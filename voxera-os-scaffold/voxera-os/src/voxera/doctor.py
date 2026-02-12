@@ -29,6 +29,10 @@ async def run_doctor() -> dict:
     return results
 
 def print_report(results: dict) -> None:
+    if not results:
+        console.print("[yellow]No brain providers configured. Run 'voxera setup' first.[/yellow]")
+        return
+
     t = Table(title="Voxera Doctor Report")
     t.add_column("Brain")
     t.add_column("Provider")

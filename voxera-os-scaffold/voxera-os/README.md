@@ -52,7 +52,7 @@ Voxera is designed as three layers:
 2. **AI Control Plane** — intent routing, planning, memory, tool runner, policy enforcement
 3. **Experience Layer** — voice shell + minimal confirmation panel (and later full GUI/CLI modes)
 
-See `docs/ARCHITECTURE.md` and `docs/BOOTSTRAP.md`.
+See `docs/ARCHITECTURE.md`, `docs/BOOTSTRAP.md`, and `docs/CODEX_MEMORY.md`.
 
 ## Safety model (MVP)
 - No silent risky changes (network/install/credentials)
