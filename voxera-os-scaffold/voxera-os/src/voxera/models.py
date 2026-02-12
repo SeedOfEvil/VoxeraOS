@@ -41,6 +41,18 @@ class PlanStep(BaseModel):
     args: Dict[str, Any] = Field(default_factory=dict)
     requires_approval: bool = False
     capability: Optional[str] = None
+    risk: Literal["low", "medium", "high"] = "low"
+    policy_decision: Optional[Literal["allow", "ask", "deny"]] = None
+    reason: Optional[str] = None
+
+
+class PlanSimulation(BaseModel):
+    title: str
+    goal: str
+    steps: List[PlanStep]
+    approvals_required: int = 0
+    blocked: bool = False
+    summary: str = ""
 
 class Plan(BaseModel):
     title: str

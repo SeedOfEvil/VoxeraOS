@@ -38,6 +38,7 @@ This writes config to:
 voxera status
 voxera skills list
 voxera run system.status
+voxera run system.open_app --arg name=firefox --dry-run
 ```
 
 ### 3) Start the panel (optional)
@@ -53,6 +54,8 @@ Voxera is designed as three layers:
 3. **Experience Layer** — voice shell + minimal confirmation panel (and later full GUI/CLI modes)
 
 See `docs/ARCHITECTURE.md`, `docs/BOOTSTRAP.md`, and `docs/CODEX_MEMORY.md`.
+
+For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test checklist.
 
 ## Safety model (MVP)
 - No silent risky changes (network/install/credentials)
