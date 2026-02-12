@@ -1,0 +1,19 @@
+mode: mixed
+brain:
+  primary:
+    type: gemini
+    model: gemini-3-flash
+    api_key_ref: CLOUD_API_KEY
+  fallback:
+    type: openai_compat
+    base_url: http://localhost:11434/v1
+    model: llama3
+policy:
+  network_changes: ask
+  installs: ask
+  file_delete: ask
+  open_apps: allow
+  system_settings: ask
+privacy:
+  cloud_allowed: true
+  redact_logs: true

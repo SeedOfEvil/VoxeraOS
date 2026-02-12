@@ -1,0 +1,6 @@
+id: system.open_app
+name: Open App
+description: Launch an application by name (MVP allowlist).
+entrypoint: voxera_builtin_skills.open_app:run
+capabilities: ["apps.open"]
+risk: medium

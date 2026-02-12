@@ -1,0 +1,6 @@
+approvals:
+  network_changes: ask
+  installs: ask
+  file_delete: ask
+  open_apps: allow
+  system_settings: ask

@@ -1,0 +1,6 @@
+id: system.status
+name: System Status
+description: Show basic system info (CPU/RAM/Disk placeholders).
+entrypoint: voxera_builtin_skills.system_status:run
+capabilities: []
+risk: low

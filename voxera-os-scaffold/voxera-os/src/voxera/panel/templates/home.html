@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Voxera Panel</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .card { border: 1px solid #ddd; border-radius: 14px; padding: 14px; }
+    h1 { margin-top: 0; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Voxera Panel</h1>
+  <p class="muted">MVP panel: approvals queue + latest audit events (JSONL).</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Approvals</h2>
+      {% if approvals|length == 0 %}
+        <p class="muted">No pending approvals.</p>
+      {% else %}
+        <ul>
+          {% for a in approvals %}
+            <li><b>{{a.title}}</b><br/><span class="muted">{{a.detail}}</span></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      <h3>Add test approval</h3>
+      <form method="post" action="/approvals/add">
+        <input name="title" placeholder="Title" required style="width:100%; padding:8px; margin-bottom:8px;"/>
+        <textarea name="detail" placeholder="Detail" required style="width:100%; padding:8px; height:70px;"></textarea>
+        <button type="submit" style="margin-top:8px;">Add</button>
+      </form>
+
+      <form method="post" action="/approvals/clear" style="margin-top:10px;">
+        <button type="submit">Clear approvals</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Audit (latest)</h2>
+      {% if audit|length == 0 %}
+        <p class="muted">No audit events yet.</p>
+      {% else %}
+        {% for e in audit %}
+          <pre>{{ e }}</pre>
+          <hr/>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

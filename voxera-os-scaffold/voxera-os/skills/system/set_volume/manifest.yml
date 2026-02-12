@@ -1,0 +1,6 @@
+id: system.set_volume
+name: Set Volume
+description: Set system volume percentage (Linux 'pactl' if available).
+entrypoint: voxera_builtin_skills.set_volume:run
+capabilities: ["system.settings"]
+risk: medium

@@ -1,0 +1,11 @@
+[Unit]
+Description=Voxera Core (router/skills/audit)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env voxera daemon
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

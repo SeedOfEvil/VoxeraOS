@@ -1,0 +1,11 @@
+[Unit]
+Description=Voxera Panel (approvals + audit UI)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env voxera panel --host 127.0.0.1 --port 8844
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
