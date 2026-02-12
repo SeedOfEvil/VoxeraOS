@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Optional
 import typer
 from rich.console import Console
@@ -61,7 +62,11 @@ def _approval_prompt(manifest, decision):
     return typer.confirm("Approve?", default=False)
 
 @app.command()
-def run(skill_id: str, arg: Optional[str] = typer.Option(None, help="Key=Value arg (single MVP)")):
+def run(
+    skill_id: str,
+    arg: Optional[str] = typer.Option(None, help="Key=Value arg (single MVP)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate execution without running the skill."),
+):
     """Run a skill by ID (MVP)."""
     cfg = load_config()
     reg = SkillRegistry()
@@ -75,6 +80,11 @@ def run(skill_id: str, arg: Optional[str] = typer.Option(None, help="Key=Value a
             raise typer.BadParameter("--arg must be key=value")
         k, v = arg.split("=", 1)
         args[k] = v
+
+    if dry_run:
+        sim = runner.simulate(mf, args=args, policy=cfg.policy)
+        console.print(json.dumps(sim.model_dump(), indent=2))
+        return
 
     rr = runner.run(mf, args=args, policy=cfg.policy, require_approval_cb=_approval_prompt)
     if rr.ok:

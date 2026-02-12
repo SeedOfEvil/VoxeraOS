@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict
-from ..models import RunResult, SkillManifest
+from ..models import PlanSimulation, PlanStep, RunResult, SkillManifest
 from ..policy import decide
 from ..audit import log
 from .registry import SkillRegistry
@@ -9,6 +9,36 @@ from .registry import SkillRegistry
 class SkillRunner:
     def __init__(self, registry: SkillRegistry):
         self.registry = registry
+
+    def simulate(self, manifest: SkillManifest, args: Dict[str, Any], policy) -> PlanSimulation:
+        decision = decide(manifest, policy)
+        requires_approval = decision.decision == "ask" or manifest.risk == "high"
+        blocked = decision.decision == "deny"
+
+        step = PlanStep(
+            action="Run skill",
+            skill_id=manifest.id,
+            args=args,
+            requires_approval=requires_approval,
+            risk=manifest.risk,
+            policy_decision=decision.decision,
+            reason=decision.reason,
+        )
+
+        summary = (
+            "Blocked by policy" if blocked
+            else "Approval required before execution" if requires_approval
+            else "Safe to execute"
+        )
+
+        return PlanSimulation(
+            title=f"Dry-run: {manifest.name}",
+            goal=manifest.description,
+            steps=[step],
+            approvals_required=1 if requires_approval else 0,
+            blocked=blocked,
+            summary=summary,
+        )
 
     def run(self, manifest: SkillManifest, args: Dict[str, Any], policy, require_approval_cb=None) -> RunResult:
         decision = decide(manifest, policy)
