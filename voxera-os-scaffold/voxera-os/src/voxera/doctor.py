@@ -16,7 +16,12 @@ async def run_doctor() -> dict:
     for name, bc in cfg.brain.items():
         try:
             if bc.type == "openai_compat":
-                brain = OpenAICompatBrain(base_url=bc.base_url or "", model=bc.model, api_key_ref=bc.api_key_ref)
+                brain = OpenAICompatBrain(
+                    base_url=bc.base_url or "",
+                    model=bc.model,
+                    api_key_ref=bc.api_key_ref,
+                    extra_headers=bc.extra_headers,
+                )
                 results[name] = await brain.capability_test()
             elif bc.type == "gemini":
                 brain = GeminiBrain(model=bc.model, api_key_ref=bc.api_key_ref)

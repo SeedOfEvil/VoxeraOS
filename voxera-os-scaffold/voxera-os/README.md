@@ -12,7 +12,8 @@ a minimal approval/audit web panel, and pluggable “brain” providers (cloud o
 
 ## What works in this scaffold
 - ✅ Typed setup wizard (TUI) to pick **Local vs Cloud** brain + store config safely
-- ✅ Provider abstraction layer + adapters (OpenAI-compatible works immediately with local servers like Ollama)
+- ✅ OpenRouter-first cloud setup path with recommended headers + model tiers (fast/balanced/reasoning/fallback)
+- ✅ Provider abstraction layer + adapters (OpenAI-compatible works immediately with local servers like Ollama/OpenRouter)
 - ✅ Skill registry + permissions + approval gating (MVP)
 - ✅ Audit log (JSONL) + rollback hooks (MVP)
 - ✅ Minimal panel (FastAPI) to review approvals + audit trail
@@ -32,6 +33,19 @@ voxera setup
 This writes config to:
 - `~/.config/voxera/config.yml`
 - secrets stored via `keyring` when possible; otherwise a 0600 fallback file
+
+
+### OpenRouter recommended setup
+`voxera setup` now includes an **OpenRouter** cloud option and configures:
+- Base URL: `https://openrouter.ai/api/v1`
+- Headers: `HTTP-Referer` and `X-Title`
+- Brain tiers: `primary`, `fast`, `reasoning`, `fallback`
+
+After setup, run:
+```bash
+voxera doctor
+```
+to verify each configured model endpoint.
 
 ### 2) Try basic commands
 ```bash

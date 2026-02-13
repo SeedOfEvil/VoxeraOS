@@ -8,6 +8,7 @@ class BrainConfig(BaseModel):
     model: str
     base_url: Optional[str] = None  # for openai_compat
     api_key_ref: Optional[str] = None  # keyring ref name
+    extra_headers: Dict[str, str] = Field(default_factory=dict)  # optional provider-specific headers
 
 class PolicyApprovals(BaseModel):
     network_changes: Literal["allow", "ask", "deny"] = "ask"
