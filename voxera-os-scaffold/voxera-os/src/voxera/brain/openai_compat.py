@@ -9,14 +9,26 @@ from ..secrets import get_secret
 class OpenAICompatBrain:
     """Works with any OpenAI-compatible endpoint (local or cloud)."""
 
-    def __init__(self, base_url: str, model: str, api_key_ref: Optional[str] = None, timeout: float = 60.0):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key_ref: Optional[str] = None,
+        timeout: float = 60.0,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key_ref = api_key_ref
         self.timeout = timeout
+        self.extra_headers = extra_headers or {}
 
     def _headers(self) -> Dict[str, str]:
         hdr = {"Content-Type": "application/json"}
+        for k, v in self.extra_headers.items():
+            if v:
+                hdr[k] = v
+
         if self.api_key_ref:
             key = get_secret(self.api_key_ref) or self.api_key_ref
             if key and key.startswith(("keyring:", "file:")):
