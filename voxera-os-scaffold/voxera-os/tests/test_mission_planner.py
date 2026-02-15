@@ -248,3 +248,39 @@ def test_plan_mission_emits_single_selected_per_attempt(monkeypatch):
     assert len(fallback) == 1
     assert selected[0]["attempt_index"] == 0
     assert selected[1]["attempt_index"] == 1
+
+
+def test_plan_mission_keeps_write_text_body_alias(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Write note","steps":[{"skill_id":"files.write_text","args":{"path":"~/VoxeraOS/notes/note.txt","body":"remember milk"}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("write a note saying remember milk", cfg=cfg, registry=reg))
+    assert mission.steps[0].skill_id == "files.write_text"
+    assert mission.steps[0].args["path"] == "~/VoxeraOS/notes/note.txt"
+    assert mission.steps[0].args["text"] == "remember milk"
+

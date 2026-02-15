@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from pathlib import Path
 from typing import List, Optional
 import typer
@@ -14,13 +15,50 @@ from .doctor import doctor_sync
 from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
 from .audit import tail
+
+from . import __version__
 from .core.missions import MissionRunner, get_mission, list_missions
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.queue_daemon import MissionQueueDaemon
 from .core.mission_planner import MissionPlannerError, plan_mission
 
 console = Console()
+
+
+def _git_sha() -> str | None:
+    try:
+        out = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+    except Exception:
+        return None
+    return out or None
+
+
+def _version_string() -> str:
+    sha = _git_sha()
+    return f"{__version__} ({sha})" if sha else __version__
+
+
+def _show_version(value: bool):
+    if not value:
+        return
+    console.print(_version_string())
+    raise typer.Exit()
+
+
 app = typer.Typer(help="Voxera OS — Vera's control plane CLI")
+
+@app.callback()
+def main(
+    version: bool = typer.Option(False, "--version", callback=_show_version, is_eager=True, help="Show Voxera version and exit."),
+):
+    """Voxera CLI root command group."""
+
+
+@app.command("version")
+def version_cmd():
+    """Show Voxera version."""
+    console.print(_version_string())
+
 
 skills_app = typer.Typer(help="Manage skills")
 app.add_typer(skills_app, name="skills")

@@ -49,7 +49,13 @@ def _normalize_step_args(raw_args: object, expected_args: List[str]) -> dict:
     if not expected_args:
         return raw_args
 
-    normalized = {k: v for k, v in raw_args.items() if k in expected_args}
+    alias_map = {"content": "text", "body": "text"}
+    expanded = dict(raw_args)
+    for alias, canonical in alias_map.items():
+        if canonical in expected_args and canonical not in expanded and alias in expanded:
+            expanded[canonical] = expanded[alias]
+
+    normalized = {k: v for k, v in expanded.items() if k in expected_args}
     if normalized:
         return normalized
 

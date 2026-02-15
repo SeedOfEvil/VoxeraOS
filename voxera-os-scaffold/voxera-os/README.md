@@ -28,6 +28,7 @@ pip install -e ".[dev]"
 make update
 make services-install
 
+voxera --version
 voxera queue status
 voxera inbox add "Write a daily check-in note with priorities and blockers"
 voxera daemon --once
@@ -117,6 +118,11 @@ voxera queue approvals list
 voxera queue approvals approve <job_id_or_filename>
 voxera queue approvals deny <job_id_or_filename>
 ```
+
+Queue status troubleshooting:
+- Primary pending jobs are counted from `pending/*.json` (excluding `*.pending.json`).
+- Approval artifacts are counted from `pending/approvals/*.approval.json`.
+- If an approval artifact is malformed, `voxera queue approvals list` still shows an "(unparseable approval artifact)" row and logs `queue_status_parse_failed` in audit output.
 
 Completed jobs are moved to `done/`; invalid or denied jobs are moved to `failed/`.
 

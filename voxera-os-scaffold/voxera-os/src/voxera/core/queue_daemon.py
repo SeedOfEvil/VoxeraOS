@@ -232,16 +232,61 @@ class MissionQueueDaemon:
             return 0
         return sum(1 for _ in directory.glob(pattern))
 
-    def pending_approvals_snapshot(self, *, limit: int = 10) -> list[dict[str, Any]]:
+    def _pending_primary_jobs(self) -> list[Path]:
+        if not self.pending.exists():
+            return []
+        return sorted(
+            p
+            for p in self.pending.glob("*.json")
+            if p.is_file() and not p.name.endswith(".pending.json")
+        )
+
+    def _approval_ref_variants(self, path: Path) -> set[str]:
+        stem = path.stem
+        if stem.endswith(".approval"):
+            stem = stem[: -len(".approval")]
+        return {
+            stem,
+            f"{stem}.json",
+            f"{stem}.approval",
+            f"{stem}.approval.json",
+            path.name,
+        }
+
+    def _iter_approval_artifacts(self) -> list[Path]:
         if not self.approvals.exists():
             return []
+        return sorted(self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+    def _read_approval_artifact(self, artifact: Path) -> dict[str, Any]:
+        try:
+            data = json.loads(artifact.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("approval artifact must be a JSON object")
+            data["_artifact"] = artifact.name
+            return data
+        except Exception as exc:
+            log(
+                {
+                    "event": "queue_status_parse_failed",
+                    "filename": artifact.name,
+                    "error": repr(exc),
+                }
+            )
+            return {
+                "job": artifact.name,
+                "step": "-",
+                "skill": "(unparseable approval artifact)",
+                "reason": repr(exc),
+                "capability": "-",
+                "_artifact": artifact.name,
+            }
+
+    def pending_approvals_snapshot(self, *, limit: int = 10) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
-        artifacts = sorted(self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        artifacts = self._iter_approval_artifacts()
         for artifact in artifacts[:limit]:
-            try:
-                data = json.loads(artifact.read_text(encoding="utf-8"))
-            except Exception:
-                continue
+            data = self._read_approval_artifact(artifact)
             out.append(
                 {
                     "job": data.get("job", ""),
@@ -274,7 +319,7 @@ class MissionQueueDaemon:
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
             "counts": {
-                "pending": self._count_files(self.pending, "*.json") - self._count_files(self.pending, "*.pending.json"),
+                "pending": len(self._pending_primary_jobs()),
                 "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
                 "done": self._count_files(self.done, "*.json"),
                 "failed": self._count_files(self.failed, "*.json"),
@@ -337,16 +382,21 @@ class MissionQueueDaemon:
             candidate2 = self.pending / f"{ref}.json"
             if candidate2.exists():
                 return candidate2
+
+        target = ref.strip()
+        for artifact in self._iter_approval_artifacts():
+            if target in self._approval_ref_variants(artifact):
+                via_artifact = self.pending / f"{artifact.stem.removesuffix('.approval')}.json"
+                if via_artifact.exists():
+                    return via_artifact
+
         raise FileNotFoundError(f"pending job not found: {ref}")
 
     def approvals_list(self) -> list[dict[str, Any]]:
         self.ensure_dirs()
         out: list[dict[str, Any]] = []
-        for artifact in sorted(self.approvals.glob("*.approval.json")):
-            try:
-                out.append(json.loads(artifact.read_text(encoding="utf-8")))
-            except Exception:
-                continue
+        for artifact in self._iter_approval_artifacts():
+            out.append(self._read_approval_artifact(artifact))
         return out
 
     def resolve_approval(self, ref: str, *, approve: bool) -> bool:

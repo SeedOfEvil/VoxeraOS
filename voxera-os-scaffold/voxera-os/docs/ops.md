@@ -36,6 +36,11 @@ then the daemon processes it through the normal planner + policy + audit pipelin
 When a queued mission hits an ASK policy gate, it is moved to `pending/` and a
 `pending/approvals/*.approval.json` artifact is created.
 
+Queue status troubleshooting quick checks:
+- `voxera queue status` counts `pending/*.json` as pending jobs, excluding `*.pending.json` metadata files.
+- `voxera queue status` counts approvals from `pending/approvals/*.approval.json`.
+- `voxera queue approvals list` will surface malformed artifacts as `(unparseable approval artifact)` and emit `queue_status_parse_failed` audit events.
+
 ```bash
 voxera queue approvals list
 voxera queue approvals deny <job_id_or_filename>
