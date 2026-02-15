@@ -1,6 +1,6 @@
 # Ubuntu Testing Guide
 
-Use this checklist to run Voxera OS Alpha v0.1 end-to-end on an Ubuntu machine.
+Use this checklist to run Voxera OS Alpha v0.1.2 end-to-end on an Ubuntu machine.
 
 ## 1) System prerequisites
 
