@@ -15,6 +15,7 @@ from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
 from .audit import tail
 from .core.missions import MissionRunner, get_mission, list_missions
+from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.queue_daemon import MissionQueueDaemon
 from .core.mission_planner import MissionPlannerError, plan_mission
 
@@ -26,8 +27,10 @@ app.add_typer(skills_app, name="skills")
 missions_app = typer.Typer(help="Run multi-step built-in missions")
 queue_app = typer.Typer(help="Queue job utilities")
 queue_approvals_app = typer.Typer(help="Resolve pending queue approvals")
+inbox_app = typer.Typer(help="Human-friendly queue inbox")
 app.add_typer(missions_app, name="missions")
 app.add_typer(queue_app, name="queue")
+app.add_typer(inbox_app, name="inbox")
 queue_app.add_typer(queue_approvals_app, name="approvals")
 
 @app.command()
@@ -310,3 +313,46 @@ def queue_approvals_deny(
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1)
     console.print("Denied. Job moved to failed/.")
+
+
+@inbox_app.command("add")
+def inbox_add(
+    goal: str,
+    id: Optional[str] = typer.Option(None, "--id", help="Optional job id (defaults to generated timestamp+hash)."),
+    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+):
+    """Create an inbox queue job from plain goal text."""
+    try:
+        created = add_inbox_job(Path(queue_dir), goal, job_id=id)
+    except ValueError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    payload = json.loads(created.read_text(encoding="utf-8"))
+    console.print(f"Created inbox job: {created}")
+    console.print(f"ID: {payload.get('id', '')}")
+    console.print(f"Goal: {payload.get('goal', '')}")
+
+
+@inbox_app.command("list")
+def inbox_list(
+    n: int = typer.Option(20, "--n", min=1, help="Number of recent inbox jobs to show."),
+    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+):
+    """List inbox-created jobs across queue states."""
+    jobs, missing_dirs = list_inbox_jobs(Path(queue_dir), limit=n)
+
+    table = Table(title="Inbox Jobs")
+    table.add_column("State")
+    table.add_column("Job")
+    table.add_column("ID")
+    table.add_column("Goal")
+    if jobs:
+        for job in jobs:
+            table.add_row(job.state, job.filename, job.job_id, job.goal)
+    else:
+        table.add_row("-", "-", "-", "No inbox jobs found")
+    console.print(table)
+
+    for missing in missing_dirs:
+        console.print(f"[yellow]Hint:[/yellow] missing directory: {missing}")
