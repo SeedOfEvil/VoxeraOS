@@ -43,10 +43,21 @@ class MissionQueueDaemon:
         self.mission_runner = MissionRunner(
             runner,
             policy=cfg.policy,
+            require_approval_cb=self._queue_approval_prompt,
             redact_logs=cfg.privacy.redact_logs,
             mission_log_path=mission_log_path,
         )
         self.cfg = cfg
+
+    def _queue_approval_prompt(self, manifest, decision) -> bool:
+        log(
+            {
+                "event": "queue_approval_required",
+                "skill": manifest.id,
+                "reason": decision.reason,
+            }
+        )
+        return False
 
     def ensure_dirs(self) -> None:
         self.inbox.mkdir(parents=True, exist_ok=True)
@@ -63,6 +74,9 @@ class MissionQueueDaemon:
 
     def process_job_file(self, job_path: Path) -> bool:
         self.ensure_dirs()
+        if not job_path.exists():
+            return False
+
         log({"event": "queue_job_received", "job": str(job_path)})
         try:
             payload = json.loads(job_path.read_text(encoding="utf-8"))
@@ -98,7 +112,13 @@ class MissionQueueDaemon:
             goal = str(payload["goal"])
             log({"event": "queue_job_started", "kind": "goal", "goal": goal})
             try:
-                mission = asyncio.run(plan_mission(goal=goal, cfg=self.cfg, registry=self.mission_runner.skill_runner.registry))
+                mission = asyncio.run(
+                    plan_mission(
+                        goal=goal,
+                        cfg=self.cfg,
+                        registry=self.mission_runner.skill_runner.registry,
+                    )
+                )
             except MissionPlannerError as exc:
                 raise RuntimeError(str(exc)) from exc
             return self.mission_runner.run(mission)
@@ -140,6 +160,7 @@ class MissionQueueDaemon:
             observer.schedule(_Handler(), str(self.inbox), recursive=False)
             observer.start()
             log({"event": "queue_watch_mode", "mode": "watchdog"})
+            self.process_pending_once()
             try:
                 while True:
                     time.sleep(self.poll_interval)
