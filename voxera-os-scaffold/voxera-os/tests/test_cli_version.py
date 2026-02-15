@@ -10,7 +10,7 @@ def test_version_command_prints_semver(monkeypatch):
     result = runner.invoke(cli.app, ["version"])
 
     assert result.exit_code == 0
-    assert "0.1.2 (abc1234)" in result.stdout
+    assert "0.1.3 (abc1234)" in result.stdout
 
 
 def test_root_version_option_prints_and_exits(monkeypatch):
@@ -20,4 +20,4 @@ def test_root_version_option_prints_and_exits(monkeypatch):
     result = runner.invoke(cli.app, ["--version"])
 
     assert result.exit_code == 0
-    assert "0.1.2" in result.stdout
+    assert "0.1.3" in result.stdout

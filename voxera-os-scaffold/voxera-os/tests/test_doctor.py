@@ -16,8 +16,9 @@ def test_run_doctor_writes_empty_report_when_no_brains(monkeypatch, tmp_path: Pa
 
     results = asyncio.run(run_doctor())
 
-    assert results == {}
-    assert json.loads(report_path.read_text(encoding="utf-8")) == {}
+    assert "sandbox.podman" in results
+    assert results["sandbox.podman"]["provider"] == "podman"
+    assert json.loads(report_path.read_text(encoding="utf-8"))["sandbox.podman"]["provider"] == "podman"
 
 
 def test_print_report_warns_when_no_brains_configured(capsys):

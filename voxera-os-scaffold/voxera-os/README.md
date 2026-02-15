@@ -1,7 +1,7 @@
-# Voxera OS Alpha v0.1.2 — Voice-first AI Control Plane
+# Voxera OS Alpha v0.1.3 — Voice-first AI Control Plane
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is **Voxera OS Alpha v0.1.2**: it ships a typed first-run setup (`voxera setup`), cloud-planned missions,
+This repo is **Voxera OS Alpha v0.1.3**: it ships a typed first-run setup (`voxera setup`), cloud-planned missions,
 a queue daemon with approval inbox, queue status + panel insights, update tooling, systemd user services, and pluggable “brain” providers.
 
 **Names**
@@ -10,7 +10,7 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 - Wake word (planned): **“Hey Voxera”**
 - CLI: `voxera`
 
-## What works in Alpha v0.1.2
+## What works in Alpha v0.1.3
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
 - ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
@@ -227,14 +227,45 @@ For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test c
 - Everything is audited (what/why/how to undo)
 - Skills declare permissions; policies decide “allow/ask/deny”
 
+
+## Sandbox execution (v0.1.3 MVP)
+
+### Install rootless Podman on Ubuntu 24.04
+```bash
+sudo apt update
+sudo apt install -y podman uidmap slirp4netns fuse-overlayfs
+podman info --debug | head
+```
+
+### Run sandbox.exec
+`sandbox.exec` always runs in the Podman backend and requires `command` as an array (list) of strings.
+
+Example (Python API):
+```python
+from voxera.models import AppConfig
+from voxera.skills.registry import SkillRegistry
+from voxera.skills.runner import SkillRunner
+
+reg = SkillRegistry(); reg.discover()
+runner = SkillRunner(reg, config=AppConfig())
+rr = runner.run(reg.get("sandbox.exec"), {"command": ["bash", "-lc", "echo hi; touch /work/ok"]}, AppConfig().policy)
+print(rr.ok, rr.data["artifacts_dir"])
+```
+
+### Security model
+- Default `--network=none` (network remains blocked unless explicitly requested and approved).
+- Read-only root filesystem (`--read-only`).
+- Only `~/.voxera/workspace/<job_id>/` is mounted writable to `/work`.
+- Artifacts are stored in `~/.voxera/artifacts/<job_id>/` (`stdout.txt`, `stderr.txt`, `runner.json`, `command.txt`).
+- `:Z` SELinux mount suffix is used for Podman volume labeling; this is compatible on non-SELinux systems as well.
+
 ## Roadmap
 - Voice stack (wake word + STT/TTS)
-- Container sandbox runner (Podman)
 - First-boot “installer-by-conversation” flow
 - Immutable base image (Silverblue-style) for atomic upgrades + rollback
 
 ---
-**Alpha v0.1.2** is meant to give you a working system + fast iteration loop while preserving safety gates.
+**Alpha v0.1.3** is meant to give you a working system + fast iteration loop while preserving safety gates.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 

@@ -1,6 +1,6 @@
 # Ubuntu Testing Guide
 
-Use this checklist to run Voxera OS Alpha v0.1.2 end-to-end on an Ubuntu machine.
+Use this checklist to run Voxera OS Alpha v0.1.3 end-to-end on an Ubuntu machine.
 
 ## 1) System prerequisites
 
@@ -50,6 +50,17 @@ voxera status
 voxera skills list
 voxera run system.status
 ```
+
+
+## 5b) Install rootless Podman for sandbox skills
+
+```bash
+sudo apt install -y podman uidmap slirp4netns fuse-overlayfs
+podman info --debug | head
+```
+
+On SELinux hosts, Podman bind mounts use `:Z` labels (Voxera applies this automatically).
+On non-SELinux hosts the same mount option remains compatible.
 
 ## 6) Validate dry-run simulation (no execution)
 

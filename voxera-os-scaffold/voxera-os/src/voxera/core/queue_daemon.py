@@ -52,6 +52,7 @@ class MissionQueueDaemon:
         reg = SkillRegistry()
         reg.discover()
         runner = SkillRunner(reg)
+        runner.config = cfg
         self.mission_runner = MissionRunner(
             runner,
             policy=cfg.policy,

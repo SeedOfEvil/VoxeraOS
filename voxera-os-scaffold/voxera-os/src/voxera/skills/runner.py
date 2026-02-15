@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 from typing import Any, Dict
-from ..models import PlanSimulation, PlanStep, RunResult, SkillManifest
-from ..policy import decide
+
 from ..audit import log
+from ..models import AppConfig, PlanSimulation, PlanStep, RunResult, SkillManifest
+from ..policy import decide
 from .arg_normalizer import canonicalize_args
+from .execution import generate_job_id, select_runner
 from .registry import SkillRegistry
 
+
 class SkillRunner:
-    def __init__(self, registry: SkillRegistry):
+    def __init__(self, registry: SkillRegistry, config: AppConfig | None = None):
         self.registry = registry
+        self.config = config or AppConfig()
 
     def simulate(self, manifest: SkillManifest, args: Dict[str, Any], policy) -> PlanSimulation:
         args = canonicalize_args(manifest.id, args)
-        decision = decide(manifest, policy)
+        decision = decide(manifest, policy, args=args)
         requires_approval = decision.decision == "ask" or manifest.risk == "high"
         blocked = decision.decision == "deny"
 
@@ -28,8 +32,10 @@ class SkillRunner:
         )
 
         summary = (
-            "Blocked by policy" if blocked
-            else "Approval required before execution" if requires_approval
+            "Blocked by policy"
+            if blocked
+            else "Approval required before execution"
+            if requires_approval
             else "Safe to execute"
         )
 
@@ -51,7 +57,7 @@ class SkillRunner:
         audit_context: Dict[str, Any] | None = None,
     ) -> RunResult:
         args = canonicalize_args(manifest.id, args)
-        decision = decide(manifest, policy)
+        decision = decide(manifest, policy, args=args)
         requires = decision.decision in ("ask", "deny") or manifest.risk in ("high",)
 
         if decision.decision == "deny":
@@ -103,12 +109,32 @@ class SkillRunner:
                 )
 
         fn = self.registry.load_entrypoint(manifest)
-        log({"event": "skill_start", "skill": manifest.id, "args": args, "reason": decision.reason})
+        runner = select_runner(manifest)
+        job_id = generate_job_id()
+        log(
+            {
+                "event": "skill_start",
+                "skill": manifest.id,
+                "args": args,
+                "reason": decision.reason,
+                "runner": runner.runner_name,
+                "job_id": job_id,
+            }
+        )
         try:
-            out = fn(**args)
-            rr = out if isinstance(out, RunResult) else RunResult(ok=True, output=str(out))
-            log({"event": "skill_done", "skill": manifest.id, "ok": rr.ok, "error": rr.error})
+            rr = runner.run(manifest=manifest, args=args, fn=fn, cfg=self.config, job_id=job_id)
+            log(
+                {
+                    "event": "skill_done",
+                    "skill": manifest.id,
+                    "ok": rr.ok,
+                    "error": rr.error,
+                    "runner": runner.runner_name,
+                    "job_id": job_id,
+                    "artifacts_dir": rr.data.get("artifacts_dir"),
+                }
+            )
             return rr
         except Exception as e:
-            log({"event": "skill_error", "skill": manifest.id, "error": repr(e)})
+            log({"event": "skill_error", "skill": manifest.id, "error": repr(e), "runner": runner.runner_name, "job_id": job_id})
             return RunResult(ok=False, error=repr(e))

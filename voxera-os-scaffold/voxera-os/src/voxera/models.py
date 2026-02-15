@@ -27,6 +27,10 @@ class AppConfig(BaseModel):
     policy: PolicyApprovals = Field(default_factory=PolicyApprovals)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     skills_path: Optional[str] = None
+    sandbox_image: str = "docker.io/library/ubuntu:24.04"
+    sandbox_memory: str = "512m"
+    sandbox_cpus: float = 1.0
+    sandbox_pids_limit: int = 256
 
 class SkillManifest(BaseModel):
     id: str
@@ -35,6 +39,9 @@ class SkillManifest(BaseModel):
     entrypoint: str  # python module:function
     capabilities: List[str] = Field(default_factory=list)
     risk: Literal["low", "medium", "high"] = "low"
+    exec_mode: Literal["local", "sandbox"] = "local"
+    needs_network: bool = False
+    fs_scope: Literal["workspace_only", "read_only", "broader"] = "workspace_only"
 
 class PlanStep(BaseModel):
     action: str

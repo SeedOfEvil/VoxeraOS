@@ -102,9 +102,12 @@ def skills_list():
     table.add_column("ID")
     table.add_column("Name")
     table.add_column("Risk")
+    table.add_column("Exec")
+    table.add_column("Net")
+    table.add_column("FS")
     table.add_column("Capabilities")
     for _, mf in sorted(m.items()):
-        table.add_row(mf.id, mf.name, mf.risk, ", ".join(mf.capabilities))
+        table.add_row(mf.id, mf.name, mf.risk, mf.exec_mode, str(mf.needs_network), mf.fs_scope, ", ".join(mf.capabilities))
     console.print(table)
 
 
@@ -136,6 +139,7 @@ def run(
     reg.discover()
     mf = reg.get(skill_id)
     runner = SkillRunner(reg)
+    runner.config = cfg
 
     args = {}
     for item in arg or []:
@@ -167,6 +171,7 @@ def missions_plan(
     reg = SkillRegistry()
     reg.discover()
     runner = SkillRunner(reg)
+    runner.config = cfg
     mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt, redact_logs=cfg.privacy.redact_logs)
 
     try:
@@ -201,6 +206,7 @@ def missions_run(
     reg = SkillRegistry()
     reg.discover()
     runner = SkillRunner(reg)
+    runner.config = cfg
     mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt, redact_logs=cfg.privacy.redact_logs)
 
     try:

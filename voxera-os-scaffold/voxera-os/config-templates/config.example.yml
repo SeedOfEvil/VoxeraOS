@@ -17,3 +17,8 @@ policy:
 privacy:
   cloud_allowed: true
   redact_logs: true
+
+sandbox_image: docker.io/library/ubuntu:24.04
+sandbox_memory: 512m
+sandbox_cpus: 1.0
+sandbox_pids_limit: 256
