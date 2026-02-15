@@ -1,5 +1,4 @@
 import json
-import os
 import sys
 import types
 from types import SimpleNamespace
@@ -99,7 +98,17 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     deny_job = queue_dir / "deny.json"
     queue_dir.mkdir(parents=True, exist_ok=True)
     approve_job.write_text(json.dumps({"mission_id": "focus_mode"}), encoding="utf-8")
-    deny_job.write_text(json.dumps({"mission_id": "focus_mode"}), encoding="utf-8")
+    deny_job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="goal_url",
+            title="Goal URL",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
 
     log_path = tmp_path / "mission-log.md"
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=log_path)
@@ -113,6 +122,8 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     assert pending_job.exists()
     assert artifact["status"] == "pending_approval"
     assert artifact["args"]["percent"] == "<redacted>"
+    assert any(e["event"] == "queue_job_received" for e in events)
+    assert any(e["event"] == "queue_job_started" for e in events)
     assert any(e["event"] == "queue_job_pending_approval" for e in events)
     assert "status=pending_approval" in log_path.read_text(encoding="utf-8")
 
@@ -120,11 +131,15 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     assert (queue_dir / "done" / "approval.json").exists()
 
     daemon.process_job_file(deny_job)
+    deny_artifact = queue_dir / "pending" / "approvals" / "deny.approval.json"
+    assert deny_artifact.exists()
+    deny_details = json.loads(deny_artifact.read_text(encoding="utf-8"))
+    assert deny_details["skill"] == "system.open_url"
     daemon.resolve_approval("deny", approve=False)
     assert (queue_dir / "failed" / "deny.json").exists()
-    assert any(e["event"] == "queue_job_failed" for e in events)
+    assert any(e["event"] == "queue_job_failed" and "Denied in approval inbox" in e.get("error", "") for e in events)
     assert any(e["event"] == "mission_denied" for e in events)
-    assert "system.set_volume" not in log_path.read_text(encoding="utf-8")
+    assert "status=denied" in log_path.read_text(encoding="utf-8")
 
 
 def test_queue_daemon_dev_auto_approve_constraints(tmp_path, monkeypatch):
@@ -136,33 +151,51 @@ def test_queue_daemon_dev_auto_approve_constraints(tmp_path, monkeypatch):
     system_job.write_text(json.dumps({"mission_id": "focus_mode"}), encoding="utf-8")
     net_job.write_text(json.dumps({"mission_id": "daily_checkin"}), encoding="utf-8")
 
-    daemon_default = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log-default.md")
-    monkeypatch.setattr(daemon_default.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
-    daemon_default.process_job_file(system_job)
+    no_dev_events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: no_dev_events.append(event))
+    daemon_no_dev = MissionQueueDaemon(
+        queue_root=queue_dir,
+        mission_log_path=tmp_path / "mission-log-no-dev.md",
+        auto_approve_ask=True,
+    )
+    monkeypatch.setattr(daemon_no_dev.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    daemon_no_dev.process_job_file(system_job)
     assert (queue_dir / "pending" / "system.json").exists()
+    assert not any(event["event"] == "queue_auto_approved" for event in no_dev_events)
 
-    os.environ["VOXERA_DEV_MODE"] = "1"
-    try:
-        # move back for next check
-        (queue_dir / "pending" / "system.json").replace(system_job)
-        meta = queue_dir / "pending" / "system.pending.json"
-        art = queue_dir / "pending" / "approvals" / "system.approval.json"
-        meta.unlink(missing_ok=True)
-        art.unlink(missing_ok=True)
+    (queue_dir / "pending" / "system.json").replace(system_job)
+    (queue_dir / "pending" / "system.pending.json").unlink(missing_ok=True)
+    (queue_dir / "pending" / "approvals" / "system.approval.json").unlink(missing_ok=True)
 
-        daemon = MissionQueueDaemon(
-            queue_root=queue_dir,
-            mission_log_path=tmp_path / "mission-log.md",
-            auto_approve_ask=True,
-        )
-        monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
-        daemon.process_job_file(system_job)
-        daemon.process_job_file(net_job)
+    dev_events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: dev_events.append(event))
+    monkeypatch.setenv("VOXERA_DEV_MODE", "1")
+    daemon_dev = MissionQueueDaemon(
+        queue_root=queue_dir,
+        mission_log_path=tmp_path / "mission-log-dev.md",
+        auto_approve_ask=True,
+    )
+    monkeypatch.setattr(daemon_dev.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    daemon_dev.process_job_file(system_job)
+    daemon_dev.process_job_file(net_job)
 
-        assert (queue_dir / "done" / "system.json").exists()
-        assert (queue_dir / "pending" / "network.json").exists()
-    finally:
-        os.environ.pop("VOXERA_DEV_MODE", None)
+    assert (queue_dir / "done" / "system.json").exists()
+    assert (queue_dir / "pending" / "network.json").exists()
+    assert any(
+        event["event"] == "queue_auto_approved"
+        and event.get("capability") == "system.settings"
+        for event in dev_events
+    )
+    assert not any(
+        event["event"] == "queue_auto_approved"
+        and event.get("capability") == "network.change"
+        for event in dev_events
+    )
+    assert any(
+        event["event"] == "queue_approval_required"
+        and event.get("skill") == "system.open_url"
+        for event in dev_events
+    )
 
 
 def test_queue_daemon_watchdog_mode_processes_existing_backlog(tmp_path, monkeypatch):

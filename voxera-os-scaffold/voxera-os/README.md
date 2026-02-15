@@ -1,8 +1,8 @@
-# Voxera OS Alpha v0.1 — Voice-first AI Control Plane
+# Voxera OS Alpha v0.1.2 — Voice-first AI Control Plane
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is **Voxera OS Alpha v0.1**: it ships a typed first-run setup (`voxera setup`), a tool/skill runner,
-a minimal approval/audit web panel, and pluggable “brain” providers (cloud or local OpenAI-compatible endpoints).
+This repo is **Voxera OS Alpha v0.1.2**: it ships a typed first-run setup (`voxera setup`), cloud-planned missions,
+a queue daemon with approval inbox, queue status + panel insights, update tooling, systemd user services, and pluggable “brain” providers.
 
 **Names**
 - OS: **Voxera OS**
@@ -10,13 +10,32 @@ a minimal approval/audit web panel, and pluggable “brain” providers (cloud o
 - Wake word (planned): **“Hey Voxera”**
 - CLI: `voxera`
 
-## What works in Alpha v0.1
-- ✅ Typed setup wizard (TUI) to pick **Local vs Cloud** brain + store config safely
-- ✅ OpenRouter-first cloud setup path with recommended headers + model tiers (fast/balanced/reasoning/fallback)
-- ✅ Provider abstraction layer + adapters (OpenAI-compatible works immediately with local servers like Ollama/OpenRouter)
-- ✅ Skill registry + permissions + approval gating (MVP)
-- ✅ Audit log (JSONL) + rollback hooks (MVP)
-- ✅ Minimal panel (FastAPI) to review approvals + audit trail
+## What works in Alpha v0.1.2
+- ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
+- ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
+- ✅ Queue status UX (`voxera queue status`) and panel insights for pending approvals/audit
+- ✅ DEV-only auto-approve gating for `system.settings` only (`VOXERA_DEV_MODE=1` + `--auto-approve-ask`)
+- ✅ Human-friendly inbox entry point (`voxera inbox add`, `voxera inbox list`) for queueing goals
+- ✅ Update flow (`make update`) and systemd user service lifecycle (`make services-install`, status/restart/stop)
+
+## Quick start (Alpha)
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e ".[dev]"
+
+make update
+make services-install
+
+voxera queue status
+voxera inbox add "Write a daily check-in note with priorities and blockers"
+voxera daemon --once
+voxera queue approvals list
+voxera queue approvals approve <job_id_or_filename>
+# or deny:
+voxera queue approvals deny <job_id_or_filename>
+```
 
 ## Quick start (dev VM)
 ```bash
@@ -70,7 +89,7 @@ voxera missions plan "run a quick health check and open my terminal"
 This uses your configured `primary` brain provider and still enforces local policy + approvals.
 
 
-### 2d) Queue missions for daemon execution
+### 2d) Queue missions/goals for daemon execution
 ```bash
 mkdir -p ~/VoxeraOS/notes/queue
 echo '{"mission_id":"system_check"}' > ~/VoxeraOS/notes/queue/job-1.json
@@ -78,6 +97,11 @@ echo '{"mission":"system_check"}' > ~/VoxeraOS/notes/queue/job-2.json
 echo '{"goal":"run a quick system check"}' > ~/VoxeraOS/notes/queue/job-3.json
 # compatibility alias still accepted:
 echo '{"plan_goal":"run a quick system check"}' > ~/VoxeraOS/notes/queue/job-4.json
+
+# human-friendly queueing entry point:
+voxera inbox add "Write a daily check-in note with top priorities"
+voxera inbox list --n 20
+
 voxera daemon --once
 ```
 Queue job schema accepts either:
@@ -187,7 +211,7 @@ For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test c
 - Immutable base image (Silverblue-style) for atomic upgrades + rollback
 
 ---
-**Alpha v0.1** is meant to give you a working system + fast iteration loop while preserving safety gates.
+**Alpha v0.1.2** is meant to give you a working system + fast iteration loop while preserving safety gates.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 

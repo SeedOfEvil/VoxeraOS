@@ -17,6 +17,41 @@ and enables/starts:
 - `voxera-daemon.service`
 - `voxera-panel.service`
 
+## Inbox -> queue processing flow
+
+Use `voxera inbox` as the human-friendly front door for queued goals:
+
+```bash
+voxera inbox add "Write a daily check-in note with priorities and blockers"
+voxera inbox list --n 20
+voxera daemon --once
+voxera queue status
+```
+
+`voxera inbox add` writes queue-compatible JSON (`{"id":"...","goal":"..."}`) into the queue root,
+then the daemon processes it through the normal planner + policy + audit pipeline.
+
+## Approval deny workflow
+
+When a queued mission hits an ASK policy gate, it is moved to `pending/` and a
+`pending/approvals/*.approval.json` artifact is created.
+
+```bash
+voxera queue approvals list
+voxera queue approvals deny <job_id_or_filename>
+voxera queue status
+```
+
+Denied jobs are visible in `failed/`, and audit/mission logs include deny lifecycle entries.
+
+## DEV auto-approve warning
+
+`voxera daemon --auto-approve-ask` is **DEV-only** and requires `VOXERA_DEV_MODE=1`.
+Without that env var, no ASK actions are auto-approved.
+
+Even in DEV mode, auto-approval is restricted to `system.settings` capability only.
+Network asks (for example `system.open_url`) still go to pending approval inbox.
+
 ## Update cadence
 
 Recommended cadence: update frequently (daily/weekly) on active systems.
