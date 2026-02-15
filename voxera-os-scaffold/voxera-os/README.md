@@ -55,6 +55,13 @@ voxera run system.status
 voxera run system.open_app --arg name=firefox --dry-run
 ```
 
+### 2b) Try built-in missions (agent-style multi-step flow)
+```bash
+voxera missions list
+voxera missions run system_check --dry-run
+voxera missions run work_mode
+```
+
 ### 3) Start the panel (optional)
 ```bash
 voxera panel

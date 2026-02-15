@@ -13,12 +13,15 @@ from .doctor import doctor_sync
 from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
 from .audit import tail
+from .core.missions import MissionRunner, get_mission, list_missions
 
 console = Console()
 app = typer.Typer(help="Voxera OS — Vera's control plane CLI")
 
 skills_app = typer.Typer(help="Manage skills")
 app.add_typer(skills_app, name="skills")
+missions_app = typer.Typer(help="Run multi-step built-in missions")
+app.add_typer(missions_app, name="missions")
 
 @app.command()
 def setup():
@@ -56,6 +59,18 @@ def skills_list():
         table.add_row(mf.id, mf.name, mf.risk, ", ".join(mf.capabilities))
     console.print(table)
 
+
+@missions_app.command("list")
+def missions_list():
+    table = Table(title="Missions")
+    table.add_column("ID")
+    table.add_column("Title")
+    table.add_column("Steps")
+    table.add_column("Notes")
+    for mission in sorted(list_missions(), key=lambda m: m.id):
+        table.add_row(mission.id, mission.title, str(len(mission.steps)), mission.notes or "")
+    console.print(table)
+
 def _approval_prompt(manifest, decision):
     console.print(f"\n⚠️  Approval required for: [bold]{manifest.id}[/bold]")
     console.print(f"Reason: {decision.reason}")
@@ -89,6 +104,37 @@ def run(
     rr = runner.run(mf, args=args, policy=cfg.policy, require_approval_cb=_approval_prompt)
     if rr.ok:
         console.print(rr.output or "OK")
+    else:
+        console.print(f"[red]ERROR:[/red] {rr.error}")
+        raise typer.Exit(code=1)
+
+
+@missions_app.command("run")
+def missions_run(
+    mission_id: str,
+    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate mission execution without running skills."),
+):
+    """Run a built-in multi-step mission by ID."""
+    cfg = load_config()
+    reg = SkillRegistry()
+    reg.discover()
+    runner = SkillRunner(reg)
+    mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt)
+
+    try:
+        mission = get_mission(mission_id)
+    except KeyError as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(code=1)
+
+    if dry_run:
+        sim = mission_runner.simulate(mission)
+        console.print(json.dumps(sim.model_dump(), indent=2))
+        return
+
+    rr = mission_runner.run(mission)
+    if rr.ok:
+        console.print(rr.output)
     else:
         console.print(f"[red]ERROR:[/red] {rr.error}")
         raise typer.Exit(code=1)
