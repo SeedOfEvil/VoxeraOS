@@ -4,12 +4,13 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..audit import log
+from ..audit import log, tail
 from ..config import load_config
 from ..skills.registry import SkillRegistry
 from ..skills.runner import SkillRunner
@@ -180,6 +181,7 @@ class MissionQueueDaemon:
         }
         artifact_path = self.approvals / f"{job_in_pending.stem}.approval.json"
         artifact_path.write_text(json.dumps(approval, indent=2), encoding="utf-8")
+        self._notify_pending_approval(approval)
 
         meta = {
             "status": "pending_approval",
@@ -198,6 +200,88 @@ class MissionQueueDaemon:
             },
         }
         (self.pending / f"{job_in_pending.stem}.pending.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    def _notify_pending_approval(self, approval: dict[str, Any]) -> None:
+        if os.getenv("VOXERA_NOTIFY") != "1":
+            return
+
+        job = str(approval.get("job") or approval.get("job_id") or "unknown-job")
+        skill = str(approval.get("skill") or "unknown-skill")
+        reason = str(approval.get("reason") or "approval required")
+        try:
+            result = subprocess.run(
+                [
+                    "notify-send",
+                    "Voxera approval pending",
+                    f"{job} · {skill}\n{reason}",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                log({"event": "queue_notify_sent", "job": job, "skill": skill, "reason": reason})
+                return
+            stderr = (result.stderr or "").strip() or f"notify-send exited with code {result.returncode}"
+            log({"event": "queue_notify_failed", "job": job, "skill": skill, "reason": reason, "error": stderr})
+        except Exception as exc:
+            log({"event": "queue_notify_failed", "job": job, "skill": skill, "reason": reason, "error": repr(exc)})
+
+    def _count_files(self, directory: Path, pattern: str) -> int:
+        if not directory.exists():
+            return 0
+        return sum(1 for _ in directory.glob(pattern))
+
+    def pending_approvals_snapshot(self, *, limit: int = 10) -> list[dict[str, Any]]:
+        if not self.approvals.exists():
+            return []
+        out: list[dict[str, Any]] = []
+        artifacts = sorted(self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for artifact in artifacts[:limit]:
+            try:
+                data = json.loads(artifact.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            out.append(
+                {
+                    "job": data.get("job", ""),
+                    "step": data.get("step", ""),
+                    "skill": data.get("skill", ""),
+                    "reason": data.get("reason", ""),
+                    "capability": data.get("capability", ""),
+                }
+            )
+        return out
+
+    def recent_failed_jobs_snapshot(self, *, limit: int = 10, audit_tail: int = 200) -> list[dict[str, Any]]:
+        if not self.failed.exists():
+            return []
+
+        error_by_job: dict[str, str] = {}
+        for event in reversed(tail(audit_tail)):
+            if event.get("event") != "queue_job_failed":
+                continue
+            job = Path(str(event.get("job", ""))).name
+            if not job or job in error_by_job:
+                continue
+            error_by_job[job] = str(event.get("error") or "")
+
+        files = sorted(self.failed.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        return [{"job": item.name, "error": error_by_job.get(item.name, "")} for item in files[:limit]]
+
+    def status_snapshot(self, *, approvals_limit: int = 10, failed_limit: int = 10) -> dict[str, Any]:
+        return {
+            "queue_root": str(self.queue_root),
+            "exists": self.queue_root.exists(),
+            "counts": {
+                "pending": self._count_files(self.pending, "*.json") - self._count_files(self.pending, "*.pending.json"),
+                "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
+                "done": self._count_files(self.done, "*.json"),
+                "failed": self._count_files(self.failed, "*.json"),
+            },
+            "pending_approvals": self.pending_approvals_snapshot(limit=approvals_limit),
+            "recent_failed": self.recent_failed_jobs_snapshot(limit=failed_limit),
+        }
 
     def process_job_file(self, job_path: Path) -> bool:
         self.ensure_dirs()
