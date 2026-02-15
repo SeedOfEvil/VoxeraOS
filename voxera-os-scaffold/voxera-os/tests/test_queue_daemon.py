@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import types
+from types import SimpleNamespace
 
 import pytest
 
@@ -202,3 +203,88 @@ def test_queue_daemon_watchdog_mode_processes_existing_backlog(tmp_path, monkeyp
         daemon.run(once=False)
 
     assert (queue_dir / "done" / "job1.json").exists()
+
+
+def test_status_snapshot_counts_and_pending_parsing(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+    (queue_dir / "done").mkdir(parents=True)
+    (queue_dir / "failed").mkdir(parents=True)
+
+    (queue_dir / "pending" / "job1.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "pending" / "job1.pending.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "done" / "done1.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "bad1.json").write_text("{}", encoding="utf-8")
+
+    approval = {
+        "job": "job1.json",
+        "step": 2,
+        "skill": "system.set_volume",
+        "capability": "system.settings",
+        "reason": "system.settings -> ask",
+    }
+    (queue_dir / "pending" / "approvals" / "job1.approval.json").write_text(
+        json.dumps(approval), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(
+        "voxera.core.queue_daemon.tail",
+        lambda _n: [
+            {
+                "event": "queue_job_failed",
+                "job": str(queue_dir / "failed" / "bad1.json"),
+                "error": "boom",
+            }
+        ],
+    )
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    status = daemon.status_snapshot()
+
+    assert status["counts"] == {"pending": 1, "pending_approvals": 1, "done": 1, "failed": 1}
+    assert status["pending_approvals"][0]["skill"] == "system.set_volume"
+    assert status["recent_failed"][0] == {"job": "bad1.json", "error": "boom"}
+
+
+def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "missing-queue"
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    status = daemon.status_snapshot()
+
+    assert status["exists"] is False
+    assert status["counts"] == {"pending": 0, "pending_approvals": 0, "done": 0, "failed": 0}
+    assert status["pending_approvals"] == []
+    assert status["recent_failed"] == []
+
+
+def test_pending_approval_notification_success_and_failure_events(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    daemon = MissionQueueDaemon(queue_root=tmp_path / "queue", mission_log_path=tmp_path / "mission-log.md")
+
+    approval = {"job": "job1.json", "skill": "system.set_volume", "reason": "need approval"}
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
+    monkeypatch.setenv("VOXERA_NOTIFY", "1")
+
+    monkeypatch.setattr(
+        "voxera.core.queue_daemon.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stderr=""),
+    )
+    daemon._notify_pending_approval(approval)
+    assert events[-1]["event"] == "queue_notify_sent"
+
+    monkeypatch.setattr(
+        "voxera.core.queue_daemon.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stderr="notify not available"),
+    )
+    daemon._notify_pending_approval(approval)
+    assert events[-1]["event"] == "queue_notify_failed"
+
+    def _raise(*args, **kwargs):
+        raise FileNotFoundError("notify-send missing")
+
+    monkeypatch.setattr("voxera.core.queue_daemon.subprocess.run", _raise)
+    daemon._notify_pending_approval(approval)
+    assert events[-1]["event"] == "queue_notify_failed"

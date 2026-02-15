@@ -236,6 +236,52 @@ def queue_approvals_list(
     console.print(table)
 
 
+@queue_app.command("status")
+def queue_status(
+    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+):
+    """Show queue health, pending approvals, and recent failures."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    status = daemon.status_snapshot(approvals_limit=8, failed_limit=8)
+
+    counts = status["counts"]
+    counts_table = Table(title="Queue Status")
+    counts_table.add_column("Bucket")
+    counts_table.add_column("Count", justify="right")
+    counts_table.add_row("pending/", str(counts["pending"]))
+    counts_table.add_row("pending/approvals/", str(counts["pending_approvals"]))
+    counts_table.add_row("done/", str(counts["done"]))
+    counts_table.add_row("failed/", str(counts["failed"]))
+    console.print(counts_table)
+
+    if not status["exists"]:
+        console.print(f"[yellow]Hint:[/yellow] queue root not found yet: {status['queue_root']}")
+
+    approvals = status["pending_approvals"]
+    approvals_table = Table(title="Pending Approvals")
+    approvals_table.add_column("Job")
+    approvals_table.add_column("Step")
+    approvals_table.add_column("Skill")
+    approvals_table.add_column("Reason")
+    if approvals:
+        for item in approvals:
+            approvals_table.add_row(str(item.get("job", "")), str(item.get("step", "")), str(item.get("skill", "")), str(item.get("reason", "")))
+    else:
+        approvals_table.add_row("-", "-", "-", "No pending approvals")
+    console.print(approvals_table)
+
+    failed = status["recent_failed"]
+    failed_table = Table(title="Recent Failed Jobs")
+    failed_table.add_column("Job")
+    failed_table.add_column("Error Summary")
+    if failed:
+        for item in failed:
+            failed_table.add_row(str(item.get("job", "")), str(item.get("error", "") or "(no audit error summary)") )
+    else:
+        failed_table.add_row("-", "No failed jobs")
+    console.print(failed_table)
+
+
 @queue_approvals_app.command("approve")
 def queue_approvals_approve(
     ref: str,

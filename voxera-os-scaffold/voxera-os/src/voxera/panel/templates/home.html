@@ -17,6 +17,19 @@
   <h1>Voxera Panel</h1>
   <p class="muted">MVP panel: approvals queue + latest audit events (JSONL).</p>
 
+  <div class="card" style="margin-bottom: 18px;">
+    <h2>Queue Status</h2>
+    {% if not queue.exists %}
+      <p class="muted">Queue root not found: {{queue_root}}</p>
+    {% endif %}
+    <ul>
+      <li><b>pending/</b>: {{queue.counts.pending}}</li>
+      <li><b>pending/approvals/</b>: {{queue.counts.pending_approvals}}</li>
+      <li><b>done/</b>: {{queue.counts.done}}</li>
+      <li><b>failed/</b>: {{queue.counts.failed}}</li>
+    </ul>
+  </div>
+
   <div class="grid">
     <div class="card">
       <h2>Approvals</h2>
@@ -40,6 +53,34 @@
       <form method="post" action="/approvals/clear" style="margin-top:10px;">
         <button type="submit">Clear approvals</button>
       </form>
+
+      <h3>Pending Queue Approvals</h3>
+      {% if queue.pending_approvals|length == 0 %}
+        <p class="muted">No pending queue approvals.</p>
+      {% else %}
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+          <thead>
+            <tr>
+              <th align="left">Job</th>
+              <th align="left">Step</th>
+              <th align="left">Skill</th>
+              <th align="left">Capability</th>
+              <th align="left">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for item in queue.pending_approvals %}
+            <tr>
+              <td>{{item.job}}</td>
+              <td>{{item.step}}</td>
+              <td>{{item.skill}}</td>
+              <td>{{item.capability}}</td>
+              <td>{{item.reason}}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
     </div>
 
     <div class="card">
@@ -53,6 +94,15 @@
         {% endfor %}
       {% endif %}
     </div>
+  </div>
+
+  <div class="card" style="margin-top: 18px;">
+    <h2>Mission Log (last 20 lines)</h2>
+    {% if mission_log_tail|length == 0 %}
+      <p class="muted">Mission log not found: {{mission_log_path}}</p>
+    {% else %}
+      <pre>{{ mission_log_tail|join('\n') }}</pre>
+    {% endif %}
   </div>
 </body>
 </html>
