@@ -33,3 +33,43 @@ def test_run_system_check_mission_succeeds():
     assert rr.ok is True
     assert "Mission completed" in rr.output
     assert len(rr.data["results"]) == 1
+
+
+def test_mission_runner_appends_redacted_log(tmp_path):
+    reg = SkillRegistry()
+    reg.discover()
+    runner = SkillRunner(reg)
+    log_path = tmp_path / "mission-log.md"
+    mission_runner = MissionRunner(
+        runner,
+        policy=PolicyApprovals(),
+        redact_logs=True,
+        mission_log_path=log_path,
+    )
+
+    rr = mission_runner.run(get_mission("system_check"))
+
+    assert rr.ok is True
+    content = log_path.read_text(encoding="utf-8")
+    assert "system_check" in content
+    assert "details:" not in content
+
+
+def test_mission_runner_appends_unredacted_log_details(tmp_path):
+    reg = SkillRegistry()
+    reg.discover()
+    runner = SkillRunner(reg)
+    log_path = tmp_path / "mission-log.md"
+    mission_runner = MissionRunner(
+        runner,
+        policy=PolicyApprovals(),
+        redact_logs=False,
+        mission_log_path=log_path,
+    )
+
+    rr = mission_runner.run(get_mission("system_check"))
+
+    assert rr.ok is True
+    content = log_path.read_text(encoding="utf-8")
+    assert "details:" in content
+    assert "system.status" in content

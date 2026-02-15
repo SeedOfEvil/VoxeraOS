@@ -69,6 +69,25 @@ voxera missions plan "run a quick health check and open my terminal"
 ```
 This uses your configured `primary` brain provider and still enforces local policy + approvals.
 
+
+### 2d) Queue missions for daemon execution
+```bash
+mkdir -p ~/VoxeraOS/notes/queue
+echo '{"mission_id":"system_check"}' > ~/VoxeraOS/notes/queue/job-1.json
+voxera daemon --once
+```
+The daemon watches `~/VoxeraOS/notes/queue/` for JSON jobs (`mission_id` or `goal`) and
+moves completed jobs to `done/` and failures to `failed/`.
+
+### 2e) Run end-to-end smoke checks
+```bash
+make e2e
+# optional live mission:
+E2E_RUN_LIVE=1 make e2e
+```
+The smoke script checks optional OS tools (`wmctrl`, `xdg-open`, clipboard utilities, `pactl`)
+and prints install hints when missing.
+
 ### 3) Start the panel (optional)
 ```bash
 voxera panel
@@ -98,3 +117,6 @@ For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test c
 
 ---
 **This is scaffolding**: it’s meant to get you to a working GitHub first commit and a fast iteration loop.
+
+`files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
+

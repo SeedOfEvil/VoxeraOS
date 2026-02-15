@@ -1,6 +1,6 @@
 id: files.write_text
 name: Write Text File
-description: Write UTF-8 text to allowlisted notes paths.
+description: Write or append UTF-8 text to allowlisted notes paths.
 entrypoint: voxera_builtin_skills.files_write_text:run
 capabilities: []
 risk: medium
