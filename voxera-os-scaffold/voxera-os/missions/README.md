@@ -4,7 +4,7 @@ Voxera treats every request as a Mission Card:
 
 Observe -> Suggest -> Simulate -> Approve -> Apply -> Verify -> Remember
 
-This scaffold includes:
+Alpha v0.1 includes:
 - skill runner
 - policy + approvals
 - audit trail (including `mission_approved` / `mission_denied`)

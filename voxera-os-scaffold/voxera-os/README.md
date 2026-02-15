@@ -1,7 +1,7 @@
-# Voxera OS (Scaffold) — Voice-first AI Control Plane
+# Voxera OS Alpha v0.1 — Voice-first AI Control Plane
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is a **first-commit scaffold**: it ships a typed first-run setup (`voxera setup`), a tool/skill runner,
+This repo is **Voxera OS Alpha v0.1**: it ships a typed first-run setup (`voxera setup`), a tool/skill runner,
 a minimal approval/audit web panel, and pluggable “brain” providers (cloud or local OpenAI-compatible endpoints).
 
 **Names**
@@ -10,7 +10,7 @@ a minimal approval/audit web panel, and pluggable “brain” providers (cloud o
 - Wake word (planned): **“Hey Voxera”**
 - CLI: `voxera`
 
-## What works in this scaffold
+## What works in Alpha v0.1
 - ✅ Typed setup wizard (TUI) to pick **Local vs Cloud** brain + store config safely
 - ✅ OpenRouter-first cloud setup path with recommended headers + model tiers (fast/balanced/reasoning/fallback)
 - ✅ Provider abstraction layer + adapters (OpenAI-compatible works immediately with local servers like Ollama/OpenRouter)
@@ -111,6 +111,60 @@ voxera panel
 # open http://127.0.0.1:8844
 ```
 
+## Updating VoxeraOS (Alpha)
+
+### Option 1 (recommended)
+From repo root (safe update + smoke checks):
+```bash
+cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
+make update
+```
+
+### Option 2 (direct script usage)
+```bash
+# default: fetch/pull, reinstall editable dev env, compile + tests
+bash scripts/update.sh
+
+# include e2e dry-run smoke checks
+bash scripts/update.sh --smoke
+
+# skip compile/tests for advanced users
+bash scripts/update.sh --skip-tests
+
+# force update when local changes exist (uses rebase pull with autostash)
+bash scripts/update.sh --force
+```
+
+What the update flow does:
+- Pulls latest commits from `main` (unless `VOXERA_UPDATE_ALLOW_BRANCH=1` is set).
+- Reinstalls VoxeraOS in editable mode in `.venv` (`pip install -e ".[dev]"`).
+- Runs `python -m compileall src` and `pytest -q` by default.
+- Runs `E2E_DRY_RUN=1 make e2e` when `--smoke` is enabled.
+- Restarts user services (`voxera-daemon.service`, `voxera-panel.service`) if installed/enabled.
+
+> Safety note: update steps do not delete anything under `~/VoxeraOS/notes`.
+
+### Service lifecycle commands
+```bash
+cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
+make services-install   # install + enable + start user units
+make services-status    # show service status
+make services-restart   # restart enabled units
+make services-stop      # stop units (keeps enabled state)
+make services-disable   # disable and stop units
+```
+
+Systemd units run from your project venv path (`.venv/bin/voxera`) and update in place.
+`make services-install` renders unit paths from the checkout directory you run it from, so clones outside
+`~/VoxeraOS` also work. Restarting services picks up the latest code after updates.
+
+### Updating troubleshooting
+- **Update blocked by local changes**: run `git status`, then either commit/stash changes, or re-run with `--force`.
+- **Service fails to restart**:
+  - `systemctl --user status voxera-daemon.service voxera-panel.service`
+  - `journalctl --user -u voxera-daemon.service -n 100 --no-pager`
+  - `journalctl --user -u voxera-panel.service -n 100 --no-pager`
+
 ## How the “OS” is structured
 Voxera is designed as three layers:
 1. **Substrate OS** (Ubuntu/Fedora/etc.) — drivers, updates, filesystem, networking
@@ -133,7 +187,7 @@ For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test c
 - Immutable base image (Silverblue-style) for atomic upgrades + rollback
 
 ---
-**This is scaffolding**: it’s meant to get you to a working GitHub first commit and a fast iteration loop.
+**Alpha v0.1** is meant to give you a working system + fast iteration loop while preserving safety gates.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 
