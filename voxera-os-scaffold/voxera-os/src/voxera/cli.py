@@ -24,7 +24,11 @@ app = typer.Typer(help="Voxera OS — Vera's control plane CLI")
 skills_app = typer.Typer(help="Manage skills")
 app.add_typer(skills_app, name="skills")
 missions_app = typer.Typer(help="Run multi-step built-in missions")
+queue_app = typer.Typer(help="Queue job utilities")
+queue_approvals_app = typer.Typer(help="Resolve pending queue approvals")
 app.add_typer(missions_app, name="missions")
+app.add_typer(queue_app, name="queue")
+queue_app.add_typer(queue_approvals_app, name="approvals")
 
 @app.command()
 def setup():
@@ -125,7 +129,7 @@ def missions_plan(
     mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt, redact_logs=cfg.privacy.redact_logs)
 
     try:
-        mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg))
+        mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg, source="cli"))
     except MissionPlannerError as e:
         console.print(f"[red]ERROR:[/red] {e}")
         raise typer.Exit(code=1)
@@ -194,10 +198,69 @@ def daemon(
     once: bool = typer.Option(False, "--once", help="Process current queue and exit."),
     queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
     poll_interval: float = typer.Option(1.0, "--poll-interval", min=0.1, help="Polling interval in seconds when watchdog is unavailable."),
+    auto_approve_ask: bool = typer.Option(False, "--auto-approve-ask", help="DEV ONLY: auto-approve allowlisted ASK capabilities."),
 ):
     """Run mission queue daemon watching for JSON jobs."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir), poll_interval=poll_interval)
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir), poll_interval=poll_interval, auto_approve_ask=auto_approve_ask)
     try:
         daemon.run(once=once)
     except KeyboardInterrupt:
         console.print("Queue daemon stopped.")
+
+
+@queue_approvals_app.command("list")
+def queue_approvals_list(
+    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+):
+    """List pending queue approvals."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    approvals = daemon.approvals_list()
+    if not approvals:
+        console.print("No pending approvals.")
+        return
+
+    table = Table(title="Queue Approval Inbox")
+    table.add_column("Job")
+    table.add_column("Step")
+    table.add_column("Skill")
+    table.add_column("Capability")
+    table.add_column("Reason")
+    for item in approvals:
+        table.add_row(
+            str(item.get("job", "")),
+            str(item.get("step", "")),
+            str(item.get("skill", "")),
+            str(item.get("capability", "")),
+            str(item.get("reason", "")),
+        )
+    console.print(table)
+
+
+@queue_approvals_app.command("approve")
+def queue_approvals_approve(
+    ref: str,
+    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+):
+    """Approve a pending queue job by filename or id."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    try:
+        ok = daemon.resolve_approval(ref, approve=True)
+    except FileNotFoundError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1)
+    console.print("Approved and resumed." if ok else "Approval processed; job still pending another approval.")
+
+
+@queue_approvals_app.command("deny")
+def queue_approvals_deny(
+    ref: str,
+    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+):
+    """Deny a pending queue job by filename or id."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    try:
+        daemon.resolve_approval(ref, approve=False)
+    except FileNotFoundError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1)
+    console.print("Denied. Job moved to failed/.")

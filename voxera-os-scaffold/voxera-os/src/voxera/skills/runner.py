@@ -59,7 +59,25 @@ class SkillRunner:
             return RunResult(ok=False, error=f"Denied by policy: {decision.reason}")
 
         if requires and require_approval_cb:
-            approved = require_approval_cb(manifest, decision)
+            try:
+                approved = require_approval_cb(manifest, decision, audit_context=audit_context, args=args)
+            except TypeError:
+                approved = require_approval_cb(manifest, decision)
+
+            if isinstance(approved, dict) and approved.get("status") == "pending":
+                log({"event": "skill_pending_approval", "skill": manifest.id, "reason": decision.reason})
+                return RunResult(
+                    ok=False,
+                    error="Approval required.",
+                    data={
+                        **approved,
+                        "status": "pending_approval",
+                        "skill": manifest.id,
+                        "reason": decision.reason,
+                        "capability": (manifest.capabilities[0] if manifest.capabilities else None),
+                    },
+                )
+
             if not approved:
                 if audit_context and audit_context.get("mission"):
                     log(
