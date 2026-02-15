@@ -62,6 +62,13 @@ voxera missions run system_check --dry-run
 voxera missions run work_mode
 ```
 
+### 2c) Let cloud AI plan a mission from a goal
+```bash
+voxera missions plan "prep a focused work session" --dry-run
+voxera missions plan "run a quick health check and open my terminal"
+```
+This uses your configured `primary` brain provider and still enforces local policy + approvals.
+
 ### 3) Start the panel (optional)
 ```bash
 voxera panel

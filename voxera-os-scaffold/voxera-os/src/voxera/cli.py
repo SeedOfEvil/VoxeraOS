@@ -14,6 +14,7 @@ from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
 from .audit import tail
 from .core.missions import MissionRunner, get_mission, list_missions
+from .core.mission_planner import MissionPlannerError, plan_mission
 
 console = Console()
 app = typer.Typer(help="Voxera OS — Vera's control plane CLI")
@@ -108,6 +109,40 @@ def run(
         console.print(f"[red]ERROR:[/red] {rr.error}")
         raise typer.Exit(code=1)
 
+
+@missions_app.command("plan")
+def missions_plan(
+    goal: str,
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview a cloud-planned mission without execution."),
+):
+    """Use the configured cloud brain to create and run a mission plan."""
+    cfg = load_config()
+    reg = SkillRegistry()
+    reg.discover()
+    runner = SkillRunner(reg)
+    mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt)
+
+    try:
+        mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg))
+    except MissionPlannerError as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold]Planned mission:[/bold] {mission.title}")
+    console.print(f"Goal: {mission.goal}")
+    console.print(f"Steps: {len(mission.steps)}")
+
+    if dry_run:
+        sim = mission_runner.simulate(mission)
+        console.print(json.dumps(sim.model_dump(), indent=2))
+        return
+
+    rr = mission_runner.run(mission)
+    if rr.ok:
+        console.print(rr.output)
+    else:
+        console.print(f"[red]ERROR:[/red] {rr.error}")
+        raise typer.Exit(code=1)
 
 @missions_app.command("run")
 def missions_run(

@@ -31,3 +31,16 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Replace `#TBD` with the real PR number after merge.
 - Risks/notes:
   - Process-only change; no runtime behavior changed.
+
+## 2026-02-15 — PR #TBD — Add cloud-assisted mission planning path
+- Summary:
+  - Added `voxera missions plan` to let the configured cloud brain draft a mission from a natural-language goal.
+  - Added strict planner validation so only known skill IDs and JSON outputs are accepted before execution.
+  - Updated mission docs and added root-level `AGENT.md`/`CODEX.md` memory pointers for operator continuity.
+- Validation:
+  - `pytest -q`
+- Follow-ups:
+  - Add provider fallback selection for planning (`primary` -> `fast`/`fallback`) when cloud requests fail.
+  - Add tests for policy deny + approval rejection paths on cloud-planned missions.
+- Risks/notes:
+  - Cloud planner quality depends on model behavior; guardrails reject malformed output.
