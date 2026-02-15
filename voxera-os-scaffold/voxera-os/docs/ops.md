@@ -11,8 +11,9 @@ cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
 make services-install
 ```
 
-This installs user units from `deploy/systemd/user/` into `~/.config/systemd/user`, reloads
-systemd user state, and enables/starts:
+This installs user units from `deploy/systemd/user/` into `~/.config/systemd/user`, rendering
+`WorkingDirectory` and `ExecStart` to your **current checkout path**, then reloads systemd user state
+and enables/starts:
 - `voxera-daemon.service`
 - `voxera-panel.service`
 
@@ -41,7 +42,12 @@ cd ~/VoxeraOS
 git log --oneline --decorate -n 20
 git checkout <sha>
 cd voxera-os-scaffold/voxera-os
-bash scripts/update.sh --skip-tests --restart
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+python -m compileall src
+pytest -q
+make services-restart
 ```
 
 Then validate:
@@ -50,6 +56,8 @@ Then validate:
 voxera status
 voxera queue status
 ```
+
+This keeps you pinned to the selected commit (detached HEAD) until you intentionally switch back.
 
 When ready, return to main:
 

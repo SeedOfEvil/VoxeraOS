@@ -3,6 +3,7 @@
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
 SYSTEMD_SRC_DIR := deploy/systemd/user
 VOXERA_UNITS := voxera-daemon.service voxera-panel.service
+VOXERA_PROJECT_DIR := $(abspath .)
 
 install:
 	python -m pip install -U pip
@@ -36,7 +37,9 @@ update-fast:
 
 services-install:
 	mkdir -p "$(SYSTEMD_USER_DIR)"
-	cp "$(SYSTEMD_SRC_DIR)"/*.service "$(SYSTEMD_USER_DIR)/"
+	for unit in voxera-daemon.service voxera-panel.service; do \
+		sed "s|@VOXERA_PROJECT_DIR@|$(VOXERA_PROJECT_DIR)|g" "$(SYSTEMD_SRC_DIR)/$$unit" > "$(SYSTEMD_USER_DIR)/$$unit"; \
+	done
 	systemctl --user daemon-reload
 	systemctl --user enable --now $(VOXERA_UNITS)
 

@@ -154,8 +154,9 @@ make services-stop      # stop units (keeps enabled state)
 make services-disable   # disable and stop units
 ```
 
-Systemd units run from your project venv path (`.venv/bin/voxera`) and update in place;
-restarting services picks up the latest code after updates.
+Systemd units run from your project venv path (`.venv/bin/voxera`) and update in place.
+`make services-install` renders unit paths from the checkout directory you run it from, so clones outside
+`~/VoxeraOS` also work. Restarting services picks up the latest code after updates.
 
 ### Updating troubleshooting
 - **Update blocked by local changes**: run `git status`, then either commit/stash changes, or re-run with `--force`.

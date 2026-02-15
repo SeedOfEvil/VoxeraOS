@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/VoxeraOS/voxera-os-scaffold/voxera-os
-ExecStart=%h/VoxeraOS/voxera-os-scaffold/voxera-os/.venv/bin/voxera daemon
+WorkingDirectory=@VOXERA_PROJECT_DIR@
+ExecStart=@VOXERA_PROJECT_DIR@/.venv/bin/voxera daemon
 Restart=on-failure
 RestartSec=2
 
