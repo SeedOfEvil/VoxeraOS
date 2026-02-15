@@ -31,6 +31,8 @@ voxera queue status
 `voxera inbox add` writes queue-compatible JSON (`{"id":"...","goal":"..."}`) into the queue root,
 then the daemon processes it through the normal planner + policy + audit pipeline.
 
+Planner note: simple write goals (for example, writing explicit text to a notes file path) take a deterministic fast-path and produce a single `files.write_text` step, bypassing cloud planner variability and clipboard detours.
+
 ## Approval deny workflow
 
 When a queued mission hits an ASK policy gate, it is moved to `pending/` and a

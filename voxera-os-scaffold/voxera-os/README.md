@@ -12,6 +12,7 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 
 ## What works in Alpha v0.1.2
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
+- ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
 - ✅ Queue status UX (`voxera queue status`) and panel insights for pending approvals/audit
 - ✅ DEV-only auto-approve gating for `system.settings` only (`VOXERA_DEV_MODE=1` + `--auto-approve-ask`)
@@ -88,6 +89,9 @@ voxera missions plan "prep a focused work session" --dry-run
 voxera missions plan "run a quick health check and open my terminal"
 ```
 This uses your configured `primary` brain provider and still enforces local policy + approvals.
+
+For simple write goals matching patterns like `Write a note to <path> saying: <text>`, `Write <text> to <path>`, or `Create a note/file at <path> with <text>`, Voxera uses a deterministic fast-path before LLM planning and emits exactly one `files.write_text` step (default `mode=overwrite`, or `append` when explicitly requested).
+
 
 
 ### 2d) Queue missions/goals for daemon execution
