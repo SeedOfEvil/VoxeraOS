@@ -4,10 +4,9 @@ from voxera.skills.registry import SkillRegistry
 from voxera.skills.runner import SkillRunner
 
 
-def test_list_missions_contains_work_mode_and_system_check():
+def test_list_missions_contains_daily_cards_and_system_check():
     mission_ids = {m.id for m in list_missions()}
-    assert "work_mode" in mission_ids
-    assert "system_check" in mission_ids
+    assert {"work_mode", "focus_mode", "daily_checkin", "incident_mode", "wrap_up", "system_check"}.issubset(mission_ids)
 
 
 def test_simulate_work_mode_requires_approval_for_system_settings():

@@ -1,18 +1,27 @@
 from __future__ import annotations
 
-import json
 import inspect
-from typing import List
+import json
+from dataclasses import dataclass
+from typing import List, Tuple
 
+from ..audit import log
 from ..brain.gemini import GeminiBrain
 from ..brain.openai_compat import OpenAICompatBrain
 from ..models import AppConfig
+from ..skills.arg_normalizer import canonicalize_args
 from ..skills.registry import SkillRegistry
 from .missions import MissionStep, MissionTemplate
 
 
 class MissionPlannerError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class _BrainCandidate:
+    name: str
+    brain: object
 
 
 def _expected_args_for_skill(registry: SkillRegistry, skill_id: str) -> List[str]:
@@ -47,33 +56,42 @@ def _normalize_step_args(raw_args: object, expected_args: List[str]) -> dict:
     return {}
 
 
-def _build_brain(cfg: AppConfig):
+def _create_brain(provider):
+    if provider.type == "openai_compat":
+        return OpenAICompatBrain(
+            base_url=provider.base_url or "",
+            model=provider.model,
+            api_key_ref=provider.api_key_ref,
+            extra_headers=provider.extra_headers,
+        )
+
+    if provider.type == "gemini":
+        return GeminiBrain(model=provider.model, api_key_ref=provider.api_key_ref)
+
+    raise MissionPlannerError(f"Unsupported brain provider for mission planning: {provider.type}")
+
+
+def _build_brain_candidates(cfg: AppConfig) -> List[_BrainCandidate]:
     if not cfg.privacy.cloud_allowed:
         raise MissionPlannerError("Cloud planning is disabled by privacy.cloud_allowed=false")
 
-    primary = cfg.brain.get("primary")
-    if not primary and cfg.brain:
-        primary = next(iter(cfg.brain.values()))
-
-    if not primary:
+    if not cfg.brain:
         raise MissionPlannerError("No brain provider is configured. Run 'voxera setup' first.")
 
-    if primary.type == "openai_compat":
-        return OpenAICompatBrain(
-            base_url=primary.base_url or "",
-            model=primary.model,
-            api_key_ref=primary.api_key_ref,
-            extra_headers=primary.extra_headers,
-        )
+    ordered: List[Tuple[str, object]] = []
+    for key in ("primary", "fast", "fallback"):
+        provider = cfg.brain.get(key)
+        if provider:
+            ordered.append((key, provider))
 
-    if primary.type == "gemini":
-        return GeminiBrain(model=primary.model, api_key_ref=primary.api_key_ref)
+    for key, provider in cfg.brain.items():
+        if key not in {name for name, _ in ordered}:
+            ordered.append((key, provider))
 
-    raise MissionPlannerError(f"Unsupported brain provider for mission planning: {primary.type}")
+    return [_BrainCandidate(name=name, brain=_create_brain(provider)) for name, provider in ordered]
 
 
-async def plan_mission(goal: str, cfg: AppConfig, registry: SkillRegistry) -> MissionTemplate:
-    brain = _build_brain(cfg)
+async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
     skills = sorted(registry.discover().values(), key=lambda m: m.id)
 
     skills_block = "\n".join(
@@ -105,14 +123,49 @@ async def plan_mission(goal: str, cfg: AppConfig, registry: SkillRegistry) -> Mi
     raw = resp.text.strip()
 
     try:
-        payload = json.loads(raw)
+        return json.loads(raw)
     except json.JSONDecodeError as exc:
         raise MissionPlannerError(f"Planner returned non-JSON output: {raw[:200]}") from exc
+
+
+async def plan_mission(goal: str, cfg: AppConfig, registry: SkillRegistry) -> MissionTemplate:
+    candidates = _build_brain_candidates(cfg)
+    payload = None
+    planner_name = None
+    retries = 0
+    last_error = None
+
+    for retries, candidate in enumerate(candidates):
+        try:
+            payload = await _plan_payload(goal=goal, registry=registry, brain=candidate.brain)
+            planner_name = candidate.name
+            log(
+                {
+                    "event": "planner_selected",
+                    "provider": planner_name,
+                    "retry_count": retries,
+                }
+            )
+            break
+        except MissionPlannerError as exc:
+            last_error = str(exc)
+            log(
+                {
+                    "event": "planner_fallback",
+                    "provider": candidate.name,
+                    "retry_count": retries,
+                    "error": last_error,
+                }
+            )
+
+    if payload is None or planner_name is None:
+        raise MissionPlannerError(f"Planner failed after fallbacks: {last_error or 'unknown error'}")
 
     steps_json: List[dict] = payload.get("steps") or []
     if not steps_json:
         raise MissionPlannerError("Planner returned no mission steps.")
 
+    skills = sorted(registry.discover().values(), key=lambda m: m.id)
     known_ids = {m.id for m in skills}
     steps: List[MissionStep] = []
     for item in steps_json[:5]:
@@ -120,9 +173,10 @@ async def plan_mission(goal: str, cfg: AppConfig, registry: SkillRegistry) -> Mi
         if skill_id not in known_ids:
             raise MissionPlannerError(f"Planner referenced unknown skill: {skill_id}")
         args = _normalize_step_args(item.get("args"), _expected_args_for_skill(registry, skill_id))
+        args = canonicalize_args(skill_id, args)
         steps.append(MissionStep(skill_id=skill_id, args=args))
 
     title = payload.get("title") or "Cloud Planned Mission"
-    notes = payload.get("notes") or "Generated by configured cloud brain."
+    notes = payload.get("notes") or f"Generated by configured cloud brain ({planner_name})."
 
     return MissionTemplate(id="cloud_planned", title=title, goal=goal, steps=steps, notes=notes)
