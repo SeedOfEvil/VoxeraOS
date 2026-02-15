@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Optional
+from typing import List, Optional
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -80,7 +80,7 @@ def _approval_prompt(manifest, decision):
 @app.command()
 def run(
     skill_id: str,
-    arg: Optional[str] = typer.Option(None, help="Key=Value arg (single MVP)"),
+    arg: Optional[List[str]] = typer.Option(None, "--arg", help="Key=Value args (repeat --arg for multiple)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Simulate execution without running the skill."),
 ):
     """Run a skill by ID (MVP)."""
@@ -91,10 +91,10 @@ def run(
     runner = SkillRunner(reg)
 
     args = {}
-    if arg:
-        if "=" not in arg:
+    for item in arg or []:
+        if "=" not in item:
             raise typer.BadParameter("--arg must be key=value")
-        k, v = arg.split("=", 1)
+        k, v = item.split("=", 1)
         args[k] = v
 
     if dry_run:
