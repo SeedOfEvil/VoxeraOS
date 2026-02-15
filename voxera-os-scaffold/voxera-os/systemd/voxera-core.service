@@ -4,8 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env voxera daemon
+WorkingDirectory=%h/VoxeraOS/voxera-os-scaffold/voxera-os
+ExecStart=%h/VoxeraOS/voxera-os-scaffold/voxera-os/.venv/bin/voxera daemon
 Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=default.target

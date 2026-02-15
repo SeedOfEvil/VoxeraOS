@@ -111,6 +111,59 @@ voxera panel
 # open http://127.0.0.1:8844
 ```
 
+## Updating VoxeraOS (Alpha)
+
+### Option 1 (recommended)
+From repo root (safe update + smoke checks):
+```bash
+cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
+make update
+```
+
+### Option 2 (direct script usage)
+```bash
+# default: fetch/pull, reinstall editable dev env, compile + tests
+bash scripts/update.sh
+
+# include e2e dry-run smoke checks
+bash scripts/update.sh --smoke
+
+# skip compile/tests for advanced users
+bash scripts/update.sh --skip-tests
+
+# force update when local changes exist (uses rebase pull with autostash)
+bash scripts/update.sh --force
+```
+
+What the update flow does:
+- Pulls latest commits from `main` (unless `VOXERA_UPDATE_ALLOW_BRANCH=1` is set).
+- Reinstalls VoxeraOS in editable mode in `.venv` (`pip install -e ".[dev]"`).
+- Runs `python -m compileall src` and `pytest -q` by default.
+- Runs `E2E_DRY_RUN=1 make e2e` when `--smoke` is enabled.
+- Restarts user services (`voxera-daemon.service`, `voxera-panel.service`) if installed/enabled.
+
+> Safety note: update steps do not delete anything under `~/VoxeraOS/notes`.
+
+### Service lifecycle commands
+```bash
+cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
+make services-install   # install + enable + start user units
+make services-status    # show service status
+make services-restart   # restart enabled units
+make services-stop      # stop units (keeps enabled state)
+make services-disable   # disable and stop units
+```
+
+Systemd units run from your project venv path (`.venv/bin/voxera`) and update in place;
+restarting services picks up the latest code after updates.
+
+### Updating troubleshooting
+- **Update blocked by local changes**: run `git status`, then either commit/stash changes, or re-run with `--force`.
+- **Service fails to restart**:
+  - `systemctl --user status voxera-daemon.service voxera-panel.service`
+  - `journalctl --user -u voxera-daemon.service -n 100 --no-pager`
+  - `journalctl --user -u voxera-panel.service -n 100 --no-pager`
+
 ## How the “OS” is structured
 Voxera is designed as three layers:
 1. **Substrate OS** (Ubuntu/Fedora/etc.) — drivers, updates, filesystem, networking
