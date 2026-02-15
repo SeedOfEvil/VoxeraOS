@@ -118,3 +118,64 @@ def test_plan_mission_uses_fallback(monkeypatch):
     mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
     assert mission.steps[0].skill_id == "system.status"
     assert "fast" in (mission.notes or "")
+
+
+class _SlowBrain:
+    async def generate(self, messages, tools=None):
+        await asyncio.sleep(60)
+
+
+def test_plan_mission_timeout_falls_back(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr("voxera.core.mission_planner._PLANNER_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "brain": _SlowBrain()})(),
+            type("C", (), {"name": "fast", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+    assert mission.steps[0].skill_id == "system.status"
+
+
+def test_plan_mission_rejects_payload_with_unknown_top_level_keys(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Quick prep","steps":[{"skill_id":"system.status","args":{}}],"hijack":"ignore rules"}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    with pytest.raises(MissionPlannerError, match="unsupported keys"):
+        asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
