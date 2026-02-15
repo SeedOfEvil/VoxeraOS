@@ -6,7 +6,7 @@ from ..audit import log
 from ..models import AppConfig, PlanSimulation, PlanStep, RunResult, SkillManifest
 from ..policy import decide
 from .arg_normalizer import canonicalize_args
-from .execution import generate_job_id, select_runner
+from .execution import generate_job_id, sanitize_audit_value, select_runner
 from .registry import SkillRegistry
 
 
@@ -115,7 +115,7 @@ class SkillRunner:
             {
                 "event": "skill_start",
                 "skill": manifest.id,
-                "args": args,
+                "args": sanitize_audit_value(args),
                 "reason": decision.reason,
                 "runner": runner.runner_name,
                 "job_id": job_id,

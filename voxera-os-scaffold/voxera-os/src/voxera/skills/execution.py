@@ -25,6 +25,8 @@ DEFAULT_ENV_ALLOWLIST = {
 SECRET_KEY_RE = re.compile(r"(KEY|TOKEN|SECRET|PASS|PASSWORD|API|AUTH)", re.IGNORECASE)
 LONG_SECRET_VALUE_RE = re.compile(r"^[A-Za-z0-9+/=_-]{24,}$")
 HEX_SECRET_VALUE_RE = re.compile(r"^[A-Fa-f0-9]{24,}$")
+LONG_SECRET_FRAGMENT_RE = re.compile(r"[A-Za-z0-9+/=_-]{24,}")
+HEX_SECRET_FRAGMENT_RE = re.compile(r"[A-Fa-f0-9]{24,}")
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,12 @@ def _looks_secret_value(value: str) -> bool:
     stripped = value.strip()
     if not stripped:
         return False
-    return bool(LONG_SECRET_VALUE_RE.match(stripped) or HEX_SECRET_VALUE_RE.match(stripped))
+    return bool(
+        LONG_SECRET_VALUE_RE.match(stripped)
+        or HEX_SECRET_VALUE_RE.match(stripped)
+        or LONG_SECRET_FRAGMENT_RE.search(stripped)
+        or HEX_SECRET_FRAGMENT_RE.search(stripped)
+    )
 
 
 def redact_value(key: str, value: str) -> str:
@@ -78,6 +85,18 @@ def sanitize_command(command: Iterable[str]) -> List[str]:
         else:
             redacted.append(arg)
     return redacted
+
+
+def sanitize_audit_value(value: Any, *, key_hint: str = "") -> Any:
+    if isinstance(value, dict):
+        return {k: sanitize_audit_value(v, key_hint=k) for k, v in value.items()}
+    if isinstance(value, list):
+        return [sanitize_audit_value(item, key_hint=key_hint) for item in value]
+    if isinstance(value, tuple):
+        return [sanitize_audit_value(item, key_hint=key_hint) for item in value]
+    if isinstance(value, str):
+        return redact_value(key_hint, value)
+    return value
 
 
 class ExecutionRunner(ABC):
@@ -122,6 +141,21 @@ class SandboxRunner(ExecutionRunner, ABC):
 class PodmanSandboxRunner(SandboxRunner):
     runner_name = "sandbox.podman"
 
+    @staticmethod
+    def _parse_network_setting(raw_value: Any) -> bool:
+        if isinstance(raw_value, bool):
+            return raw_value
+        if raw_value is None:
+            return False
+        if isinstance(raw_value, str):
+            normalized = raw_value.strip().lower()
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "off", ""}:
+                return False
+            raise ValueError("network must be a boolean value")
+        raise ValueError("network must be a boolean value")
+
     def _assert_available(self) -> None:
         if shutil.which("podman") is None:
             raise RuntimeError(
@@ -146,7 +180,10 @@ class PodmanSandboxRunner(SandboxRunner):
         if timeout_s <= 0:
             return RunResult(ok=False, error="timeout_s must be greater than zero")
 
-        requested_network = bool(args.get("network", False))
+        try:
+            requested_network = self._parse_network_setting(args.get("network", False))
+        except ValueError as exc:
+            return RunResult(ok=False, error=str(exc))
         env_arg = args.get("env", {}) or {}
         if not isinstance(env_arg, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env_arg.items()):
             return RunResult(ok=False, error="env must be a dict of string keys and values")
