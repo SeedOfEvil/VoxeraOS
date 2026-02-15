@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 from typing import List
 
 from ..brain.gemini import GeminiBrain
@@ -12,6 +13,38 @@ from .missions import MissionStep, MissionTemplate
 
 class MissionPlannerError(RuntimeError):
     pass
+
+
+def _expected_args_for_skill(registry: SkillRegistry, skill_id: str) -> List[str]:
+    """Return keyword-compatible argument names for the skill entrypoint."""
+    manifest = registry.get(skill_id)
+    fn = registry.load_entrypoint(manifest)
+    sig = inspect.signature(fn)
+    names: List[str] = []
+    for p in sig.parameters.values():
+        if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+            names.append(p.name)
+    return names
+
+
+def _normalize_step_args(raw_args: object, expected_args: List[str]) -> dict:
+    if not isinstance(raw_args, dict):
+        return {}
+
+    if not expected_args:
+        return raw_args
+
+    normalized = {k: v for k, v in raw_args.items() if k in expected_args}
+    if normalized:
+        return normalized
+
+    # Compatibility fallback: if the planner picked the wrong key for a
+    # single-argument skill (e.g. app_name vs name), map the single provided
+    # value to the expected parameter.
+    if len(expected_args) == 1 and len(raw_args) == 1:
+        return {expected_args[0]: next(iter(raw_args.values()))}
+
+    return {}
 
 
 def _build_brain(cfg: AppConfig):
@@ -86,9 +119,7 @@ async def plan_mission(goal: str, cfg: AppConfig, registry: SkillRegistry) -> Mi
         skill_id = item.get("skill_id")
         if skill_id not in known_ids:
             raise MissionPlannerError(f"Planner referenced unknown skill: {skill_id}")
-        args = item.get("args")
-        if not isinstance(args, dict):
-            args = {}
+        args = _normalize_step_args(item.get("args"), _expected_args_for_skill(registry, skill_id))
         steps.append(MissionStep(skill_id=skill_id, args=args))
 
     title = payload.get("title") or "Cloud Planned Mission"
