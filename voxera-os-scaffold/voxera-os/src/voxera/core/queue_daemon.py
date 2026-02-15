@@ -18,6 +18,8 @@ from .mission_planner import MissionPlannerError, plan_mission
 from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
 
 _AUTO_APPROVE_ALLOWLIST = {"system.settings"}
+_PARSE_RETRY_ATTEMPTS = 4
+_PARSE_RETRY_BACKOFF_S = 0.1
 
 
 @dataclass
@@ -227,6 +229,41 @@ class MissionQueueDaemon:
         except Exception as exc:
             log({"event": "queue_notify_failed", "job": job, "skill": skill, "reason": reason, "error": repr(exc)})
 
+
+    def _is_ready_job_file(self, path: Path) -> bool:
+        if path.parent != self.inbox or not path.is_file():
+            return False
+        name = path.name
+        if not name.endswith(".json"):
+            return False
+        if name.startswith("."):
+            return False
+        blocked_suffixes = (".pending.json", ".approval.json", ".tmp.json", ".partial.json")
+        if name.endswith(blocked_suffixes):
+            return False
+        return True
+
+    def _load_job_payload_with_retry(self, job_path: Path) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(1, _PARSE_RETRY_ATTEMPTS + 1):
+            try:
+                payload = json.loads(job_path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("job payload must be a JSON object")
+                if attempt > 1:
+                    log({"event": "queue_job_parse_stabilized", "attempt": attempt, "path": str(job_path)})
+                return payload
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                if attempt >= _PARSE_RETRY_ATTEMPTS:
+                    break
+                log({"event": "queue_job_retry_parse", "attempt": attempt, "path": str(job_path)})
+                time.sleep(_PARSE_RETRY_BACKOFF_S)
+
+        if last_error is not None:
+            raise last_error
+        raise ValueError("job payload must be a JSON object")
+
     def _count_files(self, directory: Path, pattern: str) -> int:
         if not directory.exists():
             return 0
@@ -336,9 +373,7 @@ class MissionQueueDaemon:
         self.current_job_ref = str(job_path)
         log({"event": "queue_job_received", "job": str(job_path)})
         try:
-            payload = json.loads(job_path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict):
-                raise ValueError("job payload must be a JSON object")
+            payload = self._load_job_payload_with_retry(job_path)
             payload = self._normalize_payload(payload)
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
         except Exception as exc:
@@ -468,7 +503,7 @@ class MissionQueueDaemon:
         self.ensure_dirs()
         processed = 0
         for job in sorted(self.inbox.glob("*.json")):
-            if job.parent != self.inbox:
+            if not self._is_ready_job_file(job):
                 continue
             self.process_job_file(job)
             processed += 1
@@ -495,7 +530,7 @@ class MissionQueueDaemon:
                     if event.is_directory:
                         return
                     path = Path(event.src_path)
-                    if path.suffix.lower() == ".json" and path.parent == daemon.inbox:
+                    if daemon._is_ready_job_file(path):
                         daemon.process_job_file(path)
 
             observer = Observer()

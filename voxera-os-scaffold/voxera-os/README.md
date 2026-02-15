@@ -126,6 +126,19 @@ Queue status troubleshooting:
 
 Completed jobs are moved to `done/`; invalid or denied jobs are moved to `failed/`.
 
+
+Queue job best practice (atomic producer write):
+```bash
+queue_dir=~/VoxeraOS/notes/queue
+job_id=job-$(date +%s)
+tmp_path="$queue_dir/.${job_id}.tmp"
+final_path="$queue_dir/${job_id}.json"
+printf '{"goal":"run a quick system check"}\n' > "$tmp_path"
+mv "$tmp_path" "$final_path"
+```
+
+The daemon only processes ready `*.json` job files (ignoring dotfiles, `*.tmp`, and `*.partial` artifacts) and performs brief JSON parse retries to tolerate short partial-write windows before failing a truly invalid job.
+
 ### 2e) Run end-to-end smoke checks
 ```bash
 make e2e

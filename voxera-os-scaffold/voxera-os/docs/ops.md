@@ -41,6 +41,17 @@ Queue status troubleshooting quick checks:
 - `voxera queue status` counts approvals from `pending/approvals/*.approval.json`.
 - `voxera queue approvals list` will surface malformed artifacts as `(unparseable approval artifact)` and emit `queue_status_parse_failed` audit events.
 
+Queue job best practice (atomic producer write + rename):
+```bash
+queue_dir=~/VoxeraOS/notes/queue
+job_id=job-$(date +%s)
+tmp_path="$queue_dir/.${job_id}.tmp"
+final_path="$queue_dir/${job_id}.json"
+printf '{"goal":"run a quick system check"}\n' > "$tmp_path"
+mv "$tmp_path" "$final_path"
+```
+The daemon ignores temporary artifacts (`.*`, `*.tmp`, `*.partial`) and retries JSON parsing briefly so short partial writes can stabilize before the job is marked failed.
+
 ```bash
 voxera queue approvals list
 voxera queue approvals deny <job_id_or_filename>
