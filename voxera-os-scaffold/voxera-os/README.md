@@ -12,6 +12,7 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 
 ## What works in Alpha v0.1.2
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
+- ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
 - ✅ Queue status UX (`voxera queue status`) and panel insights for pending approvals/audit
 - ✅ DEV-only auto-approve gating for `system.settings` only (`VOXERA_DEV_MODE=1` + `--auto-approve-ask`)
@@ -28,6 +29,7 @@ pip install -e ".[dev]"
 make update
 make services-install
 
+voxera --version
 voxera queue status
 voxera inbox add "Write a daily check-in note with priorities and blockers"
 voxera daemon --once
@@ -88,6 +90,9 @@ voxera missions plan "run a quick health check and open my terminal"
 ```
 This uses your configured `primary` brain provider and still enforces local policy + approvals.
 
+For simple write goals matching patterns like `Write a note to <path> saying: <text>`, `Write <text> to <path>`, or `Create a note/file at <path> with <text>`, Voxera uses a deterministic fast-path before LLM planning and emits exactly one `files.write_text` step (default `mode=overwrite`, or `append` when explicitly requested).
+
+
 
 ### 2d) Queue missions/goals for daemon execution
 ```bash
@@ -118,7 +123,25 @@ voxera queue approvals approve <job_id_or_filename>
 voxera queue approvals deny <job_id_or_filename>
 ```
 
+Queue status troubleshooting:
+- Primary pending jobs are counted from `pending/*.json` (excluding `*.pending.json`).
+- Approval artifacts are counted from `pending/approvals/*.approval.json`.
+- If an approval artifact is malformed, `voxera queue approvals list` still shows an "(unparseable approval artifact)" row and logs `queue_status_parse_failed` in audit output.
+
 Completed jobs are moved to `done/`; invalid or denied jobs are moved to `failed/`.
+
+
+Queue job best practice (atomic producer write):
+```bash
+queue_dir=~/VoxeraOS/notes/queue
+job_id=job-$(date +%s)
+tmp_path="$queue_dir/.${job_id}.tmp"
+final_path="$queue_dir/${job_id}.json"
+printf '{"goal":"run a quick system check"}\n' > "$tmp_path"
+mv "$tmp_path" "$final_path"
+```
+
+The daemon only processes ready `*.json` job files (ignoring dotfiles, `*.tmp`, and `*.partial` artifacts) and performs brief JSON parse retries to tolerate short partial-write windows before failing a truly invalid job.
 
 ### 2e) Run end-to-end smoke checks
 ```bash

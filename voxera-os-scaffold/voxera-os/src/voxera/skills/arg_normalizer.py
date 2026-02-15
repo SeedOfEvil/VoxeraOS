@@ -13,6 +13,11 @@ _OPEN_APP_ALIAS = {
     "gnome-control-center": "gnome-control-center",
 }
 
+_WRITE_TEXT_ALIASES = {
+    "content": "text",
+    "body": "text",
+}
+
 
 def _canonical_open_app(args: Dict[str, Any]) -> Dict[str, Any]:
     name = str(args.get("name", "")).strip().lower()
@@ -32,9 +37,21 @@ def _canonical_set_volume(args: Dict[str, Any]) -> Dict[str, Any]:
     return {**args, "percent": str(clamped)}
 
 
+def _canonical_write_text(args: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(args)
+    if "text" not in normalized:
+        for alias, target in _WRITE_TEXT_ALIASES.items():
+            if alias in normalized:
+                normalized[target] = normalized[alias]
+                break
+    return normalized
+
+
 def canonicalize_args(skill_id: str, args: Dict[str, Any]) -> Dict[str, Any]:
     if skill_id == "system.open_app":
         return _canonical_open_app(args)
     if skill_id == "system.set_volume":
         return _canonical_set_volume(args)
+    if skill_id == "files.write_text":
+        return _canonical_write_text(args)
     return args

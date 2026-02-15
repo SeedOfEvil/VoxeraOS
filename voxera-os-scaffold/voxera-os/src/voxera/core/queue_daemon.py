@@ -18,6 +18,8 @@ from .mission_planner import MissionPlannerError, plan_mission
 from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
 
 _AUTO_APPROVE_ALLOWLIST = {"system.settings"}
+_PARSE_RETRY_ATTEMPTS = 4
+_PARSE_RETRY_BACKOFF_S = 0.1
 
 
 @dataclass
@@ -227,21 +229,101 @@ class MissionQueueDaemon:
         except Exception as exc:
             log({"event": "queue_notify_failed", "job": job, "skill": skill, "reason": reason, "error": repr(exc)})
 
+
+    def _is_ready_job_file(self, path: Path) -> bool:
+        if path.parent != self.inbox or not path.is_file():
+            return False
+        name = path.name
+        if not name.endswith(".json"):
+            return False
+        if name.startswith("."):
+            return False
+        blocked_suffixes = (".pending.json", ".approval.json", ".tmp.json", ".partial.json")
+        if name.endswith(blocked_suffixes):
+            return False
+        return True
+
+    def _load_job_payload_with_retry(self, job_path: Path) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(1, _PARSE_RETRY_ATTEMPTS + 1):
+            try:
+                payload = json.loads(job_path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("job payload must be a JSON object")
+                if attempt > 1:
+                    log({"event": "queue_job_parse_stabilized", "attempt": attempt, "path": str(job_path)})
+                return payload
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                if attempt >= _PARSE_RETRY_ATTEMPTS:
+                    break
+                log({"event": "queue_job_retry_parse", "attempt": attempt, "path": str(job_path)})
+                time.sleep(_PARSE_RETRY_BACKOFF_S)
+
+        if last_error is not None:
+            raise last_error
+        raise ValueError("job payload must be a JSON object")
+
     def _count_files(self, directory: Path, pattern: str) -> int:
         if not directory.exists():
             return 0
         return sum(1 for _ in directory.glob(pattern))
 
-    def pending_approvals_snapshot(self, *, limit: int = 10) -> list[dict[str, Any]]:
+    def _pending_primary_jobs(self) -> list[Path]:
+        if not self.pending.exists():
+            return []
+        return sorted(
+            p
+            for p in self.pending.glob("*.json")
+            if p.is_file() and not p.name.endswith(".pending.json")
+        )
+
+    def _approval_ref_variants(self, path: Path) -> set[str]:
+        stem = path.stem
+        if stem.endswith(".approval"):
+            stem = stem[: -len(".approval")]
+        return {
+            stem,
+            f"{stem}.json",
+            f"{stem}.approval",
+            f"{stem}.approval.json",
+            path.name,
+        }
+
+    def _iter_approval_artifacts(self) -> list[Path]:
         if not self.approvals.exists():
             return []
+        return sorted(self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+    def _read_approval_artifact(self, artifact: Path) -> dict[str, Any]:
+        try:
+            data = json.loads(artifact.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("approval artifact must be a JSON object")
+            data["_artifact"] = artifact.name
+            return data
+        except Exception as exc:
+            log(
+                {
+                    "event": "queue_status_parse_failed",
+                    "filename": artifact.name,
+                    "error": repr(exc),
+                }
+            )
+            return {
+                "job": artifact.name,
+                "step": "-",
+                "skill": "(unparseable approval artifact)",
+                "reason": repr(exc),
+                "capability": "-",
+                "_artifact": artifact.name,
+            }
+
+    def pending_approvals_snapshot(self, *, limit: int = 10) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
-        artifacts = sorted(self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        artifacts = self._iter_approval_artifacts()
         for artifact in artifacts[:limit]:
-            try:
-                data = json.loads(artifact.read_text(encoding="utf-8"))
-            except Exception:
-                continue
+            data = self._read_approval_artifact(artifact)
             out.append(
                 {
                     "job": data.get("job", ""),
@@ -274,7 +356,7 @@ class MissionQueueDaemon:
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
             "counts": {
-                "pending": self._count_files(self.pending, "*.json") - self._count_files(self.pending, "*.pending.json"),
+                "pending": len(self._pending_primary_jobs()),
                 "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
                 "done": self._count_files(self.done, "*.json"),
                 "failed": self._count_files(self.failed, "*.json"),
@@ -291,9 +373,7 @@ class MissionQueueDaemon:
         self.current_job_ref = str(job_path)
         log({"event": "queue_job_received", "job": str(job_path)})
         try:
-            payload = json.loads(job_path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict):
-                raise ValueError("job payload must be a JSON object")
+            payload = self._load_job_payload_with_retry(job_path)
             payload = self._normalize_payload(payload)
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
         except Exception as exc:
@@ -337,16 +417,21 @@ class MissionQueueDaemon:
             candidate2 = self.pending / f"{ref}.json"
             if candidate2.exists():
                 return candidate2
+
+        target = ref.strip()
+        for artifact in self._iter_approval_artifacts():
+            if target in self._approval_ref_variants(artifact):
+                via_artifact = self.pending / f"{artifact.stem.removesuffix('.approval')}.json"
+                if via_artifact.exists():
+                    return via_artifact
+
         raise FileNotFoundError(f"pending job not found: {ref}")
 
     def approvals_list(self) -> list[dict[str, Any]]:
         self.ensure_dirs()
         out: list[dict[str, Any]] = []
-        for artifact in sorted(self.approvals.glob("*.approval.json")):
-            try:
-                out.append(json.loads(artifact.read_text(encoding="utf-8")))
-            except Exception:
-                continue
+        for artifact in self._iter_approval_artifacts():
+            out.append(self._read_approval_artifact(artifact))
         return out
 
     def resolve_approval(self, ref: str, *, approve: bool) -> bool:
@@ -418,7 +503,7 @@ class MissionQueueDaemon:
         self.ensure_dirs()
         processed = 0
         for job in sorted(self.inbox.glob("*.json")):
-            if job.parent != self.inbox:
+            if not self._is_ready_job_file(job):
                 continue
             self.process_job_file(job)
             processed += 1
@@ -445,7 +530,7 @@ class MissionQueueDaemon:
                     if event.is_directory:
                         return
                     path = Path(event.src_path)
-                    if path.suffix.lower() == ".json" and path.parent == daemon.inbox:
+                    if daemon._is_ready_job_file(path):
                         daemon.process_job_file(path)
 
             observer = Observer()

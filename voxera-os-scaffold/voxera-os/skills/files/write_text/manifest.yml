@@ -4,3 +4,17 @@ description: Write or append UTF-8 text to allowlisted notes paths.
 entrypoint: voxera_builtin_skills.files_write_text:run
 capabilities: []
 risk: medium
+args:
+  path:
+    type: string
+    required: true
+    description: Absolute or ~/ path under ~/VoxeraOS/notes.
+  text:
+    type: string
+    required: true
+    description: UTF-8 text content to write.
+  mode:
+    type: string
+    required: false
+    enum: [append, overwrite]
+    default: overwrite

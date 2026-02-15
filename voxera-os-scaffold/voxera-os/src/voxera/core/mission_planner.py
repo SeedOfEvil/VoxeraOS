@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import re
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Tuple
 
 from ..audit import log
@@ -49,7 +51,13 @@ def _normalize_step_args(raw_args: object, expected_args: List[str]) -> dict:
     if not expected_args:
         return raw_args
 
-    normalized = {k: v for k, v in raw_args.items() if k in expected_args}
+    alias_map = {"content": "text", "body": "text"}
+    expanded = dict(raw_args)
+    for alias, canonical in alias_map.items():
+        if canonical in expected_args and canonical not in expanded and alias in expanded:
+            expanded[canonical] = expanded[alias]
+
+    normalized = {k: v for k, v in expanded.items() if k in expected_args}
     if normalized:
         return normalized
 
@@ -60,6 +68,82 @@ def _normalize_step_args(raw_args: object, expected_args: List[str]) -> dict:
         return {expected_args[0]: next(iter(raw_args.values()))}
 
     return {}
+
+
+
+def _strip_matching_quotes(value: str) -> str:
+    text = value.strip()
+    pairs = (("\"", "\""), ("'", "'"), ("“", "”"), ("‘", "’"))
+    for start, end in pairs:
+        if text.startswith(start) and text.endswith(end) and len(text) >= 2:
+            return text[1:-1].strip()
+    return text
+
+
+def _looks_like_append(goal: str) -> bool:
+    lowered = goal.lower()
+    return bool(re.search(r"\bappend(?:ing|ed)?\b", lowered))
+
+
+def _is_safe_notes_path(raw_path: str) -> bool:
+    try:
+        resolved = Path(raw_path).expanduser().resolve()
+        allowed = (Path.home() / "VoxeraOS" / "notes").resolve()
+    except Exception:
+        return False
+    return resolved == allowed or allowed in resolved.parents
+
+
+def _extract_simple_write_args(goal: str) -> dict[str, str] | None:
+    text = goal.strip()
+    if not text:
+        return None
+
+    patterns = [
+        re.compile(
+            r"""
+            ^\s*(?:please\s+)?write\s+(?:a\s+)?(?:note|file)\s+(?:to|at)\s+
+            (?P<path>.+?)\s+
+            (?:saying|that\s+says?)\s*:?\s*
+            (?P<text>.+?)\s*$
+            """,
+            flags=re.IGNORECASE | re.DOTALL | re.VERBOSE,
+        ),
+        re.compile(
+            r"""
+            ^\s*(?:please\s+)?write\s+
+            (?P<text>.+?)\s+
+            to\s+(?P<path>.+?)\s*$
+            """,
+            flags=re.IGNORECASE | re.DOTALL | re.VERBOSE,
+        ),
+        re.compile(
+            r"""
+            ^\s*(?:please\s+)?create\s+(?:a\s+)?(?:note|file)\s+(?:at|to)\s+
+            (?P<path>.+?)\s+
+            with\s+(?P<text>.+?)\s*$
+            """,
+            flags=re.IGNORECASE | re.DOTALL | re.VERBOSE,
+        ),
+    ]
+
+    for pattern in patterns:
+        m = pattern.match(text)
+        if not m:
+            continue
+
+        raw_path = _strip_matching_quotes(m.group("path")).strip().rstrip(",;")
+        if not raw_path or not _is_safe_notes_path(raw_path):
+            continue
+
+        body_text = _strip_matching_quotes(m.group("text")).strip()
+        if not body_text:
+            continue
+
+        mode = "append" if _looks_like_append(text) else "overwrite"
+        return {"path": raw_path, "text": body_text, "mode": mode}
+
+    return None
 
 
 def _create_brain(provider):
@@ -145,7 +229,6 @@ async def plan_mission(
     source: str = "cli",
     job_ref: str | None = None,
 ) -> MissionTemplate:
-    candidates = _build_brain_candidates(cfg)
     payload = None
     planner_name = None
     retries = 0
@@ -162,6 +245,27 @@ async def plan_mission(
         }
     )
 
+    simple_write_args = _extract_simple_write_args(goal)
+    if simple_write_args is not None:
+        log(
+            {
+                "event": "planner_selected",
+                "plan_id": plan_id,
+                "provider": "deterministic_simple_write",
+                "attempt_index": 0,
+            }
+        )
+        steps = [MissionStep(skill_id="files.write_text", args=simple_write_args)]
+        log({"event": "plan_built", "plan_id": plan_id, "steps": len(steps)})
+        return MissionTemplate(
+            id="cloud_planned",
+            title="Deterministic Note Write",
+            goal=goal,
+            steps=steps,
+            notes="Deterministic simple-write planning path.",
+        )
+
+    candidates = _build_brain_candidates(cfg)
     for retries, candidate in enumerate(candidates):
         log(
             {

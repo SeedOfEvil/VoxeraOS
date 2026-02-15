@@ -1,5 +1,7 @@
 import json
 import sys
+import threading
+import time
 import types
 from types import SimpleNamespace
 
@@ -321,3 +323,151 @@ def test_pending_approval_notification_success_and_failure_events(tmp_path, monk
     monkeypatch.setattr("voxera.core.queue_daemon.subprocess.run", _raise)
     daemon._notify_pending_approval(approval)
     assert events[-1]["event"] == "queue_notify_failed"
+
+
+def test_queue_status_and_approvals_list_include_artifacts_and_parse_failures(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+
+    (queue_dir / "pending" / "job-ask-site.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "pending" / "job-ask-site.pending.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "job-ask-site.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-ask-site.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "capability": "apps.open",
+                "reason": "apps.open -> allow; network.change -> ask",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "pending" / "approvals" / "broken.approval.json").write_text("not-json", encoding="utf-8")
+
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+
+    status = daemon.status_snapshot()
+    approvals = daemon.approvals_list()
+
+    assert status["counts"]["pending"] == 1
+    assert status["counts"]["pending_approvals"] == 2
+    assert len(approvals) == 2
+    assert any(item.get("job") == "job-ask-site.json" for item in approvals)
+    assert any(item.get("skill") == "(unparseable approval artifact)" for item in approvals)
+    assert any(e.get("event") == "queue_status_parse_failed" and e.get("filename") == "broken.approval.json" for e in events)
+
+
+def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="goal_url",
+            title="Goal URL",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+
+    for idx, ref in enumerate(["job-a", "job-b", "job-c", "job-d"]):
+        job = queue_dir / f"{ref}.json"
+        job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
+        daemon.process_job_file(job)
+
+    assert daemon.resolve_approval("job-a", approve=True) is True
+    assert daemon.resolve_approval("job-b.json", approve=True) is True
+    assert daemon.resolve_approval("job-c.approval", approve=True) is True
+    assert daemon.resolve_approval("job-d.approval.json", approve=True) is True
+
+    for ref in ["job-a", "job-b", "job-c", "job-d"]:
+        assert (queue_dir / "done" / f"{ref}.json").exists()
+
+
+
+def test_queue_daemon_retries_partial_json_and_stabilizes(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "partial.json"
+    job.write_text("", encoding="utf-8")
+
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
+    monkeypatch.setattr("voxera.core.queue_daemon._PARSE_RETRY_BACKOFF_S", 0.05)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+
+    def _finish_write():
+        time.sleep(0.08)
+        job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+
+    writer = threading.Thread(target=_finish_write)
+    writer.start()
+    daemon.process_pending_once()
+    writer.join(timeout=1)
+
+    assert (queue_dir / "done" / "partial.json").exists()
+    assert not (queue_dir / "failed" / "partial.json").exists()
+    assert any(e.get("event") == "queue_job_retry_parse" for e in events)
+    assert any(e.get("event") == "queue_job_parse_stabilized" for e in events)
+
+
+def test_queue_daemon_ignores_non_job_artifacts_in_inbox(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    (queue_dir / "good.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    (queue_dir / ".hidden.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    (queue_dir / "skip.pending.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    (queue_dir / "skip.approval.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    (queue_dir / "skip.tmp.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    (queue_dir / "skip.partial.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    (queue_dir / "scratch.tmp").write_text("{}", encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    processed = daemon.process_pending_once()
+
+    assert processed == 1
+    assert (queue_dir / "done" / "good.json").exists()
+    assert (queue_dir / ".hidden.json").exists()
+    assert (queue_dir / "skip.pending.json").exists()
+    assert (queue_dir / "skip.approval.json").exists()
+    assert (queue_dir / "skip.tmp.json").exists()
+    assert (queue_dir / "skip.partial.json").exists()
+
+
+def test_queue_daemon_persistent_invalid_json_fails_after_retries(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "broken.json"
+    job.write_text("{", encoding="utf-8")
+
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
+    monkeypatch.setattr("voxera.core.queue_daemon._PARSE_RETRY_BACKOFF_S", 0.01)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon.process_pending_once()
+
+    assert (queue_dir / "failed" / "broken.json").exists()
+    retry_events = [e for e in events if e.get("event") == "queue_job_retry_parse"]
+    assert len(retry_events) >= 1
+    failed = [e for e in events if e.get("event") == "queue_job_failed"]
+    assert failed
+    assert "JSONDecodeError" in failed[-1].get("error", "")
+

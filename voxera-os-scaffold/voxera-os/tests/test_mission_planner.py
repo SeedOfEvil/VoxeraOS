@@ -248,3 +248,138 @@ def test_plan_mission_emits_single_selected_per_attempt(monkeypatch):
     assert len(fallback) == 1
     assert selected[0]["attempt_index"] == 0
     assert selected[1]["attempt_index"] == 1
+
+
+def test_plan_mission_keeps_write_text_body_alias(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Write note","steps":[{"skill_id":"files.write_text","args":{"path":"~/VoxeraOS/notes/note.txt","body":"remember milk"}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("write a note saying remember milk", cfg=cfg, registry=reg))
+    assert mission.steps[0].skill_id == "files.write_text"
+    assert mission.steps[0].args["path"] == "~/VoxeraOS/notes/note.txt"
+    assert mission.steps[0].args["text"] == "remember milk"
+
+
+
+def test_plan_mission_simple_write_fast_path_overwrite_default(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": False})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for simple write goals")),
+    )
+
+    mission = asyncio.run(
+        plan_mission(
+            'Write a note to ~/VoxeraOS/notes/partial-ok.txt saying: partial recovered ok.',
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "files.write_text"
+    assert step.args["path"] == "~/VoxeraOS/notes/partial-ok.txt"
+    assert step.args["text"] == "partial recovered ok."
+    assert step.args["mode"] == "overwrite"
+
+
+def test_plan_mission_simple_write_fast_path_append(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": False})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for simple write goals")),
+    )
+
+    mission = asyncio.run(
+        plan_mission(
+            'Create a file at ~/VoxeraOS/notes/log.txt with append this line (append mode).',
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "files.write_text"
+    assert step.args["mode"] == "append"
+    assert step.args["text"] == "append this line (append mode)."
+
+
+def test_plan_mission_simple_write_fast_path_handles_whitespace_newlines(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": False})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for simple write goals")),
+    )
+
+    goal = """
+        Write   "line one\nline two"
+        to   ~/VoxeraOS/notes/spacey.txt
+    """
+    mission = asyncio.run(plan_mission(goal, cfg=cfg, registry=reg))
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "files.write_text"
+    assert step.args["path"] == "~/VoxeraOS/notes/spacey.txt"
+    assert step.args["text"] == "line one\nline two"
+    assert step.args["mode"] == "overwrite"
+
+
+def test_plan_mission_simple_write_fast_path_never_adds_clipboard_steps(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": False})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for simple write goals")),
+    )
+
+    mission = asyncio.run(
+        plan_mission(
+            "Write partial recovered ok to ~/VoxeraOS/notes/partial-ok.txt",
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert len(mission.steps) == 1
+    assert all(step.skill_id != "clipboard.copy" for step in mission.steps)
+    assert all(step.skill_id != "clipboard.paste" for step in mission.steps)
+

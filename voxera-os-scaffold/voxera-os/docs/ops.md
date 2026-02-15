@@ -31,10 +31,28 @@ voxera queue status
 `voxera inbox add` writes queue-compatible JSON (`{"id":"...","goal":"..."}`) into the queue root,
 then the daemon processes it through the normal planner + policy + audit pipeline.
 
+Planner note: simple write goals (for example, writing explicit text to a notes file path) take a deterministic fast-path and produce a single `files.write_text` step, bypassing cloud planner variability and clipboard detours.
+
 ## Approval deny workflow
 
 When a queued mission hits an ASK policy gate, it is moved to `pending/` and a
 `pending/approvals/*.approval.json` artifact is created.
+
+Queue status troubleshooting quick checks:
+- `voxera queue status` counts `pending/*.json` as pending jobs, excluding `*.pending.json` metadata files.
+- `voxera queue status` counts approvals from `pending/approvals/*.approval.json`.
+- `voxera queue approvals list` will surface malformed artifacts as `(unparseable approval artifact)` and emit `queue_status_parse_failed` audit events.
+
+Queue job best practice (atomic producer write + rename):
+```bash
+queue_dir=~/VoxeraOS/notes/queue
+job_id=job-$(date +%s)
+tmp_path="$queue_dir/.${job_id}.tmp"
+final_path="$queue_dir/${job_id}.json"
+printf '{"goal":"run a quick system check"}\n' > "$tmp_path"
+mv "$tmp_path" "$final_path"
+```
+The daemon ignores temporary artifacts (`.*`, `*.tmp`, `*.partial`) and retries JSON parsing briefly so short partial writes can stabilize before the job is marked failed.
 
 ```bash
 voxera queue approvals list

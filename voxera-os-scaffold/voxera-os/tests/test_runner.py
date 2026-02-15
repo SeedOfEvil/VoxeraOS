@@ -60,3 +60,14 @@ def test_simulate_canonicalizes_open_app_args():
 
     sim = runner.simulate(manifest, args={"name": "terminal"}, policy=PolicyApprovals())
     assert sim.steps[0].args == {"name": "gnome-terminal"}
+
+
+def test_simulate_canonicalizes_write_text_aliases():
+    reg = SkillRegistry()
+    reg.discover()
+    runner = SkillRunner(reg)
+    manifest = reg.get("files.write_text")
+
+    sim = runner.simulate(manifest, args={"path": "~/VoxeraOS/notes/test.txt", "content": "hello"}, policy=PolicyApprovals())
+    assert sim.steps[0].args["text"] == "hello"
+
