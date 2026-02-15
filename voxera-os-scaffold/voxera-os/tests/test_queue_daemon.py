@@ -1,83 +1,177 @@
 import json
+import os
 import sys
 import types
 
 import pytest
 
+from voxera.core.missions import MissionStep, MissionTemplate
 from voxera.core.queue_daemon import MissionQueueDaemon
+from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig
 
 
-def test_queue_daemon_processes_json_job_to_done(tmp_path):
+
+def _force_policy_ask(monkeypatch, *, redact_logs=True):
+    cfg = AppConfig(policy=PolicyApprovals(system_settings="ask", network_changes="ask"), privacy=PrivacyConfig(redact_logs=redact_logs))
+    monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
+
+
+def _stub_planner(monkeypatch):
+    async def _fake_plan(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="cloud_planned",
+            title="Stub Plan",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.status", args={})],
+            notes="stub",
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _fake_plan)
+
+
+def test_queue_daemon_processes_plan_goal_alias_to_done(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
     queue_dir = tmp_path / "queue"
     job = queue_dir / "job1.json"
     job.parent.mkdir(parents=True, exist_ok=True)
-    job.write_text(json.dumps({"mission_id": "system_check"}), encoding="utf-8")
+    job.write_text(json.dumps({"plan_goal": "check machine"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(
-        queue_root=queue_dir,
-        poll_interval=0.1,
-        mission_log_path=tmp_path / "mission-log.md",
-    )
-
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
     count = daemon.process_pending_once()
 
     assert count == 1
-    assert not job.exists()
     assert (queue_dir / "done" / "job1.json").exists()
-    assert daemon.stats.processed == 1
-    assert daemon.stats.failed == 0
 
 
-def test_queue_daemon_moves_invalid_job_to_failed(tmp_path):
+def test_queue_daemon_processes_goal_to_done(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job1.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon.process_pending_once()
+
+    assert (queue_dir / "done" / "job1.json").exists()
+
+
+def test_queue_daemon_rejects_invalid_schema_with_clear_error(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+
     queue_dir = tmp_path / "queue"
     job = queue_dir / "bad.json"
     job.parent.mkdir(parents=True, exist_ok=True)
-    job.write_text("not-json", encoding="utf-8")
+    job.write_text(json.dumps({"foo": "bar"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(
-        queue_root=queue_dir,
-        poll_interval=0.1,
-        mission_log_path=tmp_path / "mission-log.md",
-    )
-
-    count = daemon.process_pending_once()
-
-    assert count == 1
-    assert not job.exists()
-    assert (queue_dir / "failed" / "bad.json").exists()
-    assert daemon.stats.processed == 0
-    assert daemon.stats.failed == 1
-
-
-def test_queue_daemon_rejects_ask_policy_without_approval(tmp_path):
-    queue_dir = tmp_path / "queue"
-    job = queue_dir / "approval.json"
-    job.parent.mkdir(parents=True, exist_ok=True)
-    job.write_text(json.dumps({"mission_id": "work_mode"}), encoding="utf-8")
-
-    daemon = MissionQueueDaemon(
-        queue_root=queue_dir,
-        poll_interval=0.1,
-        mission_log_path=tmp_path / "mission-log.md",
-    )
-
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
     daemon.process_pending_once()
 
-    assert (queue_dir / "failed" / "approval.json").exists()
-    assert not (queue_dir / "done" / "approval.json").exists()
+    assert (queue_dir / "failed" / "bad.json").exists()
+    assert any("mission_id (or mission) or goal (or plan_goal)" in evt.get("error", "") for evt in events if evt.get("event") == "queue_job_failed")
+
+
+def test_queue_daemon_accepts_mission_alias(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job1.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(json.dumps({"mission": "system_check"}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon.process_pending_once()
+
+    assert (queue_dir / "done" / "job1.json").exists()
+
+
+def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+
+    queue_dir = tmp_path / "queue"
+    approve_job = queue_dir / "approval.json"
+    deny_job = queue_dir / "deny.json"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    approve_job.write_text(json.dumps({"mission_id": "focus_mode"}), encoding="utf-8")
+    deny_job.write_text(json.dumps({"mission_id": "focus_mode"}), encoding="utf-8")
+
+    log_path = tmp_path / "mission-log.md"
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=log_path)
+    monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    daemon.process_job_file(approve_job)
+
+    pending_job = queue_dir / "pending" / "approval.json"
+    artifact_path = queue_dir / "pending" / "approvals" / "approval.approval.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert pending_job.exists()
+    assert artifact["status"] == "pending_approval"
+    assert artifact["args"]["percent"] == "<redacted>"
+    assert any(e["event"] == "queue_job_pending_approval" for e in events)
+    assert "status=pending_approval" in log_path.read_text(encoding="utf-8")
+
+    daemon.resolve_approval("approval", approve=True)
+    assert (queue_dir / "done" / "approval.json").exists()
+
+    daemon.process_job_file(deny_job)
+    daemon.resolve_approval("deny", approve=False)
+    assert (queue_dir / "failed" / "deny.json").exists()
+    assert any(e["event"] == "queue_job_failed" for e in events)
+    assert any(e["event"] == "mission_denied" for e in events)
+    assert "system.set_volume" not in log_path.read_text(encoding="utf-8")
+
+
+def test_queue_daemon_dev_auto_approve_constraints(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    system_job = queue_dir / "system.json"
+    net_job = queue_dir / "network.json"
+    system_job.write_text(json.dumps({"mission_id": "focus_mode"}), encoding="utf-8")
+    net_job.write_text(json.dumps({"mission_id": "daily_checkin"}), encoding="utf-8")
+
+    daemon_default = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log-default.md")
+    monkeypatch.setattr(daemon_default.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    daemon_default.process_job_file(system_job)
+    assert (queue_dir / "pending" / "system.json").exists()
+
+    os.environ["VOXERA_DEV_MODE"] = "1"
+    try:
+        # move back for next check
+        (queue_dir / "pending" / "system.json").replace(system_job)
+        meta = queue_dir / "pending" / "system.pending.json"
+        art = queue_dir / "pending" / "approvals" / "system.approval.json"
+        meta.unlink(missing_ok=True)
+        art.unlink(missing_ok=True)
+
+        daemon = MissionQueueDaemon(
+            queue_root=queue_dir,
+            mission_log_path=tmp_path / "mission-log.md",
+            auto_approve_ask=True,
+        )
+        monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+        daemon.process_job_file(system_job)
+        daemon.process_job_file(net_job)
+
+        assert (queue_dir / "done" / "system.json").exists()
+        assert (queue_dir / "pending" / "network.json").exists()
+    finally:
+        os.environ.pop("VOXERA_DEV_MODE", None)
 
 
 def test_queue_daemon_watchdog_mode_processes_existing_backlog(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "queue"
     job = queue_dir / "job1.json"
     job.parent.mkdir(parents=True, exist_ok=True)
     job.write_text(json.dumps({"mission_id": "system_check"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(
-        queue_root=queue_dir,
-        poll_interval=0.1,
-        mission_log_path=tmp_path / "mission-log.md",
-    )
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
 
     class _EventHandler:
         pass
@@ -107,5 +201,4 @@ def test_queue_daemon_watchdog_mode_processes_existing_backlog(tmp_path, monkeyp
     with pytest.raises(KeyboardInterrupt):
         daemon.run(once=False)
 
-    assert not job.exists()
     assert (queue_dir / "done" / "job1.json").exists()

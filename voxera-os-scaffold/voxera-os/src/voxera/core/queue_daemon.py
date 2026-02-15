@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import time
 from dataclasses import dataclass
@@ -13,7 +14,9 @@ from ..config import load_config
 from ..skills.registry import SkillRegistry
 from ..skills.runner import SkillRunner
 from .mission_planner import MissionPlannerError, plan_mission
-from .missions import MissionRunner, get_mission
+from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
+
+_AUTO_APPROVE_ALLOWLIST = {"system.settings"}
 
 
 @dataclass
@@ -28,13 +31,19 @@ class MissionQueueDaemon:
         queue_root: Path | None = None,
         poll_interval: float = 1.0,
         mission_log_path: Path | None = None,
+        *,
+        auto_approve_ask: bool = False,
     ):
         self.queue_root = (queue_root or (Path.home() / "VoxeraOS" / "notes" / "queue")).expanduser()
         self.inbox = self.queue_root
         self.done = self.queue_root / "done"
         self.failed = self.queue_root / "failed"
+        self.pending = self.queue_root / "pending"
+        self.approvals = self.pending / "approvals"
         self.poll_interval = poll_interval
         self.stats = QueueStats()
+        self.current_job_ref: str | None = None
+        self._approved_steps: set[tuple[str, int, str]] = set()
 
         cfg = load_config()
         reg = SkillRegistry()
@@ -48,21 +57,66 @@ class MissionQueueDaemon:
             mission_log_path=mission_log_path,
         )
         self.cfg = cfg
+        self.auto_approve_ask = auto_approve_ask
+        self.dev_mode = os.getenv("VOXERA_DEV_MODE") == "1"
 
-    def _queue_approval_prompt(self, manifest, decision) -> bool:
+    def _decision_capability(self, decision) -> str:
+        first = (decision.reason or "").split(";", 1)[0].strip()
+        return first.split(" ->", 1)[0].strip() if "->" in first else "unknown"
+
+    def _redact_args(self, args: dict[str, Any]) -> dict[str, Any]:
+        if not self.cfg.privacy.redact_logs:
+            return args
+        return {k: "<redacted>" for k in args.keys()}
+
+    def _queue_approval_prompt(self, manifest, decision, *, audit_context=None, args=None):
+        capability = self._decision_capability(decision)
+        step = (audit_context or {}).get("step")
+        reason = decision.reason
+
+        approval_key = (self.current_job_ref or "", int(step or 0), manifest.id)
+        if approval_key in self._approved_steps:
+            self._approved_steps.discard(approval_key)
+            return True
+
+        if self.auto_approve_ask and self.dev_mode and capability in _AUTO_APPROVE_ALLOWLIST:
+            log(
+                {
+                    "event": "queue_auto_approved",
+                    "job": self.current_job_ref,
+                    "step": step,
+                    "skill": manifest.id,
+                    "reason": reason,
+                    "capability": capability,
+                }
+            )
+            return True
+
         log(
             {
                 "event": "queue_approval_required",
+                "job": self.current_job_ref,
+                "step": step,
                 "skill": manifest.id,
-                "reason": decision.reason,
+                "reason": reason,
+                "capability": capability,
             }
         )
-        return False
+        return {
+            "status": "pending",
+            "step": step,
+            "skill": manifest.id,
+            "reason": reason,
+            "capability": capability,
+            "args": self._redact_args(args or {}),
+        }
 
     def ensure_dirs(self) -> None:
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.done.mkdir(parents=True, exist_ok=True)
         self.failed.mkdir(parents=True, exist_ok=True)
+        self.pending.mkdir(parents=True, exist_ok=True)
+        self.approvals.mkdir(parents=True, exist_ok=True)
 
     def _move_job(self, src: Path, target_dir: Path) -> Path:
         target = target_dir / src.name
@@ -72,30 +126,118 @@ class MissionQueueDaemon:
         shutil.move(str(src), str(target))
         return target
 
+    def _normalize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        mission_id = payload.get("mission_id", payload.get("mission"))
+        goal = payload.get("goal") if "goal" in payload else payload.get("plan_goal")
+        normalized: dict[str, Any] = {}
+        if mission_id is not None:
+            normalized["mission_id"] = str(mission_id)
+        if goal is not None:
+            normalized["goal"] = str(goal)
+        return normalized
+
+    def _build_mission_for_payload(self, payload: dict[str, Any], *, job_ref: str) -> MissionTemplate:
+        normalized = self._normalize_payload(payload)
+        if "mission_id" in normalized:
+            return get_mission(normalized["mission_id"])
+        if "goal" in normalized:
+            try:
+                return asyncio.run(
+                    plan_mission(
+                        goal=normalized["goal"],
+                        cfg=self.cfg,
+                        registry=self.mission_runner.skill_runner.registry,
+                        source="queue",
+                        job_ref=job_ref,
+                    )
+                )
+            except MissionPlannerError as exc:
+                raise RuntimeError(str(exc)) from exc
+        raise ValueError("job must contain either mission_id (or mission) or goal (or plan_goal)")
+
+    def _write_pending_artifacts(
+        self,
+        job_in_pending: Path,
+        *,
+        payload: dict[str, Any],
+        mission: MissionTemplate,
+        run_data: dict[str, Any],
+    ) -> None:
+        step = int(run_data.get("step", 0) or 0)
+        approval = {
+            "job": job_in_pending.name,
+            "job_path": str(job_in_pending),
+            "job_id": job_in_pending.stem,
+            "mission_id": payload.get("mission_id"),
+            "goal": payload.get("goal"),
+            "step": step,
+            "skill": run_data.get("skill"),
+            "args": run_data.get("args", {}),
+            "reason": run_data.get("reason"),
+            "capability": run_data.get("capability"),
+            "status": "pending_approval",
+            "ts": time.time(),
+        }
+        artifact_path = self.approvals / f"{job_in_pending.stem}.approval.json"
+        artifact_path.write_text(json.dumps(approval, indent=2), encoding="utf-8")
+
+        meta = {
+            "status": "pending_approval",
+            "job": job_in_pending.name,
+            "payload": payload,
+            "resume_step": step,
+            "mission": {
+                "id": mission.id,
+                "title": mission.title,
+                "goal": mission.goal,
+                "notes": mission.notes,
+                "steps": [
+                    {"skill_id": s.skill_id, "args": s.args}
+                    for s in mission.steps
+                ],
+            },
+        }
+        (self.pending / f"{job_in_pending.stem}.pending.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
     def process_job_file(self, job_path: Path) -> bool:
         self.ensure_dirs()
         if not job_path.exists():
             return False
 
+        self.current_job_ref = str(job_path)
         log({"event": "queue_job_received", "job": str(job_path)})
         try:
             payload = json.loads(job_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("job payload must be a JSON object")
+            payload = self._normalize_payload(payload)
+            mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
         except Exception as exc:
             moved = self._move_job(job_path, self.failed)
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
             return False
 
-        try:
-            rr = self._execute_payload(payload)
-            if not rr.ok:
-                raise RuntimeError(rr.error or "mission failed")
-        except Exception as exc:
+        kind = "mission_id" if payload.get("mission_id") else "goal"
+        log({"event": "queue_job_started", "kind": kind, "mission": payload.get("mission_id"), "goal": payload.get("goal")})
+        rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
+        if rr.data.get("status") == "pending_approval":
+            moved = self._move_job(job_path, self.pending)
+            self._write_pending_artifacts(moved, payload=payload, mission=mission, run_data=rr.data)
+            log(
+                {
+                    "event": "queue_job_pending_approval",
+                    "job": str(moved),
+                    "step": rr.data.get("step"),
+                    "reason": rr.data.get("reason"),
+                }
+            )
+            return False
+
+        if not rr.ok:
             moved = self._move_job(job_path, self.failed)
             self.stats.failed += 1
-            log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
+            log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
             return False
 
         moved = self._move_job(job_path, self.done)
@@ -103,26 +245,90 @@ class MissionQueueDaemon:
         log({"event": "queue_job_done", "job": str(moved)})
         return True
 
-    def _execute_payload(self, payload: dict[str, Any]):
-        if "mission_id" in payload:
-            mission = get_mission(str(payload["mission_id"]))
-            log({"event": "queue_job_started", "kind": "mission_id", "mission": mission.id})
-            return self.mission_runner.run(mission)
-        if "goal" in payload:
-            goal = str(payload["goal"])
-            log({"event": "queue_job_started", "kind": "goal", "goal": goal})
+    def _find_pending_job(self, ref: str) -> Path:
+        candidate = self.pending / ref
+        if candidate.exists():
+            return candidate
+        if not ref.endswith(".json"):
+            candidate2 = self.pending / f"{ref}.json"
+            if candidate2.exists():
+                return candidate2
+        raise FileNotFoundError(f"pending job not found: {ref}")
+
+    def approvals_list(self) -> list[dict[str, Any]]:
+        self.ensure_dirs()
+        out: list[dict[str, Any]] = []
+        for artifact in sorted(self.approvals.glob("*.approval.json")):
             try:
-                mission = asyncio.run(
-                    plan_mission(
-                        goal=goal,
-                        cfg=self.cfg,
-                        registry=self.mission_runner.skill_runner.registry,
-                    )
-                )
-            except MissionPlannerError as exc:
-                raise RuntimeError(str(exc)) from exc
-            return self.mission_runner.run(mission)
-        raise ValueError("job must contain either mission_id or goal")
+                out.append(json.loads(artifact.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+        return out
+
+    def resolve_approval(self, ref: str, *, approve: bool) -> bool:
+        self.ensure_dirs()
+        job = self._find_pending_job(ref)
+        meta_path = self.pending / f"{job.stem}.pending.json"
+        artifact_path = self.approvals / f"{job.stem}.approval.json"
+        if not meta_path.exists():
+            raise FileNotFoundError(f"approval metadata missing for {job.name}")
+
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if not approve:
+            moved = self._move_job(job, self.failed)
+            self.stats.failed += 1
+            mission_data = meta.get("mission", {})
+            denied_mission = MissionTemplate(
+                id=mission_data.get("id", "queue_mission"),
+                title=mission_data.get("title", "Queued Mission"),
+                goal=mission_data.get("goal", ""),
+                notes=mission_data.get("notes"),
+                steps=[],
+            )
+            self.mission_runner._append_mission_log(denied_mission, [], status="denied")
+            log({"event": "mission_denied", "mission": meta.get("mission", {}).get("id"), "reason": "approval denied from inbox"})
+            log({"event": "queue_job_failed", "job": str(moved), "error": "Denied in approval inbox"})
+            meta_path.unlink(missing_ok=True)
+            artifact_path.unlink(missing_ok=True)
+            return True
+
+        payload = meta.get("payload", {})
+        mission_data = meta.get("mission", {})
+        steps = [MissionStep(skill_id=item["skill_id"], args=item.get("args", {})) for item in mission_data.get("steps", [])]
+        mission = MissionTemplate(
+            id=mission_data.get("id", payload.get("mission_id", "queue_mission")),
+            title=mission_data.get("title", "Queued Mission"),
+            goal=mission_data.get("goal", payload.get("goal", "")),
+            notes=mission_data.get("notes"),
+            steps=steps,
+        )
+        self.current_job_ref = str(job)
+        resume_step = int(meta.get("resume_step", 1) or 1)
+        resume_skill = meta.get("mission", {}).get("steps", [{}])[max(resume_step - 1, 0)].get("skill_id", "")
+        self._approved_steps.add((str(job), resume_step, resume_skill))
+        rr = self.mission_runner.run(
+            mission,
+            start_step=resume_step,
+            context={"queue_job": str(job), "approval_resumed": True},
+        )
+        if rr.data.get("status") == "pending_approval":
+            self._write_pending_artifacts(job, payload=payload, mission=mission, run_data=rr.data)
+            log({"event": "queue_job_pending_approval", "job": str(job), "step": rr.data.get("step"), "reason": rr.data.get("reason")})
+            return False
+        if not rr.ok:
+            moved = self._move_job(job, self.failed)
+            self.stats.failed += 1
+            log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
+            meta_path.unlink(missing_ok=True)
+            artifact_path.unlink(missing_ok=True)
+            return False
+
+        moved = self._move_job(job, self.done)
+        self.stats.processed += 1
+        log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
+        meta_path.unlink(missing_ok=True)
+        artifact_path.unlink(missing_ok=True)
+        return True
 
     def process_pending_once(self) -> int:
         self.ensure_dirs()
@@ -136,7 +342,9 @@ class MissionQueueDaemon:
 
     def run(self, once: bool = False) -> None:
         self.ensure_dirs()
-        log({"event": "queue_daemon_start", "queue": str(self.inbox), "once": once})
+        if self.auto_approve_ask and not self.dev_mode:
+            log({"event": "queue_auto_approve_disabled", "reason": "VOXERA_DEV_MODE is not enabled"})
+        log({"event": "queue_daemon_start", "queue": str(self.inbox), "once": once, "auto_approve_ask": self.auto_approve_ask})
         if once:
             count = self.process_pending_once()
             log({"event": "queue_daemon_stop", "reason": "once", "processed": count})

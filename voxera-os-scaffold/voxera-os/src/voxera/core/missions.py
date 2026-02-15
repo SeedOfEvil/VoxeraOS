@@ -119,16 +119,25 @@ class MissionRunner:
         self.redact_logs = redact_logs
         self.mission_log_path = mission_log_path or Path.home() / "VoxeraOS" / "notes" / "mission-log.md"
 
-    def _append_mission_log(self, mission: MissionTemplate, outputs: List[Dict[str, Any]], ok: bool) -> None:
+    def _append_mission_log(
+        self,
+        mission: MissionTemplate,
+        outputs: List[Dict[str, Any]],
+        *,
+        status: str,
+        paused_step: int | None = None,
+    ) -> None:
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
-        status = "ok" if ok else "failed"
         summary = f"- {ts} | {mission.id} | {mission.title} | status={status} | steps={len(outputs)}"
+        if paused_step:
+            summary = f"{summary} | paused_step={paused_step}"
         if not self.redact_logs:
             details = "; ".join(
                 f"step {item['step']} {item['skill']} ok={item['ok']}"
                 for item in outputs
             )
-            summary = f"{summary} | details: {details}"
+            if details:
+                summary = f"{summary} | details: {details}"
         try:
             self.mission_log_path.parent.mkdir(parents=True, exist_ok=True)
             with self.mission_log_path.open("a", encoding="utf-8") as f:
@@ -161,18 +170,28 @@ class MissionRunner:
             summary=summary,
         )
 
-    def run(self, mission: MissionTemplate) -> RunResult:
-        log({"event": "mission_start", "mission": mission.id, "steps": len(mission.steps)})
+    def run(
+        self,
+        mission: MissionTemplate,
+        *,
+        start_step: int = 1,
+        context: Dict[str, Any] | None = None,
+    ) -> RunResult:
+        context = context or {}
+        log({"event": "mission_start", "mission": mission.id, "steps": len(mission.steps), "start_step": start_step})
         outputs: List[Dict[str, Any]] = []
 
         for idx, ms in enumerate(mission.steps, start=1):
-            manifest = self.skill_runner.registry.get(ms.skill_id)
+            if idx < start_step:
+                continue
+
+            audit_context = {"mission": mission.id, "step": idx, **context}
             rr = self.skill_runner.run(
-                manifest,
+                self.skill_runner.registry.get(ms.skill_id),
                 args=ms.args,
                 policy=self.policy,
                 require_approval_cb=self.require_approval_cb,
-                audit_context={"mission": mission.id, "step": idx},
+                audit_context=audit_context,
             )
             outputs.append(
                 {
@@ -183,9 +202,17 @@ class MissionRunner:
                     "error": rr.error,
                 }
             )
+            if rr.data.get("status") == "pending_approval":
+                log({"event": "mission_pending_approval", "mission": mission.id, "step": idx, "skill": ms.skill_id})
+                self._append_mission_log(mission, outputs, status="pending_approval", paused_step=idx)
+                data = dict(rr.data)
+                data.setdefault("results", outputs)
+                data.setdefault("step", idx)
+                data.setdefault("skill", ms.skill_id)
+                return RunResult(ok=False, error="Mission paused for approval.", data=data)
             if not rr.ok:
                 log({"event": "mission_error", "mission": mission.id, "step": idx, "error": rr.error})
-                self._append_mission_log(mission, outputs, ok=False)
+                self._append_mission_log(mission, outputs, status="failed")
                 return RunResult(
                     ok=False,
                     error=f"Mission failed at step {idx} ({ms.skill_id}): {rr.error}",
@@ -193,5 +220,5 @@ class MissionRunner:
                 )
 
         log({"event": "mission_done", "mission": mission.id, "steps": len(mission.steps)})
-        self._append_mission_log(mission, outputs, ok=True)
+        self._append_mission_log(mission, outputs, status="ok")
         return RunResult(ok=True, output=f"Mission completed: {mission.title}", data={"results": outputs})

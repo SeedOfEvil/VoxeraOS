@@ -74,10 +74,27 @@ This uses your configured `primary` brain provider and still enforces local poli
 ```bash
 mkdir -p ~/VoxeraOS/notes/queue
 echo '{"mission_id":"system_check"}' > ~/VoxeraOS/notes/queue/job-1.json
+echo '{"mission":"system_check"}' > ~/VoxeraOS/notes/queue/job-2.json
+echo '{"goal":"run a quick system check"}' > ~/VoxeraOS/notes/queue/job-3.json
+# compatibility alias still accepted:
+echo '{"plan_goal":"run a quick system check"}' > ~/VoxeraOS/notes/queue/job-4.json
 voxera daemon --once
 ```
-The daemon watches `~/VoxeraOS/notes/queue/` for JSON jobs (`mission_id` or `goal`) and
-moves completed jobs to `done/` and failures to `failed/`.
+Queue job schema accepts either:
+- `mission_id` (or alias `mission`)
+- `goal` (preferred) or compatibility alias `plan_goal`
+
+If a queued mission hits an approval-required step, it is moved to `pending/` (not failed),
+and an approval artifact is written to `pending/approvals/*.approval.json`.
+
+Resolve approvals with:
+```bash
+voxera queue approvals list
+voxera queue approvals approve <job_id_or_filename>
+voxera queue approvals deny <job_id_or_filename>
+```
+
+Completed jobs are moved to `done/`; invalid or denied jobs are moved to `failed/`.
 
 ### 2e) Run end-to-end smoke checks
 ```bash
@@ -120,3 +137,17 @@ For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test c
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 
+
+
+## Mission log and redaction behavior
+- Mission runs append to `~/VoxeraOS/notes/mission-log.md`.
+- In redacted mode (`privacy.redact_logs=true`), entries only include status + skill ids (no args/URLs).
+- Queue approval pauses append `status=pending_approval` with paused step.
+- Approval denials append a denied/failed record with minimal details.
+
+## DEV-only auto-approval for queue testing (dangerous)
+`voxera daemon --auto-approve-ask` is **off by default** and only active when `VOXERA_DEV_MODE=1`.
+
+- Auto-approval allowlist is intentionally strict: `system.settings` only.
+- Network capabilities (for example `network.change`, `system.open_url`) are **never** auto-approved and still go to `pending/`.
+- Auto-approvals emit loud audit events (`queue_auto_approved`) for test visibility.
