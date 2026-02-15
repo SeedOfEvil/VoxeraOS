@@ -1,0 +1,6 @@
+id: system.open_url
+name: Open URL
+description: Open an HTTP/HTTPS URL in Firefox or default browser.
+entrypoint: voxera_builtin_skills.open_url:run
+capabilities: ["apps.open", "network.change"]
+risk: medium

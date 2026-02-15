@@ -4,6 +4,7 @@ from typing import Any, Dict
 from ..models import PlanSimulation, PlanStep, RunResult, SkillManifest
 from ..policy import decide
 from ..audit import log
+from .arg_normalizer import canonicalize_args
 from .registry import SkillRegistry
 
 class SkillRunner:
@@ -11,6 +12,7 @@ class SkillRunner:
         self.registry = registry
 
     def simulate(self, manifest: SkillManifest, args: Dict[str, Any], policy) -> PlanSimulation:
+        args = canonicalize_args(manifest.id, args)
         decision = decide(manifest, policy)
         requires_approval = decision.decision == "ask" or manifest.risk == "high"
         blocked = decision.decision == "deny"
@@ -40,7 +42,15 @@ class SkillRunner:
             summary=summary,
         )
 
-    def run(self, manifest: SkillManifest, args: Dict[str, Any], policy, require_approval_cb=None) -> RunResult:
+    def run(
+        self,
+        manifest: SkillManifest,
+        args: Dict[str, Any],
+        policy,
+        require_approval_cb=None,
+        audit_context: Dict[str, Any] | None = None,
+    ) -> RunResult:
+        args = canonicalize_args(manifest.id, args)
         decision = decide(manifest, policy)
         requires = decision.decision in ("ask", "deny") or manifest.risk in ("high",)
 
@@ -51,8 +61,28 @@ class SkillRunner:
         if requires and require_approval_cb:
             approved = require_approval_cb(manifest, decision)
             if not approved:
+                if audit_context and audit_context.get("mission"):
+                    log(
+                        {
+                            "event": "mission_denied",
+                            "mission": audit_context.get("mission"),
+                            "step": audit_context.get("step"),
+                            "skill": manifest.id,
+                            "reason": decision.reason,
+                        }
+                    )
                 log({"event": "skill_rejected", "skill": manifest.id, "reason": decision.reason})
                 return RunResult(ok=False, error="User rejected approval.")
+            if audit_context and audit_context.get("mission"):
+                log(
+                    {
+                        "event": "mission_approved",
+                        "mission": audit_context.get("mission"),
+                        "step": audit_context.get("step"),
+                        "skill": manifest.id,
+                        "reason": decision.reason,
+                    }
+                )
 
         fn = self.registry.load_entrypoint(manifest)
         log({"event": "skill_start", "skill": manifest.id, "args": args, "reason": decision.reason})

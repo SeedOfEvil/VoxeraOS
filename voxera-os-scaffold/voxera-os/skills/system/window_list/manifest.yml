@@ -1,0 +1,6 @@
+id: system.window_list
+name: Window List
+description: List currently open desktop windows.
+entrypoint: voxera_builtin_skills.window_list:run
+capabilities: []
+risk: low

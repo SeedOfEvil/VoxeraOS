@@ -50,3 +50,13 @@ def test_simulate_blocked_when_policy_denies():
     assert sim.blocked is True
     assert sim.summary == "Blocked by policy"
     assert sim.steps[0].policy_decision == "deny"
+
+
+def test_simulate_canonicalizes_open_app_args():
+    reg = SkillRegistry()
+    reg.discover()
+    runner = SkillRunner(reg)
+    manifest = reg.get("system.open_app")
+
+    sim = runner.simulate(manifest, args={"name": "terminal"}, policy=PolicyApprovals())
+    assert sim.steps[0].args == {"name": "gnome-terminal"}

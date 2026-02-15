@@ -33,10 +33,8 @@ def test_plan_mission_from_cloud_json(monkeypatch):
     reg.discover()
 
     monkeypatch.setattr(
-        "voxera.core.mission_planner._build_brain",
-        lambda _cfg: _FakeBrain(
-            '{"title":"Quick prep","notes":"cloud test","steps":[{"skill_id":"system.status","args":{}}]}'
-        ),
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"title":"Quick prep","notes":"cloud test","steps":[{"skill_id":"system.status","args":{}}]}')})()],
     )
 
     mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
@@ -60,8 +58,8 @@ def test_plan_mission_rejects_unknown_skill(monkeypatch):
     reg.discover()
 
     monkeypatch.setattr(
-        "voxera.core.mission_planner._build_brain",
-        lambda _cfg: _FakeBrain('{"steps":[{"skill_id":"system.missing","args":{}}]}'),
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"steps":[{"skill_id":"system.missing","args":{}}]}')})()],
     )
 
     with pytest.raises(MissionPlannerError, match="unknown skill"):
@@ -82,10 +80,8 @@ def test_plan_mission_normalizes_single_arg_alias(monkeypatch):
     reg.discover()
 
     monkeypatch.setattr(
-        "voxera.core.mission_planner._build_brain",
-        lambda _cfg: _FakeBrain(
-            '{"title":"Work mode","steps":[{"skill_id":"system.open_app","args":{"app_name":"firefox"}}]}'
-        ),
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"title":"Work mode","steps":[{"skill_id":"system.open_app","args":{"app_name":"Firefox"}}]}')})()],
     )
 
     mission = asyncio.run(plan_mission("start work mode", cfg=cfg, registry=reg))
@@ -94,26 +90,31 @@ def test_plan_mission_normalizes_single_arg_alias(monkeypatch):
     assert mission.steps[0].args == {"name": "firefox"}
 
 
-def test_plan_mission_drops_unexpected_args(monkeypatch):
+def test_plan_mission_uses_fallback(monkeypatch):
     cfg = AppConfig(
         brain={
-            "primary": BrainConfig(
-                type="openai_compat",
-                model="test-model",
-                base_url="https://example.test/v1",
-            )
+            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
         }
     )
     reg = SkillRegistry()
     reg.discover()
 
+    class _FailingBrain:
+        async def generate(self, messages, tools=None):
+            class _Resp:
+                text = "not-json"
+
+            return _Resp()
+
     monkeypatch.setattr(
-        "voxera.core.mission_planner._build_brain",
-        lambda _cfg: _FakeBrain(
-            '{"title":"Volume","steps":[{"skill_id":"system.set_volume","args":{"percent":"35","unexpected":"x"}}]}'
-        ),
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "brain": _FailingBrain()})(),
+            type("C", (), {"name": "fast", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+        ],
     )
 
-    mission = asyncio.run(plan_mission("set volume", cfg=cfg, registry=reg))
-
-    assert mission.steps[0].args == {"percent": "35"}
+    mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+    assert mission.steps[0].skill_id == "system.status"
+    assert "fast" in (mission.notes or "")
