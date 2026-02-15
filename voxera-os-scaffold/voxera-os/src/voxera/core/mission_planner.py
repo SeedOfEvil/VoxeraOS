@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 from dataclasses import dataclass
@@ -16,6 +17,10 @@ from .missions import MissionStep, MissionTemplate
 
 class MissionPlannerError(RuntimeError):
     pass
+
+
+_MAX_STEPS = 5
+_PLANNER_TIMEOUT_SECONDS = 25
 
 
 @dataclass(frozen=True)
@@ -119,7 +124,12 @@ async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
         },
     ]
 
-    resp = await brain.generate(messages)
+    try:
+        resp = await asyncio.wait_for(brain.generate(messages), timeout=_PLANNER_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError as exc:
+        raise MissionPlannerError(
+            f"Planner timed out after {_PLANNER_TIMEOUT_SECONDS}s"
+        ) from exc
     raw = resp.text.strip()
 
     try:
@@ -147,13 +157,14 @@ async def plan_mission(goal: str, cfg: AppConfig, registry: SkillRegistry) -> Mi
                 }
             )
             break
-        except MissionPlannerError as exc:
+        except Exception as exc:
             last_error = str(exc)
             log(
                 {
                     "event": "planner_fallback",
                     "provider": candidate.name,
                     "retry_count": retries,
+                    "error_type": type(exc).__name__,
                     "error": last_error,
                 }
             )
@@ -161,15 +172,31 @@ async def plan_mission(goal: str, cfg: AppConfig, registry: SkillRegistry) -> Mi
     if payload is None or planner_name is None:
         raise MissionPlannerError(f"Planner failed after fallbacks: {last_error or 'unknown error'}")
 
-    steps_json: List[dict] = payload.get("steps") or []
-    if not steps_json:
+    if not isinstance(payload, dict):
+        raise MissionPlannerError("Planner returned invalid JSON payload type.")
+
+    allowed_keys = {"title", "goal", "notes", "steps"}
+    unknown_keys = set(payload) - allowed_keys
+    if unknown_keys:
+        keys = ", ".join(sorted(unknown_keys))
+        raise MissionPlannerError(f"Planner returned unsupported keys: {keys}")
+
+    steps_json = payload.get("steps")
+    if not isinstance(steps_json, list) or not steps_json:
         raise MissionPlannerError("Planner returned no mission steps.")
+    if len(steps_json) > _MAX_STEPS:
+        raise MissionPlannerError(f"Planner returned too many steps ({len(steps_json)} > {_MAX_STEPS}).")
 
     skills = sorted(registry.discover().values(), key=lambda m: m.id)
     known_ids = {m.id for m in skills}
     steps: List[MissionStep] = []
-    for item in steps_json[:5]:
+    for item in steps_json:
+        if not isinstance(item, dict):
+            raise MissionPlannerError("Planner returned an invalid step object.")
+
         skill_id = item.get("skill_id")
+        if not isinstance(skill_id, str):
+            raise MissionPlannerError("Planner returned a step without a valid skill_id.")
         if skill_id not in known_ids:
             raise MissionPlannerError(f"Planner referenced unknown skill: {skill_id}")
         args = _normalize_step_args(item.get("args"), _expected_args_for_skill(registry, skill_id))

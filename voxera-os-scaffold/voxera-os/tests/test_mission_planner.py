@@ -118,3 +118,79 @@ def test_plan_mission_uses_fallback(monkeypatch):
     mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
     assert mission.steps[0].skill_id == "system.status"
     assert "fast" in (mission.notes or "")
+
+
+def test_plan_mission_fallback_on_runtime_error(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+            "fallback": BrainConfig(type="openai_compat", model="fallback", base_url="https://example.test/v1"),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    class _ExplodingBrain:
+        async def generate(self, messages, tools=None):
+            raise RuntimeError("provider down")
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "brain": _ExplodingBrain()})(),
+            type("C", (), {"name": "fallback", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+    assert mission.steps[0].skill_id == "system.status"
+    assert "fallback" in (mission.notes or "")
+
+
+def test_plan_mission_rejects_unknown_top_level_keys(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain('{"title":"x","steps":[{"skill_id":"system.status","args":{}}],"tool_calls":["rm -rf /"]}'),
+                },
+            )(),
+        ],
+    )
+
+    with pytest.raises(MissionPlannerError, match="unsupported keys"):
+        asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+
+
+def test_plan_mission_rejects_too_many_steps(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    six_steps = {
+        "steps": [{"skill_id": "system.status", "args": {}} for _ in range(6)]
+    }
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain(str(six_steps).replace("'", '"'))})()],
+    )
+
+    with pytest.raises(MissionPlannerError, match="too many steps"):
+        asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
