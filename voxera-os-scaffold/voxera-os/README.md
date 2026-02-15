@@ -1,7 +1,7 @@
-# Voxera OS (Scaffold) — Voice-first AI Control Plane
+# Voxera OS Alpha v0.1 — Voice-first AI Control Plane
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is a **first-commit scaffold**: it ships a typed first-run setup (`voxera setup`), a tool/skill runner,
+This repo is **Voxera OS Alpha v0.1**: it ships a typed first-run setup (`voxera setup`), a tool/skill runner,
 a minimal approval/audit web panel, and pluggable “brain” providers (cloud or local OpenAI-compatible endpoints).
 
 **Names**
@@ -10,7 +10,7 @@ a minimal approval/audit web panel, and pluggable “brain” providers (cloud o
 - Wake word (planned): **“Hey Voxera”**
 - CLI: `voxera`
 
-## What works in this scaffold
+## What works in Alpha v0.1
 - ✅ Typed setup wizard (TUI) to pick **Local vs Cloud** brain + store config safely
 - ✅ OpenRouter-first cloud setup path with recommended headers + model tiers (fast/balanced/reasoning/fallback)
 - ✅ Provider abstraction layer + adapters (OpenAI-compatible works immediately with local servers like Ollama/OpenRouter)
@@ -186,7 +186,7 @@ For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test c
 - Immutable base image (Silverblue-style) for atomic upgrades + rollback
 
 ---
-**This is scaffolding**: it’s meant to get you to a working GitHub first commit and a fast iteration loop.
+**Alpha v0.1** is meant to give you a working system + fast iteration loop while preserving safety gates.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 

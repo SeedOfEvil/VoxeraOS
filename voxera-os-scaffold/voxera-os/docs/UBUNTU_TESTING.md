@@ -1,6 +1,6 @@
 # Ubuntu Testing Guide
 
-Use this checklist to run Voxera OS scaffold end-to-end on an Ubuntu machine.
+Use this checklist to run Voxera OS Alpha v0.1 end-to-end on an Ubuntu machine.
 
 ## 1) System prerequisites
 
@@ -81,5 +81,5 @@ Open `http://127.0.0.1:8844`.
 ## Troubleshooting
 
 - If `voxera` command is not found, ensure your venv is activated.
-- If setup cannot store secrets in keyring, scaffold falls back to file-based secret storage.
+- If setup cannot store secrets in keyring, Voxera OS falls back to file-based secret storage.
 - If local-model tests fail, verify your endpoint is reachable and configured in `voxera setup`.
