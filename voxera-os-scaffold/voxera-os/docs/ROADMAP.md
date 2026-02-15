@@ -1,11 +1,12 @@
 # Roadmap
 
-## Alpha v0.1 (current)
+## Alpha v0.1.2 (current)
 - Setup wizard (TUI)
 - Provider abstraction (cloud/local)
 - Skill runner + policy gate
 - Minimal panel (approvals + audit)
 - Audit logs (JSONL)
+- Cloud-assisted mission planning (`voxera missions plan "<goal>"`)
 
 ## Alpha v0.2
 - OpenAI-compatible provider solidified (Ollama, etc.)
