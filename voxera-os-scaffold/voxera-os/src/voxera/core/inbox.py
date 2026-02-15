@@ -33,6 +33,8 @@ def add_inbox_job(queue_root: Path, goal: str, *, job_id: str | None = None) -> 
 
     payload = {"id": resolved_id, "goal": goal}
     target = queue_root / f"inbox-{resolved_id}.json"
+    if target.exists():
+        raise FileExistsError(f"inbox job already exists: {target}")
     target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return target
 

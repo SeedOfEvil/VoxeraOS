@@ -1,4 +1,6 @@
 import json
+
+import pytest
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -36,6 +38,30 @@ def test_inbox_add_writes_goal_and_id(tmp_path):
     assert created.name == "inbox-alpha-1.json"
     assert payload == {"id": "alpha-1", "goal": "Write daily check-in"}
 
+
+
+
+def test_inbox_add_rejects_duplicate_id_without_overwriting(tmp_path):
+    queue_dir = tmp_path / "queue"
+    created = add_inbox_job(queue_dir, "first goal", job_id="dup-1")
+
+    with pytest.raises(FileExistsError):
+        add_inbox_job(queue_dir, "second goal", job_id="dup-1")
+
+    payload = json.loads(created.read_text(encoding="utf-8"))
+    assert payload == {"id": "dup-1", "goal": "first goal"}
+
+
+def test_inbox_add_cli_reports_duplicate_id_error(tmp_path):
+    queue_dir = tmp_path / "queue"
+    runner = CliRunner()
+
+    first = runner.invoke(cli.app, ["inbox", "add", "first goal", "--id", "dup-2", "--queue-dir", str(queue_dir)])
+    second = runner.invoke(cli.app, ["inbox", "add", "second goal", "--id", "dup-2", "--queue-dir", str(queue_dir)])
+
+    assert first.exit_code == 0
+    assert second.exit_code == 1
+    assert "inbox job already exists" in second.stdout
 
 def test_generate_inbox_id_is_stable_for_goal_and_timestamp():
     job_id = generate_inbox_id("hello", now_ms=1730000000123)

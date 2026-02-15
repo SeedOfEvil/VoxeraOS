@@ -324,7 +324,7 @@ def inbox_add(
     """Create an inbox queue job from plain goal text."""
     try:
         created = add_inbox_job(Path(queue_dir), goal, job_id=id)
-    except ValueError as exc:
+    except (ValueError, FileExistsError) as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1)
 
