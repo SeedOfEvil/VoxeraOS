@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..audit import log
@@ -102,10 +104,37 @@ def get_mission(mission_id: str) -> MissionTemplate:
 
 
 class MissionRunner:
-    def __init__(self, skill_runner, policy, require_approval_cb=None):
+    def __init__(
+        self,
+        skill_runner,
+        policy,
+        require_approval_cb=None,
+        *,
+        redact_logs: bool = True,
+        mission_log_path: Path | None = None,
+    ):
         self.skill_runner = skill_runner
         self.policy = policy
         self.require_approval_cb = require_approval_cb
+        self.redact_logs = redact_logs
+        self.mission_log_path = mission_log_path or Path.home() / "VoxeraOS" / "notes" / "mission-log.md"
+
+    def _append_mission_log(self, mission: MissionTemplate, outputs: List[Dict[str, Any]], ok: bool) -> None:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        status = "ok" if ok else "failed"
+        summary = f"- {ts} | {mission.id} | {mission.title} | status={status} | steps={len(outputs)}"
+        if not self.redact_logs:
+            details = "; ".join(
+                f"step {item['step']} {item['skill']} ok={item['ok']}"
+                for item in outputs
+            )
+            summary = f"{summary} | details: {details}"
+        try:
+            self.mission_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.mission_log_path.open("a", encoding="utf-8") as f:
+                f.write(summary + "\n")
+        except Exception as exc:
+            log({"event": "mission_log_error", "mission": mission.id, "error": repr(exc)})
 
     def simulate(self, mission: MissionTemplate) -> PlanSimulation:
         steps: List[PlanStep] = []
@@ -156,6 +185,7 @@ class MissionRunner:
             )
             if not rr.ok:
                 log({"event": "mission_error", "mission": mission.id, "step": idx, "error": rr.error})
+                self._append_mission_log(mission, outputs, ok=False)
                 return RunResult(
                     ok=False,
                     error=f"Mission failed at step {idx} ({ms.skill_id}): {rr.error}",
@@ -163,4 +193,5 @@ class MissionRunner:
                 )
 
         log({"event": "mission_done", "mission": mission.id, "steps": len(mission.steps)})
+        self._append_mission_log(mission, outputs, ok=True)
         return RunResult(ok=True, output=f"Mission completed: {mission.title}", data={"results": outputs})

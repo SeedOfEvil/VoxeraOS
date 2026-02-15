@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import List, Optional
 import typer
 from rich.console import Console
@@ -14,6 +15,7 @@ from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
 from .audit import tail
 from .core.missions import MissionRunner, get_mission, list_missions
+from .core.queue_daemon import MissionQueueDaemon
 from .core.mission_planner import MissionPlannerError, plan_mission
 
 console = Console()
@@ -120,7 +122,7 @@ def missions_plan(
     reg = SkillRegistry()
     reg.discover()
     runner = SkillRunner(reg)
-    mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt)
+    mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt, redact_logs=cfg.privacy.redact_logs)
 
     try:
         mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg))
@@ -154,7 +156,7 @@ def missions_run(
     reg = SkillRegistry()
     reg.discover()
     runner = SkillRunner(reg)
-    mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt)
+    mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt, redact_logs=cfg.privacy.redact_logs)
 
     try:
         mission = get_mission(mission_id)
@@ -188,6 +190,14 @@ def panel(host: str = "127.0.0.1", port: int = 8844):
     uvicorn.run("voxera.panel.app:app", host=host, port=port, reload=False)
 
 @app.command()
-def daemon():
-    """Placeholder for a long-running core daemon (router/planner/event loop)."""
-    console.print("Voxera daemon scaffold. For now, use 'voxera run' and 'voxera panel'.")
+def daemon(
+    once: bool = typer.Option(False, "--once", help="Process current queue and exit."),
+    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+    poll_interval: float = typer.Option(1.0, "--poll-interval", min=0.1, help="Polling interval in seconds when watchdog is unavailable."),
+):
+    """Run mission queue daemon watching for JSON jobs."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir), poll_interval=poll_interval)
+    try:
+        daemon.run(once=once)
+    except KeyboardInterrupt:
+        console.print("Queue daemon stopped.")

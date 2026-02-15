@@ -1,4 +1,4 @@
-.PHONY: install dev panel test lint fmt
+.PHONY: install dev panel test lint fmt e2e
 
 install:
 	python -m pip install -U pip
@@ -20,3 +20,7 @@ lint:
 
 fmt:
 	ruff format .
+
+
+e2e:
+	bash scripts/e2e_smoke.sh
