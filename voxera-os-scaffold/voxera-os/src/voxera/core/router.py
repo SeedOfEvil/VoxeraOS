@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+
 @dataclass
 class Route:
     lane: Literal["local", "cloud"]
     reason: str
+
 
 def route_request(text: str, privacy_cloud_allowed: bool) -> Route:
     risky_words = ["install", "update", "network", "vpn", "firewall", "delete", "remove", "sudo"]

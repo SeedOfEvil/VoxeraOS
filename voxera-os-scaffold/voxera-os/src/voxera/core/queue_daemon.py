@@ -37,7 +37,9 @@ class MissionQueueDaemon:
         *,
         auto_approve_ask: bool = False,
     ):
-        self.queue_root = (queue_root or (Path.home() / "VoxeraOS" / "notes" / "queue")).expanduser()
+        self.queue_root = (
+            queue_root or (Path.home() / "VoxeraOS" / "notes" / "queue")
+        ).expanduser()
         self.inbox = self.queue_root
         self.done = self.queue_root / "done"
         self.failed = self.queue_root / "failed"
@@ -71,7 +73,7 @@ class MissionQueueDaemon:
     def _redact_args(self, args: dict[str, Any]) -> dict[str, Any]:
         if not self.cfg.privacy.redact_logs:
             return args
-        return {k: "<redacted>" for k in args.keys()}
+        return {k: "<redacted>" for k in args}
 
     def _queue_approval_prompt(self, manifest, decision, *, audit_context=None, args=None):
         capability = self._decision_capability(decision)
@@ -140,7 +142,9 @@ class MissionQueueDaemon:
             normalized["goal"] = str(goal)
         return normalized
 
-    def _build_mission_for_payload(self, payload: dict[str, Any], *, job_ref: str) -> MissionTemplate:
+    def _build_mission_for_payload(
+        self, payload: dict[str, Any], *, job_ref: str
+    ) -> MissionTemplate:
         normalized = self._normalize_payload(payload)
         if "mission_id" in normalized:
             return get_mission(normalized["mission_id"])
@@ -196,13 +200,12 @@ class MissionQueueDaemon:
                 "title": mission.title,
                 "goal": mission.goal,
                 "notes": mission.notes,
-                "steps": [
-                    {"skill_id": s.skill_id, "args": s.args}
-                    for s in mission.steps
-                ],
+                "steps": [{"skill_id": s.skill_id, "args": s.args} for s in mission.steps],
             },
         }
-        (self.pending / f"{job_in_pending.stem}.pending.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        (self.pending / f"{job_in_pending.stem}.pending.json").write_text(
+            json.dumps(meta, indent=2), encoding="utf-8"
+        )
 
     def _notify_pending_approval(self, approval: dict[str, Any]) -> None:
         if os.getenv("VOXERA_NOTIFY") != "1":
@@ -225,11 +228,28 @@ class MissionQueueDaemon:
             if result.returncode == 0:
                 log({"event": "queue_notify_sent", "job": job, "skill": skill, "reason": reason})
                 return
-            stderr = (result.stderr or "").strip() or f"notify-send exited with code {result.returncode}"
-            log({"event": "queue_notify_failed", "job": job, "skill": skill, "reason": reason, "error": stderr})
+            stderr = (
+                result.stderr or ""
+            ).strip() or f"notify-send exited with code {result.returncode}"
+            log(
+                {
+                    "event": "queue_notify_failed",
+                    "job": job,
+                    "skill": skill,
+                    "reason": reason,
+                    "error": stderr,
+                }
+            )
         except Exception as exc:
-            log({"event": "queue_notify_failed", "job": job, "skill": skill, "reason": reason, "error": repr(exc)})
-
+            log(
+                {
+                    "event": "queue_notify_failed",
+                    "job": job,
+                    "skill": skill,
+                    "reason": reason,
+                    "error": repr(exc),
+                }
+            )
 
     def _is_ready_job_file(self, path: Path) -> bool:
         if path.parent != self.inbox or not path.is_file():
@@ -240,9 +260,7 @@ class MissionQueueDaemon:
         if name.startswith("."):
             return False
         blocked_suffixes = (".pending.json", ".approval.json", ".tmp.json", ".partial.json")
-        if name.endswith(blocked_suffixes):
-            return False
-        return True
+        return not name.endswith(blocked_suffixes)
 
     def _load_job_payload_with_retry(self, job_path: Path) -> dict[str, Any]:
         last_error: Exception | None = None
@@ -252,7 +270,13 @@ class MissionQueueDaemon:
                 if not isinstance(payload, dict):
                     raise ValueError("job payload must be a JSON object")
                 if attempt > 1:
-                    log({"event": "queue_job_parse_stabilized", "attempt": attempt, "path": str(job_path)})
+                    log(
+                        {
+                            "event": "queue_job_parse_stabilized",
+                            "attempt": attempt,
+                            "path": str(job_path),
+                        }
+                    )
                 return payload
             except json.JSONDecodeError as exc:
                 last_error = exc
@@ -294,7 +318,9 @@ class MissionQueueDaemon:
     def _iter_approval_artifacts(self) -> list[Path]:
         if not self.approvals.exists():
             return []
-        return sorted(self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        return sorted(
+            self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
 
     def _read_approval_artifact(self, artifact: Path) -> dict[str, Any]:
         try:
@@ -336,7 +362,9 @@ class MissionQueueDaemon:
             )
         return out
 
-    def recent_failed_jobs_snapshot(self, *, limit: int = 10, audit_tail: int = 200) -> list[dict[str, Any]]:
+    def recent_failed_jobs_snapshot(
+        self, *, limit: int = 10, audit_tail: int = 200
+    ) -> list[dict[str, Any]]:
         if not self.failed.exists():
             return []
 
@@ -350,9 +378,13 @@ class MissionQueueDaemon:
             error_by_job[job] = str(event.get("error") or "")
 
         files = sorted(self.failed.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-        return [{"job": item.name, "error": error_by_job.get(item.name, "")} for item in files[:limit]]
+        return [
+            {"job": item.name, "error": error_by_job.get(item.name, "")} for item in files[:limit]
+        ]
 
-    def status_snapshot(self, *, approvals_limit: int = 10, failed_limit: int = 10) -> dict[str, Any]:
+    def status_snapshot(
+        self, *, approvals_limit: int = 10, failed_limit: int = 10
+    ) -> dict[str, Any]:
         return {
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
@@ -384,7 +416,14 @@ class MissionQueueDaemon:
             return False
 
         kind = "mission_id" if payload.get("mission_id") else "goal"
-        log({"event": "queue_job_started", "kind": kind, "mission": payload.get("mission_id"), "goal": payload.get("goal")})
+        log(
+            {
+                "event": "queue_job_started",
+                "kind": kind,
+                "mission": payload.get("mission_id"),
+                "goal": payload.get("goal"),
+            }
+        )
         rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
         if rr.data.get("status") == "pending_approval":
             moved = self._move_job(job_path, self.pending)
@@ -402,7 +441,13 @@ class MissionQueueDaemon:
         if not rr.ok:
             moved = self._move_job(job_path, self.failed)
             self.stats.failed += 1
-            log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
+            log(
+                {
+                    "event": "queue_job_failed",
+                    "job": str(moved),
+                    "error": rr.error or "mission failed",
+                }
+            )
             return False
 
         moved = self._move_job(job_path, self.done)
@@ -456,15 +501,30 @@ class MissionQueueDaemon:
                 steps=[],
             )
             self.mission_runner._append_mission_log(denied_mission, [], status="denied")
-            log({"event": "mission_denied", "mission": meta.get("mission", {}).get("id"), "reason": "approval denied from inbox"})
-            log({"event": "queue_job_failed", "job": str(moved), "error": "Denied in approval inbox"})
+            log(
+                {
+                    "event": "mission_denied",
+                    "mission": meta.get("mission", {}).get("id"),
+                    "reason": "approval denied from inbox",
+                }
+            )
+            log(
+                {
+                    "event": "queue_job_failed",
+                    "job": str(moved),
+                    "error": "Denied in approval inbox",
+                }
+            )
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
             return True
 
         payload = meta.get("payload", {})
         mission_data = meta.get("mission", {})
-        steps = [MissionStep(skill_id=item["skill_id"], args=item.get("args", {})) for item in mission_data.get("steps", [])]
+        steps = [
+            MissionStep(skill_id=item["skill_id"], args=item.get("args", {}))
+            for item in mission_data.get("steps", [])
+        ]
         mission = MissionTemplate(
             id=mission_data.get("id", payload.get("mission_id", "queue_mission")),
             title=mission_data.get("title", "Queued Mission"),
@@ -474,7 +534,9 @@ class MissionQueueDaemon:
         )
         self.current_job_ref = str(job)
         resume_step = int(meta.get("resume_step", 1) or 1)
-        resume_skill = meta.get("mission", {}).get("steps", [{}])[max(resume_step - 1, 0)].get("skill_id", "")
+        resume_skill = (
+            meta.get("mission", {}).get("steps", [{}])[max(resume_step - 1, 0)].get("skill_id", "")
+        )
         self._approved_steps.add((str(job), resume_step, resume_skill))
         rr = self.mission_runner.run(
             mission,
@@ -483,12 +545,25 @@ class MissionQueueDaemon:
         )
         if rr.data.get("status") == "pending_approval":
             self._write_pending_artifacts(job, payload=payload, mission=mission, run_data=rr.data)
-            log({"event": "queue_job_pending_approval", "job": str(job), "step": rr.data.get("step"), "reason": rr.data.get("reason")})
+            log(
+                {
+                    "event": "queue_job_pending_approval",
+                    "job": str(job),
+                    "step": rr.data.get("step"),
+                    "reason": rr.data.get("reason"),
+                }
+            )
             return False
         if not rr.ok:
             moved = self._move_job(job, self.failed)
             self.stats.failed += 1
-            log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
+            log(
+                {
+                    "event": "queue_job_failed",
+                    "job": str(moved),
+                    "error": rr.error or "mission failed",
+                }
+            )
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
             return False
@@ -513,8 +588,17 @@ class MissionQueueDaemon:
     def run(self, once: bool = False) -> None:
         self.ensure_dirs()
         if self.auto_approve_ask and not self.dev_mode:
-            log({"event": "queue_auto_approve_disabled", "reason": "VOXERA_DEV_MODE is not enabled"})
-        log({"event": "queue_daemon_start", "queue": str(self.inbox), "once": once, "auto_approve_ask": self.auto_approve_ask})
+            log(
+                {"event": "queue_auto_approve_disabled", "reason": "VOXERA_DEV_MODE is not enabled"}
+            )
+        log(
+            {
+                "event": "queue_daemon_start",
+                "queue": str(self.inbox),
+                "once": once,
+                "auto_approve_ask": self.auto_approve_ask,
+            }
+        )
         if once:
             count = self.process_pending_once()
             log({"event": "queue_daemon_stop", "reason": "once", "processed": count})

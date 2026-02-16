@@ -1,24 +1,28 @@
-from __future__ import annotations
-
 """Gemini adapter scaffold.
 
 Wire this to Google Gemini API when ready.
 """
 
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
+
+from typing import Any
+
 from .base import BrainResponse, ToolSpec
 
+
 class GeminiBrain:
-    def __init__(self, model: str, api_key_ref: Optional[str] = None):
+    def __init__(self, model: str, api_key_ref: str | None = None):
         self.model = model
         self.api_key_ref = api_key_ref
 
-    async def generate(self, messages: List[Dict[str, str]], tools: Optional[List[ToolSpec]] = None) -> BrainResponse:
+    async def generate(
+        self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
+    ) -> BrainResponse:
         raise NotImplementedError(
             "Gemini adapter is scaffolded. Implement generate() in src/voxera/brain/gemini.py."
         )
 
-    async def capability_test(self) -> Dict[str, Any]:
+    async def capability_test(self) -> dict[str, Any]:
         return {
             "provider": "gemini",
             "model": self.model,

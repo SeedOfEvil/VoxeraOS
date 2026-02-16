@@ -69,7 +69,11 @@ def test_simulate_canonicalizes_write_text_aliases():
     runner = SkillRunner(reg)
     manifest = reg.get("files.write_text")
 
-    sim = runner.simulate(manifest, args={"path": "~/VoxeraOS/notes/test.txt", "content": "hello"}, policy=PolicyApprovals())
+    sim = runner.simulate(
+        manifest,
+        args={"path": "~/VoxeraOS/notes/test.txt", "content": "hello"},
+        policy=PolicyApprovals(),
+    )
     assert sim.steps[0].args["text"] == "hello"
 
 

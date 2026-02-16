@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
-from rich.console import Console
-from rich.prompt import Prompt, Confirm
-from rich.panel import Panel
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
+
+from .config import capabilities_report_path, save_config, save_policy
 from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig
-from .config import save_config, save_policy, capabilities_report_path
-from .secrets import set_secret
 from .paths import ensure_dirs
+from .secrets import set_secret
 
 console = Console()
 
@@ -24,7 +25,11 @@ def _pick_brain_type() -> str:
 
 
 def _cloud_provider() -> str:
-    return Prompt.ask("Cloud provider adapter", choices=["gemini", "openai_compat", "openrouter"], default="openrouter")
+    return Prompt.ask(
+        "Cloud provider adapter",
+        choices=["gemini", "openai_compat", "openrouter"],
+        default="openrouter",
+    )
 
 
 def _local_provider() -> str:
@@ -46,7 +51,12 @@ def _policy_defaults() -> PolicyApprovals:
 
 
 def _configure_openrouter_brains(cfg: AppConfig, api_key_ref: str) -> None:
-    console.print(Panel("OpenRouter recommended setup: register app headers + multiple model tiers.", title="OpenRouter"))
+    console.print(
+        Panel(
+            "OpenRouter recommended setup: register app headers + multiple model tiers.",
+            title="OpenRouter",
+        )
+    )
     base_url = "https://openrouter.ai/api/v1"
     referer = Prompt.ask("HTTP-Referer header (your app URL)", default="https://localhost")
     title = Prompt.ask("X-Title header (your app name)", default="Voxera OS")
@@ -108,10 +118,14 @@ async def run_setup() -> AppConfig:
             set_secret(ref_name, api_key)
             cfg.brain["primary"] = BrainConfig(type=adapter, model=model, api_key_ref=ref_name)
 
-            if Confirm.ask("Configure a local fallback (OpenAI-compatible endpoint)?", default=True):
+            if Confirm.ask(
+                "Configure a local fallback (OpenAI-compatible endpoint)?", default=True
+            ):
                 base_url = Prompt.ask("Local base URL", default="http://localhost:11434/v1")
                 fb_model = Prompt.ask("Local model", default="llama3")
-                cfg.brain["fallback"] = BrainConfig(type="openai_compat", model=fb_model, base_url=base_url)
+                cfg.brain["fallback"] = BrainConfig(
+                    type="openai_compat", model=fb_model, base_url=base_url
+                )
 
     else:
         adapter = _local_provider()

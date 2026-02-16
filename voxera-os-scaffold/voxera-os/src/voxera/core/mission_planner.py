@@ -7,7 +7,6 @@ import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
 
 from ..audit import log
 from ..brain.gemini import GeminiBrain
@@ -32,19 +31,19 @@ class _BrainCandidate:
     brain: object
 
 
-def _expected_args_for_skill(registry: SkillRegistry, skill_id: str) -> List[str]:
+def _expected_args_for_skill(registry: SkillRegistry, skill_id: str) -> list[str]:
     """Return keyword-compatible argument names for the skill entrypoint."""
     manifest = registry.get(skill_id)
     fn = registry.load_entrypoint(manifest)
     sig = inspect.signature(fn)
-    names: List[str] = []
+    names: list[str] = []
     for p in sig.parameters.values():
         if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
             names.append(p.name)
     return names
 
 
-def _normalize_step_args(raw_args: object, expected_args: List[str]) -> dict:
+def _normalize_step_args(raw_args: object, expected_args: list[str]) -> dict:
     if not isinstance(raw_args, dict):
         return {}
 
@@ -70,10 +69,9 @@ def _normalize_step_args(raw_args: object, expected_args: List[str]) -> dict:
     return {}
 
 
-
 def _strip_matching_quotes(value: str) -> str:
     text = value.strip()
-    pairs = (("\"", "\""), ("'", "'"), ("“", "”"), ("‘", "’"))
+    pairs = (('"', '"'), ("'", "'"), ("“", "”"), ("‘", "’"))
     for start, end in pairs:
         if text.startswith(start) and text.endswith(end) and len(text) >= 2:
             return text[1:-1].strip()
@@ -161,14 +159,14 @@ def _create_brain(provider):
     raise MissionPlannerError(f"Unsupported brain provider for mission planning: {provider.type}")
 
 
-def _build_brain_candidates(cfg: AppConfig) -> List[_BrainCandidate]:
+def _build_brain_candidates(cfg: AppConfig) -> list[_BrainCandidate]:
     if not cfg.privacy.cloud_allowed:
         raise MissionPlannerError("Cloud planning is disabled by privacy.cloud_allowed=false")
 
     if not cfg.brain:
         raise MissionPlannerError("No brain provider is configured. Run 'voxera setup' first.")
 
-    ordered: List[Tuple[str, object]] = []
+    ordered: list[tuple[str, object]] = []
     for key in ("primary", "fast", "fallback"):
         provider = cfg.brain.get(key)
         if provider:
@@ -201,11 +199,7 @@ async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
         },
         {
             "role": "user",
-            "content": (
-                f"Goal: {goal}\n"
-                f"Skill catalog:\n{skills_block}\n"
-                "Return only JSON."
-            ),
+            "content": (f"Goal: {goal}\nSkill catalog:\n{skills_block}\nReturn only JSON."),
         },
     ]
 
@@ -294,7 +288,9 @@ async def plan_mission(
 
     if payload is None or planner_name is None:
         log({"event": "plan_failed", "plan_id": plan_id, "error": last_error or "unknown error"})
-        raise MissionPlannerError(f"Planner failed after fallbacks: {last_error or 'unknown error'}")
+        raise MissionPlannerError(
+            f"Planner failed after fallbacks: {last_error or 'unknown error'}"
+        )
 
     if not isinstance(payload, dict):
         log({"event": "plan_failed", "plan_id": plan_id, "error": "invalid JSON payload type"})
@@ -310,11 +306,13 @@ async def plan_mission(
     if not isinstance(steps_json, list) or not steps_json:
         raise MissionPlannerError("Planner returned no mission steps.")
     if len(steps_json) > _MAX_STEPS:
-        raise MissionPlannerError(f"Planner returned too many steps ({len(steps_json)} > {_MAX_STEPS}).")
+        raise MissionPlannerError(
+            f"Planner returned too many steps ({len(steps_json)} > {_MAX_STEPS})."
+        )
 
     skills = sorted(registry.discover().values(), key=lambda m: m.id)
     known_ids = {m.id for m in skills}
-    steps: List[MissionStep] = []
+    steps: list[MissionStep] = []
     for item in steps_json:
         if not isinstance(item, dict):
             raise MissionPlannerError("Planner returned an invalid step object.")

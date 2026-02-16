@@ -34,7 +34,18 @@ def test_plan_mission_from_cloud_json(monkeypatch):
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"title":"Quick prep","notes":"cloud test","steps":[{"skill_id":"system.status","args":{}}]}')})()],
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Quick prep","notes":"cloud test","steps":[{"skill_id":"system.status","args":{}}]}'
+                    ),
+                },
+            )()
+        ],
     )
 
     mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
@@ -59,7 +70,16 @@ def test_plan_mission_rejects_unknown_skill(monkeypatch):
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"steps":[{"skill_id":"system.missing","args":{}}]}')})()],
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain('{"steps":[{"skill_id":"system.missing","args":{}}]}'),
+                },
+            )()
+        ],
     )
 
     with pytest.raises(MissionPlannerError, match="unknown skill"):
@@ -81,7 +101,18 @@ def test_plan_mission_normalizes_single_arg_alias(monkeypatch):
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"title":"Work mode","steps":[{"skill_id":"system.open_app","args":{"app_name":"Firefox"}}]}')})()],
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Work mode","steps":[{"skill_id":"system.open_app","args":{"app_name":"Firefox"}}]}'
+                    ),
+                },
+            )()
+        ],
     )
 
     mission = asyncio.run(plan_mission("start work mode", cfg=cfg, registry=reg))
@@ -93,8 +124,12 @@ def test_plan_mission_normalizes_single_arg_alias(monkeypatch):
 def test_plan_mission_uses_fallback(monkeypatch):
     cfg = AppConfig(
         brain={
-            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
-            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+            "primary": BrainConfig(
+                type="openai_compat", model="primary", base_url="https://example.test/v1"
+            ),
+            "fast": BrainConfig(
+                type="openai_compat", model="fast", base_url="https://example.test/v1"
+            ),
         }
     )
     reg = SkillRegistry()
@@ -111,7 +146,14 @@ def test_plan_mission_uses_fallback(monkeypatch):
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
             type("C", (), {"name": "primary", "brain": _FailingBrain()})(),
-            type("C", (), {"name": "fast", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+            type(
+                "C",
+                (),
+                {
+                    "name": "fast",
+                    "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}'),
+                },
+            )(),
         ],
     )
 
@@ -128,8 +170,12 @@ class _SlowBrain:
 def test_plan_mission_timeout_falls_back(monkeypatch):
     cfg = AppConfig(
         brain={
-            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
-            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+            "primary": BrainConfig(
+                type="openai_compat", model="primary", base_url="https://example.test/v1"
+            ),
+            "fast": BrainConfig(
+                type="openai_compat", model="fast", base_url="https://example.test/v1"
+            ),
         }
     )
     reg = SkillRegistry()
@@ -140,7 +186,14 @@ def test_plan_mission_timeout_falls_back(monkeypatch):
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
             type("C", (), {"name": "primary", "brain": _SlowBrain()})(),
-            type("C", (), {"name": "fast", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+            type(
+                "C",
+                (),
+                {
+                    "name": "fast",
+                    "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}'),
+                },
+            )(),
         ],
     )
 
@@ -184,7 +237,9 @@ def test_plan_mission_rejects_payload_with_unknown_top_level_keys(monkeypatch):
 def test_plan_mission_emits_correlated_plan_telemetry(monkeypatch):
     cfg = AppConfig(
         brain={
-            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+            "primary": BrainConfig(
+                type="openai_compat", model="primary", base_url="https://example.test/v1"
+            ),
         }
     )
     reg = SkillRegistry()
@@ -194,11 +249,20 @@ def test_plan_mission_emits_correlated_plan_telemetry(monkeypatch):
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
-            type("C", (), {"name": "primary", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})()
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}'),
+                },
+            )()
         ],
     )
 
-    mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg, source="queue", job_ref="job-1"))
+    mission = asyncio.run(
+        plan_mission("check machine", cfg=cfg, registry=reg, source="queue", job_ref="job-1")
+    )
     assert mission.steps[0].skill_id == "system.status"
 
     selected = [e for e in events if e.get("event") == "planner_selected"]
@@ -217,8 +281,12 @@ def test_plan_mission_emits_correlated_plan_telemetry(monkeypatch):
 def test_plan_mission_emits_single_selected_per_attempt(monkeypatch):
     cfg = AppConfig(
         brain={
-            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
-            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+            "primary": BrainConfig(
+                type="openai_compat", model="primary", base_url="https://example.test/v1"
+            ),
+            "fast": BrainConfig(
+                type="openai_compat", model="fast", base_url="https://example.test/v1"
+            ),
         }
     )
     reg = SkillRegistry()
@@ -229,6 +297,7 @@ def test_plan_mission_emits_single_selected_per_attempt(monkeypatch):
         async def generate(self, messages, tools=None):
             class _Resp:
                 text = "not-json"
+
             return _Resp()
 
     monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
@@ -236,7 +305,14 @@ def test_plan_mission_emits_single_selected_per_attempt(monkeypatch):
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
             type("C", (), {"name": "primary", "brain": _FailingBrain()})(),
-            type("C", (), {"name": "fast", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+            type(
+                "C",
+                (),
+                {
+                    "name": "fast",
+                    "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}'),
+                },
+            )(),
         ],
     )
 
@@ -285,7 +361,6 @@ def test_plan_mission_keeps_write_text_body_alias(monkeypatch):
     assert mission.steps[0].args["text"] == "remember milk"
 
 
-
 def test_plan_mission_simple_write_fast_path_overwrite_default(monkeypatch):
     cfg = AppConfig(privacy={"cloud_allowed": False})
     reg = SkillRegistry()
@@ -293,12 +368,14 @@ def test_plan_mission_simple_write_fast_path_overwrite_default(monkeypatch):
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for simple write goals")),
+        lambda _cfg: (_ for _ in ()).throw(
+            AssertionError("LLM planner should not be called for simple write goals")
+        ),
     )
 
     mission = asyncio.run(
         plan_mission(
-            'Write a note to ~/VoxeraOS/notes/partial-ok.txt saying: partial recovered ok.',
+            "Write a note to ~/VoxeraOS/notes/partial-ok.txt saying: partial recovered ok.",
             cfg=cfg,
             registry=reg,
         )
@@ -319,12 +396,14 @@ def test_plan_mission_simple_write_fast_path_append(monkeypatch):
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for simple write goals")),
+        lambda _cfg: (_ for _ in ()).throw(
+            AssertionError("LLM planner should not be called for simple write goals")
+        ),
     )
 
     mission = asyncio.run(
         plan_mission(
-            'Create a file at ~/VoxeraOS/notes/log.txt with append this line (append mode).',
+            "Create a file at ~/VoxeraOS/notes/log.txt with append this line (append mode).",
             cfg=cfg,
             registry=reg,
         )
@@ -344,7 +423,9 @@ def test_plan_mission_simple_write_fast_path_handles_whitespace_newlines(monkeyp
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for simple write goals")),
+        lambda _cfg: (_ for _ in ()).throw(
+            AssertionError("LLM planner should not be called for simple write goals")
+        ),
     )
 
     goal = """
@@ -368,7 +449,9 @@ def test_plan_mission_simple_write_fast_path_never_adds_clipboard_steps(monkeypa
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for simple write goals")),
+        lambda _cfg: (_ for _ in ()).throw(
+            AssertionError("LLM planner should not be called for simple write goals")
+        ),
     )
 
     mission = asyncio.run(
@@ -382,4 +465,3 @@ def test_plan_mission_simple_write_fast_path_never_adds_clipboard_steps(monkeypa
     assert len(mission.steps) == 1
     assert all(step.skill_id != "clipboard.copy" for step in mission.steps)
     assert all(step.skill_id != "clipboard.paste" for step in mission.steps)
-

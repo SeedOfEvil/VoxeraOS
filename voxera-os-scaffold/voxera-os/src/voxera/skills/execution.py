@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
 import time
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping
+from typing import Any
 
 from ..models import AppConfig, RunResult, SkillManifest
 
@@ -73,12 +73,12 @@ def redact_value(key: str, value: str) -> str:
     return value
 
 
-def sanitize_env(env: Mapping[str, str]) -> Dict[str, str]:
+def sanitize_env(env: Mapping[str, str]) -> dict[str, str]:
     return {k: redact_value(k, v) for k, v in env.items()}
 
 
-def sanitize_command(command: Iterable[str]) -> List[str]:
-    redacted: List[str] = []
+def sanitize_command(command: Iterable[str]) -> list[str]:
+    redacted: list[str] = []
     for arg in command:
         if _looks_secret_value(arg):
             redacted.append("REDACTED")
@@ -107,7 +107,7 @@ class ExecutionRunner(ABC):
         self,
         *,
         manifest: SkillManifest,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         fn: Callable[..., Any],
         cfg: AppConfig,
         job_id: str,
@@ -122,7 +122,7 @@ class LocalRunner(ExecutionRunner):
         self,
         *,
         manifest: SkillManifest,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         fn: Callable[..., Any],
         cfg: AppConfig,
         job_id: str,
@@ -166,15 +166,21 @@ class PodmanSandboxRunner(SandboxRunner):
         self,
         *,
         manifest: SkillManifest,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         fn: Callable[..., Any],
         cfg: AppConfig,
         job_id: str,
     ) -> RunResult:
         self._assert_available()
         command = args.get("command")
-        if not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
-            return RunResult(ok=False, error="sandbox.exec requires command as a non-empty list of strings")
+        if (
+            not isinstance(command, list)
+            or not command
+            or not all(isinstance(x, str) for x in command)
+        ):
+            return RunResult(
+                ok=False, error="sandbox.exec requires command as a non-empty list of strings"
+            )
 
         timeout_s = int(args.get("timeout_s", 60))
         if timeout_s <= 0:
@@ -185,7 +191,9 @@ class PodmanSandboxRunner(SandboxRunner):
         except ValueError as exc:
             return RunResult(ok=False, error=str(exc))
         env_arg = args.get("env", {}) or {}
-        if not isinstance(env_arg, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env_arg.items()):
+        if not isinstance(env_arg, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in env_arg.items()
+        ):
             return RunResult(ok=False, error="env must be a dict of string keys and values")
 
         safe_env = {k: v for k, v in env_arg.items() if k in DEFAULT_ENV_ALLOWLIST}
@@ -198,7 +206,7 @@ class PodmanSandboxRunner(SandboxRunner):
 
         start_ts = time.time()
         volume = f"{paths.workspace_dir}:/work:rw,Z"
-        podman_cmd: List[str] = [
+        podman_cmd: list[str] = [
             "podman",
             "run",
             "--rm",
@@ -223,7 +231,9 @@ class PodmanSandboxRunner(SandboxRunner):
         for k, v in safe_env.items():
             podman_cmd.extend(["-e", f"{k}={v}"])
 
-        podman_cmd.extend(["--network", "bridge" if requested_network else "none", cfg.sandbox_image])
+        podman_cmd.extend(
+            ["--network", "bridge" if requested_network else "none", cfg.sandbox_image]
+        )
         podman_cmd.extend(command)
 
         command_path.write_text(" ".join(sanitize_command(podman_cmd)), encoding="utf-8")
@@ -275,7 +285,13 @@ class PodmanSandboxRunner(SandboxRunner):
         return RunResult(
             ok=(exit_code == 0 and not timed_out),
             output=stdout.strip(),
-            error=None if exit_code == 0 and not timed_out else ("Sandbox command timed out" if timed_out else stderr.strip() or f"Sandbox command failed with exit code {exit_code}"),
+            error=None
+            if exit_code == 0 and not timed_out
+            else (
+                "Sandbox command timed out"
+                if timed_out
+                else stderr.strip() or f"Sandbox command failed with exit code {exit_code}"
+            ),
             data={
                 "runner": self.runner_name,
                 "job_id": job_id,

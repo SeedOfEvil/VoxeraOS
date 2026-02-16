@@ -3,15 +3,18 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
-from typing import Optional
+
 import keyring
+
 from .paths import config_dir, ensure_dirs
 
 FALLBACK_SECRETS_FILE = "secrets.env"
 
+
 def _fallback_path() -> Path:
     ensure_dirs()
     return config_dir() / FALLBACK_SECRETS_FILE
+
 
 def set_secret(ref: str, value: str) -> str:
     """Store secret in keyring if possible; otherwise fallback to a 0600 file."""
@@ -32,7 +35,8 @@ def set_secret(ref: str, value: str) -> str:
         os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)  # 0600
         return f"file:{ref}"
 
-def get_secret(ref: str) -> Optional[str]:
+
+def get_secret(ref: str) -> str | None:
     try:
         v = keyring.get_password("voxera", ref)
         if v:

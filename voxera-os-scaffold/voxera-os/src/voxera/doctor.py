@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+
 from rich.console import Console
 from rich.table import Table
-from .config import load_config, capabilities_report_path
-from .brain.openai_compat import OpenAICompatBrain
+
 from .brain.gemini import GeminiBrain
+from .brain.openai_compat import OpenAICompatBrain
+from .config import capabilities_report_path, load_config
 
 console = Console()
+
 
 async def run_doctor() -> dict:
     cfg = load_config()
@@ -37,10 +40,13 @@ async def run_doctor() -> dict:
         "model": cfg.sandbox_image,
         "json_ok": shutil.which("podman") is not None,
         "latency_s": "",
-        "note": "rootless podman available" if shutil.which("podman") else "podman missing: install rootless podman for sandbox skills",
+        "note": "rootless podman available"
+        if shutil.which("podman")
+        else "podman missing: install rootless podman for sandbox skills",
     }
     capabilities_report_path().write_text(json.dumps(results, indent=2), encoding="utf-8")
     return results
+
 
 def print_report(results: dict) -> None:
     if not results:
@@ -64,6 +70,7 @@ def print_report(results: dict) -> None:
             str(r.get("note") or r.get("error") or ""),
         )
     console.print(t)
+
 
 def doctor_sync():
     results = asyncio.run(run_doctor())

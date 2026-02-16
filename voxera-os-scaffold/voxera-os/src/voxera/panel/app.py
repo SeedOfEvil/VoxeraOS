@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from pathlib import Path
-from typing import List, Dict, Any
+
 from ..audit import tail
 from ..core.queue_daemon import MissionQueueDaemon
 
@@ -18,7 +19,8 @@ templates = Environment(
     autoescape=select_autoescape(["html", "xml"]),
 )
 
-APPROVALS: List[Dict[str, Any]] = []
+APPROVALS: list[dict[str, Any]] = []
+
 
 @app.get("/", response_class=HTMLResponse)
 def home():
@@ -40,6 +42,7 @@ def home():
         mission_log_tail=mission_log_tail,
     )
 
+
 @app.post("/approvals/add")
 async def add_approval(request: Request):
     form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
@@ -49,6 +52,7 @@ async def add_approval(request: Request):
         return RedirectResponse(url="/", status_code=303)
     APPROVALS.append({"title": title, "detail": detail})
     return RedirectResponse(url="/", status_code=303)
+
 
 @app.post("/approvals/clear")
 def clear_approvals():

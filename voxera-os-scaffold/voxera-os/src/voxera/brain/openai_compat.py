@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 import httpx
-from .base import BrainResponse, ToolSpec
+
 from ..secrets import get_secret
+from .base import BrainResponse, ToolSpec
+
 
 class OpenAICompatBrain:
     """Works with any OpenAI-compatible endpoint (local or cloud)."""
@@ -13,9 +16,9 @@ class OpenAICompatBrain:
         self,
         base_url: str,
         model: str,
-        api_key_ref: Optional[str] = None,
+        api_key_ref: str | None = None,
         timeout: float = 60.0,
-        extra_headers: Optional[Dict[str, str]] = None,
+        extra_headers: dict[str, str] | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -23,7 +26,7 @@ class OpenAICompatBrain:
         self.timeout = timeout
         self.extra_headers = extra_headers or {}
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         hdr = {"Content-Type": "application/json"}
         for k, v in self.extra_headers.items():
             if v:
@@ -37,17 +40,28 @@ class OpenAICompatBrain:
                 hdr["Authorization"] = f"Bearer {key}"
         return hdr
 
-    async def generate(self, messages: List[Dict[str, str]], tools: Optional[List[ToolSpec]] = None) -> BrainResponse:
-        payload: Dict[str, Any] = {"model": self.model, "messages": messages}
+    async def generate(
+        self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
+    ) -> BrainResponse:
+        payload: dict[str, Any] = {"model": self.model, "messages": messages}
         if tools:
             payload["tools"] = [
-                {"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.schema}}
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.schema,
+                    },
+                }
                 for t in tools
             ]
             payload["tool_choice"] = "auto"
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.post(f"{self.base_url}/chat/completions", headers=self._headers(), json=payload)
+            r = await client.post(
+                f"{self.base_url}/chat/completions", headers=self._headers(), json=payload
+            )
             r.raise_for_status()
             data = r.json()
 
@@ -56,12 +70,16 @@ class OpenAICompatBrain:
         tool_calls = choice.get("tool_calls") or []
         return BrainResponse(text=text, tool_calls=tool_calls)
 
-    async def capability_test(self) -> Dict[str, Any]:
+    async def capability_test(self) -> dict[str, Any]:
         import time
+
         start = time.time()
         messages = [
             {"role": "system", "content": "You are a strict JSON generator."},
-            {"role": "user", "content": "Return ONLY JSON with keys: ok (bool), model (string), steps (array of 3 strings)."},
+            {
+                "role": "user",
+                "content": "Return ONLY JSON with keys: ok (bool), model (string), steps (array of 3 strings).",
+            },
         ]
         resp = await self.generate(messages)
         elapsed = time.time() - start
