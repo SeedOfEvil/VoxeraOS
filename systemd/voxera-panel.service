@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/VoxeraOS/voxera-os-scaffold/voxera-os
-ExecStart=%h/VoxeraOS/voxera-os-scaffold/voxera-os/.venv/bin/voxera panel --host 127.0.0.1 --port 8844
+WorkingDirectory=%h/VoxeraOS
+ExecStart=%h/VoxeraOS/.venv/bin/voxera panel --host 127.0.0.1 --port 8844
 Restart=on-failure
 RestartSec=2
 
