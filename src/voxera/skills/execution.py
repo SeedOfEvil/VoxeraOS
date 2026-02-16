@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import time
 import uuid
@@ -173,7 +174,14 @@ class PodmanSandboxRunner(SandboxRunner):
     ) -> RunResult:
         self._assert_available()
         command = args.get("command")
-        if not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
+        shell_command: str | None = None
+        if isinstance(command, str):
+            shell_command = command.strip()
+            if not shell_command:
+                return RunResult(ok=False, error="sandbox.exec requires command as a non-empty list of strings")
+            shell_binary = "bash" if shutil.which("bash") is not None else "sh"
+            command = [shell_binary, "-lc", shell_command]
+        elif not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
             return RunResult(ok=False, error="sandbox.exec requires command as a non-empty list of strings")
 
         timeout_s = int(args.get("timeout_s", 60))
@@ -226,7 +234,14 @@ class PodmanSandboxRunner(SandboxRunner):
         podman_cmd.extend(["--network", "bridge" if requested_network else "none", cfg.sandbox_image])
         podman_cmd.extend(command)
 
-        command_path.write_text(" ".join(sanitize_command(podman_cmd)), encoding="utf-8")
+        sanitized_podman = " ".join(shlex.quote(arg) for arg in sanitize_command(podman_cmd))
+        if shell_command is None:
+            command_path.write_text(sanitized_podman, encoding="utf-8")
+        else:
+            command_path.write_text(
+                f"shell_command: {shell_command}\nargv: {sanitized_podman}",
+                encoding="utf-8",
+            )
 
         try:
             proc = subprocess.run(

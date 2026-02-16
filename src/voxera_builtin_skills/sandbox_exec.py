@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 
 def run(
-    command: List[str],
+    command: Union[str, List[str]],
     timeout_s: int = 60,
     env: Optional[Dict[str, str]] = None,
     network: bool = False,

@@ -1,6 +1,6 @@
 id: sandbox.exec
 name: Sandbox Execute
-description: Execute a command list in a rootless Podman sandbox.
+description: Execute a command (argv list or shell string) in a rootless Podman sandbox.
 entrypoint: voxera_builtin_skills.sandbox_exec:run
 capabilities: []
 risk: medium
