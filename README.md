@@ -148,6 +148,8 @@ This uses your configured `primary` brain provider and still enforces local poli
 For simple write goals matching patterns like `Write a note to <path> saying: <text>`, `Write <text> to <path>`, or `Create a note/file at <path> with <text>`, Voxera uses a deterministic fast-path before LLM planning and emits exactly one `files.write_text` step (default `mode=overwrite`, or `append` when explicitly requested).
 
 
+For non-explicit verification goals, planner-produced `sandbox.exec` steps that use GUI/host-dependent or sandbox-inappropriate tooling (e.g., `xdotool`, `wmctrl`, `xprop`, `gdbus`, `curl`, `wget`) are rewritten to safe `clipboard.copy` manual confirmation steps. Explicit shell-command intent from the user is preserved.
+
 
 ### 2d) Queue missions/goals for daemon execution
 ```bash
