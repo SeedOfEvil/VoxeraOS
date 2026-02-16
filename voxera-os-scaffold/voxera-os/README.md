@@ -83,6 +83,23 @@ voxera missions run system_check --dry-run
 voxera missions run work_mode
 ```
 
+### File-based missions
+In addition to built-in mission IDs, Voxera can load mission definitions from files:
+
+- `./missions/<mission_id>.json`
+- `./missions/<mission_id>.yaml` or `./missions/<mission_id>.yml`
+- `~/.config/voxera/missions/<mission_id>.json|yaml|yml`
+
+Resolution order is deterministic: built-ins first, then file-based missions.
+Built-in IDs are not overridden by file missions by default.
+
+Mission file schema:
+- `id` (optional; defaults to filename mission_id)
+- `title` (optional; defaults to mission_id)
+- `goal` (optional string)
+- `notes` (optional string or list of strings)
+- `steps` (required list): each step uses `skill_id` (or alias `skill`) and optional `args` object.
+
 ### 2c) Let cloud AI plan a mission from a goal
 ```bash
 voxera missions plan "prep a focused work session" --dry-run

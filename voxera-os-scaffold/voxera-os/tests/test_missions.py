@@ -1,3 +1,8 @@
+import json
+
+import pytest
+
+import voxera.core.missions as missions_module
 from voxera.core.missions import MissionRunner, get_mission, list_missions
 from voxera.models import PolicyApprovals
 from voxera.skills.registry import SkillRegistry
@@ -73,3 +78,84 @@ def test_mission_runner_appends_unredacted_log_details(tmp_path):
     content = log_path.read_text(encoding="utf-8")
     assert "details:" in content
     assert "system.status" in content
+
+
+def test_get_mission_loads_file_based_json_mission(tmp_path, monkeypatch):
+    mission_dir = tmp_path / "missions"
+    mission_dir.mkdir(parents=True)
+    mission_path = mission_dir / "custom_mission.json"
+    mission_path.write_text(
+        json.dumps(
+            {
+                "title": "Custom Mission",
+                "goal": "Run system status via file mission",
+                "notes": ["line one", "line two"],
+                "steps": [{"skill_id": "system.status", "args": {}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(missions_module, "_mission_search_dirs", lambda: [mission_dir])
+
+    mission = get_mission("custom_mission")
+    assert mission.id == "custom_mission"
+    assert mission.title == "Custom Mission"
+    assert mission.notes == "line one\nline two"
+    assert mission.steps[0].skill_id == "system.status"
+
+
+def test_get_mission_prefers_hardcoded_template_over_file(tmp_path, monkeypatch):
+    mission_dir = tmp_path / "missions"
+    mission_dir.mkdir(parents=True)
+    (mission_dir / "system_check.json").write_text(
+        json.dumps(
+            {
+                "title": "Fake",
+                "goal": "Should not override built-in",
+                "steps": [{"skill_id": "sandbox.exec", "args": {"command": ["bash", "-lc", "echo nope"]}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(missions_module, "_mission_search_dirs", lambda: [mission_dir])
+
+    mission = get_mission("system_check")
+    assert mission.title == "System Check"
+    assert mission.steps[0].skill_id == "system.status"
+
+
+def test_list_missions_stable_order_hardcoded_then_file(tmp_path, monkeypatch):
+    mission_dir = tmp_path / "missions"
+    mission_dir.mkdir(parents=True)
+    (mission_dir / "zeta.json").write_text(
+        json.dumps({"steps": [{"skill_id": "system.status", "args": {}}]}),
+        encoding="utf-8",
+    )
+    (mission_dir / "alpha.json").write_text(
+        json.dumps({"steps": [{"skill": "system.status", "args": {}}]}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(missions_module, "_mission_search_dirs", lambda: [mission_dir])
+
+    mission_ids = [mission.id for mission in list_missions()]
+    hardcoded_prefix = list(missions_module.MISSION_TEMPLATES.keys())
+    assert mission_ids[: len(hardcoded_prefix)] == hardcoded_prefix
+    assert mission_ids[-2:] == ["alpha", "zeta"]
+
+
+def test_get_mission_rejects_invalid_file_with_path(tmp_path, monkeypatch):
+    mission_dir = tmp_path / "missions"
+    mission_dir.mkdir(parents=True)
+    invalid_path = mission_dir / "bad.json"
+    invalid_path.write_text(
+        json.dumps({"steps": [{"args": {}}]}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(missions_module, "_mission_search_dirs", lambda: [mission_dir])
+
+    with pytest.raises(ValueError, match=r"Invalid mission file .*bad\.json: step 1 missing non-empty skill_id"):
+        get_mission("bad")

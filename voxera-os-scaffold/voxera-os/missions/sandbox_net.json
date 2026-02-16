@@ -1,0 +1,15 @@
+{
+  "id": "sandbox_net",
+  "title": "Sandbox Network Test",
+  "goal": "Run sandbox command with network enabled to exercise approval flow.",
+  "notes": "This mission requests network=true and should require approval under default policy.",
+  "steps": [
+    {
+      "skill_id": "sandbox.exec",
+      "args": {
+        "network": true,
+        "command": ["bash", "-lc", "echo net-test; wget -qO- https://example.com | head -n 1 || true"]
+      }
+    }
+  ]
+}

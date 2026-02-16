@@ -1,0 +1,14 @@
+{
+  "id": "sandbox_smoke",
+  "title": "Sandbox Smoke",
+  "goal": "Run a basic sandbox execution smoke test with network disabled.",
+  "notes": "Validates command execution and writable /work artifacts.",
+  "steps": [
+    {
+      "skill_id": "sandbox.exec",
+      "args": {
+        "command": ["bash", "-lc", "echo hi; touch /work/ok; ls -la /work"]
+      }
+    }
+  ]
+}
