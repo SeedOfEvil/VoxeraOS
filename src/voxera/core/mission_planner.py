@@ -94,6 +94,33 @@ def _is_safe_notes_path(raw_path: str) -> bool:
     return resolved == allowed or allowed in resolved.parents
 
 
+
+
+def _parse_planner_json(raw_text: str) -> dict:
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError:
+        pass
+
+    stripped = raw_text.strip()
+    fence_pattern = re.compile(r"```(?:\s*(?P<lang>[A-Za-z0-9_+-]+))?\s*\n(?P<body>.*?)\n```", re.DOTALL)
+
+    for match in fence_pattern.finditer(stripped):
+        lang = (match.group("lang") or "").strip().lower()
+        if lang and lang != "json":
+            continue
+        body = match.group("body").strip()
+        if not body:
+            continue
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+
+    raise MissionPlannerError(f"Planner returned non-JSON output: {stripped[:200]}")
+
 def _extract_simple_write_args(goal: str) -> dict[str, str] | None:
     text = goal.strip()
     if not text:
@@ -213,12 +240,9 @@ async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
         resp = await asyncio.wait_for(brain.generate(messages), timeout=_PLANNER_TIMEOUT_SECONDS)
     except asyncio.TimeoutError as exc:
         raise MissionPlannerError(f"Planner timed out after {_PLANNER_TIMEOUT_SECONDS}s") from exc
-    raw = resp.text.strip()
+    raw = resp.text
 
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise MissionPlannerError(f"Planner returned non-JSON output: {raw[:200]}") from exc
+    return _parse_planner_json(raw)
 
 
 async def plan_mission(

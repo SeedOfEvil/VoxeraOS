@@ -2,9 +2,59 @@ import asyncio
 
 import pytest
 
-from voxera.core.mission_planner import MissionPlannerError, plan_mission
+from voxera.core.mission_planner import MissionPlannerError, _parse_planner_json, plan_mission
 from voxera.models import AppConfig, BrainConfig
 from voxera.skills.registry import SkillRegistry
+
+
+def test_parse_planner_json_accepts_raw_json():
+    parsed = _parse_planner_json('{"steps":[{"skill_id":"system.status","args":{}}]}')
+
+    assert parsed["steps"][0]["skill_id"] == "system.status"
+
+
+def test_parse_planner_json_accepts_fenced_json_block():
+    parsed = _parse_planner_json("""```json
+{"steps":[{"skill_id":"system.status","args":{}}]}
+```""")
+
+    assert parsed["steps"][0]["skill_id"] == "system.status"
+
+
+def test_parse_planner_json_accepts_fenced_block_without_language():
+    parsed = _parse_planner_json("""```
+{"steps":[{"skill_id":"system.status","args":{}}]}
+```""")
+
+    assert parsed["steps"][0]["skill_id"] == "system.status"
+
+
+def test_parse_planner_json_accepts_commentary_with_fenced_json_block():
+    parsed = _parse_planner_json("""I will now provide the mission plan.
+
+```json
+{"steps":[{"skill_id":"system.status","args":{}}]}
+```
+
+Let me know if you want alternatives.
+""")
+
+    assert parsed["steps"][0]["skill_id"] == "system.status"
+
+
+def test_parse_planner_json_prefers_first_parseable_fenced_block_when_multiple():
+    parsed = _parse_planner_json("""before
+```json
+not valid
+```
+between
+```json
+{"steps":[{"skill_id":"system.status","args":{}}]}
+```
+after
+""")
+
+    assert parsed["steps"][0]["skill_id"] == "system.status"
 
 
 class _FakeBrain:
