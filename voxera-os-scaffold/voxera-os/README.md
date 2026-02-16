@@ -76,6 +76,46 @@ voxera run system.status
 voxera run system.open_app --arg name=firefox --dry-run
 ```
 
+### First-time queue + mission setup (required folders)
+Preferred one-time bootstrap command:
+```bash
+voxera queue init
+```
+This creates (mkdir -p only; never deletes):
+- Queue root: `~/VoxeraOS/notes/queue`
+- `~/VoxeraOS/notes/queue/pending/`
+- `~/VoxeraOS/notes/queue/pending/approvals/`
+- `~/VoxeraOS/notes/queue/done/`
+- `~/VoxeraOS/notes/queue/failed/`
+
+Equivalent manual command:
+```bash
+mkdir -p ~/VoxeraOS/notes/queue/{pending/approvals,done,failed}
+```
+
+Start/restart daemon service:
+```bash
+systemctl --user restart voxera-daemon.service
+# or first-time enable/start:
+systemctl --user enable --now voxera-daemon.service
+```
+
+Submit a queue job file:
+```bash
+cat > ~/VoxeraOS/notes/queue/job-1.json <<'JSON'
+{"version":"1","goal":"run a quick system check","mission_id":"system_check"}
+JSON
+```
+
+View status and resolve approvals:
+```bash
+voxera queue status
+voxera queue approvals list
+voxera queue approvals approve <job_id_or_filename>
+voxera queue approvals deny <job_id_or_filename>
+```
+
+
 ### 2b) Try built-in missions (agent-style multi-step flow)
 ```bash
 voxera missions list
@@ -84,13 +124,11 @@ voxera missions run work_mode
 ```
 
 ### File-based missions
-In addition to built-in mission IDs, Voxera can load mission definitions from files:
+Mission resolution order is deterministic:
+1. Built-in mission IDs (`MISSION_TEMPLATES`, hardcoded)
+2. Repo mission files: `./missions/<mission_id>.json|yaml|yml`
+3. User mission files: `~/.config/voxera/missions/<mission_id>.json|yaml|yml`
 
-- `./missions/<mission_id>.json`
-- `./missions/<mission_id>.yaml` or `./missions/<mission_id>.yml`
-- `~/.config/voxera/missions/<mission_id>.json|yaml|yml`
-
-Resolution order is deterministic: built-ins first, then file-based missions.
 Built-in IDs are not overridden by file missions by default.
 
 Mission file schema:
@@ -159,6 +197,37 @@ mv "$tmp_path" "$final_path"
 ```
 
 The daemon only processes ready `*.json` job files (ignoring dotfiles, `*.tmp`, and `*.partial` artifacts) and performs brief JSON parse retries to tolerate short partial-write windows before failing a truly invalid job.
+
+### Testing sandbox + approvals via queue
+1) Submit a network-off sandbox mission (`sandbox_smoke`) and process once:
+```bash
+cat > ~/VoxeraOS/notes/queue/sandbox-smoke.json <<'JSON'
+{"version":"1","goal":"sandbox smoke","mission_id":"sandbox_smoke"}
+JSON
+voxera daemon --once
+```
+Expected: job moves to `done/`.
+
+2) Submit a network-enabled sandbox mission (`sandbox_net`), then approve:
+```bash
+cat > ~/VoxeraOS/notes/queue/sandbox-net.json <<'JSON'
+{"version":"1","goal":"sandbox net","mission_id":"sandbox_net"}
+JSON
+voxera daemon --once
+voxera queue approvals list
+voxera queue approvals approve sandbox-net
+```
+Expected: first run moves to `pending/` + writes `pending/approvals/*.approval.json`; after approval it moves to `done/`.
+
+
+### Queue/artifact directory layout
+- Queue root: `~/VoxeraOS/notes/queue`
+  - `pending/`
+  - `pending/approvals/`
+  - `done/`
+  - `failed/`
+- Sandbox artifacts: `~/.voxera/artifacts/<job_id>/`
+- Sandbox workspace: `~/.voxera/workspace/<job_id>/`
 
 ### 2e) Run end-to-end smoke checks
 ```bash

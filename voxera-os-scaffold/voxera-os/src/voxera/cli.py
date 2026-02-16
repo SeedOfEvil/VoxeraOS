@@ -283,6 +283,21 @@ def queue_approvals_list(
     console.print(table)
 
 
+@queue_app.command("init")
+def queue_init(
+    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+):
+    """Create queue directories (safe mkdir -p; does not delete data)."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon.ensure_dirs()
+    console.print(f"Initialized queue directories under: {daemon.queue_root}")
+    console.print(f"- inbox/: {daemon.inbox}")
+    console.print(f"- pending/: {daemon.pending}")
+    console.print(f"- pending/approvals/: {daemon.approvals}")
+    console.print(f"- done/: {daemon.done}")
+    console.print(f"- failed/: {daemon.failed}")
+
+
 @queue_app.command("status")
 def queue_status(
     queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
