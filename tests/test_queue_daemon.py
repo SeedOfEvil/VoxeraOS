@@ -200,6 +200,34 @@ def test_queue_daemon_dev_auto_approve_constraints(tmp_path, monkeypatch):
     )
 
 
+def test_queue_goal_job_rewrites_default_write_steps_and_completes(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-e2e-ask.json"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job.write_text(json.dumps({"goal": "check machine health"}), encoding="utf-8")
+
+    async def _fake_generate(_messages, tools=None):
+        class _Resp:
+            text = '{"title":"E2E Ask","steps":[{"skill_id":"system.status","args":{}},{"skill_id":"files.write_text","args":{"path":"/home/seedofevil/VoxeraOS/notes/result.txt","text":"Done"}}]}'
+
+        return _Resp()
+
+    fake_brain = type("B", (), {"generate": _fake_generate})()
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [type("C", (), {"name": "primary", "brain": fake_brain})()],
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+
+    daemon.process_pending_once()
+
+    assert (queue_dir / "done" / "job-e2e-ask.json").exists()
+    assert not (queue_dir / "failed" / "job-e2e-ask.json").exists()
+
+
 def test_queue_daemon_watchdog_mode_processes_existing_backlog(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "queue"
