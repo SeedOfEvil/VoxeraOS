@@ -1,0 +1,18 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+notes/
+src/*.egg-info/
+
+# local dev
+.venv/
+notes/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
