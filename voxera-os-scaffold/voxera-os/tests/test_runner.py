@@ -1,3 +1,4 @@
+import voxera.skills.runner as runner_module
 from voxera.models import PolicyApprovals, SkillManifest
 from voxera.skills.registry import SkillRegistry
 from voxera.skills.runner import SkillRunner
@@ -71,3 +72,28 @@ def test_simulate_canonicalizes_write_text_aliases():
     sim = runner.simulate(manifest, args={"path": "~/VoxeraOS/notes/test.txt", "content": "hello"}, policy=PolicyApprovals())
     assert sim.steps[0].args["text"] == "hello"
 
+
+def test_run_redacts_sensitive_args_in_audit_log(monkeypatch):
+    reg = SkillRegistry()
+    manifest = _manifest(capabilities=[])
+    reg.load_entrypoint = lambda _mf: (lambda **_kwargs: "ok")
+    runner = SkillRunner(reg)
+
+    events = []
+    monkeypatch.setattr(runner_module, "log", lambda event: events.append(event))
+
+    rr = runner.run(
+        manifest,
+        args={
+            "command": ["curl", "-H", "Authorization: Bearer sk_live_123456789012345678901234"],
+            "env": {"API_KEY": "super-secret-value-1234567890"},
+            "note": "safe",
+        },
+        policy=PolicyApprovals(),
+    )
+
+    assert rr.ok is True
+    start_event = next(event for event in events if event.get("event") == "skill_start")
+    assert start_event["args"]["env"]["API_KEY"] == "REDACTED"
+    assert start_event["args"]["command"][2] == "REDACTED"
+    assert start_event["args"]["note"] == "safe"

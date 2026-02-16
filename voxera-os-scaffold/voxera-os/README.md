@@ -1,7 +1,7 @@
-# Voxera OS Alpha v0.1.2 — Voice-first AI Control Plane
+# Voxera OS Alpha v0.1.3 — Voice-first AI Control Plane
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is **Voxera OS Alpha v0.1.2**: it ships a typed first-run setup (`voxera setup`), cloud-planned missions,
+This repo is **Voxera OS Alpha v0.1.3**: it ships a typed first-run setup (`voxera setup`), cloud-planned missions,
 a queue daemon with approval inbox, queue status + panel insights, update tooling, systemd user services, and pluggable “brain” providers.
 
 **Names**
@@ -10,7 +10,7 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 - Wake word (planned): **“Hey Voxera”**
 - CLI: `voxera`
 
-## What works in Alpha v0.1.2
+## What works in Alpha v0.1.3
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
 - ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
@@ -76,12 +76,67 @@ voxera run system.status
 voxera run system.open_app --arg name=firefox --dry-run
 ```
 
+### First-time queue + mission setup (required folders)
+Preferred one-time bootstrap command:
+```bash
+voxera queue init
+```
+This creates (mkdir -p only; never deletes):
+- Queue root: `~/VoxeraOS/notes/queue`
+- `~/VoxeraOS/notes/queue/pending/`
+- `~/VoxeraOS/notes/queue/pending/approvals/`
+- `~/VoxeraOS/notes/queue/done/`
+- `~/VoxeraOS/notes/queue/failed/`
+
+Equivalent manual command:
+```bash
+mkdir -p ~/VoxeraOS/notes/queue/{pending/approvals,done,failed}
+```
+
+Start/restart daemon service:
+```bash
+systemctl --user restart voxera-daemon.service
+# or first-time enable/start:
+systemctl --user enable --now voxera-daemon.service
+```
+
+Submit a queue job file:
+```bash
+cat > ~/VoxeraOS/notes/queue/job-1.json <<'JSON'
+{"version":"1","goal":"run a quick system check","mission_id":"system_check"}
+JSON
+```
+
+View status and resolve approvals:
+```bash
+voxera queue status
+voxera queue approvals list
+voxera queue approvals approve <job_id_or_filename>
+voxera queue approvals deny <job_id_or_filename>
+```
+
+
 ### 2b) Try built-in missions (agent-style multi-step flow)
 ```bash
 voxera missions list
 voxera missions run system_check --dry-run
 voxera missions run work_mode
 ```
+
+### File-based missions
+Mission resolution order is deterministic:
+1. Built-in mission IDs (`MISSION_TEMPLATES`, hardcoded)
+2. Repo mission files: `./missions/<mission_id>.json|yaml|yml`
+3. User mission files: `~/.config/voxera/missions/<mission_id>.json|yaml|yml`
+
+Built-in IDs are not overridden by file missions by default.
+
+Mission file schema:
+- `id` (optional; defaults to filename mission_id)
+- `title` (optional; defaults to mission_id)
+- `goal` (optional string)
+- `notes` (optional string or list of strings)
+- `steps` (required list): each step uses `skill_id` (or alias `skill`) and optional `args` object.
 
 ### 2c) Let cloud AI plan a mission from a goal
 ```bash
@@ -142,6 +197,37 @@ mv "$tmp_path" "$final_path"
 ```
 
 The daemon only processes ready `*.json` job files (ignoring dotfiles, `*.tmp`, and `*.partial` artifacts) and performs brief JSON parse retries to tolerate short partial-write windows before failing a truly invalid job.
+
+### Testing sandbox + approvals via queue
+1) Submit a network-off sandbox mission (`sandbox_smoke`) and process once:
+```bash
+cat > ~/VoxeraOS/notes/queue/sandbox-smoke.json <<'JSON'
+{"version":"1","goal":"sandbox smoke","mission_id":"sandbox_smoke"}
+JSON
+voxera daemon --once
+```
+Expected: job moves to `done/`.
+
+2) Submit a network-enabled sandbox mission (`sandbox_net`), then approve:
+```bash
+cat > ~/VoxeraOS/notes/queue/sandbox-net.json <<'JSON'
+{"version":"1","goal":"sandbox net","mission_id":"sandbox_net"}
+JSON
+voxera daemon --once
+voxera queue approvals list
+voxera queue approvals approve sandbox-net
+```
+Expected: first run moves to `pending/` + writes `pending/approvals/*.approval.json`; after approval it moves to `done/`.
+
+
+### Queue/artifact directory layout
+- Queue root: `~/VoxeraOS/notes/queue`
+  - `pending/`
+  - `pending/approvals/`
+  - `done/`
+  - `failed/`
+- Sandbox artifacts: `~/.voxera/artifacts/<job_id>/`
+- Sandbox workspace: `~/.voxera/workspace/<job_id>/`
 
 ### 2e) Run end-to-end smoke checks
 ```bash
@@ -227,14 +313,45 @@ For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test c
 - Everything is audited (what/why/how to undo)
 - Skills declare permissions; policies decide “allow/ask/deny”
 
+
+## Sandbox execution (v0.1.3 MVP)
+
+### Install rootless Podman on Ubuntu 24.04
+```bash
+sudo apt update
+sudo apt install -y podman uidmap slirp4netns fuse-overlayfs
+podman info --debug | head
+```
+
+### Run sandbox.exec
+`sandbox.exec` always runs in the Podman backend and requires `command` as an array (list) of strings.
+
+Example (Python API):
+```python
+from voxera.models import AppConfig
+from voxera.skills.registry import SkillRegistry
+from voxera.skills.runner import SkillRunner
+
+reg = SkillRegistry(); reg.discover()
+runner = SkillRunner(reg, config=AppConfig())
+rr = runner.run(reg.get("sandbox.exec"), {"command": ["bash", "-lc", "echo hi; touch /work/ok"]}, AppConfig().policy)
+print(rr.ok, rr.data["artifacts_dir"])
+```
+
+### Security model
+- Default `--network=none` (network remains blocked unless explicitly requested and approved).
+- Read-only root filesystem (`--read-only`).
+- Only `~/.voxera/workspace/<job_id>/` is mounted writable to `/work`.
+- Artifacts are stored in `~/.voxera/artifacts/<job_id>/` (`stdout.txt`, `stderr.txt`, `runner.json`, `command.txt`).
+- `:Z` SELinux mount suffix is used for Podman volume labeling; this is compatible on non-SELinux systems as well.
+
 ## Roadmap
 - Voice stack (wake word + STT/TTS)
-- Container sandbox runner (Podman)
 - First-boot “installer-by-conversation” flow
 - Immutable base image (Silverblue-style) for atomic upgrades + rollback
 
 ---
-**Alpha v0.1.2** is meant to give you a working system + fast iteration loop while preserving safety gates.
+**Alpha v0.1.3** is meant to give you a working system + fast iteration loop while preserving safety gates.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 

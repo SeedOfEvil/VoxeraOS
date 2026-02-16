@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from rich.console import Console
 from rich.table import Table
 from .config import load_config, capabilities_report_path
@@ -30,6 +31,14 @@ async def run_doctor() -> dict:
                 results[name] = {"provider": bc.type, "error": "Unknown provider type"}
         except Exception as e:
             results[name] = {"provider": bc.type, "error": repr(e)}
+
+    results["sandbox.podman"] = {
+        "provider": "podman",
+        "model": cfg.sandbox_image,
+        "json_ok": shutil.which("podman") is not None,
+        "latency_s": "",
+        "note": "rootless podman available" if shutil.which("podman") else "podman missing: install rootless podman for sandbox skills",
+    }
     capabilities_report_path().write_text(json.dumps(results, indent=2), encoding="utf-8")
     return results
 

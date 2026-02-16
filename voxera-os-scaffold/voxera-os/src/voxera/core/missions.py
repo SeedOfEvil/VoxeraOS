@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from ..audit import log
 from ..models import PlanSimulation, PlanStep, RunResult
+from ..skills.registry import SkillRegistry
 
 
 @dataclass(frozen=True)
@@ -92,15 +97,129 @@ MISSION_TEMPLATES: Dict[str, MissionTemplate] = {
 }
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _mission_search_dirs() -> List[Path]:
+    return [
+        _repo_root() / "missions",
+        Path.home() / ".config" / "voxera" / "missions",
+    ]
+
+
+@lru_cache(maxsize=1)
+def _known_skill_ids() -> set[str]:
+    reg = SkillRegistry()
+    manifests = reg.discover()
+    return set(manifests.keys())
+
+
+def _parse_mission_file(path: Path, mission_id_hint: str) -> MissionTemplate:
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except Exception as exc:
+        raise ValueError(f"Invalid mission file {path}: unable to read ({exc})") from exc
+
+    try:
+        if path.suffix == ".json":
+            payload = json.loads(raw_text)
+        else:
+            payload = yaml.safe_load(raw_text)
+    except Exception as exc:
+        raise ValueError(f"Invalid mission file {path}: parse error ({exc})") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"Invalid mission file {path}: root must be an object")
+
+    mission_id = payload.get("id", mission_id_hint)
+    if not isinstance(mission_id, str) or not mission_id.strip():
+        raise ValueError(f"Invalid mission file {path}: id must be a non-empty string")
+
+    steps_raw = payload.get("steps")
+    if not isinstance(steps_raw, list) or not steps_raw:
+        raise ValueError(f"Invalid mission file {path}: steps must be a non-empty list")
+
+    known_skills = _known_skill_ids()
+    steps: List[MissionStep] = []
+    for idx, step_obj in enumerate(steps_raw, start=1):
+        if not isinstance(step_obj, dict):
+            raise ValueError(f"Invalid mission file {path}: step {idx} must be an object")
+
+        skill_id = step_obj.get("skill_id", step_obj.get("skill"))
+        if not isinstance(skill_id, str) or not skill_id.strip():
+            raise ValueError(f"Invalid mission file {path}: step {idx} missing non-empty skill_id")
+        if skill_id not in known_skills:
+            raise ValueError(f"Invalid mission file {path}: step {idx} unknown skill_id '{skill_id}'")
+
+        args = step_obj.get("args", {})
+        if not isinstance(args, dict):
+            raise ValueError(f"Invalid mission file {path}: step {idx} args must be an object")
+
+        steps.append(MissionStep(skill_id=skill_id, args=args))
+
+    title = payload.get("title", mission_id)
+    if not isinstance(title, str) or not title.strip():
+        raise ValueError(f"Invalid mission file {path}: title must be a non-empty string when provided")
+
+    goal = payload.get("goal", "")
+    if not isinstance(goal, str):
+        raise ValueError(f"Invalid mission file {path}: goal must be a string when provided")
+
+    notes_raw = payload.get("notes")
+    notes: str | None
+    if notes_raw is None:
+        notes = None
+    elif isinstance(notes_raw, str):
+        notes = notes_raw
+    elif isinstance(notes_raw, list) and all(isinstance(item, str) for item in notes_raw):
+        notes = "\n".join(notes_raw)
+    else:
+        raise ValueError(f"Invalid mission file {path}: notes must be a string or list of strings")
+
+    return MissionTemplate(id=mission_id, title=title, goal=goal, steps=steps, notes=notes)
+
+
+def _resolve_file_mission(mission_id: str) -> MissionTemplate | None:
+    exts = (".json", ".yaml", ".yml")
+    for base_dir in _mission_search_dirs():
+        for ext in exts:
+            candidate = base_dir / f"{mission_id}{ext}"
+            if candidate.exists() and candidate.is_file():
+                return _parse_mission_file(candidate, mission_id)
+    return None
+
+
+def _iter_file_missions() -> List[MissionTemplate]:
+    exts = {".json", ".yaml", ".yml"}
+    templates: Dict[str, MissionTemplate] = {}
+
+    for base_dir in _mission_search_dirs():
+        if not base_dir.exists() or not base_dir.is_dir():
+            continue
+        for path in sorted(base_dir.iterdir(), key=lambda p: (p.stem, p.suffix)):
+            if path.suffix not in exts or not path.is_file():
+                continue
+            mission = _parse_mission_file(path, path.stem)
+            if mission.id in MISSION_TEMPLATES or mission.id in templates:
+                continue
+            templates[mission.id] = mission
+
+    return [templates[key] for key in sorted(templates.keys())]
+
+
 def list_missions() -> List[MissionTemplate]:
-    return list(MISSION_TEMPLATES.values())
+    return list(MISSION_TEMPLATES.values()) + _iter_file_missions()
 
 
 def get_mission(mission_id: str) -> MissionTemplate:
     try:
         return MISSION_TEMPLATES[mission_id]
-    except KeyError as exc:
-        raise KeyError(f"Unknown mission: {mission_id}") from exc
+    except KeyError:
+        mission = _resolve_file_mission(mission_id)
+        if mission is not None:
+            return mission
+        raise KeyError(f"Unknown mission: {mission_id}") from None
 
 
 class MissionRunner:

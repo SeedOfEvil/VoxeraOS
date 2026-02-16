@@ -1,6 +1,6 @@
 # Roadmap
 
-## Alpha v0.1.2 (current)
+## Alpha v0.1.3 (current)
 - Setup wizard (TUI)
 - Provider abstraction (cloud/local)
 - Skill runner + policy gate

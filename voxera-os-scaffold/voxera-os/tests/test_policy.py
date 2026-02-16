@@ -12,3 +12,16 @@ def test_policy_deny():
     mf = SkillManifest(id="i", name="i", description="i", entrypoint="a:b", capabilities=["install.packages"], risk="medium")
     d = decide(mf, pol)
     assert d.decision == "deny"
+
+
+def test_policy_sandbox_network_request_requires_approval():
+    mf = SkillManifest(
+        id="sandbox.exec",
+        name="Sandbox",
+        description="x",
+        entrypoint="a:b",
+        exec_mode="sandbox",
+    )
+    d = decide(mf, PolicyApprovals(), args={"network": True})
+    assert d.decision == "ask"
+    assert "runs in SANDBOX" in d.reason
