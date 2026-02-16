@@ -7,9 +7,13 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: quality-gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   stage-a-pr-gates:
-    name: Stage A (PR) - staged gates
+    name: Stage A (PR) - changed files + full tests
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -21,7 +25,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: 'pip'
 
       - name: Install dependencies
@@ -29,71 +33,65 @@ jobs:
           python -m pip install -U pip
           pip install -e ".[dev]"
 
-      - name: Resolve changed Python files
+      - name: Determine changed Python files
         id: changed
         shell: bash
         run: |
           set -euo pipefail
-          base_ref="${{ github.base_ref }}"
-          git fetch origin "$base_ref" --depth=1
-          mapfile -t changed_py < <(git diff --name-only --diff-filter=AM "origin/${base_ref}"...HEAD -- '*.py')
-          files="${changed_py[*]:-}"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.sha }}"
+          mapfile -t changed_py < <(git diff --name-only --diff-filter=AM "$BASE_SHA" "$HEAD_SHA" -- '*.py')
+
+          printf '%s\n' "${changed_py[@]:-}" > changed_python_files.txt
+          if [ -s changed_python_files.txt ]; then
+            CHANGED_PY=$(paste -sd ' ' changed_python_files.txt)
+          else
+            CHANGED_PY=""
+          fi
+
           {
-            echo "files=$files"
-            echo "count=${#changed_py[@]}"
+            echo "changed_py=$CHANGED_PY"
+            echo "changed_count=${#changed_py[@]}"
           } >> "$GITHUB_OUTPUT"
 
+          echo "Changed Python files (${#changed_py[@]}):"
+          cat changed_python_files.txt || true
+
       - name: Ruff check (changed files only, blocking)
-        shell: bash
-        run: |
-          if [ -n "${{ steps.changed.outputs.files }}" ]; then
-            ruff check ${{ steps.changed.outputs.files }}
-          else
-            echo "No changed Python files; skipping changed-file ruff check."
-          fi
+        if: steps.changed.outputs.changed_py != ''
+        run: ruff check ${{ steps.changed.outputs.changed_py }}
 
-      - name: Pytest (full, blocking)
-        run: pytest
+      - name: Ruff format check (changed files only, blocking)
+        if: steps.changed.outputs.changed_py != ''
+        run: ruff format --check ${{ steps.changed.outputs.changed_py }}
 
-      - name: Mypy (changed files only, non-blocking report)
-        shell: bash
-        run: |
-          mkdir -p ci-reports
-          if [ -n "${{ steps.changed.outputs.files }}" ]; then
-            mypy ${{ steps.changed.outputs.files }} | tee ci-reports/mypy-stage-a.txt || true
-          else
-            echo "No changed Python files; skipping changed-file mypy." | tee ci-reports/mypy-stage-a.txt
-          fi
+      - name: Skip changed-file lint when no Python files changed
+        if: steps.changed.outputs.changed_py == ''
+        run: echo "No changed Python files; skipping changed-file ruff checks."
+
+      - name: Mypy (changed files only, non-blocking)
+        id: mypy_stage_a
+        if: steps.changed.outputs.changed_py != ''
+        continue-on-error: true
+        run: mypy ${{ steps.changed.outputs.changed_py }} | tee mypy-stage-a.txt
+
+      - name: Mypy skip note (no changed Python files)
+        if: steps.changed.outputs.changed_py == ''
+        run: echo "No changed Python files; skipping changed-file mypy." | tee mypy-stage-a.txt
 
       - name: Upload Stage A mypy report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mypy-stage-a-report
-          path: ci-reports/mypy-stage-a.txt
+          path: mypy-stage-a.txt
 
-      - name: Add Stage A summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "## Stage A quality gates"
-            echo "- Ruff (changed files): blocking"
-            echo "- Pytest (full): blocking"
-            echo "- Mypy (changed files): non-blocking (report only)"
-            echo ""
-            echo "### Changed Python files"
-            echo "- Count: ${{ steps.changed.outputs.count }}"
-            echo ""
-            echo "### Mypy output"
-            echo '```txt'
-            cat ci-reports/mypy-stage-a.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Pytest (full suite, blocking)
+        run: pytest -q
 
   stage-b-main-gates:
-    name: Stage B (main/push/manual) - full repository
-    if: github.event_name != 'pull_request'
+    name: Stage B (main push/manual) - full repository
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -102,7 +100,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: 'pip'
 
       - name: Install dependencies
@@ -110,39 +108,22 @@ jobs:
           python -m pip install -U pip
           pip install -e ".[dev]"
 
-      - name: Ruff check (full repository, blocking)
+      - name: Ruff check (full repo, blocking)
         run: ruff check .
 
-      - name: Pytest (full, blocking)
-        run: pytest
+      - name: Ruff format check (full repo, blocking)
+        run: ruff format --check .
 
-      - name: Mypy (full src, non-blocking report)
-        shell: bash
-        run: |
-          mkdir -p ci-reports
-          mypy src | tee ci-reports/mypy-stage-b.txt || true
+      - name: Mypy (src, non-blocking)
+        continue-on-error: true
+        run: mypy src | tee mypy-stage-b.txt
 
       - name: Upload Stage B mypy report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mypy-stage-b-report
-          path: ci-reports/mypy-stage-b.txt
+          path: mypy-stage-b.txt
 
-      - name: Add Stage B summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "## Stage B quality gates"
-            echo "- Ruff (full): blocking"
-            echo "- Pytest (full): blocking"
-            echo "- Mypy (src): non-blocking until baseline is zero; then flip to blocking"
-            echo ""
-            echo "### Mypy output"
-            echo '```txt'
-            cat ci-reports/mypy-stage-b.txt
-            echo '```'
-            echo ""
-            echo "Next milestone: reduce mypy baseline errors to zero, then flip mypy to blocking on PRs."
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Pytest (full suite, blocking)
+        run: pytest -q
