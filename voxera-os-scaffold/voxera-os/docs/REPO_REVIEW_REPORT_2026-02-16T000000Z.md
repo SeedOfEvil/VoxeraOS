@@ -126,8 +126,8 @@ This review used:
 
 1) **Enforce staged quality gates in CI (fastest low-risk path)**
 ```bash
-# Stage A (immediate): gate only changed files for ruff/mypy, full pytest.
-# Stage B (after cleanup PRs): gate whole-repo ruff + mypy.
+# Stage A (PRs): ruff on changed files (blocking), pytest (blocking), mypy on changed files (non-blocking, reports only).
+# Stage B (main/push/manual): full ruff (blocking), pytest (blocking), mypy src (non-blocking until baseline is addressed, then flip to blocking).
 ```
 
 2) **Mechanical lint cleanup PR (no behavior changes)**
@@ -155,6 +155,7 @@ mypy src
   - `ruff check .`
   - `mypy src`
   - `pytest`
+- Next milestone: reduce mypy baseline errors to zero, then flip mypy to blocking on PRs.
 
 ## P1 (short-term)
 4. **Document supported runtime matrices**
