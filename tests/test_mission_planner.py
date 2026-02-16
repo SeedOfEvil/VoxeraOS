@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -358,7 +359,7 @@ def test_plan_mission_rewrites_non_explicit_files_write_to_clipboard(monkeypatch
                 {
                     "name": "primary",
                     "brain": _FakeBrain(
-                        '{"title":"Check","steps":[{"skill_id":"system.status","args":{}},{"skill_id":"files.write_text","args":{"path":"/home/seedofevil/VoxeraOS/notes/result.txt","text":"Check complete"}}]}'
+                        '{"title":"Check","steps":[{"skill_id":"system.status","args":{}},{"skill_id":"files.write_text","args":{"path":"~/VoxeraOS/notes/result.txt","text":"Check complete"}}]}'
                     ),
                 },
             )()
@@ -406,6 +407,99 @@ def test_plan_mission_keeps_files_write_text_for_explicit_write_goal(monkeypatch
 
     assert mission.steps[0].skill_id == "files.write_text"
     assert mission.steps[0].args["text"] == "remember milk"
+
+
+
+
+def test_plan_mission_rewrites_non_explicit_sandbox_gui_or_network_exec_to_clipboard(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        json.dumps(
+                            {
+                                "title": "E2E Ask",
+                                "steps": [
+                                    {
+                                        "skill_id": "sandbox.exec",
+                                        "args": {
+                                            "command": [
+                                                "bash",
+                                                "-lc",
+                                                'title=$(xdotool getactivewindow getwindowname) && echo $title | grep "Example"',
+                                            ]
+                                        },
+                                    },
+                                    {
+                                        "skill_id": "sandbox.exec",
+                                        "args": {"command": ["bash", "-lc", "curl -I https://example.com"]},
+                                    },
+                                ],
+                            }
+                        )
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("check app title and smoke", cfg=cfg, registry=reg))
+
+    assert len(mission.steps) == 2
+    assert all(step.skill_id == "clipboard.copy" for step in mission.steps)
+    assert "Example" in mission.steps[0].args["text"]
+
+
+def test_plan_mission_keeps_explicit_shell_intent_for_sandbox_exec(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Explicit","steps":[{"skill_id":"sandbox.exec","args":{"command":["bash","-lc","curl -I https://example.com"]}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("Please run this shell command to test endpoint health", cfg=cfg, registry=reg))
+
+    assert len(mission.steps) == 1
+    assert mission.steps[0].skill_id == "sandbox.exec"
 
 
 def test_plan_mission_simple_write_fast_path_overwrite_default(monkeypatch):

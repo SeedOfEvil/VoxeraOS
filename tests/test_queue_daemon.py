@@ -207,10 +207,33 @@ def test_queue_goal_job_rewrites_default_write_steps_and_completes(tmp_path, mon
     queue_dir.mkdir(parents=True, exist_ok=True)
     job.write_text(json.dumps({"goal": "check machine health"}), encoding="utf-8")
 
+    generated_payloads = []
+
     async def _fake_generate(_messages, tools=None):
         class _Resp:
-            text = '{"title":"E2E Ask","steps":[{"skill_id":"system.status","args":{}},{"skill_id":"files.write_text","args":{"path":"/home/seedofevil/VoxeraOS/notes/result.txt","text":"Done"}}]}'
+            text = json.dumps(
+                {
+                    "title": "E2E Ask",
+                    "steps": [
+                        {
+                            "skill_id": "sandbox.exec",
+                            "args": {
+                                "command": [
+                                    "bash",
+                                    "-lc",
+                                    'title=$(xdotool getactivewindow getwindowname) && echo $title | grep "Example"',
+                                ]
+                            },
+                        },
+                        {
+                            "skill_id": "sandbox.exec",
+                            "args": {"command": ["bash", "-lc", "curl -I https://example.com"]},
+                        },
+                    ],
+                }
+            )
 
+        generated_payloads.append(_Resp.text)
         return _Resp()
 
     fake_brain = type("B", (), {"generate": _fake_generate})()
@@ -222,10 +245,26 @@ def test_queue_goal_job_rewrites_default_write_steps_and_completes(tmp_path, mon
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
     monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
 
+    captured = {}
+    real_run = daemon.mission_runner.run
+
+    def _capture_run(mission, context=None):
+        captured["mission"] = mission
+        return real_run(mission, context=context)
+
+    monkeypatch.setattr(daemon.mission_runner, "run", _capture_run)
+
     daemon.process_pending_once()
 
     assert (queue_dir / "done" / "job-e2e-ask.json").exists()
     assert not (queue_dir / "failed" / "job-e2e-ask.json").exists()
+    assert generated_payloads
+    assert "mission" in captured
+    step_dump = json.dumps([{"skill_id": s.skill_id, "args": s.args} for s in captured["mission"].steps]).lower()
+    assert "sandbox.exec" not in step_dump
+    assert "xdotool" not in step_dump
+    assert "curl" not in step_dump
+    assert "wget" not in step_dump
 
 
 def test_queue_daemon_watchdog_mode_processes_existing_backlog(tmp_path, monkeypatch):

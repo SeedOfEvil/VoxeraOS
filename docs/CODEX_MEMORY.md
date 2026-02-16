@@ -44,3 +44,15 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Add tests for policy deny + approval rejection paths on cloud-planned missions.
 - Risks/notes:
   - Cloud planner quality depends on model behavior; guardrails reject malformed output.
+
+## 2026-02-16 — PR #TBD — Rewrite unsafe non-explicit sandbox.exec planner steps
+- Summary:
+  - Added planner-side safety rewrite for non-explicit goals so `sandbox.exec` steps using host-GUI/sandbox-inappropriate tools (`xdotool`, `wmctrl`, `xprop`, `gdbus`, `curl`, `wget`) are converted into `clipboard.copy` manual confirmation prompts.
+  - Kept explicit user shell-command intent intact so command-oriented goals still allow planner `sandbox.exec` output.
+  - Updated docs to describe the new planner guardrail behavior and aligned note-path examples with `~/VoxeraOS/notes`.
+- Validation:
+  - `pytest -q tests/test_mission_planner.py tests/test_queue_daemon.py`
+- Follow-ups:
+  - Add telemetry/metrics on rewrite frequency to detect planner drift.
+- Risks/notes:
+  - Intent detection is heuristic and should be monitored for false positives/negatives.
