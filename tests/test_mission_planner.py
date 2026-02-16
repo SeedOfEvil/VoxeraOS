@@ -336,6 +336,78 @@ def test_plan_mission_keeps_write_text_body_alias(monkeypatch):
 
 
 
+def test_plan_mission_rewrites_non_explicit_files_write_to_clipboard(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Check","steps":[{"skill_id":"system.status","args":{}},{"skill_id":"files.write_text","args":{"path":"/home/seedofevil/VoxeraOS/notes/result.txt","text":"Check complete"}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+
+    assert len(mission.steps) == 2
+    assert mission.steps[0].skill_id == "system.status"
+    assert mission.steps[1].skill_id == "clipboard.copy"
+    assert mission.steps[1].args["text"] == "Check complete"
+
+
+def test_plan_mission_keeps_files_write_text_for_explicit_write_goal(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Write note","steps":[{"skill_id":"files.write_text","args":{"path":"~/VoxeraOS/notes/note.txt","text":"remember milk"}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("Write remember milk to ~/VoxeraOS/notes/note.txt", cfg=cfg, registry=reg))
+
+    assert mission.steps[0].skill_id == "files.write_text"
+    assert mission.steps[0].args["text"] == "remember milk"
+
+
 def test_plan_mission_simple_write_fast_path_overwrite_default(monkeypatch):
     cfg = AppConfig(privacy={"cloud_allowed": False})
     reg = SkillRegistry()
