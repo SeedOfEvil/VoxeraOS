@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import re
+import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,40 +88,50 @@ def _looks_like_append(goal: str) -> bool:
 
 def _is_safe_notes_path(raw_path: str) -> bool:
     try:
-        resolved = Path(raw_path).expanduser().resolve()
-        allowed = (Path.home() / "VoxeraOS" / "notes").resolve()
+        resolved = Path(raw_path).expanduser().resolve(strict=False)
+        allowed = (Path.home() / "VoxeraOS" / "notes").resolve(strict=False)
     except Exception:
         return False
     return resolved == allowed or allowed in resolved.parents
 
 
+def _goal_implies_allowed_notes_directory(goal: str) -> bool:
+    lowered = goal.lower()
+    hints = (
+        "allowed notes directory",
+        "under notes directory",
+        "under the notes directory",
+        "in notes directory",
+        "in the notes directory",
+        "under ~/voxeraos/notes",
+    )
+    return any(hint in lowered for hint in hints)
+
+
+def _goal_mentions_explicit_path(goal: str) -> bool:
+    text = goal.lower()
+    return any(token in text for token in ("~/", "/", "\\", ".txt", ".md", "path:"))
+
+
+def _extract_allowed_notes_write_args(goal: str) -> dict[str, str] | None:
+    if not _goal_implies_allowed_notes_directory(goal) or _goal_mentions_explicit_path(goal):
+        return None
+
+    m = re.search(r"(?:saying|that\s+says?)\s*:?\s*(.+)$", goal.strip(), flags=re.IGNORECASE | re.DOTALL)
+    text = _strip_matching_quotes((m.group(1) if m else "ok").strip()).strip() or "ok"
+    return {"path": "ok.txt", "text": text, "mode": "append" if _looks_like_append(goal) else "overwrite"}
 
 
 def _parse_planner_json(raw_text: str) -> dict:
-    try:
-        return json.loads(raw_text)
-    except json.JSONDecodeError:
-        pass
-
     stripped = raw_text.strip()
-    fence_pattern = re.compile(r"```(?:\s*(?P<lang>[A-Za-z0-9_+-]+))?\s*\n(?P<body>.*?)\n```", re.DOTALL)
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise MissionPlannerError(f"Planner returned non-JSON output: {stripped[:200]}") from exc
 
-    for match in fence_pattern.finditer(stripped):
-        lang = (match.group("lang") or "").strip().lower()
-        if lang and lang != "json":
-            continue
-        body = match.group("body").strip()
-        if not body:
-            continue
-        try:
-            parsed = json.loads(body)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-
-    raise MissionPlannerError(f"Planner returned non-JSON output: {stripped[:200]}")
-
+    if not isinstance(parsed, dict):
+        raise MissionPlannerError("Planner must return a JSON object.")
+    return parsed
 
 
 
@@ -306,7 +317,11 @@ async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
                 "Output JSON only with keys: title, goal, notes, steps. "
                 "steps must be 1-5 items and each item has skill_id and args object. "
                 "Use only skill IDs from the provided catalog. "
-                "Do not use files.write_text unless the user explicitly asks to write/update a file."
+                "Do not use files.write_text unless the user explicitly asks to write/update a file. "
+                "If writing under the allowed notes directory without a specific filename, use a relative path like ok.txt. "
+                "Never use placeholder paths like /path/to/notes.txt. "
+                "For sandbox.exec always use argv list form like {\"command\": [\"bash\", \"-lc\", \"echo HELLO\"]}; never use a command string. "
+                "Do not wrap output in markdown/code fences and do not include commentary. Return one strict JSON object only."
             ),
         },
         {
@@ -326,6 +341,50 @@ async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
     raw = resp.text
 
     return _parse_planner_json(raw)
+
+
+def _normalize_write_step_for_allowed_notes_goal(goal: str, step: MissionStep) -> MissionStep:
+    if step.skill_id != "files.write_text":
+        return step
+
+    if not _goal_implies_allowed_notes_directory(goal):
+        return step
+
+    args = dict(step.args)
+    raw_path = args.get("path")
+    path = raw_path.strip() if isinstance(raw_path, str) else ""
+    placeholder_paths = {"/path/to/notes.txt", "/path/to/note.txt", "notes.txt", "note.txt"}
+
+    if not path:
+        args["path"] = "ok.txt"
+        return MissionStep(skill_id=step.skill_id, args=args)
+
+    if path in placeholder_paths or path.startswith("/path/to/"):
+        args["path"] = "ok.txt"
+        return MissionStep(skill_id=step.skill_id, args=args)
+
+    return step
+
+
+def _normalize_sandbox_exec_step(step: MissionStep) -> MissionStep:
+    if step.skill_id != "sandbox.exec":
+        return step
+
+    args = dict(step.args)
+    command = args.get("command")
+    if isinstance(command, str):
+        command_text = command.strip()
+        if not command_text:
+            raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
+        shell = "bash" if shutil.which("bash") else "sh"
+        args["command"] = [shell, "-lc", command_text]
+        return MissionStep(skill_id=step.skill_id, args=args)
+
+    if not isinstance(command, list) or not command:
+        raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
+    if not all(isinstance(part, str) and part for part in command):
+        raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
+    return step
 
 
 async def plan_mission(
@@ -353,6 +412,9 @@ async def plan_mission(
     )
 
     simple_write_args = _extract_simple_write_args(goal)
+    if simple_write_args is None:
+        simple_write_args = _extract_allowed_notes_write_args(goal)
+
     if simple_write_args is not None:
         log(
             {
@@ -439,6 +501,8 @@ async def plan_mission(
     notes = payload.get("notes") or f"Generated by configured cloud brain ({planner_name})."
 
     steps = _rewrite_non_explicit_file_writes(goal, steps)
+    steps = [_normalize_write_step_for_allowed_notes_goal(goal, step) for step in steps]
+    steps = [_normalize_sandbox_exec_step(step) for step in steps]
     steps = _rewrite_non_explicit_sandbox_steps(goal, steps)
 
     log({"event": "plan_built", "plan_id": plan_id, "steps": len(steps)})

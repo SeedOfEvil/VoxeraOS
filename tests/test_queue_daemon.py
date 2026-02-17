@@ -9,8 +9,12 @@ import pytest
 
 from voxera.core.missions import MissionStep, MissionTemplate
 from voxera.core.queue_daemon import MissionQueueDaemon
-from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig
+from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig, RunResult
+import voxera_builtin_skills.files_write_text as files_write_text_skill
 
+
+async def _fake_generate_for_sandbox_argv(_messages, tools=None):
+    return type("R", (), {"text": json.dumps({"title": "argv", "steps": [{"skill_id": "sandbox.exec", "args": {"command": "echo HELLO-ARGV"}}]})})()
 
 
 def _force_policy_ask(monkeypatch, *, redact_logs=True):
@@ -452,10 +456,10 @@ def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, m
         job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
         daemon.process_job_file(job)
 
-    assert daemon.resolve_approval("job-a", approve=True) is True
+    assert daemon.resolve_approval("a", approve=True) is True
     assert daemon.resolve_approval("job-b.json", approve=True) is True
-    assert daemon.resolve_approval("job-c.approval", approve=True) is True
-    assert daemon.resolve_approval("job-d.approval.json", approve=True) is True
+    assert daemon.resolve_approval(str(queue_dir / "pending" / "job-c.json"), approve=True) is True
+    assert daemon.resolve_approval(str(queue_dir / "pending" / "approvals" / "job-d.approval.json"), approve=True) is True
 
     for ref in ["job-a", "job-b", "job-c", "job-d"]:
         assert (queue_dir / "done" / f"{ref}.json").exists()
@@ -538,3 +542,72 @@ def test_queue_daemon_persistent_invalid_json_fails_after_retries(tmp_path, monk
     assert failed
     assert "JSONDecodeError" in failed[-1].get("error", "")
 
+
+
+def test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end(tmp_path, monkeypatch):
+    cfg = AppConfig(policy=PolicyApprovals(system_settings="ask", network_changes="ask"), privacy=PrivacyConfig(cloud_allowed=False, redact_logs=True))
+    monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
+
+    allowed_root = tmp_path / "notes"
+    monkeypatch.setattr(files_write_text_skill, "ALLOWED_ROOT", allowed_root)
+
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-write-notes.json"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job.write_text(json.dumps({"goal": "Write a note under the allowed notes directory saying: queue e2e ok."}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon.process_pending_once()
+
+    assert (queue_dir / "done" / "job-write-notes.json").exists()
+    assert (allowed_root / "ok.txt").exists()
+    assert "queue e2e ok." in (allowed_root / "ok.txt").read_text(encoding="utf-8")
+
+
+def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
+    cfg = AppConfig(
+        policy=PolicyApprovals(system_settings="ask", network_changes="ask"),
+        privacy=PrivacyConfig(redact_logs=True),
+    )
+    monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
+
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-sandbox-argv.json"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job.write_text(json.dumps({"goal": "Run command to print HELLO-ARGV"}), encoding="utf-8")
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": type(
+                        "B",
+                        (),
+                        {
+                            "generate": staticmethod(_fake_generate_for_sandbox_argv)
+                        },
+                    )(),
+                },
+            )()
+        ],
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+
+    def _fake_skill_run(manifest, args, policy, require_approval_cb=None, audit_context=None):
+        assert manifest.id == "sandbox.exec"
+        assert isinstance(args.get("command"), list)
+        assert args["command"][0] in {"bash", "sh"}
+        assert args["command"][1] == "-lc"
+        assert args["command"][2] == "echo HELLO-ARGV"
+        return RunResult(ok=True, output="ok")
+
+    monkeypatch.setattr(daemon.mission_runner.skill_runner, "run", _fake_skill_run)
+    daemon.process_pending_once()
+
+    assert (queue_dir / "done" / "job-sandbox-argv.json").exists()
+    assert not (queue_dir / "failed" / "job-sandbox-argv.json").exists()

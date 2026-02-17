@@ -11,6 +11,10 @@
     h1 { margin-top: 0; }
     pre { white-space: pre-wrap; word-break: break-word; }
     .muted { color: #666; }
+    .btn { border: 1px solid #bbb; border-radius: 8px; background: #fff; padding: 6px 10px; cursor: pointer; }
+    .btn.approve { border-color: #2e8b57; color: #2e8b57; }
+    .btn.deny { border-color: #b22222; color: #b22222; }
+    .row-actions { display: flex; gap: 6px; }
   </style>
 </head>
 <body>
@@ -32,29 +36,7 @@
 
   <div class="grid">
     <div class="card">
-      <h2>Approvals</h2>
-      {% if approvals|length == 0 %}
-        <p class="muted">No pending approvals.</p>
-      {% else %}
-        <ul>
-          {% for a in approvals %}
-            <li><b>{{a.title}}</b><br/><span class="muted">{{a.detail}}</span></li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-
-      <h3>Add test approval</h3>
-      <form method="post" action="/approvals/add">
-        <input name="title" placeholder="Title" required style="width:100%; padding:8px; margin-bottom:8px;"/>
-        <textarea name="detail" placeholder="Detail" required style="width:100%; padding:8px; height:70px;"></textarea>
-        <button type="submit" style="margin-top:8px;">Add</button>
-      </form>
-
-      <form method="post" action="/approvals/clear" style="margin-top:10px;">
-        <button type="submit">Clear approvals</button>
-      </form>
-
-      <h3>Pending Queue Approvals</h3>
+      <h2>Pending Queue Approvals</h2>
       {% if queue.pending_approvals|length == 0 %}
         <p class="muted">No pending queue approvals.</p>
       {% else %}
@@ -62,20 +44,31 @@
           <thead>
             <tr>
               <th align="left">Job</th>
+              <th align="left">Approve As</th>
               <th align="left">Step</th>
               <th align="left">Skill</th>
               <th align="left">Capability</th>
               <th align="left">Reason</th>
+              <th align="left">Action</th>
             </tr>
           </thead>
           <tbody>
           {% for item in queue.pending_approvals %}
             <tr>
               <td>{{item.job}}</td>
+              <td>{{(item.approve_refs or [])[:2]|join(' | ')}}</td>
               <td>{{item.step}}</td>
               <td>{{item.skill}}</td>
               <td>{{item.capability}}</td>
               <td>{{item.reason}}</td>
+              <td class="row-actions">
+                <form method="post" action="/queue/approvals/{{item.job}}/approve">
+                  <button class="btn approve" type="submit">Approve</button>
+                </form>
+                <form method="post" action="/queue/approvals/{{item.job}}/deny">
+                  <button class="btn deny" type="submit">Deny</button>
+                </form>
+              </td>
             </tr>
           {% endfor %}
           </tbody>
