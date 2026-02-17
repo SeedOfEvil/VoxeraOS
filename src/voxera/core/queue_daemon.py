@@ -283,13 +283,23 @@ class MissionQueueDaemon:
         stem = path.stem
         if stem.endswith(".approval"):
             stem = stem[: -len(".approval")]
+        base = stem.removeprefix("job-")
         return {
             stem,
+            base,
             f"{stem}.json",
+            f"{base}.json",
             f"{stem}.approval",
             f"{stem}.approval.json",
             path.name,
         }
+
+    def _canonical_job_name(self, artifact: Path, data: dict[str, Any]) -> str:
+        job = Path(str(data.get("job") or "")).name
+        if job and not job.endswith(".approval.json"):
+            return job
+        stem = artifact.stem.removesuffix(".approval")
+        return f"{stem}.json"
 
     def _iter_approval_artifacts(self) -> list[Path]:
         if not self.approvals.exists():
@@ -302,6 +312,8 @@ class MissionQueueDaemon:
             if not isinstance(data, dict):
                 raise ValueError("approval artifact must be a JSON object")
             data["_artifact"] = artifact.name
+            data["job"] = self._canonical_job_name(artifact, data)
+            data["approve_refs"] = [data["job"], Path(data["job"]).stem.removeprefix("job-"), str((self.pending / data["job"]).resolve())]
             return data
         except Exception as exc:
             log(
@@ -411,15 +423,32 @@ class MissionQueueDaemon:
         return True
 
     def _find_pending_job(self, ref: str) -> Path:
-        candidate = self.pending / ref
-        if candidate.exists():
-            return candidate
-        if not ref.endswith(".json"):
-            candidate2 = self.pending / f"{ref}.json"
-            if candidate2.exists():
-                return candidate2
+        raw_ref = ref.strip()
+        if not raw_ref:
+            raise FileNotFoundError("pending job not found: (empty ref)")
 
-        target = ref.strip()
+        direct = Path(raw_ref).expanduser()
+        if direct.exists() and direct.is_file():
+            if direct.parent == self.pending:
+                return direct
+            if direct.parent == self.approvals:
+                pending_from_approval = self.pending / f"{direct.stem.removesuffix('.approval')}.json"
+                if pending_from_approval.exists():
+                    return pending_from_approval
+
+        base = Path(raw_ref).name
+        stem = Path(base).stem.removesuffix(".approval")
+        short = stem.removeprefix("job-")
+        for cand in {
+            self.pending / base,
+            self.pending / f"{stem}.json",
+            self.pending / f"job-{short}.json",
+            self.pending / f"{short}.json",
+        }:
+            if cand.exists() and cand.is_file():
+                return cand
+
+        target = base
         for artifact in self._iter_approval_artifacts():
             if target in self._approval_ref_variants(artifact):
                 via_artifact = self.pending / f"{artifact.stem.removesuffix('.approval')}.json"

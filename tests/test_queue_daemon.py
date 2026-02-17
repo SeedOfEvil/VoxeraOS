@@ -452,10 +452,10 @@ def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, m
         job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
         daemon.process_job_file(job)
 
-    assert daemon.resolve_approval("job-a", approve=True) is True
+    assert daemon.resolve_approval("a", approve=True) is True
     assert daemon.resolve_approval("job-b.json", approve=True) is True
-    assert daemon.resolve_approval("job-c.approval", approve=True) is True
-    assert daemon.resolve_approval("job-d.approval.json", approve=True) is True
+    assert daemon.resolve_approval(str(queue_dir / "pending" / "job-c.json"), approve=True) is True
+    assert daemon.resolve_approval(str(queue_dir / "pending" / "approvals" / "job-d.approval.json"), approve=True) is True
 
     for ref in ["job-a", "job-b", "job-c", "job-d"]:
         assert (queue_dir / "done" / f"{ref}.json").exists()

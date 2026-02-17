@@ -268,6 +268,7 @@ def queue_approvals_list(
 
     table = Table(title="Queue Approval Inbox")
     table.add_column("Job")
+    table.add_column("Approve As")
     table.add_column("Step")
     table.add_column("Skill")
     table.add_column("Capability")
@@ -275,6 +276,7 @@ def queue_approvals_list(
     for item in approvals:
         table.add_row(
             str(item.get("job", "")),
+            " | ".join(str(v) for v in item.get("approve_refs", [])[:2]),
             str(item.get("step", "")),
             str(item.get("skill", "")),
             str(item.get("capability", "")),

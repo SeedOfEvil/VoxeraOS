@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from urllib.parse import parse_qs
+from pathlib import Path
+from typing import Any, Dict, List
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from pathlib import Path
-from typing import List, Dict, Any
+
 from ..audit import tail
 from ..core.queue_daemon import MissionQueueDaemon
 
@@ -20,11 +20,18 @@ templates = Environment(
 
 APPROVALS: List[Dict[str, Any]] = []
 
+
+def _queue_root() -> Path:
+    return Path.home() / "VoxeraOS" / "notes" / "queue"
+
+
 @app.get("/", response_class=HTMLResponse)
 def home():
-    queue_root = Path.home() / "VoxeraOS" / "notes" / "queue"
+    queue_root = _queue_root()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     queue = daemon.status_snapshot(approvals_limit=12, failed_limit=8)
+    queue["pending_approvals"] = daemon.approvals_list()[:12]
+
     mission_log = Path.home() / "VoxeraOS" / "notes" / "mission-log.md"
     mission_log_tail = []
     if mission_log.exists():
@@ -40,17 +47,16 @@ def home():
         mission_log_tail=mission_log_tail,
     )
 
-@app.post("/approvals/add")
-async def add_approval(request: Request):
-    form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
-    title = (form_data.get("title") or [""])[0]
-    detail = (form_data.get("detail") or [""])[0]
-    if not title or not detail:
-        return RedirectResponse(url="/", status_code=303)
-    APPROVALS.append({"title": title, "detail": detail})
+
+@app.post("/queue/approvals/{ref}/approve")
+def approve_queue_job(ref: str):
+    daemon = MissionQueueDaemon(queue_root=_queue_root())
+    daemon.resolve_approval(ref, approve=True)
     return RedirectResponse(url="/", status_code=303)
 
-@app.post("/approvals/clear")
-def clear_approvals():
-    APPROVALS.clear()
+
+@app.post("/queue/approvals/{ref}/deny")
+def deny_queue_job(ref: str):
+    daemon = MissionQueueDaemon(queue_root=_queue_root())
+    daemon.resolve_approval(ref, approve=False)
     return RedirectResponse(url="/", status_code=303)
