@@ -599,3 +599,62 @@ def test_plan_mission_simple_write_fast_path_never_adds_clipboard_steps(monkeypa
     assert all(step.skill_id != "clipboard.copy" for step in mission.steps)
     assert all(step.skill_id != "clipboard.paste" for step in mission.steps)
 
+
+
+def test_plan_mission_defaults_relative_ok_txt_for_allowed_notes_goal_without_path(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": False})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: (_ for _ in ()).throw(AssertionError("LLM planner should not be called for allowed-notes implicit write goals")),
+    )
+
+    mission = asyncio.run(
+        plan_mission(
+            "Write a note under the allowed notes directory saying all good.",
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "files.write_text"
+    assert step.args["path"] == "ok.txt"
+
+
+def test_plan_mission_rewrites_placeholder_notes_path_to_relative(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": True}, brain={"primary": BrainConfig(type="openai_compat", model="test-model", base_url="https://example.test/v1")})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Write note","steps":[{"skill_id":"files.write_text","args":{"path":"/path/to/notes.txt","text":"ok"}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(
+        plan_mission(
+            "Write under the allowed notes directory",
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "files.write_text"
+    assert step.args["path"] == "ok.txt"

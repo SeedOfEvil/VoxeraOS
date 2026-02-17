@@ -10,6 +10,7 @@ import pytest
 from voxera.core.missions import MissionStep, MissionTemplate
 from voxera.core.queue_daemon import MissionQueueDaemon
 from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig
+import voxera_builtin_skills.files_write_text as files_write_text_skill
 
 
 
@@ -538,3 +539,23 @@ def test_queue_daemon_persistent_invalid_json_fails_after_retries(tmp_path, monk
     assert failed
     assert "JSONDecodeError" in failed[-1].get("error", "")
 
+
+
+def test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end(tmp_path, monkeypatch):
+    cfg = AppConfig(policy=PolicyApprovals(system_settings="ask", network_changes="ask"), privacy=PrivacyConfig(cloud_allowed=False, redact_logs=True))
+    monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
+
+    allowed_root = tmp_path / "notes"
+    monkeypatch.setattr(files_write_text_skill, "ALLOWED_ROOT", allowed_root)
+
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-write-notes.json"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job.write_text(json.dumps({"goal": "Write a note under the allowed notes directory saying: queue e2e ok."}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon.process_pending_once()
+
+    assert (queue_dir / "done" / "job-write-notes.json").exists()
+    assert (allowed_root / "ok.txt").exists()
+    assert "queue e2e ok." in (allowed_root / "ok.txt").read_text(encoding="utf-8")

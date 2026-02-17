@@ -9,12 +9,14 @@ ALLOWED_ROOT = Path.home() / "VoxeraOS" / "notes"
 
 
 def _resolve_safe_path(path: str) -> Path:
-    raw = Path(path).expanduser()
-    resolved = raw.resolve()
-    allowed = ALLOWED_ROOT.resolve()
-    if resolved == allowed or allowed in resolved.parents:
-        return resolved
-    raise ValueError(f"Path is outside allowlist: {allowed}")
+    allowed = ALLOWED_ROOT.expanduser().resolve(strict=False)
+    requested = Path(path).expanduser()
+    target = requested if requested.is_absolute() else (allowed / requested)
+    target_resolved = target.resolve(strict=False)
+
+    if not target_resolved.is_relative_to(allowed):
+        raise ValueError(f"Path is outside allowlist: {target_resolved}")
+    return target_resolved
 
 
 def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite") -> RunResult:
