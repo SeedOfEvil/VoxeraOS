@@ -14,48 +14,23 @@ def test_parse_planner_json_accepts_raw_json():
     assert parsed["steps"][0]["skill_id"] == "system.status"
 
 
-def test_parse_planner_json_accepts_fenced_json_block():
-    parsed = _parse_planner_json("""```json
+def test_parse_planner_json_rejects_fenced_json_block():
+    with pytest.raises(MissionPlannerError, match="non-JSON output"):
+        _parse_planner_json("""```json
 {"steps":[{"skill_id":"system.status","args":{}}]}
 ```""")
 
-    assert parsed["steps"][0]["skill_id"] == "system.status"
 
-
-def test_parse_planner_json_accepts_fenced_block_without_language():
-    parsed = _parse_planner_json("""```
+def test_parse_planner_json_rejects_commentary_around_json():
+    with pytest.raises(MissionPlannerError, match="non-JSON output"):
+        _parse_planner_json("""I will now provide the mission plan.
 {"steps":[{"skill_id":"system.status","args":{}}]}
-```""")
-
-    assert parsed["steps"][0]["skill_id"] == "system.status"
-
-
-def test_parse_planner_json_accepts_commentary_with_fenced_json_block():
-    parsed = _parse_planner_json("""I will now provide the mission plan.
-
-```json
-{"steps":[{"skill_id":"system.status","args":{}}]}
-```
-
-Let me know if you want alternatives.
 """)
 
-    assert parsed["steps"][0]["skill_id"] == "system.status"
 
-
-def test_parse_planner_json_prefers_first_parseable_fenced_block_when_multiple():
-    parsed = _parse_planner_json("""before
-```json
-not valid
-```
-between
-```json
-{"steps":[{"skill_id":"system.status","args":{}}]}
-```
-after
-""")
-
-    assert parsed["steps"][0]["skill_id"] == "system.status"
+def test_parse_planner_json_rejects_non_object_json():
+    with pytest.raises(MissionPlannerError, match="JSON object"):
+        _parse_planner_json('[{"skill_id":"system.status","args":{}}]')
 
 
 class _FakeBrain:
@@ -465,6 +440,80 @@ def test_plan_mission_rewrites_non_explicit_sandbox_gui_or_network_exec_to_clipb
     assert len(mission.steps) == 2
     assert all(step.skill_id == "clipboard.copy" for step in mission.steps)
     assert "Example" in mission.steps[0].args["text"]
+
+
+
+
+def test_plan_mission_normalizes_sandbox_exec_string_command_to_argv(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"command":"echo HELLO-ARGV"}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "sandbox.exec"
+    assert isinstance(step.args["command"], list)
+    assert step.args["command"][1] == "-lc"
+    assert step.args["command"][2] == "echo HELLO-ARGV"
+
+
+def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"command":"   "}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    with pytest.raises(MissionPlannerError, match="sandbox.exec command must be a non-empty list"):
+        asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
 
 
 def test_plan_mission_keeps_explicit_shell_intent_for_sandbox_exec(monkeypatch):
