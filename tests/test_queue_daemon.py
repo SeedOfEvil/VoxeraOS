@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+import voxera_builtin_skills.files_write_text as files_write_text_skill
 from voxera.core.missions import MissionStep, MissionTemplate
 from voxera.core.queue_daemon import MissionQueueDaemon
 from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig, RunResult
-import voxera_builtin_skills.files_write_text as files_write_text_skill
 
 
 async def _fake_generate_for_sandbox_argv(_messages, tools=None):
@@ -451,7 +451,7 @@ def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, m
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
     monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
 
-    for idx, ref in enumerate(["job-a", "job-b", "job-c", "job-d"]):
+    for _idx, ref in enumerate(["job-a", "job-b", "job-c", "job-d"]):
         job = queue_dir / f"{ref}.json"
         job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
         daemon.process_job_file(job)
@@ -567,7 +567,7 @@ def test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end(tmp_path, 
 def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
     cfg = AppConfig(
         policy=PolicyApprovals(system_settings="ask", network_changes="ask"),
-        privacy=PrivacyConfig(redact_logs=True),
+        privacy=PrivacyConfig(redact_logs=False),
     )
     monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
 
@@ -596,18 +596,33 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
         ],
     )
 
+    events = []
+    monkeypatch.setattr("voxera.skills.runner.log", lambda event: events.append(event))
+
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _manifest: (lambda **_kwargs: "ok"),
+    )
 
-    def _fake_skill_run(manifest, args, policy, require_approval_cb=None, audit_context=None):
-        assert manifest.id == "sandbox.exec"
-        assert isinstance(args.get("command"), list)
-        assert args["command"][0] in {"bash", "sh"}
-        assert args["command"][1] == "-lc"
-        assert args["command"][2] == "echo HELLO-ARGV"
-        return RunResult(ok=True, output="ok")
+    class _Runner:
+        runner_name = "unit"
 
-    monkeypatch.setattr(daemon.mission_runner.skill_runner, "run", _fake_skill_run)
+        @staticmethod
+        def run(manifest, args, fn, cfg, job_id):
+            assert manifest.id == "sandbox.exec"
+            assert isinstance(args.get("command"), list)
+            assert args["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
+            return RunResult(ok=True, output="ok")
+
+    monkeypatch.setattr("voxera.skills.runner.select_runner", lambda _manifest: _Runner())
     daemon.process_pending_once()
 
     assert (queue_dir / "done" / "job-sandbox-argv.json").exists()
     assert not (queue_dir / "failed" / "job-sandbox-argv.json").exists()
+
+    skill_start = next(
+        event for event in events if event.get("event") == "skill_start" and event.get("skill") == "sandbox.exec"
+    )
+    assert skill_start["args"]["command"] == ["bash", "-lc", "echo HELLO-ARGV"]

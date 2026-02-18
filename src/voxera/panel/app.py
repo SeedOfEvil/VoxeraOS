@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -18,7 +18,7 @@ templates = Environment(
     autoescape=select_autoescape(["html", "xml"]),
 )
 
-APPROVALS: List[Dict[str, Any]] = []
+APPROVALS: list[dict[str, Any]] = []
 
 
 def _queue_root() -> Path:

@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Dict, Optional
+
 import yaml
+
 from ..models import SkillManifest
 
 DEFAULT_SKILLS_DIR = Path(__file__).resolve().parents[3] / "skills"
 
 class SkillRegistry:
-    def __init__(self, skills_dir: Optional[Path] = None):
+    def __init__(self, skills_dir: Path | None = None):
         self.skills_dir = skills_dir or DEFAULT_SKILLS_DIR
-        self._cache: Dict[str, SkillManifest] = {}
+        self._cache: dict[str, SkillManifest] = {}
 
-    def discover(self) -> Dict[str, SkillManifest]:
+    def discover(self) -> dict[str, SkillManifest]:
         manifests = {}
         if not self.skills_dir.exists():
             return manifests

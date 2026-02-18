@@ -71,7 +71,7 @@ class MissionQueueDaemon:
     def _redact_args(self, args: dict[str, Any]) -> dict[str, Any]:
         if not self.cfg.privacy.redact_logs:
             return args
-        return {k: "<redacted>" for k in args.keys()}
+        return {k: "<redacted>" for k in args}
 
     def _queue_approval_prompt(self, manifest, decision, *, audit_context=None, args=None):
         capability = self._decision_capability(decision)
@@ -240,9 +240,7 @@ class MissionQueueDaemon:
         if name.startswith("."):
             return False
         blocked_suffixes = (".pending.json", ".approval.json", ".tmp.json", ".partial.json")
-        if name.endswith(blocked_suffixes):
-            return False
-        return True
+        return not name.endswith(blocked_suffixes)
 
     def _load_job_payload_with_retry(self, job_path: Path) -> dict[str, Any]:
         last_error: Exception | None = None

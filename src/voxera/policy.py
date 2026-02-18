@@ -25,10 +25,7 @@ def decide(skill: SkillManifest, policy: PolicyApprovals, *, args: dict[str, Any
     reasons = []
     for cap in skill.capabilities:
         field = CAP_TO_POLICY_FIELD.get(cap)
-        if not field:
-            cap_decision = "ask"
-        else:
-            cap_decision = getattr(policy, field)
+        cap_decision = "ask" if not field else getattr(policy, field)
         reasons.append(f"{cap} -> {cap_decision}")
         if cap_decision == "deny":
             decision = "deny"

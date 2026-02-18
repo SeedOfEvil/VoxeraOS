@@ -4,11 +4,9 @@ import asyncio
 import inspect
 import json
 import re
-import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
 
 from ..audit import log
 from ..brain.gemini import GeminiBrain
@@ -33,19 +31,19 @@ class _BrainCandidate:
     brain: object
 
 
-def _expected_args_for_skill(registry: SkillRegistry, skill_id: str) -> List[str]:
+def _expected_args_for_skill(registry: SkillRegistry, skill_id: str) -> list[str]:
     """Return keyword-compatible argument names for the skill entrypoint."""
     manifest = registry.get(skill_id)
     fn = registry.load_entrypoint(manifest)
     sig = inspect.signature(fn)
-    names: List[str] = []
+    names: list[str] = []
     for p in sig.parameters.values():
         if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
             names.append(p.name)
     return names
 
 
-def _normalize_step_args(raw_args: object, expected_args: List[str]) -> dict:
+def _normalize_step_args(raw_args: object, expected_args: list[str]) -> dict:
     if not isinstance(raw_args, dict):
         return {}
 
@@ -170,11 +168,11 @@ def _sandbox_step_uses_disallowed_tooling(step: MissionStep) -> bool:
     return any(tool in joined for tool in _SANDBOX_DISALLOWED_TOOLING)
 
 
-def _rewrite_non_explicit_sandbox_steps(goal: str, steps: List[MissionStep]) -> List[MissionStep]:
+def _rewrite_non_explicit_sandbox_steps(goal: str, steps: list[MissionStep]) -> list[MissionStep]:
     if _goal_explicitly_requests_shell_commands(goal):
         return steps
 
-    rewritten: List[MissionStep] = []
+    rewritten: list[MissionStep] = []
     for step in steps:
         if not _sandbox_step_uses_disallowed_tooling(step):
             rewritten.append(step)
@@ -190,11 +188,11 @@ def _rewrite_non_explicit_sandbox_steps(goal: str, steps: List[MissionStep]) -> 
 
     return rewritten
 
-def _rewrite_non_explicit_file_writes(goal: str, steps: List[MissionStep]) -> List[MissionStep]:
+def _rewrite_non_explicit_file_writes(goal: str, steps: list[MissionStep]) -> list[MissionStep]:
     if _goal_requests_file_write(goal):
         return steps
 
-    rewritten: List[MissionStep] = []
+    rewritten: list[MissionStep] = []
     for step in steps:
         if step.skill_id != "files.write_text":
             rewritten.append(step)
@@ -281,14 +279,14 @@ def _create_brain(provider):
     raise MissionPlannerError(f"Unsupported brain provider for mission planning: {provider.type}")
 
 
-def _build_brain_candidates(cfg: AppConfig) -> List[_BrainCandidate]:
+def _build_brain_candidates(cfg: AppConfig) -> list[_BrainCandidate]:
     if not cfg.privacy.cloud_allowed:
         raise MissionPlannerError("Cloud planning is disabled by privacy.cloud_allowed=false")
 
     if not cfg.brain:
         raise MissionPlannerError("No brain provider is configured. Run 'voxera setup' first.")
 
-    ordered: List[Tuple[str, object]] = []
+    ordered: list[tuple[str, object]] = []
     for key in ("primary", "fast", "fallback"):
         provider = cfg.brain.get(key)
         if provider:
@@ -376,15 +374,23 @@ def _normalize_sandbox_exec_step(step: MissionStep) -> MissionStep:
         command_text = command.strip()
         if not command_text:
             raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-        shell = "bash" if shutil.which("bash") else "sh"
-        args["command"] = [shell, "-lc", command_text]
+        args["command"] = ["bash", "-lc", command_text]
         return MissionStep(skill_id=step.skill_id, args=args)
 
     if not isinstance(command, list) or not command:
         raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-    if not all(isinstance(part, str) and part for part in command):
-        raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-    return step
+
+    normalized_command: list[str] = []
+    for part in command:
+        if not isinstance(part, str):
+            raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
+        normalized_part = part.strip()
+        if not normalized_part:
+            raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
+        normalized_command.append(normalized_part)
+
+    args["command"] = normalized_command
+    return MissionStep(skill_id=step.skill_id, args=args)
 
 
 async def plan_mission(
@@ -483,7 +489,7 @@ async def plan_mission(
 
     skills = sorted(registry.discover().values(), key=lambda m: m.id)
     known_ids = {m.id for m in skills}
-    steps: List[MissionStep] = []
+    steps: list[MissionStep] = []
     for item in steps_json:
         if not isinstance(item, dict):
             raise MissionPlannerError("Planner returned an invalid step object.")

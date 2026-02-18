@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
-from rich.console import Console
-from rich.prompt import Prompt, Confirm
-from rich.panel import Panel
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
+
+from .config import capabilities_report_path, save_config, save_policy
 from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig
-from .config import save_config, save_policy, capabilities_report_path
-from .secrets import set_secret
 from .paths import ensure_dirs
+from .secrets import set_secret
 
 console = Console()
 

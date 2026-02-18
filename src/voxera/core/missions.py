@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -17,7 +17,7 @@ from ..skills.registry import SkillRegistry
 @dataclass(frozen=True)
 class MissionStep:
     skill_id: str
-    args: Dict[str, Any] = field(default_factory=dict)
+    args: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -25,11 +25,11 @@ class MissionTemplate:
     id: str
     title: str
     goal: str
-    steps: List[MissionStep]
-    notes: Optional[str] = None
+    steps: list[MissionStep]
+    notes: str | None = None
 
 
-MISSION_TEMPLATES: Dict[str, MissionTemplate] = {
+MISSION_TEMPLATES: dict[str, MissionTemplate] = {
     "work_mode": MissionTemplate(
         id="work_mode",
         title="Start Work Mode",
@@ -101,7 +101,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def _mission_search_dirs() -> List[Path]:
+def _mission_search_dirs() -> list[Path]:
     return [
         _repo_root() / "missions",
         Path.home() / ".config" / "voxera" / "missions",
@@ -122,10 +122,7 @@ def _parse_mission_file(path: Path, mission_id_hint: str) -> MissionTemplate:
         raise ValueError(f"Invalid mission file {path}: unable to read ({exc})") from exc
 
     try:
-        if path.suffix == ".json":
-            payload = json.loads(raw_text)
-        else:
-            payload = yaml.safe_load(raw_text)
+        payload = json.loads(raw_text) if path.suffix == ".json" else yaml.safe_load(raw_text)
     except Exception as exc:
         raise ValueError(f"Invalid mission file {path}: parse error ({exc})") from exc
 
@@ -141,7 +138,7 @@ def _parse_mission_file(path: Path, mission_id_hint: str) -> MissionTemplate:
         raise ValueError(f"Invalid mission file {path}: steps must be a non-empty list")
 
     known_skills = _known_skill_ids()
-    steps: List[MissionStep] = []
+    steps: list[MissionStep] = []
     for idx, step_obj in enumerate(steps_raw, start=1):
         if not isinstance(step_obj, dict):
             raise ValueError(f"Invalid mission file {path}: step {idx} must be an object")
@@ -190,9 +187,9 @@ def _resolve_file_mission(mission_id: str) -> MissionTemplate | None:
     return None
 
 
-def _iter_file_missions() -> List[MissionTemplate]:
+def _iter_file_missions() -> list[MissionTemplate]:
     exts = {".json", ".yaml", ".yml"}
-    templates: Dict[str, MissionTemplate] = {}
+    templates: dict[str, MissionTemplate] = {}
 
     for base_dir in _mission_search_dirs():
         if not base_dir.exists() or not base_dir.is_dir():
@@ -208,7 +205,7 @@ def _iter_file_missions() -> List[MissionTemplate]:
     return [templates[key] for key in sorted(templates.keys())]
 
 
-def list_missions() -> List[MissionTemplate]:
+def list_missions() -> list[MissionTemplate]:
     return list(MISSION_TEMPLATES.values()) + _iter_file_missions()
 
 
@@ -241,7 +238,7 @@ class MissionRunner:
     def _append_mission_log(
         self,
         mission: MissionTemplate,
-        outputs: List[Dict[str, Any]],
+        outputs: list[dict[str, Any]],
         *,
         status: str,
         paused_step: int | None = None,
@@ -265,7 +262,7 @@ class MissionRunner:
             log({"event": "mission_log_error", "mission": mission.id, "error": repr(exc)})
 
     def simulate(self, mission: MissionTemplate) -> PlanSimulation:
-        steps: List[PlanStep] = []
+        steps: list[PlanStep] = []
         approvals_required = 0
         blocked = False
 
@@ -294,11 +291,11 @@ class MissionRunner:
         mission: MissionTemplate,
         *,
         start_step: int = 1,
-        context: Dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> RunResult:
         context = context or {}
         log({"event": "mission_start", "mission": mission.id, "steps": len(mission.steps), "start_step": start_step})
-        outputs: List[Dict[str, Any]] = []
+        outputs: list[dict[str, Any]] = []
 
         for idx, ms in enumerate(mission.steps, start=1):
             if idx < start_step:

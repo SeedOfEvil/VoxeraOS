@@ -4,25 +4,26 @@ import asyncio
 import json
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from . import __version__
+from .audit import tail
 from .config import load_config
-from .setup_wizard import run_setup
+from .core.inbox import add_inbox_job, list_inbox_jobs
+from .core.mission_planner import MissionPlannerError, plan_mission
+from .core.missions import MissionRunner, get_mission, list_missions
+from .core.queue_daemon import MissionQueueDaemon
 from .doctor import doctor_sync
+from .setup_wizard import run_setup
 from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
-from .audit import tail
-
-from . import __version__
-from .core.missions import MissionRunner, get_mission, list_missions
-from .core.inbox import add_inbox_job, list_inbox_jobs
-from .core.queue_daemon import MissionQueueDaemon
-from .core.mission_planner import MissionPlannerError, plan_mission
 
 console = Console()
+
+RUN_ARG_OPTION = typer.Option(None, "--arg", help="Key=Value args (repeat --arg for multiple).")
 
 
 def _git_sha() -> str | None:
@@ -130,7 +131,7 @@ def _approval_prompt(manifest, decision):
 @app.command()
 def run(
     skill_id: str,
-    arg: Optional[List[str]] = typer.Option(None, "--arg", help="Key=Value args (repeat --arg for multiple)."),
+    arg: list[str] | None = RUN_ARG_OPTION,
     dry_run: bool = typer.Option(False, "--dry-run", help="Simulate execution without running the skill."),
 ):
     """Run a skill by ID (MVP)."""
@@ -178,7 +179,7 @@ def missions_plan(
         mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg, source="cli"))
     except MissionPlannerError as e:
         console.print(f"[red]ERROR:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     console.print(f"[bold]Planned mission:[/bold] {mission.title}")
     console.print(f"Goal: {mission.goal}")
@@ -213,7 +214,7 @@ def missions_run(
         mission = get_mission(mission_id)
     except KeyError as e:
         console.print(f"[red]ERROR:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     if dry_run:
         sim = mission_runner.simulate(mission)
@@ -357,7 +358,7 @@ def queue_approvals_approve(
         ok = daemon.resolve_approval(ref, approve=True)
     except FileNotFoundError as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
     console.print("Approved and resumed." if ok else "Approval processed; job still pending another approval.")
 
 
@@ -372,14 +373,14 @@ def queue_approvals_deny(
         daemon.resolve_approval(ref, approve=False)
     except FileNotFoundError as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
     console.print("Denied. Job moved to failed/.")
 
 
 @inbox_app.command("add")
 def inbox_add(
     goal: str,
-    id: Optional[str] = typer.Option(None, "--id", help="Optional job id (defaults to generated timestamp+hash)."),
+    id: str | None = typer.Option(None, "--id", help="Optional job id (defaults to generated timestamp+hash)."),
     queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
 ):
     """Create an inbox queue job from plain goal text."""
@@ -387,7 +388,7 @@ def inbox_add(
         created = add_inbox_job(Path(queue_dir), goal, job_id=id)
     except (ValueError, FileExistsError) as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     payload = json.loads(created.read_text(encoding="utf-8"))
     console.print(f"Created inbox job: {created}")

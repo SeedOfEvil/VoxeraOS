@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
 import shlex
+import shutil
 import subprocess
 import time
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping
+from typing import Any
 
 from ..models import AppConfig, RunResult, SkillManifest
 
@@ -74,12 +74,12 @@ def redact_value(key: str, value: str) -> str:
     return value
 
 
-def sanitize_env(env: Mapping[str, str]) -> Dict[str, str]:
+def sanitize_env(env: Mapping[str, str]) -> dict[str, str]:
     return {k: redact_value(k, v) for k, v in env.items()}
 
 
-def sanitize_command(command: Iterable[str]) -> List[str]:
-    redacted: List[str] = []
+def sanitize_command(command: Iterable[str]) -> list[str]:
+    redacted: list[str] = []
     for arg in command:
         if _looks_secret_value(arg):
             redacted.append("REDACTED")
@@ -108,7 +108,7 @@ class ExecutionRunner(ABC):
         self,
         *,
         manifest: SkillManifest,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         fn: Callable[..., Any],
         cfg: AppConfig,
         job_id: str,
@@ -123,7 +123,7 @@ class LocalRunner(ExecutionRunner):
         self,
         *,
         manifest: SkillManifest,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         fn: Callable[..., Any],
         cfg: AppConfig,
         job_id: str,
@@ -167,7 +167,7 @@ class PodmanSandboxRunner(SandboxRunner):
         self,
         *,
         manifest: SkillManifest,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         fn: Callable[..., Any],
         cfg: AppConfig,
         job_id: str,
@@ -206,7 +206,7 @@ class PodmanSandboxRunner(SandboxRunner):
 
         start_ts = time.time()
         volume = f"{paths.workspace_dir}:/work:rw,Z"
-        podman_cmd: List[str] = [
+        podman_cmd: list[str] = [
             "podman",
             "run",
             "--rm",
