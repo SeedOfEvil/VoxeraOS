@@ -479,8 +479,7 @@ def test_plan_mission_normalizes_sandbox_exec_string_command_to_argv(monkeypatch
     step = mission.steps[0]
     assert step.skill_id == "sandbox.exec"
     assert isinstance(step.args["command"], list)
-    assert step.args["command"][1] == "-lc"
-    assert step.args["command"][2] == "echo HELLO-ARGV"
+    assert step.args["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
 
 
 def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
@@ -515,6 +514,40 @@ def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
     with pytest.raises(MissionPlannerError, match="sandbox.exec command must be a non-empty list"):
         asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
 
+
+
+
+def test_plan_mission_rejects_invalid_sandbox_exec_command_list(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "brain": _FakeBrain(
+                        '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"command":["bash","  ","echo HELLO-ARGV"]}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    with pytest.raises(MissionPlannerError, match="sandbox.exec command must be a non-empty list"):
+        asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
 
 def test_plan_mission_keeps_explicit_shell_intent_for_sandbox_exec(monkeypatch):
     cfg = AppConfig(

@@ -4,7 +4,6 @@ import asyncio
 import inspect
 import json
 import re
-import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -375,15 +374,23 @@ def _normalize_sandbox_exec_step(step: MissionStep) -> MissionStep:
         command_text = command.strip()
         if not command_text:
             raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-        shell = "bash" if shutil.which("bash") else "sh"
-        args["command"] = [shell, "-lc", command_text]
+        args["command"] = ["bash", "-lc", command_text]
         return MissionStep(skill_id=step.skill_id, args=args)
 
     if not isinstance(command, list) or not command:
         raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-    if not all(isinstance(part, str) and part for part in command):
-        raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-    return step
+
+    normalized_command: list[str] = []
+    for part in command:
+        if not isinstance(part, str):
+            raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
+        normalized_part = part.strip()
+        if not normalized_part:
+            raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
+        normalized_command.append(normalized_part)
+
+    args["command"] = normalized_command
+    return MissionStep(skill_id=step.skill_id, args=args)
 
 
 async def plan_mission(
