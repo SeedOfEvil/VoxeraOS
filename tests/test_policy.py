@@ -1,5 +1,6 @@
-from voxera.models import SkillManifest, PolicyApprovals
+from voxera.models import PolicyApprovals, SkillManifest
 from voxera.policy import decide
+
 
 def test_policy_ask_on_unknown_cap():
     mf = SkillManifest(id="x", name="x", description="x", entrypoint="a:b", capabilities=["unknown.cap"], risk="low")

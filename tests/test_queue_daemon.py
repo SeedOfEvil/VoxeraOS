@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+import voxera_builtin_skills.files_write_text as files_write_text_skill
 from voxera.core.missions import MissionStep, MissionTemplate
 from voxera.core.queue_daemon import MissionQueueDaemon
 from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig, RunResult
-import voxera_builtin_skills.files_write_text as files_write_text_skill
 
 
 async def _fake_generate_for_sandbox_argv(_messages, tools=None):
@@ -451,7 +451,7 @@ def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, m
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
     monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
 
-    for idx, ref in enumerate(["job-a", "job-b", "job-c", "job-d"]):
+    for _idx, ref in enumerate(["job-a", "job-b", "job-c", "job-d"]):
         job = queue_dir / f"{ref}.json"
         job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
         daemon.process_job_file(job)

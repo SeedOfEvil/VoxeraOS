@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+
 from rich.console import Console
 from rich.table import Table
-from .config import load_config, capabilities_report_path
-from .brain.openai_compat import OpenAICompatBrain
+
 from .brain.gemini import GeminiBrain
+from .brain.openai_compat import OpenAICompatBrain
+from .config import capabilities_report_path, load_config
 
 console = Console()
 

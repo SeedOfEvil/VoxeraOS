@@ -19,7 +19,7 @@ class InboxJob:
 
 def generate_inbox_id(goal: str, *, now_ms: int | None = None) -> str:
     now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
-    digest = hashlib.sha1(f"{goal}|{now_ms}".encode("utf-8")).hexdigest()[:8]
+    digest = hashlib.sha1(f"{goal}|{now_ms}".encode()).hexdigest()[:8]
     return f"{now_ms}-{digest}"
 
 

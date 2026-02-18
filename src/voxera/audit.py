@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
+
 from .paths import data_dir, ensure_dirs
+
 
 def audit_path() -> Path:
     ensure_dirs()
     ts = time.strftime("%Y%m%d")
     return data_dir() / "audit" / f"audit-{ts}.jsonl"
 
-def log(event: Dict[str, Any]) -> None:
+def log(event: dict[str, Any]) -> None:
     p = audit_path()
     event = dict(event)
     event.setdefault("ts", time.time())

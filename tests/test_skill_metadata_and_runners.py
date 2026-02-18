@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from voxera.models import SkillManifest
-from voxera.skills.execution import LocalRunner, PodmanSandboxRunner, ensure_job_paths, select_runner
+from voxera.skills.execution import (
+    LocalRunner,
+    PodmanSandboxRunner,
+    ensure_job_paths,
+    select_runner,
+)
 from voxera.skills.registry import SkillRegistry
 
 

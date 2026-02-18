@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 _OPEN_APP_ALIAS = {
     "firefox": "firefox",
@@ -19,14 +19,14 @@ _WRITE_TEXT_ALIASES = {
 }
 
 
-def _canonical_open_app(args: Dict[str, Any]) -> Dict[str, Any]:
+def _canonical_open_app(args: dict[str, Any]) -> dict[str, Any]:
     name = str(args.get("name", "")).strip().lower()
     if not name:
         return args
     return {**args, "name": _OPEN_APP_ALIAS.get(name, name)}
 
 
-def _canonical_set_volume(args: Dict[str, Any]) -> Dict[str, Any]:
+def _canonical_set_volume(args: dict[str, Any]) -> dict[str, Any]:
     try:
         raw = args.get("percent")
         value = int(float(raw))
@@ -37,7 +37,7 @@ def _canonical_set_volume(args: Dict[str, Any]) -> Dict[str, Any]:
     return {**args, "percent": str(clamped)}
 
 
-def _canonical_write_text(args: Dict[str, Any]) -> Dict[str, Any]:
+def _canonical_write_text(args: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(args)
     if "text" not in normalized:
         for alias, target in _WRITE_TEXT_ALIASES.items():
@@ -47,7 +47,7 @@ def _canonical_write_text(args: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
-def canonicalize_args(skill_id: str, args: Dict[str, Any]) -> Dict[str, Any]:
+def canonicalize_args(skill_id: str, args: dict[str, Any]) -> dict[str, Any]:
     if skill_id == "system.open_app":
         return _canonical_open_app(args)
     if skill_id == "system.set_volume":

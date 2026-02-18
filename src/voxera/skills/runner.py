@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from ..audit import log
 from ..models import AppConfig, PlanSimulation, PlanStep, RunResult, SkillManifest
@@ -15,7 +15,7 @@ class SkillRunner:
         self.registry = registry
         self.config = config or AppConfig()
 
-    def simulate(self, manifest: SkillManifest, args: Dict[str, Any], policy) -> PlanSimulation:
+    def simulate(self, manifest: SkillManifest, args: dict[str, Any], policy) -> PlanSimulation:
         args = canonicalize_args(manifest.id, args)
         decision = decide(manifest, policy, args=args)
         requires_approval = decision.decision == "ask" or manifest.risk == "high"
@@ -51,10 +51,10 @@ class SkillRunner:
     def run(
         self,
         manifest: SkillManifest,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         policy,
         require_approval_cb=None,
-        audit_context: Dict[str, Any] | None = None,
+        audit_context: dict[str, Any] | None = None,
     ) -> RunResult:
         args = canonicalize_args(manifest.id, args)
         decision = decide(manifest, policy, args=args)

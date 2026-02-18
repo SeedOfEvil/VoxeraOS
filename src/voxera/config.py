@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import yaml
-from .paths import ensure_dirs, config_dir, data_dir
+
 from .models import AppConfig
+from .paths import config_dir, data_dir, ensure_dirs
 
 DEFAULT_CONFIG_NAME = "config.yml"
 DEFAULT_POLICY_NAME = "policy.yml"

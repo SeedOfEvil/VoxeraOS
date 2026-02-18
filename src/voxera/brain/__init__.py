@@ -1,3 +1,5 @@
 from .base import Brain, BrainResponse, ToolSpec
-from .openai_compat import OpenAICompatBrain
 from .gemini import GeminiBrain
+from .openai_compat import OpenAICompatBrain
+
+__all__ = ["Brain", "BrainResponse", "ToolSpec", "GeminiBrain", "OpenAICompatBrain"]
