@@ -19,6 +19,10 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 - ✅ Human-friendly inbox entry point (`voxera inbox add`, `voxera inbox list`) for queueing goals
 - ✅ Update flow (`make update`) and systemd user service lifecycle (`make services-install`, status/restart/stop)
 
+## Reliability roadmap
+
+For the durability/retry/explainability release plan, see `docs/durability-backbone-roadmap.md`.
+
 ## Quick start (Alpha)
 ```bash
 python3 -m venv .venv

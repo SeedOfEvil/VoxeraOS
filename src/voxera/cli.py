@@ -317,6 +317,8 @@ def queue_status(
     counts_table.add_row("pending/approvals/", str(counts["pending_approvals"]))
     counts_table.add_row("done/", str(counts["done"]))
     counts_table.add_row("failed/", str(counts["failed"]))
+    counts_table.add_row("active_missions", str(counts.get("active", 0)))
+    counts_table.add_row("resumable_missions", str(counts.get("resumable", 0)))
     console.print(counts_table)
 
     if not status["exists"]:

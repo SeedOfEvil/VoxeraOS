@@ -347,7 +347,14 @@ def test_status_snapshot_counts_and_pending_parsing(tmp_path, monkeypatch):
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
     status = daemon.status_snapshot()
 
-    assert status["counts"] == {"pending": 1, "pending_approvals": 1, "done": 1, "failed": 1}
+    assert status["counts"] == {
+        "pending": 1,
+        "pending_approvals": 1,
+        "done": 1,
+        "failed": 1,
+        "active": 0,
+        "resumable": 0,
+    }
     assert status["pending_approvals"][0]["skill"] == "system.set_volume"
     assert status["recent_failed"][0] == {"job": "bad1.json", "error": "boom"}
 
@@ -360,7 +367,14 @@ def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch)
     status = daemon.status_snapshot()
 
     assert status["exists"] is False
-    assert status["counts"] == {"pending": 0, "pending_approvals": 0, "done": 0, "failed": 0}
+    assert status["counts"] == {
+        "pending": 0,
+        "pending_approvals": 0,
+        "done": 0,
+        "failed": 0,
+        "active": 0,
+        "resumable": 0,
+    }
     assert status["pending_approvals"] == []
     assert status["recent_failed"] == []
 
@@ -506,7 +520,6 @@ def test_queue_daemon_ignores_non_job_artifacts_in_inbox(tmp_path, monkeypatch):
     (queue_dir / "skip.pending.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
     (queue_dir / "skip.approval.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
     (queue_dir / "skip.tmp.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
-    (queue_dir / "skip.partial.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
     (queue_dir / "scratch.tmp").write_text("{}", encoding="utf-8")
 
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
@@ -518,7 +531,59 @@ def test_queue_daemon_ignores_non_job_artifacts_in_inbox(tmp_path, monkeypatch):
     assert (queue_dir / "skip.pending.json").exists()
     assert (queue_dir / "skip.approval.json").exists()
     assert (queue_dir / "skip.tmp.json").exists()
-    assert (queue_dir / "skip.partial.json").exists()
+
+
+def test_resume_inflight_jobs_processes_running_state_job(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    job = queue_dir / "resume-me.json"
+    job.write_text(json.dumps({"mission_id": "system_check"}), encoding="utf-8")
+
+    state_dir = queue_dir / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "resume-me.state.json").write_text(
+        json.dumps(
+            {
+                "version": "1",
+                "job": "resume-me.json",
+                "status": "running",
+                "payload": {"mission_id": "system_check"},
+                "current_step": 1,
+                "completed_steps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    resumed = daemon.resume_inflight_jobs()
+
+    assert resumed == 1
+    assert (queue_dir / "done" / "resume-me.json").exists()
+
+    state = json.loads((queue_dir / "state" / "resume-me.state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "completed"
+    assert state["completed_steps"] == [1]
+
+
+def test_process_job_file_writes_state_record(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "stateful.json"
+    job.write_text(json.dumps({"mission_id": "system_check"}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    ok = daemon.process_job_file(job)
+
+    assert ok is True
+    state_path = queue_dir / "state" / "stateful.state.json"
+    assert state_path.exists()
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["status"] == "completed"
+    assert state["mission"]["id"] == "system_check"
 
 
 def test_queue_daemon_persistent_invalid_json_fails_after_retries(tmp_path, monkeypatch):

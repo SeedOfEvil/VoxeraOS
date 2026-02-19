@@ -20,6 +20,8 @@ from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
 _AUTO_APPROVE_ALLOWLIST = {"system.settings"}
 _PARSE_RETRY_ATTEMPTS = 4
 _PARSE_RETRY_BACKOFF_S = 0.1
+_MISSION_STATE_VERSION = "1"
+_RESUMABLE_STATES = {"running", "pending_approval"}
 
 
 @dataclass
@@ -43,6 +45,7 @@ class MissionQueueDaemon:
         self.failed = self.queue_root / "failed"
         self.pending = self.queue_root / "pending"
         self.approvals = self.pending / "approvals"
+        self.state_dir = self.queue_root / "state"
         self.poll_interval = poll_interval
         self.stats = QueueStats()
         self.current_job_ref: str | None = None
@@ -121,6 +124,67 @@ class MissionQueueDaemon:
         self.failed.mkdir(parents=True, exist_ok=True)
         self.pending.mkdir(parents=True, exist_ok=True)
         self.approvals.mkdir(parents=True, exist_ok=True)
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+
+    def _state_path(self, job_name: str) -> Path:
+        return self.state_dir / f"{Path(job_name).stem}.state.json"
+
+    def _read_state(self, job_name: str) -> dict[str, Any] | None:
+        path = self._state_path(job_name)
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _write_state(
+        self,
+        *,
+        job_name: str,
+        status: str,
+        payload: dict[str, Any] | None = None,
+        mission: MissionTemplate | None = None,
+        current_step: int | None = None,
+        completed_steps: list[int] | None = None,
+        last_error: str | None = None,
+    ) -> None:
+        now = time.time()
+        existing = self._read_state(job_name) or {}
+        record: dict[str, Any] = {
+            "version": _MISSION_STATE_VERSION,
+            "job": job_name,
+            "job_path": str((self.queue_root / job_name).resolve()),
+            "status": status,
+            "updated_at": now,
+            "created_at": existing.get("created_at", now),
+            "payload": payload if payload is not None else existing.get("payload", {}),
+            "current_step": int(current_step if current_step is not None else existing.get("current_step", 0)),
+            "completed_steps": completed_steps if completed_steps is not None else existing.get("completed_steps", []),
+            "last_error": last_error if last_error is not None else existing.get("last_error"),
+        }
+        if mission is not None:
+            record["mission"] = {
+                "id": mission.id,
+                "title": mission.title,
+                "goal": mission.goal,
+                "notes": mission.notes,
+                "steps": [{"skill_id": s.skill_id, "args": s.args} for s in mission.steps],
+            }
+        elif "mission" in existing:
+            record["mission"] = existing["mission"]
+        self._state_path(job_name).write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+    def _completed_steps_from_results(self, results: list[dict[str, Any]]) -> list[int]:
+        completed: list[int] = []
+        for item in results:
+            try:
+                if item.get("ok"):
+                    completed.append(int(item.get("step", 0)))
+            except Exception:
+                continue
+        return completed
 
     def _move_job(self, src: Path, target_dir: Path) -> Path:
         target = target_dir / src.name
@@ -363,6 +427,18 @@ class MissionQueueDaemon:
         return [{"job": item.name, "error": error_by_job.get(item.name, "")} for item in files[:limit]]
 
     def status_snapshot(self, *, approvals_limit: int = 10, failed_limit: int = 10) -> dict[str, Any]:
+        resumable = 0
+        active = 0
+        if self.state_dir.exists():
+            for path in self.state_dir.glob("*.state.json"):
+                state = self._read_state(path.name.replace(".state.json", ".json"))
+                if not state:
+                    continue
+                status = str(state.get("status", ""))
+                if status in _RESUMABLE_STATES:
+                    resumable += 1
+                if status in {"queued", "running", "pending_approval"}:
+                    active += 1
         return {
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
@@ -371,6 +447,8 @@ class MissionQueueDaemon:
                 "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
                 "done": self._count_files(self.done, "*.json"),
                 "failed": self._count_files(self.failed, "*.json"),
+                "active": active,
+                "resumable": resumable,
             },
             "pending_approvals": self.pending_approvals_snapshot(limit=approvals_limit),
             "recent_failed": self.recent_failed_jobs_snapshot(limit=failed_limit),
@@ -383,22 +461,34 @@ class MissionQueueDaemon:
 
         self.current_job_ref = str(job_path)
         log({"event": "queue_job_received", "job": str(job_path)})
+        self._write_state(job_name=job_path.name, status="queued")
         try:
             payload = self._load_job_payload_with_retry(job_path)
             payload = self._normalize_payload(payload)
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
         except Exception as exc:
             moved = self._move_job(job_path, self.failed)
+            self._write_state(job_name=moved.name, status="failed", last_error=repr(exc))
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
             return False
 
         kind = "mission_id" if payload.get("mission_id") else "goal"
         log({"event": "queue_job_started", "kind": kind, "mission": payload.get("mission_id"), "goal": payload.get("goal")})
+        self._write_state(job_name=job_path.name, status="running", payload=payload, mission=mission, current_step=1, completed_steps=[])
         rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
+        completed_steps = self._completed_steps_from_results(rr.data.get("results", []))
         if rr.data.get("status") == "pending_approval":
             moved = self._move_job(job_path, self.pending)
             self._write_pending_artifacts(moved, payload=payload, mission=mission, run_data=rr.data)
+            self._write_state(
+                job_name=moved.name,
+                status="pending_approval",
+                payload=payload,
+                mission=mission,
+                current_step=int(rr.data.get("step", 0) or 0),
+                completed_steps=completed_steps,
+            )
             log(
                 {
                     "event": "queue_job_pending_approval",
@@ -411,14 +501,56 @@ class MissionQueueDaemon:
 
         if not rr.ok:
             moved = self._move_job(job_path, self.failed)
+            self._write_state(
+                job_name=moved.name,
+                status="failed",
+                payload=payload,
+                mission=mission,
+                current_step=int(rr.data.get("step", 0) or 0),
+                completed_steps=completed_steps,
+                last_error=rr.error or "mission failed",
+            )
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
             return False
 
         moved = self._move_job(job_path, self.done)
+        self._write_state(
+            job_name=moved.name,
+            status="completed",
+            payload=payload,
+            mission=mission,
+            current_step=len(mission.steps),
+            completed_steps=completed_steps,
+        )
         self.stats.processed += 1
         log({"event": "queue_job_done", "job": str(moved)})
         return True
+
+    def resume_inflight_jobs(self) -> int:
+        self.ensure_dirs()
+        resumed = 0
+        for state_file in sorted(self.state_dir.glob("*.state.json")):
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(state, dict):
+                continue
+            if state.get("status") not in _RESUMABLE_STATES:
+                continue
+            job_name = str(state.get("job") or f"{state_file.stem.removesuffix('.state')}.json")
+            candidates = [self.inbox / job_name, self.pending / job_name]
+            job_path = next((p for p in candidates if p.exists() and p.is_file()), None)
+            if job_path is None:
+                continue
+            if job_path.parent == self.pending:
+                continue
+            self.process_job_file(job_path)
+            resumed += 1
+        if resumed:
+            log({"event": "queue_resume_processed", "count": resumed})
+        return resumed
 
     def _find_pending_job(self, ref: str) -> Path:
         raw_ref = ref.strip()
@@ -473,6 +605,7 @@ class MissionQueueDaemon:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         if not approve:
             moved = self._move_job(job, self.failed)
+            self._write_state(job_name=moved.name, status="failed", last_error="Denied in approval inbox")
             self.stats.failed += 1
             mission_data = meta.get("mission", {})
             denied_mission = MissionTemplate(
@@ -508,12 +641,22 @@ class MissionQueueDaemon:
             start_step=resume_step,
             context={"queue_job": str(job), "approval_resumed": True},
         )
+        completed_steps = self._completed_steps_from_results(rr.data.get("results", []))
         if rr.data.get("status") == "pending_approval":
             self._write_pending_artifacts(job, payload=payload, mission=mission, run_data=rr.data)
+            self._write_state(
+                job_name=job.name,
+                status="pending_approval",
+                payload=payload,
+                mission=mission,
+                current_step=int(rr.data.get("step", 0) or 0),
+                completed_steps=completed_steps,
+            )
             log({"event": "queue_job_pending_approval", "job": str(job), "step": rr.data.get("step"), "reason": rr.data.get("reason")})
             return False
         if not rr.ok:
             moved = self._move_job(job, self.failed)
+            self._write_state(job_name=moved.name, status="failed", payload=payload, mission=mission, completed_steps=completed_steps, last_error=rr.error or "mission failed")
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
             meta_path.unlink(missing_ok=True)
@@ -521,6 +664,7 @@ class MissionQueueDaemon:
             return False
 
         moved = self._move_job(job, self.done)
+        self._write_state(job_name=moved.name, status="completed", payload=payload, mission=mission, current_step=len(mission.steps), completed_steps=completed_steps)
         self.stats.processed += 1
         log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
         meta_path.unlink(missing_ok=True)
@@ -542,6 +686,7 @@ class MissionQueueDaemon:
         if self.auto_approve_ask and not self.dev_mode:
             log({"event": "queue_auto_approve_disabled", "reason": "VOXERA_DEV_MODE is not enabled"})
         log({"event": "queue_daemon_start", "queue": str(self.inbox), "once": once, "auto_approve_ask": self.auto_approve_ask})
+        self.resume_inflight_jobs()
         if once:
             count = self.process_pending_once()
             log({"event": "queue_daemon_stop", "reason": "once", "processed": count})
