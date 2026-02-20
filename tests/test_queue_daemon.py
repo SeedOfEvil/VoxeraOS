@@ -702,3 +702,31 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
         event for event in events if event.get("event") == "skill_start" and event.get("skill") == "sandbox.exec"
     )
     assert skill_start["args"]["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
+
+
+def test_queue_daemon_restart_does_not_reprocess_completed_job(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    job = queue_dir / "job-durability-bounce.json"
+    payload = {
+        "id": "durability-bounce",
+        "goal": "Write the text 'BOUNCE' to a notes file under the allowed notes directory.",
+    }
+    job.write_text(json.dumps(payload), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    processed = daemon.process_pending_once()
+    assert processed == 1
+    assert (queue_dir / "done" / "job-durability-bounce.json").exists()
+
+    # Simulate daemon restart with an accidentally reintroduced original job file.
+    job.write_text(json.dumps(payload), encoding="utf-8")
+    daemon2 = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log-2.md")
+    processed_after_restart = daemon2.process_pending_once()
+
+    assert processed_after_restart == 1
+    assert not job.exists()
+    done_matches = sorted((queue_dir / "done").glob("job-durability-bounce*.json"))
+    assert [p.name for p in done_matches] == ["job-durability-bounce.json"]

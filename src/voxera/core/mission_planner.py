@@ -124,13 +124,9 @@ def _extract_allowed_notes_write_args(goal: str) -> dict[str, str] | None:
     if not _goal_implies_allowed_notes_directory(goal) or _goal_mentions_explicit_path(goal):
         return None
 
-    quoted_text_match = re.search(
-        r"write the text\s+(['\"])(.+?)\1\s+to a notes file",
-        goal.strip(),
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if quoted_text_match:
-        text = quoted_text_match.group(2).strip() or "ok"
+    quoted_payload = _extract_write_the_text_payload(goal)
+    if quoted_payload is not None:
+        text = quoted_payload
     else:
         m = re.search(
             r"(?:saying|that\s+says?)\s*:?\s*(.+)$", goal.strip(), flags=re.IGNORECASE | re.DOTALL

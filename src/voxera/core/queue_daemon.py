@@ -22,6 +22,7 @@ _PARSE_RETRY_ATTEMPTS = 4
 _PARSE_RETRY_BACKOFF_S = 0.1
 _MISSION_STATE_VERSION = "1"
 _RESUMABLE_STATES = {"running", "pending_approval"}
+_TERMINAL_STATES = {"completed", "failed", "denied"}
 
 
 @dataclass
@@ -186,6 +187,16 @@ class MissionQueueDaemon:
         elif "mission" in existing:
             record["mission"] = existing["mission"]
         self._state_path(job_name).write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+
+    def _existing_terminal_state(self, job_name: str) -> str | None:
+        state = self._read_state(job_name)
+        if not state:
+            return None
+        status = str(state.get("status", ""))
+        if status in _TERMINAL_STATES:
+            return status
+        return None
 
     def _completed_steps_from_results(self, results: list[dict[str, Any]]) -> list[int]:
         completed: list[int] = []
@@ -507,6 +518,16 @@ class MissionQueueDaemon:
             return False
 
         self.current_job_ref = str(job_path)
+        terminal_status = self._existing_terminal_state(job_path.name)
+        if terminal_status is not None:
+            log({
+                "event": "queue_job_duplicate_ignored",
+                "job": str(job_path),
+                "existing_status": terminal_status,
+            })
+            job_path.unlink(missing_ok=True)
+            return False
+
         log({"event": "queue_job_received", "job": str(job_path)})
         self._write_state(job_name=job_path.name, status="queued", job_path=job_path)
         try:
