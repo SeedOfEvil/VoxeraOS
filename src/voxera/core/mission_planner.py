@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +29,28 @@ _PLANNER_TIMEOUT_SECONDS = 25
 @dataclass(frozen=True)
 class _BrainCandidate:
     name: str
+    model: str
     brain: object
+
+
+def _classify_planner_error(exc: Exception) -> str:
+    message = str(exc).lower()
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or "timed out" in message:
+        return "timeout"
+    if "rate limit" in message or "429" in message:
+        return "rate_limit"
+    if "non-json output" in message or ("json" in message and "planner" in message):
+        return "malformed_json"
+    if isinstance(exc, MissionPlannerError):
+        return "planner_error"
+    return "provider_error"
+
+
+def _format_planner_failure_message(attempt_errors: list[tuple[str, str]]) -> str:
+    if not attempt_errors:
+        return "Planner failed after fallbacks: unknown error"
+    summary = ", ".join(f"{provider}:{error_class}" for provider, error_class in attempt_errors)
+    return f"Planner failed after fallbacks: {summary}"
 
 
 def _expected_args_for_skill(registry: SkillRegistry, skill_id: str) -> list[str]:
@@ -296,7 +318,10 @@ def _build_brain_candidates(cfg: AppConfig) -> list[_BrainCandidate]:
         if key not in {name for name, _ in ordered}:
             ordered.append((key, provider))
 
-    return [_BrainCandidate(name=name, brain=_create_brain(provider)) for name, provider in ordered]
+    return [
+        _BrainCandidate(name=name, model=provider.model, brain=_create_brain(provider))
+        for name, provider in ordered
+    ]
 
 
 async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
@@ -403,9 +428,9 @@ async def plan_mission(
 ) -> MissionTemplate:
     payload = None
     planner_name = None
-    retries = 0
     last_error = None
     plan_id = str(uuid.uuid4())
+    attempt_errors: list[tuple[str, str]] = []
 
     log(
         {
@@ -427,11 +452,27 @@ async def plan_mission(
                 "event": "planner_selected",
                 "plan_id": plan_id,
                 "provider": "deterministic_simple_write",
-                "attempt_index": 0,
+                "model": "deterministic",
+                "attempt": 1,
+                "error_class": "none",
+                "latency_ms": 0,
+                "fallback_used": False,
             }
         )
         steps = [MissionStep(skill_id="files.write_text", args=simple_write_args)]
-        log({"event": "plan_built", "plan_id": plan_id, "steps": len(steps)})
+        log(
+            {
+                "event": "plan_built",
+                "plan_id": plan_id,
+                "provider": "deterministic_simple_write",
+                "model": "deterministic",
+                "attempt": 1,
+                "error_class": "none",
+                "latency_ms": 0,
+                "fallback_used": False,
+                "steps": len(steps),
+            }
+        )
         return MissionTemplate(
             id="cloud_planned",
             title="Deterministic Note Write",
@@ -441,38 +482,77 @@ async def plan_mission(
         )
 
     candidates = _build_brain_candidates(cfg)
-    for retries, candidate in enumerate(candidates):
-        log(
-            {
-                "event": "planner_selected",
-                "plan_id": plan_id,
-                "provider": candidate.name,
-                "attempt_index": retries,
-            }
-        )
+    for attempt_index, candidate in enumerate(candidates, start=1):
+        fallback_used = attempt_index > 1
+        started = time.monotonic()
         try:
             payload = await _plan_payload(goal=goal, registry=registry, brain=candidate.brain)
             planner_name = candidate.name
+            latency_ms = int((time.monotonic() - started) * 1000)
+            log(
+                {
+                    "event": "planner_selected",
+                    "plan_id": plan_id,
+                    "provider": candidate.name,
+                    "model": candidate.model,
+                    "attempt": attempt_index,
+                    "error_class": "none",
+                    "latency_ms": latency_ms,
+                    "fallback_used": fallback_used,
+                }
+            )
             break
         except Exception as exc:
             last_error = str(exc)
+            error_class = _classify_planner_error(exc)
+            attempt_errors.append((candidate.name, error_class))
+            latency_ms = int((time.monotonic() - started) * 1000)
             log(
                 {
                     "event": "planner_fallback",
                     "plan_id": plan_id,
                     "provider": candidate.name,
-                    "attempt_index": retries,
+                    "model": candidate.model,
+                    "attempt": attempt_index,
+                    "error_class": error_class,
+                    "latency_ms": latency_ms,
+                    "fallback_used": fallback_used,
                     "error_type": type(exc).__name__,
                     "error": last_error,
                 }
             )
 
     if payload is None or planner_name is None:
-        log({"event": "plan_failed", "plan_id": plan_id, "error": last_error or "unknown error"})
-        raise MissionPlannerError(f"Planner failed after fallbacks: {last_error or 'unknown error'}")
+        message = _format_planner_failure_message(attempt_errors)
+        log(
+            {
+                "event": "plan_failed",
+                "plan_id": plan_id,
+                "provider": "none",
+                "model": "none",
+                "attempt": len(candidates),
+                "error_class": attempt_errors[-1][1] if attempt_errors else "unknown",
+                "latency_ms": 0,
+                "fallback_used": len(candidates) > 1,
+                "error": last_error or "unknown error",
+            }
+        )
+        raise MissionPlannerError(message)
 
     if not isinstance(payload, dict):
-        log({"event": "plan_failed", "plan_id": plan_id, "error": "invalid JSON payload type"})
+        log(
+            {
+                "event": "plan_failed",
+                "plan_id": plan_id,
+                "provider": planner_name or "unknown",
+                "model": next((candidate.model for candidate in candidates if candidate.name == planner_name), "unknown"),
+                "attempt": next((index for index, candidate in enumerate(candidates, start=1) if candidate.name == planner_name), 1),
+                "error_class": "malformed_json",
+                "latency_ms": 0,
+                "fallback_used": planner_name != "primary",
+                "error": "invalid JSON payload type",
+            }
+        )
         raise MissionPlannerError("Planner returned invalid JSON payload type.")
 
     allowed_keys = {"title", "goal", "notes", "steps"}
@@ -511,5 +591,23 @@ async def plan_mission(
     steps = [_normalize_sandbox_exec_step(step) for step in steps]
     steps = _rewrite_non_explicit_sandbox_steps(goal, steps)
 
-    log({"event": "plan_built", "plan_id": plan_id, "steps": len(steps)})
+    log(
+        {
+            "event": "plan_built",
+            "plan_id": plan_id,
+            "provider": planner_name,
+            "model": next(
+                (candidate.model for candidate in candidates if candidate.name == planner_name),
+                "unknown",
+            ),
+            "attempt": next(
+                (index for index, candidate in enumerate(candidates, start=1) if candidate.name == planner_name),
+                1,
+            ),
+            "error_class": "none",
+            "latency_ms": 0,
+            "fallback_used": planner_name != "primary",
+            "steps": len(steps),
+        }
+    )
     return MissionTemplate(id="cloud_planned", title=title, goal=goal, steps=steps, notes=notes)

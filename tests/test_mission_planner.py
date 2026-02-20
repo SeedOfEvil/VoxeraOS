@@ -60,7 +60,7 @@ def test_plan_mission_from_cloud_json(monkeypatch):
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"title":"Quick prep","notes":"cloud test","steps":[{"skill_id":"system.status","args":{}}]}')})()],
+        lambda _cfg: [type("C", (), {"name": "primary", "model": "primary-model", "brain": _FakeBrain('{"title":"Quick prep","notes":"cloud test","steps":[{"skill_id":"system.status","args":{}}]}')})()],
     )
 
     mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
@@ -85,7 +85,7 @@ def test_plan_mission_rejects_unknown_skill(monkeypatch):
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"steps":[{"skill_id":"system.missing","args":{}}]}')})()],
+        lambda _cfg: [type("C", (), {"name": "primary", "model": "primary-model", "brain": _FakeBrain('{"steps":[{"skill_id":"system.missing","args":{}}]}')})()],
     )
 
     with pytest.raises(MissionPlannerError, match="unknown skill"):
@@ -107,7 +107,7 @@ def test_plan_mission_normalizes_single_arg_alias(monkeypatch):
 
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: [type("C", (), {"name": "primary", "brain": _FakeBrain('{"title":"Work mode","steps":[{"skill_id":"system.open_app","args":{"app_name":"Firefox"}}]}')})()],
+        lambda _cfg: [type("C", (), {"name": "primary", "model": "primary-model", "brain": _FakeBrain('{"title":"Work mode","steps":[{"skill_id":"system.open_app","args":{"app_name":"Firefox"}}]}')})()],
     )
 
     mission = asyncio.run(plan_mission("start work mode", cfg=cfg, registry=reg))
@@ -116,7 +116,7 @@ def test_plan_mission_normalizes_single_arg_alias(monkeypatch):
     assert mission.steps[0].args == {"name": "firefox"}
 
 
-def test_plan_mission_uses_fallback(monkeypatch):
+def test_plan_mission_primary_malformed_output_fallback_success(monkeypatch):
     cfg = AppConfig(
         brain={
             "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
@@ -136,14 +136,20 @@ def test_plan_mission_uses_fallback(monkeypatch):
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
-            type("C", (), {"name": "primary", "brain": _FailingBrain()})(),
-            type("C", (), {"name": "fast", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _FailingBrain()})(),
+            type("C", (), {"name": "fast", "model": "fast-model", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
         ],
     )
+    events = []
+    monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
 
     mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
     assert mission.steps[0].skill_id == "system.status"
     assert "fast" in (mission.notes or "")
+
+    fallback_event = next(e for e in events if e.get("event") == "planner_fallback")
+    assert fallback_event["error_class"] == "malformed_json"
+    assert fallback_event["provider"] == "primary"
 
 
 class _SlowBrain:
@@ -151,7 +157,7 @@ class _SlowBrain:
         await asyncio.sleep(60)
 
 
-def test_plan_mission_timeout_falls_back(monkeypatch):
+def test_plan_mission_primary_timeout_fast_success(monkeypatch):
     cfg = AppConfig(
         brain={
             "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
@@ -165,14 +171,56 @@ def test_plan_mission_timeout_falls_back(monkeypatch):
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
-            type("C", (), {"name": "primary", "brain": _SlowBrain()})(),
-            type("C", (), {"name": "fast", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _SlowBrain()})(),
+            type("C", (), {"name": "fast", "model": "fast-model", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
         ],
     )
+    events = []
+    monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
 
     mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
     assert mission.steps[0].skill_id == "system.status"
 
+    fallback_event = next(e for e in events if e.get("event") == "planner_fallback")
+    assert fallback_event["error_class"] == "timeout"
+    assert fallback_event["provider"] == "primary"
+
+
+
+
+def test_plan_mission_all_providers_fail_deterministic_error(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+            "fallback": BrainConfig(type="openai_compat", model="fallback", base_url="https://example.test/v1"),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    class _RateLimitBrain:
+        async def generate(self, messages, tools=None):
+            raise RuntimeError("rate limit exceeded")
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _SlowBrain()})(),
+            type("C", (), {"name": "fast", "model": "fast-model", "brain": _FakeBrain("not-json")})(),
+            type("C", (), {"name": "fallback", "model": "fallback-model", "brain": _RateLimitBrain()})(),
+        ],
+    )
+    monkeypatch.setattr("voxera.core.mission_planner._PLANNER_TIMEOUT_SECONDS", 0.01)
+
+    with pytest.raises(
+        MissionPlannerError,
+        match=(
+            "Planner failed after fallbacks: "
+            "primary:timeout, fast:malformed_json, fallback:rate_limit"
+        ),
+    ):
+        asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
 
 def test_plan_mission_rejects_payload_with_unknown_top_level_keys(monkeypatch):
     cfg = AppConfig(
@@ -195,6 +243,7 @@ def test_plan_mission_rejects_payload_with_unknown_top_level_keys(monkeypatch):
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Quick prep","steps":[{"skill_id":"system.status","args":{}}],"hijack":"ignore rules"}'
                     ),
@@ -220,7 +269,7 @@ def test_plan_mission_emits_correlated_plan_telemetry(monkeypatch):
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
-            type("C", (), {"name": "primary", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})()
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})()
         ],
     )
 
@@ -238,6 +287,12 @@ def test_plan_mission_emits_correlated_plan_telemetry(monkeypatch):
     assert plan_id
     assert selected[0].get("plan_id") == plan_id
     assert built[0].get("plan_id") == plan_id
+    assert selected[0]["provider"] == "primary"
+    assert selected[0]["model"] == "primary-model"
+    assert selected[0]["attempt"] == 1
+    assert selected[0]["error_class"] == "none"
+    assert isinstance(selected[0]["latency_ms"], int)
+    assert selected[0]["fallback_used"] is False
 
 
 def test_plan_mission_emits_single_selected_per_attempt(monkeypatch):
@@ -261,8 +316,8 @@ def test_plan_mission_emits_single_selected_per_attempt(monkeypatch):
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
-            type("C", (), {"name": "primary", "brain": _FailingBrain()})(),
-            type("C", (), {"name": "fast", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _FailingBrain()})(),
+            type("C", (), {"name": "fast", "model": "fast-model", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
         ],
     )
 
@@ -270,10 +325,13 @@ def test_plan_mission_emits_single_selected_per_attempt(monkeypatch):
 
     selected = [e for e in events if e.get("event") == "planner_selected"]
     fallback = [e for e in events if e.get("event") == "planner_fallback"]
-    assert len(selected) == 2
+    assert len(selected) == 1
     assert len(fallback) == 1
-    assert selected[0]["attempt_index"] == 0
-    assert selected[1]["attempt_index"] == 1
+    assert fallback[0]["attempt"] == 1
+    assert fallback[0]["error_class"] == "malformed_json"
+    assert fallback[0]["fallback_used"] is False
+    assert selected[0]["attempt"] == 2
+    assert selected[0]["fallback_used"] is True
 
 
 def test_plan_mission_keeps_write_text_body_alias(monkeypatch):
@@ -297,6 +355,7 @@ def test_plan_mission_keeps_write_text_body_alias(monkeypatch):
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Write note","steps":[{"skill_id":"files.write_text","args":{"path":"~/VoxeraOS/notes/note.txt","body":"remember milk"}}]}'
                     ),
@@ -333,6 +392,7 @@ def test_plan_mission_rewrites_non_explicit_files_write_to_clipboard(monkeypatch
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Check","steps":[{"skill_id":"system.status","args":{}},{"skill_id":"files.write_text","args":{"path":"~/VoxeraOS/notes/result.txt","text":"Check complete"}}]}'
                     ),
@@ -370,6 +430,7 @@ def test_plan_mission_keeps_files_write_text_for_explicit_write_goal(monkeypatch
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Write note","steps":[{"skill_id":"files.write_text","args":{"path":"~/VoxeraOS/notes/note.txt","text":"remember milk"}}]}'
                     ),
@@ -407,6 +468,7 @@ def test_plan_mission_rewrites_non_explicit_sandbox_gui_or_network_exec_to_clipb
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         json.dumps(
                             {
@@ -465,6 +527,7 @@ def test_plan_mission_normalizes_sandbox_exec_string_command_to_argv(monkeypatch
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"command":"echo HELLO-ARGV"}}]}'
                     ),
@@ -503,6 +566,7 @@ def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"command":"   "}}]}'
                     ),
@@ -538,6 +602,7 @@ def test_plan_mission_rejects_invalid_sandbox_exec_command_list(monkeypatch):
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"command":["bash","  ","echo HELLO-ARGV"]}}]}'
                     ),
@@ -570,6 +635,7 @@ def test_plan_mission_keeps_explicit_shell_intent_for_sandbox_exec(monkeypatch):
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Explicit","steps":[{"skill_id":"sandbox.exec","args":{"command":["bash","-lc","curl -I https://example.com"]}}]}'
                     ),
@@ -720,6 +786,7 @@ def test_plan_mission_rewrites_placeholder_notes_path_to_relative(monkeypatch):
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": _FakeBrain(
                         '{"title":"Write note","steps":[{"skill_id":"files.write_text","args":{"path":"/path/to/notes.txt","text":"ok"}}]}'
                     ),

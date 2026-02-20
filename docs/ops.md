@@ -141,6 +141,26 @@ voxera audit
 voxera queue status
 ```
 
+
+### Planner drift watch (fallback diagnostics)
+
+Use planner audit events to spot model drift and provider instability:
+- `planner_fallback` captures `provider`, `model`, `attempt`, `error_class`, `latency_ms`, and `fallback_used`.
+- `plan_built` captures the winning provider/model and whether fallback routing was used.
+
+Operational heuristic:
+- Rising `fallback_used=true` rates over a rolling window usually indicate primary-plan quality or reliability drift.
+- Rising `error_class=malformed_json` typically indicates output-format drift.
+- Rising `error_class=timeout` or `rate_limit` usually indicates provider saturation/transport issues.
+
+Start with:
+
+```bash
+voxera audit | rg "planner_fallback|plan_built"
+```
+
+If fallback frequency spikes, compare by `provider` + `model` and promote/demote routing (`primary` vs `fast` vs `fallback`) until error-class mix returns to baseline.
+
 ## Safety note
 
 Operational workflows here do **not** require deleting data under `~/VoxeraOS/notes`.
