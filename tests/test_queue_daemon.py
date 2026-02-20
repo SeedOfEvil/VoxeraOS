@@ -3,6 +3,7 @@ import sys
 import threading
 import time
 import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -132,9 +133,15 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     assert any(e["event"] == "queue_job_started" for e in events)
     assert any(e["event"] == "queue_job_pending_approval" for e in events)
     assert "status=pending_approval" in log_path.read_text(encoding="utf-8")
+    pending_state = json.loads((queue_dir / "state" / "approval.state.json").read_text(encoding="utf-8"))
+    assert pending_state["status"] == "pending_approval"
+    assert Path(pending_state["job_path"]) == pending_job.resolve()
 
     daemon.resolve_approval("approval", approve=True)
     assert (queue_dir / "done" / "approval.json").exists()
+    done_state = json.loads((queue_dir / "state" / "approval.state.json").read_text(encoding="utf-8"))
+    assert done_state["status"] == "completed"
+    assert Path(done_state["job_path"]) == (queue_dir / "done" / "approval.json").resolve()
 
     daemon.process_job_file(deny_job)
     deny_artifact = queue_dir / "pending" / "approvals" / "deny.approval.json"
@@ -143,6 +150,9 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     assert deny_details["skill"] == "system.open_url"
     daemon.resolve_approval("deny", approve=False)
     assert (queue_dir / "failed" / "deny.json").exists()
+    failed_state = json.loads((queue_dir / "state" / "deny.state.json").read_text(encoding="utf-8"))
+    assert failed_state["status"] == "failed"
+    assert Path(failed_state["job_path"]) == (queue_dir / "failed" / "deny.json").resolve()
     assert any(e["event"] == "queue_job_failed" and "Denied in approval inbox" in e.get("error", "") for e in events)
     assert any(e["event"] == "mission_denied" for e in events)
     assert "status=denied" in log_path.read_text(encoding="utf-8")
@@ -584,6 +594,7 @@ def test_process_job_file_writes_state_record(tmp_path, monkeypatch):
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["status"] == "completed"
     assert state["mission"]["id"] == "system_check"
+    assert Path(state["job_path"]) == (queue_dir / "done" / "stateful.json").resolve()
 
 
 def test_queue_daemon_persistent_invalid_json_fails_after_retries(tmp_path, monkeypatch):

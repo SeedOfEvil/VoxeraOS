@@ -149,13 +149,14 @@ class MissionQueueDaemon:
         current_step: int | None = None,
         completed_steps: list[int] | None = None,
         last_error: str | None = None,
+        job_path: Path | None = None,
     ) -> None:
         now = time.time()
         existing = self._read_state(job_name) or {}
         record: dict[str, Any] = {
             "version": _MISSION_STATE_VERSION,
             "job": job_name,
-            "job_path": str((self.queue_root / job_name).resolve()),
+            "job_path": str((job_path.resolve() if job_path is not None else (self.queue_root / job_name).resolve())),
             "status": status,
             "updated_at": now,
             "created_at": existing.get("created_at", now),
@@ -461,21 +462,21 @@ class MissionQueueDaemon:
 
         self.current_job_ref = str(job_path)
         log({"event": "queue_job_received", "job": str(job_path)})
-        self._write_state(job_name=job_path.name, status="queued")
+        self._write_state(job_name=job_path.name, status="queued", job_path=job_path)
         try:
             payload = self._load_job_payload_with_retry(job_path)
             payload = self._normalize_payload(payload)
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
         except Exception as exc:
             moved = self._move_job(job_path, self.failed)
-            self._write_state(job_name=moved.name, status="failed", last_error=repr(exc))
+            self._write_state(job_name=moved.name, status="failed", last_error=repr(exc), job_path=moved)
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
             return False
 
         kind = "mission_id" if payload.get("mission_id") else "goal"
         log({"event": "queue_job_started", "kind": kind, "mission": payload.get("mission_id"), "goal": payload.get("goal")})
-        self._write_state(job_name=job_path.name, status="running", payload=payload, mission=mission, current_step=1, completed_steps=[])
+        self._write_state(job_name=job_path.name, status="running", payload=payload, mission=mission, current_step=1, completed_steps=[], job_path=job_path)
         rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
         completed_steps = self._completed_steps_from_results(rr.data.get("results", []))
         if rr.data.get("status") == "pending_approval":
@@ -488,6 +489,7 @@ class MissionQueueDaemon:
                 mission=mission,
                 current_step=int(rr.data.get("step", 0) or 0),
                 completed_steps=completed_steps,
+                job_path=moved,
             )
             log(
                 {
@@ -509,6 +511,7 @@ class MissionQueueDaemon:
                 current_step=int(rr.data.get("step", 0) or 0),
                 completed_steps=completed_steps,
                 last_error=rr.error or "mission failed",
+                job_path=moved,
             )
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
@@ -522,6 +525,7 @@ class MissionQueueDaemon:
             mission=mission,
             current_step=len(mission.steps),
             completed_steps=completed_steps,
+            job_path=moved,
         )
         self.stats.processed += 1
         log({"event": "queue_job_done", "job": str(moved)})
@@ -605,7 +609,7 @@ class MissionQueueDaemon:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         if not approve:
             moved = self._move_job(job, self.failed)
-            self._write_state(job_name=moved.name, status="failed", last_error="Denied in approval inbox")
+            self._write_state(job_name=moved.name, status="failed", last_error="Denied in approval inbox", job_path=moved)
             self.stats.failed += 1
             mission_data = meta.get("mission", {})
             denied_mission = MissionTemplate(
@@ -651,12 +655,13 @@ class MissionQueueDaemon:
                 mission=mission,
                 current_step=int(rr.data.get("step", 0) or 0),
                 completed_steps=completed_steps,
+                job_path=job,
             )
             log({"event": "queue_job_pending_approval", "job": str(job), "step": rr.data.get("step"), "reason": rr.data.get("reason")})
             return False
         if not rr.ok:
             moved = self._move_job(job, self.failed)
-            self._write_state(job_name=moved.name, status="failed", payload=payload, mission=mission, completed_steps=completed_steps, last_error=rr.error or "mission failed")
+            self._write_state(job_name=moved.name, status="failed", payload=payload, mission=mission, completed_steps=completed_steps, last_error=rr.error or "mission failed", job_path=moved)
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
             meta_path.unlink(missing_ok=True)
@@ -664,7 +669,7 @@ class MissionQueueDaemon:
             return False
 
         moved = self._move_job(job, self.done)
-        self._write_state(job_name=moved.name, status="completed", payload=payload, mission=mission, current_step=len(mission.steps), completed_steps=completed_steps)
+        self._write_state(job_name=moved.name, status="completed", payload=payload, mission=mission, current_step=len(mission.steps), completed_steps=completed_steps, job_path=moved)
         self.stats.processed += 1
         log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
         meta_path.unlink(missing_ok=True)
