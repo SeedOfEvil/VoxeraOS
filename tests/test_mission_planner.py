@@ -827,6 +827,94 @@ def test_plan_mission_allowed_notes_goal_extracts_quoted_text_payload(monkeypatc
     assert step.args["text"] == "BOUNCE"
 
 
+
+
+def test_plan_mission_allowed_notes_goal_extracts_double_quoted_text_payload(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": False})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: (_ for _ in ()).throw(
+            AssertionError(
+                "LLM planner should not be called for allowed-notes implicit write goals"
+            )
+        ),
+    )
+
+    mission = asyncio.run(
+        plan_mission(
+            'Write the text "BOUNCE" to a notes file under the allowed notes directory.',
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "files.write_text"
+    assert step.args["path"] == "ok.txt"
+    assert step.args["text"] == "BOUNCE"
+
+
+def test_plan_mission_allowed_notes_goal_defaults_to_ok_without_quoted_payload(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": False})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: (_ for _ in ()).throw(
+            AssertionError(
+                "LLM planner should not be called for allowed-notes implicit write goals"
+            )
+        ),
+    )
+
+    mission = asyncio.run(
+        plan_mission(
+            "Write the text to a notes file under the allowed notes directory.",
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "files.write_text"
+    assert step.args["path"] == "ok.txt"
+    assert step.args["text"] == "ok"
+
+
+def test_plan_mission_allowed_notes_goal_preserves_payload_spaces_and_punctuation(monkeypatch):
+    cfg = AppConfig(privacy={"cloud_allowed": False})
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: (_ for _ in ()).throw(
+            AssertionError(
+                "LLM planner should not be called for allowed-notes implicit write goals"
+            )
+        ),
+    )
+
+    mission = asyncio.run(
+        plan_mission(
+            "Write the text 'Bounce now, please! 123 :)' to a notes file under the allowed notes directory.",
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert len(mission.steps) == 1
+    step = mission.steps[0]
+    assert step.skill_id == "files.write_text"
+    assert step.args["path"] == "ok.txt"
+    assert step.args["text"] == "Bounce now, please! 123 :)"
+
 def test_plan_mission_rewrites_placeholder_notes_path_to_relative(monkeypatch):
     cfg = AppConfig(
         privacy={"cloud_allowed": True},

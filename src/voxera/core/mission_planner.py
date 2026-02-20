@@ -110,6 +110,16 @@ def _goal_mentions_explicit_path(goal: str) -> bool:
     return any(token in text for token in ("~/", "/", "\\", ".txt", ".md", "path:"))
 
 
+def _extract_write_the_text_payload(goal: str) -> str | None:
+    match = re.search(
+        r"write\s+the\s+text\s+(['\"])(.+?)\1", goal.strip(), flags=re.IGNORECASE | re.DOTALL
+    )
+    if not match:
+        return None
+    payload = match.group(2).strip()
+    return payload or None
+
+
 def _extract_allowed_notes_write_args(goal: str) -> dict[str, str] | None:
     if not _goal_implies_allowed_notes_directory(goal) or _goal_mentions_explicit_path(goal):
         return None
@@ -272,6 +282,9 @@ def _extract_simple_write_args(goal: str) -> dict[str, str] | None:
             continue
 
         body_text = _strip_matching_quotes(m.group("text")).strip()
+        quoted_payload = _extract_write_the_text_payload(text)
+        if quoted_payload is not None:
+            body_text = quoted_payload
         if not body_text:
             continue
 
