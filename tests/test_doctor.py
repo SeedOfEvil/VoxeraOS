@@ -66,6 +66,29 @@ def test_run_doctor_adds_fallback_note_and_audit_event(monkeypatch, tmp_path: Pa
     assert events[0]["note"] == results["primary"]["note"]
 
 
+def test_run_doctor_ignores_audit_oserror(monkeypatch, tmp_path: Path):
+    report_path = tmp_path / "capabilities.json"
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="m1", base_url="https://example.com")
+        }
+    )
+
+    monkeypatch.setattr("voxera.doctor.load_config", lambda: cfg)
+    monkeypatch.setattr("voxera.doctor.capabilities_report_path", lambda: report_path)
+    monkeypatch.setattr("voxera.doctor.OpenAICompatBrain", lambda **_: _FakeBrain({"json_ok": True}))
+
+    def _raise_oserror(event):
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr("voxera.doctor.audit.log", _raise_oserror)
+
+    results = asyncio.run(run_doctor())
+
+    assert results["primary"]["json_ok"] is True
+    assert report_path.exists()
+
+
 class _FakeResponse:
     def __init__(self, text: str):
         self.text = text

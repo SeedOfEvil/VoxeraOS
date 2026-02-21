@@ -31,17 +31,20 @@ def _normalize_brain_result(name: str, provider: str, model: str, result: dict[s
     except (TypeError, ValueError):
         latency_ms = None
 
-    audit.log(
-        {
-            "event": "doctor_brain_test",
-            "brain": name,
-            "provider": normalized.get("provider"),
-            "model": normalized.get("model"),
-            "json_ok": json_ok,
-            "latency_ms": latency_ms,
-            "note": normalized.get("note") or normalized.get("error") or "",
-        }
-    )
+    try:
+        audit.log(
+            {
+                "event": "doctor_brain_test",
+                "brain": name,
+                "provider": normalized.get("provider"),
+                "model": normalized.get("model"),
+                "json_ok": json_ok,
+                "latency_ms": latency_ms,
+                "note": normalized.get("note") or normalized.get("error") or "",
+            }
+        )
+    except OSError:
+        pass
     return normalized
 
 
