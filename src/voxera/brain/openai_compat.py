@@ -81,21 +81,41 @@ class OpenAICompatBrain:
                 "content": "Return ONLY JSON with keys: ok (bool), model (string), steps (array of 3 strings).",
             },
         ]
-        resp = await self.generate(messages)
-        elapsed = time.time() - start
+        elapsed = 0.0
         ok = False
         parsed = None
+        raw = ""
+        note = ""
         try:
-            parsed = json.loads(resp.text.strip())
-            ok = isinstance(parsed, dict) and "ok" in parsed and "steps" in parsed
-        except Exception:
-            ok = False
+            resp = await self.generate(messages)
+            raw = resp.text[:500]
+            try:
+                parsed = json.loads(resp.text.strip())
+                ok = isinstance(parsed, dict) and "ok" in parsed and "steps" in parsed
+                if not ok:
+                    note = "response_json_missing_required_keys"
+            except json.JSONDecodeError:
+                ok = False
+                snippet = resp.text.strip().replace("\n", " ")[:120]
+                note = f"malformed_json: {snippet}"
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code if exc.response is not None else "unknown"
+            note = f"HTTPStatusError: status={status}"
+        except httpx.TimeoutException as exc:
+            note = f"{exc.__class__.__name__}: {exc}"
+        except httpx.HTTPError as exc:
+            note = f"{exc.__class__.__name__}: {exc}"
+        except Exception as exc:
+            note = f"{exc.__class__.__name__}: {exc}"
+
+        elapsed = time.time() - start
         return {
             "provider": "openai_compat",
             "model": self.model,
             "base_url": self.base_url,
             "latency_s": round(elapsed, 3),
             "json_ok": ok,
-            "raw": resp.text[:500],
+            "note": note,
+            "raw": raw,
             "parsed": parsed,
         }

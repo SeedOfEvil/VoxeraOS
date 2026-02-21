@@ -114,14 +114,28 @@ class GeminiBrain:
         note = ""
         raw = ""
         json_ok = False
+        parsed = None
+
         try:
             resp = await self.generate(messages)
             raw = resp.text[:500]
-            parsed = json.loads(resp.text.strip())
-            json_ok = isinstance(parsed, dict) and "ok" in parsed and "steps" in parsed
-            note = "live call succeeded"
+            try:
+                parsed = json.loads(resp.text.strip())
+                json_ok = isinstance(parsed, dict) and "ok" in parsed and "steps" in parsed
+                if not json_ok:
+                    note = "response_json_missing_required_keys"
+            except json.JSONDecodeError:
+                snippet = resp.text.strip().replace("\n", " ")[:120]
+                note = f"malformed_json: {snippet}"
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code if exc.response is not None else "unknown"
+            note = f"HTTPStatusError: status={status}"
+        except httpx.TimeoutException as exc:
+            note = f"{exc.__class__.__name__}: {exc}"
+        except httpx.HTTPError as exc:
+            note = f"{exc.__class__.__name__}: {exc}"
         except Exception as exc:
-            note = str(exc)
+            note = f"{exc.__class__.__name__}: {exc}"
             raw = raw or note[:500]
 
         return {
@@ -131,4 +145,5 @@ class GeminiBrain:
             "json_ok": json_ok,
             "note": note,
             "raw": raw,
+            "parsed": parsed,
         }
