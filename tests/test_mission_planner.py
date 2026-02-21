@@ -311,8 +311,6 @@ def test_plan_mission_all_providers_fail_deterministic_error(monkeypatch):
         asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
 
 
-
-
 def test_plan_mission_primary_provider_error_then_fallback_selected(monkeypatch):
     cfg = AppConfig(
         brain={
@@ -336,7 +334,9 @@ def test_plan_mission_primary_provider_error_then_fallback_selected(monkeypatch)
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
-            type("C", (), {"name": "primary", "model": "primary-model", "brain": _ProviderBoom()})(),
+            type(
+                "C", (), {"name": "primary", "model": "primary-model", "brain": _ProviderBoom()}
+            )(),
             type(
                 "C",
                 (),
@@ -391,8 +391,14 @@ def test_plan_mission_all_providers_fail_emits_plan_failed_event(monkeypatch):
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
-            type("C", (), {"name": "primary", "model": "primary-model", "brain": _MalformedProvider()})(),
-            type("C", (), {"name": "fallback", "model": "fallback-model", "brain": _RateLimited()})(),
+            type(
+                "C",
+                (),
+                {"name": "primary", "model": "primary-model", "brain": _MalformedProvider()},
+            )(),
+            type(
+                "C", (), {"name": "fallback", "model": "fallback-model", "brain": _RateLimited()}
+            )(),
         ],
     )
 
@@ -413,7 +419,9 @@ def test_plan_mission_classifies_malformed_provider_output(monkeypatch):
             "primary": BrainConfig(
                 type="openai_compat", model="primary", base_url="https://example.test/v1"
             ),
-            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+            "fast": BrainConfig(
+                type="openai_compat", model="fast", base_url="https://example.test/v1"
+            ),
         }
     )
     reg = SkillRegistry()
@@ -428,7 +436,11 @@ def test_plan_mission_classifies_malformed_provider_output(monkeypatch):
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
         lambda _cfg: [
-            type("C", (), {"name": "primary", "model": "primary-model", "brain": _MalformedProvider()})(),
+            type(
+                "C",
+                (),
+                {"name": "primary", "model": "primary-model", "brain": _MalformedProvider()},
+            )(),
             type(
                 "C",
                 (),

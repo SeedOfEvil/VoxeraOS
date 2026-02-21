@@ -465,8 +465,6 @@ def test_status_snapshot_prefers_valid_failed_sidecar_and_excludes_sidecar_from_
     assert status["recent_failed"][0] == {"job": "bad1.json", "error": "from-sidecar"}
 
 
-
-
 def test_status_snapshot_failed_sidecar_health_counters(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "queue"
@@ -515,7 +513,14 @@ def test_status_snapshot_invalid_sidecar_keeps_recent_failed_renderable(tmp_path
     failed_job = queue_dir / "failed" / "bad1.json"
     failed_job.write_text("{}", encoding="utf-8")
     failed_job.with_name("bad1.error.json").write_text(
-        json.dumps({"schema_version": 999, "job": "bad1.json", "error": "broken", "timestamp_ms": int(time.time() * 1000)}),
+        json.dumps(
+            {
+                "schema_version": 999,
+                "job": "bad1.json",
+                "error": "broken",
+                "timestamp_ms": int(time.time() * 1000),
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -544,7 +549,14 @@ def test_status_snapshot_invalid_sidecar_logs_once_per_snapshot(tmp_path, monkey
     failed_job = queue_dir / "failed" / "bad1.json"
     failed_job.write_text("{}", encoding="utf-8")
     failed_job.with_name("bad1.error.json").write_text(
-        json.dumps({"schema_version": 999, "job": "bad1.json", "error": "broken", "timestamp_ms": int(time.time() * 1000)}),
+        json.dumps(
+            {
+                "schema_version": 999,
+                "job": "bad1.json",
+                "error": "broken",
+                "timestamp_ms": int(time.time() * 1000),
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -559,7 +571,6 @@ def test_status_snapshot_invalid_sidecar_logs_once_per_snapshot(tmp_path, monkey
     assert status["failed_sidecars_invalid"] == 1
     invalid_events = [e for e in events if e.get("event") == "queue_failed_sidecar_invalid"]
     assert len(invalid_events) == 1
-
 
 
 def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch):

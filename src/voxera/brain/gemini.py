@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import time
-
 from typing import Any
 
 import httpx
@@ -52,7 +51,9 @@ class GeminiBrain:
             first = candidates[0]
             parts = first["content"]["parts"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("Planner returned malformed provider output: missing candidates") from exc
+            raise RuntimeError(
+                "Planner returned malformed provider output: missing candidates"
+            ) from exc
 
         text_parts = [str(part.get("text") or "") for part in parts if isinstance(part, dict)]
         text = "".join(text_parts).strip()
@@ -94,7 +95,9 @@ class GeminiBrain:
         try:
             data = response.json()
         except ValueError as exc:
-            raise RuntimeError("Planner returned malformed provider output: non-JSON response") from exc
+            raise RuntimeError(
+                "Planner returned malformed provider output: non-JSON response"
+            ) from exc
 
         text = self._extract_text(data)
         return BrainResponse(text=text, tool_calls=[])
