@@ -385,3 +385,10 @@ print(rr.ok, rr.data["artifacts_dir"])
 - Auto-approval allowlist is intentionally strict: `system.settings` only.
 - Network capabilities (for example `network.change`, `system.open_url`) are **never** auto-approved and still go to `pending/`.
 - Auto-approvals emit loud audit events (`queue_auto_approved`) for test visibility.
+
+## Merge checklist (local)
+Before merging any PR to `main`, run:
+
+- `make premerge`
+
+This runs the release-critical failed-sidecar guardrail, the unit test suite, and the E2E smoke script.

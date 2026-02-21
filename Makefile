@@ -64,3 +64,14 @@ services-stop:
 
 services-disable:
 	systemctl --user disable --now $(VOXERA_UNITS)
+
+.PHONY: premerge
+premerge:
+	@set -e; \
+	echo "[premerge] failed-sidecar guardrail"; \
+	$(MAKE) test-failed-sidecar; \
+	echo "[premerge] unit tests"; \
+	pytest -q; \
+	echo "[premerge] e2e smoke"; \
+	bash scripts/e2e_smoke.sh; \
+	echo "[premerge] OK to merge"
