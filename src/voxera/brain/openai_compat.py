@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
 
 from ..secrets import get_secret
 from .base import BrainResponse, ToolSpec
+from .json_recovery import recover_json_object
 
 
 class OpenAICompatBrain:
@@ -92,9 +92,8 @@ class OpenAICompatBrain:
         try:
             resp = await self.generate(messages)
             raw = (resp.text or "")[:500]
-            try:
-                parsed = json.loads((resp.text or "").strip())
-            except json.JSONDecodeError:
+            parsed, recovery_note = recover_json_object(resp.text or "")
+            if parsed is None:
                 snippet = " ".join((resp.text or "").strip().split())[:160]
                 note = f"malformed_json:{snippet}"
             else:
@@ -109,7 +108,12 @@ class OpenAICompatBrain:
                     and isinstance(first_step.get("skill_id"), str)
                     and isinstance(first_step.get("args"), dict)
                 )
-                note = "invalid_json: schema_mismatch" if not json_ok else "live call succeeded"
+                if not json_ok:
+                    note = "invalid_json: schema_mismatch"
+                elif recovery_note:
+                    note = recovery_note
+                else:
+                    note = "live call succeeded"
         except httpx.TimeoutException:
             note = "timeout"
         except httpx.HTTPStatusError as exc:

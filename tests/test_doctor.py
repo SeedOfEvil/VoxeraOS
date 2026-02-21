@@ -109,6 +109,43 @@ def test_openai_compat_capability_test_malformed_json(monkeypatch):
     assert result["note"].startswith("malformed_json:")
 
 
+
+
+def test_openai_compat_capability_test_strips_markdown_fence(monkeypatch):
+    from voxera.brain.openai_compat import OpenAICompatBrain
+
+    async def _fake_generate(self, messages, tools=None):
+        return _FakeResponse(
+            """```json
+{"title":"T","goal":"G","steps":[{"skill_id":"system.status","args":{}}]}
+```"""
+        )
+
+    monkeypatch.setattr(OpenAICompatBrain, "generate", _fake_generate)
+    brain = OpenAICompatBrain(base_url="https://api.example.com", model="x")
+
+    result = asyncio.run(brain.capability_test())
+
+    assert result["json_ok"] is True
+    assert result["note"] == "stripped_markdown_fence"
+
+
+def test_openai_compat_capability_test_extracts_json_object(monkeypatch):
+    from voxera.brain.openai_compat import OpenAICompatBrain
+
+    async def _fake_generate(self, messages, tools=None):
+        return _FakeResponse(
+            'Here you go: {"title":"T","goal":"G","steps":[{"skill_id":"system.status","args":{}}]} Thanks'
+        )
+
+    monkeypatch.setattr(OpenAICompatBrain, "generate", _fake_generate)
+    brain = OpenAICompatBrain(base_url="https://api.example.com", model="x")
+
+    result = asyncio.run(brain.capability_test())
+
+    assert result["json_ok"] is True
+    assert result["note"] == "extracted_json_object"
+
 def test_openai_compat_capability_test_http_error(monkeypatch):
     from voxera.brain.openai_compat import OpenAICompatBrain
 
@@ -156,6 +193,43 @@ def test_openai_compat_capability_test_timeout(monkeypatch):
 
     assert result["json_ok"] is False
     assert result["note"] == "timeout"
+
+
+
+def test_gemini_capability_test_strips_markdown_fence(monkeypatch):
+    from voxera.brain.gemini import GeminiBrain
+
+    async def _fake_generate(self, messages, tools=None):
+        return _FakeResponse(
+            """```
+{"title":"T","goal":"G","steps":[{"skill_id":"system.status","args":{}}]}
+```"""
+        )
+
+    monkeypatch.setattr(GeminiBrain, "generate", _fake_generate)
+    brain = GeminiBrain(model="gemini-2.0-flash")
+
+    result = asyncio.run(brain.capability_test())
+
+    assert result["json_ok"] is True
+    assert result["note"] == "stripped_markdown_fence"
+
+
+def test_gemini_capability_test_extracts_json_object(monkeypatch):
+    from voxera.brain.gemini import GeminiBrain
+
+    async def _fake_generate(self, messages, tools=None):
+        return _FakeResponse(
+            'Plan: {"title":"T","goal":"G","steps":[{"skill_id":"system.status","args":{}}]} done'
+        )
+
+    monkeypatch.setattr(GeminiBrain, "generate", _fake_generate)
+    brain = GeminiBrain(model="gemini-2.0-flash")
+
+    result = asyncio.run(brain.capability_test())
+
+    assert result["json_ok"] is True
+    assert result["note"] == "extracted_json_object"
 
 def test_gemini_capability_test_http_error(monkeypatch):
     from voxera.brain.gemini import GeminiBrain
