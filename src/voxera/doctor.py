@@ -3,15 +3,46 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table
 
+from . import audit
 from .brain.gemini import GeminiBrain
 from .brain.openai_compat import OpenAICompatBrain
 from .config import capabilities_report_path, load_config
 
 console = Console()
+
+
+def _normalize_brain_result(name: str, provider: str, model: str, result: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(result)
+    normalized["provider"] = str(normalized.get("provider") or provider)
+    normalized["model"] = str(normalized.get("model") or model)
+    json_ok = bool(normalized.get("json_ok", False))
+    normalized["json_ok"] = json_ok
+    if not json_ok and not str(normalized.get("note") or "").strip():
+        normalized["note"] = "invalid_json: capability_test returned json_ok=false (no details)"
+
+    latency_s = normalized.get("latency_s")
+    try:
+        latency_ms = int(float(latency_s) * 1000)
+    except (TypeError, ValueError):
+        latency_ms = None
+
+    audit.log(
+        {
+            "event": "doctor_brain_test",
+            "brain": name,
+            "provider": normalized.get("provider"),
+            "model": normalized.get("model"),
+            "json_ok": json_ok,
+            "latency_ms": latency_ms,
+            "note": normalized.get("note") or normalized.get("error") or "",
+        }
+    )
+    return normalized
 
 
 async def run_doctor() -> dict:
@@ -26,14 +57,16 @@ async def run_doctor() -> dict:
                     api_key_ref=bc.api_key_ref,
                     extra_headers=bc.extra_headers,
                 )
-                results[name] = await brain.capability_test()
+                raw_result = await brain.capability_test()
             elif bc.type == "gemini":
                 brain = GeminiBrain(model=bc.model, api_key_ref=bc.api_key_ref)
-                results[name] = await brain.capability_test()
+                raw_result = await brain.capability_test()
             else:
-                results[name] = {"provider": bc.type, "error": "Unknown provider type"}
+                raw_result = {"provider": bc.type, "model": bc.model, "error": "Unknown provider type"}
         except Exception as e:
-            results[name] = {"provider": bc.type, "error": repr(e)}
+            raw_result = {"provider": bc.type, "model": bc.model, "error": repr(e)}
+
+        results[name] = _normalize_brain_result(name, bc.type, bc.model, raw_result)
 
     results["sandbox.podman"] = {
         "provider": "podman",
