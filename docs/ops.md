@@ -105,6 +105,39 @@ Troubleshooting notes:
 - If you find orphan sidecars/jobs, they will still be listed/pruned predictably by stem unit,
   so cleanup can safely rely on the daemon retention policy.
 
+Mixed-version incident runbook (`queue_failed_sidecar_invalid`):
+1. Detect and confirm in audit stream:
+   ```bash
+   voxera audit | rg "queue_failed_sidecar_invalid"
+   ```
+2. Scope impacted artifacts by sidecar schema version under `failed/`:
+   ```bash
+   python - <<'PY'
+   import json
+   from collections import Counter
+   from pathlib import Path
+
+   failed_dir = Path.home() / "VoxeraOS/notes/queue/failed"
+   counts = Counter()
+   for sidecar in failed_dir.glob("*.error.json"):
+       try:
+           payload = json.loads(sidecar.read_text(encoding="utf-8"))
+       except Exception:
+           counts["unparseable"] += 1
+           continue
+       counts[str(payload.get("schema_version", "missing"))] += 1
+   for version, count in sorted(counts.items()):
+       print(f"schema_version={version}: {count}")
+   PY
+   ```
+3. Remediate safely:
+   - Align service versions first (ensure daemon build and operators are on the same release line).
+   - Quarantine incompatible sidecars by moving them out of `failed/` before retries if they came from a newer build.
+   - Reprocess by recreating the failed primary job only after version compatibility is restored.
+4. Release hygiene for schema changes:
+   - Any schema bump must update writer pin + reader allowlist together.
+   - Include migration/compatibility notes in release notes and echo the change in `README.md`, `docs/ops.md`, and `docs/CODEX_MEMORY.md`.
+
 
 ## Information sources (keep in sync)
 
