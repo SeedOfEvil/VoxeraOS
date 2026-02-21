@@ -51,7 +51,9 @@ def test_run_doctor_adds_fallback_note_and_audit_event(monkeypatch, tmp_path: Pa
 
     monkeypatch.setattr("voxera.doctor.load_config", lambda: cfg)
     monkeypatch.setattr("voxera.doctor.capabilities_report_path", lambda: report_path)
-    monkeypatch.setattr("voxera.doctor.OpenAICompatBrain", lambda **_: _FakeBrain({"json_ok": False}))
+    monkeypatch.setattr(
+        "voxera.doctor.OpenAICompatBrain", lambda **_: _FakeBrain({"json_ok": False})
+    )
     monkeypatch.setattr("voxera.doctor.audit.log", lambda event: events.append(event))
 
     results = asyncio.run(run_doctor())
@@ -76,7 +78,9 @@ def test_run_doctor_ignores_audit_oserror(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr("voxera.doctor.load_config", lambda: cfg)
     monkeypatch.setattr("voxera.doctor.capabilities_report_path", lambda: report_path)
-    monkeypatch.setattr("voxera.doctor.OpenAICompatBrain", lambda **_: _FakeBrain({"json_ok": True}))
+    monkeypatch.setattr(
+        "voxera.doctor.OpenAICompatBrain", lambda **_: _FakeBrain({"json_ok": True})
+    )
 
     def _raise_oserror(event):
         raise OSError("read-only filesystem")
@@ -107,8 +111,6 @@ def test_openai_compat_capability_test_malformed_json(monkeypatch):
 
     assert result["json_ok"] is False
     assert result["note"].startswith("malformed_json:")
-
-
 
 
 def test_openai_compat_capability_test_strips_markdown_fence(monkeypatch):
@@ -145,6 +147,7 @@ def test_openai_compat_capability_test_extracts_json_object(monkeypatch):
 
     assert result["json_ok"] is True
     assert result["note"] == "extracted_json_object"
+
 
 def test_openai_compat_capability_test_http_error(monkeypatch):
     from voxera.brain.openai_compat import OpenAICompatBrain
@@ -195,7 +198,6 @@ def test_openai_compat_capability_test_timeout(monkeypatch):
     assert result["note"] == "timeout"
 
 
-
 def test_gemini_capability_test_strips_markdown_fence(monkeypatch):
     from voxera.brain.gemini import GeminiBrain
 
@@ -230,6 +232,7 @@ def test_gemini_capability_test_extracts_json_object(monkeypatch):
 
     assert result["json_ok"] is True
     assert result["note"] == "extracted_json_object"
+
 
 def test_gemini_capability_test_http_error(monkeypatch):
     from voxera.brain.gemini import GeminiBrain
