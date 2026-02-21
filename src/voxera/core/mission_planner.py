@@ -39,7 +39,11 @@ def _classify_planner_error(exc: Exception) -> str:
         return "timeout"
     if "rate limit" in message or "429" in message:
         return "rate_limit"
-    if "non-json output" in message or ("json" in message and "planner" in message):
+    if (
+        "non-json output" in message
+        or ("json" in message and "planner" in message)
+        or "malformed provider output" in message
+    ):
         return "malformed_json"
     if isinstance(exc, MissionPlannerError):
         return "planner_error"

@@ -384,6 +384,9 @@ def queue_status(
     counts_table.add_row("pending/approvals/", str(counts["pending_approvals"]))
     counts_table.add_row("done/", str(counts["done"]))
     counts_table.add_row("failed/", str(counts["failed"]))
+    counts_table.add_row("failed metadata valid", str(status.get("failed_sidecars_valid", 0)))
+    counts_table.add_row("failed metadata invalid", str(status.get("failed_sidecars_invalid", 0)))
+    counts_table.add_row("failed metadata missing", str(status.get("failed_sidecars_missing", 0)))
     console.print(counts_table)
 
     if not status["exists"]:

@@ -573,11 +573,52 @@ class MissionQueueDaemon:
             )
         return out
 
-    def recent_failed_jobs_snapshot(
-        self, *, limit: int = 10, audit_tail: int = 200
-    ) -> list[dict[str, Any]]:
+    def _failed_job_files_snapshot(self) -> list[Path]:
         if not self.failed.exists():
             return []
+        return sorted(
+            (p for p in self.failed.glob("*.json") if self._is_primary_job_json(p)),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+
+    def _failed_sidecar_snapshot(
+        self, failed_files: list[Path]
+    ) -> tuple[dict[str, dict[str, Any] | None], dict[str, int]]:
+        sidecars_by_job: dict[str, dict[str, Any] | None] = {}
+        valid = 0
+        invalid = 0
+        missing = 0
+
+        for failed_job in failed_files:
+            sidecar = self._failed_error_sidecar(failed_job)
+            if not sidecar.exists():
+                sidecars_by_job[failed_job.name] = None
+                missing += 1
+                continue
+
+            payload = self._read_failed_error_sidecar(failed_job)
+            sidecars_by_job[failed_job.name] = payload
+            if payload is None:
+                invalid += 1
+            else:
+                valid += 1
+
+        return sidecars_by_job, {
+            "failed_sidecars_valid": valid,
+            "failed_sidecars_invalid": invalid,
+            "failed_sidecars_missing": missing,
+        }
+
+    def recent_failed_jobs_snapshot(
+        self,
+        *,
+        limit: int = 10,
+        audit_tail: int = 200,
+        failed_files: list[Path] | None = None,
+        sidecars_by_job: dict[str, dict[str, Any] | None] | None = None,
+    ) -> list[dict[str, Any]]:
+        files = failed_files if failed_files is not None else self._failed_job_files_snapshot()
 
         error_by_job: dict[str, str] = {}
         for event in reversed(tail(audit_tail)):
@@ -588,17 +629,13 @@ class MissionQueueDaemon:
                 continue
             error_by_job[job] = str(event.get("error") or "")
 
-        files = sorted(
-            (p for p in self.failed.glob("*.json") if self._is_primary_job_json(p)),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        resolved_sidecars = sidecars_by_job or {}
         rows: list[dict[str, Any]] = []
         for item in files[:limit]:
-            sidecar_error = ""
-            sidecar = self._read_failed_error_sidecar(item)
-            if sidecar is not None:
-                sidecar_error = str(sidecar.get("error") or "")
+            sidecar_payload = resolved_sidecars.get(item.name)
+            if sidecar_payload is None and item.name not in resolved_sidecars:
+                sidecar_payload = self._read_failed_error_sidecar(item)
+            sidecar_error = str(sidecar_payload.get("error") or "") if sidecar_payload else ""
             rows.append(
                 {"job": item.name, "error": sidecar_error or error_by_job.get(item.name, "")}
             )
@@ -607,6 +644,8 @@ class MissionQueueDaemon:
     def status_snapshot(
         self, *, approvals_limit: int = 10, failed_limit: int = 10
     ) -> dict[str, Any]:
+        failed_files = self._failed_job_files_snapshot()
+        sidecars_by_job, sidecar_health = self._failed_sidecar_snapshot(failed_files)
         return {
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
@@ -614,12 +653,13 @@ class MissionQueueDaemon:
                 "pending": len(self._pending_primary_jobs()),
                 "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
                 "done": self._count_files(self.done, "*.json"),
-                "failed": sum(1 for p in self.failed.glob("*.json") if self._is_primary_job_json(p))
-                if self.failed.exists()
-                else 0,
+                "failed": len(failed_files),
             },
+            **sidecar_health,
             "pending_approvals": self.pending_approvals_snapshot(limit=approvals_limit),
-            "recent_failed": self.recent_failed_jobs_snapshot(limit=failed_limit),
+            "recent_failed": self.recent_failed_jobs_snapshot(
+                limit=failed_limit, failed_files=failed_files, sidecars_by_job=sidecars_by_job
+            ),
         }
 
     def process_job_file(self, job_path: Path) -> bool:

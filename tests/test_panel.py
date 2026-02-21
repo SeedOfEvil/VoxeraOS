@@ -21,6 +21,8 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert res.status_code == 200
     body = res.text
     assert "Queue Status" in body
+    assert "Failed Metadata Health" in body
+    assert "Failed metadata valid" in body
     assert "Pending Queue Approvals" in body
     assert "Mission Log (last 20 lines)" in body
     assert "line-29" in body
