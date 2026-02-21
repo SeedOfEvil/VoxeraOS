@@ -829,9 +829,7 @@ def test_failed_sidecar_schema_for_approval_resume_runtime_failure(tmp_path, mon
     assert sidecar["payload"] == {"goal": "Open https://example.com"}
 
 
-def test_failed_sidecar_schema_version_policy_rejects_unknown_future_version(
-    tmp_path, monkeypatch
-):
+def test_failed_sidecar_schema_version_policy_rejects_unknown_future_version(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     events = []
     monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
@@ -898,7 +896,10 @@ def test_queue_failure_lifecycle_smoke_sidecar_snapshot_then_prune(tmp_path, mon
     )
     status_before = daemon.status_snapshot()
     assert status_before["counts"]["failed"] == 1
-    assert status_before["recent_failed"][0] == {"job": failed_job.name, "error": "runtime exploded"}
+    assert status_before["recent_failed"][0] == {
+        "job": failed_job.name,
+        "error": "runtime exploded",
+    }
 
     result = daemon.prune_failed_artifacts(max_count=0)
     assert result == {"removed_jobs": 1, "removed_sidecars": 1}
