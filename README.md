@@ -187,6 +187,17 @@ Queue status troubleshooting:
 
 Completed jobs are moved to `done/`; invalid or denied jobs are moved to `failed/`.
 
+Failed-job sidecar contract and retention:
+- Optional sidecar path: `failed/<job_stem>.error.json`.
+- Required fields: `schema_version` (currently `1`), `job`, `error`, `timestamp_ms` (epoch milliseconds).
+- Optional field: `payload` (object).
+- Queue status prefers validated sidecar error text for `recent_failed`, but failed counts include **primary failed jobs only** (sidecars excluded).
+- Invalid sidecars are ignored in snapshots and logged as `queue_failed_sidecar_invalid`.
+- Retention pruning keeps newest logical failed units (primary + sidecar) and can be configured with:
+  - `VOXERA_QUEUE_FAILED_MAX_AGE_S`
+  - `VOXERA_QUEUE_FAILED_MAX_COUNT`
+
+
 
 Queue job best practice (atomic producer write):
 ```bash

@@ -11,7 +11,10 @@ from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig
 
 
 def _force_policy_ask(monkeypatch):
-    cfg = AppConfig(policy=PolicyApprovals(system_settings="ask", network_changes="ask"), privacy=PrivacyConfig(redact_logs=True))
+    cfg = AppConfig(
+        policy=PolicyApprovals(system_settings="ask", network_changes="ask"),
+        privacy=PrivacyConfig(redact_logs=True),
+    )
     monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
 
 
@@ -37,8 +40,6 @@ def test_inbox_add_writes_goal_and_id(tmp_path):
     assert payload == {"id": "alpha-1", "goal": "Write daily check-in"}
 
 
-
-
 def test_inbox_add_rejects_duplicate_id_without_overwriting(tmp_path):
     queue_dir = tmp_path / "queue"
     created = add_inbox_job(queue_dir, "first goal", job_id="dup-1")
@@ -54,12 +55,17 @@ def test_inbox_add_cli_reports_duplicate_id_error(tmp_path):
     queue_dir = tmp_path / "queue"
     runner = CliRunner()
 
-    first = runner.invoke(cli.app, ["inbox", "add", "first goal", "--id", "dup-2", "--queue-dir", str(queue_dir)])
-    second = runner.invoke(cli.app, ["inbox", "add", "second goal", "--id", "dup-2", "--queue-dir", str(queue_dir)])
+    first = runner.invoke(
+        cli.app, ["inbox", "add", "first goal", "--id", "dup-2", "--queue-dir", str(queue_dir)]
+    )
+    second = runner.invoke(
+        cli.app, ["inbox", "add", "second goal", "--id", "dup-2", "--queue-dir", str(queue_dir)]
+    )
 
     assert first.exit_code == 0
     assert second.exit_code == 1
     assert "inbox job already exists" in second.stdout
+
 
 def test_generate_inbox_id_is_stable_for_goal_and_timestamp():
     job_id = generate_inbox_id("hello", now_ms=1730000000123)

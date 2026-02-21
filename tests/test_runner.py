@@ -69,14 +69,18 @@ def test_simulate_canonicalizes_write_text_aliases():
     runner = SkillRunner(reg)
     manifest = reg.get("files.write_text")
 
-    sim = runner.simulate(manifest, args={"path": "~/VoxeraOS/notes/test.txt", "content": "hello"}, policy=PolicyApprovals())
+    sim = runner.simulate(
+        manifest,
+        args={"path": "~/VoxeraOS/notes/test.txt", "content": "hello"},
+        policy=PolicyApprovals(),
+    )
     assert sim.steps[0].args["text"] == "hello"
 
 
 def test_run_redacts_sensitive_args_in_audit_log(monkeypatch):
     reg = SkillRegistry()
     manifest = _manifest(capabilities=[])
-    reg.load_entrypoint = lambda _mf: (lambda **_kwargs: "ok")
+    reg.load_entrypoint = lambda _mf: lambda **_kwargs: "ok"
     runner = SkillRunner(reg)
 
     events = []

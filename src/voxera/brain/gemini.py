@@ -15,7 +15,9 @@ class GeminiBrain:
         self.model = model
         self.api_key_ref = api_key_ref
 
-    async def generate(self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None) -> BrainResponse:
+    async def generate(
+        self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
+    ) -> BrainResponse:
         raise NotImplementedError(
             "Gemini adapter is scaffolded. Implement generate() in src/voxera/brain/gemini.py."
         )

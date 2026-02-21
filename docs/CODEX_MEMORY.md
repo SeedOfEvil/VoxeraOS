@@ -56,3 +56,16 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Add telemetry/metrics on rewrite frequency to detect planner drift.
 - Risks/notes:
   - Intent detection is heuristic and should be monitored for false positives/negatives.
+
+
+## 2026-02-21 — PR #TBD — Queue failed-artifact reliability pass
+- Summary:
+  - Added a stable failed-sidecar contract with schema versioning (`schema_version=1`) and required fields (`job`, `error`, `timestamp_ms`) plus optional `payload`.
+  - Added strict sidecar validation on write/read paths and ensured all queue failure paths emit schema-compliant sidecars.
+  - Added deterministic failed-artifact retention pruning that treats primary+sidecar as one logical unit, handles orphans predictably, and supports max-age/max-count while preserving newest failures.
+- Validation:
+  - `pytest -q tests/test_queue_daemon.py tests/test_cli_queue.py`
+- Follow-ups:
+  - Consider adding a first-class CLI command to inspect/prune failed retention state.
+- Risks/notes:
+  - Invalid legacy sidecars are intentionally ignored for status summaries and logged via `queue_failed_sidecar_invalid`.

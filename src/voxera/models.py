@@ -10,7 +10,10 @@ class BrainConfig(BaseModel):
     model: str
     base_url: str | None = None  # for openai_compat
     api_key_ref: str | None = None  # keyring ref name
-    extra_headers: dict[str, str] = Field(default_factory=dict)  # optional provider-specific headers
+    extra_headers: dict[str, str] = Field(
+        default_factory=dict
+    )  # optional provider-specific headers
+
 
 class PolicyApprovals(BaseModel):
     network_changes: Literal["allow", "ask", "deny"] = "ask"
@@ -19,9 +22,11 @@ class PolicyApprovals(BaseModel):
     open_apps: Literal["allow", "ask", "deny"] = "allow"
     system_settings: Literal["allow", "ask", "deny"] = "ask"
 
+
 class PrivacyConfig(BaseModel):
     cloud_allowed: bool = True
     redact_logs: bool = True
+
 
 class AppConfig(BaseModel):
     mode: Literal["voice", "gui", "cli", "mixed"] = "mixed"
@@ -34,6 +39,7 @@ class AppConfig(BaseModel):
     sandbox_cpus: float = 1.0
     sandbox_pids_limit: int = 256
 
+
 class SkillManifest(BaseModel):
     id: str
     name: str
@@ -44,6 +50,7 @@ class SkillManifest(BaseModel):
     exec_mode: Literal["local", "sandbox"] = "local"
     needs_network: bool = False
     fs_scope: Literal["workspace_only", "read_only", "broader"] = "workspace_only"
+
 
 class PlanStep(BaseModel):
     action: str
@@ -64,10 +71,12 @@ class PlanSimulation(BaseModel):
     blocked: bool = False
     summary: str = ""
 
+
 class Plan(BaseModel):
     title: str
     goal: str
     steps: list[PlanStep]
+
 
 class RunResult(BaseModel):
     ok: bool

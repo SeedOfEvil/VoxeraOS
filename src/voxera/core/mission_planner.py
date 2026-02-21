@@ -91,10 +91,9 @@ def _normalize_step_args(raw_args: object, expected_args: list[str]) -> dict:
     return {}
 
 
-
 def _strip_matching_quotes(value: str) -> str:
     text = value.strip()
-    pairs = (("\"", "\""), ("'", "'"), ("“", "”"), ("‘", "’"))
+    pairs = (('"', '"'), ("'", "'"), ("“", "”"), ("‘", "’"))
     for start, end in pairs:
         if text.startswith(start) and text.endswith(end) and len(text) >= 2:
             return text[1:-1].strip()
@@ -137,9 +136,15 @@ def _extract_allowed_notes_write_args(goal: str) -> dict[str, str] | None:
     if not _goal_implies_allowed_notes_directory(goal) or _goal_mentions_explicit_path(goal):
         return None
 
-    m = re.search(r"(?:saying|that\s+says?)\s*:?\s*(.+)$", goal.strip(), flags=re.IGNORECASE | re.DOTALL)
+    m = re.search(
+        r"(?:saying|that\s+says?)\s*:?\s*(.+)$", goal.strip(), flags=re.IGNORECASE | re.DOTALL
+    )
     text = _strip_matching_quotes((m.group(1) if m else "ok").strip()).strip() or "ok"
-    return {"path": "ok.txt", "text": text, "mode": "append" if _looks_like_append(goal) else "overwrite"}
+    return {
+        "path": "ok.txt",
+        "text": text,
+        "mode": "append" if _looks_like_append(goal) else "overwrite",
+    }
 
 
 def _parse_planner_json(raw_text: str) -> dict:
@@ -152,8 +157,6 @@ def _parse_planner_json(raw_text: str) -> dict:
     if not isinstance(parsed, dict):
         raise MissionPlannerError("Planner must return a JSON object.")
     return parsed
-
-
 
 
 def _goal_requests_file_write(goal: str) -> bool:
@@ -205,10 +208,13 @@ def _rewrite_non_explicit_sandbox_steps(goal: str, steps: list[MissionStep]) -> 
         message = "Please manually confirm the expected result for this verification step."
         m = re.search(r"grep\s+['\"]([^'\"]+)['\"]", joined)
         if m:
-            message = f"Please confirm the page/window title contains '{m.group(1)}' (manual check)."
+            message = (
+                f"Please confirm the page/window title contains '{m.group(1)}' (manual check)."
+            )
         rewritten.append(MissionStep(skill_id="clipboard.copy", args={"text": message}))
 
     return rewritten
+
 
 def _rewrite_non_explicit_file_writes(goal: str, steps: list[MissionStep]) -> list[MissionStep]:
     if _goal_requests_file_write(goal):
@@ -226,13 +232,16 @@ def _rewrite_non_explicit_file_writes(goal: str, steps: list[MissionStep]) -> li
         else:
             path = step.args.get("path")
             if isinstance(path, str) and path.strip():
-                message = f"Planner requested writing to {path}; switched to clipboard.copy for safety."
+                message = (
+                    f"Planner requested writing to {path}; switched to clipboard.copy for safety."
+                )
             else:
                 message = "Planner requested a file write; switched to clipboard.copy for safety."
 
         rewritten.append(MissionStep(skill_id="clipboard.copy", args={"text": message}))
 
     return rewritten
+
 
 def _extract_simple_write_args(goal: str) -> dict[str, str] | None:
     text = goal.strip()
@@ -343,17 +352,13 @@ async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
                 "Do not use files.write_text unless the user explicitly asks to write/update a file. "
                 "If writing under the allowed notes directory without a specific filename, use a relative path like ok.txt. "
                 "Never use placeholder paths like /path/to/notes.txt. "
-                "For sandbox.exec always use argv list form like {\"command\": [\"bash\", \"-lc\", \"echo HELLO\"]}; never use a command string. "
+                'For sandbox.exec always use argv list form like {"command": ["bash", "-lc", "echo HELLO"]}; never use a command string. '
                 "Do not wrap output in markdown/code fences and do not include commentary. Return one strict JSON object only."
             ),
         },
         {
             "role": "user",
-            "content": (
-                f"Goal: {goal}\n"
-                f"Skill catalog:\n{skills_block}\n"
-                "Return only JSON."
-            ),
+            "content": (f"Goal: {goal}\nSkill catalog:\n{skills_block}\nReturn only JSON."),
         },
     ]
 
@@ -545,8 +550,18 @@ async def plan_mission(
                 "event": "plan_failed",
                 "plan_id": plan_id,
                 "provider": planner_name or "unknown",
-                "model": next((candidate.model for candidate in candidates if candidate.name == planner_name), "unknown"),
-                "attempt": next((index for index, candidate in enumerate(candidates, start=1) if candidate.name == planner_name), 1),
+                "model": next(
+                    (candidate.model for candidate in candidates if candidate.name == planner_name),
+                    "unknown",
+                ),
+                "attempt": next(
+                    (
+                        index
+                        for index, candidate in enumerate(candidates, start=1)
+                        if candidate.name == planner_name
+                    ),
+                    1,
+                ),
                 "error_class": "malformed_json",
                 "latency_ms": 0,
                 "fallback_used": planner_name != "primary",
@@ -565,7 +580,9 @@ async def plan_mission(
     if not isinstance(steps_json, list) or not steps_json:
         raise MissionPlannerError("Planner returned no mission steps.")
     if len(steps_json) > _MAX_STEPS:
-        raise MissionPlannerError(f"Planner returned too many steps ({len(steps_json)} > {_MAX_STEPS}).")
+        raise MissionPlannerError(
+            f"Planner returned too many steps ({len(steps_json)} > {_MAX_STEPS})."
+        )
 
     skills = sorted(registry.discover().values(), key=lambda m: m.id)
     known_ids = {m.id for m in skills}
@@ -601,7 +618,11 @@ async def plan_mission(
                 "unknown",
             ),
             "attempt": next(
-                (index for index, candidate in enumerate(candidates, start=1) if candidate.name == planner_name),
+                (
+                    index
+                    for index, candidate in enumerate(candidates, start=1)
+                    if candidate.name == planner_name
+                ),
                 1,
             ),
             "error_class": "none",

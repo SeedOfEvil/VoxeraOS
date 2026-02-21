@@ -48,9 +48,16 @@ def _show_version(value: bool):
 
 app = typer.Typer(help="Voxera OS — Vera's control plane CLI")
 
+
 @app.callback()
 def main(
-    version: bool = typer.Option(False, "--version", callback=_show_version, is_eager=True, help="Show Voxera version and exit."),
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_show_version,
+        is_eager=True,
+        help="Show Voxera version and exit.",
+    ),
 ):
     """Voxera CLI root command group."""
 
@@ -72,15 +79,18 @@ app.add_typer(queue_app, name="queue")
 app.add_typer(inbox_app, name="inbox")
 queue_app.add_typer(queue_approvals_app, name="approvals")
 
+
 @app.command()
 def setup():
     """Run first-run typed setup wizard."""
     asyncio.run(run_setup())
 
+
 @app.command()
 def doctor():
     """Run provider capability tests and write a report."""
     doctor_sync()
+
 
 @app.command()
 def status():
@@ -95,6 +105,7 @@ def status():
     table.add_row("brains", ", ".join(cfg.brain.keys()) if cfg.brain else "(not configured)")
     console.print(table)
 
+
 @skills_app.command("list")
 def skills_list():
     reg = SkillRegistry()
@@ -108,7 +119,15 @@ def skills_list():
     table.add_column("FS")
     table.add_column("Capabilities")
     for _, mf in sorted(m.items()):
-        table.add_row(mf.id, mf.name, mf.risk, mf.exec_mode, str(mf.needs_network), mf.fs_scope, ", ".join(mf.capabilities))
+        table.add_row(
+            mf.id,
+            mf.name,
+            mf.risk,
+            mf.exec_mode,
+            str(mf.needs_network),
+            mf.fs_scope,
+            ", ".join(mf.capabilities),
+        )
     console.print(table)
 
 
@@ -123,16 +142,20 @@ def missions_list():
         table.add_row(mission.id, mission.title, str(len(mission.steps)), mission.notes or "")
     console.print(table)
 
+
 def _approval_prompt(manifest, decision):
     console.print(f"\n⚠️  Approval required for: [bold]{manifest.id}[/bold]")
     console.print(f"Reason: {decision.reason}")
     return typer.confirm("Approve?", default=False)
 
+
 @app.command()
 def run(
     skill_id: str,
     arg: list[str] | None = RUN_ARG_OPTION,
-    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate execution without running the skill."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Simulate execution without running the skill."
+    ),
 ):
     """Run a skill by ID (MVP)."""
     cfg = load_config()
@@ -165,7 +188,9 @@ def run(
 @missions_app.command("plan")
 def missions_plan(
     goal: str,
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview a cloud-planned mission without execution."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview a cloud-planned mission without execution."
+    ),
 ):
     """Use the configured cloud brain to create and run a mission plan."""
     cfg = load_config()
@@ -173,7 +198,12 @@ def missions_plan(
     reg.discover()
     runner = SkillRunner(reg)
     runner.config = cfg
-    mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt, redact_logs=cfg.privacy.redact_logs)
+    mission_runner = MissionRunner(
+        runner,
+        policy=cfg.policy,
+        require_approval_cb=_approval_prompt,
+        redact_logs=cfg.privacy.redact_logs,
+    )
 
     try:
         mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg, source="cli"))
@@ -197,10 +227,13 @@ def missions_plan(
         console.print(f"[red]ERROR:[/red] {rr.error}")
         raise typer.Exit(code=1)
 
+
 @missions_app.command("run")
 def missions_run(
     mission_id: str,
-    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate mission execution without running skills."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Simulate mission execution without running skills."
+    ),
 ):
     """Run a built-in multi-step mission by ID."""
     cfg = load_config()
@@ -208,7 +241,12 @@ def missions_run(
     reg.discover()
     runner = SkillRunner(reg)
     runner.config = cfg
-    mission_runner = MissionRunner(runner, policy=cfg.policy, require_approval_cb=_approval_prompt, redact_logs=cfg.privacy.redact_logs)
+    mission_runner = MissionRunner(
+        runner,
+        policy=cfg.policy,
+        require_approval_cb=_approval_prompt,
+        redact_logs=cfg.privacy.redact_logs,
+    )
 
     try:
         mission = get_mission(mission_id)
@@ -228,6 +266,7 @@ def missions_run(
         console.print(f"[red]ERROR:[/red] {rr.error}")
         raise typer.Exit(code=1)
 
+
 @app.command()
 def audit(n: int = 30):
     """Show last N audit events."""
@@ -235,21 +274,37 @@ def audit(n: int = 30):
     for e in events:
         console.print(e)
 
+
 @app.command()
 def panel(host: str = "127.0.0.1", port: int = 8844):
     """Run the minimal approvals/audit panel."""
     import uvicorn
+
     uvicorn.run("voxera.panel.app:app", host=host, port=port, reload=False)
+
 
 @app.command()
 def daemon(
     once: bool = typer.Option(False, "--once", help="Process current queue and exit."),
-    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
-    poll_interval: float = typer.Option(1.0, "--poll-interval", min=0.1, help="Polling interval in seconds when watchdog is unavailable."),
-    auto_approve_ask: bool = typer.Option(False, "--auto-approve-ask", help="DEV ONLY: auto-approve allowlisted ASK capabilities."),
+    queue_dir: str = typer.Option(
+        "~/VoxeraOS/notes/queue",
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+    poll_interval: float = typer.Option(
+        1.0,
+        "--poll-interval",
+        min=0.1,
+        help="Polling interval in seconds when watchdog is unavailable.",
+    ),
+    auto_approve_ask: bool = typer.Option(
+        False, "--auto-approve-ask", help="DEV ONLY: auto-approve allowlisted ASK capabilities."
+    ),
 ):
     """Run mission queue daemon watching for JSON jobs."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir), poll_interval=poll_interval, auto_approve_ask=auto_approve_ask)
+    daemon = MissionQueueDaemon(
+        queue_root=Path(queue_dir), poll_interval=poll_interval, auto_approve_ask=auto_approve_ask
+    )
     try:
         daemon.run(once=once)
     except KeyboardInterrupt:
@@ -258,7 +313,11 @@ def daemon(
 
 @queue_approvals_app.command("list")
 def queue_approvals_list(
-    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+    queue_dir: str = typer.Option(
+        "~/VoxeraOS/notes/queue",
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
 ):
     """List pending queue approvals."""
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
@@ -288,7 +347,11 @@ def queue_approvals_list(
 
 @queue_app.command("init")
 def queue_init(
-    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+    queue_dir: str = typer.Option(
+        "~/VoxeraOS/notes/queue",
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
 ):
     """Create queue directories (safe mkdir -p; does not delete data)."""
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
@@ -303,7 +366,11 @@ def queue_init(
 
 @queue_app.command("status")
 def queue_status(
-    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+    queue_dir: str = typer.Option(
+        "~/VoxeraOS/notes/queue",
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
 ):
     """Show queue health, pending approvals, and recent failures."""
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
@@ -330,7 +397,12 @@ def queue_status(
     approvals_table.add_column("Reason")
     if approvals:
         for item in approvals:
-            approvals_table.add_row(str(item.get("job", "")), str(item.get("step", "")), str(item.get("skill", "")), str(item.get("reason", "")))
+            approvals_table.add_row(
+                str(item.get("job", "")),
+                str(item.get("step", "")),
+                str(item.get("skill", "")),
+                str(item.get("reason", "")),
+            )
     else:
         approvals_table.add_row("-", "-", "-", "No pending approvals")
     console.print(approvals_table)
@@ -341,7 +413,9 @@ def queue_status(
     failed_table.add_column("Error Summary")
     if failed:
         for item in failed:
-            failed_table.add_row(str(item.get("job", "")), str(item.get("error", "") or "(no audit error summary)") )
+            failed_table.add_row(
+                str(item.get("job", "")), str(item.get("error", "") or "(no audit error summary)")
+            )
     else:
         failed_table.add_row("-", "No failed jobs")
     console.print(failed_table)
@@ -350,7 +424,11 @@ def queue_status(
 @queue_approvals_app.command("approve")
 def queue_approvals_approve(
     ref: str,
-    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+    queue_dir: str = typer.Option(
+        "~/VoxeraOS/notes/queue",
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
 ):
     """Approve a pending queue job by filename or id."""
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
@@ -359,13 +437,19 @@ def queue_approvals_approve(
     except FileNotFoundError as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1) from exc
-    console.print("Approved and resumed." if ok else "Approval processed; job still pending another approval.")
+    console.print(
+        "Approved and resumed." if ok else "Approval processed; job still pending another approval."
+    )
 
 
 @queue_approvals_app.command("deny")
 def queue_approvals_deny(
     ref: str,
-    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+    queue_dir: str = typer.Option(
+        "~/VoxeraOS/notes/queue",
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
 ):
     """Deny a pending queue job by filename or id."""
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
@@ -380,8 +464,14 @@ def queue_approvals_deny(
 @inbox_app.command("add")
 def inbox_add(
     goal: str,
-    id: str | None = typer.Option(None, "--id", help="Optional job id (defaults to generated timestamp+hash)."),
-    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+    id: str | None = typer.Option(
+        None, "--id", help="Optional job id (defaults to generated timestamp+hash)."
+    ),
+    queue_dir: str = typer.Option(
+        "~/VoxeraOS/notes/queue",
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
 ):
     """Create an inbox queue job from plain goal text."""
     try:
@@ -399,7 +489,11 @@ def inbox_add(
 @inbox_app.command("list")
 def inbox_list(
     n: int = typer.Option(20, "--n", min=1, help="Number of recent inbox jobs to show."),
-    queue_dir: str = typer.Option("~/VoxeraOS/notes/queue", "--queue-dir", help="Queue directory containing JSON mission jobs."),
+    queue_dir: str = typer.Option(
+        "~/VoxeraOS/notes/queue",
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
 ):
     """List inbox-created jobs across queue states."""
     jobs, missing_dirs = list_inbox_jobs(Path(queue_dir), limit=n)

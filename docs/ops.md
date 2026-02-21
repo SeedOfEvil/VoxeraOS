@@ -62,6 +62,50 @@ voxera queue status
 
 Denied jobs are visible in `failed/`, and audit/mission logs include deny lifecycle entries.
 
+## Failed artifact sidecar contract + retention
+
+Every failed primary job (`failed/*.json`) may have an optional sidecar at
+`failed/<job_stem>.error.json` with this schema contract:
+
+- Required fields:
+  - `schema_version` (currently `1`)
+  - `job` (exact failed filename, e.g. `job-123.json`)
+  - `error` (string summary)
+  - `timestamp_ms` (Unix epoch **milliseconds**)
+- Optional:
+  - `payload` (object)
+
+The daemon validates this schema on both write and read. Invalid sidecars are ignored for
+status summaries and emit `queue_failed_sidecar_invalid` audit events.
+
+Retention pruning treats a failed primary job plus `.error.json` as one logical unit:
+
+- Pairing key is the shared stem (`x.json` + `x.error.json`).
+- Orphans are still deterministic units:
+  - job without sidecar = one unit
+  - sidecar without job = one unit
+- Newness for pruning uses the newest mtime of either file in the unit.
+- Policy keeps newest failures and removes older units:
+  - `VOXERA_QUEUE_FAILED_MAX_AGE_S` (optional max age in seconds)
+  - `VOXERA_QUEUE_FAILED_MAX_COUNT` (optional max logical units)
+
+When both are set, max-age is applied first, then max-count keeps the newest among survivors.
+
+Troubleshooting notes:
+- ASK-policy failures denied from `voxera queue approvals deny ...` write a compliant sidecar
+  with `error="Denied in approval inbox"` and payload context when available.
+- If you find orphan sidecars/jobs, they will still be listed/pruned predictably by stem unit,
+  so cleanup can safely rely on the daemon retention policy.
+
+
+## Information sources (keep in sync)
+
+For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:
+- `README.md` (operator-facing feature and workflow docs)
+- `docs/ROADMAP.md` (what is current vs next)
+- `docs/CODEX_MEMORY.md` (chronological merged-change memory)
+- `AGENT.md` and `CODEX.md` (root-level quick memory pointers)
+
 ## DEV auto-approve warning
 
 `voxera daemon --auto-approve-ask` is **DEV-only** and requires `VOXERA_DEV_MODE=1`.

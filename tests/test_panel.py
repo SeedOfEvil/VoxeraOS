@@ -46,19 +46,33 @@ def test_panel_can_click_approve_pending_queue_job(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
     (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
-    (queue_dir / "pending" / "job-e2e-ask.json").write_text(json.dumps({"goal": "demo"}), encoding="utf-8")
+    (queue_dir / "pending" / "job-e2e-ask.json").write_text(
+        json.dumps({"goal": "demo"}), encoding="utf-8"
+    )
     (queue_dir / "pending" / "job-e2e-ask.pending.json").write_text(
         json.dumps(
             {
                 "payload": {"goal": "demo"},
                 "resume_step": 1,
-                "mission": {"id": "demo", "title": "Demo", "goal": "demo", "steps": [{"skill_id": "system.status", "args": {}}]},
+                "mission": {
+                    "id": "demo",
+                    "title": "Demo",
+                    "goal": "demo",
+                    "steps": [{"skill_id": "system.status", "args": {}}],
+                },
             }
         ),
         encoding="utf-8",
     )
     (queue_dir / "pending" / "approvals" / "job-e2e-ask.approval.json").write_text(
-        json.dumps({"job": "job-e2e-ask.json", "step": 1, "skill": "system.open_url", "reason": "needs approval"}),
+        json.dumps(
+            {
+                "job": "job-e2e-ask.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "reason": "needs approval",
+            }
+        ),
         encoding="utf-8",
     )
 

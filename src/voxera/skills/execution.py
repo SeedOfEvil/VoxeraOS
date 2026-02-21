@@ -178,11 +178,19 @@ class PodmanSandboxRunner(SandboxRunner):
         if isinstance(command, str):
             shell_command = command.strip()
             if not shell_command:
-                return RunResult(ok=False, error="sandbox.exec requires command as a non-empty list of strings")
+                return RunResult(
+                    ok=False, error="sandbox.exec requires command as a non-empty list of strings"
+                )
             shell_binary = "bash" if shutil.which("bash") is not None else "sh"
             command = [shell_binary, "-lc", shell_command]
-        elif not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
-            return RunResult(ok=False, error="sandbox.exec requires command as a non-empty list of strings")
+        elif (
+            not isinstance(command, list)
+            or not command
+            or not all(isinstance(x, str) for x in command)
+        ):
+            return RunResult(
+                ok=False, error="sandbox.exec requires command as a non-empty list of strings"
+            )
 
         timeout_s = int(args.get("timeout_s", 60))
         if timeout_s <= 0:
@@ -193,7 +201,9 @@ class PodmanSandboxRunner(SandboxRunner):
         except ValueError as exc:
             return RunResult(ok=False, error=str(exc))
         env_arg = args.get("env", {}) or {}
-        if not isinstance(env_arg, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env_arg.items()):
+        if not isinstance(env_arg, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in env_arg.items()
+        ):
             return RunResult(ok=False, error="env must be a dict of string keys and values")
 
         safe_env = {k: v for k, v in env_arg.items() if k in DEFAULT_ENV_ALLOWLIST}
@@ -231,7 +241,9 @@ class PodmanSandboxRunner(SandboxRunner):
         for k, v in safe_env.items():
             podman_cmd.extend(["-e", f"{k}={v}"])
 
-        podman_cmd.extend(["--network", "bridge" if requested_network else "none", cfg.sandbox_image])
+        podman_cmd.extend(
+            ["--network", "bridge" if requested_network else "none", cfg.sandbox_image]
+        )
         podman_cmd.extend(command)
 
         sanitized_podman = " ".join(shlex.quote(arg) for arg in sanitize_command(podman_cmd))
@@ -290,7 +302,13 @@ class PodmanSandboxRunner(SandboxRunner):
         return RunResult(
             ok=(exit_code == 0 and not timed_out),
             output=stdout.strip(),
-            error=None if exit_code == 0 and not timed_out else ("Sandbox command timed out" if timed_out else stderr.strip() or f"Sandbox command failed with exit code {exit_code}"),
+            error=None
+            if exit_code == 0 and not timed_out
+            else (
+                "Sandbox command timed out"
+                if timed_out
+                else stderr.strip() or f"Sandbox command failed with exit code {exit_code}"
+            ),
             data={
                 "runner": self.runner_name,
                 "job_id": job_id,

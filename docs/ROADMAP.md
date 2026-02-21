@@ -7,6 +7,11 @@
 - Minimal panel (approvals + audit)
 - Audit logs (JSONL)
 - Cloud-assisted mission planning (`voxera missions plan "<goal>"`)
+- Queue reliability hardening:
+  - schema-versioned failed sidecars (`failed/*.error.json`)
+  - sidecar validation on write/read
+  - deterministic failed retention pruning (paired/orphan-aware, max-age/max-count)
+  - failed status snapshots prefer valid sidecars while counting only primary jobs
 
 ## Alpha v0.2
 - OpenAI-compatible provider solidified (Ollama, etc.)

@@ -40,17 +40,28 @@ class OpenAICompatBrain:
                 hdr["Authorization"] = f"Bearer {key}"
         return hdr
 
-    async def generate(self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None) -> BrainResponse:
+    async def generate(
+        self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
+    ) -> BrainResponse:
         payload: dict[str, Any] = {"model": self.model, "messages": messages}
         if tools:
             payload["tools"] = [
-                {"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.schema}}
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.schema,
+                    },
+                }
                 for t in tools
             ]
             payload["tool_choice"] = "auto"
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.post(f"{self.base_url}/chat/completions", headers=self._headers(), json=payload)
+            r = await client.post(
+                f"{self.base_url}/chat/completions", headers=self._headers(), json=payload
+            )
             r.raise_for_status()
             data = r.json()
 
@@ -61,10 +72,14 @@ class OpenAICompatBrain:
 
     async def capability_test(self) -> dict[str, Any]:
         import time
+
         start = time.time()
         messages = [
             {"role": "system", "content": "You are a strict JSON generator."},
-            {"role": "user", "content": "Return ONLY JSON with keys: ok (bool), model (string), steps (array of 3 strings)."},
+            {
+                "role": "user",
+                "content": "Return ONLY JSON with keys: ok (bool), model (string), steps (array of 3 strings).",
+            },
         ]
         resp = await self.generate(messages)
         elapsed = time.time() - start
