@@ -17,6 +17,7 @@ _REQUIRED_TELEMETRY_FIELDS = {
     "latency_ms": int,
     "fallback_used": bool,
 }
+_EXACT_INT_TELEMETRY_FIELDS = {"attempt", "latency_ms"}
 _CANONICAL_ERROR_CLASSES = {
     "none",
     "timeout",
@@ -863,7 +864,10 @@ def test_plan_mission_telemetry_contract_retry_then_success(monkeypatch):
     for event in telemetry_events:
         for key, expected_type in _REQUIRED_TELEMETRY_FIELDS.items():
             assert key in event
-            assert isinstance(event[key], expected_type)
+            if key in _EXACT_INT_TELEMETRY_FIELDS:
+                assert type(event[key]) is int
+            else:
+                assert isinstance(event[key], expected_type)
         assert event["error_class"] in _CANONICAL_ERROR_CLASSES
 
     assert [e["provider"] for e in telemetry_events if e["event"] in {"planner_fallback", "planner_selected"}] == ["primary", "fast"]
@@ -926,6 +930,9 @@ def test_plan_mission_telemetry_contract_all_provider_failure_sequence(monkeypat
     failed_event = failed_events[0]
     for key, expected_type in _REQUIRED_TELEMETRY_FIELDS.items():
         assert key in failed_event
-        assert isinstance(failed_event[key], expected_type)
+        if key in _EXACT_INT_TELEMETRY_FIELDS:
+            assert type(failed_event[key]) is int
+        else:
+            assert isinstance(failed_event[key], expected_type)
     assert failed_event["error_class"] == "rate_limit"
     assert failed_event["fallback_used"] is True
