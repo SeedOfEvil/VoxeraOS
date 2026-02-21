@@ -69,3 +69,17 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Consider adding a first-class CLI command to inspect/prune failed retention state.
 - Risks/notes:
   - Invalid legacy sidecars are intentionally ignored for status summaries and logged via `queue_failed_sidecar_invalid`.
+
+
+## 2026-02-21 — PR #TBD — Tighten sidecar schema policy + lifecycle smoke coverage
+- Summary:
+  - Centralized failed-sidecar schema version checks with explicit writer pin (`1`) and reader allowlist (`[1]`).
+  - Added deterministic rejection handling for unknown/future sidecar versions while preserving `queue_failed_sidecar_invalid` audit signaling.
+  - Added a queue failure lifecycle smoke test validating fail -> sidecar-preferred snapshot -> prune -> empty snapshot behavior.
+- Validation:
+  - `pytest -q tests/test_queue_daemon.py`
+  - `pytest -q tests/test_cli_queue.py`
+- Follow-ups:
+  - If a future schema bump is needed, update writer pin + reader allowlist together and document migration path before rollout.
+- Risks/notes:
+  - Mixed-version sidecars now surface deterministically as invalid until compatibility is explicitly added.

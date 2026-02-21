@@ -78,6 +78,14 @@ Every failed primary job (`failed/*.json`) may have an optional sidecar at
 The daemon validates this schema on both write and read. Invalid sidecars are ignored for
 status summaries and emit `queue_failed_sidecar_invalid` audit events.
 
+Schema evolution policy:
+- Writer is pinned to a single current version (`1`) to keep emitted artifacts deterministic.
+- Reader accepts an explicit allowlist of supported versions (currently `[1]`).
+- Unknown future versions are rejected deterministically and surfaced via
+  `queue_failed_sidecar_invalid` so operators can detect mixed-version artifacts quickly.
+- When introducing a new schema version, update both writer pin and reader allowlist
+  intentionally, and document migration/compatibility expectations in release notes.
+
 Retention pruning treats a failed primary job plus `.error.json` as one logical unit:
 
 - Pairing key is the shared stem (`x.json` + `x.error.json`).
