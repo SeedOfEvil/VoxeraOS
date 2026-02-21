@@ -3,6 +3,7 @@ import sys
 import threading
 import time
 import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,17 @@ import voxera_builtin_skills.files_write_text as files_write_text_skill
 from voxera.core.missions import MissionStep, MissionTemplate
 from voxera.core.queue_daemon import MissionQueueDaemon
 from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig, RunResult
+
+
+def _assert_job_moved(target_dir, job_filename):
+    target_dir.mkdir(parents=True, exist_ok=True)
+    exact = target_dir / job_filename
+    if exact.exists():
+        return exact
+    job_path = Path(job_filename)
+    matches = sorted(target_dir.glob(f"{job_path.stem}-*{job_path.suffix}"))
+    assert matches, f"expected moved job for {job_filename} in {target_dir}"
+    return matches[-1]
 
 
 async def _fake_generate_for_sandbox_argv(_messages, tools=None):
@@ -77,7 +89,11 @@ def test_queue_daemon_rejects_invalid_schema_with_clear_error(tmp_path, monkeypa
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
     daemon.process_pending_once()
 
-    assert (queue_dir / "failed" / "bad.json").exists()
+    failed_job = _assert_job_moved(queue_dir / "failed", "bad.json")
+    sidecar = failed_job.with_name(f"{failed_job.stem}.error.json")
+    assert sidecar.exists()
+    details = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert "mission_id (or mission) or goal (or plan_goal)" in details["error"]
     assert any("mission_id (or mission) or goal (or plan_goal)" in evt.get("error", "") for evt in events if evt.get("event") == "queue_job_failed")
 
 
@@ -134,7 +150,7 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     assert "status=pending_approval" in log_path.read_text(encoding="utf-8")
 
     daemon.resolve_approval("approval", approve=True)
-    assert (queue_dir / "done" / "approval.json").exists()
+    _assert_job_moved(queue_dir / "done", "approval.json")
 
     daemon.process_job_file(deny_job)
     deny_artifact = queue_dir / "pending" / "approvals" / "deny.approval.json"
@@ -142,7 +158,7 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     deny_details = json.loads(deny_artifact.read_text(encoding="utf-8"))
     assert deny_details["skill"] == "system.open_url"
     daemon.resolve_approval("deny", approve=False)
-    assert (queue_dir / "failed" / "deny.json").exists()
+    _assert_job_moved(queue_dir / "failed", "deny.json")
     assert any(e["event"] == "queue_job_failed" and "Denied in approval inbox" in e.get("error", "") for e in events)
     assert any(e["event"] == "mission_denied" for e in events)
     assert "status=denied" in log_path.read_text(encoding="utf-8")
@@ -233,6 +249,10 @@ def test_queue_goal_job_rewrites_default_write_steps_and_completes(tmp_path, mon
                             "skill_id": "sandbox.exec",
                             "args": {"command": ["bash", "-lc", "curl -I https://example.com"]},
                         },
+                        {
+                            "skill_id": "system.open_url",
+                            "args": {"url": "https://example.com"},
+                        },
                     ],
                 }
             )
@@ -243,7 +263,7 @@ def test_queue_goal_job_rewrites_default_write_steps_and_completes(tmp_path, mon
     fake_brain = type("B", (), {"generate": _fake_generate})()
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: [type("C", (), {"name": "primary", "brain": fake_brain})()],
+        lambda _cfg: [type("C", (), {"name": "primary", "model": "primary-model", "brain": fake_brain})()],
     )
 
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
@@ -260,8 +280,11 @@ def test_queue_goal_job_rewrites_default_write_steps_and_completes(tmp_path, mon
 
     daemon.process_pending_once()
 
-    assert (queue_dir / "done" / "job-e2e-ask.json").exists()
-    assert not (queue_dir / "failed" / "job-e2e-ask.json").exists()
+    pending_job = _assert_job_moved(queue_dir / "pending", "job-e2e-ask.json")
+    assert not any((queue_dir / "done").glob("job-e2e-ask*.json"))
+    approval_artifact = queue_dir / "pending" / "approvals" / f"{pending_job.stem}.approval.json"
+    assert approval_artifact.exists()
+    assert (queue_dir / "pending" / f"{pending_job.stem}.pending.json").exists()
     assert generated_payloads
     assert "mission" in captured
     step_dump = json.dumps([{"skill_id": s.skill_id, "args": s.args} for s in captured["mission"].steps]).lower()
@@ -462,7 +485,7 @@ def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, m
     assert daemon.resolve_approval(str(queue_dir / "pending" / "approvals" / "job-d.approval.json"), approve=True) is True
 
     for ref in ["job-a", "job-b", "job-c", "job-d"]:
-        assert (queue_dir / "done" / f"{ref}.json").exists()
+        _assert_job_moved(queue_dir / "done", f"{ref}.json")
 
 
 
@@ -489,8 +512,8 @@ def test_queue_daemon_retries_partial_json_and_stabilizes(tmp_path, monkeypatch)
     daemon.process_pending_once()
     writer.join(timeout=1)
 
-    assert (queue_dir / "done" / "partial.json").exists()
-    assert not (queue_dir / "failed" / "partial.json").exists()
+    _assert_job_moved(queue_dir / "done", "partial.json")
+    assert not any((queue_dir / "failed").glob("partial*.json"))
     assert any(e.get("event") == "queue_job_retry_parse" for e in events)
     assert any(e.get("event") == "queue_job_parse_stabilized" for e in events)
 
@@ -535,7 +558,8 @@ def test_queue_daemon_persistent_invalid_json_fails_after_retries(tmp_path, monk
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
     daemon.process_pending_once()
 
-    assert (queue_dir / "failed" / "broken.json").exists()
+    failed_job = _assert_job_moved(queue_dir / "failed", "broken.json")
+    assert failed_job.with_name(f"{failed_job.stem}.error.json").exists()
     retry_events = [e for e in events if e.get("event") == "queue_job_retry_parse"]
     assert len(retry_events) >= 1
     failed = [e for e in events if e.get("event") == "queue_job_failed"]
@@ -559,14 +583,14 @@ def test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end(tmp_path, 
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
     daemon.process_pending_once()
 
-    assert (queue_dir / "done" / "job-write-notes.json").exists()
+    _assert_job_moved(queue_dir / "done", "job-write-notes.json")
     assert (allowed_root / "ok.txt").exists()
     assert "queue e2e ok." in (allowed_root / "ok.txt").read_text(encoding="utf-8")
 
 
 def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
     cfg = AppConfig(
-        policy=PolicyApprovals(system_settings="ask", network_changes="ask"),
+        policy=PolicyApprovals(system_settings="allow", network_changes="allow"),
         privacy=PrivacyConfig(redact_logs=False),
     )
     monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
@@ -584,6 +608,7 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
                 (),
                 {
                     "name": "primary",
+                    "model": "primary-model",
                     "brain": type(
                         "B",
                         (),
@@ -619,8 +644,8 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
     monkeypatch.setattr("voxera.skills.runner.select_runner", lambda _manifest: _Runner())
     daemon.process_pending_once()
 
-    assert (queue_dir / "done" / "job-sandbox-argv.json").exists()
-    assert not (queue_dir / "failed" / "job-sandbox-argv.json").exists()
+    _assert_job_moved(queue_dir / "done", "job-sandbox-argv.json")
+    assert not any((queue_dir / "failed").glob("job-sandbox-argv*.json"))
 
     skill_start = next(
         event for event in events if event.get("event") == "skill_start" and event.get("skill") == "sandbox.exec"
