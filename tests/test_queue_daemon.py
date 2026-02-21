@@ -531,6 +531,37 @@ def test_status_snapshot_invalid_sidecar_keeps_recent_failed_renderable(tmp_path
     assert status["recent_failed"][0] == {"job": "bad1.json", "error": "from-audit"}
 
 
+def test_status_snapshot_invalid_sidecar_logs_once_per_snapshot(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
+
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "failed").mkdir(parents=True)
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+    (queue_dir / "done").mkdir(parents=True)
+
+    failed_job = queue_dir / "failed" / "bad1.json"
+    failed_job.write_text("{}", encoding="utf-8")
+    failed_job.with_name("bad1.error.json").write_text(
+        json.dumps({"schema_version": 999, "job": "bad1.json", "error": "broken", "timestamp_ms": int(time.time() * 1000)}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "voxera.core.queue_daemon.tail",
+        lambda _n: [{"event": "queue_job_failed", "job": str(failed_job), "error": "from-audit"}],
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    status = daemon.status_snapshot()
+
+    assert status["failed_sidecars_invalid"] == 1
+    invalid_events = [e for e in events if e.get("event") == "queue_failed_sidecar_invalid"]
+    assert len(invalid_events) == 1
+
+
+
 def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "missing-queue"
@@ -926,7 +957,7 @@ def test_failed_sidecar_schema_version_policy_rejects_unknown_future_version(tmp
 
     assert status["recent_failed"][0] == {"job": "bad1.json", "error": "from-audit"}
     invalid_events = [e for e in events if e.get("event") == "queue_failed_sidecar_invalid"]
-    assert invalid_events
+    assert len(invalid_events) == 1
     assert "unsupported failed sidecar schema version for read" in invalid_events[0]["error"]
 
 
