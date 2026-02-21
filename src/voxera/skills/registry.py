@@ -10,6 +10,7 @@ from ..models import SkillManifest
 
 DEFAULT_SKILLS_DIR = Path(__file__).resolve().parents[3] / "skills"
 
+
 class SkillRegistry:
     def __init__(self, skills_dir: Path | None = None):
         self.skills_dir = skills_dir or DEFAULT_SKILLS_DIR

@@ -20,7 +20,9 @@ class PolicyDecision:
     reason: str
 
 
-def decide(skill: SkillManifest, policy: PolicyApprovals, *, args: dict[str, Any] | None = None) -> PolicyDecision:
+def decide(
+    skill: SkillManifest, policy: PolicyApprovals, *, args: dict[str, Any] | None = None
+) -> PolicyDecision:
     decision = "allow"
     reasons = []
     for cap in skill.capabilities:
@@ -54,4 +56,6 @@ def decide(skill: SkillManifest, policy: PolicyApprovals, *, args: dict[str, Any
             decision = "ask"
             reasons.append("sandbox network requested => approval required")
 
-    return PolicyDecision(decision=decision, reason="; ".join(reasons) if reasons else "no capabilities")
+    return PolicyDecision(
+        decision=decision, reason="; ".join(reasons) if reasons else "no capabilities"
+    )

@@ -16,6 +16,8 @@ def run(percent: str) -> RunResult:
         subprocess.check_call(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{p}%"])
         return RunResult(ok=True, output=f"Volume set to {p}%")
     except FileNotFoundError:
-        return RunResult(ok=False, error="pactl not found. Install pipewire-pulse or pulseaudio tools.")
+        return RunResult(
+            ok=False, error="pactl not found. Install pipewire-pulse or pulseaudio tools."
+        )
     except subprocess.CalledProcessError as e:
         return RunResult(ok=False, error=f"pactl failed: {e}")

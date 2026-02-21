@@ -59,7 +59,13 @@ MISSION_TEMPLATES: dict[str, MissionTemplate] = {
         steps=[
             MissionStep(skill_id="system.status"),
             MissionStep(skill_id="system.open_url", args={"url": "https://calendar.google.com"}),
-            MissionStep(skill_id="files.write_text", args={"path": "~/VoxeraOS/notes/daily-checkin.txt", "text": "Today:\n- Priorities\n- Blockers\n"}),
+            MissionStep(
+                skill_id="files.write_text",
+                args={
+                    "path": "~/VoxeraOS/notes/daily-checkin.txt",
+                    "text": "Today:\n- Priorities\n- Blockers\n",
+                },
+            ),
             MissionStep(skill_id="system.open_app", args={"name": "terminal"}),
         ],
         notes="Creates a daily check-in note and opens calendar.",
@@ -81,8 +87,13 @@ MISSION_TEMPLATES: dict[str, MissionTemplate] = {
         title="Wrap Up",
         goal="Capture end-of-day notes and lower noise",
         steps=[
-            MissionStep(skill_id="files.read_text", args={"path": "~/VoxeraOS/notes/daily-checkin.txt"}),
-            MissionStep(skill_id="clipboard.copy", args={"text": "Workday summary captured in ~/VoxeraOS/notes/daily-checkin.txt"}),
+            MissionStep(
+                skill_id="files.read_text", args={"path": "~/VoxeraOS/notes/daily-checkin.txt"}
+            ),
+            MissionStep(
+                skill_id="clipboard.copy",
+                args={"text": "Workday summary captured in ~/VoxeraOS/notes/daily-checkin.txt"},
+            ),
             MissionStep(skill_id="system.set_volume", args={"percent": "15"}),
         ],
         notes="Review notes, copy summary text, and lower volume.",
@@ -147,7 +158,9 @@ def _parse_mission_file(path: Path, mission_id_hint: str) -> MissionTemplate:
         if not isinstance(skill_id, str) or not skill_id.strip():
             raise ValueError(f"Invalid mission file {path}: step {idx} missing non-empty skill_id")
         if skill_id not in known_skills:
-            raise ValueError(f"Invalid mission file {path}: step {idx} unknown skill_id '{skill_id}'")
+            raise ValueError(
+                f"Invalid mission file {path}: step {idx} unknown skill_id '{skill_id}'"
+            )
 
         args = step_obj.get("args", {})
         if not isinstance(args, dict):
@@ -157,7 +170,9 @@ def _parse_mission_file(path: Path, mission_id_hint: str) -> MissionTemplate:
 
     title = payload.get("title", mission_id)
     if not isinstance(title, str) or not title.strip():
-        raise ValueError(f"Invalid mission file {path}: title must be a non-empty string when provided")
+        raise ValueError(
+            f"Invalid mission file {path}: title must be a non-empty string when provided"
+        )
 
     goal = payload.get("goal", "")
     if not isinstance(goal, str):
@@ -233,7 +248,9 @@ class MissionRunner:
         self.policy = policy
         self.require_approval_cb = require_approval_cb
         self.redact_logs = redact_logs
-        self.mission_log_path = mission_log_path or Path.home() / "VoxeraOS" / "notes" / "mission-log.md"
+        self.mission_log_path = (
+            mission_log_path or Path.home() / "VoxeraOS" / "notes" / "mission-log.md"
+        )
 
     def _append_mission_log(
         self,
@@ -244,13 +261,14 @@ class MissionRunner:
         paused_step: int | None = None,
     ) -> None:
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
-        summary = f"- {ts} | {mission.id} | {mission.title} | status={status} | steps={len(outputs)}"
+        summary = (
+            f"- {ts} | {mission.id} | {mission.title} | status={status} | steps={len(outputs)}"
+        )
         if paused_step:
             summary = f"{summary} | paused_step={paused_step}"
         if not self.redact_logs:
             details = "; ".join(
-                f"step {item['step']} {item['skill']} ok={item['ok']}"
-                for item in outputs
+                f"step {item['step']} {item['skill']} ok={item['ok']}" for item in outputs
             )
             if details:
                 summary = f"{summary} | details: {details}"
@@ -294,7 +312,14 @@ class MissionRunner:
         context: dict[str, Any] | None = None,
     ) -> RunResult:
         context = context or {}
-        log({"event": "mission_start", "mission": mission.id, "steps": len(mission.steps), "start_step": start_step})
+        log(
+            {
+                "event": "mission_start",
+                "mission": mission.id,
+                "steps": len(mission.steps),
+                "start_step": start_step,
+            }
+        )
         outputs: list[dict[str, Any]] = []
 
         for idx, ms in enumerate(mission.steps, start=1):
@@ -319,15 +344,31 @@ class MissionRunner:
                 }
             )
             if rr.data.get("status") == "pending_approval":
-                log({"event": "mission_pending_approval", "mission": mission.id, "step": idx, "skill": ms.skill_id})
-                self._append_mission_log(mission, outputs, status="pending_approval", paused_step=idx)
+                log(
+                    {
+                        "event": "mission_pending_approval",
+                        "mission": mission.id,
+                        "step": idx,
+                        "skill": ms.skill_id,
+                    }
+                )
+                self._append_mission_log(
+                    mission, outputs, status="pending_approval", paused_step=idx
+                )
                 data = dict(rr.data)
                 data.setdefault("results", outputs)
                 data.setdefault("step", idx)
                 data.setdefault("skill", ms.skill_id)
                 return RunResult(ok=False, error="Mission paused for approval.", data=data)
             if not rr.ok:
-                log({"event": "mission_error", "mission": mission.id, "step": idx, "error": rr.error})
+                log(
+                    {
+                        "event": "mission_error",
+                        "mission": mission.id,
+                        "step": idx,
+                        "error": rr.error,
+                    }
+                )
                 self._append_mission_log(mission, outputs, status="failed")
                 return RunResult(
                     ok=False,
@@ -337,4 +378,6 @@ class MissionRunner:
 
         log({"event": "mission_done", "mission": mission.id, "steps": len(mission.steps)})
         self._append_mission_log(mission, outputs, status="ok")
-        return RunResult(ok=True, output=f"Mission completed: {mission.title}", data={"results": outputs})
+        return RunResult(
+            ok=True, output=f"Mission completed: {mission.title}", data={"results": outputs}
+        )

@@ -27,11 +27,25 @@ def _assert_job_moved(target_dir, job_filename):
 
 
 async def _fake_generate_for_sandbox_argv(_messages, tools=None):
-    return type("R", (), {"text": json.dumps({"title": "argv", "steps": [{"skill_id": "sandbox.exec", "args": {"command": "echo HELLO-ARGV"}}]})})()
+    return type(
+        "R",
+        (),
+        {
+            "text": json.dumps(
+                {
+                    "title": "argv",
+                    "steps": [{"skill_id": "sandbox.exec", "args": {"command": "echo HELLO-ARGV"}}],
+                }
+            )
+        },
+    )()
 
 
 def _force_policy_ask(monkeypatch, *, redact_logs=True):
-    cfg = AppConfig(policy=PolicyApprovals(system_settings="ask", network_changes="ask"), privacy=PrivacyConfig(redact_logs=redact_logs))
+    cfg = AppConfig(
+        policy=PolicyApprovals(system_settings="ask", network_changes="ask"),
+        privacy=PrivacyConfig(redact_logs=redact_logs),
+    )
     monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
 
 
@@ -56,7 +70,9 @@ def test_queue_daemon_processes_plan_goal_alias_to_done(tmp_path, monkeypatch):
     job.parent.mkdir(parents=True, exist_ok=True)
     job.write_text(json.dumps({"plan_goal": "check machine"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     count = daemon.process_pending_once()
 
     assert count == 1
@@ -71,7 +87,9 @@ def test_queue_daemon_processes_goal_to_done(tmp_path, monkeypatch):
     job.parent.mkdir(parents=True, exist_ok=True)
     job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     daemon.process_pending_once()
 
     assert (queue_dir / "done" / "job1.json").exists()
@@ -87,7 +105,9 @@ def test_queue_daemon_rejects_invalid_schema_with_clear_error(tmp_path, monkeypa
     job.parent.mkdir(parents=True, exist_ok=True)
     job.write_text(json.dumps({"foo": "bar"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     daemon.process_pending_once()
 
     failed_job = _assert_job_moved(queue_dir / "failed", "bad.json")
@@ -95,7 +115,11 @@ def test_queue_daemon_rejects_invalid_schema_with_clear_error(tmp_path, monkeypa
     assert sidecar.exists()
     details = json.loads(sidecar.read_text(encoding="utf-8"))
     assert "mission_id (or mission) or goal (or plan_goal)" in details["error"]
-    assert any("mission_id (or mission) or goal (or plan_goal)" in evt.get("error", "") for evt in events if evt.get("event") == "queue_job_failed")
+    assert any(
+        "mission_id (or mission) or goal (or plan_goal)" in evt.get("error", "")
+        for evt in events
+        if evt.get("event") == "queue_job_failed"
+    )
 
 
 def test_queue_daemon_accepts_mission_alias(tmp_path, monkeypatch):
@@ -105,7 +129,9 @@ def test_queue_daemon_accepts_mission_alias(tmp_path, monkeypatch):
     job.parent.mkdir(parents=True, exist_ok=True)
     job.write_text(json.dumps({"mission": "system_check"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     daemon.process_pending_once()
 
     assert (queue_dir / "done" / "job1.json").exists()
@@ -135,7 +161,11 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
 
     log_path = tmp_path / "mission-log.md"
     daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=log_path)
-    monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
     daemon.process_job_file(approve_job)
 
     pending_job = queue_dir / "pending" / "approval.json"
@@ -160,7 +190,10 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     assert deny_details["skill"] == "system.open_url"
     daemon.resolve_approval("deny", approve=False)
     _assert_job_moved(queue_dir / "failed", "deny.json")
-    assert any(e["event"] == "queue_job_failed" and "Denied in approval inbox" in e.get("error", "") for e in events)
+    assert any(
+        e["event"] == "queue_job_failed" and "Denied in approval inbox" in e.get("error", "")
+        for e in events
+    )
     assert any(e["event"] == "mission_denied" for e in events)
     assert "status=denied" in log_path.read_text(encoding="utf-8")
 
@@ -181,7 +214,11 @@ def test_queue_daemon_dev_auto_approve_constraints(tmp_path, monkeypatch):
         mission_log_path=tmp_path / "mission-log-no-dev.md",
         auto_approve_ask=True,
     )
-    monkeypatch.setattr(daemon_no_dev.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    monkeypatch.setattr(
+        daemon_no_dev.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
     daemon_no_dev.process_job_file(system_job)
     assert (queue_dir / "pending" / "system.json").exists()
     assert not any(event["event"] == "queue_auto_approved" for event in no_dev_events)
@@ -198,25 +235,26 @@ def test_queue_daemon_dev_auto_approve_constraints(tmp_path, monkeypatch):
         mission_log_path=tmp_path / "mission-log-dev.md",
         auto_approve_ask=True,
     )
-    monkeypatch.setattr(daemon_dev.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    monkeypatch.setattr(
+        daemon_dev.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
     daemon_dev.process_job_file(system_job)
     daemon_dev.process_job_file(net_job)
 
     assert (queue_dir / "done" / "system.json").exists()
     assert (queue_dir / "pending" / "network.json").exists()
     assert any(
-        event["event"] == "queue_auto_approved"
-        and event.get("capability") == "system.settings"
+        event["event"] == "queue_auto_approved" and event.get("capability") == "system.settings"
         for event in dev_events
     )
     assert not any(
-        event["event"] == "queue_auto_approved"
-        and event.get("capability") == "network.change"
+        event["event"] == "queue_auto_approved" and event.get("capability") == "network.change"
         for event in dev_events
     )
     assert any(
-        event["event"] == "queue_approval_required"
-        and event.get("skill") == "system.open_url"
+        event["event"] == "queue_approval_required" and event.get("skill") == "system.open_url"
         for event in dev_events
     )
 
@@ -264,11 +302,19 @@ def test_queue_goal_job_rewrites_default_write_steps_and_completes(tmp_path, mon
     fake_brain = type("B", (), {"generate": _fake_generate})()
     monkeypatch.setattr(
         "voxera.core.mission_planner._build_brain_candidates",
-        lambda _cfg: [type("C", (), {"name": "primary", "model": "primary-model", "brain": fake_brain})()],
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": fake_brain})()
+        ],
     )
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
-    monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
 
     captured = {}
     real_run = daemon.mission_runner.run
@@ -288,7 +334,9 @@ def test_queue_goal_job_rewrites_default_write_steps_and_completes(tmp_path, mon
     assert (queue_dir / "pending" / f"{pending_job.stem}.pending.json").exists()
     assert generated_payloads
     assert "mission" in captured
-    step_dump = json.dumps([{"skill_id": s.skill_id, "args": s.args} for s in captured["mission"].steps]).lower()
+    step_dump = json.dumps(
+        [{"skill_id": s.skill_id, "args": s.args} for s in captured["mission"].steps]
+    ).lower()
     assert "sandbox.exec" not in step_dump
     assert "xdotool" not in step_dump
     assert "curl" not in step_dump
@@ -302,7 +350,9 @@ def test_queue_daemon_watchdog_mode_processes_existing_backlog(tmp_path, monkeyp
     job.parent.mkdir(parents=True, exist_ok=True)
     job.write_text(json.dumps({"mission_id": "system_check"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
 
     class _EventHandler:
         pass
@@ -321,8 +371,12 @@ def test_queue_daemon_watchdog_mode_processes_existing_backlog(tmp_path, monkeyp
             return None
 
     monkeypatch.setitem(sys.modules, "watchdog", types.ModuleType("watchdog"))
-    monkeypatch.setitem(sys.modules, "watchdog.events", types.SimpleNamespace(FileSystemEventHandler=_EventHandler))
-    monkeypatch.setitem(sys.modules, "watchdog.observers", types.SimpleNamespace(Observer=_Observer))
+    monkeypatch.setitem(
+        sys.modules, "watchdog.events", types.SimpleNamespace(FileSystemEventHandler=_EventHandler)
+    )
+    monkeypatch.setitem(
+        sys.modules, "watchdog.observers", types.SimpleNamespace(Observer=_Observer)
+    )
 
     def _interrupt(_seconds: float):
         raise KeyboardInterrupt
@@ -376,7 +430,9 @@ def test_status_snapshot_counts_and_pending_parsing(tmp_path, monkeypatch):
     assert status["recent_failed"][0] == {"job": "bad1.json", "error": "boom"}
 
 
-def test_status_snapshot_prefers_valid_failed_sidecar_and_excludes_sidecar_from_failed_count(tmp_path, monkeypatch):
+def test_status_snapshot_prefers_valid_failed_sidecar_and_excludes_sidecar_from_failed_count(
+    tmp_path, monkeypatch
+):
     _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "queue"
     (queue_dir / "failed").mkdir(parents=True)
@@ -424,7 +480,9 @@ def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch)
 
 def test_pending_approval_notification_success_and_failure_events(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
-    daemon = MissionQueueDaemon(queue_root=tmp_path / "queue", mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=tmp_path / "queue", mission_log_path=tmp_path / "mission-log.md"
+    )
 
     approval = {"job": "job1.json", "skill": "system.set_volume", "reason": "need approval"}
     events = []
@@ -453,7 +511,9 @@ def test_pending_approval_notification_success_and_failure_events(tmp_path, monk
     assert events[-1]["event"] == "queue_notify_failed"
 
 
-def test_queue_status_and_approvals_list_include_artifacts_and_parse_failures(tmp_path, monkeypatch):
+def test_queue_status_and_approvals_list_include_artifacts_and_parse_failures(
+    tmp_path, monkeypatch
+):
     _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "queue"
     (queue_dir / "pending" / "approvals").mkdir(parents=True)
@@ -472,7 +532,9 @@ def test_queue_status_and_approvals_list_include_artifacts_and_parse_failures(tm
         ),
         encoding="utf-8",
     )
-    (queue_dir / "pending" / "approvals" / "broken.approval.json").write_text("not-json", encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "broken.approval.json").write_text(
+        "not-json", encoding="utf-8"
+    )
 
     events = []
     monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
@@ -487,7 +549,11 @@ def test_queue_status_and_approvals_list_include_artifacts_and_parse_failures(tm
     assert len(approvals) == 2
     assert any(item.get("job") == "job-ask-site.json" for item in approvals)
     assert any(item.get("skill") == "(unparseable approval artifact)" for item in approvals)
-    assert any(e.get("event") == "queue_status_parse_failed" and e.get("filename") == "broken.approval.json" for e in events)
+    assert any(
+        e.get("event") == "queue_status_parse_failed"
+        and e.get("filename") == "broken.approval.json"
+        for e in events
+    )
 
 
 def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, monkeypatch):
@@ -505,8 +571,14 @@ def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, m
 
     monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
-    monkeypatch.setattr(daemon.mission_runner.skill_runner.registry, "load_entrypoint", lambda _mf: (lambda **_kwargs: "ok"))
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
 
     for _idx, ref in enumerate(["job-a", "job-b", "job-c", "job-d"]):
         job = queue_dir / f"{ref}.json"
@@ -516,11 +588,15 @@ def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, m
     assert daemon.resolve_approval("a", approve=True) is True
     assert daemon.resolve_approval("job-b.json", approve=True) is True
     assert daemon.resolve_approval(str(queue_dir / "pending" / "job-c.json"), approve=True) is True
-    assert daemon.resolve_approval(str(queue_dir / "pending" / "approvals" / "job-d.approval.json"), approve=True) is True
+    assert (
+        daemon.resolve_approval(
+            str(queue_dir / "pending" / "approvals" / "job-d.approval.json"), approve=True
+        )
+        is True
+    )
 
     for ref in ["job-a", "job-b", "job-c", "job-d"]:
         _assert_job_moved(queue_dir / "done", f"{ref}.json")
-
 
 
 def test_queue_daemon_retries_partial_json_and_stabilizes(tmp_path, monkeypatch):
@@ -535,7 +611,9 @@ def test_queue_daemon_retries_partial_json_and_stabilizes(tmp_path, monkeypatch)
     monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
     monkeypatch.setattr("voxera.core.queue_daemon._PARSE_RETRY_BACKOFF_S", 0.05)
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
 
     def _finish_write():
         time.sleep(0.08)
@@ -560,13 +638,23 @@ def test_queue_daemon_ignores_non_job_artifacts_in_inbox(tmp_path, monkeypatch):
 
     (queue_dir / "good.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
     (queue_dir / ".hidden.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
-    (queue_dir / "skip.pending.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
-    (queue_dir / "skip.approval.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
-    (queue_dir / "skip.tmp.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
-    (queue_dir / "skip.partial.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    (queue_dir / "skip.pending.json").write_text(
+        json.dumps({"goal": "check machine"}), encoding="utf-8"
+    )
+    (queue_dir / "skip.approval.json").write_text(
+        json.dumps({"goal": "check machine"}), encoding="utf-8"
+    )
+    (queue_dir / "skip.tmp.json").write_text(
+        json.dumps({"goal": "check machine"}), encoding="utf-8"
+    )
+    (queue_dir / "skip.partial.json").write_text(
+        json.dumps({"goal": "check machine"}), encoding="utf-8"
+    )
     (queue_dir / "scratch.tmp").write_text("{}", encoding="utf-8")
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     processed = daemon.process_pending_once()
 
     assert processed == 1
@@ -589,7 +677,9 @@ def test_queue_daemon_persistent_invalid_json_fails_after_retries(tmp_path, monk
     monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
     monkeypatch.setattr("voxera.core.queue_daemon._PARSE_RETRY_BACKOFF_S", 0.01)
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     daemon.process_pending_once()
 
     failed_job = _assert_job_moved(queue_dir / "failed", "broken.json")
@@ -608,11 +698,15 @@ def test_failed_sidecar_schema_for_parse_failure(tmp_path, monkeypatch):
     job = queue_dir / "bad-json.json"
     job.write_text("{", encoding="utf-8")
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     daemon.process_pending_once()
 
     failed_job = _assert_job_moved(queue_dir / "failed", "bad-json.json")
-    sidecar = json.loads(failed_job.with_name(f"{failed_job.stem}.error.json").read_text(encoding="utf-8"))
+    sidecar = json.loads(
+        failed_job.with_name(f"{failed_job.stem}.error.json").read_text(encoding="utf-8")
+    )
     assert sidecar["schema_version"] == 1
     assert sidecar["job"] == failed_job.name
     assert isinstance(sidecar["error"], str) and sidecar["error"]
@@ -628,7 +722,9 @@ def test_failed_sidecar_schema_for_runtime_failure_with_payload(tmp_path, monkey
     job = queue_dir / "runtime-fail.json"
     job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     monkeypatch.setattr(
         daemon.mission_runner,
         "run",
@@ -637,7 +733,9 @@ def test_failed_sidecar_schema_for_runtime_failure_with_payload(tmp_path, monkey
 
     daemon.process_pending_once()
     failed_job = _assert_job_moved(queue_dir / "failed", "runtime-fail.json")
-    sidecar = json.loads(failed_job.with_name(f"{failed_job.stem}.error.json").read_text(encoding="utf-8"))
+    sidecar = json.loads(
+        failed_job.with_name(f"{failed_job.stem}.error.json").read_text(encoding="utf-8")
+    )
     assert sidecar["schema_version"] == 1
     assert sidecar["job"] == failed_job.name
     assert sidecar["error"] == "runtime exploded"
@@ -649,24 +747,37 @@ def test_failed_sidecar_schema_for_approval_denied(tmp_path, monkeypatch):
     queue_dir = tmp_path / "queue"
     (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
 
-    (queue_dir / "pending" / "deny.json").write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
+    (queue_dir / "pending" / "deny.json").write_text(
+        json.dumps({"goal": "Open https://example.com"}), encoding="utf-8"
+    )
     (queue_dir / "pending" / "deny.pending.json").write_text(
         json.dumps(
             {
                 "payload": {"goal": "Open https://example.com"},
                 "resume_step": 1,
-                "mission": {"id": "goal_url", "title": "Goal URL", "goal": "Open", "steps": [{"skill_id": "system.open_url", "args": {"url": "https://example.com"}}]},
+                "mission": {
+                    "id": "goal_url",
+                    "title": "Goal URL",
+                    "goal": "Open",
+                    "steps": [
+                        {"skill_id": "system.open_url", "args": {"url": "https://example.com"}}
+                    ],
+                },
             }
         ),
         encoding="utf-8",
     )
-    (queue_dir / "pending" / "approvals" / "deny.approval.json").write_text(json.dumps({"job": "deny.json"}), encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "deny.approval.json").write_text(
+        json.dumps({"job": "deny.json"}), encoding="utf-8"
+    )
 
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
     daemon.resolve_approval("deny", approve=False)
 
     failed_job = _assert_job_moved(queue_dir / "failed", "deny.json")
-    sidecar = json.loads(failed_job.with_name(f"{failed_job.stem}.error.json").read_text(encoding="utf-8"))
+    sidecar = json.loads(
+        failed_job.with_name(f"{failed_job.stem}.error.json").read_text(encoding="utf-8")
+    )
     assert sidecar["schema_version"] == 1
     assert sidecar["error"] == "Denied in approval inbox"
     assert sidecar["payload"] == {"goal": "Open https://example.com"}
@@ -677,18 +788,29 @@ def test_failed_sidecar_schema_for_approval_resume_runtime_failure(tmp_path, mon
     queue_dir = tmp_path / "queue"
     (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
 
-    (queue_dir / "pending" / "resume.json").write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
+    (queue_dir / "pending" / "resume.json").write_text(
+        json.dumps({"goal": "Open https://example.com"}), encoding="utf-8"
+    )
     (queue_dir / "pending" / "resume.pending.json").write_text(
         json.dumps(
             {
                 "payload": {"goal": "Open https://example.com"},
                 "resume_step": 1,
-                "mission": {"id": "goal_url", "title": "Goal URL", "goal": "Open", "steps": [{"skill_id": "system.open_url", "args": {"url": "https://example.com"}}]},
+                "mission": {
+                    "id": "goal_url",
+                    "title": "Goal URL",
+                    "goal": "Open",
+                    "steps": [
+                        {"skill_id": "system.open_url", "args": {"url": "https://example.com"}}
+                    ],
+                },
             }
         ),
         encoding="utf-8",
     )
-    (queue_dir / "pending" / "approvals" / "resume.approval.json").write_text(json.dumps({"job": "resume.json"}), encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "resume.approval.json").write_text(
+        json.dumps({"job": "resume.json"}), encoding="utf-8"
+    )
 
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
     monkeypatch.setattr(
@@ -699,7 +821,9 @@ def test_failed_sidecar_schema_for_approval_resume_runtime_failure(tmp_path, mon
 
     daemon.resolve_approval("resume", approve=True)
     failed_job = _assert_job_moved(queue_dir / "failed", "resume.json")
-    sidecar = json.loads(failed_job.with_name(f"{failed_job.stem}.error.json").read_text(encoding="utf-8"))
+    sidecar = json.loads(
+        failed_job.with_name(f"{failed_job.stem}.error.json").read_text(encoding="utf-8")
+    )
     assert sidecar["schema_version"] == 1
     assert sidecar["error"] == "resume runtime failed"
     assert sidecar["payload"] == {"goal": "Open https://example.com"}
@@ -707,7 +831,9 @@ def test_failed_sidecar_schema_for_approval_resume_runtime_failure(tmp_path, mon
 
 def test_prune_failed_artifacts_with_pairs_and_orphans(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
-    daemon = MissionQueueDaemon(queue_root=tmp_path / "queue", mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=tmp_path / "queue", mission_log_path=tmp_path / "mission-log.md"
+    )
     daemon.ensure_dirs()
 
     now = time.time()
@@ -730,7 +856,9 @@ def test_prune_failed_artifacts_with_pairs_and_orphans(tmp_path, monkeypatch):
     result = daemon.prune_failed_artifacts(max_age_s=200, max_count=3)
     assert result == {"removed_jobs": 2, "removed_sidecars": 1}
 
-    remaining_primary = sorted(p.name for p in daemon.failed.glob("*.json") if daemon._is_primary_job_json(p))
+    remaining_primary = sorted(
+        p.name for p in daemon.failed.glob("*.json") if daemon._is_primary_job_json(p)
+    )
     remaining_sidecars = sorted(p.name for p in daemon.failed.glob("*.error.json"))
     assert remaining_primary == ["a.json", "b.json"]
     assert remaining_sidecars == ["a.error.json", "orphan-sidecar.error.json"]
@@ -738,7 +866,9 @@ def test_prune_failed_artifacts_with_pairs_and_orphans(tmp_path, monkeypatch):
     assert not (daemon.failed / "old.error.json").exists()
 
 
-def test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_name(tmp_path, monkeypatch):
+def test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_name(
+    tmp_path, monkeypatch
+):
     _force_policy_ask(monkeypatch)
     _stub_planner(monkeypatch)
     queue_dir = tmp_path / "queue"
@@ -747,7 +877,9 @@ def test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_nam
     (queue_dir / "failed" / "dup.json").write_text("{}", encoding="utf-8")
 
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
-    monkeypatch.setattr(daemon.mission_runner, "run", lambda *_args, **_kwargs: RunResult(ok=False, error="boom"))
+    monkeypatch.setattr(
+        daemon.mission_runner, "run", lambda *_args, **_kwargs: RunResult(ok=False, error="boom")
+    )
 
     src = queue_dir / "dup.json"
     src.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
@@ -760,9 +892,11 @@ def test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_nam
     assert sidecar["job"] == moved.name
 
 
-
 def test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end(tmp_path, monkeypatch):
-    cfg = AppConfig(policy=PolicyApprovals(system_settings="ask", network_changes="ask"), privacy=PrivacyConfig(cloud_allowed=False, redact_logs=True))
+    cfg = AppConfig(
+        policy=PolicyApprovals(system_settings="ask", network_changes="ask"),
+        privacy=PrivacyConfig(cloud_allowed=False, redact_logs=True),
+    )
     monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
 
     allowed_root = tmp_path / "notes"
@@ -771,9 +905,16 @@ def test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end(tmp_path, 
     queue_dir = tmp_path / "queue"
     job = queue_dir / "job-write-notes.json"
     queue_dir.mkdir(parents=True, exist_ok=True)
-    job.write_text(json.dumps({"goal": "Write a note under the allowed notes directory saying: queue e2e ok."}), encoding="utf-8")
+    job.write_text(
+        json.dumps(
+            {"goal": "Write a note under the allowed notes directory saying: queue e2e ok."}
+        ),
+        encoding="utf-8",
+    )
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     daemon.process_pending_once()
 
     _assert_job_moved(queue_dir / "done", "job-write-notes.json")
@@ -805,9 +946,7 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
                     "brain": type(
                         "B",
                         (),
-                        {
-                            "generate": staticmethod(_fake_generate_for_sandbox_argv)
-                        },
+                        {"generate": staticmethod(_fake_generate_for_sandbox_argv)},
                     )(),
                 },
             )()
@@ -817,11 +956,13 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
     events = []
     monkeypatch.setattr("voxera.skills.runner.log", lambda event: events.append(event))
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md")
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
     monkeypatch.setattr(
         daemon.mission_runner.skill_runner.registry,
         "load_entrypoint",
-        lambda _manifest: (lambda **_kwargs: "ok"),
+        lambda _manifest: lambda **_kwargs: "ok",
     )
 
     class _Runner:
@@ -841,6 +982,8 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
     assert not any((queue_dir / "failed").glob("job-sandbox-argv*.json"))
 
     skill_start = next(
-        event for event in events if event.get("event") == "skill_start" and event.get("skill") == "sandbox.exec"
+        event
+        for event in events
+        if event.get("event") == "skill_start" and event.get("skill") == "sandbox.exec"
     )
     assert skill_start["args"]["command"] == ["bash", "-lc", "echo HELLO-ARGV"]

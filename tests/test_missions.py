@@ -11,7 +11,14 @@ from voxera.skills.runner import SkillRunner
 
 def test_list_missions_contains_daily_cards_and_system_check():
     mission_ids = {m.id for m in list_missions()}
-    assert {"work_mode", "focus_mode", "daily_checkin", "incident_mode", "wrap_up", "system_check"}.issubset(mission_ids)
+    assert {
+        "work_mode",
+        "focus_mode",
+        "daily_checkin",
+        "incident_mode",
+        "wrap_up",
+        "system_check",
+    }.issubset(mission_ids)
 
 
 def test_simulate_work_mode_requires_approval_for_system_settings():
@@ -113,7 +120,9 @@ def test_get_mission_prefers_hardcoded_template_over_file(tmp_path, monkeypatch)
             {
                 "title": "Fake",
                 "goal": "Should not override built-in",
-                "steps": [{"skill_id": "sandbox.exec", "args": {"command": ["bash", "-lc", "echo nope"]}}],
+                "steps": [
+                    {"skill_id": "sandbox.exec", "args": {"command": ["bash", "-lc", "echo nope"]}}
+                ],
             }
         ),
         encoding="utf-8",
@@ -157,5 +166,7 @@ def test_get_mission_rejects_invalid_file_with_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr(missions_module, "_mission_search_dirs", lambda: [mission_dir])
 
-    with pytest.raises(ValueError, match=r"Invalid mission file .*bad\.json: step 1 missing non-empty skill_id"):
+    with pytest.raises(
+        ValueError, match=r"Invalid mission file .*bad\.json: step 1 missing non-empty skill_id"
+    ):
         get_mission("bad")
