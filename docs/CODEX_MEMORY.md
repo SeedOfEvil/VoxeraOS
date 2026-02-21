@@ -83,3 +83,16 @@ This file is the single, persistent project memory for Codex-assisted work.
   - If a future schema bump is needed, update writer pin + reader allowlist together and document migration path before rollout.
 - Risks/notes:
   - Mixed-version sidecars now surface deterministically as invalid until compatibility is explicitly added.
+
+
+## 2026-02-21 — PR #TBD — Add failed-sidecar CI guardrail + mixed-version runbook
+- Summary:
+  - Added a dedicated `make test-failed-sidecar` target that runs the sidecar schema-policy future-version rejection test and lifecycle smoke coverage.
+  - Added PR CI workflow `.github/workflows/queue-failed-sidecar.yml` to run the guardrail tests whenever queue-daemon sidecar logic or operator docs are changed.
+  - Expanded `docs/ops.md` with a mixed-version incident runbook for `queue_failed_sidecar_invalid` and linked contributor guidance in `README.md`.
+- Validation:
+  - `make test-failed-sidecar`
+- Follow-ups:
+  - Mark `queue-failed-sidecar-guardrail` as a required branch protection check on the default branch.
+- Risks/notes:
+  - Docs include shell snippets for ops triage; keep queue root paths aligned with deployment conventions.

@@ -198,7 +198,8 @@ Failed-job sidecar contract and retention:
   - `VOXERA_QUEUE_FAILED_MAX_AGE_S`
   - `VOXERA_QUEUE_FAILED_MAX_COUNT`
 - Queue failure lifecycle is covered by tests (runtime failure -> sidecar snapshot preference -> prune cleanup) in `tests/test_queue_daemon.py`.
-
+- Contributors can run the release-critical guardrail locally with `make test-failed-sidecar` (targets the future-version rejection + lifecycle smoke tests).
+- PRs that touch queue-daemon sidecar behavior/docs are expected to pass the `queue-failed-sidecar-guardrail` CI workflow.
 
 
 Queue job best practice (atomic producer write):
