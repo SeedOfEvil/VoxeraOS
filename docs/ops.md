@@ -97,6 +97,15 @@ Troubleshooting notes:
 - If you find orphan sidecars/jobs, they will still be listed/pruned predictably by stem unit,
   so cleanup can safely rely on the daemon retention policy.
 
+
+## Information sources (keep in sync)
+
+For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:
+- `README.md` (operator-facing feature and workflow docs)
+- `docs/ROADMAP.md` (what is current vs next)
+- `docs/CODEX_MEMORY.md` (chronological merged-change memory)
+- `AGENT.md` and `CODEX.md` (root-level quick memory pointers)
+
 ## DEV auto-approve warning
 
 `voxera daemon --auto-approve-ask` is **DEV-only** and requires `VOXERA_DEV_MODE=1`.
