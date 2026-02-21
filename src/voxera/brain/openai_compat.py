@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
 
 from ..secrets import get_secret
 from .base import BrainResponse, ToolSpec
+from .json_recovery import recover_json_object
 
 
 class OpenAICompatBrain:
@@ -78,24 +78,60 @@ class OpenAICompatBrain:
             {"role": "system", "content": "You are a strict JSON generator."},
             {
                 "role": "user",
-                "content": "Return ONLY JSON with keys: ok (bool), model (string), steps (array of 3 strings).",
+                "content": (
+                    "Return ONLY JSON with this shape: "
+                    '{"title":"string","goal":"string","steps":[{"skill_id":"system.status","args":{}}]}'
+                ),
             },
         ]
-        resp = await self.generate(messages)
-        elapsed = time.time() - start
-        ok = False
+
+        note = ""
+        raw = ""
+        json_ok = False
         parsed = None
         try:
-            parsed = json.loads(resp.text.strip())
-            ok = isinstance(parsed, dict) and "ok" in parsed and "steps" in parsed
-        except Exception:
-            ok = False
+            resp = await self.generate(messages)
+            raw = (resp.text or "")[:500]
+            parsed, recovery_note = recover_json_object(resp.text or "")
+            if parsed is None:
+                snippet = " ".join((resp.text or "").strip().split())[:160]
+                note = f"malformed_json:{snippet}"
+            else:
+                steps = parsed.get("steps") if isinstance(parsed, dict) else None
+                first_step = steps[0] if isinstance(steps, list) and steps else None
+                json_ok = (
+                    isinstance(parsed, dict)
+                    and isinstance(parsed.get("title"), str)
+                    and isinstance(parsed.get("goal"), str)
+                    and isinstance(steps, list)
+                    and isinstance(first_step, dict)
+                    and isinstance(first_step.get("skill_id"), str)
+                    and isinstance(first_step.get("args"), dict)
+                )
+                if not json_ok:
+                    note = "invalid_json: schema_mismatch"
+                elif recovery_note:
+                    note = recovery_note
+                else:
+                    note = "live call succeeded"
+        except httpx.TimeoutException:
+            note = "timeout"
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            note = "rate_limit" if status == 429 else f"http_error:{status}"
+            raw = raw or " ".join(exc.response.text.split())[:500]
+        except httpx.HTTPError:
+            note = "provider_error:HTTPError"
+        except Exception as exc:
+            note = f"provider_error:{type(exc).__name__}"
+
         return {
             "provider": "openai_compat",
             "model": self.model,
             "base_url": self.base_url,
-            "latency_s": round(elapsed, 3),
-            "json_ok": ok,
-            "raw": resp.text[:500],
+            "latency_s": round(time.time() - start, 3),
+            "json_ok": json_ok,
+            "note": note,
+            "raw": raw,
             "parsed": parsed,
         }
