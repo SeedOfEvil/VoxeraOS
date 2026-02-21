@@ -311,6 +311,142 @@ def test_plan_mission_all_providers_fail_deterministic_error(monkeypatch):
         asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
 
 
+
+
+def test_plan_mission_primary_provider_error_then_fallback_selected(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat", model="primary", base_url="https://example.test/v1"
+            ),
+            "fallback": BrainConfig(
+                type="openai_compat", model="fallback", base_url="https://example.test/v1"
+            ),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    class _ProviderBoom:
+        async def generate(self, messages, tools=None):
+            raise RuntimeError("provider backend exploded")
+
+    events = []
+    monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _ProviderBoom()})(),
+            type(
+                "C",
+                (),
+                {
+                    "name": "fallback",
+                    "model": "fallback-model",
+                    "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}'),
+                },
+            )(),
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+    assert mission.steps[0].skill_id == "system.status"
+
+    fallback_events = [e for e in events if e.get("event") == "planner_fallback"]
+    selected_events = [e for e in events if e.get("event") == "planner_selected"]
+    assert len(fallback_events) == 1
+    assert fallback_events[0]["provider"] == "primary"
+    assert fallback_events[0]["attempt"] == 1
+    assert fallback_events[0]["error_class"] == "provider_error"
+    assert len(selected_events) == 1
+    assert selected_events[0]["provider"] == "fallback"
+    assert selected_events[0]["attempt"] == 2
+    assert selected_events[0]["fallback_used"] is True
+
+
+def test_plan_mission_all_providers_fail_emits_plan_failed_event(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat", model="primary", base_url="https://example.test/v1"
+            ),
+            "fallback": BrainConfig(
+                type="openai_compat", model="fallback", base_url="https://example.test/v1"
+            ),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+    events = []
+
+    class _MalformedProvider:
+        async def generate(self, messages, tools=None):
+            raise RuntimeError("Planner returned malformed provider output: missing candidates")
+
+    class _RateLimited:
+        async def generate(self, messages, tools=None):
+            raise RuntimeError("rate limit hit")
+
+    monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _MalformedProvider()})(),
+            type("C", (), {"name": "fallback", "model": "fallback-model", "brain": _RateLimited()})(),
+        ],
+    )
+
+    with pytest.raises(
+        MissionPlannerError,
+        match="Planner failed after fallbacks: primary:malformed_json, fallback:rate_limit",
+    ):
+        asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+
+    failed_events = [e for e in events if e.get("event") == "plan_failed"]
+    assert len(failed_events) == 1
+    assert failed_events[0]["error_class"] == "rate_limit"
+
+
+def test_plan_mission_classifies_malformed_provider_output(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat", model="primary", base_url="https://example.test/v1"
+            ),
+            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    class _MalformedProvider:
+        async def generate(self, messages, tools=None):
+            raise RuntimeError("Planner returned malformed provider output: empty content text")
+
+    events = []
+    monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _MalformedProvider()})(),
+            type(
+                "C",
+                (),
+                {
+                    "name": "fast",
+                    "model": "fast-model",
+                    "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}'),
+                },
+            )(),
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+    assert mission.steps[0].skill_id == "system.status"
+    fallback_event = next(e for e in events if e.get("event") == "planner_fallback")
+    assert fallback_event["error_class"] == "malformed_json"
+
+
 def test_plan_mission_rejects_payload_with_unknown_top_level_keys(monkeypatch):
     cfg = AppConfig(
         brain={

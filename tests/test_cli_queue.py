@@ -81,3 +81,36 @@ def test_queue_approval_list_job_value_can_be_used_with_approve(tmp_path):
 
     assert approved.exit_code == 0
     assert (queue_dir / "done" / "job-e2e-ask.json").exists()
+
+
+def test_queue_status_renders_failed_metadata_counters(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "failed").mkdir(parents=True)
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+    (queue_dir / "done").mkdir(parents=True)
+
+    (queue_dir / "failed" / "valid.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "valid.error.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "job": "valid.json",
+                "error": "ok",
+                "timestamp_ms": 1700000000000,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "failed" / "invalid.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "invalid.error.json").write_text(
+        json.dumps({"schema_version": 1, "job": "invalid.json"}), encoding="utf-8"
+    )
+    (queue_dir / "failed" / "missing.json").write_text("{}", encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["queue", "status", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "failed metadata valid" in result.output
+    assert "failed metadata invalid" in result.output
+    assert "failed metadata missing" in result.output

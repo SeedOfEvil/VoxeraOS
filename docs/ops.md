@@ -78,6 +78,14 @@ Every failed primary job (`failed/*.json`) may have an optional sidecar at
 The daemon validates this schema on both write and read. Invalid sidecars are ignored for
 status summaries and emit `queue_failed_sidecar_invalid` audit events.
 
+Operator-facing status surfaces expose sidecar-health counters:
+- `failed metadata valid`
+- `failed metadata invalid`
+- `failed metadata missing`
+
+When `failed metadata invalid` is non-zero, inspect `failed/*.error.json` and triage
+matching `queue_failed_sidecar_invalid` audit events before retrying jobs.
+
 Schema evolution policy:
 - Writer is pinned to a single current version (`1`) to keep emitted artifacts deterministic.
 - Reader accepts an explicit allowlist of supported versions (currently `[1]`).
@@ -232,6 +240,7 @@ voxera queue status
 Dashboard (live): `https://grafana.voxera.internal/d/planner-reliability/mission-planner-reliability`
 
 Use planner audit events (`planner_selected`, `planner_fallback`, `plan_built`, `plan_failed`) as the canonical telemetry stream for production operator panels.
+Gemini and OpenAI-compatible planners both emit this same fallback telemetry contract.
 
 Required dashboard panels:
 - Fallback rate: `% of planner events with fallback_used=true` (slice by provider/model).

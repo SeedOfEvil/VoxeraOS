@@ -604,9 +604,39 @@ class MissionQueueDaemon:
             )
         return rows
 
+    def _failed_sidecar_health_snapshot(self) -> dict[str, int]:
+        if not self.failed.exists():
+            return {
+                "failed_sidecars_valid": 0,
+                "failed_sidecars_invalid": 0,
+                "failed_sidecars_missing": 0,
+            }
+
+        valid = 0
+        invalid = 0
+        missing = 0
+        for failed_job in self.failed.glob("*.json"):
+            if not self._is_primary_job_json(failed_job):
+                continue
+            sidecar = self._failed_error_sidecar(failed_job)
+            if not sidecar.exists():
+                missing += 1
+                continue
+            payload = self._read_failed_error_sidecar(failed_job)
+            if payload is None:
+                invalid += 1
+            else:
+                valid += 1
+        return {
+            "failed_sidecars_valid": valid,
+            "failed_sidecars_invalid": invalid,
+            "failed_sidecars_missing": missing,
+        }
+
     def status_snapshot(
         self, *, approvals_limit: int = 10, failed_limit: int = 10
     ) -> dict[str, Any]:
+        sidecar_health = self._failed_sidecar_health_snapshot()
         return {
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
@@ -618,6 +648,7 @@ class MissionQueueDaemon:
                 if self.failed.exists()
                 else 0,
             },
+            **sidecar_health,
             "pending_approvals": self.pending_approvals_snapshot(limit=approvals_limit),
             "recent_failed": self.recent_failed_jobs_snapshot(limit=failed_limit),
         }
