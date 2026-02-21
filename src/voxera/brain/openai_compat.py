@@ -109,10 +109,7 @@ class OpenAICompatBrain:
                     and isinstance(first_step.get("skill_id"), str)
                     and isinstance(first_step.get("args"), dict)
                 )
-                if not json_ok:
-                    note = "invalid_json: schema_mismatch"
-                else:
-                    note = "live call succeeded"
+                note = "invalid_json: schema_mismatch" if not json_ok else "live call succeeded"
         except httpx.TimeoutException:
             note = "timeout"
         except httpx.HTTPStatusError as exc:

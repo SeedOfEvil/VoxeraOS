@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import shutil
 from typing import Any
@@ -31,7 +32,7 @@ def _normalize_brain_result(name: str, provider: str, model: str, result: dict[s
     except (TypeError, ValueError):
         latency_ms = None
 
-    try:
+    with contextlib.suppress(OSError):
         audit.log(
             {
                 "event": "doctor_brain_test",
@@ -43,8 +44,6 @@ def _normalize_brain_result(name: str, provider: str, model: str, result: dict[s
                 "note": normalized.get("note") or normalized.get("error") or "",
             }
         )
-    except OSError:
-        pass
     return normalized
 
 
