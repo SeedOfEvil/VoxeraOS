@@ -142,6 +142,48 @@ voxera queue status
 ```
 
 
+## Planner reliability workstream (dashboard + alerts)
+
+Dashboard (live): `https://grafana.voxera.internal/d/planner-reliability/mission-planner-reliability`
+
+Use planner audit events (`planner_selected`, `planner_fallback`, `plan_built`, `plan_failed`) as the canonical telemetry stream for production operator panels.
+
+Required dashboard panels:
+- Fallback rate: `% of planner events with fallback_used=true` (slice by provider/model).
+- Plan failure rate: `% of requests ending in plan_failed`.
+- Planner latency percentiles (p50/p95/p99) from `latency_ms`, segmented by `provider` + `model`.
+- `error_class` distribution, grouped by provider/model.
+- Attempt-depth trend: distribution/time series of `attempt` values to show retry depth pressure.
+
+Alerting (live): `https://grafana.voxera.internal/alerting/list?search=planner`
+
+Initial thresholds, ownership, and routing:
+
+| Alert | Threshold | Baseline window | Sustain window | Owner | Routing |
+|---|---|---|---|---|---|
+| fallback-rate spike | fallback_used=true rate > `8%` AND >= `2x` trailing baseline | 7d trailing same-hour baseline | 15m | AI Runtime On-Call | PagerDuty: `voxera-ai-runtime` + `#ops-planner` |
+| sustained plan-failure increase | `plan_failed` rate > `3%` | 24h baseline | 20m | AI Runtime On-Call | PagerDuty: `voxera-ai-runtime` |
+| timeout spike | `error_class=timeout` > `2%` by provider/model | 24h baseline | 10m | Platform SRE | PagerDuty: `voxera-sre` + `#ops-planner` |
+| rate_limit spike | `error_class=rate_limit` > `1.5%` by provider/model | 24h baseline | 10m | Platform SRE | PagerDuty: `voxera-sre` + vendor escalation runbook |
+| malformed_json spike (drift signal) | `error_class=malformed_json` > `1%` and > `3x` 7d baseline | 7d trailing baseline | 15m | Planner Maintainers | Slack: `#ops-planner` + Jira component `planner-telemetry` |
+
+### How to interpret planner degradation
+
+1. Open **Fallback Rate** and **Attempt-Depth Trend** panels first. If fallback and higher attempts rise together, primary reliability drift is likely.
+2. Check **Error Class Distribution** next:
+   - `malformed_json` growth -> likely response-format drift/model behavior change.
+   - `timeout` growth -> provider latency/saturation or network transport degradation.
+   - `rate_limit` growth -> quota or burst-management pressure.
+3. Confirm impact with **Plan Failure Rate** and **Latency p95/p99** panels to distinguish recoverable retries from user-visible failures.
+4. Use the alert list above to route response: runtime vs SRE vs planner maintainer ownership.
+
+Quick audit triage command:
+
+```bash
+voxera audit | rg "planner_selected|planner_fallback|plan_built|plan_failed"
+```
+
+
 ### Planner drift watch (fallback diagnostics)
 
 Use planner audit events to spot model drift and provider instability:
