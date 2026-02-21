@@ -829,6 +829,88 @@ def test_failed_sidecar_schema_for_approval_resume_runtime_failure(tmp_path, mon
     assert sidecar["payload"] == {"goal": "Open https://example.com"}
 
 
+def test_failed_sidecar_schema_version_policy_rejects_unknown_future_version(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
+
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    failed_job = queue_dir / "failed" / "bad1.json"
+    failed_job.write_text("{}", encoding="utf-8")
+    failed_job.with_name("bad1.error.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 999,
+                "job": "bad1.json",
+                "error": "future schema",
+                "timestamp_ms": int(time.time() * 1000),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "voxera.core.queue_daemon.tail",
+        lambda _n: [{"event": "queue_job_failed", "job": str(failed_job), "error": "from-audit"}],
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    status = daemon.status_snapshot()
+
+    assert status["recent_failed"][0] == {"job": "bad1.json", "error": "from-audit"}
+    invalid_events = [e for e in events if e.get("event") == "queue_failed_sidecar_invalid"]
+    assert invalid_events
+    assert "unsupported failed sidecar schema version for read" in invalid_events[0]["error"]
+
+
+def test_queue_failure_lifecycle_smoke_sidecar_snapshot_then_prune(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "job-fail.json"
+    job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner,
+        "run",
+        lambda *_args, **_kwargs: RunResult(ok=False, error="runtime exploded"),
+    )
+
+    daemon.process_pending_once()
+    failed_job = _assert_job_moved(queue_dir / "failed", "job-fail.json")
+    sidecar_path = failed_job.with_name(f"{failed_job.stem}.error.json")
+    assert sidecar_path.exists()
+
+    monkeypatch.setattr(
+        "voxera.core.queue_daemon.tail",
+        lambda _n: [
+            {
+                "event": "queue_job_failed",
+                "job": str(failed_job),
+                "error": "from-audit",
+            }
+        ],
+    )
+    status_before = daemon.status_snapshot()
+    assert status_before["counts"]["failed"] == 1
+    assert status_before["recent_failed"][0] == {
+        "job": failed_job.name,
+        "error": "runtime exploded",
+    }
+
+    result = daemon.prune_failed_artifacts(max_count=0)
+    assert result == {"removed_jobs": 1, "removed_sidecars": 1}
+    assert not failed_job.exists()
+    assert not sidecar_path.exists()
+
+    status_after = daemon.status_snapshot()
+    assert status_after["counts"]["failed"] == 0
+    assert status_after["recent_failed"] == []
+
+
 def test_prune_failed_artifacts_with_pairs_and_orphans(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     daemon = MissionQueueDaemon(

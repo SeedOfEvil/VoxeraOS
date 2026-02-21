@@ -9,9 +9,10 @@
 - Cloud-assisted mission planning (`voxera missions plan "<goal>"`)
 - Queue reliability hardening:
   - schema-versioned failed sidecars (`failed/*.error.json`)
-  - sidecar validation on write/read
+  - centralized schema-version policy (writer pin + reader allowlist) for sidecar validation
   - deterministic failed retention pruning (paired/orphan-aware, max-age/max-count)
   - failed status snapshots prefer valid sidecars while counting only primary jobs
+  - queue failure lifecycle smoke coverage (fail -> snapshot -> prune)
 
 ## Alpha v0.2
 - OpenAI-compatible provider solidified (Ollama, etc.)

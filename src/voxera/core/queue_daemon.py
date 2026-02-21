@@ -20,7 +20,8 @@ from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
 _AUTO_APPROVE_ALLOWLIST = {"system.settings"}
 _PARSE_RETRY_ATTEMPTS = 4
 _PARSE_RETRY_BACKOFF_S = 0.1
-_FAILED_SIDECAR_SCHEMA_VERSION = 1
+_FAILED_SIDECAR_SCHEMA_WRITE_VERSION = 1
+_FAILED_SIDECAR_SCHEMA_READ_VERSIONS = {_FAILED_SIDECAR_SCHEMA_WRITE_VERSION}
 _FAILED_TIMESTAMP_MS_MIN = 10**12
 
 
@@ -178,10 +179,7 @@ class MissionQueueDaemon:
         missing = [field for field in required if field not in payload]
         if missing:
             raise ValueError(f"failed sidecar missing required fields: {', '.join(missing)}")
-        if payload.get("schema_version") != _FAILED_SIDECAR_SCHEMA_VERSION:
-            raise ValueError(
-                f"unsupported failed sidecar schema version: {payload.get('schema_version')}"
-            )
+        self._validate_failed_sidecar_schema_version(payload.get("schema_version"), mode="read")
         job = payload.get("job")
         if not isinstance(job, str) or not job:
             raise ValueError("failed sidecar field 'job' must be a non-empty string")
@@ -221,15 +219,35 @@ class MissionQueueDaemon:
             )
             return None
 
+    def _validate_failed_sidecar_schema_version(self, version: Any, *, mode: str) -> int:
+        if not isinstance(version, int):
+            raise ValueError("failed sidecar field 'schema_version' must be an integer")
+        if mode == "read":
+            if version in _FAILED_SIDECAR_SCHEMA_READ_VERSIONS:
+                return version
+            raise ValueError(
+                "unsupported failed sidecar schema version for read: "
+                f"{version} (supported: {sorted(_FAILED_SIDECAR_SCHEMA_READ_VERSIONS)})"
+            )
+        if mode == "write":
+            if version == _FAILED_SIDECAR_SCHEMA_WRITE_VERSION:
+                return version
+            raise ValueError(
+                "unsupported failed sidecar schema version for write: "
+                f"{version} (writer pinned to {_FAILED_SIDECAR_SCHEMA_WRITE_VERSION})"
+            )
+        raise ValueError(f"invalid schema-version validation mode: {mode}")
+
     def _write_failed_error_sidecar(
         self, failed_job: Path, *, error: str, payload: dict[str, Any] | None = None
     ) -> None:
         details: dict[str, Any] = {
-            "schema_version": _FAILED_SIDECAR_SCHEMA_VERSION,
+            "schema_version": _FAILED_SIDECAR_SCHEMA_WRITE_VERSION,
             "job": failed_job.name,
             "error": error,
             "timestamp_ms": int(time.time() * 1000),
         }
+        self._validate_failed_sidecar_schema_version(details["schema_version"], mode="write")
         if payload is not None:
             details["payload"] = payload
         self._validate_failed_error_sidecar(details, expected_job=failed_job.name)

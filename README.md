@@ -193,9 +193,11 @@ Failed-job sidecar contract and retention:
 - Optional field: `payload` (object).
 - Queue status prefers validated sidecar error text for `recent_failed`, but failed counts include **primary failed jobs only** (sidecars excluded).
 - Invalid sidecars are ignored in snapshots and logged as `queue_failed_sidecar_invalid`.
+- Schema evolution policy: writer is pinned to version `1`, reader uses an explicit supported-version allowlist (currently `[1]`), and unknown future versions are rejected deterministically.
 - Retention pruning keeps newest logical failed units (primary + sidecar) and can be configured with:
   - `VOXERA_QUEUE_FAILED_MAX_AGE_S`
   - `VOXERA_QUEUE_FAILED_MAX_COUNT`
+- Queue failure lifecycle is covered by tests (runtime failure -> sidecar snapshot preference -> prune cleanup) in `tests/test_queue_daemon.py`.
 
 
 

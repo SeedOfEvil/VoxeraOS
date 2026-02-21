@@ -10,12 +10,12 @@ Use this file as a quick operational memory index for agent-style development in
 - Audit logging verified for step-level events and mission completion (`mission_done`) with policy reason context.
 
 ## Latest extension
-- Added queue failed-artifact reliability pass: schema-versioned `failed/*.error.json` sidecars, strict read/write validation, retention pruning (pair/orphan aware), and status preference for validated sidecar error details.
+- Added queue failed-artifact reliability pass with explicit schema-version compatibility policy (writer pin + reader allowlist), strict read/write validation, retention pruning (pair/orphan aware), and status preference for validated sidecar error details.
 
 ## Current confidence snapshot
 - Queue failure paths validated: pre-run parse/planner, runtime, approval deny, approval-resume runtime all emit schema-compliant sidecars.
 - Queue status keeps failed counts based on primary failed jobs only, while using valid sidecars for richer error summaries.
-- Retention controls available via env (`VOXERA_QUEUE_FAILED_MAX_AGE_S`, `VOXERA_QUEUE_FAILED_MAX_COUNT`) and preserve newest logical failure units first.
+- Retention controls available via env (`VOXERA_QUEUE_FAILED_MAX_AGE_S`, `VOXERA_QUEUE_FAILED_MAX_COUNT`) preserve newest logical failure units first, with lifecycle smoke coverage validating fail -> snapshot -> prune behavior.
 
 ## What to validate next
 - Add CLI surface for failed-retention policy visibility/override (currently env or constructor-based).
