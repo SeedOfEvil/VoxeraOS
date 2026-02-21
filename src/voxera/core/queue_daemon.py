@@ -20,6 +20,8 @@ from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
 _AUTO_APPROVE_ALLOWLIST = {"system.settings"}
 _PARSE_RETRY_ATTEMPTS = 4
 _PARSE_RETRY_BACKOFF_S = 0.1
+_FAILED_SIDECAR_SCHEMA_VERSION = 1
+_FAILED_TIMESTAMP_MS_MIN = 10**12
 
 
 @dataclass
@@ -36,6 +38,8 @@ class MissionQueueDaemon:
         mission_log_path: Path | None = None,
         *,
         auto_approve_ask: bool = False,
+        failed_retention_max_age_s: float | None = None,
+        failed_retention_max_count: int | None = None,
     ):
         self.queue_root = (queue_root or (Path.home() / "VoxeraOS" / "notes" / "queue")).expanduser()
         self.inbox = self.queue_root
@@ -63,6 +67,28 @@ class MissionQueueDaemon:
         self.cfg = cfg
         self.auto_approve_ask = auto_approve_ask
         self.dev_mode = os.getenv("VOXERA_DEV_MODE") == "1"
+        self.failed_retention_max_age_s = failed_retention_max_age_s if failed_retention_max_age_s is not None else self._env_float("VOXERA_QUEUE_FAILED_MAX_AGE_S")
+        self.failed_retention_max_count = failed_retention_max_count if failed_retention_max_count is not None else self._env_int("VOXERA_QUEUE_FAILED_MAX_COUNT")
+
+    def _env_float(self, key: str) -> float | None:
+        raw = os.getenv(key)
+        if not raw:
+            return None
+        try:
+            value = float(raw)
+            return value if value > 0 else None
+        except ValueError:
+            return None
+
+    def _env_int(self, key: str) -> int | None:
+        raw = os.getenv(key)
+        if not raw:
+            return None
+        try:
+            value = int(raw)
+            return value if value > 0 else None
+        except ValueError:
+            return None
 
     def _decision_capability(self, decision) -> str:
         first = (decision.reason or "").split(";", 1)[0].strip()
@@ -133,15 +159,109 @@ class MissionQueueDaemon:
     def _failed_error_sidecar(self, failed_job: Path) -> Path:
         return failed_job.with_name(f"{failed_job.stem}.error.json")
 
+    def _validate_failed_error_sidecar(self, payload: Any, *, expected_job: str | None = None) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("failed sidecar payload must be a JSON object")
+        required = ("schema_version", "job", "error", "timestamp_ms")
+        missing = [field for field in required if field not in payload]
+        if missing:
+            raise ValueError(f"failed sidecar missing required fields: {', '.join(missing)}")
+        if payload.get("schema_version") != _FAILED_SIDECAR_SCHEMA_VERSION:
+            raise ValueError(f"unsupported failed sidecar schema version: {payload.get('schema_version')}")
+        job = payload.get("job")
+        if not isinstance(job, str) or not job:
+            raise ValueError("failed sidecar field 'job' must be a non-empty string")
+        if expected_job is not None and job != expected_job:
+            raise ValueError(f"failed sidecar job mismatch: expected {expected_job}, got {job}")
+        err = payload.get("error")
+        if not isinstance(err, str) or not err:
+            raise ValueError("failed sidecar field 'error' must be a non-empty string")
+        timestamp_ms = payload.get("timestamp_ms")
+        if not isinstance(timestamp_ms, int) or timestamp_ms < _FAILED_TIMESTAMP_MS_MIN:
+            raise ValueError("failed sidecar field 'timestamp_ms' must be an epoch timestamp in milliseconds")
+        if "payload" in payload and payload["payload"] is not None and not isinstance(payload["payload"], dict):
+            raise ValueError("failed sidecar field 'payload' must be an object when present")
+        return payload
+
+    def _read_failed_error_sidecar(self, failed_job: Path) -> dict[str, Any] | None:
+        sidecar_path = self._failed_error_sidecar(failed_job)
+        if not sidecar_path.exists():
+            return None
+        try:
+            data = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            return self._validate_failed_error_sidecar(data, expected_job=failed_job.name)
+        except Exception as exc:
+            log({"event": "queue_failed_sidecar_invalid", "job": failed_job.name, "path": str(sidecar_path), "error": repr(exc)})
+            return None
+
     def _write_failed_error_sidecar(self, failed_job: Path, *, error: str, payload: dict[str, Any] | None = None) -> None:
         details: dict[str, Any] = {
+            "schema_version": _FAILED_SIDECAR_SCHEMA_VERSION,
             "job": failed_job.name,
             "error": error,
             "timestamp_ms": int(time.time() * 1000),
         }
         if payload is not None:
             details["payload"] = payload
+        self._validate_failed_error_sidecar(details, expected_job=failed_job.name)
         self._failed_error_sidecar(failed_job).write_text(json.dumps(details, indent=2), encoding="utf-8")
+
+    def prune_failed_artifacts(self, *, max_age_s: float | None = None, max_count: int | None = None) -> dict[str, int]:
+        self.ensure_dirs()
+        max_age_s = self.failed_retention_max_age_s if max_age_s is None else max_age_s
+        max_count = self.failed_retention_max_count if max_count is None else max_count
+
+        primary_jobs = [p for p in self.failed.glob("*.json") if self._is_primary_job_json(p)]
+        sidecars = list(self.failed.glob("*.error.json"))
+        units: dict[str, dict[str, Any]] = {}
+
+        for job in primary_jobs:
+            key = job.stem
+            unit = units.setdefault(key, {"key": key, "job": None, "sidecar": None})
+            unit["job"] = job
+        for sidecar in sidecars:
+            key = sidecar.stem.removesuffix(".error")
+            unit = units.setdefault(key, {"key": key, "job": None, "sidecar": None})
+            unit["sidecar"] = sidecar
+
+        def _unit_newest_mtime(unit: dict[str, Any]) -> float:
+            mtimes = [p.stat().st_mtime for p in (unit.get("job"), unit.get("sidecar")) if p is not None and p.exists()]
+            return max(mtimes) if mtimes else 0.0
+
+        ordered = sorted(units.values(), key=lambda unit: (_unit_newest_mtime(unit), unit["key"]), reverse=True)
+        keep_keys: set[str] = {unit["key"] for unit in ordered}
+
+        if max_age_s is not None and max_age_s > 0:
+            cutoff = time.time() - max_age_s
+            keep_keys = {unit["key"] for unit in ordered if _unit_newest_mtime(unit) >= cutoff}
+
+        if max_count is not None and max_count >= 0:
+            age_filtered = [unit for unit in ordered if unit["key"] in keep_keys]
+            keep_keys = {unit["key"] for unit in age_filtered[:max_count]}
+
+        removed_jobs = 0
+        removed_sidecars = 0
+        for unit in ordered:
+            if unit["key"] in keep_keys:
+                continue
+            job = unit.get("job")
+            sidecar = unit.get("sidecar")
+            if job is not None and job.exists():
+                job.unlink()
+                removed_jobs += 1
+            if sidecar is not None and sidecar.exists():
+                sidecar.unlink()
+                removed_sidecars += 1
+
+        if removed_jobs or removed_sidecars:
+            log({
+                "event": "queue_failed_artifacts_pruned",
+                "removed_jobs": removed_jobs,
+                "removed_sidecars": removed_sidecars,
+                "max_age_s": max_age_s,
+                "max_count": max_count,
+            })
+        return {"removed_jobs": removed_jobs, "removed_sidecars": removed_sidecars}
 
     def _normalize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         mission_id = payload.get("mission_id", payload.get("mission"))
@@ -383,14 +503,9 @@ class MissionQueueDaemon:
         rows: list[dict[str, Any]] = []
         for item in files[:limit]:
             sidecar_error = ""
-            sidecar_path = self._failed_error_sidecar(item)
-            if sidecar_path.exists():
-                try:
-                    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
-                    if isinstance(sidecar, dict):
-                        sidecar_error = str(sidecar.get("error") or "")
-                except Exception:
-                    sidecar_error = ""
+            sidecar = self._read_failed_error_sidecar(item)
+            if sidecar is not None:
+                sidecar_error = str(sidecar.get("error") or "")
             rows.append({"job": item.name, "error": sidecar_error or error_by_job.get(item.name, "")})
         return rows
 
@@ -421,9 +536,11 @@ class MissionQueueDaemon:
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
         except Exception as exc:
             moved = self._move_job(job_path, self.failed)
-            self._write_failed_error_sidecar(moved, error=repr(exc))
+            sidecar_payload = payload if "payload" in locals() and isinstance(payload, dict) else None
+            self._write_failed_error_sidecar(moved, error=repr(exc), payload=sidecar_payload)
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
+            self.prune_failed_artifacts()
             return False
 
         kind = "mission_id" if payload.get("mission_id") else "goal"
@@ -448,6 +565,7 @@ class MissionQueueDaemon:
             self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
+            self.prune_failed_artifacts()
             return False
 
         moved = self._move_job(job_path, self.done)
@@ -521,6 +639,7 @@ class MissionQueueDaemon:
             self.mission_runner._append_mission_log(denied_mission, [], status="denied")
             log({"event": "mission_denied", "mission": meta.get("mission", {}).get("id"), "reason": "approval denied from inbox"})
             log({"event": "queue_job_failed", "job": str(moved), "error": "Denied in approval inbox"})
+            self.prune_failed_artifacts()
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
             return True
@@ -554,6 +673,7 @@ class MissionQueueDaemon:
             self._write_failed_error_sidecar(moved, error=error_text, payload=payload if isinstance(payload, dict) else None)
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
+            self.prune_failed_artifacts()
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
             return False
