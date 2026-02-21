@@ -8,6 +8,27 @@ from voxera.models import AppConfig, BrainConfig
 from voxera.skills.registry import SkillRegistry
 
 
+_PLANNER_TELEMETRY_EVENTS = {"planner_selected", "planner_fallback", "plan_built", "plan_failed"}
+_REQUIRED_TELEMETRY_FIELDS = {
+    "provider": str,
+    "model": str,
+    "attempt": int,
+    "error_class": str,
+    "latency_ms": int,
+    "fallback_used": bool,
+}
+_EXACT_INT_TELEMETRY_FIELDS = {"attempt", "latency_ms"}
+_CANONICAL_ERROR_CLASSES = {
+    "none",
+    "timeout",
+    "rate_limit",
+    "malformed_json",
+    "planner_error",
+    "provider_error",
+    "unknown",
+}
+
+
 def test_parse_planner_json_accepts_raw_json():
     parsed = _parse_planner_json('{"steps":[{"skill_id":"system.status","args":{}}]}')
 
@@ -807,3 +828,111 @@ def test_plan_mission_rewrites_placeholder_notes_path_to_relative(monkeypatch):
     step = mission.steps[0]
     assert step.skill_id == "files.write_text"
     assert step.args["path"] == "ok.txt"
+
+
+def test_plan_mission_telemetry_contract_retry_then_success(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+            "fallback": BrainConfig(type="openai_compat", model="fallback", base_url="https://example.test/v1"),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+    events = []
+
+    class _FailingBrain:
+        async def generate(self, messages, tools=None):
+            raise RuntimeError("rate limit exceeded")
+
+    monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _FailingBrain()})(),
+            type("C", (), {"name": "fast", "model": "fast-model", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+            type("C", (), {"name": "fallback", "model": "fallback-model", "brain": _FakeBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')})(),
+        ],
+    )
+
+    asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+
+    telemetry_events = [e for e in events if e.get("event") in _PLANNER_TELEMETRY_EVENTS]
+    assert telemetry_events
+
+    for event in telemetry_events:
+        for key, expected_type in _REQUIRED_TELEMETRY_FIELDS.items():
+            assert key in event
+            if key in _EXACT_INT_TELEMETRY_FIELDS:
+                assert type(event[key]) is int
+            else:
+                assert isinstance(event[key], expected_type)
+        assert event["error_class"] in _CANONICAL_ERROR_CLASSES
+
+    assert [e["provider"] for e in telemetry_events if e["event"] in {"planner_fallback", "planner_selected"}] == ["primary", "fast"]
+    assert [e["attempt"] for e in telemetry_events if e["event"] in {"planner_fallback", "planner_selected"}] == [1, 2]
+
+    fallback_event = next(e for e in telemetry_events if e["event"] == "planner_fallback")
+    selected_event = next(e for e in telemetry_events if e["event"] == "planner_selected")
+    built_event = next(e for e in telemetry_events if e["event"] == "plan_built")
+    assert fallback_event["fallback_used"] is False
+    assert selected_event["fallback_used"] is True
+    assert built_event["attempt"] == selected_event["attempt"]
+    assert built_event["provider"] == selected_event["provider"]
+
+
+def test_plan_mission_telemetry_contract_all_provider_failure_sequence(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="primary", base_url="https://example.test/v1"),
+            "fast": BrainConfig(type="openai_compat", model="fast", base_url="https://example.test/v1"),
+            "fallback": BrainConfig(type="openai_compat", model="fallback", base_url="https://example.test/v1"),
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+    events = []
+
+    class _RateLimitBrain:
+        async def generate(self, messages, tools=None):
+            raise RuntimeError("rate limit exceeded")
+
+    monkeypatch.setattr("voxera.core.mission_planner._PLANNER_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type("C", (), {"name": "primary", "model": "primary-model", "brain": _SlowBrain()})(),
+            type("C", (), {"name": "fast", "model": "fast-model", "brain": _FakeBrain("not-json")})(),
+            type("C", (), {"name": "fallback", "model": "fallback-model", "brain": _RateLimitBrain()})(),
+        ],
+    )
+
+    with pytest.raises(
+        MissionPlannerError,
+        match=(
+            "Planner failed after fallbacks: "
+            "primary:timeout, fast:malformed_json, fallback:rate_limit"
+        ),
+    ):
+        asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+
+    telemetry_events = [e for e in events if e.get("event") in _PLANNER_TELEMETRY_EVENTS]
+    fallback_events = [e for e in telemetry_events if e["event"] == "planner_fallback"]
+    failed_events = [e for e in telemetry_events if e["event"] == "plan_failed"]
+
+    assert [e["provider"] for e in fallback_events] == ["primary", "fast", "fallback"]
+    assert [e["attempt"] for e in fallback_events] == [1, 2, 3]
+    assert [e["error_class"] for e in fallback_events] == ["timeout", "malformed_json", "rate_limit"]
+    assert len(failed_events) == 1
+
+    failed_event = failed_events[0]
+    for key, expected_type in _REQUIRED_TELEMETRY_FIELDS.items():
+        assert key in failed_event
+        if key in _EXACT_INT_TELEMETRY_FIELDS:
+            assert type(failed_event[key]) is int
+        else:
+            assert isinstance(failed_event[key], expected_type)
+    assert failed_event["error_class"] == "rate_limit"
+    assert failed_event["fallback_used"] is True

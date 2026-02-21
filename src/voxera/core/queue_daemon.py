@@ -130,6 +130,19 @@ class MissionQueueDaemon:
         shutil.move(str(src), str(target))
         return target
 
+    def _failed_error_sidecar(self, failed_job: Path) -> Path:
+        return failed_job.with_name(f"{failed_job.stem}.error.json")
+
+    def _write_failed_error_sidecar(self, failed_job: Path, *, error: str, payload: dict[str, Any] | None = None) -> None:
+        details: dict[str, Any] = {
+            "job": failed_job.name,
+            "error": error,
+            "timestamp_ms": int(time.time() * 1000),
+        }
+        if payload is not None:
+            details["payload"] = payload
+        self._failed_error_sidecar(failed_job).write_text(json.dumps(details, indent=2), encoding="utf-8")
+
     def _normalize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         mission_id = payload.get("mission_id", payload.get("mission"))
         goal = payload.get("goal") if "goal" in payload else payload.get("plan_goal")
@@ -268,6 +281,9 @@ class MissionQueueDaemon:
             return 0
         return sum(1 for _ in directory.glob(pattern))
 
+    def _is_primary_job_json(self, path: Path) -> bool:
+        return path.name.endswith(".json") and not path.name.endswith((".pending.json", ".approval.json", ".error.json"))
+
     def _pending_primary_jobs(self) -> list[Path]:
         if not self.pending.exists():
             return []
@@ -359,8 +375,24 @@ class MissionQueueDaemon:
                 continue
             error_by_job[job] = str(event.get("error") or "")
 
-        files = sorted(self.failed.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-        return [{"job": item.name, "error": error_by_job.get(item.name, "")} for item in files[:limit]]
+        files = sorted(
+            (p for p in self.failed.glob("*.json") if self._is_primary_job_json(p)),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        rows: list[dict[str, Any]] = []
+        for item in files[:limit]:
+            sidecar_error = ""
+            sidecar_path = self._failed_error_sidecar(item)
+            if sidecar_path.exists():
+                try:
+                    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+                    if isinstance(sidecar, dict):
+                        sidecar_error = str(sidecar.get("error") or "")
+                except Exception:
+                    sidecar_error = ""
+            rows.append({"job": item.name, "error": sidecar_error or error_by_job.get(item.name, "")})
+        return rows
 
     def status_snapshot(self, *, approvals_limit: int = 10, failed_limit: int = 10) -> dict[str, Any]:
         return {
@@ -370,7 +402,7 @@ class MissionQueueDaemon:
                 "pending": len(self._pending_primary_jobs()),
                 "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
                 "done": self._count_files(self.done, "*.json"),
-                "failed": self._count_files(self.failed, "*.json"),
+                "failed": sum(1 for p in self.failed.glob("*.json") if self._is_primary_job_json(p)) if self.failed.exists() else 0,
             },
             "pending_approvals": self.pending_approvals_snapshot(limit=approvals_limit),
             "recent_failed": self.recent_failed_jobs_snapshot(limit=failed_limit),
@@ -389,6 +421,7 @@ class MissionQueueDaemon:
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
         except Exception as exc:
             moved = self._move_job(job_path, self.failed)
+            self._write_failed_error_sidecar(moved, error=repr(exc))
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
             return False
@@ -411,8 +444,10 @@ class MissionQueueDaemon:
 
         if not rr.ok:
             moved = self._move_job(job_path, self.failed)
+            error_text = rr.error or "mission failed"
+            self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
             self.stats.failed += 1
-            log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
+            log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
             return False
 
         moved = self._move_job(job_path, self.done)
@@ -473,6 +508,7 @@ class MissionQueueDaemon:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         if not approve:
             moved = self._move_job(job, self.failed)
+            self._write_failed_error_sidecar(moved, error="Denied in approval inbox", payload=meta.get("payload") if isinstance(meta, dict) else None)
             self.stats.failed += 1
             mission_data = meta.get("mission", {})
             denied_mission = MissionTemplate(
@@ -514,8 +550,10 @@ class MissionQueueDaemon:
             return False
         if not rr.ok:
             moved = self._move_job(job, self.failed)
+            error_text = rr.error or "mission failed"
+            self._write_failed_error_sidecar(moved, error=error_text, payload=payload if isinstance(payload, dict) else None)
             self.stats.failed += 1
-            log({"event": "queue_job_failed", "job": str(moved), "error": rr.error or "mission failed"})
+            log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
             return False
