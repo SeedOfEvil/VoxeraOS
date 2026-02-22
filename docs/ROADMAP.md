@@ -22,6 +22,10 @@
 - Added CI enforcement for release-sensitive file changes.
 - Hardened queue failed-artifact sidecar validation + retention behavior with lifecycle smoke coverage.
 - Consolidated quality + release checks into one merge-readiness gate for branch protection.
+- Strengthened merge-readiness with a mypy ratchet baseline (`scripts/mypy_ratchet.py` + `tools/mypy-baseline.txt`).
+- Split validation tiers into PR-required merge checks (`make merge-readiness-check`) vs broader local validation (`make full-validation-check`).
+- Added local pre-push parity via `.pre-commit-config.yaml` so pre-push runs the same merge-readiness gate as CI.
+- Improved CI diagnosability by capturing quality/release logs and uploading `merge-readiness-logs` artifacts on failures.
 
 ## Next up (ordered)
 1. Queue observability surfacing: make retention policy and invalid-sidecar counters more visible in CLI/panel summaries.

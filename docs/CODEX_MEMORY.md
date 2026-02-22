@@ -21,7 +21,7 @@ This file is the single, persistent project memory for Codex-assisted work.
   - <migration steps, rollback notes, caveats>
 ```
 
-## 2026-02-12 — PR #TBD — Introduce persistent Codex memory log
+## 2026-02-12 — PR #N/A (pre-history) — Introduce persistent Codex memory log
 - Summary:
   - Added this canonical memory file for Codex agents to keep merged work history.
   - Linked the file from `README.md` so contributors can find and maintain it.
@@ -32,7 +32,7 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Risks/notes:
   - Process-only change; no runtime behavior changed.
 
-## 2026-02-15 — PR #TBD — Add cloud-assisted mission planning path
+## 2026-02-15 — PR #5 — Add cloud-assisted mission planning path
 - Summary:
   - Added `voxera missions plan` to let the configured cloud brain draft a mission from a natural-language goal.
   - Added strict planner validation so only known skill IDs and JSON outputs are accepted before execution.
@@ -45,7 +45,7 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Risks/notes:
   - Cloud planner quality depends on model behavior; guardrails reject malformed output.
 
-## 2026-02-16 — PR #TBD — Rewrite unsafe non-explicit sandbox.exec planner steps
+## 2026-02-16 — PR #23 — Rewrite unsafe non-explicit sandbox.exec planner steps
 - Summary:
   - Added planner-side safety rewrite for non-explicit goals so `sandbox.exec` steps using host-GUI/sandbox-inappropriate tools (`xdotool`, `wmctrl`, `xprop`, `gdbus`, `curl`, `wget`) are converted into `clipboard.copy` manual confirmation prompts.
   - Kept explicit user shell-command intent intact so command-oriented goals still allow planner `sandbox.exec` output.
@@ -58,7 +58,7 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Intent detection is heuristic and should be monitored for false positives/negatives.
 
 
-## 2026-02-21 — PR #TBD — Queue failed-artifact reliability pass
+## 2026-02-21 — PR #29 — Queue failed-artifact reliability pass
 - Summary:
   - Added a stable failed-sidecar contract with schema versioning (`schema_version=1`) and required fields (`job`, `error`, `timestamp_ms`) plus optional `payload`.
   - Added strict sidecar validation on write/read paths and ensured all queue failure paths emit schema-compliant sidecars.
@@ -71,7 +71,7 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Invalid legacy sidecars are intentionally ignored for status summaries and logged via `queue_failed_sidecar_invalid`.
 
 
-## 2026-02-21 — PR #TBD — Tighten sidecar schema policy + lifecycle smoke coverage
+## 2026-02-21 — PR #34 — Tighten sidecar schema policy + lifecycle smoke coverage
 - Summary:
   - Centralized failed-sidecar schema version checks with explicit writer pin (`1`) and reader allowlist (`[1]`).
   - Added deterministic rejection handling for unknown/future sidecar versions while preserving `queue_failed_sidecar_invalid` audit signaling.
@@ -85,7 +85,7 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Mixed-version sidecars now surface deterministically as invalid until compatibility is explicitly added.
 
 
-## 2026-02-21 — PR #TBD — Add failed-sidecar CI guardrail + mixed-version runbook
+## 2026-02-21 — PR #34 — Add failed-sidecar CI guardrail + mixed-version runbook
 - Summary:
   - Added a dedicated `make test-failed-sidecar` target that runs the sidecar schema-policy future-version rejection test and lifecycle smoke coverage.
   - Added PR CI workflow `.github/workflows/queue-failed-sidecar.yml` to run the guardrail tests whenever queue-daemon sidecar logic or operator docs are changed.
@@ -96,3 +96,18 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Mark `queue-failed-sidecar-guardrail` as a required branch protection check on the default branch.
 - Risks/notes:
   - Docs include shell snippets for ops triage; keep queue root paths aligned with deployment conventions.
+
+
+## 2026-02-22 — PR #40 — Strengthen merge-readiness with mypy ratchet, validation tiers, and CI artifacts
+- Summary:
+  - Added a mypy ratchet utility and committed baseline flow (`scripts/mypy_ratchet.py`, `tools/mypy-baseline.txt`) so new type regressions are blocked while preserving controlled debt burn-down.
+  - Split validation tiers into merge-required checks (`make merge-readiness-check`) and broader local validation (`make full-validation-check`), then aligned local pre-push parity through `.pre-commit-config.yaml`.
+  - Updated merge-readiness CI to include scripts/tools path triggers, capture quality/release logs, and upload `merge-readiness-logs` artifacts on failure.
+- Validation:
+  - `make merge-readiness-check`
+  - `pytest -q tests/test_mypy_ratchet.py`
+  - `make full-validation-check`
+- Follow-ups:
+  - Add policy controls for baseline-file review ownership and rationale requirements when refreshing `tools/mypy-baseline.txt`.
+- Risks/notes:
+  - Baseline updates should remain triaged/intentional; avoid using baseline rewrites as a shortcut for unresolved type regressions.

@@ -36,10 +36,41 @@ jobs:
       - name: Run merge readiness checks
         run: |
           mkdir -p artifacts
+          set +e
           make quality-check > artifacts/quality-check.txt 2>&1
+          quality_rc=$?
           make release-check > artifacts/release-check.txt 2>&1
+          release_rc=$?
+          set -e
           cat artifacts/quality-check.txt
           cat artifacts/release-check.txt
+
+          {
+            echo "## merge-readiness summary"
+            if [ $quality_rc -eq 0 ] && [ $release_rc -eq 0 ]; then
+              echo "- ✅ quality-check: passed"
+              echo "- ✅ release-check: passed"
+            else
+              if [ $quality_rc -ne 0 ]; then
+                echo "- ❌ quality-check: failed (see artifacts/quality-check.txt)"
+              else
+                echo "- ✅ quality-check: passed"
+              fi
+
+              if [ $release_rc -ne 0 ]; then
+                echo "- ❌ release-check: failed (see artifacts/release-check.txt)"
+              else
+                echo "- ✅ release-check: passed"
+              fi
+
+              echo "- Reproduce locally from repository root: \`make merge-readiness-check\`"
+              echo "- Failure logs are uploaded as the \`merge-readiness-logs\` artifact."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ $quality_rc -ne 0 ] || [ $release_rc -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Upload merge-readiness artifacts on failure
         if: failure()
