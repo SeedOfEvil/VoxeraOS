@@ -3,105 +3,192 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Voxera Panel</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    .card { border: 1px solid #ddd; border-radius: 14px; padding: 14px; }
-    h1 { margin-top: 0; }
-    pre { white-space: pre-wrap; word-break: break-word; }
-    .muted { color: #666; }
-    .btn { border: 1px solid #bbb; border-radius: 8px; background: #fff; padding: 6px 10px; cursor: pointer; }
-    .btn.approve { border-color: #2e8b57; color: #2e8b57; }
-    .btn.deny { border-color: #b22222; color: #b22222; }
-    .row-actions { display: flex; gap: 6px; }
-  </style>
+  <title>Voxera Control Pane</title>
+  <link rel="stylesheet" href="/static/panel.css" />
 </head>
 <body>
-  <h1>Voxera Panel</h1>
-  <p class="muted">MVP panel: approvals queue + latest audit events (JSONL).</p>
+  <div class="container">
+    <header class="page-header">
+      <div>
+        <h1 class="title">Voxera Control Pane</h1>
+        <p class="subtitle">Mission operations center — queue orchestration, approvals, and live activity.</p>
+      </div>
+      <span class="badge">Classical Modern UI</span>
+    </header>
 
-  <div class="card" style="margin-bottom: 18px;">
-    <h2>Queue Status</h2>
-    {% if not queue.exists %}
-      <p class="muted">Queue root not found: {{queue_root}}</p>
+    {% if created %}
+      <div class="alert alert-success">Queued new job: <b>{{created}}</b>.</div>
     {% endif %}
-    <ul>
-      <li><b>pending/</b>: {{queue.counts.pending}}</li>
-      <li><b>pending/approvals/</b>: {{queue.counts.pending_approvals}}</li>
-      <li><b>done/</b>: {{queue.counts.done}}</li>
-      <li><b>failed/</b>: {{queue.counts.failed}}</li>
-    </ul>
-    <h3>Failed Metadata Health</h3>
-    <ul>
-      <li><b>Failed metadata valid</b>: {{queue.failed_sidecars_valid}}</li>
-      <li><b>Failed metadata invalid</b>: {{queue.failed_sidecars_invalid}}</li>
-      <li><b>Failed metadata missing</b>: {{queue.failed_sidecars_missing}}</li>
-    </ul>
-  </div>
+    {% if mission_created %}
+      <div class="alert alert-success">Created mission template: <b>{{mission_created}}</b>.</div>
+    {% endif %}
+    {% if error %}
+      <div class="alert alert-danger">Action failed: {{error}}</div>
+    {% endif %}
 
-  <div class="grid">
-    <div class="card">
-      <h2>Pending Queue Approvals</h2>
-      {% if queue.pending_approvals|length == 0 %}
-        <p class="muted">No pending queue approvals.</p>
-      {% else %}
-        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-          <thead>
-            <tr>
-              <th align="left">Job</th>
-              <th align="left">Approve As</th>
-              <th align="left">Step</th>
-              <th align="left">Skill</th>
-              <th align="left">Capability</th>
-              <th align="left">Reason</th>
-              <th align="left">Action</th>
-            </tr>
-          </thead>
+    <section class="grid grid-3" style="margin-bottom:16px;">
+      <article class="card"><p class="kpi">{{queue.counts.pending}}</p><p class="kpi-label">Pending Jobs</p></article>
+      <article class="card"><p class="kpi">{{queue.counts.pending_approvals}}</p><p class="kpi-label">Approval Inbox</p></article>
+      <article class="card"><p class="kpi">{{queue.counts.done}}</p><p class="kpi-label">Completed Jobs</p></article>
+    </section>
+
+    <section class="grid grid-2" style="margin-bottom:16px;">
+      <article class="card">
+        <h2>Launch Mission Fast</h2>
+        <form class="form-stack" method="get" action="/queue/create">
+          <label>Queue Type
+            <select class="select" name="kind">
+              <option value="goal">Plan from goal</option>
+              <option value="mission">Run predefined mission</option>
+            </select>
+          </label>
+          <div class="form-row">
+            <label>Mission ID
+              <select class="select" name="mission_id">
+                <option value="">Select mission...</option>
+                {% for mission in missions %}
+                  <option value="{{mission.id}}">{{mission.id}} — {{mission.title}}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Goal (for planner)
+              <input class="input" type="text" name="goal" placeholder="e.g. create a daily check-in and open calendar" />
+            </label>
+          </div>
+          <button class="btn btn-primary" type="submit">Queue Mission</button>
+        </form>
+      </article>
+
+      <article class="card">
+        <h2>Create Mission Template</h2>
+        <form class="form-stack" method="get" action="/missions/create">
+          <div class="form-row">
+            <label>ID <input class="input" type="text" name="mission_id" placeholder="my_mission" required /></label>
+            <label>Title <input class="input" type="text" name="title" placeholder="My Mission" /></label>
+          </div>
+          <label>Goal <input class="input" type="text" name="goal" placeholder="Outcome this mission should reach" /></label>
+          <label>Notes <input class="input" type="text" name="notes" placeholder="Optional notes" /></label>
+          <label>Steps JSON
+            <textarea class="textarea" name="steps_json" rows="5">[{"skill_id":"system.status","args":{}}]</textarea>
+          </label>
+          <button class="btn" type="submit">Save Mission Template</button>
+        </form>
+      </article>
+    </section>
+
+    <section class="grid grid-2" style="margin-bottom:16px;">
+      <article class="card">
+        <h2>Active Work</h2>
+        {% if active_jobs|length == 0 %}
+          <p class="muted">No active jobs currently.</p>
+        {% else %}
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Job</th><th>Mission</th><th>Goal</th><th>Status</th></tr></thead>
+              <tbody>
+              {% for item in active_jobs %}
+                <tr>
+                  <td>{{item.job}}</td>
+                  <td>{{item.mission}}</td>
+                  <td>{{item.goal}}</td>
+                  <td><span class="badge badge-running">{{item.state}}</span></td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </article>
+
+      <article class="card">
+        <h2>Recent Activity</h2>
+        {% if recent_activity|length == 0 %}
+          <p class="muted">No recent lifecycle events yet.</p>
+        {% else %}
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Event</th><th>Job</th><th>Mission</th><th>Step</th></tr></thead>
+              <tbody>
+              {% for item in recent_activity %}
+                <tr><td>{{item.event}}</td><td>{{item.job}}</td><td>{{item.mission}}</td><td>{{item.step}}</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="grid grid-2">
+      <article class="card">
+        <h2>Pending Queue Approvals</h2>
+        {% if queue.pending_approvals|length == 0 %}
+          <p class="muted">No pending queue approvals.</p>
+        {% else %}
+          <div class="table-wrap"><table>
+            <thead>
+              <tr><th>Job</th><th>Step</th><th>Skill</th><th>Capability</th><th>Reason</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+            {% for item in queue.pending_approvals %}
+              <tr>
+                <td>{{item.job}}</td>
+                <td>{{item.step}}</td>
+                <td>{{item.skill}}</td>
+                <td>{{item.capability}}</td>
+                <td>{{item.reason}}</td>
+                <td>
+                  <div style="display:flex; gap:6px;">
+                    <form method="post" action="/queue/approvals/{{item.job}}/approve"><button class="btn btn-approve" type="submit">Approve</button></form>
+                    <form method="post" action="/queue/approvals/{{item.job}}/deny"><button class="btn btn-deny" type="submit">Deny</button></form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table></div>
+        {% endif %}
+      </article>
+
+      <article class="card">
+        <h2>Mission Library</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>ID</th><th>Title</th><th>Goal</th><th>Steps</th></tr></thead>
           <tbody>
-          {% for item in queue.pending_approvals %}
+          {% for mission in missions %}
             <tr>
-              <td>{{item.job}}</td>
-              <td>{{(item.approve_refs or [])[:2]|join(' | ')}}</td>
-              <td>{{item.step}}</td>
-              <td>{{item.skill}}</td>
-              <td>{{item.capability}}</td>
-              <td>{{item.reason}}</td>
-              <td class="row-actions">
-                <form method="post" action="/queue/approvals/{{item.job}}/approve">
-                  <button class="btn approve" type="submit">Approve</button>
-                </form>
-                <form method="post" action="/queue/approvals/{{item.job}}/deny">
-                  <button class="btn deny" type="submit">Deny</button>
-                </form>
-              </td>
+              <td>{{mission.id}}</td>
+              <td>{{mission.title}}</td>
+              <td>{{mission.goal}}</td>
+              <td>{{mission.steps|length}}</td>
             </tr>
           {% endfor %}
           </tbody>
-        </table>
-      {% endif %}
-    </div>
+        </table></div>
+      </article>
+    </section>
 
-    <div class="card">
-      <h2>Audit (latest)</h2>
-      {% if audit|length == 0 %}
-        <p class="muted">No audit events yet.</p>
-      {% else %}
-        {% for e in audit %}
-          <pre>{{ e }}</pre>
-          <hr/>
-        {% endfor %}
-      {% endif %}
-    </div>
-  </div>
+    <section class="grid grid-2" style="margin-top:16px;">
+      <article class="card">
+        <h2>Audit (latest)</h2>
+        {% if audit|length == 0 %}
+          <p class="muted">No audit events yet.</p>
+        {% else %}
+          {% for e in audit %}
+            <pre>{{ e }}</pre>
+          {% endfor %}
+        {% endif %}
+      </article>
 
-  <div class="card" style="margin-top: 18px;">
-    <h2>Mission Log (last 20 lines)</h2>
-    {% if mission_log_tail|length == 0 %}
-      <p class="muted">Mission log not found: {{mission_log_path}}</p>
-    {% else %}
-      <pre>{{ mission_log_tail|join('\n') }}</pre>
-    {% endif %}
+      <article class="card">
+        <h2>Mission Log (last 20 lines)</h2>
+        {% if mission_log_tail|length == 0 %}
+          <p class="muted">Mission log not found: {{mission_log_path}}</p>
+        {% else %}
+          <pre>{{ mission_log_tail|join('\n') }}</pre>
+        {% endif %}
+      </article>
+    </section>
   </div>
 </body>
 </html>
