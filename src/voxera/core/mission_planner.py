@@ -166,6 +166,8 @@ def _parse_planner_json(raw_text: str) -> dict:
 def _goal_requests_file_write(goal: str) -> bool:
     if _extract_simple_write_args(goal) is not None:
         return True
+    if _extract_allowed_notes_write_args(goal) is not None:
+        return True
     lowered = goal.lower()
     write_verbs = ("write", "create", "append", "save", "update")
     file_nouns = ("note", "file", ".txt", ".md", "markdown", "document")

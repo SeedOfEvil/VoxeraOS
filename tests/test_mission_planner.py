@@ -1247,3 +1247,12 @@ def test_plan_mission_telemetry_contract_all_provider_failure_sequence(monkeypat
             assert isinstance(failed_event[key], expected_type)
     assert failed_event["error_class"] == "rate_limit"
     assert failed_event["fallback_used"] is True
+
+
+def test_goal_requests_file_write_for_allowed_notes_goal():
+    from voxera.core.mission_planner import _goal_requests_file_write
+
+    assert (
+        _goal_requests_file_write("Write a note under the allowed notes directory saying all good.")
+        is True
+    )

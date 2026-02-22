@@ -158,12 +158,22 @@ class MissionQueueDaemon:
         self.pending.mkdir(parents=True, exist_ok=True)
         self.approvals.mkdir(parents=True, exist_ok=True)
 
-    def _move_job(self, src: Path, target_dir: Path) -> Path:
+    def _move_job(self, src: Path, target_dir: Path) -> Path | None:
         target = target_dir / src.name
         if target.exists():
             ts = int(time.time() * 1000)
             target = target_dir / f"{src.stem}-{ts}{src.suffix}"
-        shutil.move(str(src), str(target))
+        try:
+            shutil.move(str(src), str(target))
+        except FileNotFoundError:
+            log(
+                {
+                    "event": "queue_job_already_moved",
+                    "job": str(src),
+                    "target_dir": str(target_dir),
+                }
+            )
+            return None
         return target
 
     def _failed_error_sidecar(self, failed_job: Path) -> Path:
@@ -684,6 +694,8 @@ class MissionQueueDaemon:
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
         except Exception as exc:
             moved = self._move_job(job_path, self.failed)
+            if moved is None:
+                return False
             sidecar_payload = (
                 payload if "payload" in locals() and isinstance(payload, dict) else None
             )
@@ -705,6 +717,8 @@ class MissionQueueDaemon:
         rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
         if rr.data.get("status") == "pending_approval":
             moved = self._move_job(job_path, self.pending)
+            if moved is None:
+                return False
             self._write_pending_artifacts(moved, payload=payload, mission=mission, run_data=rr.data)
             log(
                 {
@@ -718,6 +732,8 @@ class MissionQueueDaemon:
 
         if not rr.ok:
             moved = self._move_job(job_path, self.failed)
+            if moved is None:
+                return False
             error_text = rr.error or "mission failed"
             self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
             self.stats.failed += 1
@@ -726,6 +742,8 @@ class MissionQueueDaemon:
             return False
 
         moved = self._move_job(job_path, self.done)
+        if moved is None:
+            return False
         self.stats.processed += 1
         log({"event": "queue_job_done", "job": str(moved)})
         return True
@@ -785,6 +803,10 @@ class MissionQueueDaemon:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         if not approve:
             moved = self._move_job(job, self.failed)
+            if moved is None:
+                meta_path.unlink(missing_ok=True)
+                artifact_path.unlink(missing_ok=True)
+                return False
             self._write_failed_error_sidecar(
                 moved,
                 error="Denied in approval inbox",
@@ -856,6 +878,10 @@ class MissionQueueDaemon:
             return False
         if not rr.ok:
             moved = self._move_job(job, self.failed)
+            if moved is None:
+                meta_path.unlink(missing_ok=True)
+                artifact_path.unlink(missing_ok=True)
+                return False
             error_text = rr.error or "mission failed"
             self._write_failed_error_sidecar(
                 moved, error=error_text, payload=payload if isinstance(payload, dict) else None
@@ -868,6 +894,10 @@ class MissionQueueDaemon:
             return False
 
         moved = self._move_job(job, self.done)
+        if moved is None:
+            meta_path.unlink(missing_ok=True)
+            artifact_path.unlink(missing_ok=True)
+            return False
         self.stats.processed += 1
         log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
         meta_path.unlink(missing_ok=True)

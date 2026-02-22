@@ -1056,6 +1056,97 @@ def test_prune_failed_artifacts_with_pairs_and_orphans(tmp_path, monkeypatch):
     assert not (daemon.failed / "old.error.json").exists()
 
 
+def test_process_job_file_missing_source_during_failed_move_is_non_fatal(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "job-race.json"
+    job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner, "run", lambda *_args, **_kwargs: RunResult(ok=False, error="boom")
+    )
+
+    original_move = daemon._move_job
+
+    def _race_move(src, target_dir):
+        src.unlink(missing_ok=True)
+        return original_move(src, target_dir)
+
+    monkeypatch.setattr(daemon, "_move_job", _race_move)
+
+    assert daemon.process_job_file(job) is False
+    assert not (queue_dir / "failed" / "job-race.json").exists()
+    assert any(e.get("event") == "queue_job_already_moved" for e in events)
+
+
+def test_resolve_approval_missing_source_during_done_move_is_non_fatal(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="goal_status",
+            title="Goal Status",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.status", args={})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+
+    job = queue_dir / "job-approve-race.json"
+    job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    assert daemon.process_job_file(job) is True
+
+    pending_job = queue_dir / "pending" / "job-approve-race.json"
+    pending_job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    meta_path = queue_dir / "pending" / "job-approve-race.pending.json"
+    meta_path.write_text(
+        json.dumps(
+            {
+                "status": "pending_approval",
+                "payload": {"goal": "check machine"},
+                "mission": {
+                    "id": "goal_status",
+                    "title": "Goal Status",
+                    "goal": "check machine",
+                    "steps": [{"skill_id": "system.status", "args": {}}],
+                },
+                "resume_step": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    artifact_path = queue_dir / "pending" / "approvals" / "job-approve-race.approval.json"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(json.dumps({"job": "job-approve-race.json"}), encoding="utf-8")
+
+    original_move = daemon._move_job
+
+    def _race_move(src, target_dir):
+        if src == pending_job and target_dir == daemon.done:
+            src.unlink(missing_ok=True)
+        return original_move(src, target_dir)
+
+    monkeypatch.setattr(daemon, "_move_job", _race_move)
+
+    assert daemon.resolve_approval("job-approve-race", approve=True) is False
+    assert not meta_path.exists()
+    assert not artifact_path.exists()
+    assert any(e.get("event") == "queue_job_already_moved" for e in events)
+
+
 def test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_name(
     tmp_path, monkeypatch
 ):
