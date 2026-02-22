@@ -103,7 +103,9 @@ def test_panel_queue_create_goal_and_mission(tmp_path, monkeypatch):
     payload = json.loads(queued[0].read_text(encoding="utf-8"))
     assert payload == {"goal": "run system check"}
 
-    mission_res = client.get("/queue/create", params={"kind": "mission", "mission_id": "system_check"})
+    mission_res = client.get(
+        "/queue/create", params={"kind": "mission", "mission_id": "system_check"}
+    )
     assert mission_res.status_code == 200
     queued = list((fake_home / "VoxeraOS" / "notes" / "queue").glob("*.json"))
     assert len(queued) == 2
@@ -133,7 +135,13 @@ def test_panel_active_work_from_audit(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
 
-    log({"event": "queue_job_started", "job": str(fake_home / "VoxeraOS/notes/queue/job-1.json"), "goal": "demo"})
+    log(
+        {
+            "event": "queue_job_started",
+            "job": str(fake_home / "VoxeraOS/notes/queue/job-1.json"),
+            "goal": "demo",
+        }
+    )
     client = TestClient(panel_module.app)
     body = client.get("/").text
     assert "job-1.json" in body

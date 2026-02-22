@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..audit import tail
-from ..core.missions import MissionTemplate, MissionStep, list_missions, _parse_mission_file
+from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
 from ..core.queue_daemon import MissionQueueDaemon
 from ..version import get_version
 
@@ -47,7 +47,9 @@ def _write_queue_job(payload: dict[str, Any]) -> str:
     return final_path.name
 
 
-def _build_activity(audit_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _build_activity(
+    audit_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     active: dict[str, dict[str, Any]] = {}
     recent: list[dict[str, Any]] = []
     for event in audit_events:
