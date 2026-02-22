@@ -62,6 +62,17 @@ def main() -> int:
     current_errors = parse_errors(stdout)
 
     if args.write_baseline:
+        if rc not in (0, 1):
+            print(
+                f"mypy failed with unexpected exit code {rc}; refusing to write baseline.",
+                file=sys.stderr,
+            )
+            if stdout:
+                print(stdout, end="")
+            if stderr:
+                print(stderr, end="", file=sys.stderr)
+            return rc
+
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         baseline_path.write_text(
             "\n".join(sorted(current_errors)) + ("\n" if current_errors else ""),
