@@ -1252,6 +1252,7 @@ def test_plan_mission_telemetry_contract_all_provider_failure_sequence(monkeypat
 def test_goal_requests_file_write_for_allowed_notes_goal():
     from voxera.core.mission_planner import _goal_requests_file_write
 
-    assert _goal_requests_file_write(
-        "Write a note under the allowed notes directory saying all good."
-    ) is True
+    assert (
+        _goal_requests_file_write("Write a note under the allowed notes directory saying all good.")
+        is True
+    )

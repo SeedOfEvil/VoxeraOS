@@ -1056,8 +1056,6 @@ def test_prune_failed_artifacts_with_pairs_and_orphans(tmp_path, monkeypatch):
     assert not (daemon.failed / "old.error.json").exists()
 
 
-
-
 def test_process_job_file_missing_source_during_failed_move_is_non_fatal(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     _stub_planner(monkeypatch)
@@ -1147,6 +1145,8 @@ def test_resolve_approval_missing_source_during_done_move_is_non_fatal(tmp_path,
     assert not meta_path.exists()
     assert not artifact_path.exists()
     assert any(e.get("event") == "queue_job_already_moved" for e in events)
+
+
 def test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_name(
     tmp_path, monkeypatch
 ):
