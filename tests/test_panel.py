@@ -22,6 +22,9 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert res.status_code == 200
     body = res.text
     assert "Voxera Control Pane" in body
+    assert "Control" in body
+    assert "Logging" in body
+    assert "Queue Status + Failed Metadata Health" in body
     assert "Active Work" in body
     assert "Mission Library" in body
     assert "Pending Queue Approvals" in body
@@ -41,7 +44,7 @@ def test_panel_home_shows_not_found_hints(tmp_path, monkeypatch):
     body = res.text
     expected_log = str(fake_home / "VoxeraOS" / "notes" / "mission-log.md")
     assert f"Mission log not found: {expected_log}" in body
-    assert "No active jobs currently." in body
+    assert "Active Work" in body
 
 
 def test_panel_can_click_approve_pending_queue_job(tmp_path, monkeypatch):
