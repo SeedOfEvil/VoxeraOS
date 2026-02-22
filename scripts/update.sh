@@ -95,11 +95,7 @@ else
   git pull --ff-only
 fi
 
-project_dir="$repo_root/voxera-os-scaffold/voxera-os"
-if [[ ! -d "$project_dir" ]]; then
-  echo "Error: expected project directory not found: $project_dir" >&2
-  exit 1
-fi
+project_dir="$repo_root"
 cd "$project_dir"
 
 if [[ ! -d .venv ]]; then
