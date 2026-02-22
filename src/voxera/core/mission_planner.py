@@ -471,7 +471,9 @@ def _normalize_file_step_paths(step: MissionStep) -> MissionStep:
             return MissionStep(skill_id=step.skill_id, args=args)
         return MissionStep(
             skill_id="clipboard.copy",
-            args={"text": "Planner requested a file read without a path; manual confirmation required."},
+            args={
+                "text": "Planner requested a file read without a path; manual confirmation required."
+            },
         )
 
     if _is_safe_notes_path(path):
@@ -483,7 +485,9 @@ def _normalize_file_step_paths(step: MissionStep) -> MissionStep:
 
     return MissionStep(
         skill_id="clipboard.copy",
-        args={"text": f"Planner requested reading outside allowlist ({path}); manual confirmation required."},
+        args={
+            "text": f"Planner requested reading outside allowlist ({path}); manual confirmation required."
+        },
     )
 
 
