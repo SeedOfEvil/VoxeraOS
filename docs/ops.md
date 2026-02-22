@@ -152,6 +152,16 @@ Mixed-version incident runbook (`queue_failed_sidecar_invalid`):
    - Include migration/compatibility notes in release notes and echo the change in `README.md`, `docs/ops.md`, and `docs/CODEX_MEMORY.md`.
 
 
+## Merge-readiness gate
+
+Use the unified merge gate from repository root:
+
+```bash
+make merge-readiness-check
+```
+
+This combines fast quality checks (format/lint/type) and release consistency checks (version/doc/runtime alignment) under one workflow status check: `merge-readiness / merge-readiness`.
+
 ## Information sources (keep in sync)
 
 For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:

@@ -396,12 +396,12 @@ Before merging any PR to `main`, run:
 
 This runs the release-critical failed-sidecar guardrail, the unit test suite, and the E2E smoke script.
 
-## Release consistency checklist
+## Merge-readiness + release consistency checklist
 When preparing a release or changing install/service flows, verify:
 
 - Bump `project.version` in `pyproject.toml`; runtime surfaces consume this via `voxera.version.get_version()` (CLI + panel metadata).
-- Run version/doc guardrails from repository root: `make release-check`.
+- Run unified merge/readiness guardrails from repository root: `make merge-readiness-check`.
 - Re-run broader guardrails from repository root: `pytest -q` and `make premerge`.
-- Keep operational docs synchronized (`README.md`, `docs/ops.md`, `docs/BOOTSTRAP.md`) with one workflow and repository-root command examples.
+- Keep operational docs synchronized (`README.md`, `docs/ops.md`, `docs/BOOTSTRAP.md`, `docs/ROADMAP.md`) with one workflow and repository-root command examples.
 - Validate queue/service onboarding commands still match current CLI and Make targets (`voxera queue init`, `make services-install`, `make update`).
-- Ensure branch protection requires the `release-check / release-check` status check so doc/runtime version drift blocks merges.
+- Ensure branch protection requires the `merge-readiness / merge-readiness` status check so quality + doc/runtime version drift blocks merges.

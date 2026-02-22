@@ -1,4 +1,4 @@
-.PHONY: install dev panel test test-failed-sidecar release-check lint fmt e2e update update-fast services-install services-restart services-status services-stop services-disable
+.PHONY: install dev panel test test-failed-sidecar quality-check release-check merge-readiness-check lint fmt e2e update update-fast services-install services-restart services-status services-stop services-disable
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
 SYSTEMD_SRC_DIR := deploy/systemd/user
@@ -22,6 +22,11 @@ test:
 test-failed-sidecar:
 	pytest -q tests/test_queue_daemon.py -k "failed_sidecar_schema_version_policy_rejects_unknown_future_version or queue_failure_lifecycle_smoke_sidecar_snapshot_then_prune"
 
+quality-check:
+	ruff format --check .
+	ruff check .
+	mypy src/voxera --ignore-missing-imports
+
 release-check:
 	pytest -q \
 		tests/test_version_source.py \
@@ -29,9 +34,12 @@ release-check:
 		tests/test_docs_consistency.py \
 		tests/test_cli_version.py::test_root_version_option_prints_and_exits
 
+merge-readiness-check:
+	$(MAKE) quality-check
+	$(MAKE) release-check
+
 lint:
-	ruff check .
-	mypy src/voxera --ignore-missing-imports
+	$(MAKE) quality-check
 
 fmt:
 	ruff format .
