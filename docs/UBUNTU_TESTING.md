@@ -1,6 +1,6 @@
 # Ubuntu Testing Guide
 
-Use this checklist to run Voxera OS Alpha v0.1.3 end-to-end on an Ubuntu machine.
+Use this checklist to run Voxera OS Alpha v0.1.4 end-to-end on an Ubuntu machine.
 
 ## 1) System prerequisites
 
@@ -19,7 +19,7 @@ sudo apt install -y curl jq pulseaudio-utils
 
 ```bash
 git clone <your-repo-url> VoxeraOS
-cd VoxeraOS/voxera-os-scaffold/voxera-os
+cd VoxeraOS
 ```
 
 ## 3) Create environment and install dependencies

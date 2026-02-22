@@ -1,6 +1,6 @@
 # Roadmap
 
-## Current product baseline (Alpha v0.1.3)
+## Current product baseline (Alpha v0.1.4 stability + UX baseline)
 - Setup wizard (TUI)
 - Provider abstraction (cloud/local)
 - Skill runner + policy gate
@@ -13,6 +13,9 @@
   - deterministic failed retention pruning (paired/orphan-aware, max-age/max-count)
   - failed status snapshots prefer valid sidecars while counting only primary jobs
   - queue failure lifecycle smoke coverage (fail -> snapshot -> prune)
+
+For the locked v0.1.4 release scope, acceptance criteria, and release checklist, see `docs/ROADMAP_0.1.4.md`.
+
 
 ## Next 4/8/12 weeks (user-visible milestones)
 

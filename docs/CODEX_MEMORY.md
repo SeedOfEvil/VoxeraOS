@@ -137,3 +137,15 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Keep enabler targets small and incremental each sprint so user-visible milestones remain primary.
 - Risks/notes:
   - Enabler work should not displace product-visible outcomes; use it to reduce delivery friction and regressions.
+
+## 2026-02-22 — PR #N/A — Rebrand to v0.1.4 and lock stability/UX baseline scope
+- Summary:
+  - Bumped project branding/version references from `0.1.3` to `0.1.4` across package metadata, README, roadmap/testing docs, mission docs, and legal notice.
+  - Added `docs/ROADMAP_0.1.4.md` to lock the release scope around reliability, UX polish, observability, and release acceptance criteria.
+  - Updated top-level release messaging to position v0.1.4 as a trustworthy daily-driver baseline ahead of broader voice-first expansion.
+- Validation:
+  - `make release-check`
+- Follow-ups:
+  - Replace `PR #N/A` with the merged PR number.
+- Risks/notes:
+  - Version sync is intentionally documentation-first; runtime version is sourced from package metadata and should be released/tagged with matching git state.
