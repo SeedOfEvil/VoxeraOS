@@ -111,3 +111,29 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Add policy controls for baseline-file review ownership and rationale requirements when refreshing `tools/mypy-baseline.txt`.
 - Risks/notes:
   - Baseline updates should remain triaged/intentional; avoid using baseline rewrites as a shortcut for unresolved type regressions.
+
+## 2026-02-22 — PR #41 — Strengthen merge-readiness governance, CI summaries, and docs alignment
+- Summary:
+  - Updated merge-readiness CI to capture quality/release logs under `artifacts/`, publish a concise `$GITHUB_STEP_SUMMARY`, and fail the job if either phase fails.
+  - Added baseline governance guidance for `tools/mypy-baseline.txt` refresh/review expectations in both `README.md` and `docs/ops.md`.
+  - Added review protection in `.github/CODEOWNERS` for `tools/mypy-baseline.txt` and `scripts/mypy_ratchet.py`, and backfilled roadmap/memory references to reflect completed ratchet + validation-tier + CI-artifact work.
+- Validation:
+  - `make merge-readiness-check` (initial failure: missing `types-PyYAML` stubs)
+  - `pip install types-PyYAML`
+  - `make merge-readiness-check` (pass: quality/type and release checks)
+- Follow-ups:
+  - Keep 30/60/90 roadmap milestones focused on user-visible outcomes while maintaining guardrails as ongoing policy.
+- Risks/notes:
+  - Baseline refreshes remain review-sensitive; avoid using baseline rewrites to mask unresolved typing regressions.
+
+## 2026-02-22 — PR #42 — Re-scope roadmap cadence to 4/8/12 weeks with delivery enablers
+- Summary:
+  - Replaced 30/60/90-day roadmap framing with 4/8/12-week milestones better matched to current solo-maintainer delivery pace.
+  - Added non-user-visible delivery enablers (CI timing visibility, test reliability growth, release-smoke repeatability, docs/audit hygiene) with reachable targets.
+  - Synced roadmap references in `README.md` and `docs/ops.md` to the new week-based cadence and enabler coverage.
+- Validation:
+  - `git diff -- README.md docs/ROADMAP.md docs/ops.md docs/CODEX_MEMORY.md`
+- Follow-ups:
+  - Keep enabler targets small and incremental each sprint so user-visible milestones remain primary.
+- Risks/notes:
+  - Enabler work should not displace product-visible outcomes; use it to reduce delivery friction and regressions.
