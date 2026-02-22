@@ -31,4 +31,3 @@ def get_version() -> str:
         return package_version(PACKAGE_NAME)
     except PackageNotFoundError:
         return _version_from_pyproject() or FALLBACK_DEV_VERSION
-

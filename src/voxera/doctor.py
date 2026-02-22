@@ -17,7 +17,9 @@ from .config import capabilities_report_path, load_config
 console = Console()
 
 
-def _normalize_brain_result(name: str, provider: str, model: str, result: dict[str, Any]) -> dict[str, Any]:
+def _normalize_brain_result(
+    name: str, provider: str, model: str, result: dict[str, Any]
+) -> dict[str, Any]:
     normalized = dict(result)
     normalized["provider"] = str(normalized.get("provider") or provider)
     normalized["model"] = str(normalized.get("model") or model)
@@ -64,7 +66,11 @@ async def run_doctor() -> dict:
                 brain = GeminiBrain(model=bc.model, api_key_ref=bc.api_key_ref)
                 raw_result = await brain.capability_test()
             else:
-                raw_result = {"provider": bc.type, "model": bc.model, "error": "Unknown provider type"}
+                raw_result = {
+                    "provider": bc.type,
+                    "model": bc.model,
+                    "error": "Unknown provider type",
+                }
         except Exception as e:
             raw_result = {"provider": bc.type, "model": bc.model, "error": repr(e)}
 

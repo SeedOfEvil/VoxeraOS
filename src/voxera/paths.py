@@ -24,7 +24,6 @@ def ensure_dirs():
     return cd, dd
 
 
-
 def queue_root() -> Path:
     return Path.home() / "VoxeraOS" / "notes" / "queue"
 

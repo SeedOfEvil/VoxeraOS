@@ -28,7 +28,4 @@ def test_pyproject_declares_tomli_for_python_lt_311():
     payload = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     deps = payload["project"]["dependencies"]
 
-    assert any(
-        dep.startswith("tomli>=2.0") and "python_version < '3.11'" in dep
-        for dep in deps
-    )
+    assert any(dep.startswith("tomli>=2.0") and "python_version < '3.11'" in dep for dep in deps)
