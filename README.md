@@ -268,7 +268,7 @@ voxera panel
 ### Option 1 (recommended)
 From repo root (safe update + smoke checks):
 ```bash
-cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
+# from repository root
 make update
 ```
 
@@ -298,7 +298,7 @@ What the update flow does:
 
 ### Service lifecycle commands
 ```bash
-cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
+# from repository root
 make services-install   # install + enable + start user units
 make services-status    # show service status
 make services-restart   # restart enabled units
@@ -395,3 +395,11 @@ Before merging any PR to `main`, run:
 - `make premerge`
 
 This runs the release-critical failed-sidecar guardrail, the unit test suite, and the E2E smoke script.
+
+## Release consistency checklist
+When preparing a release or changing install/service flows, verify:
+
+- Bump `project.version` in `pyproject.toml`; runtime surfaces consume this via `voxera.version.get_version()` (CLI + panel metadata).
+- Re-run guardrails from repository root: `pytest -q` and `make premerge`.
+- Keep operational docs synchronized (`README.md`, `docs/ops.md`, `docs/BOOTSTRAP.md`) with one workflow and repository-root command examples.
+- Validate queue/service onboarding commands still match current CLI and Make targets (`voxera queue init`, `make services-install`, `make update`).

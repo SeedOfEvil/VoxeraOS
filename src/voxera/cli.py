@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import __version__
+from .version import get_version
 from .audit import tail
 from .config import load_config
 from .core.inbox import add_inbox_job, list_inbox_jobs
@@ -36,7 +36,8 @@ def _git_sha() -> str | None:
 
 def _version_string() -> str:
     sha = _git_sha()
-    return f"{__version__} ({sha})" if sha else __version__
+    version = get_version()
+    return f"{version} ({sha})" if sha else version
 
 
 def _show_version(value: bool):

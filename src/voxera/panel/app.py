@@ -9,8 +9,9 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..audit import tail
 from ..core.queue_daemon import MissionQueueDaemon
+from ..version import get_version
 
-app = FastAPI(title="Voxera Panel", version="0.1.0")
+app = FastAPI(title="Voxera Panel", version=get_version())
 
 HERE = Path(__file__).resolve().parent
 templates = Environment(

@@ -88,3 +88,7 @@ def test_panel_can_click_approve_pending_queue_job(tmp_path, monkeypatch):
     res = client.post("/queue/approvals/job-e2e-ask.json/approve", follow_redirects=False)
     assert res.status_code == 303
     assert (queue_dir / "done" / "job-e2e-ask.json").exists()
+
+
+def test_panel_app_uses_shared_version_source():
+    assert panel_module.app.version == panel_module.get_version()

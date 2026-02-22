@@ -20,3 +20,15 @@ voxera setup
 - Policy: `~/.config/voxera/policy.yml`
 - Capability report: `~/.local/share/voxera/capabilities.json`
 - Audit: `~/.local/share/voxera/audit/*.jsonl`
+
+
+## Post-setup operational handoff
+After `voxera setup`, continue from repository root for local operations:
+
+```bash
+voxera queue init
+make services-install
+make services-status
+```
+
+Use repository-root command examples in docs unless an absolute path is operationally required.
