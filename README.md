@@ -400,6 +400,8 @@ This runs the release-critical failed-sidecar guardrail, the unit test suite, an
 When preparing a release or changing install/service flows, verify:
 
 - Bump `project.version` in `pyproject.toml`; runtime surfaces consume this via `voxera.version.get_version()` (CLI + panel metadata).
-- Re-run guardrails from repository root: `pytest -q` and `make premerge`.
+- Run version/doc guardrails from repository root: `make release-check`.
+- Re-run broader guardrails from repository root: `pytest -q` and `make premerge`.
 - Keep operational docs synchronized (`README.md`, `docs/ops.md`, `docs/BOOTSTRAP.md`) with one workflow and repository-root command examples.
 - Validate queue/service onboarding commands still match current CLI and Make targets (`voxera queue init`, `make services-install`, `make update`).
+- Ensure branch protection requires the `release-check / release-check` status check so doc/runtime version drift blocks merges.

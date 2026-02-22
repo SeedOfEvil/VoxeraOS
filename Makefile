@@ -1,4 +1,4 @@
-.PHONY: install dev panel test test-failed-sidecar lint fmt e2e update update-fast services-install services-restart services-status services-stop services-disable
+.PHONY: install dev panel test test-failed-sidecar release-check lint fmt e2e update update-fast services-install services-restart services-status services-stop services-disable
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
 SYSTEMD_SRC_DIR := deploy/systemd/user
@@ -21,6 +21,13 @@ test:
 
 test-failed-sidecar:
 	pytest -q tests/test_queue_daemon.py -k "failed_sidecar_schema_version_policy_rejects_unknown_future_version or queue_failure_lifecycle_smoke_sidecar_snapshot_then_prune"
+
+release-check:
+	pytest -q \
+		tests/test_version_source.py \
+		tests/test_panel.py::test_panel_app_uses_shared_version_source \
+		tests/test_docs_consistency.py \
+		tests/test_cli_version.py::test_root_version_option_prints_and_exits
 
 lint:
 	ruff check .

@@ -1,0 +1,37 @@
+name: release-check
+
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "src/voxera/version.py"
+      - "src/voxera/cli.py"
+      - "src/voxera/panel/app.py"
+      - "README.md"
+      - "docs/**"
+      - "Makefile"
+      - "tests/test_version_source.py"
+      - "tests/test_docs_consistency.py"
+      - "tests/test_cli_version.py"
+      - "tests/test_panel.py"
+  workflow_dispatch: {}
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run release consistency checks
+        run: make release-check
