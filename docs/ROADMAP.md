@@ -13,6 +13,20 @@
   - deterministic failed retention pruning (paired/orphan-aware, max-age/max-count)
   - failed status snapshots prefer valid sidecars while counting only primary jobs
   - queue failure lifecycle smoke coverage (fail -> snapshot -> prune)
+- Unified merge-readiness guardrail:
+  - single `make merge-readiness-check` target runs both quality checks (format/lint/type) and release consistency checks
+  - PR gate consolidated under one required status check (`merge-readiness / merge-readiness`)
+
+## Recently completed
+- Added release consistency checks for package/runtime/CLI/docs version alignment.
+- Added CI enforcement for release-sensitive file changes.
+- Hardened queue failed-artifact sidecar validation + retention behavior with lifecycle smoke coverage.
+- Consolidated quality + release checks into one merge-readiness gate for branch protection.
+
+## Next up (ordered)
+1. Queue observability surfacing: make retention policy and invalid-sidecar counters more visible in CLI/panel summaries.
+2. Structured mission planning + dry-run simulation mode for safer preview before execution.
+3. OpenAI-compatible provider hardening and broader v0.2 mission catalog expansion.
 
 ## Alpha v0.2
 - OpenAI-compatible provider solidified (Ollama, etc.)

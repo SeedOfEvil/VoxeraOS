@@ -88,6 +88,14 @@ def sanitize_command(command: Iterable[str]) -> list[str]:
     return redacted
 
 
+def _text_from_subprocess_output(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def sanitize_audit_value(value: Any, *, key_hint: str = "") -> Any:
     if isinstance(value, dict):
         return {k: sanitize_audit_value(v, key_hint=k) for k, v in value.items()}
@@ -268,8 +276,8 @@ class PodmanSandboxRunner(SandboxRunner):
             exit_code = proc.returncode
             timed_out = False
         except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout or ""
-            stderr = (exc.stderr or "") + "\nTimed out"
+            stdout = _text_from_subprocess_output(exc.stdout)
+            stderr = _text_from_subprocess_output(exc.stderr) + "\nTimed out"
             exit_code = 124
             timed_out = True
 
