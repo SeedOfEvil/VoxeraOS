@@ -22,3 +22,8 @@ Use this file as a quick operational memory index for agent-style development in
 - Track sidecar validation failures (`queue_failed_sidecar_invalid`) in panel/operator dashboards.
 - Brain fallback behavior when `primary` fails (latency/error path).
 - Prompt-injection resistance in planner output validation.
+
+
+## Release alignment
+- Active release line: Alpha v0.1.4 (stability + UX baseline).
+- Keep release-sensitive docs and package metadata aligned with `docs/ROADMAP_0.1.4.md`.

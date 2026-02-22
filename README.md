@@ -1,7 +1,7 @@
-# Voxera OS Alpha v0.1.3 — Voice-first AI Control Plane
+# Voxera OS Alpha v0.1.4 — Voice-first AI Control Plane (Stability + UX Baseline)
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is **Voxera OS Alpha v0.1.3**: it ships a typed first-run setup (`voxera setup`), cloud-planned missions,
+This repo is **Voxera OS Alpha v0.1.4**: a stability + UX baseline release with typed first-run setup (`voxera setup`), cloud-planned missions,
 a queue daemon with approval inbox, queue status + panel insights, update tooling, systemd user services, and pluggable “brain” providers.
 
 **Names**
@@ -10,7 +10,7 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 - Wake word (planned): **“Hey Voxera”**
 - CLI: `voxera`
 
-## What works in Alpha v0.1.3
+## What works in Alpha v0.1.4 (daily-driver baseline)
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
 - ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
@@ -333,7 +333,7 @@ For Ubuntu validation, follow `docs/UBUNTU_TESTING.md` for a full machine test c
 - Skills declare permissions; policies decide “allow/ask/deny”
 
 
-## Sandbox execution (v0.1.3 MVP)
+## Sandbox execution (v0.1.4 MVP)
 
 ### Install rootless Podman on Ubuntu 24.04
 ```bash
@@ -369,10 +369,10 @@ print(rr.ok, rr.data["artifacts_dir"])
 - **Next 8 weeks:** structured mission planning previews with safer dry-run simulation UX.
 - **Next 12 weeks:** stronger OpenAI-compatible provider behavior and broader mission catalog coverage.
 
-See `docs/ROADMAP.md` for measurable 4/8/12-week outcomes, plus non-user-visible delivery enablers.
+See `docs/ROADMAP.md` for measurable 4/8/12-week outcomes, and `docs/ROADMAP_0.1.4.md` for the locked stability/UX scope and release checklist.
 
 ---
-**Alpha v0.1.3** is meant to give you a working system + fast iteration loop while preserving safety gates.
+**Alpha v0.1.4** is the trustworthy daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 
