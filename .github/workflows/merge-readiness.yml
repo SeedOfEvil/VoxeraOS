@@ -63,8 +63,8 @@ jobs:
                 echo "- ✅ release-check: passed"
               fi
 
-              echo "- Reproduce locally from repository root: `make merge-readiness-check`"
-              echo "- Failure logs are uploaded as the `merge-readiness-logs` artifact."
+              echo "- Reproduce locally from repository root: \`make merge-readiness-check\`"
+              echo "- Failure logs are uploaded as the \`merge-readiness-logs\` artifact."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
