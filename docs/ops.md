@@ -194,9 +194,16 @@ Troubleshooting:
 
 For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:
 - `README.md` (operator-facing feature and workflow docs)
-- `docs/ROADMAP.md` (what is current vs next)
+- `docs/ROADMAP.md` (current baseline + 4/8/12-week user-visible milestones + delivery enablers)
 - `docs/CODEX_MEMORY.md` (chronological merged-change memory)
 - `AGENT.md` and `CODEX.md` (root-level quick memory pointers)
+
+Documentation + audit hygiene checklist (run for every merged behavior/process change):
+1. Update `README.md` for user/operator workflow changes.
+2. Update `docs/ROADMAP.md` so completed and upcoming work reflect current state.
+3. Append a merged-entry to `docs/CODEX_MEMORY.md` with summary, validation, follow-ups, and risks.
+4. Confirm CI/ops guidance in `docs/ops.md` still matches current `Makefile`/workflow behavior.
+5. If checks or runbooks changed, verify audit event names and triage steps remain accurate in docs.
 
 ## DEV auto-approve warning
 

@@ -364,10 +364,12 @@ print(rr.ok, rr.data["artifacts_dir"])
 - Artifacts are stored in `~/.voxera/artifacts/<job_id>/` (`stdout.txt`, `stderr.txt`, `runner.json`, `command.txt`).
 - `:Z` SELinux mount suffix is used for Podman volume labeling; this is compatible on non-SELinux systems as well.
 
-## Roadmap
-- Voice stack (wake word + STT/TTS)
-- First-boot “installer-by-conversation” flow
-- Immutable base image (Silverblue-style) for atomic upgrades + rollback
+## Roadmap (user-visible milestones)
+- **Next 4 weeks:** clearer queue reliability signals in CLI/panel and operator workflows.
+- **Next 8 weeks:** structured mission planning previews with safer dry-run simulation UX.
+- **Next 12 weeks:** stronger OpenAI-compatible provider behavior and broader mission catalog coverage.
+
+See `docs/ROADMAP.md` for measurable 4/8/12-week outcomes, plus non-user-visible delivery enablers.
 
 ---
 **Alpha v0.1.3** is meant to give you a working system + fast iteration loop while preserving safety gates.
