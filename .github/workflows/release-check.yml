@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "pyproject.toml"
+      - "src/voxera/__init__.py"
       - "src/voxera/version.py"
       - "src/voxera/cli.py"
       - "src/voxera/panel/app.py"
