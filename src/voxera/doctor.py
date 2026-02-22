@@ -30,7 +30,7 @@ def _normalize_brain_result(
 
     latency_s = normalized.get("latency_s")
     try:
-        latency_ms = int(float(latency_s) * 1000)
+        latency_ms = int(float(latency_s) * 1000) if latency_s is not None else None
     except (TypeError, ValueError):
         latency_ms = None
 
@@ -55,7 +55,7 @@ async def run_doctor() -> dict:
     for name, bc in cfg.brain.items():
         try:
             if bc.type == "openai_compat":
-                brain = OpenAICompatBrain(
+                brain: OpenAICompatBrain | GeminiBrain = OpenAICompatBrain(
                     base_url=bc.base_url or "",
                     model=bc.model,
                     api_key_ref=bc.api_key_ref,

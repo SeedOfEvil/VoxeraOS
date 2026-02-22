@@ -26,6 +26,20 @@ class OpenAICompatBrain:
         self.timeout = timeout
         self.extra_headers = extra_headers or {}
 
+    def _resolve_api_key(self) -> str:
+        if not self.api_key_ref:
+            raise RuntimeError("OpenAI-compatible API key reference is required")
+        key_or_ref = get_secret(self.api_key_ref) or self.api_key_ref
+        if key_or_ref.startswith(("keyring:", "file:")):
+            ref_name = key_or_ref.split(":", 1)[1]
+            resolved = get_secret(ref_name)
+            if resolved is None:
+                raise RuntimeError("OpenAI-compatible API key secret is missing")
+            key_or_ref = resolved
+        if not key_or_ref.strip():
+            raise RuntimeError("OpenAI-compatible API key is missing or empty")
+        return key_or_ref
+
     def _headers(self) -> dict[str, str]:
         hdr = {"Content-Type": "application/json"}
         for k, v in self.extra_headers.items():
@@ -33,11 +47,7 @@ class OpenAICompatBrain:
                 hdr[k] = v
 
         if self.api_key_ref:
-            key = get_secret(self.api_key_ref) or self.api_key_ref
-            if key and key.startswith(("keyring:", "file:")):
-                key = get_secret(key.split(":", 1)[1])
-            if key:
-                hdr["Authorization"] = f"Bearer {key}"
+            hdr["Authorization"] = f"Bearer {self._resolve_api_key()}"
         return hdr
 
     async def generate(

@@ -295,18 +295,28 @@ class MissionQueueDaemon:
             age_filtered = [unit for unit in ordered if unit["key"] in keep_keys]
             keep_keys = {unit["key"] for unit in age_filtered[:max_count]}
 
+        def _coerce_path(unit: dict[str, Any], key: str) -> Path | None:
+            value = unit.get(key)
+            if value is None:
+                return None
+            if isinstance(value, Path):
+                return value
+            if isinstance(value, str):
+                return Path(value)
+            raise ValueError(f"failed artifact unit field {key!r} must be a path")
+
         removed_jobs = 0
         removed_sidecars = 0
         for unit in ordered:
             if unit["key"] in keep_keys:
                 continue
-            job = unit.get("job")
-            sidecar = unit.get("sidecar")
-            if job is not None and job.exists():
-                job.unlink()
+            job_path = _coerce_path(unit, "job")
+            sidecar_path = _coerce_path(unit, "sidecar")
+            if job_path is not None and job_path.exists():
+                job_path.unlink()
                 removed_jobs += 1
-            if sidecar is not None and sidecar.exists():
-                sidecar.unlink()
+            if sidecar_path is not None and sidecar_path.exists():
+                sidecar_path.unlink()
                 removed_sidecars += 1
 
         if removed_jobs or removed_sidecars:

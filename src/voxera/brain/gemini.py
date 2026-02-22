@@ -29,12 +29,16 @@ class GeminiBrain:
     def _resolve_api_key(self) -> str:
         if not self.api_key_ref:
             raise RuntimeError("Gemini API key is required for planner.generate")
-        key = get_secret(self.api_key_ref) or self.api_key_ref
-        if key and key.startswith(("keyring:", "file:")):
-            key = get_secret(key.split(":", 1)[1])
-        if not key:
+        key_or_ref = get_secret(self.api_key_ref) or self.api_key_ref
+        if key_or_ref.startswith(("keyring:", "file:")):
+            ref_name = key_or_ref.split(":", 1)[1]
+            resolved = get_secret(ref_name)
+            if resolved is None:
+                raise RuntimeError("Gemini API key secret is missing")
+            key_or_ref = resolved
+        if not key_or_ref.strip():
             raise RuntimeError("Gemini API key is missing or empty")
-        return key
+        return key_or_ref
 
     def _convert_messages_to_contents(self, messages: list[dict[str, str]]) -> list[dict[str, Any]]:
         contents: list[dict[str, Any]] = []

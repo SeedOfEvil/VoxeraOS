@@ -27,8 +27,11 @@ def _canonical_open_app(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _canonical_set_volume(args: dict[str, Any]) -> dict[str, Any]:
+    raw = args.get("percent")
+    if raw is None:
+        return args
+
     try:
-        raw = args.get("percent")
         value = int(float(raw))
     except (TypeError, ValueError):
         return args

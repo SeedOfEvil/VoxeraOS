@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, cast
 
 from ..audit import log
 from ..models import AppConfig, PlanSimulation, PlanStep, RunResult, SkillManifest
@@ -8,6 +8,14 @@ from ..policy import decide
 from .arg_normalizer import canonicalize_args
 from .execution import generate_job_id, sanitize_audit_value, select_runner
 from .registry import SkillRegistry
+
+_PolicyDecisionLiteral = Literal["allow", "ask", "deny"]
+
+
+def _normalize_policy_decision(value: str) -> _PolicyDecisionLiteral:
+    if value not in {"allow", "ask", "deny"}:
+        raise ValueError(f"Unexpected policy decision: {value}")
+    return cast(_PolicyDecisionLiteral, value)
 
 
 class SkillRunner:
@@ -21,13 +29,15 @@ class SkillRunner:
         requires_approval = decision.decision == "ask" or manifest.risk == "high"
         blocked = decision.decision == "deny"
 
+        policy_decision = _normalize_policy_decision(decision.decision)
+
         step = PlanStep(
             action="Run skill",
             skill_id=manifest.id,
             args=args,
             requires_approval=requires_approval,
             risk=manifest.risk,
-            policy_decision=decision.decision,
+            policy_decision=policy_decision,
             reason=decision.reason,
         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Literal, cast
 
 from rich.console import Console
 from rich.panel import Panel
@@ -13,10 +14,16 @@ from .secrets import set_secret
 
 console = Console()
 
+_ModeLiteral = Literal["voice", "gui", "cli", "mixed"]
+_BrainTypeLiteral = Literal["gemini", "openai_compat"]
 
-def _pick_mode() -> str:
+
+def _pick_mode() -> _ModeLiteral:
     console.print(Panel("Choose interaction mode", title="Voxera Setup"))
-    return Prompt.ask("Mode", choices=["voice", "gui", "cli", "mixed"], default="mixed")
+    return cast(
+        _ModeLiteral,
+        Prompt.ask("Mode", choices=["voice", "gui", "cli", "mixed"], default="mixed"),
+    )
 
 
 def _pick_brain_type() -> str:
@@ -34,6 +41,12 @@ def _cloud_provider() -> str:
 
 def _local_provider() -> str:
     return Prompt.ask("Local adapter", choices=["openai_compat"], default="openai_compat")
+
+
+def _validated_brain_type(value: str) -> _BrainTypeLiteral:
+    if value not in {"gemini", "openai_compat"}:
+        raise ValueError(f"Unsupported brain type: {value}")
+    return cast(_BrainTypeLiteral, value)
 
 
 def _policy_defaults() -> PolicyApprovals:
@@ -102,7 +115,7 @@ async def run_setup() -> AppConfig:
     mode = _pick_mode()
     brain_source = _pick_brain_type()
 
-    cfg = AppConfig(mode=mode)
+    cfg = AppConfig(mode=cast(_ModeLiteral, mode))
 
     if brain_source == "cloud":
         adapter = _cloud_provider()
@@ -116,7 +129,9 @@ async def run_setup() -> AppConfig:
             api_key = Prompt.ask("API key (will be stored securely)", password=True)
             ref_name = "CLOUD_API_KEY"
             set_secret(ref_name, api_key)
-            cfg.brain["primary"] = BrainConfig(type=adapter, model=model, api_key_ref=ref_name)
+            cfg.brain["primary"] = BrainConfig(
+                type=_validated_brain_type(adapter), model=model, api_key_ref=ref_name
+            )
 
             if Confirm.ask(
                 "Configure a local fallback (OpenAI-compatible endpoint)?", default=True
@@ -131,7 +146,9 @@ async def run_setup() -> AppConfig:
         adapter = _local_provider()
         base_url = Prompt.ask("Local base URL", default="http://localhost:11434/v1")
         model = Prompt.ask("Local model", default="llama3")
-        cfg.brain["primary"] = BrainConfig(type=adapter, model=model, base_url=base_url)
+        cfg.brain["primary"] = BrainConfig(
+            type=_validated_brain_type(adapter), model=model, base_url=base_url
+        )
 
     console.print(Panel("Privacy posture", title="Privacy"))
     privacy = PrivacyConfig()

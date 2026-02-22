@@ -17,7 +17,7 @@ class SkillRegistry:
         self._cache: dict[str, SkillManifest] = {}
 
     def discover(self) -> dict[str, SkillManifest]:
-        manifests = {}
+        manifests: dict[str, SkillManifest] = {}
         if not self.skills_dir.exists():
             return manifests
         for yml in self.skills_dir.rglob("manifest.yml"):
