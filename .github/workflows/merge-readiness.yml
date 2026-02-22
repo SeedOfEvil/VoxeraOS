@@ -9,6 +9,8 @@ on:
       - "docs/**"
       - "src/**"
       - "tests/**"
+      - "scripts/**"
+      - "tools/**"
       - ".github/workflows/merge-readiness.yml"
       - ".pre-commit-config.yaml"
       - "mypy.ini"
@@ -32,4 +34,16 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run merge readiness checks
-        run: make merge-readiness-check
+        run: |
+          mkdir -p artifacts
+          make quality-check > artifacts/quality-check.txt 2>&1
+          make release-check > artifacts/release-check.txt 2>&1
+          cat artifacts/quality-check.txt
+          cat artifacts/release-check.txt
+
+      - name: Upload merge-readiness artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merge-readiness-logs
+          path: artifacts/

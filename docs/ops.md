@@ -162,6 +162,28 @@ make merge-readiness-check
 
 This combines fast quality checks (format/lint/type) and release consistency checks (version/doc/runtime alignment) under one workflow status check: `merge-readiness / merge-readiness`.
 
+Validation tiers:
+- Required for pull request merge: `make merge-readiness-check`.
+- Broader local validation before releases/high-risk refactors: `make full-validation-check` (`make premerge` alias).
+
+Typing policy:
+- `make type-check` uses a mypy ratchet against `tools/mypy-baseline.txt` and blocks new type errors.
+- `make type-check-strict` runs full mypy for baseline burn-down work.
+- `make update-mypy-baseline` should only be used for intentional baseline refreshes after triage.
+
+Local workflow parity:
+- `make dev` installs pre-commit + pre-push hooks.
+- Pre-push runs `make merge-readiness-check` so local gates match CI expectations.
+
+CI diagnostics:
+- On merge-readiness failures, GitHub Actions uploads `merge-readiness-logs` artifacts (quality/release logs).
+- Download artifacts from the failed workflow run for quick triage without rerunning locally.
+
+Troubleshooting:
+- If `ruff` fails, run `make fmt` then rerun `make merge-readiness-check`.
+- If mypy ratchet fails with new errors, fix the reported lines or explicitly triage + refresh baseline with `make update-mypy-baseline`.
+- If release-check fails, ensure docs and runtime versioned surfaces remain aligned.
+
 ## Information sources (keep in sync)
 
 For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:
