@@ -25,9 +25,10 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert "Control" in body
     assert "Logging" in body
     assert "Queue Status + Failed Metadata Health" in body
+    assert "Approval Command Center" in body
     assert "Active Work" in body
     assert "Mission Library" in body
-    assert "Pending Queue Approvals" in body
+    assert "Approval Command Center" in body
     assert "Mission Log (last 20 lines)" in body
     assert "line-29" in body
     assert "line-8" not in body

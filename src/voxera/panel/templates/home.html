@@ -106,6 +106,38 @@
         </article>
       </section>
 
+      <section class="card" style="margin-bottom:16px;">
+        <h2>Approval Command Center</h2>
+        <p class="muted">Approve or deny pending actions directly from the Control pane.</p>
+        {% if queue.pending_approvals|length == 0 %}
+          <p class="muted">No pending queue approvals.</p>
+        {% else %}
+          <div class="table-wrap"><table>
+            <thead>
+              <tr><th>Job</th><th>Approve As</th><th>Step</th><th>Skill</th><th>Capability</th><th>Reason</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+            {% for item in queue.pending_approvals %}
+              <tr>
+                <td>{{item.job}}</td>
+                <td>{{(item.approve_refs or [])[:2]|join(' | ')}}</td>
+                <td>{{item.step}}</td>
+                <td>{{item.skill}}</td>
+                <td>{{item.capability}}</td>
+                <td>{{item.reason}}</td>
+                <td>
+                  <div style="display:flex; gap:6px;">
+                    <form method="post" action="/queue/approvals/{{item.job}}/approve"><button class="btn btn-approve" type="submit">Approve</button></form>
+                    <form method="post" action="/queue/approvals/{{item.job}}/deny"><button class="btn btn-deny" type="submit">Deny</button></form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table></div>
+        {% endif %}
+      </section>
+
       <section class="grid grid-2" style="margin-bottom:16px;">
         <article class="card">
           <h2>Active Work</h2>
@@ -131,32 +163,20 @@
         </article>
 
         <article class="card">
-          <h2>Pending Queue Approvals</h2>
-          {% if queue.pending_approvals|length == 0 %}
-            <p class="muted">No pending queue approvals.</p>
+          <h2>Recent Activity Snapshot</h2>
+          {% if recent_activity|length == 0 %}
+            <p class="muted">No recent lifecycle events yet.</p>
           {% else %}
-            <div class="table-wrap"><table>
-              <thead>
-                <tr><th>Job</th><th>Step</th><th>Skill</th><th>Capability</th><th>Reason</th><th>Action</th></tr>
-              </thead>
-              <tbody>
-              {% for item in queue.pending_approvals %}
-                <tr>
-                  <td>{{item.job}}</td>
-                  <td>{{item.step}}</td>
-                  <td>{{item.skill}}</td>
-                  <td>{{item.capability}}</td>
-                  <td>{{item.reason}}</td>
-                  <td>
-                    <div style="display:flex; gap:6px;">
-                      <form method="post" action="/queue/approvals/{{item.job}}/approve"><button class="btn btn-approve" type="submit">Approve</button></form>
-                      <form method="post" action="/queue/approvals/{{item.job}}/deny"><button class="btn btn-deny" type="submit">Deny</button></form>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-              </tbody>
-            </table></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Event</th><th>Job</th><th>Mission</th><th>Step</th></tr></thead>
+                <tbody>
+                {% for item in recent_activity[:6] %}
+                  <tr><td>{{item.event}}</td><td>{{item.job}}</td><td>{{item.mission}}</td><td>{{item.step}}</td></tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
           {% endif %}
         </article>
       </section>
