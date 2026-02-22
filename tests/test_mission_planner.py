@@ -170,6 +170,111 @@ def test_plan_mission_normalizes_single_arg_alias(monkeypatch):
     assert mission.steps[0].args == {"name": "firefox"}
 
 
+def test_plan_mission_checkin_note_goal_uses_deterministic_notes_write(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    events = []
+    monkeypatch.setattr("voxera.core.mission_planner.log", lambda e: events.append(e))
+
+    mission = asyncio.run(
+        plan_mission(
+            "Write a daily check-in note with priorities and blockers",
+            cfg=cfg,
+            registry=reg,
+        )
+    )
+
+    assert mission.title == "Deterministic Note Write"
+    assert len(mission.steps) == 1
+    assert mission.steps[0].skill_id == "files.write_text"
+    assert mission.steps[0].args["path"] == "daily-check-in.md"
+    assert "Priorities" in mission.steps[0].args["text"]
+    assert "Blockers" in mission.steps[0].args["text"]
+    assert any(e.get("event") == "planner_selected" for e in events)
+
+
+def test_plan_mission_rewrites_non_explicit_outside_allowlist_file_read(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "model": "primary-model",
+                    "brain": _FakeBrain(
+                        '{"title":"Prep","steps":[{"skill_id":"files.read_text","args":{"path":"/tmp/secret.txt"}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("check machine", cfg=cfg, registry=reg))
+
+    assert mission.steps[0].skill_id == "clipboard.copy"
+    assert "switched to clipboard.copy for safety" in mission.steps[0].args["text"]
+
+
+def test_plan_mission_normalizes_outside_allowlist_file_write_path(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "model": "primary-model",
+                    "brain": _FakeBrain(
+                        '{"title":"Write","steps":[{"skill_id":"files.write_text","args":{"path":"/tmp/out.txt","text":"hello"}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("write a note summary", cfg=cfg, registry=reg))
+
+    assert mission.steps[0].skill_id == "files.write_text"
+    assert mission.steps[0].args["path"] == "ok.txt"
+
+
 def test_plan_mission_primary_malformed_output_fallback_success(monkeypatch):
     cfg = AppConfig(
         brain={
