@@ -12,6 +12,7 @@ from typing import Any
 
 from ..audit import log, tail
 from ..config import load_config
+from ..paths import queue_root as default_queue_root
 from ..skills.registry import SkillRegistry
 from ..skills.runner import SkillRunner
 from .mission_planner import MissionPlannerError, plan_mission
@@ -42,9 +43,7 @@ class MissionQueueDaemon:
         failed_retention_max_age_s: float | None = None,
         failed_retention_max_count: int | None = None,
     ):
-        self.queue_root = (
-            queue_root or (Path.home() / "VoxeraOS" / "notes" / "queue")
-        ).expanduser()
+        self.queue_root = (queue_root or default_queue_root()).expanduser()
         self.inbox = self.queue_root
         self.done = self.queue_root / "done"
         self.failed = self.queue_root / "failed"

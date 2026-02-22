@@ -9,7 +9,6 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import __version__
 from .audit import tail
 from .config import load_config
 from .core.inbox import add_inbox_job, list_inbox_jobs
@@ -17,9 +16,11 @@ from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
 from .core.queue_daemon import MissionQueueDaemon
 from .doctor import doctor_sync
+from .paths import queue_root_display
 from .setup_wizard import run_setup
 from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
+from .version import get_version
 
 console = Console()
 
@@ -36,7 +37,8 @@ def _git_sha() -> str | None:
 
 def _version_string() -> str:
     sha = _git_sha()
-    return f"{__version__} ({sha})" if sha else __version__
+    version = get_version()
+    return f"{version} ({sha})" if sha else version
 
 
 def _show_version(value: bool):
@@ -287,7 +289,7 @@ def panel(host: str = "127.0.0.1", port: int = 8844):
 def daemon(
     once: bool = typer.Option(False, "--once", help="Process current queue and exit."),
     queue_dir: str = typer.Option(
-        "~/VoxeraOS/notes/queue",
+        queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
@@ -314,7 +316,7 @@ def daemon(
 @queue_approvals_app.command("list")
 def queue_approvals_list(
     queue_dir: str = typer.Option(
-        "~/VoxeraOS/notes/queue",
+        queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
@@ -348,7 +350,7 @@ def queue_approvals_list(
 @queue_app.command("init")
 def queue_init(
     queue_dir: str = typer.Option(
-        "~/VoxeraOS/notes/queue",
+        queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
@@ -367,7 +369,7 @@ def queue_init(
 @queue_app.command("status")
 def queue_status(
     queue_dir: str = typer.Option(
-        "~/VoxeraOS/notes/queue",
+        queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
@@ -428,7 +430,7 @@ def queue_status(
 def queue_approvals_approve(
     ref: str,
     queue_dir: str = typer.Option(
-        "~/VoxeraOS/notes/queue",
+        queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
@@ -449,7 +451,7 @@ def queue_approvals_approve(
 def queue_approvals_deny(
     ref: str,
     queue_dir: str = typer.Option(
-        "~/VoxeraOS/notes/queue",
+        queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
@@ -471,7 +473,7 @@ def inbox_add(
         None, "--id", help="Optional job id (defaults to generated timestamp+hash)."
     ),
     queue_dir: str = typer.Option(
-        "~/VoxeraOS/notes/queue",
+        queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
@@ -493,7 +495,7 @@ def inbox_add(
 def inbox_list(
     n: int = typer.Option(20, "--n", min=1, help="Number of recent inbox jobs to show."),
     queue_dir: str = typer.Option(
-        "~/VoxeraOS/notes/queue",
+        queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),

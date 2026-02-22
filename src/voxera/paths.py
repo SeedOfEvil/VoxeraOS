@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from platformdirs import user_config_path, user_data_path
 
 APP = "voxera"
@@ -20,3 +22,16 @@ def ensure_dirs():
     dd.mkdir(parents=True, exist_ok=True)
     (dd / "audit").mkdir(parents=True, exist_ok=True)
     return cd, dd
+
+
+def queue_root() -> Path:
+    return Path.home() / "VoxeraOS" / "notes" / "queue"
+
+
+def queue_root_display() -> str:
+    root = queue_root()
+    home = Path.home()
+    try:
+        return f"~/{root.relative_to(home).as_posix()}"
+    except ValueError:
+        return root.as_posix()

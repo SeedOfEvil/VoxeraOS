@@ -4,10 +4,9 @@ This guide covers day-2 operations for VoxeraOS in service mode.
 
 ## Install services
 
-From the Python project root:
+From repository root:
 
 ```bash
-cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
 make services-install
 ```
 
@@ -19,7 +18,13 @@ and enables/starts:
 
 ## Inbox -> queue processing flow
 
-Use `voxera inbox` as the human-friendly front door for queued goals:
+Use `voxera inbox` as the human-friendly front door for queued goals. Ensure queue folders exist once per machine:
+
+```bash
+voxera queue init
+```
+
+Then run:
 
 ```bash
 voxera inbox add "Write a daily check-in note with priorities and blockers"
@@ -168,7 +173,7 @@ Network asks (for example `system.open_url`) still go to pending approval inbox.
 Recommended cadence: update frequently (daily/weekly) on active systems.
 
 ```bash
-cd ~/VoxeraOS/voxera-os-scaffold/voxera-os
+# from repository root
 make update
 ```
 
@@ -187,7 +192,7 @@ If a fresh update causes regressions, rollback to a known commit:
 cd ~/VoxeraOS
 git log --oneline --decorate -n 20
 git checkout <sha>
-cd voxera-os-scaffold/voxera-os
+cd <your-checkout-path>
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
