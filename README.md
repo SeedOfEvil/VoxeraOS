@@ -389,19 +389,31 @@ print(rr.ok, rr.data["artifacts_dir"])
 - Network capabilities (for example `network.change`, `system.open_url`) are **never** auto-approved and still go to `pending/`.
 - Auto-approvals emit loud audit events (`queue_auto_approved`) for test visibility.
 
-## Merge checklist (local)
-Before merging any PR to `main`, run:
+## Before pushing
+Run the required gate from repository root before every push:
 
-- `make premerge`
+- `make merge-readiness-check`
 
-This runs the release-critical failed-sidecar guardrail, the unit test suite, and the E2E smoke script.
+`make dev` installs both pre-commit and pre-push hooks. The pre-push hook also runs `make merge-readiness-check` so local behavior matches CI.
+
+## Validation tiers
+Use these two validation tiers to avoid policy drift:
+
+- Required for PR merge: `make merge-readiness-check`
+  - Runs formatting/lint checks and mypy ratchet (`make quality-check`)
+  - Runs release consistency checks (`make release-check`)
+- Broader local validation before release branches or risky changes: `make full-validation-check`
+  - Includes merge-readiness plus failed-sidecar guardrails, full pytest, and E2E smoke
+
+`make premerge` is an alias for `make full-validation-check`.
 
 ## Merge-readiness + release consistency checklist
 When preparing a release or changing install/service flows, verify:
 
 - Bump `project.version` in `pyproject.toml`; runtime surfaces consume this via `voxera.version.get_version()` (CLI + panel metadata).
 - Run unified merge/readiness guardrails from repository root: `make merge-readiness-check`.
-- Re-run broader guardrails from repository root: `pytest -q` and `make premerge`.
+- If mypy baseline cleanup is needed, use `make type-check-strict` for full strict checks and `make update-mypy-baseline` only after intentional debt triage.
+- Re-run broader guardrails from repository root: `make full-validation-check`.
 - Keep operational docs synchronized (`README.md`, `docs/ops.md`, `docs/BOOTSTRAP.md`, `docs/ROADMAP.md`) with one workflow and repository-root command examples.
 - Validate queue/service onboarding commands still match current CLI and Make targets (`voxera queue init`, `make services-install`, `make update`).
 - Ensure branch protection requires the `merge-readiness / merge-readiness` status check so quality + doc/runtime version drift blocks merges.

@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: merge-readiness-check
+        name: merge-readiness-check
+        entry: make merge-readiness-check
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
