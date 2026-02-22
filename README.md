@@ -396,6 +396,17 @@ Run the required gate from repository root before every push:
 
 `make dev` installs both pre-commit and pre-push hooks. The pre-push hook also runs `make merge-readiness-check` so local behavior matches CI.
 
+CI run summary now records whether the quality or release phase failed and points to `artifacts/quality-check.txt` / `artifacts/release-check.txt` in uploaded `merge-readiness-logs` artifacts.
+
+
+## Mypy ratchet baseline governance
+Treat `tools/mypy-baseline.txt` as a controlled policy artifact:
+
+- Do **not** run `make update-mypy-baseline` as a first response to a failing ratchet.
+- First, fix newly reported typing regressions and rerun `make merge-readiness-check`.
+- Refresh the baseline only after intentional debt triage and include a short rationale in the PR description (what changed and why).
+- Changes to `tools/mypy-baseline.txt` and `scripts/mypy_ratchet.py` should receive maintainer review.
+
 ## Validation tiers
 Use these two validation tiers to avoid policy drift:
 

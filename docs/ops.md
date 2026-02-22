@@ -171,12 +171,18 @@ Typing policy:
 - `make type-check-strict` runs full mypy for baseline burn-down work.
 - `make update-mypy-baseline` should only be used for intentional baseline refreshes after triage.
 
+Baseline governance:
+- Do not refresh the baseline as the first response to a ratchet failure; fix new errors first.
+- Any baseline refresh should include a clear PR rationale (what debt was triaged and why update is intentional).
+- `tools/mypy-baseline.txt` and `scripts/mypy_ratchet.py` are review-sensitive and should receive maintainer approval.
+
 Local workflow parity:
 - `make dev` installs pre-commit + pre-push hooks.
 - Pre-push runs `make merge-readiness-check` so local gates match CI expectations.
 
 CI diagnostics:
 - On merge-readiness failures, GitHub Actions uploads `merge-readiness-logs` artifacts (quality/release logs).
+- Workflow step summary will call out whether quality or release phase failed and where to find the logs.
 - Download artifacts from the failed workflow run for quick triage without rerunning locally.
 
 Troubleshooting:

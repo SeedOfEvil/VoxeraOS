@@ -1,0 +1,3 @@
+# Require maintainer review for typing-ratchet policy artifacts.
+/tools/mypy-baseline.txt @SeedOfEvil
+/scripts/mypy_ratchet.py @SeedOfEvil
