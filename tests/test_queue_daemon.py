@@ -1303,3 +1303,120 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
         if event.get("event") == "skill_start" and event.get("skill") == "sandbox.exec"
     )
     assert skill_start["args"]["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
+
+
+def test_pending_approval_payload_includes_target_scope_and_policy_reason(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "approval-url.json"
+    job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="goal_url",
+            title="Goal URL",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    daemon.process_pending_once()
+    artifact_path = queue_dir / "pending" / "approvals" / "approval-url.approval.json"
+    approval = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert approval["target"] == {"type": "url", "value": "https://example.com"}
+    assert approval["scope"]["fs_scope"] == "broader"
+    assert approval["scope"]["needs_network"] is True
+    assert "policy_reason" in approval
+
+
+def test_approval_always_grant_allows_matching_scope_only(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        if "example" in goal:
+            return MissionTemplate(
+                id="goal_url",
+                title="Goal URL",
+                goal=goal,
+                steps=[
+                    MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})
+                ],
+            )
+        return MissionTemplate(
+            id="goal_settings",
+            title="Goal Settings",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.set_volume", args={"percent": "15"})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    (queue_dir / "job1.json").write_text(json.dumps({"goal": "Open example"}), encoding="utf-8")
+    daemon.process_pending_once()
+    assert (queue_dir / "pending" / "job1.json").exists()
+
+    daemon.resolve_approval("job1", approve=True, approve_always=True)
+    assert (queue_dir / "done" / "job1.json").exists()
+
+    (queue_dir / "job2.json").write_text(
+        json.dumps({"goal": "Open example again"}), encoding="utf-8"
+    )
+    daemon.process_pending_once()
+    assert (queue_dir / "done" / "job2.json").exists()
+
+    (queue_dir / "job3.json").write_text(json.dumps({"goal": "change volume"}), encoding="utf-8")
+    daemon.process_pending_once()
+    assert (queue_dir / "pending" / "job3.json").exists()
+
+
+def test_job_artifacts_written_for_done_and_pending(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="goal_url",
+            title="Goal URL",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    (queue_dir / "art.json").write_text(json.dumps({"goal": "Open example"}), encoding="utf-8")
+    daemon.process_pending_once()
+
+    art_dir = queue_dir / "artifacts" / "art"
+    assert (art_dir / "plan.json").exists()
+    assert (art_dir / "actions.jsonl").exists()
+
+    daemon.resolve_approval("art", approve=True)
+    assert (art_dir / "stdout.txt").exists()
+    assert (art_dir / "stderr.txt").exists()

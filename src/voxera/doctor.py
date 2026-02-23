@@ -4,6 +4,9 @@ import asyncio
 import contextlib
 import json
 import shutil
+import tempfile
+import time
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -13,8 +16,70 @@ from . import audit
 from .brain.gemini import GeminiBrain
 from .brain.openai_compat import OpenAICompatBrain
 from .config import capabilities_report_path, load_config
+from .core.queue_daemon import MissionQueueDaemon
 
 console = Console()
+
+
+def run_self_test(*, timeout_s: float = 8.0) -> dict[str, Any]:
+    started = time.time()
+    with tempfile.TemporaryDirectory(prefix="voxera-doctor-") as tmp:
+        queue_root = Path(tmp) / "queue"
+        queue_root.mkdir(parents=True, exist_ok=True)
+        job = queue_root / "doctor-self-test.json"
+        job.write_text(json.dumps({"mission_id": "system_check"}, indent=2), encoding="utf-8")
+
+        daemon = MissionQueueDaemon(queue_root=queue_root)
+        daemon.ensure_dirs()
+
+        done_job = queue_root / "done" / job.name
+        failed_job = queue_root / "failed" / job.name
+        while time.time() - started < timeout_s:
+            daemon.process_pending_once()
+            if done_job.exists() or failed_job.exists():
+                break
+            time.sleep(0.15)
+
+        audit_events = [
+            e
+            for e in audit.tail(200)
+            if str(e.get("job", "")).endswith(job.name)
+            or e.get("event") in {"queue_job_started", "queue_job_done", "queue_job_failed"}
+        ]
+        artifacts_dir = queue_root / "artifacts" / job.stem
+        required = [
+            artifacts_dir / "actions.jsonl",
+            artifacts_dir / "plan.json",
+            artifacts_dir / "stdout.txt",
+            artifacts_dir / "stderr.txt",
+        ]
+        missing = [str(item) for item in required if not item.exists()]
+
+        ok = done_job.exists() and bool(audit_events) and not missing
+        fixes: list[str] = []
+        if not done_job.exists() and not failed_job.exists():
+            fixes.append(
+                "Daemon did not complete job in time; verify queue daemon processing and mission load."
+            )
+        if not audit_events:
+            fixes.append(
+                "No audit events correlated with self-test job; verify audit path permissions."
+            )
+        if missing:
+            fixes.append("Missing artifact files; verify artifact writer hooks in queue daemon.")
+
+        return {
+            "ok": ok,
+            "queue_root": str(queue_root),
+            "job": job.name,
+            "done": done_job.exists(),
+            "failed": failed_job.exists(),
+            "audit_events": len(audit_events),
+            "artifacts_dir": str(artifacts_dir),
+            "missing_artifacts": missing,
+            "fixes": fixes,
+            "duration_s": round(time.time() - started, 3),
+        }
 
 
 def _normalize_brain_result(
@@ -113,6 +178,16 @@ def print_report(results: dict) -> None:
     console.print(t)
 
 
-def doctor_sync():
+def doctor_sync(*, self_test: bool = False, timeout_s: float = 8.0):
     results = asyncio.run(run_doctor())
+    if self_test:
+        results["self_test"] = run_self_test(timeout_s=timeout_s)
     print_report(results)
+    if self_test:
+        status = results["self_test"]
+        if status["ok"]:
+            console.print("[green]Self-test PASS[/green]")
+        else:
+            console.print("[red]Self-test FAIL[/red]")
+            for step in status.get("fixes", []):
+                console.print(f"- {step}")

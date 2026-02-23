@@ -89,9 +89,14 @@ def setup():
 
 
 @app.command()
-def doctor():
+def doctor(
+    self_test: bool = typer.Option(
+        False, "--self-test", help="Run queue/audit/artifact golden-path self-test."
+    ),
+    timeout_s: float = typer.Option(8.0, "--timeout-s", min=1.0, help="Timeout for --self-test."),
+):
     """Run provider capability tests and write a report."""
-    doctor_sync()
+    doctor_sync(self_test=self_test, timeout_s=timeout_s)
 
 
 @app.command()
@@ -335,14 +340,20 @@ def queue_approvals_list(
     table.add_column("Skill")
     table.add_column("Capability")
     table.add_column("Reason")
+    table.add_column("Target")
+    table.add_column("Scope")
     for item in approvals:
+        target = item.get("target", {}) if isinstance(item.get("target"), dict) else {}
+        scope = item.get("scope", {}) if isinstance(item.get("scope"), dict) else {}
         table.add_row(
             str(item.get("job", "")),
             " | ".join(str(v) for v in item.get("approve_refs", [])[:2]),
             str(item.get("step", "")),
             str(item.get("skill", "")),
             str(item.get("capability", "")),
-            str(item.get("reason", "")),
+            str(item.get("policy_reason", item.get("reason", ""))),
+            f"{target.get('type', 'unknown')}: {target.get('value', '')}",
+            f"fs={scope.get('fs_scope', '-')}, net={scope.get('needs_network', False)}",
         )
     console.print(table)
 
@@ -364,6 +375,7 @@ def queue_init(
     console.print(f"- pending/approvals/: {daemon.approvals}")
     console.print(f"- done/: {daemon.done}")
     console.print(f"- failed/: {daemon.failed}")
+    console.print(f"- artifacts/: {daemon.artifacts}")
 
 
 @queue_app.command("status")
@@ -415,6 +427,7 @@ def queue_status(
         str(prune.get("max_count")) if prune.get("max_count") is not None else "(n/a)",
     )
     console.print(prune_table)
+    console.print(f"Artifacts root: {status.get('artifacts_root', '')}")
 
     if not status["exists"]:
         console.print(f"[yellow]Hint:[/yellow] queue root not found yet: {status['queue_root']}")
@@ -425,16 +438,22 @@ def queue_status(
     approvals_table.add_column("Step")
     approvals_table.add_column("Skill")
     approvals_table.add_column("Reason")
+    approvals_table.add_column("Target")
+    approvals_table.add_column("Scope")
     if approvals:
         for item in approvals:
+            target = item.get("target", {}) if isinstance(item.get("target"), dict) else {}
+            scope = item.get("scope", {}) if isinstance(item.get("scope"), dict) else {}
             approvals_table.add_row(
                 str(item.get("job", "")),
                 str(item.get("step", "")),
                 str(item.get("skill", "")),
-                str(item.get("reason", "")),
+                str(item.get("policy_reason", item.get("reason", ""))),
+                f"{target.get('type', 'unknown')}: {target.get('value', '')}",
+                f"fs={scope.get('fs_scope', '-')}, net={scope.get('needs_network', False)}",
             )
     else:
-        approvals_table.add_row("-", "-", "-", "No pending approvals")
+        approvals_table.add_row("-", "-", "-", "No pending approvals", "-", "-")
     console.print(approvals_table)
 
     failed = status["recent_failed"]
@@ -454,6 +473,9 @@ def queue_status(
 @queue_approvals_app.command("approve")
 def queue_approvals_approve(
     ref: str,
+    always: bool = typer.Option(
+        False, "--always", help="Approve and grant always-allow for this skill+scope."
+    ),
     queue_dir: str = typer.Option(
         queue_root_display(),
         "--queue-dir",
@@ -463,7 +485,7 @@ def queue_approvals_approve(
     """Approve a pending queue job by filename or id."""
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
     try:
-        ok = daemon.resolve_approval(ref, approve=True)
+        ok = daemon.resolve_approval(ref, approve=True, approve_always=always)
     except FileNotFoundError as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1) from exc

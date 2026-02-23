@@ -218,6 +218,7 @@ voxera queue approvals list
 
 ```bash
 voxera queue approvals approve <job_id_or_filename>
+voxera queue approvals approve <job_id_or_filename> --always
 voxera queue approvals deny <job_id_or_filename>
 ```
 
@@ -391,3 +392,14 @@ If fallback frequency spikes, compare by `provider` + `model` and promote/demote
 ## Safety note
 
 Operational workflows here do **not** require deleting data under `~/VoxeraOS/notes`.
+
+
+## Doctor golden-path self-test
+
+Use `voxera doctor --self-test` to run a tiny safe queue job (`system_check`) and validate:
+
+- queue daemon processing
+- audit event visibility
+- queue artifact bundle creation (`plan.json`, `actions.jsonl`, `stdout.txt`, `stderr.txt`)
+
+The command prints pass/fail and actionable fix steps when checks fail.

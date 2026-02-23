@@ -124,7 +124,7 @@
         {% else %}
           <div class="table-wrap"><table>
             <thead>
-              <tr><th>Job</th><th>Approve As</th><th>Step</th><th>Skill</th><th>Capability</th><th>Reason</th><th>Action</th></tr>
+              <tr><th>Job</th><th>Approve As</th><th>Step</th><th>Skill</th><th>Capability</th><th>Why (Policy)</th><th>Target</th><th>Scope</th><th>Action</th></tr>
             </thead>
             <tbody>
             {% for item in queue.pending_approvals %}
@@ -134,10 +134,13 @@
                 <td>{{item.step}}</td>
                 <td>{{item.skill}}</td>
                 <td>{{item.capability}}</td>
-                <td>{{item.reason}}</td>
+                <td>{{item.policy_reason or item.reason}}</td>
+                <td>{{item.target.type}}: {{item.target.value}}</td>
+                <td>fs={{item.scope.fs_scope}}, net={{item.scope.needs_network}}</td>
                 <td>
                   <div style="display:flex; gap:6px;">
                     <form method="post" action="/queue/approvals/{{item.job}}/approve"><button class="btn btn-approve" type="submit">Approve</button></form>
+                    <form method="post" action="/queue/approvals/{{item.job}}/approve-always"><button class="btn" type="submit">Approve Always</button></form>
                     <form method="post" action="/queue/approvals/{{item.job}}/deny"><button class="btn btn-deny" type="submit">Deny</button></form>
                   </div>
                 </td>

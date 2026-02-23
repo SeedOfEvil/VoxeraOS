@@ -283,6 +283,13 @@ def approve_queue_job(ref: str):
     return RedirectResponse(url="/", status_code=303)
 
 
+@app.post("/queue/approvals/{ref}/approve-always")
+def approve_always_queue_job(ref: str):
+    daemon = MissionQueueDaemon(queue_root=_queue_root())
+    daemon.resolve_approval(ref, approve=True, approve_always=True)
+    return RedirectResponse(url="/", status_code=303)
+
+
 @app.post("/queue/approvals/{ref}/deny")
 def deny_queue_job(ref: str):
     daemon = MissionQueueDaemon(queue_root=_queue_root())
