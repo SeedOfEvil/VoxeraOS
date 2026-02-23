@@ -170,9 +170,10 @@ voxera inbox list --n 20
 
 voxera daemon --once
 ```
-Queue job schema accepts either:
-- `mission_id` (or alias `mission`)
-- `goal` (preferred) or compatibility alias `plan_goal`
+Queue job schema accepts:
+- `mission_id` (or alias `mission`), or
+- `goal` (preferred) / compatibility alias `plan_goal`, or
+- inline `steps` (non-empty list) where each step accepts `skill_id` or legacy `skill` plus optional `args`.
 
 If a queued mission hits an approval-required step, it is moved to `pending/` (not failed),
 and an approval artifact is written to `pending/approvals/*.approval.json` with policy reason, target details, and scope metadata.

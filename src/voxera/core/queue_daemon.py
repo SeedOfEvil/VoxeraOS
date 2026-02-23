@@ -505,7 +505,52 @@ class MissionQueueDaemon:
             normalized["mission_id"] = str(mission_id)
         if goal is not None:
             normalized["goal"] = str(goal)
+
+        title = payload.get("title")
+        if title is not None:
+            normalized["title"] = str(title)
+
+        steps = payload.get("steps")
+        if steps is not None:
+            normalized["steps"] = steps
+
         return normalized
+
+    def _build_inline_mission(self, payload: dict[str, Any], *, job_ref: str) -> MissionTemplate:
+        steps_raw = payload.get("steps")
+        if not isinstance(steps_raw, list) or not steps_raw:
+            raise ValueError("job steps must be a non-empty list")
+
+        mission_steps: list[MissionStep] = []
+        for idx, item in enumerate(steps_raw, start=1):
+            if not isinstance(item, dict):
+                raise ValueError(f"job step {idx} must be an object")
+
+            skill_id_raw = item.get("skill_id", item.get("skill"))
+            skill_id = str(skill_id_raw or "").strip()
+            if not skill_id:
+                raise ValueError(
+                    f"job step {idx} missing skill_id (or legacy skill) for {Path(job_ref).name}"
+                )
+
+            args_raw = item.get("args", {})
+            if args_raw is None:
+                args_raw = {}
+            if not isinstance(args_raw, dict):
+                raise ValueError(f"job step {idx} args must be an object")
+
+            mission_steps.append(MissionStep(skill_id=skill_id, args=dict(args_raw)))
+
+        mission_id = Path(job_ref).stem
+        title = str(payload.get("title") or f"Queued Mission {mission_id}")
+        goal = str(payload.get("goal") or "User-defined queued mission")
+        return MissionTemplate(
+            id=mission_id,
+            title=title,
+            goal=goal,
+            notes="inline_queue_job",
+            steps=mission_steps,
+        )
 
     def _build_mission_for_payload(
         self, payload: dict[str, Any], *, job_ref: str
@@ -513,6 +558,8 @@ class MissionQueueDaemon:
         normalized = self._normalize_payload(payload)
         if "mission_id" in normalized:
             return get_mission(normalized["mission_id"])
+        if "steps" in normalized:
+            return self._build_inline_mission(normalized, job_ref=job_ref)
         if "goal" in normalized:
             try:
                 return asyncio.run(
@@ -526,7 +573,9 @@ class MissionQueueDaemon:
                 )
             except MissionPlannerError as exc:
                 raise RuntimeError(str(exc)) from exc
-        raise ValueError("job must contain either mission_id (or mission) or goal (or plan_goal)")
+        raise ValueError(
+            "job must contain mission_id (or mission), goal (or plan_goal), or inline steps"
+        )
 
     def _write_pending_artifacts(
         self,
@@ -883,6 +932,14 @@ class MissionQueueDaemon:
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
             self._write_plan_artifact(str(job_path), payload=payload, mission=mission)
         except Exception as exc:
+            log(
+                {
+                    "event": "queue_job_invalid",
+                    "job": str(job_path),
+                    "filename": job_path.name,
+                    "reason": repr(exc),
+                }
+            )
             moved = self._move_job(job_path, self.failed)
             if moved is None:
                 return False

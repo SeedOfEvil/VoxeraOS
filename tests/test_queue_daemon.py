@@ -114,11 +114,87 @@ def test_queue_daemon_rejects_invalid_schema_with_clear_error(tmp_path, monkeypa
     sidecar = failed_job.with_name(f"{failed_job.stem}.error.json")
     assert sidecar.exists()
     details = json.loads(sidecar.read_text(encoding="utf-8"))
-    assert "mission_id (or mission) or goal (or plan_goal)" in details["error"]
+    assert "mission_id (or mission), goal (or plan_goal), or inline steps" in details["error"]
     assert any(
-        "mission_id (or mission) or goal (or plan_goal)" in evt.get("error", "")
+        "mission_id (or mission), goal (or plan_goal), or inline steps" in evt.get("error", "")
         for evt in events
         if evt.get("event") == "queue_job_failed"
+    )
+
+
+def test_queue_daemon_accepts_inline_steps_with_legacy_skill_key(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-approval-test.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(
+        json.dumps(
+            {
+                "title": "Approval Artifact Test",
+                "goal": "Open example.com",
+                "steps": [
+                    {
+                        "skill": "system.open_url",
+                        "args": {"url": "https://example.com"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    daemon.process_pending_once()
+
+    assert (queue_dir / "pending" / "job-approval-test.json").exists()
+    artifact_path = queue_dir / "pending" / "approvals" / "job-approval-test.approval.json"
+    assert artifact_path.exists()
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["skill"] == "system.open_url"
+    assert artifact["target"] == {"type": "url", "value": "https://example.com"}
+
+
+def test_queue_daemon_inline_steps_missing_skill_fails_loudly(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-invalid-step.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(
+        json.dumps(
+            {
+                "title": "Invalid Step",
+                "goal": "broken",
+                "steps": [{"args": {"url": "https://example.com"}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    failed_job = _assert_job_moved(queue_dir / "failed", "job-invalid-step.json")
+    sidecar = failed_job.with_name(f"{failed_job.stem}.error.json")
+    assert sidecar.exists()
+    details = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert "missing skill_id (or legacy skill)" in details["error"]
+    assert any(
+        event.get("event") == "queue_job_invalid"
+        and event.get("filename") == "job-invalid-step.json"
+        for event in events
     )
 
 
