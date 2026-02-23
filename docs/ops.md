@@ -69,7 +69,7 @@ Denied jobs are visible in `failed/`, and audit/mission logs include deny lifecy
 
 Panel operator note:
 - Panel mutation routes (`/queue/create`, `/missions/create`) accept `POST` by default.
-- Optional GET mutation compatibility is disabled by default and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
+- Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 
 ## Failed artifact sidecar contract + retention
 

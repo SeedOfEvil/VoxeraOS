@@ -160,12 +160,10 @@ def test_panel_get_mutations_disabled_by_default(tmp_path, monkeypatch):
     client = TestClient(panel_module.app)
 
     queue_res = client.get("/queue/create", follow_redirects=False)
-    assert queue_res.status_code == 303
-    assert queue_res.headers["location"] == "/?error=get_mutation_disabled"
+    assert queue_res.status_code == 405
 
     mission_res = client.get("/missions/create", follow_redirects=False)
-    assert mission_res.status_code == 303
-    assert mission_res.headers["location"] == "/?error=get_mutation_disabled"
+    assert mission_res.status_code == 405
 
 
 def test_panel_get_mutations_compat_mode(tmp_path, monkeypatch):
@@ -177,8 +175,20 @@ def test_panel_get_mutations_compat_mode(tmp_path, monkeypatch):
     queue_res = client.get("/queue/create", params={"kind": "goal", "goal": "legacy goal"})
     assert queue_res.status_code == 200
 
+    mission_res = client.get(
+        "/missions/create",
+        params={
+            "mission_id": "legacy_status",
+            "steps_json": '[{"skill_id":"system.status","args":{}}]',
+        },
+    )
+    assert mission_res.status_code == 200
+
     queued = list((fake_home / "VoxeraOS" / "notes" / "queue").glob("*.json"))
     assert len(queued) == 1
+
+    mission_file = fake_home / ".config" / "voxera" / "missions" / "legacy_status.json"
+    assert mission_file.exists()
 
 
 def test_panel_queue_create_validation_errors(tmp_path, monkeypatch):

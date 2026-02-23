@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -40,8 +40,6 @@ ERROR_MESSAGES = {
     "steps_json_not_list": "Steps JSON must decode to a JSON list.",
     "mission_schema_invalid": "Mission template failed schema validation.",
     "get_mutation_disabled": "GET mutation endpoints are disabled; submit the form normally.",
-    "use_post_queue_create": "Queue creation now expects POST; legacy GET support remains compatibility-only.",
-    "use_post_mission_create": "Mission creation now expects POST; legacy GET support remains compatibility-only.",
 }
 
 
@@ -62,6 +60,14 @@ def _validate_mission_id(mission_id: str) -> str:
     if not MISSION_ID_RE.fullmatch(normalized):
         raise ValueError("mission_id_invalid")
     return normalized
+
+
+def _enforce_get_mutations_enabled() -> None:
+    if not _allow_get_mutations():
+        raise HTTPException(
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+            detail="GET mutation endpoints are disabled",
+        )
 
 
 async def _request_value(request: Request, key: str, default: str = "") -> str:
@@ -220,8 +226,7 @@ def _create_queue_job_from_values(kind: str, mission_id: str, goal: str) -> Redi
 
 @app.get("/queue/create")
 def create_queue_job_get(kind: str = "goal", mission_id: str = "", goal: str = ""):
-    if not _allow_get_mutations():
-        return RedirectResponse(url="/?error=get_mutation_disabled", status_code=303)
+    _enforce_get_mutations_enabled()
     return _create_queue_job_from_values(kind, mission_id, goal)
 
 
@@ -257,8 +262,7 @@ def create_mission_get(
     notes: str = "",
     steps_json: str = "[]",
 ):
-    if not _allow_get_mutations():
-        return RedirectResponse(url="/?error=get_mutation_disabled", status_code=303)
+    _enforce_get_mutations_enabled()
     return _create_mission_from_values(mission_id, title, goal, notes, steps_json)
 
 
