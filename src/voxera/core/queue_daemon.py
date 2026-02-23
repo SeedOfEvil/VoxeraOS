@@ -298,9 +298,12 @@ class MissionQueueDaemon:
                 stdout_lines.append(output)
             if error:
                 stderr_lines.append(error)
-            args = item.get("args") if isinstance(item.get("args"), dict) else {}
-            if item.get("skill") == "files.write_text" and args.get("path"):
-                generated_files.append(str(args["path"]))
+            raw_args = item.get("args")
+            path_value: Any = None
+            if isinstance(raw_args, dict):
+                path_value = raw_args.get("path")
+            if item.get("skill") == "files.write_text" and path_value:
+                generated_files.append(str(path_value))
         artifact_dir = self._job_artifacts_dir(job_ref)
         (artifact_dir / "stdout.txt").write_text("\n".join(stdout_lines), encoding="utf-8")
         (artifact_dir / "stderr.txt").write_text("\n".join(stderr_lines), encoding="utf-8")
