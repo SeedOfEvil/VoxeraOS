@@ -116,3 +116,61 @@ def test_queue_status_renders_failed_metadata_counters(tmp_path):
     assert "failed metadata missing" in result.output
     assert "failed retention max age (s)" in result.output
     assert "failed retention max count" in result.output
+
+
+def test_queue_approvals_list_shows_target_and_scope(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+    (queue_dir / "pending" / "job-a.json").write_text(
+        json.dumps({"goal": "demo"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-a.pending.json").write_text(
+        json.dumps(
+            {
+                "payload": {"goal": "demo"},
+                "resume_step": 1,
+                "mission": {
+                    "id": "demo",
+                    "title": "Demo",
+                    "goal": "demo",
+                    "steps": [{"skill_id": "system.status", "args": {}}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "pending" / "approvals" / "job-a.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-a.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "reason": "needs approval",
+                "policy_reason": "network_changes -> ask",
+                "target": {"type": "url", "value": "https://example.com"},
+                "scope": {"fs_scope": "workspace_only", "needs_network": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    listed = runner.invoke(cli.app, ["queue", "approvals", "list", "--queue-dir", str(queue_dir)])
+
+    assert listed.exit_code == 0
+    assert "Target" in listed.output
+    assert "Scope" in listed.output
+    assert "Queue Approval Inbox" in listed.output
+
+
+def test_queue_status_prints_artifacts_root(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+    (queue_dir / "done").mkdir(parents=True)
+    (queue_dir / "failed").mkdir(parents=True)
+
+    result = runner.invoke(cli.app, ["queue", "status", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "Artifacts root:" in result.output

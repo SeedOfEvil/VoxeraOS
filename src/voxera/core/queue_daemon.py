@@ -24,6 +24,7 @@ _PARSE_RETRY_BACKOFF_S = 0.1
 _FAILED_SIDECAR_SCHEMA_WRITE_VERSION = 1
 _FAILED_SIDECAR_SCHEMA_READ_VERSIONS = {_FAILED_SIDECAR_SCHEMA_WRITE_VERSION}
 _FAILED_TIMESTAMP_MS_MIN = 10**12
+_APPROVAL_GRANTS_FILE = "grants.json"
 
 
 @dataclass
@@ -49,6 +50,7 @@ class MissionQueueDaemon:
         self.failed = self.queue_root / "failed"
         self.pending = self.queue_root / "pending"
         self.approvals = self.pending / "approvals"
+        self.artifacts = self.queue_root / "artifacts"
         self.poll_interval = poll_interval
         self.stats = QueueStats()
         self.current_job_ref: str | None = None
@@ -113,10 +115,29 @@ class MissionQueueDaemon:
         capability = self._decision_capability(decision)
         step = (audit_context or {}).get("step")
         reason = decision.reason
+        redacted_args = self._redact_args(args or {})
+        target = self._approval_target(manifest.id, args or {})
+        scope = {
+            "fs_scope": manifest.fs_scope,
+            "needs_network": bool(manifest.needs_network),
+        }
 
         approval_key = (self.current_job_ref or "", int(step or 0), manifest.id)
         if approval_key in self._approved_steps:
             self._approved_steps.discard(approval_key)
+            return True
+
+        if self._has_approval_grant(manifest.id, capability, scope):
+            log(
+                {
+                    "event": "queue_grant_auto_approved",
+                    "job": self.current_job_ref,
+                    "step": step,
+                    "skill": manifest.id,
+                    "capability": capability,
+                    "scope": scope,
+                }
+            )
             return True
 
         if self.auto_approve_ask and self.dev_mode and capability in _AUTO_APPROVE_ALLOWLIST:
@@ -128,6 +149,8 @@ class MissionQueueDaemon:
                     "skill": manifest.id,
                     "reason": reason,
                     "capability": capability,
+                    "target": target,
+                    "scope": scope,
                 }
             )
             return True
@@ -140,6 +163,8 @@ class MissionQueueDaemon:
                 "skill": manifest.id,
                 "reason": reason,
                 "capability": capability,
+                "target": target,
+                "scope": scope,
             }
         )
         return {
@@ -147,9 +172,80 @@ class MissionQueueDaemon:
             "step": step,
             "skill": manifest.id,
             "reason": reason,
+            "policy_reason": reason,
             "capability": capability,
-            "args": self._redact_args(args or {}),
+            "args": redacted_args,
+            "target": target,
+            "scope": scope,
         }
+
+    def _approval_target(self, skill_id: str, args: dict[str, Any]) -> dict[str, str]:
+        if skill_id == "system.open_url":
+            return {"type": "url", "value": str(args.get("url", ""))}
+        if skill_id == "system.open_app":
+            return {"type": "app", "value": str(args.get("name", ""))}
+        if skill_id in {"files.read_text", "files.write_text"}:
+            return {"type": "file", "value": str(args.get("path", ""))}
+        if skill_id == "sandbox.exec":
+            command = args.get("command", [])
+            if isinstance(command, list):
+                return {"type": "command", "value": " ".join(str(c) for c in command)}
+            return {"type": "command", "value": str(command)}
+        return {"type": "unknown", "value": ""}
+
+    def _grants_path(self) -> Path:
+        return self.approvals / _APPROVAL_GRANTS_FILE
+
+    def _read_grants(self) -> list[dict[str, Any]]:
+        path = self._grants_path()
+        if not path.exists():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
+    def _write_grants(self, grants: list[dict[str, Any]]) -> None:
+        self._grants_path().write_text(json.dumps(grants, indent=2), encoding="utf-8")
+
+    def grant_approval_scope(self, *, skill: str, capability: str, scope: dict[str, Any]) -> None:
+        self.ensure_dirs()
+        grants = self._read_grants()
+        normalized = {
+            "skill": skill,
+            "capability": capability,
+            "scope": {
+                "fs_scope": str(scope.get("fs_scope", "workspace_only")),
+                "needs_network": bool(scope.get("needs_network", False)),
+            },
+            "ts": time.time(),
+        }
+        for item in grants:
+            if (
+                item.get("skill") == normalized["skill"]
+                and item.get("capability") == normalized["capability"]
+                and item.get("scope") == normalized["scope"]
+            ):
+                return
+        grants.append(normalized)
+        self._write_grants(grants)
+
+    def _has_approval_grant(self, skill: str, capability: str, scope: dict[str, Any]) -> bool:
+        normalized_scope = {
+            "fs_scope": str(scope.get("fs_scope", "workspace_only")),
+            "needs_network": bool(scope.get("needs_network", False)),
+        }
+        for item in self._read_grants():
+            if (
+                item.get("skill") == skill
+                and item.get("capability") == capability
+                and item.get("scope") == normalized_scope
+            ):
+                return True
+        return False
 
     def ensure_dirs(self) -> None:
         self.inbox.mkdir(parents=True, exist_ok=True)
@@ -157,6 +253,66 @@ class MissionQueueDaemon:
         self.failed.mkdir(parents=True, exist_ok=True)
         self.pending.mkdir(parents=True, exist_ok=True)
         self.approvals.mkdir(parents=True, exist_ok=True)
+        self.artifacts.mkdir(parents=True, exist_ok=True)
+
+    def _job_artifacts_dir(self, job_ref: str) -> Path:
+        stem = Path(job_ref).stem
+        path = self.artifacts / stem
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _write_action_event(self, job_ref: str, event: str, **data: Any) -> None:
+        path = self._job_artifacts_dir(job_ref) / "actions.jsonl"
+        payload = {"event": event, "ts": time.time(), **data}
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+
+    def _write_plan_artifact(
+        self, job_ref: str, *, payload: dict[str, Any], mission: MissionTemplate
+    ) -> None:
+        plan = {
+            "job": Path(job_ref).name,
+            "payload": payload,
+            "mission": {
+                "id": mission.id,
+                "title": mission.title,
+                "goal": mission.goal,
+                "notes": mission.notes,
+                "steps": [{"skill_id": s.skill_id, "args": s.args} for s in mission.steps],
+            },
+        }
+        (self._job_artifacts_dir(job_ref) / "plan.json").write_text(
+            json.dumps(plan, indent=2), encoding="utf-8"
+        )
+
+    def _write_run_streams(self, job_ref: str, rr_data: dict[str, Any]) -> None:
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+        generated_files: list[str] = []
+        for item in rr_data.get("results", []):
+            if not isinstance(item, dict):
+                continue
+            output = str(item.get("output") or "")
+            error = str(item.get("error") or "")
+            if output:
+                stdout_lines.append(output)
+            if error:
+                stderr_lines.append(error)
+            raw_args = item.get("args")
+            path_value: Any = None
+            if isinstance(raw_args, dict):
+                path_value = raw_args.get("path")
+            if item.get("skill") == "files.write_text" and path_value:
+                generated_files.append(str(path_value))
+        artifact_dir = self._job_artifacts_dir(job_ref)
+        (artifact_dir / "stdout.txt").write_text("\n".join(stdout_lines), encoding="utf-8")
+        (artifact_dir / "stderr.txt").write_text("\n".join(stderr_lines), encoding="utf-8")
+        if generated_files:
+            outputs_dir = artifact_dir / "outputs"
+            outputs_dir.mkdir(parents=True, exist_ok=True)
+            (outputs_dir / "generated_files.json").write_text(
+                json.dumps(generated_files, indent=2), encoding="utf-8"
+            )
 
     def _move_job(self, src: Path, target_dir: Path) -> Path | None:
         target = target_dir / src.name
@@ -349,7 +505,52 @@ class MissionQueueDaemon:
             normalized["mission_id"] = str(mission_id)
         if goal is not None:
             normalized["goal"] = str(goal)
+
+        title = payload.get("title")
+        if title is not None:
+            normalized["title"] = str(title)
+
+        steps = payload.get("steps")
+        if steps is not None:
+            normalized["steps"] = steps
+
         return normalized
+
+    def _build_inline_mission(self, payload: dict[str, Any], *, job_ref: str) -> MissionTemplate:
+        steps_raw = payload.get("steps")
+        if not isinstance(steps_raw, list) or not steps_raw:
+            raise ValueError("job steps must be a non-empty list")
+
+        mission_steps: list[MissionStep] = []
+        for idx, item in enumerate(steps_raw, start=1):
+            if not isinstance(item, dict):
+                raise ValueError(f"job step {idx} must be an object")
+
+            skill_id_raw = item.get("skill_id", item.get("skill"))
+            skill_id = str(skill_id_raw or "").strip()
+            if not skill_id:
+                raise ValueError(
+                    f"job step {idx} missing skill_id (or legacy skill) for {Path(job_ref).name}"
+                )
+
+            args_raw = item.get("args", {})
+            if args_raw is None:
+                args_raw = {}
+            if not isinstance(args_raw, dict):
+                raise ValueError(f"job step {idx} args must be an object")
+
+            mission_steps.append(MissionStep(skill_id=skill_id, args=dict(args_raw)))
+
+        mission_id = Path(job_ref).stem
+        title = str(payload.get("title") or f"Queued Mission {mission_id}")
+        goal = str(payload.get("goal") or "User-defined queued mission")
+        return MissionTemplate(
+            id=mission_id,
+            title=title,
+            goal=goal,
+            notes="inline_queue_job",
+            steps=mission_steps,
+        )
 
     def _build_mission_for_payload(
         self, payload: dict[str, Any], *, job_ref: str
@@ -357,6 +558,8 @@ class MissionQueueDaemon:
         normalized = self._normalize_payload(payload)
         if "mission_id" in normalized:
             return get_mission(normalized["mission_id"])
+        if "steps" in normalized:
+            return self._build_inline_mission(normalized, job_ref=job_ref)
         if "goal" in normalized:
             try:
                 return asyncio.run(
@@ -370,7 +573,9 @@ class MissionQueueDaemon:
                 )
             except MissionPlannerError as exc:
                 raise RuntimeError(str(exc)) from exc
-        raise ValueError("job must contain either mission_id (or mission) or goal (or plan_goal)")
+        raise ValueError(
+            "job must contain mission_id (or mission), goal (or plan_goal), or inline steps"
+        )
 
     def _write_pending_artifacts(
         self,
@@ -391,7 +596,15 @@ class MissionQueueDaemon:
             "skill": run_data.get("skill"),
             "args": run_data.get("args", {}),
             "reason": run_data.get("reason"),
+            "policy_reason": run_data.get("policy_reason", run_data.get("reason")),
             "capability": run_data.get("capability"),
+            "target": run_data.get("target", {"type": "unknown", "value": ""}),
+            "fs_scope": (run_data.get("scope") or {}).get("fs_scope", "workspace_only"),
+            "needs_network": bool((run_data.get("scope") or {}).get("needs_network", False)),
+            "scope": {
+                "fs_scope": (run_data.get("scope") or {}).get("fs_scope", "workspace_only"),
+                "needs_network": bool((run_data.get("scope") or {}).get("needs_network", False)),
+            },
             "status": "pending_approval",
             "ts": time.time(),
         }
@@ -546,11 +759,19 @@ class MissionQueueDaemon:
             self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True
         )
 
+    def _approval_scope_from_artifact(self, data: dict[str, Any]) -> dict[str, Any]:
+        nested_raw = data.get("scope")
+        nested: dict[str, Any] = nested_raw if isinstance(nested_raw, dict) else {}
+        fs_scope = data.get("fs_scope", nested.get("fs_scope", "workspace_only"))
+        needs_network = data.get("needs_network", nested.get("needs_network", False))
+        return {"fs_scope": str(fs_scope), "needs_network": bool(needs_network)}
+
     def _read_approval_artifact(self, artifact: Path) -> dict[str, Any]:
         try:
             data = json.loads(artifact.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("approval artifact must be a JSON object")
+            scope = self._approval_scope_from_artifact(data)
             data["_artifact"] = artifact.name
             data["job"] = self._canonical_job_name(artifact, data)
             data["approve_refs"] = [
@@ -558,6 +779,11 @@ class MissionQueueDaemon:
                 Path(data["job"]).stem.removeprefix("job-"),
                 str((self.pending / data["job"]).resolve()),
             ]
+            data.setdefault("target", {"type": "unknown", "value": ""})
+            data["scope"] = scope
+            data["fs_scope"] = scope["fs_scope"]
+            data["needs_network"] = scope["needs_network"]
+            data.setdefault("policy_reason", data.get("reason", ""))
             return data
         except Exception as exc:
             log(
@@ -587,7 +813,12 @@ class MissionQueueDaemon:
                     "step": data.get("step", ""),
                     "skill": data.get("skill", ""),
                     "reason": data.get("reason", ""),
+                    "policy_reason": data.get("policy_reason", data.get("reason", "")),
                     "capability": data.get("capability", ""),
+                    "target": data.get("target", {"type": "unknown", "value": ""}),
+                    "scope": data.get("scope", {}),
+                    "fs_scope": data.get("fs_scope", "workspace_only"),
+                    "needs_network": bool(data.get("needs_network", False)),
                 }
             )
         return out
@@ -702,6 +933,7 @@ class MissionQueueDaemon:
             "recent_failed": self.recent_failed_jobs_snapshot(
                 limit=failed_limit, failed_files=failed_files, sidecars_by_job=sidecars_by_job
             ),
+            "artifacts_root": str(self.artifacts),
         }
 
     def process_job_file(self, job_path: Path) -> bool:
@@ -715,7 +947,16 @@ class MissionQueueDaemon:
             payload = self._load_job_payload_with_retry(job_path)
             payload = self._normalize_payload(payload)
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
+            self._write_plan_artifact(str(job_path), payload=payload, mission=mission)
         except Exception as exc:
+            log(
+                {
+                    "event": "queue_job_invalid",
+                    "job": str(job_path),
+                    "filename": job_path.name,
+                    "reason": repr(exc),
+                }
+            )
             moved = self._move_job(job_path, self.failed)
             if moved is None:
                 return False
@@ -743,6 +984,9 @@ class MissionQueueDaemon:
             if moved is None:
                 return False
             self._write_pending_artifacts(moved, payload=payload, mission=mission, run_data=rr.data)
+            self._write_action_event(
+                str(moved), "queue_job_pending_approval", step=rr.data.get("step")
+            )
             log(
                 {
                     "event": "queue_job_pending_approval",
@@ -761,6 +1005,7 @@ class MissionQueueDaemon:
             self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
+            self._write_action_event(str(moved), "queue_job_failed", error=error_text)
             self.prune_failed_artifacts()
             return False
 
@@ -768,6 +1013,8 @@ class MissionQueueDaemon:
         if moved is None:
             return False
         self.stats.processed += 1
+        self._write_run_streams(str(moved), rr.data)
+        self._write_action_event(str(moved), "queue_job_done")
         log({"event": "queue_job_done", "job": str(moved)})
         return True
 
@@ -815,7 +1062,7 @@ class MissionQueueDaemon:
             out.append(self._read_approval_artifact(artifact))
         return out
 
-    def resolve_approval(self, ref: str, *, approve: bool) -> bool:
+    def resolve_approval(self, ref: str, *, approve: bool, approve_always: bool = False) -> bool:
         self.ensure_dirs()
         job = self._find_pending_job(ref)
         meta_path = self.pending / f"{job.stem}.pending.json"
@@ -859,12 +1106,24 @@ class MissionQueueDaemon:
                     "error": "Denied in approval inbox",
                 }
             )
+            self._write_action_event(
+                str(moved), "queue_job_failed", error="Denied in approval inbox"
+            )
             self.prune_failed_artifacts()
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
             return True
 
         payload = meta.get("payload", {})
+        approval_data: dict[str, Any] = {}
+        if artifact_path.exists():
+            approval_data = self._read_approval_artifact(artifact_path)
+        if approve_always and approval_data:
+            self.grant_approval_scope(
+                skill=str(approval_data.get("skill", "")),
+                capability=str(approval_data.get("capability", "unknown")),
+                scope=approval_data.get("scope", {}),
+            )
         mission_data = meta.get("mission", {})
         steps = [
             MissionStep(skill_id=item["skill_id"], args=item.get("args", {}))
@@ -898,6 +1157,9 @@ class MissionQueueDaemon:
                     "reason": rr.data.get("reason"),
                 }
             )
+            self._write_action_event(
+                str(job), "queue_job_pending_approval", step=rr.data.get("step")
+            )
             return False
         if not rr.ok:
             moved = self._move_job(job, self.failed)
@@ -911,6 +1173,8 @@ class MissionQueueDaemon:
             )
             self.stats.failed += 1
             log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
+            self._write_run_streams(str(moved), rr.data)
+            self._write_action_event(str(moved), "queue_job_failed", error=error_text)
             self.prune_failed_artifacts()
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
@@ -922,6 +1186,8 @@ class MissionQueueDaemon:
             artifact_path.unlink(missing_ok=True)
             return False
         self.stats.processed += 1
+        self._write_run_streams(str(moved), rr.data)
+        self._write_action_event(str(moved), "queue_job_done", via="approval_inbox")
         log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
         meta_path.unlink(missing_ok=True)
         artifact_path.unlink(missing_ok=True)

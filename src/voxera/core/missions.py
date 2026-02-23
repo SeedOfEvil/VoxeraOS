@@ -338,6 +338,7 @@ class MissionRunner:
                 {
                     "step": idx,
                     "skill": ms.skill_id,
+                    "args": ms.args,
                     "ok": rr.ok,
                     "output": rr.output,
                     "error": rr.error,

@@ -114,11 +114,87 @@ def test_queue_daemon_rejects_invalid_schema_with_clear_error(tmp_path, monkeypa
     sidecar = failed_job.with_name(f"{failed_job.stem}.error.json")
     assert sidecar.exists()
     details = json.loads(sidecar.read_text(encoding="utf-8"))
-    assert "mission_id (or mission) or goal (or plan_goal)" in details["error"]
+    assert "mission_id (or mission), goal (or plan_goal), or inline steps" in details["error"]
     assert any(
-        "mission_id (or mission) or goal (or plan_goal)" in evt.get("error", "")
+        "mission_id (or mission), goal (or plan_goal), or inline steps" in evt.get("error", "")
         for evt in events
         if evt.get("event") == "queue_job_failed"
+    )
+
+
+def test_queue_daemon_accepts_inline_steps_with_legacy_skill_key(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-approval-test.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(
+        json.dumps(
+            {
+                "title": "Approval Artifact Test",
+                "goal": "Open example.com",
+                "steps": [
+                    {
+                        "skill": "system.open_url",
+                        "args": {"url": "https://example.com"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    daemon.process_pending_once()
+
+    assert (queue_dir / "pending" / "job-approval-test.json").exists()
+    artifact_path = queue_dir / "pending" / "approvals" / "job-approval-test.approval.json"
+    assert artifact_path.exists()
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["skill"] == "system.open_url"
+    assert artifact["target"] == {"type": "url", "value": "https://example.com"}
+
+
+def test_queue_daemon_inline_steps_missing_skill_fails_loudly(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-invalid-step.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(
+        json.dumps(
+            {
+                "title": "Invalid Step",
+                "goal": "broken",
+                "steps": [{"args": {"url": "https://example.com"}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    failed_job = _assert_job_moved(queue_dir / "failed", "job-invalid-step.json")
+    sidecar = failed_job.with_name(f"{failed_job.stem}.error.json")
+    assert sidecar.exists()
+    details = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert "missing skill_id (or legacy skill)" in details["error"]
+    assert any(
+        event.get("event") == "queue_job_invalid"
+        and event.get("filename") == "job-invalid-step.json"
+        for event in events
     )
 
 
@@ -1303,3 +1379,148 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
         if event.get("event") == "skill_start" and event.get("skill") == "sandbox.exec"
     )
     assert skill_start["args"]["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
+
+
+def test_pending_approval_payload_includes_target_scope_and_policy_reason(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "approval-url.json"
+    job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="goal_url",
+            title="Goal URL",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    daemon.process_pending_once()
+    artifact_path = queue_dir / "pending" / "approvals" / "approval-url.approval.json"
+    approval = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert approval["target"] == {"type": "url", "value": "https://example.com"}
+    assert approval["fs_scope"] == "broader"
+    assert approval["needs_network"] is True
+    assert approval["scope"]["fs_scope"] == "broader"
+    assert approval["scope"]["needs_network"] is True
+    assert "policy_reason" in approval
+
+
+def test_approval_always_grant_allows_matching_scope_only(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        if "example" in goal:
+            return MissionTemplate(
+                id="goal_url",
+                title="Goal URL",
+                goal=goal,
+                steps=[
+                    MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})
+                ],
+            )
+        return MissionTemplate(
+            id="goal_settings",
+            title="Goal Settings",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.set_volume", args={"percent": "15"})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    (queue_dir / "job1.json").write_text(json.dumps({"goal": "Open example"}), encoding="utf-8")
+    daemon.process_pending_once()
+    assert (queue_dir / "pending" / "job1.json").exists()
+
+    daemon.resolve_approval("job1", approve=True, approve_always=True)
+    assert (queue_dir / "done" / "job1.json").exists()
+
+    (queue_dir / "job2.json").write_text(
+        json.dumps({"goal": "Open example again"}), encoding="utf-8"
+    )
+    daemon.process_pending_once()
+    assert (queue_dir / "done" / "job2.json").exists()
+
+    (queue_dir / "job3.json").write_text(json.dumps({"goal": "change volume"}), encoding="utf-8")
+    daemon.process_pending_once()
+    assert (queue_dir / "pending" / "job3.json").exists()
+
+
+def test_job_artifacts_written_for_done_and_pending(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="goal_url",
+            title="Goal URL",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    (queue_dir / "art.json").write_text(json.dumps({"goal": "Open example"}), encoding="utf-8")
+    daemon.process_pending_once()
+
+    art_dir = queue_dir / "artifacts" / "art"
+    assert (art_dir / "plan.json").exists()
+    assert (art_dir / "actions.jsonl").exists()
+
+    daemon.resolve_approval("art", approve=True)
+    assert (art_dir / "stdout.txt").exists()
+    assert (art_dir / "stderr.txt").exists()
+
+
+def test_pending_approvals_snapshot_scope_fallback_to_nested(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+
+    (queue_dir / "pending" / "approvals" / "job-scope.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-scope.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "reason": "network_changes -> ask",
+                "scope": {"fs_scope": "broader", "needs_network": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    snapshot = daemon.pending_approvals_snapshot(limit=4)
+
+    assert snapshot[0]["fs_scope"] == "broader"
+    assert snapshot[0]["needs_network"] is True
+    assert snapshot[0]["scope"] == {"fs_scope": "broader", "needs_network": True}

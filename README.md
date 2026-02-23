@@ -35,6 +35,7 @@ voxera inbox add "Write a daily check-in note with priorities and blockers"
 voxera daemon --once
 voxera queue approvals list
 voxera queue approvals approve <job_id_or_filename>
+voxera queue approvals approve <job_id_or_filename> --always
 # or deny:
 voxera queue approvals deny <job_id_or_filename>
 ```
@@ -66,6 +67,7 @@ This writes config to:
 After setup, run:
 ```bash
 voxera doctor
+voxera doctor --self-test
 ```
 to verify each configured model endpoint.
 
@@ -113,6 +115,7 @@ View status and resolve approvals:
 voxera queue status
 voxera queue approvals list
 voxera queue approvals approve <job_id_or_filename>
+voxera queue approvals approve <job_id_or_filename> --always
 voxera queue approvals deny <job_id_or_filename>
 ```
 
@@ -167,17 +170,19 @@ voxera inbox list --n 20
 
 voxera daemon --once
 ```
-Queue job schema accepts either:
-- `mission_id` (or alias `mission`)
-- `goal` (preferred) or compatibility alias `plan_goal`
+Queue job schema accepts:
+- `mission_id` (or alias `mission`), or
+- `goal` (preferred) / compatibility alias `plan_goal`, or
+- inline `steps` (non-empty list) where each step accepts `skill_id` or legacy `skill` plus optional `args`.
 
 If a queued mission hits an approval-required step, it is moved to `pending/` (not failed),
-and an approval artifact is written to `pending/approvals/*.approval.json`.
+and an approval artifact is written to `pending/approvals/*.approval.json` with policy reason, target details, and scope metadata at both top-level (`fs_scope`, `needs_network`) and nested (`scope.fs_scope`, `scope.needs_network`) keys for compatibility.
 
 Resolve approvals with:
 ```bash
 voxera queue approvals list
 voxera queue approvals approve <job_id_or_filename>
+voxera queue approvals approve <job_id_or_filename> --always
 voxera queue approvals deny <job_id_or_filename>
 ```
 
@@ -437,3 +442,16 @@ When preparing a release or changing install/service flows, verify:
 - Keep operational docs synchronized (`README.md`, `docs/ops.md`, `docs/BOOTSTRAP.md`, `docs/ROADMAP.md`) with one workflow and repository-root command examples.
 - Validate queue/service onboarding commands still match current CLI and Make targets (`voxera queue init`, `make services-install`, `make update`).
 - Ensure branch protection requires the `merge-readiness / merge-readiness` status check so quality + doc/runtime version drift blocks merges.
+
+
+## Queue job artifacts
+
+Each queue job now writes a first-class artifact bundle under `~/VoxeraOS/notes/queue/artifacts/<job_id>/` with:
+
+- `plan.json`
+- `actions.jsonl` timeline
+- `stdout.txt`
+- `stderr.txt`
+- optional `outputs/generated_files.json`
+
+These artifacts are present for pending, failed, and done queue paths to simplify debugging and audits.

@@ -277,3 +277,30 @@ def test_gemini_capability_test_timeout(monkeypatch):
 
     assert result["json_ok"] is False
     assert result["note"] == "timeout"
+
+
+def test_run_self_test_returns_fix_steps_when_artifacts_missing(monkeypatch):
+    from voxera.doctor import run_self_test
+
+    class _FakeDaemon:
+        def __init__(self, queue_root):
+            self.queue_root = queue_root
+
+        def ensure_dirs(self):
+            (self.queue_root / "done").mkdir(parents=True, exist_ok=True)
+
+        def process_pending_once(self):
+            job = self.queue_root / "doctor-self-test.json"
+            (self.queue_root / "done" / "doctor-self-test.json").write_text(
+                job.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            return 1
+
+    monkeypatch.setattr("voxera.doctor.MissionQueueDaemon", _FakeDaemon)
+    monkeypatch.setattr("voxera.doctor.audit.tail", lambda _n: [{"event": "queue_job_done"}])
+
+    result = run_self_test(timeout_s=1.0)
+
+    assert result["ok"] is False
+    assert result["missing_artifacts"]
+    assert result["fixes"]
