@@ -60,6 +60,12 @@
             <p class="kpi-label"><b>Failed metadata missing</b></p><p>{{queue.failed_sidecars_missing}}</p>
           </div>
           <div>
+            <p class="kpi-label"><b>Failed retention max age (s)</b></p>
+            <p>{{queue.failed_retention.max_age_s if queue.failed_retention.max_age_s is not none else "(unset)"}}</p>
+            <p class="kpi-label"><b>Failed retention max count</b></p>
+            <p>{{queue.failed_retention.max_count if queue.failed_retention.max_count is not none else "(unset)"}}</p>
+            <p class="kpi-label"><b>Latest prune removed jobs/sidecars</b></p>
+            <p>{{queue.failed_prune_last.removed_jobs}} / {{queue.failed_prune_last.removed_sidecars}}</p>
             <p class="kpi-label"><b>Queue Root</b></p>
             <p class="muted mono">{{queue_root}}</p>
           </div>

@@ -149,3 +149,9 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Replace `PR #N/A` with the merged PR number.
 - Risks/notes:
   - Version sync is intentionally documentation-first; runtime version is sourced from package metadata and should be released/tagged with matching git state.
+
+
+## Queue observability surfacing pass (CLI + panel + ops docs)
+- Added queue status surfacing for failed-retention policy and latest prune-event summary.
+- Exposed the same retention/prune snapshot in panel queue health view.
+- Expanded operator and Ubuntu testing docs with direct triage steps for sidecar-invalid + approvals workflows.

@@ -195,6 +195,7 @@ Failed-job sidecar contract and retention:
 - Queue status prefers validated sidecar error text for `recent_failed`, but failed counts include **primary failed jobs only** (sidecars excluded).
 - Invalid sidecars are ignored in snapshots and logged as `queue_failed_sidecar_invalid`.
 - Queue status and panel expose sidecar health counters: `failed metadata valid`, `failed metadata invalid`, `failed metadata missing`.
+- `voxera queue status` now also shows active failed-retention policy (`failed retention max age (s)`, `failed retention max count`) and the latest prune-event summary (`removed jobs/sidecars`).
 - Operator response when invalid rises: inspect `failed/*.error.json`, correlate with `queue_failed_sidecar_invalid` audit events, and quarantine/fix malformed sidecars before retrying jobs.
 - Schema evolution policy: writer is pinned to version `1`, reader uses an explicit supported-version allowlist (currently `[1]`), and unknown future versions are rejected deterministically.
 - Retention pruning keeps newest logical failed units (primary + sidecar) and can be configured with:
