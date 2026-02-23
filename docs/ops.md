@@ -194,6 +194,43 @@ Troubleshooting:
 - If mypy ratchet fails with new errors, fix the reported lines or explicitly triage + refresh baseline with `make update-mypy-baseline`.
 - If release-check fails, ensure docs and runtime versioned surfaces remain aligned.
 
+## Queue failed-artifact + approval triage runbook
+
+1) Inspect queue state and retention context:
+
+```bash
+voxera queue status
+```
+
+Interpretation guide:
+- `failed/` counts primary failed jobs only.
+- `failed metadata invalid` indicates malformed or schema-incompatible `failed/*.error.json` sidecars (audit logs emit `queue_failed_sidecar_invalid`).
+- `failed retention max age (s)` / `failed retention max count` show active retention controls from environment.
+- `Failed Retention (latest prune event)` summarizes the newest prune pass (`removed jobs`, `removed sidecars`).
+
+2) Inspect pending approvals:
+
+```bash
+voxera queue approvals list
+```
+
+3) Resume or deny by job reference:
+
+```bash
+voxera queue approvals approve <job_id_or_filename>
+voxera queue approvals deny <job_id_or_filename>
+```
+
+4) If invalid sidecars rise, inspect and repair/quarantine malformed artifacts before retrying jobs:
+
+```bash
+ls ~/VoxeraOS/notes/queue/failed/*.error.json
+```
+
+5) Retention control knobs (set before daemon/panel start):
+- `VOXERA_QUEUE_FAILED_MAX_AGE_S`
+- `VOXERA_QUEUE_FAILED_MAX_COUNT`
+
 ## Information sources (keep in sync)
 
 For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:

@@ -25,6 +25,8 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert "Control" in body
     assert "Logging" in body
     assert "Queue Status + Failed Metadata Health" in body
+    assert "Failed retention max age (s)" in body
+    assert "Latest prune removed jobs/sidecars" in body
     assert "Approval Command Center" in body
     assert "Active Work" in body
     assert "Mission Library" in body

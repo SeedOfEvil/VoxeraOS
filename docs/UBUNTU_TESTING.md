@@ -102,3 +102,23 @@ VOXERA_PANEL_ENABLE_GET_MUTATIONS=1 voxera panel
 - If `voxera` command is not found, ensure your venv is activated.
 - If setup cannot store secrets in keyring, Voxera OS falls back to file-based secret storage.
 - If local-model tests fail, verify your endpoint is reachable and configured in `voxera setup`.
+
+
+## 9) Queue observability + approval triage quick check
+
+```bash
+voxera queue status
+voxera queue approvals list
+```
+
+Confirm `voxera queue status` includes:
+- `failed metadata valid|invalid|missing`
+- `failed retention max age (s)` and `failed retention max count`
+- `Failed Retention (latest prune event)` with removed jobs/sidecars fields
+
+If `failed metadata invalid` is non-zero, inspect malformed sidecars in:
+- `~/VoxeraOS/notes/queue/failed/*.error.json`
+
+Retention behavior is controlled by:
+- `VOXERA_QUEUE_FAILED_MAX_AGE_S`
+- `VOXERA_QUEUE_FAILED_MAX_COUNT`

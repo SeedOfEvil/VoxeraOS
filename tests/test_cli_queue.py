@@ -114,3 +114,5 @@ def test_queue_status_renders_failed_metadata_counters(tmp_path):
     assert "failed metadata valid" in result.output
     assert "failed metadata invalid" in result.output
     assert "failed metadata missing" in result.output
+    assert "failed retention max age (s)" in result.output
+    assert "failed retention max count" in result.output

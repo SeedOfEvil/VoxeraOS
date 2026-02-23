@@ -573,6 +573,41 @@ def test_status_snapshot_invalid_sidecar_logs_once_per_snapshot(tmp_path, monkey
     assert len(invalid_events) == 1
 
 
+def test_status_snapshot_includes_retention_and_last_prune_event(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "failed").mkdir(parents=True)
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+    (queue_dir / "done").mkdir(parents=True)
+
+    events = [
+        {
+            "event": "queue_failed_artifacts_pruned",
+            "removed_jobs": 2,
+            "removed_sidecars": 1,
+            "max_age_s": 60.0,
+            "max_count": 10,
+        }
+    ]
+    monkeypatch.setattr("voxera.core.queue_daemon.tail", lambda _n: events)
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir,
+        mission_log_path=tmp_path / "mission-log.md",
+        failed_retention_max_age_s=60.0,
+        failed_retention_max_count=10,
+    )
+    status = daemon.status_snapshot()
+
+    assert status["failed_retention"] == {"max_age_s": 60.0, "max_count": 10}
+    assert status["failed_prune_last"] == {
+        "removed_jobs": 2,
+        "removed_sidecars": 1,
+        "max_age_s": 60.0,
+        "max_count": 10,
+    }
+
+
 def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "missing-queue"

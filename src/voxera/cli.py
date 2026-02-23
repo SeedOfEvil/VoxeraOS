@@ -389,7 +389,32 @@ def queue_status(
     counts_table.add_row("failed metadata valid", str(status.get("failed_sidecars_valid", 0)))
     counts_table.add_row("failed metadata invalid", str(status.get("failed_sidecars_invalid", 0)))
     counts_table.add_row("failed metadata missing", str(status.get("failed_sidecars_missing", 0)))
+    retention = status.get("failed_retention", {})
+    counts_table.add_row(
+        "failed retention max age (s)",
+        str(retention.get("max_age_s")) if retention.get("max_age_s") is not None else "(unset)",
+    )
+    counts_table.add_row(
+        "failed retention max count",
+        str(retention.get("max_count")) if retention.get("max_count") is not None else "(unset)",
+    )
     console.print(counts_table)
+
+    prune = status.get("failed_prune_last", {})
+    prune_table = Table(title="Failed Retention (latest prune event)")
+    prune_table.add_column("Field")
+    prune_table.add_column("Value")
+    prune_table.add_row("removed jobs", str(prune.get("removed_jobs", 0)))
+    prune_table.add_row("removed sidecars", str(prune.get("removed_sidecars", 0)))
+    prune_table.add_row(
+        "event max age (s)",
+        str(prune.get("max_age_s")) if prune.get("max_age_s") is not None else "(n/a)",
+    )
+    prune_table.add_row(
+        "event max count",
+        str(prune.get("max_count")) if prune.get("max_count") is not None else "(n/a)",
+    )
+    console.print(prune_table)
 
     if not status["exists"]:
         console.print(f"[yellow]Hint:[/yellow] queue root not found yet: {status['queue_root']}")

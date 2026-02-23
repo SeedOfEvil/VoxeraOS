@@ -660,11 +660,32 @@ class MissionQueueDaemon:
             )
         return rows
 
+    def _latest_failed_prune_snapshot(self, *, audit_tail: int = 200) -> dict[str, Any]:
+        for event in reversed(tail(audit_tail)):
+            if event.get("event") != "queue_failed_artifacts_pruned":
+                continue
+            return {
+                "removed_jobs": int(event.get("removed_jobs", 0) or 0),
+                "removed_sidecars": int(event.get("removed_sidecars", 0) or 0),
+                "max_age_s": event.get("max_age_s"),
+                "max_count": event.get("max_count"),
+            }
+        return {
+            "removed_jobs": 0,
+            "removed_sidecars": 0,
+            "max_age_s": None,
+            "max_count": None,
+        }
+
     def status_snapshot(
         self, *, approvals_limit: int = 10, failed_limit: int = 10
     ) -> dict[str, Any]:
         failed_files = self._failed_job_files_snapshot()
         sidecars_by_job, sidecar_health = self._failed_sidecar_snapshot(failed_files)
+        retention = {
+            "max_age_s": self.failed_retention_max_age_s,
+            "max_count": self.failed_retention_max_count,
+        }
         return {
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
@@ -675,6 +696,8 @@ class MissionQueueDaemon:
                 "failed": len(failed_files),
             },
             **sidecar_health,
+            "failed_retention": retention,
+            "failed_prune_last": self._latest_failed_prune_snapshot(),
             "pending_approvals": self.pending_approvals_snapshot(limit=approvals_limit),
             "recent_failed": self.recent_failed_jobs_snapshot(
                 limit=failed_limit, failed_files=failed_files, sidecars_by_job=sidecars_by_job

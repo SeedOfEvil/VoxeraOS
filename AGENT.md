@@ -18,8 +18,7 @@ Use this file as a quick operational memory index for agent-style development in
 - Retention controls available via env (`VOXERA_QUEUE_FAILED_MAX_AGE_S`, `VOXERA_QUEUE_FAILED_MAX_COUNT`) preserve newest logical failure units first, with lifecycle smoke coverage validating fail -> snapshot -> prune behavior.
 
 ## What to validate next
-- Add CLI surface for failed-retention policy visibility/override (currently env or constructor-based).
-- Track sidecar validation failures (`queue_failed_sidecar_invalid`) in panel/operator dashboards.
+- Add optional CLI override flags for failed retention policy (currently visibility is surfaced; overrides remain env or constructor-based).
 - Brain fallback behavior when `primary` fails (latency/error path).
 - Prompt-injection resistance in planner output validation.
 
