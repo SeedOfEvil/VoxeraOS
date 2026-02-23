@@ -176,7 +176,7 @@ Queue job schema accepts:
 - inline `steps` (non-empty list) where each step accepts `skill_id` or legacy `skill` plus optional `args`.
 
 If a queued mission hits an approval-required step, it is moved to `pending/` (not failed),
-and an approval artifact is written to `pending/approvals/*.approval.json` with policy reason, target details, and scope metadata.
+and an approval artifact is written to `pending/approvals/*.approval.json` with policy reason, target details, and scope metadata at both top-level (`fs_scope`, `needs_network`) and nested (`scope.fs_scope`, `scope.needs_network`) keys for compatibility.
 
 Resolve approvals with:
 ```bash

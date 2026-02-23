@@ -403,3 +403,12 @@ Use `voxera doctor --self-test` to run a tiny safe queue job (`system_check`) an
 - queue artifact bundle creation (`plan.json`, `actions.jsonl`, `stdout.txt`, `stderr.txt`)
 
 The command prints pass/fail and actionable fix steps when checks fail.
+
+
+### approval artifact scope compatibility
+
+Queue approval artifacts now write scope in two locations for compatibility:
+- top-level: `fs_scope`, `needs_network`
+- nested: `scope.fs_scope`, `scope.needs_network`
+
+Readers prefer top-level keys when present and fall back to nested `scope.*` for older artifacts.

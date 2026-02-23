@@ -599,7 +599,12 @@ class MissionQueueDaemon:
             "policy_reason": run_data.get("policy_reason", run_data.get("reason")),
             "capability": run_data.get("capability"),
             "target": run_data.get("target", {"type": "unknown", "value": ""}),
-            "scope": run_data.get("scope", {}),
+            "fs_scope": (run_data.get("scope") or {}).get("fs_scope", "workspace_only"),
+            "needs_network": bool((run_data.get("scope") or {}).get("needs_network", False)),
+            "scope": {
+                "fs_scope": (run_data.get("scope") or {}).get("fs_scope", "workspace_only"),
+                "needs_network": bool((run_data.get("scope") or {}).get("needs_network", False)),
+            },
             "status": "pending_approval",
             "ts": time.time(),
         }
@@ -754,11 +759,19 @@ class MissionQueueDaemon:
             self.approvals.glob("*.approval.json"), key=lambda p: p.stat().st_mtime, reverse=True
         )
 
+    def _approval_scope_from_artifact(self, data: dict[str, Any]) -> dict[str, Any]:
+        nested_raw = data.get("scope")
+        nested: dict[str, Any] = nested_raw if isinstance(nested_raw, dict) else {}
+        fs_scope = data.get("fs_scope", nested.get("fs_scope", "workspace_only"))
+        needs_network = data.get("needs_network", nested.get("needs_network", False))
+        return {"fs_scope": str(fs_scope), "needs_network": bool(needs_network)}
+
     def _read_approval_artifact(self, artifact: Path) -> dict[str, Any]:
         try:
             data = json.loads(artifact.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("approval artifact must be a JSON object")
+            scope = self._approval_scope_from_artifact(data)
             data["_artifact"] = artifact.name
             data["job"] = self._canonical_job_name(artifact, data)
             data["approve_refs"] = [
@@ -767,7 +780,9 @@ class MissionQueueDaemon:
                 str((self.pending / data["job"]).resolve()),
             ]
             data.setdefault("target", {"type": "unknown", "value": ""})
-            data.setdefault("scope", {})
+            data["scope"] = scope
+            data["fs_scope"] = scope["fs_scope"]
+            data["needs_network"] = scope["needs_network"]
             data.setdefault("policy_reason", data.get("reason", ""))
             return data
         except Exception as exc:
@@ -802,6 +817,8 @@ class MissionQueueDaemon:
                     "capability": data.get("capability", ""),
                     "target": data.get("target", {"type": "unknown", "value": ""}),
                     "scope": data.get("scope", {}),
+                    "fs_scope": data.get("fs_scope", "workspace_only"),
+                    "needs_network": bool(data.get("needs_network", False)),
                 }
             )
         return out

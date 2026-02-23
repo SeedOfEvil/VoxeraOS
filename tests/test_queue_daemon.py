@@ -1410,6 +1410,8 @@ def test_pending_approval_payload_includes_target_scope_and_policy_reason(tmp_pa
     approval = json.loads(artifact_path.read_text(encoding="utf-8"))
 
     assert approval["target"] == {"type": "url", "value": "https://example.com"}
+    assert approval["fs_scope"] == "broader"
+    assert approval["needs_network"] is True
     assert approval["scope"]["fs_scope"] == "broader"
     assert approval["scope"]["needs_network"] is True
     assert "policy_reason" in approval
@@ -1496,3 +1498,29 @@ def test_job_artifacts_written_for_done_and_pending(tmp_path, monkeypatch):
     daemon.resolve_approval("art", approve=True)
     assert (art_dir / "stdout.txt").exists()
     assert (art_dir / "stderr.txt").exists()
+
+
+def test_pending_approvals_snapshot_scope_fallback_to_nested(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+
+    (queue_dir / "pending" / "approvals" / "job-scope.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-scope.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "reason": "network_changes -> ask",
+                "scope": {"fs_scope": "broader", "needs_network": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    snapshot = daemon.pending_approvals_snapshot(limit=4)
+
+    assert snapshot[0]["fs_scope"] == "broader"
+    assert snapshot[0]["needs_network"] is True
+    assert snapshot[0]["scope"] == {"fs_scope": "broader", "needs_network": True}
