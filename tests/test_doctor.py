@@ -290,7 +290,7 @@ def test_run_self_test_returns_fix_steps_when_artifacts_missing(monkeypatch):
             (self.queue_root / "done").mkdir(parents=True, exist_ok=True)
 
         def process_pending_once(self):
-            job = self.queue_root / "doctor-self-test.json"
+            job = self.queue_root / "inbox" / "doctor-self-test.json"
             (self.queue_root / "done" / "doctor-self-test.json").write_text(
                 job.read_text(encoding="utf-8"), encoding="utf-8"
             )

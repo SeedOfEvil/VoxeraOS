@@ -16,7 +16,7 @@ and enables/starts:
 - `voxera-daemon.service`
 - `voxera-panel.service`
 
-## Inbox -> queue processing flow
+## Queue contract + intake flow
 
 Use `voxera inbox` as the human-friendly front door for queued goals. Ensure queue folders exist once per machine:
 
@@ -24,52 +24,66 @@ Use `voxera inbox` as the human-friendly front door for queued goals. Ensure que
 voxera queue init
 ```
 
-Then run:
+Queue directory contract (`~/VoxeraOS/notes/queue`):
+- `inbox/` (**only intake**, daemon consumes `inbox/*.json`)
+- `pending/`
+- `pending/approvals/`
+- `done/`
+- `failed/`
+- `artifacts/`
+- `_archive/`
 
-```bash
-voxera inbox add "Write a daily check-in note with priorities and blockers"
-voxera inbox list --n 20
-voxera daemon --once
-voxera queue status
-```
+Backwards-compatible safety behavior:
+- Legacy drops in `notes/queue/*.json` are auto-relocated to `inbox/` with audit event `queue_job_autorelocate`.
+- Mis-dropped primary jobs in `notes/queue/pending/*.json` are auto-relocated to `inbox/` (no silent stuck jobs).
 
-`voxera inbox add` writes queue-compatible JSON (`{"id":"...","goal":"..."}`) into the queue root,
-then the daemon processes it through the normal planner + policy + audit pipeline.
-
-Planner note: simple write goals (for example, writing explicit text to a notes file path) take a deterministic fast-path and produce a single `files.write_text` step, bypassing cloud planner variability and clipboard detours.
-
-## Approval deny workflow
-
-When a queued mission hits an ASK policy gate, it is moved to `pending/` and a
-`pending/approvals/*.approval.json` artifact is created.
-
-Queue status troubleshooting quick checks:
-- `voxera queue status` counts `pending/*.json` as pending jobs, excluding `*.pending.json` metadata files.
-- `voxera queue status` counts approvals from `pending/approvals/*.approval.json`.
-- `voxera queue approvals list` will surface malformed artifacts as `(unparseable approval artifact)` and emit `queue_status_parse_failed` audit events.
-
-Queue job best practice (atomic producer write + rename):
+Queue producer best practice (atomic write + rename):
 ```bash
 queue_dir=~/VoxeraOS/notes/queue
+inbox_dir="$queue_dir/inbox"
+mkdir -p "$inbox_dir"
 job_id=job-$(date +%s)
-tmp_path="$queue_dir/.${job_id}.tmp"
-final_path="$queue_dir/${job_id}.json"
-printf '{"goal":"run a quick system check"}\n' > "$tmp_path"
+tmp_path="$inbox_dir/.${job_id}.tmp"
+final_path="$inbox_dir/${job_id}.json"
+printf '{"goal":"run a quick system check"}
+' > "$tmp_path"
 mv "$tmp_path" "$final_path"
 ```
-The daemon ignores temporary artifacts (`.*`, `*.tmp`, `*.partial`) and retries JSON parsing briefly so short partial writes can stabilize before the job is marked failed.
 
+Operational commands:
 ```bash
-voxera queue approvals list
-voxera queue approvals deny <job_id_or_filename>
+voxera inbox add "Write a daily check-in note with priorities and blockers"
+voxera daemon --once
 voxera queue status
+voxera queue cancel <job_id_or_filename>
+voxera queue retry <job_id_or_filename>
+voxera queue pause
+voxera queue resume
 ```
 
-Denied jobs are visible in `failed/`, and audit/mission logs include deny lifecycle entries.
+Operational effects:
+- `queue cancel` moves matching jobs (inbox/pending/pending approvals/in-flight best effort) into `failed/` with sidecar `error="cancelled by operator"` and cleans pending approval markers.
+- `queue retry` re-queues a failed primary payload into `inbox/` and emits `queue_job_retry` audit event linking old/new attempt.
+- `queue pause` creates `.paused`; daemon still reports status but skips processing new jobs until `queue resume` removes marker.
 
-Panel operator note:
+Panel operator notes:
 - Panel mutation routes (`/queue/create`, `/missions/create`) accept `POST` by default.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
+- Panel home shows pause/resume, cancel/retry actions, and links Done/Failed jobs to artifact-backed detail pages.
+
+## Artifact bundle contract
+
+Each queue job writes/updates artifacts under `~/VoxeraOS/notes/queue/artifacts/<job_stem>/`:
+- `plan.json` — normalized payload + mission plan snapshot.
+- `actions.jsonl` — event timeline (rendered newest-first in panel detail).
+- `stdout.txt` and `stderr.txt` — aggregated step output/error streams.
+- `outputs/generated_files.json` (optional) — paths captured from `files.write_text` outputs.
+
+Interpretation quick-guide:
+- `plan.json` confirms what mission/steps were executed (or queued for approval).
+- `actions.jsonl` is the lifecycle source-of-truth for queue transitions.
+- `stdout.txt`/`stderr.txt` provide operator debugging context without needing raw logs.
+- Generated files list helps locate mission side effects quickly.
 
 ## Failed artifact sidecar contract + retention
 

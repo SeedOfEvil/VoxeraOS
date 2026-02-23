@@ -38,6 +38,10 @@ voxera queue approvals approve <job_id_or_filename>
 voxera queue approvals approve <job_id_or_filename> --always
 # or deny:
 voxera queue approvals deny <job_id_or_filename>
+voxera queue cancel <job_id_or_filename>
+voxera queue retry <job_id_or_filename>
+voxera queue pause
+voxera queue resume
 ```
 
 ## Quick start (dev VM)
@@ -86,14 +90,17 @@ voxera queue init
 ```
 This creates (mkdir -p only; never deletes):
 - Queue root: `~/VoxeraOS/notes/queue`
+- `~/VoxeraOS/notes/queue/inbox/` (intake)
 - `~/VoxeraOS/notes/queue/pending/`
 - `~/VoxeraOS/notes/queue/pending/approvals/`
 - `~/VoxeraOS/notes/queue/done/`
 - `~/VoxeraOS/notes/queue/failed/`
+- `~/VoxeraOS/notes/queue/artifacts/`
+- `~/VoxeraOS/notes/queue/_archive/`
 
 Equivalent manual command:
 ```bash
-mkdir -p ~/VoxeraOS/notes/queue/{pending/approvals,done,failed}
+mkdir -p ~/VoxeraOS/notes/queue/{inbox,pending/approvals,done,failed,artifacts,_archive}
 ```
 
 Start/restart daemon service:
@@ -105,7 +112,7 @@ systemctl --user enable --now voxera-daemon.service
 
 Submit a queue job file:
 ```bash
-cat > ~/VoxeraOS/notes/queue/job-1.json <<'JSON'
+cat > ~/VoxeraOS/notes/queue/inbox/job-1.json <<'JSON'
 {"version":"1","goal":"run a quick system check","mission_id":"system_check"}
 JSON
 ```
@@ -117,6 +124,10 @@ voxera queue approvals list
 voxera queue approvals approve <job_id_or_filename>
 voxera queue approvals approve <job_id_or_filename> --always
 voxera queue approvals deny <job_id_or_filename>
+voxera queue cancel <job_id_or_filename>
+voxera queue retry <job_id_or_filename>
+voxera queue pause
+voxera queue resume
 ```
 
 
@@ -157,12 +168,12 @@ For non-explicit verification goals, planner-produced `sandbox.exec` steps that 
 
 ### 2d) Queue missions/goals for daemon execution
 ```bash
-mkdir -p ~/VoxeraOS/notes/queue
-echo '{"mission_id":"system_check"}' > ~/VoxeraOS/notes/queue/job-1.json
-echo '{"mission":"system_check"}' > ~/VoxeraOS/notes/queue/job-2.json
-echo '{"goal":"run a quick system check"}' > ~/VoxeraOS/notes/queue/job-3.json
+mkdir -p ~/VoxeraOS/notes/queue/inbox
+echo '{"mission_id":"system_check"}' > ~/VoxeraOS/notes/queue/inbox/job-1.json
+echo '{"mission":"system_check"}' > ~/VoxeraOS/notes/queue/inbox/job-2.json
+echo '{"goal":"run a quick system check"}' > ~/VoxeraOS/notes/queue/inbox/job-3.json
 # compatibility alias still accepted:
-echo '{"plan_goal":"run a quick system check"}' > ~/VoxeraOS/notes/queue/job-4.json
+echo '{"plan_goal":"run a quick system check"}' > ~/VoxeraOS/notes/queue/inbox/job-4.json
 
 # human-friendly queueing entry point:
 voxera inbox add "Write a daily check-in note with top priorities"
@@ -170,6 +181,13 @@ voxera inbox list --n 20
 
 voxera daemon --once
 ```
+
+Queue intake contract: `notes/queue/inbox/*.json` is the only supported drop location.
+
+Safety/back-compat behavior:
+- Jobs dropped in legacy `notes/queue/*.json` are auto-relocated to `inbox/` with audit event `queue_job_autorelocate`.
+- Jobs mistakenly dropped in `notes/queue/pending/*.json` are auto-relocated to `inbox/` (never silently stuck).
+
 Queue job schema accepts:
 - `mission_id` (or alias `mission`), or
 - `goal` (preferred) / compatibility alias `plan_goal`, or
@@ -184,6 +202,10 @@ voxera queue approvals list
 voxera queue approvals approve <job_id_or_filename>
 voxera queue approvals approve <job_id_or_filename> --always
 voxera queue approvals deny <job_id_or_filename>
+voxera queue cancel <job_id_or_filename>
+voxera queue retry <job_id_or_filename>
+voxera queue pause
+voxera queue resume
 ```
 
 Queue status troubleshooting:
@@ -214,9 +236,11 @@ Failed-job sidecar contract and retention:
 Queue job best practice (atomic producer write):
 ```bash
 queue_dir=~/VoxeraOS/notes/queue
+inbox_dir="$queue_dir/inbox"
+mkdir -p "$inbox_dir"
 job_id=job-$(date +%s)
-tmp_path="$queue_dir/.${job_id}.tmp"
-final_path="$queue_dir/${job_id}.json"
+tmp_path="$inbox_dir/.${job_id}.tmp"
+final_path="$inbox_dir/${job_id}.json"
 printf '{"goal":"run a quick system check"}\n' > "$tmp_path"
 mv "$tmp_path" "$final_path"
 ```
@@ -226,7 +250,7 @@ The daemon only processes ready `*.json` job files (ignoring dotfiles, `*.tmp`, 
 ### Testing sandbox + approvals via queue
 1) Submit a network-off sandbox mission (`sandbox_smoke`) and process once:
 ```bash
-cat > ~/VoxeraOS/notes/queue/sandbox-smoke.json <<'JSON'
+cat > ~/VoxeraOS/notes/queue/inbox/sandbox-smoke.json <<'JSON'
 {"version":"1","goal":"sandbox smoke","mission_id":"sandbox_smoke"}
 JSON
 voxera daemon --once
@@ -235,7 +259,7 @@ Expected: job moves to `done/`.
 
 2) Submit a network-enabled sandbox mission (`sandbox_net`), then approve:
 ```bash
-cat > ~/VoxeraOS/notes/queue/sandbox-net.json <<'JSON'
+cat > ~/VoxeraOS/notes/queue/inbox/sandbox-net.json <<'JSON'
 {"version":"1","goal":"sandbox net","mission_id":"sandbox_net"}
 JSON
 voxera daemon --once
@@ -245,12 +269,30 @@ voxera queue approvals approve sandbox-net
 Expected: first run moves to `pending/` + writes `pending/approvals/*.approval.json`; after approval it moves to `done/`.
 
 
-### Queue/artifact directory layout
+### Queue/artifact directory layout (contract)
 - Queue root: `~/VoxeraOS/notes/queue`
+  - `inbox/` **(intake; daemon reads `inbox/*.json`)**
   - `pending/`
   - `pending/approvals/`
   - `done/`
   - `failed/`
+  - `artifacts/`
+  - `_archive/`
+
+Queue intake is unambiguous: drop primary jobs in `notes/queue/inbox/*.json`.
+Back-compat safety behavior:
+- `notes/queue/*.json` (legacy root drops) are auto-relocated to `inbox/` with audit event `queue_job_autorelocate`.
+- Mis-dropped `notes/queue/pending/*.json` primary jobs are auto-relocated to `inbox/` on daemon tick (never silently stuck forever).
+
+Operator controls:
+- `voxera queue cancel <job_id_or_filename>` → move job to `failed/` with sidecar `error="cancelled by operator"`.
+- `voxera queue retry <job_id_or_filename>` → move failed job payload back to `inbox/` and emit `queue_job_retry` audit event.
+- `voxera queue pause` / `voxera queue resume` → create/remove queue pause marker (`.paused`) and stop/start new processing.
+
+Panel updates:
+- Home dashboard exposes pause/resume and cancel/retry actions.
+- Done/Failed rows link to job detail with artifacts (`plan.json`, `actions.jsonl`, `stdout.txt`, `stderr.txt`, `outputs/generated_files.json`).
+
 - Sandbox artifacts: `~/.voxera/artifacts/<job_id>/`
 - Sandbox workspace: `~/.voxera/workspace/<job_id>/`
 

@@ -7,7 +7,7 @@ from pathlib import Path
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib  # type: ignore[no-redef]
+    import tomli as tomllib
 
 PACKAGE_NAME = "voxera-os"
 FALLBACK_DEV_VERSION = "0.0.0+dev"

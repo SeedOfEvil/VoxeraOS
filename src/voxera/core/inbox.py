@@ -25,14 +25,15 @@ def generate_inbox_id(goal: str, *, now_ms: int | None = None) -> str:
 
 def add_inbox_job(queue_root: Path, goal: str, *, job_id: str | None = None) -> Path:
     queue_root = queue_root.expanduser()
-    queue_root.mkdir(parents=True, exist_ok=True)
+    inbox_dir = queue_root / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
 
     resolved_id = (job_id or generate_inbox_id(goal)).strip()
     if not resolved_id:
         raise ValueError("job id cannot be empty")
 
     payload = {"id": resolved_id, "goal": goal}
-    target = queue_root / f"inbox-{resolved_id}.json"
+    target = inbox_dir / f"inbox-{resolved_id}.json"
     if target.exists():
         raise FileExistsError(f"inbox job already exists: {target}")
     target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -42,7 +43,7 @@ def add_inbox_job(queue_root: Path, goal: str, *, job_id: str | None = None) -> 
 def list_inbox_jobs(queue_root: Path, *, limit: int = 20) -> tuple[list[InboxJob], list[Path]]:
     queue_root = queue_root.expanduser()
     buckets = {
-        "queue": queue_root,
+        "inbox": queue_root / "inbox",
         "pending": queue_root / "pending",
         "done": queue_root / "done",
         "failed": queue_root / "failed",
