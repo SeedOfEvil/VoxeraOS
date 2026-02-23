@@ -175,6 +175,7 @@ def test_queue_status_prints_artifacts_root(tmp_path):
     assert result.exit_code == 0
     assert "Artifacts root:" in result.output
 
+
 def test_queue_status_prints_intake_and_inbox(tmp_path):
     runner = CliRunner()
     queue_dir = tmp_path / "queue"
@@ -196,7 +197,9 @@ def test_queue_cancel_retry_pause_resume_cli(tmp_path):
     assert pause.exit_code == 0
     assert (queue_dir / ".paused").exists()
 
-    cancel = runner.invoke(cli.app, ["queue", "cancel", "job-x.json", "--queue-dir", str(queue_dir)])
+    cancel = runner.invoke(
+        cli.app, ["queue", "cancel", "job-x.json", "--queue-dir", str(queue_dir)]
+    )
     assert cancel.exit_code == 0
     assert (queue_dir / "failed" / "job-x.json").exists()
 

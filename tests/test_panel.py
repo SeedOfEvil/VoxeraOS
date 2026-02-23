@@ -270,6 +270,7 @@ def test_panel_rejects_invalid_mission_id_values(tmp_path, monkeypatch):
 def test_panel_app_uses_shared_version_source():
     assert panel_module.app.version == panel_module.get_version()
 
+
 def test_panel_job_detail_smoke(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
@@ -277,13 +278,13 @@ def test_panel_job_detail_smoke(tmp_path, monkeypatch):
     art.mkdir(parents=True, exist_ok=True)
     (art / "plan.json").write_text('{"x":1}', encoding="utf-8")
     (art / "actions.jsonl").write_text('{"event":"one","ts":1}\n', encoding="utf-8")
-    (art / "stdout.txt").write_text('out', encoding="utf-8")
-    (art / "stderr.txt").write_text('err', encoding="utf-8")
+    (art / "stdout.txt").write_text("out", encoding="utf-8")
+    (art / "stderr.txt").write_text("err", encoding="utf-8")
     (art / "outputs").mkdir(parents=True, exist_ok=True)
     (art / "outputs" / "generated_files.json").write_text('["a.txt"]', encoding="utf-8")
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
     client = TestClient(panel_module.app)
-    res = client.get('/queue/jobs/job-a.json/detail')
+    res = client.get("/queue/jobs/job-a.json/detail")
     assert res.status_code == 200
     assert "stdout" in res.text
     assert "generated" in res.text.lower()

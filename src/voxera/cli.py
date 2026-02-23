@@ -473,8 +473,6 @@ def queue_status(
     console.print(failed_table)
 
 
-
-
 @queue_app.command("cancel")
 def queue_cancel(
     ref: str,

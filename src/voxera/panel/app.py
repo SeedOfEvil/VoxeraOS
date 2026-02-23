@@ -96,8 +96,6 @@ def _write_queue_job(payload: dict[str, Any]) -> str:
     return final_path.name
 
 
-
-
 def _artifact_text(path: Path, *, max_chars: int = 8000) -> str:
     if not path.exists():
         return ""
@@ -222,7 +220,12 @@ def home(created: str = "", error: str = "", mission_created: str = ""):
     daemon = MissionQueueDaemon(queue_root=queue_root)
     queue = daemon.status_snapshot(approvals_limit=12, failed_limit=8)
     queue["pending_approvals"] = daemon.approvals_list()[:12]
-    queue["done_jobs"] = [p.name for p in sorted((queue_root / "done").glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:12]]
+    queue["done_jobs"] = [
+        p.name
+        for p in sorted(
+            (queue_root / "done").glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True
+        )[:12]
+    ]
 
     mission_log = Path.home() / "VoxeraOS" / "notes" / "mission-log.md"
     mission_log_tail = []
