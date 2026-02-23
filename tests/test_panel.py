@@ -100,15 +100,15 @@ def test_panel_queue_create_goal_and_mission(tmp_path, monkeypatch):
 
     client = TestClient(panel_module.app)
 
-    goal_res = client.get("/queue/create", params={"kind": "goal", "goal": "run system check"})
+    goal_res = client.post("/queue/create", data={"kind": "goal", "goal": "run system check"})
     assert goal_res.status_code == 200
     queued = list((fake_home / "VoxeraOS" / "notes" / "queue").glob("*.json"))
     assert len(queued) == 1
     payload = json.loads(queued[0].read_text(encoding="utf-8"))
     assert payload == {"goal": "run system check"}
 
-    mission_res = client.get(
-        "/queue/create", params={"kind": "mission", "mission_id": "system_check"}
+    mission_res = client.post(
+        "/queue/create", data={"kind": "mission", "mission_id": "system_check"}
     )
     assert mission_res.status_code == 200
     queued = list((fake_home / "VoxeraOS" / "notes" / "queue").glob("*.json"))
@@ -120,9 +120,9 @@ def test_panel_create_mission_template(tmp_path, monkeypatch):
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
     client = TestClient(panel_module.app)
 
-    res = client.get(
+    res = client.post(
         "/missions/create",
-        params={
+        data={
             "mission_id": "custom_status",
             "title": "Custom Status",
             "goal": "Get system status",
@@ -150,6 +150,119 @@ def test_panel_active_work_from_audit(tmp_path, monkeypatch):
     body = client.get("/").text
     assert "job-1.json" in body
     assert "queue_job_started" in body
+
+
+def test_panel_get_mutations_disabled_by_default(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.delenv("VOXERA_PANEL_ENABLE_GET_MUTATIONS", raising=False)
+
+    client = TestClient(panel_module.app)
+
+    queue_res = client.get("/queue/create", follow_redirects=False)
+    assert queue_res.status_code == 405
+
+    mission_res = client.get("/missions/create", follow_redirects=False)
+    assert mission_res.status_code == 405
+
+
+def test_panel_get_mutations_compat_mode(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_ENABLE_GET_MUTATIONS", "1")
+
+    client = TestClient(panel_module.app)
+    queue_res = client.get("/queue/create", params={"kind": "goal", "goal": "legacy goal"})
+    assert queue_res.status_code == 200
+
+    mission_res = client.get(
+        "/missions/create",
+        params={
+            "mission_id": "legacy_status",
+            "steps_json": '[{"skill_id":"system.status","args":{}}]',
+        },
+    )
+    assert mission_res.status_code == 200
+
+    queued = list((fake_home / "VoxeraOS" / "notes" / "queue").glob("*.json"))
+    assert len(queued) == 1
+
+    mission_file = fake_home / ".config" / "voxera" / "missions" / "legacy_status.json"
+    assert mission_file.exists()
+
+
+def test_panel_queue_create_validation_errors(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+
+    missing_goal = client.post(
+        "/queue/create", data={"kind": "goal", "goal": ""}, follow_redirects=False
+    )
+    assert missing_goal.status_code == 303
+    assert missing_goal.headers["location"] == "/?error=goal_required"
+
+    missing_mission = client.post(
+        "/queue/create", data={"kind": "mission", "mission_id": ""}, follow_redirects=False
+    )
+    assert missing_mission.status_code == 303
+    assert missing_mission.headers["location"] == "/?error=mission_id_required"
+
+    bad_kind = client.post("/queue/create", data={"kind": "other"}, follow_redirects=False)
+    assert bad_kind.status_code == 303
+    assert bad_kind.headers["location"] == "/?error=queue_kind_invalid"
+
+
+def test_panel_create_mission_validation_errors(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    bad_json = client.post(
+        "/missions/create",
+        data={"mission_id": "custom_status", "steps_json": "{"},
+        follow_redirects=False,
+    )
+    assert bad_json.status_code == 303
+    assert bad_json.headers["location"] == "/?error=steps_json_invalid"
+
+    not_list = client.post(
+        "/missions/create",
+        data={"mission_id": "custom_status", "steps_json": '{"skill_id":"system.status"}'},
+        follow_redirects=False,
+    )
+    assert not_list.status_code == 303
+    assert not_list.headers["location"] == "/?error=steps_json_not_list"
+
+    schema_invalid = client.post(
+        "/missions/create",
+        data={"mission_id": "custom_status", "steps_json": '[{"args":{}}]'},
+        follow_redirects=False,
+    )
+    assert schema_invalid.status_code == 303
+    assert schema_invalid.headers["location"] == "/?error=mission_schema_invalid"
+
+    mission_file = fake_home / ".config" / "voxera" / "missions" / "custom_status.json"
+    assert not mission_file.exists()
+
+
+def test_panel_rejects_invalid_mission_id_values(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    for mission_id in ["../x", "a/b", "invalid id", "UPPERCASE"]:
+        res = client.post(
+            "/missions/create",
+            data={
+                "mission_id": mission_id,
+                "steps_json": '[{"skill_id":"system.status","args":{}}]',
+            },
+            follow_redirects=False,
+        )
+        assert res.status_code == 303
+        assert res.headers["location"] == "/?error=mission_id_invalid"
 
 
 def test_panel_app_uses_shared_version_source():

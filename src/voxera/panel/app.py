@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -26,6 +29,18 @@ templates = Environment(
 app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
 APPROVALS: list[dict[str, Any]] = []
+MISSION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+
+ERROR_MESSAGES = {
+    "goal_required": "Goal is required when queue type is goal.",
+    "mission_id_required": "Mission ID is required.",
+    "queue_kind_invalid": "Queue type must be either goal or mission.",
+    "mission_id_invalid": "Mission ID must use lowercase letters, numbers, '_' or '-'.",
+    "steps_json_invalid": "Steps JSON must be valid JSON.",
+    "steps_json_not_list": "Steps JSON must decode to a JSON list.",
+    "mission_schema_invalid": "Mission template failed schema validation.",
+    "get_mutation_disabled": "GET mutation endpoints are disabled; submit the form normally.",
+}
 
 
 def _queue_root() -> Path:
@@ -34,6 +49,39 @@ def _queue_root() -> Path:
 
 def _missions_dir() -> Path:
     return Path.home() / ".config" / "voxera" / "missions"
+
+
+def _allow_get_mutations() -> bool:
+    return os.getenv("VOXERA_PANEL_ENABLE_GET_MUTATIONS", "0") == "1"
+
+
+def _validate_mission_id(mission_id: str) -> str:
+    normalized = mission_id.strip()
+    if not MISSION_ID_RE.fullmatch(normalized):
+        raise ValueError("mission_id_invalid")
+    return normalized
+
+
+def _enforce_get_mutations_enabled() -> None:
+    if not _allow_get_mutations():
+        raise HTTPException(
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+            detail="GET mutation endpoints are disabled",
+        )
+
+
+async def _request_value(request: Request, key: str, default: str = "") -> str:
+    query_value = request.query_params.get(key)
+    if query_value is not None:
+        return query_value
+
+    content_type = request.headers.get("content-type", "")
+    if content_type.startswith("application/x-www-form-urlencoded"):
+        body = (await request.body()).decode("utf-8", errors="ignore")
+        values = parse_qs(body, keep_blank_values=True)
+        if key in values and values[key]:
+            return values[key][0]
+    return default
 
 
 def _write_queue_job(payload: dict[str, Any]) -> str:
@@ -88,28 +136,35 @@ def _build_mission_payload(
     notes: str,
     steps_json: str,
 ) -> MissionTemplate:
+    validated_mission_id = _validate_mission_id(mission_id)
     payload: dict[str, Any] = {
-        "id": mission_id.strip(),
-        "title": title.strip() or mission_id.strip(),
+        "id": validated_mission_id,
+        "title": title.strip() or validated_mission_id,
         "goal": goal.strip() or "User-defined mission",
     }
     if notes.strip():
         payload["notes"] = notes.strip()
 
-    steps_raw = json.loads(steps_json)
+    try:
+        steps_raw = json.loads(steps_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError("steps_json_invalid") from exc
     if not isinstance(steps_raw, list):
-        raise ValueError("steps_json must decode to a JSON list")
+        raise ValueError("steps_json_not_list")
     payload["steps"] = steps_raw
 
     missions_dir = _missions_dir()
     missions_dir.mkdir(parents=True, exist_ok=True)
-    candidate = missions_dir / f"{payload['id']}.json"
+    candidate = (missions_dir / f"{payload['id']}.json").resolve()
+    missions_root = missions_dir.resolve()
+    if not str(candidate).startswith(f"{missions_root}{os.sep}"):
+        raise ValueError("mission_id_invalid")
     candidate.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     try:
         validated = _parse_mission_file(candidate, payload["id"])
-    except Exception:
+    except Exception as exc:
         candidate.unlink(missing_ok=True)
-        raise
+        raise ValueError("mission_schema_invalid") from exc
     return validated
 
 
@@ -141,15 +196,20 @@ def home(created: str = "", error: str = "", mission_created: str = ""):
         created=created,
         mission_created=mission_created,
         error=error,
+        error_message=ERROR_MESSAGES.get(error, "Unexpected panel error." if error else ""),
+        get_mutations_enabled=_allow_get_mutations(),
         active_jobs=active_jobs,
         recent_activity=recent_activity,
     )
 
 
-@app.get("/queue/create")
-def create_queue_job(kind: str = "goal", mission_id: str = "", goal: str = ""):
+def _create_queue_job_from_values(kind: str, mission_id: str, goal: str) -> RedirectResponse:
+    normalized_kind = kind.strip().lower()
+    if normalized_kind not in {"goal", "mission"}:
+        return RedirectResponse(url="/?error=queue_kind_invalid", status_code=303)
+
     payload: dict[str, Any] = {}
-    if kind == "mission":
+    if normalized_kind == "mission":
         mission_id = mission_id.strip()
         if not mission_id:
             return RedirectResponse(url="/?error=mission_id_required", status_code=303)
@@ -164,24 +224,56 @@ def create_queue_job(kind: str = "goal", mission_id: str = "", goal: str = ""):
     return RedirectResponse(url=f"/?created={created}", status_code=303)
 
 
+@app.get("/queue/create")
+def create_queue_job_get(kind: str = "goal", mission_id: str = "", goal: str = ""):
+    _enforce_get_mutations_enabled()
+    return _create_queue_job_from_values(kind, mission_id, goal)
+
+
+@app.post("/queue/create")
+async def create_queue_job(request: Request):
+    kind = await _request_value(request, "kind", "goal")
+    mission_id = await _request_value(request, "mission_id", "")
+    goal = await _request_value(request, "goal", "")
+    return _create_queue_job_from_values(kind, mission_id, goal)
+
+
+def _create_mission_from_values(
+    mission_id: str, title: str, goal: str, notes: str, steps_json: str
+) -> RedirectResponse:
+    normalized_id = mission_id.strip()
+    if not normalized_id:
+        return RedirectResponse(url="/?error=mission_id_required", status_code=303)
+
+    try:
+        _build_mission_payload(normalized_id, title, goal, notes, steps_json)
+    except ValueError as exc:
+        code = str(exc)
+        return RedirectResponse(url=f"/?error={code}", status_code=303)
+
+    return RedirectResponse(url=f"/?mission_created={normalized_id}", status_code=303)
+
+
 @app.get("/missions/create")
-def create_mission(
+def create_mission_get(
     mission_id: str = "",
     title: str = "",
     goal: str = "",
     notes: str = "",
     steps_json: str = "[]",
 ):
-    mission_id = mission_id.strip()
-    if not mission_id:
-        return RedirectResponse(url="/?error=mission_id_required", status_code=303)
+    _enforce_get_mutations_enabled()
+    return _create_mission_from_values(mission_id, title, goal, notes, steps_json)
 
-    try:
-        _build_mission_payload(mission_id, title, goal, notes, steps_json)
-    except Exception as exc:
-        return RedirectResponse(url=f"/?error=mission_create_failed:{exc}", status_code=303)
 
-    return RedirectResponse(url=f"/?mission_created={mission_id}", status_code=303)
+@app.post("/missions/create")
+async def create_mission(request: Request):
+    mission_id = await _request_value(request, "mission_id", "")
+    title = await _request_value(request, "title", "")
+    goal = await _request_value(request, "goal", "")
+    notes = await _request_value(request, "notes", "")
+    steps_json = await _request_value(request, "steps_json", "[]")
+    return _create_mission_from_values(mission_id, title, goal, notes, steps_json)
 
 
 @app.post("/queue/approvals/{ref}/approve")

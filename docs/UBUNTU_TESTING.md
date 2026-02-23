@@ -89,6 +89,14 @@ voxera panel
 
 Open `http://127.0.0.1:8844`.
 
+Panel UI mutations (`/queue/create`, `/missions/create`) are POST-first. GET calls
+are blocked by default with HTTP 405. If you need legacy GET mutation behavior for
+CI/dev troubleshooting, start panel with:
+
+```bash
+VOXERA_PANEL_ENABLE_GET_MUTATIONS=1 voxera panel
+```
+
 ## Troubleshooting
 
 - If `voxera` command is not found, ensure your venv is activated.
