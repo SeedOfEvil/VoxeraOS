@@ -102,7 +102,16 @@ MISSION_TEMPLATES: dict[str, MissionTemplate] = {
         id="system_check",
         title="System Check",
         goal="Collect baseline status and verify command path",
-        steps=[MissionStep(skill_id="system.status")],
+        steps=[
+            MissionStep(skill_id="system.status"),
+            MissionStep(
+                skill_id="files.write_text",
+                args={
+                    "path": "~/VoxeraOS/notes/system-check-report.txt",
+                    "text": "Voxera system_check completed successfully.\n",
+                },
+            ),
+        ],
         notes="Low-risk health check mission.",
     ),
 }

@@ -501,7 +501,13 @@ def test_status_snapshot_counts_and_pending_parsing(tmp_path, monkeypatch):
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
     status = daemon.status_snapshot()
 
-    assert status["counts"] == {"pending": 1, "pending_approvals": 1, "done": 1, "failed": 1}
+    assert status["counts"] == {
+        "inbox": 0,
+        "pending": 1,
+        "pending_approvals": 1,
+        "done": 1,
+        "failed": 1,
+    }
     assert status["pending_approvals"][0]["skill"] == "system.set_volume"
     assert status["recent_failed"][0] == {"job": "bad1.json", "error": "boom"}
 
@@ -692,7 +698,13 @@ def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch)
     status = daemon.status_snapshot()
 
     assert status["exists"] is False
-    assert status["counts"] == {"pending": 0, "pending_approvals": 0, "done": 0, "failed": 0}
+    assert status["counts"] == {
+        "inbox": 0,
+        "pending": 0,
+        "pending_approvals": 0,
+        "done": 0,
+        "failed": 0,
+    }
     assert status["pending_approvals"] == []
     assert status["recent_failed"] == []
 
@@ -823,7 +835,8 @@ def test_queue_daemon_retries_partial_json_and_stabilizes(tmp_path, monkeypatch)
     _stub_planner(monkeypatch)
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
-    job = queue_dir / "partial.json"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "inbox" / "partial.json"
     job.write_text("", encoding="utf-8")
 
     events = []
@@ -855,7 +868,10 @@ def test_queue_daemon_ignores_non_job_artifacts_in_inbox(tmp_path, monkeypatch):
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
 
-    (queue_dir / "good.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "inbox" / "good.json").write_text(
+        json.dumps({"goal": "check machine"}), encoding="utf-8"
+    )
     (queue_dir / ".hidden.json").write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
     (queue_dir / "skip.pending.json").write_text(
         json.dumps({"goal": "check machine"}), encoding="utf-8"
@@ -1524,3 +1540,66 @@ def test_pending_approvals_snapshot_scope_fallback_to_nested(tmp_path, monkeypat
     assert snapshot[0]["fs_scope"] == "broader"
     assert snapshot[0]["needs_network"] is True
     assert snapshot[0]["scope"] == {"fs_scope": "broader", "needs_network": True}
+
+
+def test_queue_autorelocates_legacy_root_job(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    (queue_dir / "legacy.json").write_text('{"goal":"check machine"}', encoding="utf-8")
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    daemon.process_pending_once()
+    assert (queue_dir / "done" / "legacy.json").exists()
+    assert any(e.get("event") == "queue_job_autorelocate" for e in events)
+
+
+def test_queue_autorelocates_misplaced_pending_job(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending").mkdir(parents=True)
+    (queue_dir / "pending" / "wrong.json").write_text('{"goal":"check machine"}', encoding="utf-8")
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    daemon.process_pending_once()
+    assert (queue_dir / "done" / "wrong.json").exists()
+
+
+def test_cancel_retry_pause_flow(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    daemon.ensure_dirs()
+    job = queue_dir / "inbox" / "cancel-me.json"
+    job.write_text('{"goal":"check machine"}', encoding="utf-8")
+
+    daemon.pause()
+    assert daemon.process_pending_once() == 0
+    assert job.exists()
+    daemon.resume()
+
+    failed = daemon.cancel_job("cancel-me.json")
+    assert failed.exists()
+    assert (queue_dir / "failed" / "cancel-me.error.json").exists()
+
+    retried = daemon.retry_job("cancel-me.json")
+    assert retried.exists()
+    daemon.process_pending_once()
+    assert (queue_dir / "done" / "cancel-me.json").exists()
+
+
+def test_cancel_pending_approval_cleans_markers(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+    (queue_dir / "pending" / "x.json").write_text('{"goal":"g"}', encoding="utf-8")
+    (queue_dir / "pending" / "x.pending.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "x.approval.json").write_text("{}", encoding="utf-8")
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    daemon.cancel_job("x.json")
+    assert not (queue_dir / "pending" / "x.pending.json").exists()
+    assert not (queue_dir / "pending" / "approvals" / "x.approval.json").exists()
+    assert (queue_dir / "failed" / "x.error.json").exists()

@@ -394,6 +394,7 @@ def queue_status(
     counts_table = Table(title="Queue Status")
     counts_table.add_column("Bucket")
     counts_table.add_column("Count", justify="right")
+    counts_table.add_row("inbox/", str(counts["inbox"]))
     counts_table.add_row("pending/", str(counts["pending"]))
     counts_table.add_row("pending/approvals/", str(counts["pending_approvals"]))
     counts_table.add_row("done/", str(counts["done"]))
@@ -411,6 +412,8 @@ def queue_status(
         str(retention.get("max_count")) if retention.get("max_count") is not None else "(unset)",
     )
     console.print(counts_table)
+    console.print(f"Queue intake: {status.get('intake_glob', '')}")
+    console.print(f"Daemon paused: {status.get('paused', False)}")
 
     prune = status.get("failed_prune_last", {})
     prune_table = Table(title="Failed Retention (latest prune event)")
@@ -468,6 +471,72 @@ def queue_status(
     else:
         failed_table.add_row("-", "No failed jobs")
     console.print(failed_table)
+
+
+@queue_app.command("cancel")
+def queue_cancel(
+    ref: str,
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Cancel a queue job by id or filename."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    try:
+        moved = daemon.cancel_job(ref)
+    except FileNotFoundError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Cancelled: {moved.name} (moved to failed/)")
+
+
+@queue_app.command("retry")
+def queue_retry(
+    ref: str,
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Retry a failed queue job by id or filename."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    try:
+        moved = daemon.retry_job(ref)
+    except FileNotFoundError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Re-queued: {moved.name} (inbox/)")
+
+
+@queue_app.command("pause")
+def queue_pause(
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Pause queue processing."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon.pause()
+    console.print("Queue processing paused.")
+
+
+@queue_app.command("resume")
+def queue_resume(
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Resume queue processing."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon.resume()
+    console.print("Queue processing resumed.")
 
 
 @queue_approvals_app.command("approve")

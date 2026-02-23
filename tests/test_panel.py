@@ -104,7 +104,7 @@ def test_panel_queue_create_goal_and_mission(tmp_path, monkeypatch):
 
     goal_res = client.post("/queue/create", data={"kind": "goal", "goal": "run system check"})
     assert goal_res.status_code == 200
-    queued = list((fake_home / "VoxeraOS" / "notes" / "queue").glob("*.json"))
+    queued = list((fake_home / "VoxeraOS" / "notes" / "queue" / "inbox").glob("*.json"))
     assert len(queued) == 1
     payload = json.loads(queued[0].read_text(encoding="utf-8"))
     assert payload == {"goal": "run system check"}
@@ -113,7 +113,7 @@ def test_panel_queue_create_goal_and_mission(tmp_path, monkeypatch):
         "/queue/create", data={"kind": "mission", "mission_id": "system_check"}
     )
     assert mission_res.status_code == 200
-    queued = list((fake_home / "VoxeraOS" / "notes" / "queue").glob("*.json"))
+    queued = list((fake_home / "VoxeraOS" / "notes" / "queue" / "inbox").glob("*.json"))
     assert len(queued) == 2
 
 
@@ -186,7 +186,7 @@ def test_panel_get_mutations_compat_mode(tmp_path, monkeypatch):
     )
     assert mission_res.status_code == 200
 
-    queued = list((fake_home / "VoxeraOS" / "notes" / "queue").glob("*.json"))
+    queued = list((fake_home / "VoxeraOS" / "notes" / "queue" / "inbox").glob("*.json"))
     assert len(queued) == 1
 
     mission_file = fake_home / ".config" / "voxera" / "missions" / "legacy_status.json"
@@ -269,3 +269,22 @@ def test_panel_rejects_invalid_mission_id_values(tmp_path, monkeypatch):
 
 def test_panel_app_uses_shared_version_source():
     assert panel_module.app.version == panel_module.get_version()
+
+
+def test_panel_job_detail_smoke(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    art = queue_dir / "artifacts" / "job-a"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "plan.json").write_text('{"x":1}', encoding="utf-8")
+    (art / "actions.jsonl").write_text('{"event":"one","ts":1}\n', encoding="utf-8")
+    (art / "stdout.txt").write_text("out", encoding="utf-8")
+    (art / "stderr.txt").write_text("err", encoding="utf-8")
+    (art / "outputs").mkdir(parents=True, exist_ok=True)
+    (art / "outputs" / "generated_files.json").write_text('["a.txt"]', encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    res = client.get("/queue/jobs/job-a.json/detail")
+    assert res.status_code == 200
+    assert "stdout" in res.text
+    assert "generated" in res.text.lower()

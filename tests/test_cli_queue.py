@@ -174,3 +174,39 @@ def test_queue_status_prints_artifacts_root(tmp_path):
 
     assert result.exit_code == 0
     assert "Artifacts root:" in result.output
+
+
+def test_queue_status_prints_intake_and_inbox(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True)
+    (queue_dir / "inbox" / "a.json").write_text("{}", encoding="utf-8")
+    result = runner.invoke(cli.app, ["queue", "status", "--queue-dir", str(queue_dir)])
+    assert result.exit_code == 0
+    assert "Queue intake:" in result.output
+    assert "inbox/" in result.output
+
+
+def test_queue_cancel_retry_pause_resume_cli(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True)
+    (queue_dir / "inbox" / "job-x.json").write_text('{"goal":"g"}', encoding="utf-8")
+
+    pause = runner.invoke(cli.app, ["queue", "pause", "--queue-dir", str(queue_dir)])
+    assert pause.exit_code == 0
+    assert (queue_dir / ".paused").exists()
+
+    cancel = runner.invoke(
+        cli.app, ["queue", "cancel", "job-x.json", "--queue-dir", str(queue_dir)]
+    )
+    assert cancel.exit_code == 0
+    assert (queue_dir / "failed" / "job-x.json").exists()
+
+    retry = runner.invoke(cli.app, ["queue", "retry", "job-x.json", "--queue-dir", str(queue_dir)])
+    assert retry.exit_code == 0
+    assert (queue_dir / "inbox" / "job-x.json").exists()
+
+    resume = runner.invoke(cli.app, ["queue", "resume", "--queue-dir", str(queue_dir)])
+    assert resume.exit_code == 0
+    assert not (queue_dir / ".paused").exists()

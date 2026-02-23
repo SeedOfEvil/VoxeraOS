@@ -49,6 +49,7 @@
         {% endif %}
         <div class="grid grid-3">
           <div>
+            <p class="kpi-label"><b>inbox/</b></p><p>{{queue.counts.inbox}}</p>
             <p class="kpi-label"><b>pending/</b></p><p>{{queue.counts.pending}}</p>
             <p class="kpi-label"><b>pending/approvals/</b></p><p>{{queue.counts.pending_approvals}}</p>
             <p class="kpi-label"><b>done/</b></p><p>{{queue.counts.done}}</p>
@@ -68,6 +69,14 @@
             <p>{{queue.failed_prune_last.removed_jobs}} / {{queue.failed_prune_last.removed_sidecars}}</p>
             <p class="kpi-label"><b>Queue Root</b></p>
             <p class="muted mono">{{queue_root}}</p>
+            <p class="kpi-label"><b>Intake</b></p>
+            <p class="muted mono">{{queue.intake_glob}}</p>
+            <p class="kpi-label"><b>Daemon paused</b></p>
+            <p>{{queue.paused}}</p>
+            <div style="display:flex; gap:6px; margin-top:8px;">
+              <form method="post" action="/queue/pause"><button class="btn" type="submit">Pause</button></form>
+              <form method="post" action="/queue/resume"><button class="btn" type="submit">Resume</button></form>
+            </div>
           </div>
         </div>
       </section>
@@ -142,6 +151,7 @@
                     <form method="post" action="/queue/approvals/{{item.job}}/approve"><button class="btn btn-approve" type="submit">Approve</button></form>
                     <form method="post" action="/queue/approvals/{{item.job}}/approve-always"><button class="btn" type="submit">Approve Always</button></form>
                     <form method="post" action="/queue/approvals/{{item.job}}/deny"><button class="btn btn-deny" type="submit">Deny</button></form>
+                    <form method="post" action="/queue/jobs/{{item.job}}/cancel"><button class="btn btn-deny" type="submit">Cancel</button></form>
                   </div>
                 </td>
               </tr>
@@ -149,6 +159,14 @@
             </tbody>
           </table></div>
         {% endif %}
+      </section>
+
+      <section class="card" style="margin-bottom:16px;">
+        <h2>Completed Jobs</h2>
+        {% if queue.done_jobs|length == 0 %}<p class="muted">No completed jobs.</p>{% else %}
+        <div class="table-wrap"><table><thead><tr><th>Job</th><th>Artifacts</th></tr></thead><tbody>
+        {% for job in queue.done_jobs %}<tr><td>{{job}}</td><td><a href="/queue/jobs/{{job}}/detail">Open detail</a></td></tr>{% endfor %}
+        </tbody></table></div>{% endif %}
       </section>
 
       <section class="grid grid-2" style="margin-bottom:16px;">
@@ -192,6 +210,27 @@
             </div>
           {% endif %}
         </article>
+      </section>
+
+
+      <section class="card" style="margin-bottom:16px;">
+        <h2>Failed Jobs</h2>
+        {% if queue.recent_failed|length == 0 %}
+          <p class="muted">No failed jobs.</p>
+        {% else %}
+          <div class="table-wrap"><table><thead><tr><th>Job</th><th>Error</th><th>Actions</th></tr></thead><tbody>
+          {% for item in queue.recent_failed %}
+            <tr>
+              <td><a href="/queue/jobs/{{item.job}}/detail">{{item.job}}</a></td>
+              <td>{{item.error}}</td>
+              <td><div style="display:flex; gap:6px;">
+                <form method="post" action="/queue/jobs/{{item.job}}/retry"><button class="btn" type="submit">Retry</button></form>
+                <form method="post" action="/queue/jobs/{{item.job}}/cancel"><button class="btn btn-deny" type="submit">Cancel</button></form>
+              </div></td>
+            </tr>
+          {% endfor %}
+          </tbody></table></div>
+        {% endif %}
       </section>
 
       <section class="card">

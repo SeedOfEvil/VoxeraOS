@@ -45,12 +45,14 @@ class MissionQueueDaemon:
         failed_retention_max_count: int | None = None,
     ):
         self.queue_root = (queue_root or default_queue_root()).expanduser()
-        self.inbox = self.queue_root
+        self.inbox = self.queue_root / "inbox"
         self.done = self.queue_root / "done"
         self.failed = self.queue_root / "failed"
         self.pending = self.queue_root / "pending"
         self.approvals = self.pending / "approvals"
         self.artifacts = self.queue_root / "artifacts"
+        self.archive = self.queue_root / "_archive"
+        self.pause_marker = self.queue_root / ".paused"
         self.poll_interval = poll_interval
         self.stats = QueueStats()
         self.current_job_ref: str | None = None
@@ -248,12 +250,65 @@ class MissionQueueDaemon:
         return False
 
     def ensure_dirs(self) -> None:
+        self.queue_root.mkdir(parents=True, exist_ok=True)
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.done.mkdir(parents=True, exist_ok=True)
         self.failed.mkdir(parents=True, exist_ok=True)
         self.pending.mkdir(parents=True, exist_ok=True)
         self.approvals.mkdir(parents=True, exist_ok=True)
         self.artifacts.mkdir(parents=True, exist_ok=True)
+        self.archive.mkdir(parents=True, exist_ok=True)
+
+    def is_paused(self) -> bool:
+        return self.pause_marker.exists()
+
+    def pause(self) -> None:
+        self.ensure_dirs()
+        self.pause_marker.write_text("paused\n", encoding="utf-8")
+        log({"event": "queue_paused", "marker": str(self.pause_marker)})
+
+    def resume(self) -> None:
+        self.pause_marker.unlink(missing_ok=True)
+        log({"event": "queue_resumed", "marker": str(self.pause_marker)})
+
+    def _auto_relocate_legacy_jobs(self) -> int:
+        moved = 0
+        for job in sorted(self.queue_root.glob("*.json")):
+            if job.name.startswith(".") or not self._is_primary_job_json(job):
+                continue
+            relocated = self._move_job(job, self.inbox)
+            if relocated is None:
+                continue
+            moved += 1
+            log(
+                {
+                    "event": "queue_job_autorelocate",
+                    "src": str(job),
+                    "dst": str(relocated),
+                    "reason": "legacy_queue_root_intake",
+                }
+            )
+        return moved
+
+    def _auto_relocate_misplaced_pending_jobs(self) -> int:
+        moved = 0
+        for job in self._pending_primary_jobs():
+            meta = self.pending / f"{job.stem}.pending.json"
+            if meta.exists():
+                continue
+            relocated = self._move_job(job, self.inbox)
+            if relocated is None:
+                continue
+            moved += 1
+            log(
+                {
+                    "event": "queue_job_autorelocate",
+                    "src": str(job),
+                    "dst": str(relocated),
+                    "reason": "misplaced_pending_drop",
+                }
+            )
+        return moved
 
     def _job_artifacts_dir(self, job_ref: str) -> Path:
         stem = Path(job_ref).stem
@@ -718,7 +773,7 @@ class MissionQueueDaemon:
 
     def _is_primary_job_json(self, path: Path) -> bool:
         return path.name.endswith(".json") and not path.name.endswith(
-            (".pending.json", ".approval.json", ".error.json")
+            (".pending.json", ".approval.json", ".error.json", ".tmp.json", ".partial.json")
         )
 
     def _pending_primary_jobs(self) -> list[Path]:
@@ -921,6 +976,7 @@ class MissionQueueDaemon:
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
             "counts": {
+                "inbox": self._count_files(self.inbox, "*.json"),
                 "pending": len(self._pending_primary_jobs()),
                 "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
                 "done": self._count_files(self.done, "*.json"),
@@ -934,7 +990,62 @@ class MissionQueueDaemon:
                 limit=failed_limit, failed_files=failed_files, sidecars_by_job=sidecars_by_job
             ),
             "artifacts_root": str(self.artifacts),
+            "intake_glob": str(self.inbox / "*.json"),
+            "paused": self.is_paused(),
         }
+
+    def _resolve_job_ref_in_dirs(self, ref: str, directories: list[Path]) -> Path | None:
+        raw = ref.strip()
+        if not raw:
+            return None
+        direct = Path(raw).expanduser()
+        if direct.exists() and direct.is_file():
+            return direct
+        base = Path(raw).name
+        stem = Path(base).stem
+        candidates = {base, f"{stem}.json", f"job-{stem}.json"}
+        for directory in directories:
+            for cand in candidates:
+                path = directory / cand
+                if path.exists() and path.is_file():
+                    return path
+        return None
+
+    def cancel_job(self, ref: str) -> Path:
+        self.ensure_dirs()
+        job = self._resolve_job_ref_in_dirs(ref, [self.inbox, self.pending, self.done, self.failed])
+        if job is None:
+            raise FileNotFoundError(f"job not found: {ref}")
+
+        if job.parent == self.failed:
+            return job
+
+        moved = self._move_job(job, self.failed)
+        if moved is None:
+            raise FileNotFoundError(f"job not found: {ref}")
+        self._write_failed_error_sidecar(moved, error="cancelled by operator", payload=None)
+        (self.pending / f"{moved.stem}.pending.json").unlink(missing_ok=True)
+        (self.approvals / f"{moved.stem}.approval.json").unlink(missing_ok=True)
+        log({"event": "queue_job_cancel", "ref": ref, "job": str(moved)})
+        return moved
+
+    def retry_job(self, ref: str) -> Path:
+        self.ensure_dirs()
+        failed_job = self._resolve_job_ref_in_dirs(ref, [self.failed])
+        if failed_job is None:
+            raise FileNotFoundError(f"failed job not found: {ref}")
+        self._failed_error_sidecar(failed_job).unlink(missing_ok=True)
+        moved = self._move_job(failed_job, self.inbox)
+        if moved is None:
+            raise FileNotFoundError(f"failed job not found: {ref}")
+        log(
+            {
+                "event": "queue_job_retry",
+                "original_failed_job": str(failed_job),
+                "new_attempt": str(moved),
+            }
+        )
+        return moved
 
     def process_job_file(self, job_path: Path) -> bool:
         self.ensure_dirs()
@@ -1195,6 +1306,11 @@ class MissionQueueDaemon:
 
     def process_pending_once(self) -> int:
         self.ensure_dirs()
+        self._auto_relocate_legacy_jobs()
+        self._auto_relocate_misplaced_pending_jobs()
+        if self.is_paused():
+            log({"event": "queue_tick_paused", "queue": str(self.inbox)})
+            return 0
         processed = 0
         for job in sorted(self.inbox.glob("*.json")):
             if not self._is_ready_job_file(job):

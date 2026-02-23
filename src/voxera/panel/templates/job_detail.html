@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Job Detail</title><link rel="stylesheet" href="/static/panel.css" /></head>
+<body><div class="container"><a href="/">← Back</a><h1>Job {{payload.job}}</h1>
+<section class="card"><h2>Plan</h2><pre>{{payload.plan | tojson(indent=2)}}</pre></section>
+<section class="card"><h2>Actions (latest first)</h2><pre>{{payload.actions | tojson(indent=2)}}</pre></section>
+<section class="card"><h2>Generated Files</h2><ul>{% for f in payload.generated_files %}<li>{{f}}</li>{% endfor %}</ul></section>
+<section class="grid grid-2"><article class="card"><h2>stdout</h2><pre>{{payload.stdout}}</pre></article><article class="card"><h2>stderr</h2><pre>{{payload.stderr}}</pre></article></section>
+</div></body></html>

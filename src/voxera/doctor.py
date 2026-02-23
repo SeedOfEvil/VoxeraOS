@@ -26,11 +26,12 @@ def run_self_test(*, timeout_s: float = 8.0) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="voxera-doctor-") as tmp:
         queue_root = Path(tmp) / "queue"
         queue_root.mkdir(parents=True, exist_ok=True)
-        job = queue_root / "doctor-self-test.json"
-        job.write_text(json.dumps({"mission_id": "system_check"}, indent=2), encoding="utf-8")
-
         daemon = MissionQueueDaemon(queue_root=queue_root)
         daemon.ensure_dirs()
+
+        job = queue_root / "inbox" / "doctor-self-test.json"
+        job.parent.mkdir(parents=True, exist_ok=True)
+        job.write_text(json.dumps({"mission_id": "system_check"}, indent=2), encoding="utf-8")
 
         done_job = queue_root / "done" / job.name
         failed_job = queue_root / "failed" / job.name

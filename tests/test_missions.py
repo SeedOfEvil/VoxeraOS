@@ -44,7 +44,8 @@ def test_run_system_check_mission_succeeds():
 
     assert rr.ok is True
     assert "Mission completed" in rr.output
-    assert len(rr.data["results"]) == 1
+    assert len(rr.data["results"]) == 2
+    assert any(item.get("skill") == "files.write_text" for item in rr.data["results"])
 
 
 def test_mission_runner_appends_redacted_log(tmp_path):

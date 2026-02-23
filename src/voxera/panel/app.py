@@ -86,13 +86,59 @@ async def _request_value(request: Request, key: str, default: str = "") -> str:
 
 def _write_queue_job(payload: dict[str, Any]) -> str:
     queue_root = _queue_root()
-    queue_root.mkdir(parents=True, exist_ok=True)
+    inbox = queue_root / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
     job_id = f"job-{int(time.time())}-{uuid.uuid4().hex[:8]}"
-    tmp_path = queue_root / f".{job_id}.tmp.json"
-    final_path = queue_root / f"{job_id}.json"
+    tmp_path = inbox / f".{job_id}.tmp.json"
+    final_path = inbox / f"{job_id}.json"
     tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp_path.replace(final_path)
     return final_path.name
+
+
+def _artifact_text(path: Path, *, max_chars: int = 8000) -> str:
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return text[:max_chars] + ("\n...[truncated]..." if len(text) > max_chars else "")
+
+
+def _job_artifact_payload(queue_root: Path, job_name: str) -> dict[str, Any]:
+    stem = Path(job_name).stem
+    art = queue_root / "artifacts" / stem
+    plan = {}
+    if (art / "plan.json").exists():
+        with (art / "plan.json").open("r", encoding="utf-8") as f:
+            plan = json.load(f)
+    actions: list[dict[str, Any]] = []
+    actions_path = art / "actions.jsonl"
+    if actions_path.exists():
+        for line in actions_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                actions.append(json.loads(line))
+            except Exception:
+                continue
+    actions.reverse()
+    generated_files: list[str] = []
+    generated = art / "outputs" / "generated_files.json"
+    if generated.exists():
+        try:
+            parsed = json.loads(generated.read_text(encoding="utf-8"))
+            if isinstance(parsed, list):
+                generated_files = [str(i) for i in parsed]
+        except Exception:
+            generated_files = []
+    return {
+        "job": job_name,
+        "artifacts_dir": str(art),
+        "plan": plan,
+        "actions": actions,
+        "stdout": _artifact_text(art / "stdout.txt"),
+        "stderr": _artifact_text(art / "stderr.txt"),
+        "generated_files": generated_files,
+    }
 
 
 def _build_activity(
@@ -174,6 +220,12 @@ def home(created: str = "", error: str = "", mission_created: str = ""):
     daemon = MissionQueueDaemon(queue_root=queue_root)
     queue = daemon.status_snapshot(approvals_limit=12, failed_limit=8)
     queue["pending_approvals"] = daemon.approvals_list()[:12]
+    queue["done_jobs"] = [
+        p.name
+        for p in sorted(
+            (queue_root / "done").glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True
+        )[:12]
+    ]
 
     mission_log = Path.home() / "VoxeraOS" / "notes" / "mission-log.md"
     mission_log_tail = []
@@ -294,4 +346,40 @@ def approve_always_queue_job(ref: str):
 def deny_queue_job(ref: str):
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=False)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/queue/jobs/{job}/detail", response_class=HTMLResponse)
+def queue_job_detail(job: str):
+    queue_root = _queue_root()
+    payload = _job_artifact_payload(queue_root, job)
+    tmpl = templates.get_template("job_detail.html")
+    return tmpl.render(payload=payload)
+
+
+@app.post("/queue/jobs/{ref}/cancel")
+def cancel_queue_job(ref: str):
+    daemon = MissionQueueDaemon(queue_root=_queue_root())
+    daemon.cancel_job(ref)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/queue/jobs/{ref}/retry")
+def retry_queue_job(ref: str):
+    daemon = MissionQueueDaemon(queue_root=_queue_root())
+    daemon.retry_job(ref)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/queue/pause")
+def pause_queue():
+    daemon = MissionQueueDaemon(queue_root=_queue_root())
+    daemon.pause()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/queue/resume")
+def resume_queue():
+    daemon = MissionQueueDaemon(queue_root=_queue_root())
+    daemon.resume()
     return RedirectResponse(url="/", status_code=303)
