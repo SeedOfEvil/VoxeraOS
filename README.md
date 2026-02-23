@@ -263,6 +263,12 @@ voxera panel
 # open http://127.0.0.1:8844
 ```
 
+Panel mutation endpoints (`/queue/create`, `/missions/create`) now use `POST` by default.
+Legacy GET-based mutation compatibility can be enabled only for test/dev workflows:
+```bash
+VOXERA_PANEL_ENABLE_GET_MUTATIONS=1 voxera panel
+```
+
 ## Updating VoxeraOS (Alpha)
 
 ### Option 1 (recommended)

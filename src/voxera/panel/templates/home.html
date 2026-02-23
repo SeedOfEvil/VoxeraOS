@@ -23,9 +23,13 @@
       <div class="alert alert-success">Created mission template: <b>{{mission_created}}</b>.</div>
     {% endif %}
     {% if error %}
-      <div class="alert alert-danger">Action failed: {{error}}</div>
+      <div class="alert alert-danger">Action failed: {{error_message or error}}</div>
     {% endif %}
 
+
+    {% if get_mutations_enabled %}
+      <div class="alert">Compatibility mode: GET mutation endpoints are enabled for tests/dev only.</div>
+    {% endif %}
     <nav class="tabs" aria-label="Control panel views">
       <button class="tab-btn is-active" type="button" data-tab-btn="control">Control</button>
       <button class="tab-btn" type="button" data-tab-btn="logging">Logging</button>
@@ -65,7 +69,7 @@
       <section class="grid grid-2" style="margin-bottom:16px;">
         <article class="card">
           <h2>Launch Mission Fast</h2>
-          <form class="form-stack" method="get" action="/queue/create">
+          <form class="form-stack" method="post" action="/queue/create">
             <label>Queue Type
               <select class="select" name="kind">
                 <option value="goal">Plan from goal</option>
@@ -91,7 +95,7 @@
 
         <article class="card">
           <h2>Create Mission Template</h2>
-          <form class="form-stack" method="get" action="/missions/create">
+          <form class="form-stack" method="post" action="/missions/create">
             <div class="form-row">
               <label>ID <input class="input" type="text" name="mission_id" placeholder="my_mission" required /></label>
               <label>Title <input class="input" type="text" name="title" placeholder="My Mission" /></label>
