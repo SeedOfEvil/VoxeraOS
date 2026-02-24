@@ -27,6 +27,10 @@ _FAILED_TIMESTAMP_MS_MIN = 10**12
 _APPROVAL_GRANTS_FILE = "grants.json"
 
 
+class QueueLockError(RuntimeError):
+    pass
+
+
 @dataclass
 class QueueStats:
     processed: int = 0
@@ -53,6 +57,9 @@ class MissionQueueDaemon:
         self.artifacts = self.queue_root / "artifacts"
         self.archive = self.queue_root / "_archive"
         self.pause_marker = self.queue_root / ".paused"
+        self.lock_file = self.queue_root / ".daemon.lock"
+        self.lock_stale_after_s = self._env_float("VOXERA_QUEUE_LOCK_STALE_S") or 3600.0
+        self._lock_held = False
         self.poll_interval = poll_interval
         self.stats = QueueStats()
         self.current_job_ref: str | None = None
@@ -258,6 +265,111 @@ class MissionQueueDaemon:
         self.approvals.mkdir(parents=True, exist_ok=True)
         self.artifacts.mkdir(parents=True, exist_ok=True)
         self.archive.mkdir(parents=True, exist_ok=True)
+
+    def _lock_payload(self) -> dict[str, Any]:
+        return {
+            "pid": os.getpid(),
+            "ts": time.time(),
+            "queue_root": str(self.queue_root),
+        }
+
+    def _read_lock_payload(self) -> dict[str, Any]:
+        if not self.lock_file.exists():
+            return {}
+        try:
+            return json.loads(self.lock_file.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _pid_is_alive(self, pid: int) -> bool:
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def _acquire_daemon_lock(self) -> None:
+        self.ensure_dirs()
+        payload = self._lock_payload()
+        while True:
+            try:
+                fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(payload, f)
+                self._lock_held = True
+                log(
+                    {
+                        "event": "queue_daemon_lock_acquired",
+                        "lock": str(self.lock_file),
+                        "pid": payload["pid"],
+                    }
+                )
+                return
+            except FileExistsError as exc:
+                existing = self._read_lock_payload()
+                pid = int(existing.get("pid") or 0)
+                ts = float(existing.get("ts") or 0.0)
+                stale = (time.time() - ts) > self.lock_stale_after_s
+                alive = self._pid_is_alive(pid)
+                if stale or not alive:
+                    self.lock_file.unlink(missing_ok=True)
+                    log(
+                        {
+                            "event": "queue_daemon_lock_reclaimed",
+                            "lock": str(self.lock_file),
+                            "stale": stale,
+                            "existing_pid": pid,
+                        }
+                    )
+                    continue
+                raise QueueLockError(
+                    f"queue lock already held by pid={pid}: {self.lock_file}"
+                ) from exc
+
+    def release_daemon_lock(self) -> None:
+        if not self._lock_held:
+            return
+        self.lock_file.unlink(missing_ok=True)
+        self._lock_held = False
+        log({"event": "queue_daemon_lock_released", "lock": str(self.lock_file)})
+
+    def try_unlock_stale(self) -> bool:
+        if not self.lock_file.exists():
+            return False
+
+        payload = self._read_lock_payload()
+        pid = int(payload.get("pid") or 0)
+        ts = float(payload.get("ts") or payload.get("timestamp") or 0.0)
+        alive = self._pid_is_alive(pid)
+        stale = (time.time() - ts) > self.lock_stale_after_s
+
+        if stale or not alive:
+            self.lock_file.unlink(missing_ok=True)
+            log(
+                {
+                    "event": "queue_daemon_lock_unlocked_stale",
+                    "lock": str(self.lock_file),
+                    "stale": stale,
+                    "existing_pid": pid,
+                    "alive": alive,
+                }
+            )
+            return True
+
+        raise QueueLockError(
+            f"Lock held by live pid={pid}. Stop daemon first, or use --force to override."
+        )
+
+    def force_unlock(self) -> bool:
+        existed = self.lock_file.exists()
+        self.lock_file.unlink(missing_ok=True)
+        if existed:
+            log({"event": "queue_daemon_lock_force_unlocked", "lock": str(self.lock_file)})
+        return existed
 
     def is_paused(self) -> bool:
         return self.pause_marker.exists()
@@ -1321,6 +1433,7 @@ class MissionQueueDaemon:
 
     def run(self, once: bool = False) -> None:
         self.ensure_dirs()
+        self._acquire_daemon_lock()
         if self.auto_approve_ask and not self.dev_mode:
             log(
                 {"event": "queue_auto_approve_disabled", "reason": "VOXERA_DEV_MODE is not enabled"}
@@ -1333,38 +1446,41 @@ class MissionQueueDaemon:
                 "auto_approve_ask": self.auto_approve_ask,
             }
         )
-        if once:
-            count = self.process_pending_once()
-            log({"event": "queue_daemon_stop", "reason": "once", "processed": count})
-            return
-
         try:
-            from watchdog.events import FileSystemEventHandler
-            from watchdog.observers import Observer
+            if once:
+                count = self.process_pending_once()
+                log({"event": "queue_daemon_stop", "reason": "once", "processed": count})
+                return
 
-            daemon = self
-
-            class _Handler(FileSystemEventHandler):
-                def on_created(self, event):
-                    if event.is_directory:
-                        return
-                    path = Path(event.src_path)
-                    if daemon._is_ready_job_file(path):
-                        daemon.process_job_file(path)
-
-            observer = Observer()
-            observer.schedule(_Handler(), str(self.inbox), recursive=False)
-            observer.start()
-            log({"event": "queue_watch_mode", "mode": "watchdog"})
-            self.process_pending_once()
             try:
-                while True:
-                    time.sleep(self.poll_interval)
-            finally:
-                observer.stop()
-                observer.join()
-        except ImportError:
-            log({"event": "queue_watch_mode", "mode": "poll"})
-            while True:
+                from watchdog.events import FileSystemEventHandler
+                from watchdog.observers import Observer
+
+                daemon = self
+
+                class _Handler(FileSystemEventHandler):
+                    def on_created(self, event):
+                        if event.is_directory:
+                            return
+                        path = Path(event.src_path)
+                        if daemon._is_ready_job_file(path):
+                            daemon.process_job_file(path)
+
+                observer = Observer()
+                observer.schedule(_Handler(), str(self.inbox), recursive=False)
+                observer.start()
+                log({"event": "queue_watch_mode", "mode": "watchdog"})
                 self.process_pending_once()
-                time.sleep(self.poll_interval)
+                try:
+                    while True:
+                        time.sleep(self.poll_interval)
+                finally:
+                    observer.stop()
+                    observer.join()
+            except ImportError:
+                log({"event": "queue_watch_mode", "mode": "poll"})
+                while True:
+                    self.process_pending_once()
+                    time.sleep(self.poll_interval)
+        finally:
+            self.release_daemon_lock()

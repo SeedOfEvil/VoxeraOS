@@ -74,8 +74,10 @@
             <p class="kpi-label"><b>Daemon paused</b></p>
             <p>{{queue.paused}}</p>
             <div style="display:flex; gap:6px; margin-top:8px;">
-              <form method="post" action="/queue/pause"><button class="btn" type="submit">Pause</button></form>
-              <form method="post" action="/queue/resume"><button class="btn" type="submit">Resume</button></form>
+              <form method="post" action="/queue/pause">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Pause</button></form>
+              <form method="post" action="/queue/resume">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Resume</button></form>
             </div>
           </div>
         </div>
@@ -85,6 +87,7 @@
         <article class="card">
           <h2>Launch Mission Fast</h2>
           <form class="form-stack" method="post" action="/queue/create">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
             <label>Queue Type
               <select class="select" name="kind">
                 <option value="goal">Plan from goal</option>
@@ -111,6 +114,7 @@
         <article class="card">
           <h2>Create Mission Template</h2>
           <form class="form-stack" method="post" action="/missions/create">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
             <div class="form-row">
               <label>ID <input class="input" type="text" name="mission_id" placeholder="my_mission" required /></label>
               <label>Title <input class="input" type="text" name="title" placeholder="My Mission" /></label>
@@ -148,10 +152,14 @@
                 <td>fs={{item.scope.fs_scope}}, net={{item.scope.needs_network}}</td>
                 <td>
                   <div style="display:flex; gap:6px;">
-                    <form method="post" action="/queue/approvals/{{item.job}}/approve"><button class="btn btn-approve" type="submit">Approve</button></form>
-                    <form method="post" action="/queue/approvals/{{item.job}}/approve-always"><button class="btn" type="submit">Approve Always</button></form>
-                    <form method="post" action="/queue/approvals/{{item.job}}/deny"><button class="btn btn-deny" type="submit">Deny</button></form>
-                    <form method="post" action="/queue/jobs/{{item.job}}/cancel"><button class="btn btn-deny" type="submit">Cancel</button></form>
+                    <form method="post" action="/queue/approvals/{{item.job}}/approve">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-approve" type="submit">Approve</button></form>
+                    <form method="post" action="/queue/approvals/{{item.job}}/approve-always">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Approve Always</button></form>
+                    <form method="post" action="/queue/approvals/{{item.job}}/deny">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Deny</button></form>
+                    <form method="post" action="/queue/jobs/{{item.job}}/cancel">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Cancel</button></form>
                   </div>
                 </td>
               </tr>
@@ -224,8 +232,10 @@
               <td><a href="/queue/jobs/{{item.job}}/detail">{{item.job}}</a></td>
               <td>{{item.error}}</td>
               <td><div style="display:flex; gap:6px;">
-                <form method="post" action="/queue/jobs/{{item.job}}/retry"><button class="btn" type="submit">Retry</button></form>
-                <form method="post" action="/queue/jobs/{{item.job}}/cancel"><button class="btn btn-deny" type="submit">Cancel</button></form>
+                <form method="post" action="/queue/jobs/{{item.job}}/retry">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Retry</button></form>
+                <form method="post" action="/queue/jobs/{{item.job}}/cancel">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Cancel</button></form>
               </div></td>
             </tr>
           {% endfor %}

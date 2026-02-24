@@ -1,4 +1,6 @@
 import json
+import os
+import time
 
 from typer.testing import CliRunner
 
@@ -210,3 +212,67 @@ def test_queue_cancel_retry_pause_resume_cli(tmp_path):
     resume = runner.invoke(cli.app, ["queue", "resume", "--queue-dir", str(queue_dir)])
     assert resume.exit_code == 0
     assert not (queue_dir / ".paused").exists()
+
+
+def test_queue_unlock_refuses_live_lock_without_force(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    (queue_dir / ".daemon.lock").write_text(
+        json.dumps({"pid": os.getpid(), "ts": time.time()}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "unlock", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 1
+    assert "Lock held by live pid=" in result.output
+    assert (queue_dir / ".daemon.lock").exists()
+
+
+def test_queue_unlock_removes_stale_lock(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    (queue_dir / ".daemon.lock").write_text(
+        json.dumps({"pid": 999999, "ts": 1}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "unlock", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "Removed stale daemon lock." in result.output
+    assert not (queue_dir / ".daemon.lock").exists()
+
+
+def test_queue_unlock_removes_dead_pid_lock(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    (queue_dir / ".daemon.lock").write_text(
+        json.dumps({"pid": 999999, "ts": time.time()}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "unlock", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "Removed stale daemon lock." in result.output
+    assert not (queue_dir / ".daemon.lock").exists()
+
+
+def test_queue_unlock_force_removes_live_lock(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    (queue_dir / ".daemon.lock").write_text(
+        json.dumps({"pid": os.getpid(), "ts": time.time()}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "unlock", "--force", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "Force-removed daemon lock." in result.output
+    assert not (queue_dir / ".daemon.lock").exists()

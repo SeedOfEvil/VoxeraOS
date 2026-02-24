@@ -14,7 +14,7 @@ from .config import load_config
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
-from .core.queue_daemon import MissionQueueDaemon
+from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .doctor import doctor_sync
 from .paths import queue_root_display
 from .setup_wizard import run_setup
@@ -314,6 +314,9 @@ def daemon(
     )
     try:
         daemon.run(once=once)
+    except QueueLockError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
     except KeyboardInterrupt:
         console.print("Queue daemon stopped.")
 
@@ -509,6 +512,40 @@ def queue_retry(
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1) from exc
     console.print(f"Re-queued: {moved.name} (inbox/)")
+
+
+@queue_app.command("unlock")
+def queue_unlock(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Force-remove lock even if held by a live daemon (dangerous).",
+    ),
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Remove stale/dead daemon lock, or force-remove with --force."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    if force:
+        if daemon.force_unlock():
+            console.print("Force-removed daemon lock.")
+            return
+        console.print("No daemon lock was present.")
+        return
+
+    try:
+        removed = daemon.try_unlock_stale()
+    except QueueLockError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if removed:
+        console.print("Removed stale daemon lock.")
+        return
+    console.print("No daemon lock was present.")
 
 
 @queue_app.command("pause")

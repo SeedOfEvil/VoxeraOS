@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import time
 import uuid
 from pathlib import Path
@@ -42,6 +43,9 @@ ERROR_MESSAGES = {
     "get_mutation_disabled": "GET mutation endpoints are disabled; submit the form normally.",
 }
 
+CSRF_COOKIE = "voxera_panel_csrf"
+CSRF_FORM_KEY = "csrf_token"
+
 
 def _queue_root() -> Path:
     return Path.home() / "VoxeraOS" / "notes" / "queue"
@@ -53,6 +57,71 @@ def _missions_dir() -> Path:
 
 def _allow_get_mutations() -> bool:
     return os.getenv("VOXERA_PANEL_ENABLE_GET_MUTATIONS", "0") == "1"
+
+
+def _operator_credentials() -> tuple[str, str]:
+    user = os.getenv("VOXERA_PANEL_OPERATOR_USER", "operator")
+    password = os.getenv("VOXERA_PANEL_OPERATOR_PASSWORD")
+    if not password:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="VOXERA_PANEL_OPERATOR_PASSWORD must be set",
+        )
+    return user, password
+
+
+def _require_operator_basic_auth(authorization: str | None) -> None:
+    user, password = _operator_credentials()
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="operator authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    import base64
+
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "basic" or not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid authentication scheme",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    try:
+        decoded = base64.b64decode(token).decode("utf-8")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid authorization header",
+            headers={"WWW-Authenticate": "Basic"},
+        ) from exc
+    got_user, _, got_password = decoded.partition(":")
+    if not (
+        secrets.compare_digest(got_user, user) and secrets.compare_digest(got_password, password)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid operator credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+
+async def _require_mutation_guard(request: Request) -> None:
+    _require_operator_auth_from_request(request)
+    cookie_token = request.cookies.get(CSRF_COOKIE, "")
+    request_token = (request.headers.get("x-csrf-token") or "").strip() or (
+        await _request_value(request, CSRF_FORM_KEY, "")
+    ).strip()
+    if (
+        not cookie_token
+        or not request_token
+        or not secrets.compare_digest(cookie_token, request_token)
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="csrf validation failed")
+
+
+def _require_operator_auth_from_request(request: Request) -> None:
+    _require_operator_basic_auth(request.headers.get("authorization"))
 
 
 def _validate_mission_id(mission_id: str) -> str:
@@ -215,7 +284,7 @@ def _build_mission_payload(
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(created: str = "", error: str = "", mission_created: str = ""):
+def home(request: Request, created: str = "", error: str = "", mission_created: str = ""):
     queue_root = _queue_root()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     queue = daemon.status_snapshot(approvals_limit=12, failed_limit=8)
@@ -237,7 +306,8 @@ def home(created: str = "", error: str = "", mission_created: str = ""):
 
     missions = list_missions()
     tmpl = templates.get_template("home.html")
-    return tmpl.render(
+    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    html = tmpl.render(
         approvals=APPROVALS,
         audit=tail(50),
         queue=queue,
@@ -252,7 +322,11 @@ def home(created: str = "", error: str = "", mission_created: str = ""):
         get_mutations_enabled=_allow_get_mutations(),
         active_jobs=active_jobs,
         recent_activity=recent_activity,
+        csrf_token=csrf_token,
     )
+    response = HTMLResponse(content=html)
+    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
+    return response
 
 
 def _create_queue_job_from_values(kind: str, mission_id: str, goal: str) -> RedirectResponse:
@@ -277,13 +351,17 @@ def _create_queue_job_from_values(kind: str, mission_id: str, goal: str) -> Redi
 
 
 @app.get("/queue/create")
-def create_queue_job_get(kind: str = "goal", mission_id: str = "", goal: str = ""):
+def create_queue_job_get(
+    request: Request, kind: str = "goal", mission_id: str = "", goal: str = ""
+):
     _enforce_get_mutations_enabled()
+    _require_operator_auth_from_request(request)
     return _create_queue_job_from_values(kind, mission_id, goal)
 
 
 @app.post("/queue/create")
 async def create_queue_job(request: Request):
+    await _require_mutation_guard(request)
     kind = await _request_value(request, "kind", "goal")
     mission_id = await _request_value(request, "mission_id", "")
     goal = await _request_value(request, "goal", "")
@@ -308,6 +386,7 @@ def _create_mission_from_values(
 
 @app.get("/missions/create")
 def create_mission_get(
+    request: Request,
     mission_id: str = "",
     title: str = "",
     goal: str = "",
@@ -315,11 +394,13 @@ def create_mission_get(
     steps_json: str = "[]",
 ):
     _enforce_get_mutations_enabled()
+    _require_operator_auth_from_request(request)
     return _create_mission_from_values(mission_id, title, goal, notes, steps_json)
 
 
 @app.post("/missions/create")
 async def create_mission(request: Request):
+    await _require_mutation_guard(request)
     mission_id = await _request_value(request, "mission_id", "")
     title = await _request_value(request, "title", "")
     goal = await _request_value(request, "goal", "")
@@ -329,21 +410,24 @@ async def create_mission(request: Request):
 
 
 @app.post("/queue/approvals/{ref}/approve")
-def approve_queue_job(ref: str):
+async def approve_queue_job(ref: str, request: Request):
+    await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=True)
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/queue/approvals/{ref}/approve-always")
-def approve_always_queue_job(ref: str):
+async def approve_always_queue_job(ref: str, request: Request):
+    await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=True, approve_always=True)
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/queue/approvals/{ref}/deny")
-def deny_queue_job(ref: str):
+async def deny_queue_job(ref: str, request: Request):
+    await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=False)
     return RedirectResponse(url="/", status_code=303)
@@ -358,28 +442,32 @@ def queue_job_detail(job: str):
 
 
 @app.post("/queue/jobs/{ref}/cancel")
-def cancel_queue_job(ref: str):
+async def cancel_queue_job(ref: str, request: Request):
+    await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.cancel_job(ref)
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/queue/jobs/{ref}/retry")
-def retry_queue_job(ref: str):
+async def retry_queue_job(ref: str, request: Request):
+    await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.retry_job(ref)
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/queue/pause")
-def pause_queue():
+async def pause_queue(request: Request):
+    await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.pause()
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/queue/resume")
-def resume_queue():
+async def resume_queue(request: Request):
+    await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resume()
     return RedirectResponse(url="/", status_code=303)
