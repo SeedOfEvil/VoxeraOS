@@ -42,6 +42,7 @@ voxera queue cancel <job_id_or_filename>
 voxera queue retry <job_id_or_filename>
 voxera queue pause
 voxera queue resume
+voxera queue unlock
 ```
 
 ## Quick start (dev VM)
@@ -128,6 +129,7 @@ voxera queue cancel <job_id_or_filename>
 voxera queue retry <job_id_or_filename>
 voxera queue pause
 voxera queue resume
+voxera queue unlock
 ```
 
 
@@ -206,6 +208,7 @@ voxera queue cancel <job_id_or_filename>
 voxera queue retry <job_id_or_filename>
 voxera queue pause
 voxera queue resume
+voxera queue unlock
 ```
 
 Queue status troubleshooting:
