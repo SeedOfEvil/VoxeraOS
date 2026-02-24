@@ -301,7 +301,13 @@ class MissionQueueDaemon:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     json.dump(payload, f)
                 self._lock_held = True
-                log({"event": "queue_daemon_lock_acquired", "lock": str(self.lock_file), "pid": payload["pid"]})
+                log(
+                    {
+                        "event": "queue_daemon_lock_acquired",
+                        "lock": str(self.lock_file),
+                        "pid": payload["pid"],
+                    }
+                )
                 return
             except FileExistsError as exc:
                 existing = self._read_lock_payload()
@@ -311,14 +317,18 @@ class MissionQueueDaemon:
                 alive = self._pid_is_alive(pid)
                 if stale or not alive:
                     self.lock_file.unlink(missing_ok=True)
-                    log({
-                        "event": "queue_daemon_lock_reclaimed",
-                        "lock": str(self.lock_file),
-                        "stale": stale,
-                        "existing_pid": pid,
-                    })
+                    log(
+                        {
+                            "event": "queue_daemon_lock_reclaimed",
+                            "lock": str(self.lock_file),
+                            "stale": stale,
+                            "existing_pid": pid,
+                        }
+                    )
                     continue
-                raise QueueLockError(f"queue lock already held by pid={pid}: {self.lock_file}") from exc
+                raise QueueLockError(
+                    f"queue lock already held by pid={pid}: {self.lock_file}"
+                ) from exc
 
     def release_daemon_lock(self) -> None:
         if not self._lock_held:

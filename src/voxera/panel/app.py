@@ -109,11 +109,14 @@ def _require_operator_basic_auth(authorization: str | None) -> None:
 async def _require_mutation_guard(request: Request) -> None:
     _require_operator_auth_from_request(request)
     cookie_token = request.cookies.get(CSRF_COOKIE, "")
-    request_token = (
-        (request.headers.get("x-csrf-token") or "").strip()
-        or (await _request_value(request, CSRF_FORM_KEY, "")).strip()
-    )
-    if not cookie_token or not request_token or not secrets.compare_digest(cookie_token, request_token):
+    request_token = (request.headers.get("x-csrf-token") or "").strip() or (
+        await _request_value(request, CSRF_FORM_KEY, "")
+    ).strip()
+    if (
+        not cookie_token
+        or not request_token
+        or not secrets.compare_digest(cookie_token, request_token)
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="csrf validation failed")
 
 
@@ -348,7 +351,9 @@ def _create_queue_job_from_values(kind: str, mission_id: str, goal: str) -> Redi
 
 
 @app.get("/queue/create")
-def create_queue_job_get(request: Request, kind: str = "goal", mission_id: str = "", goal: str = ""):
+def create_queue_job_get(
+    request: Request, kind: str = "goal", mission_id: str = "", goal: str = ""
+):
     _enforce_get_mutations_enabled()
     _require_operator_auth_from_request(request)
     return _create_queue_job_from_values(kind, mission_id, goal)

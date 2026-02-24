@@ -68,7 +68,9 @@ def test_panel_can_click_approve_pending_queue_job(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
     (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
-    (queue_dir / "pending" / "job-e2e-ask.json").write_text(json.dumps({"goal": "demo"}), encoding="utf-8")
+    (queue_dir / "pending" / "job-e2e-ask.json").write_text(
+        json.dumps({"goal": "demo"}), encoding="utf-8"
+    )
     (queue_dir / "pending" / "job-e2e-ask.pending.json").write_text(
         json.dumps(
             {
@@ -225,7 +227,9 @@ def test_panel_queue_create_validation_errors(tmp_path, monkeypatch):
 
     client = TestClient(panel_module.app)
 
-    missing_goal = _authed_csrf_request(client, "post", "/queue/create", data={"kind": "goal", "goal": ""})
+    missing_goal = _authed_csrf_request(
+        client, "post", "/queue/create", data={"kind": "goal", "goal": ""}
+    )
     assert missing_goal.status_code == 303
     assert missing_goal.headers["location"] == "/?error=goal_required"
 

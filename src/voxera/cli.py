@@ -514,8 +514,6 @@ def queue_retry(
     console.print(f"Re-queued: {moved.name} (inbox/)")
 
 
-
-
 @queue_app.command("unlock")
 def queue_unlock(
     queue_dir: str = typer.Option(
@@ -530,6 +528,7 @@ def queue_unlock(
         console.print("Removed stale daemon lock.")
         return
     console.print("No daemon lock was present.")
+
 
 @queue_app.command("pause")
 def queue_pause(
