@@ -59,14 +59,15 @@ voxera queue cancel <job_id_or_filename>
 voxera queue retry <job_id_or_filename>
 voxera queue pause
 voxera queue resume
-voxera queue unlock
+voxera queue unlock           # safe: stale/dead locks only
+voxera queue unlock --force   # override live lock (dangerous)
 ```
 
 Operational effects:
 - `queue cancel` moves matching jobs (inbox/pending/pending approvals/in-flight best effort) into `failed/` with sidecar `error="cancelled by operator"` and cleans pending approval markers.
 - `queue retry` re-queues a failed primary payload into `inbox/` and emits `queue_job_retry` audit event linking old/new attempt.
 - `queue pause` creates `.paused`; daemon still reports status but skips processing new jobs until `queue resume` removes marker.
-- Daemon run loop acquires `notes/queue/.daemon.lock` to prevent multi-consumer races. Stale locks are reclaimed after `VOXERA_QUEUE_LOCK_STALE_S` (default 3600s); use `voxera queue unlock` for manual recovery.
+- Daemon run loop acquires `notes/queue/.daemon.lock` to prevent multi-consumer races. Stale locks are reclaimed after `VOXERA_QUEUE_LOCK_STALE_S` (default 3600s); use `voxera queue unlock` for safe stale/dead lock recovery; if lock is live, stop daemon first or use `voxera queue unlock --force` as an explicit override.
 
 Panel operator notes:
 - Panel mutation routes (`/queue/create`, `/missions/create`) accept `POST` by default.

@@ -42,7 +42,8 @@ voxera queue cancel <job_id_or_filename>
 voxera queue retry <job_id_or_filename>
 voxera queue pause
 voxera queue resume
-voxera queue unlock
+voxera queue unlock           # safe: stale/dead locks only
+voxera queue unlock --force   # override live lock (dangerous)
 ```
 
 ## Quick start (dev VM)
@@ -129,7 +130,8 @@ voxera queue cancel <job_id_or_filename>
 voxera queue retry <job_id_or_filename>
 voxera queue pause
 voxera queue resume
-voxera queue unlock
+voxera queue unlock           # safe: stale/dead locks only
+voxera queue unlock --force   # override live lock (dangerous)
 ```
 
 
@@ -208,7 +210,8 @@ voxera queue cancel <job_id_or_filename>
 voxera queue retry <job_id_or_filename>
 voxera queue pause
 voxera queue resume
-voxera queue unlock
+voxera queue unlock           # safe: stale/dead locks only
+voxera queue unlock --force   # override live lock (dangerous)
 ```
 
 Queue status troubleshooting:

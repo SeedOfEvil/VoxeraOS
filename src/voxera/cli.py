@@ -516,15 +516,33 @@ def queue_retry(
 
 @queue_app.command("unlock")
 def queue_unlock(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Force-remove lock even if held by a live daemon (dangerous).",
+    ),
     queue_dir: str = typer.Option(
         queue_root_display(),
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
 ):
-    """Force-remove the daemon lock file for recovery workflows."""
+    """Remove stale/dead daemon lock, or force-remove with --force."""
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
-    if daemon.force_unlock():
+    if force:
+        if daemon.force_unlock():
+            console.print("Force-removed daemon lock.")
+            return
+        console.print("No daemon lock was present.")
+        return
+
+    try:
+        removed = daemon.try_unlock_stale()
+    except QueueLockError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if removed:
         console.print("Removed stale daemon lock.")
         return
     console.print("No daemon lock was present.")

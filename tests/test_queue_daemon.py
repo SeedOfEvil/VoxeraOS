@@ -11,7 +11,7 @@ import pytest
 
 import voxera_builtin_skills.files_write_text as files_write_text_skill
 from voxera.core.missions import MissionStep, MissionTemplate
-from voxera.core.queue_daemon import MissionQueueDaemon
+from voxera.core.queue_daemon import MissionQueueDaemon, QueueLockError
 from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig, RunResult
 
 
@@ -1643,4 +1643,29 @@ def test_run_reclaims_stale_lock(tmp_path, monkeypatch):
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
     daemon.run(once=True)
     assert (queue_dir / "done" / "job1.json").exists()
+    assert not lock.exists()
+
+
+def test_try_unlock_stale_refuses_live_lock(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    lock = queue_dir / ".daemon.lock"
+    lock.write_text(json.dumps({"pid": os.getpid(), "ts": time.time()}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    with pytest.raises(QueueLockError, match="Lock held by live pid="):
+        daemon.try_unlock_stale()
+    assert lock.exists()
+
+
+def test_try_unlock_stale_removes_dead_or_stale_lock(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    lock = queue_dir / ".daemon.lock"
+    lock.write_text(json.dumps({"pid": 999999, "timestamp": 1}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    assert daemon.try_unlock_stale() is True
     assert not lock.exists()

@@ -337,6 +337,33 @@ class MissionQueueDaemon:
         self._lock_held = False
         log({"event": "queue_daemon_lock_released", "lock": str(self.lock_file)})
 
+    def try_unlock_stale(self) -> bool:
+        if not self.lock_file.exists():
+            return False
+
+        payload = self._read_lock_payload()
+        pid = int(payload.get("pid") or 0)
+        ts = float(payload.get("ts") or payload.get("timestamp") or 0.0)
+        alive = self._pid_is_alive(pid)
+        stale = (time.time() - ts) > self.lock_stale_after_s
+
+        if stale or not alive:
+            self.lock_file.unlink(missing_ok=True)
+            log(
+                {
+                    "event": "queue_daemon_lock_unlocked_stale",
+                    "lock": str(self.lock_file),
+                    "stale": stale,
+                    "existing_pid": pid,
+                    "alive": alive,
+                }
+            )
+            return True
+
+        raise QueueLockError(
+            f"Lock held by live pid={pid}. Stop daemon first, or use --force to override."
+        )
+
     def force_unlock(self) -> bool:
         existed = self.lock_file.exists()
         self.lock_file.unlink(missing_ok=True)
