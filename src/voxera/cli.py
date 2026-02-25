@@ -638,15 +638,23 @@ def queue_unlock(
         return
 
     try:
-        removed = daemon.try_unlock_stale()
+        result = daemon.try_unlock_stale()
     except QueueLockError as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
-    if removed:
-        console.print("Removed stale daemon lock.")
+    if not result.get("removed"):
+        console.print("No daemon lock was present.")
         return
-    console.print("No daemon lock was present.")
+
+    pid = int(result.get("pid") or 0)
+    alive = bool(result.get("alive"))
+    stale = bool(result.get("stale"))
+    if stale:
+        age_s = int(float(result.get("age_s") or 0.0))
+        console.print(f"Removed stale daemon lock (age_s={age_s}, pid={pid}, alive={alive}).")
+    else:
+        console.print("Removed orphaned daemon lock (pid not alive).")
 
 
 @queue_app.command("pause")

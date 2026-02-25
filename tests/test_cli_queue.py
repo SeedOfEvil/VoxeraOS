@@ -242,7 +242,7 @@ def test_queue_unlock_removes_stale_lock(tmp_path):
     result = runner.invoke(cli.app, ["queue", "unlock", "--queue-dir", str(queue_dir)])
 
     assert result.exit_code == 0
-    assert "Removed stale daemon lock." in result.output
+    assert "Removed stale daemon lock (age_s=" in result.output
     assert not (queue_dir / ".daemon.lock").exists()
 
 
@@ -258,7 +258,7 @@ def test_queue_unlock_removes_dead_pid_lock(tmp_path):
     result = runner.invoke(cli.app, ["queue", "unlock", "--queue-dir", str(queue_dir)])
 
     assert result.exit_code == 0
-    assert "Removed stale daemon lock." in result.output
+    assert "Removed orphaned daemon lock (pid not alive)." in result.output
     assert not (queue_dir / ".daemon.lock").exists()
 
 
