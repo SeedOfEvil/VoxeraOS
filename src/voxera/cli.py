@@ -435,6 +435,19 @@ def queue_status(
     console.print(prune_table)
     console.print(f"Artifacts root: {status.get('artifacts_root', '')}")
 
+    lock_counters = status.get("daemon_lock_counters", {})
+    lock_table = Table(title="Daemon Lock Counters")
+    lock_table.add_column("Event")
+    lock_table.add_column("Count", justify="right")
+    lock_table.add_row("acquire ok", str(lock_counters.get("lock_acquire_ok", 0)))
+    lock_table.add_row("acquire fail", str(lock_counters.get("lock_acquire_fail", 0)))
+    lock_table.add_row("reclaimed", str(lock_counters.get("lock_reclaimed", 0)))
+    lock_table.add_row("released", str(lock_counters.get("lock_released", 0)))
+    lock_table.add_row("unlock refused", str(lock_counters.get("unlock_refused", 0)))
+    lock_table.add_row("unlock ok", str(lock_counters.get("unlock_ok", 0)))
+    lock_table.add_row("force unlock", str(lock_counters.get("force_unlock_count", 0)))
+    console.print(lock_table)
+
     if not status["exists"]:
         console.print(f"[yellow]Hint:[/yellow] queue root not found yet: {status['queue_root']}")
 
@@ -474,6 +487,63 @@ def queue_status(
     else:
         failed_table.add_row("-", "No failed jobs")
     console.print(failed_table)
+
+
+@queue_app.command("health")
+def queue_health(
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Show daemon/panel health counters and lock status."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    status = daemon.status_snapshot(approvals_limit=3, failed_limit=3)
+
+    console.print(f"Health snapshot: {status.get('health_path', '')}")
+    console.print(f"Queue intake: {status.get('intake_glob', '')}")
+    console.print(f"Daemon paused: {status.get('paused', False)}")
+    console.print(f"Daemon started at ms: {status.get('daemon_started_at_ms')}")
+    console.print(f"Daemon pid: {status.get('daemon_pid')}")
+    console.print(f"Last error: {status.get('last_error', '')}")
+    console.print(f"Last error ts ms: {status.get('last_error_ts_ms')}")
+
+    lock = status.get("lock_status", {}) if isinstance(status.get("lock_status"), dict) else {}
+    lock_table = Table(title="Lock Status")
+    lock_table.add_column("Field")
+    lock_table.add_column("Value")
+    lock_table.add_row("lock path", str(lock.get("lock_path", "")))
+    lock_table.add_row("lock exists", str(lock.get("exists", False)))
+    lock_table.add_row("lock pid", str(lock.get("pid", 0)))
+    lock_table.add_row("lock pid alive", str(lock.get("alive", False)))
+    console.print(lock_table)
+
+    counters = (
+        status.get("daemon_lock_counters", {})
+        if isinstance(status.get("daemon_lock_counters"), dict)
+        else {}
+    )
+    health_table = Table(title="Health Counters")
+    health_table.add_column("Counter")
+    health_table.add_column("Value", justify="right")
+    for key in [
+        "lock_acquire_ok",
+        "lock_acquire_fail",
+        "lock_reclaimed",
+        "lock_released",
+        "unlock_refused",
+        "unlock_ok",
+        "force_unlock_count",
+        "panel_mutation_allowed",
+        "panel_401_count",
+        "panel_403_count",
+        "panel_csrf_missing",
+        "panel_csrf_invalid",
+        "panel_auth_invalid",
+    ]:
+        health_table.add_row(key, str(counters.get(key, 0)))
+    console.print(health_table)
 
 
 @queue_app.command("cancel")

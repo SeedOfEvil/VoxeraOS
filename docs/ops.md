@@ -61,6 +61,7 @@ voxera queue pause
 voxera queue resume
 voxera queue unlock           # safe: stale/dead locks only
 voxera queue unlock --force   # override live lock (dangerous)
+voxera queue health           # summary from notes/queue/health.json
 ```
 
 Operational effects:
@@ -74,6 +75,50 @@ Panel operator notes:
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `operator`) before starting the panel.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume, cancel/retry actions, and links Done/Failed jobs to artifact-backed detail pages.
+- Queue daemon + panel update a shared lightweight snapshot at `notes/queue/health.json`.
+  - Write pattern is atomic (`health.json.tmp` then rename).
+  - Concurrent writes use read-modify-write and may rarely lose an increment under heavy contention; counters are still suitable for operational trend visibility.
+
+### Incident runbook: daemon lock + panel auth/CSRF
+
+1. **Daemon will not start (`QueueLockError`)**
+   ```bash
+   voxera queue status
+   voxera audit | rg "queue_daemon_lock_"
+   ```
+   - Check `lock_acquire_fail` and `lock_reclaimed` counters for contention/recovery patterns.
+   - Confirm whether another daemon process is active before intervention.
+
+2. **Lock appears stuck**
+   ```bash
+   voxera queue unlock
+   ```
+   - Safe mode only removes stale/dead PID locks.
+   - If lock is held by a live PID, stop that daemon first.
+   - Emergency only:
+     ```bash
+     voxera queue unlock --force
+     ```
+
+3. **Panel mutations failing with 401/403**
+   - Ensure `VOXERA_PANEL_OPERATOR_PASSWORD` is set in the running panel environment.
+   - For 401, verify Basic auth user/password.
+   - For 403, verify CSRF cookie + token are both present and matching.
+   ```bash
+   voxera audit | rg "panel_(auth_missing|auth_invalid|csrf_missing|csrf_invalid|mutation_allowed|operator_config_error)"
+   voxera queue health
+   ```
+   - Check `panel_401_count`, `panel_403_count`, `panel_auth_invalid`, `panel_csrf_missing`, and `panel_csrf_invalid` trends.
+   - Quick curl sanity test (missing CSRF should return 403):
+   ```bash
+   curl -i -u operator:"$VOXERA_PANEL_OPERATOR_PASSWORD" -X POST http://127.0.0.1:8844/queue/create -d "kind=goal&goal=test"
+   ```
+
+**Where to find artifacts/logs quickly**
+- Lock file: `~/VoxeraOS/notes/queue/.daemon.lock`
+- Health snapshot: `~/VoxeraOS/notes/queue/health.json`
+- Queue artifacts root: `~/VoxeraOS/notes/queue/artifacts/`
+- Audit log stream (systemd): `journalctl --user -u voxera-daemon.service -u voxera-panel.service -f`
 
 ## Artifact bundle contract
 

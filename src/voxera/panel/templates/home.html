@@ -85,6 +85,39 @@
 
       <section class="grid grid-2" style="margin-bottom:16px;">
         <article class="card">
+          <h2>Daemon Lock Event Counters</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Event</th><th>Count</th></tr></thead>
+            <tbody>
+              <tr><td>acquired</td><td>{{queue.daemon_lock_counters.lock_acquire_ok or 0}}</td></tr>
+              <tr><td>released</td><td>{{queue.daemon_lock_counters.lock_released or 0}}</td></tr>
+              <tr><td>stale reclaimed</td><td>{{queue.daemon_lock_counters.lock_reclaimed or 0}}</td></tr>
+              <tr><td>acquire failed (active lock)</td><td>{{queue.daemon_lock_counters.lock_acquire_fail or 0}}</td></tr>
+              <tr><td>unlocked stale</td><td>{{queue.daemon_lock_counters.unlock_ok or 0}}</td></tr>
+              <tr><td>unlock refused (live pid)</td><td>{{queue.daemon_lock_counters.unlock_refused or 0}}</td></tr>
+              <tr><td>force unlocked</td><td>{{queue.daemon_lock_counters.force_unlock_count or 0}}</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="card">
+          <h2>Panel Mutation Security Counters</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Event</th><th>Count</th></tr></thead>
+            <tbody>
+              <tr><td>mutation allowed</td><td>{{panel_security_counters.panel_mutation_allowed or 0}}</td></tr>
+              <tr><td>http 401 count</td><td>{{panel_security_counters.panel_401_count or 0}}</td></tr>
+              <tr><td>http 403 count</td><td>{{panel_security_counters.panel_403_count or 0}}</td></tr>
+              <tr><td>auth invalid</td><td>{{panel_security_counters.panel_auth_invalid or 0}}</td></tr>
+              <tr><td>csrf missing</td><td>{{panel_security_counters.panel_csrf_missing or 0}}</td></tr>
+              <tr><td>csrf invalid</td><td>{{panel_security_counters.panel_csrf_invalid or 0}}</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+      </section>
+
+      <section class="grid grid-2" style="margin-bottom:16px;">
+        <article class="card">
           <h2>Launch Mission Fast</h2>
           <form class="form-stack" method="post" action="/queue/create">
             <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
