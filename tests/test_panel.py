@@ -9,7 +9,7 @@ from voxera.audit import log
 from voxera.panel import app as panel_module
 
 
-def _operator_headers(user: str = "admin", password: str = "secret") -> dict[str, str]:
+def _operator_headers(user: str = "operator", password: str = "secret") -> dict[str, str]:
     token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
     return {"Authorization": f"Basic {token}"}
 

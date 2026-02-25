@@ -102,7 +102,7 @@ def _panel_security_snapshot() -> dict[str, Any]:
 
 
 def _operator_credentials(request: Request) -> tuple[str, str]:
-    user = os.getenv("VOXERA_PANEL_OPERATOR_USER") or "admin"
+    user = os.getenv("VOXERA_PANEL_OPERATOR_USER") or "operator"
     password = os.getenv("VOXERA_PANEL_OPERATOR_PASSWORD")
     if not password:
         _panel_security_counter_incr("panel_401_count", last_error="operator password missing")
