@@ -11,14 +11,16 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..audit import log, tail
 from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
 from ..core.queue_daemon import MissionQueueDaemon
+from ..core.queue_inspect import JOB_BUCKETS, list_jobs, lookup_job, queue_snapshot
 from ..health import increment_health_counter, read_health_snapshot
+from ..incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from ..version import get_version
 
 app = FastAPI(title="Voxera Panel", version=get_version())
@@ -259,6 +261,104 @@ def _artifact_text(path: Path, *, max_chars: int = 8000) -> str:
     return text[:max_chars] + ("\n...[truncated]..." if len(text) > max_chars else "")
 
 
+def _safe_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _load_actions(path: Path, *, limit: int = 200) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    actions: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except Exception:
+            event = {"raw": line}
+        if isinstance(event, dict):
+            actions.append(event)
+    return list(reversed(actions[-limit:]))
+
+
+def _read_generated_files(artifacts_dir: Path) -> list[str]:
+    generated = artifacts_dir / "outputs" / "generated_files.json"
+    if not generated.exists():
+        return []
+    try:
+        payload = json.loads(generated.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return []
+    return [str(item) for item in payload] if isinstance(payload, list) else []
+
+
+def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
+    lookup = lookup_job(queue_root, job_id)
+    if lookup is None:
+        stem = Path(job_id).stem
+        artifacts_dir = queue_root / "artifacts" / stem
+        if not artifacts_dir.exists():
+            raise HTTPException(status_code=404, detail="job not found")
+        primary: dict[str, Any] = {}
+        approval: dict[str, Any] = {}
+        failed_sidecar: dict[str, Any] = {}
+        bucket = "unknown"
+        job_name = f"{stem}.json"
+    else:
+        primary = _safe_json(lookup.primary_path)
+        approval = _safe_json(lookup.approval_path) if lookup.approval_path else {}
+        failed_sidecar = (
+            _safe_json(lookup.failed_sidecar_path) if lookup.failed_sidecar_path else {}
+        )
+        artifacts_dir = lookup.artifacts_dir
+        bucket = lookup.bucket
+        job_name = lookup.job_id
+
+    artifact_files = (
+        [
+            child.relative_to(artifacts_dir).as_posix()
+            for child in sorted(artifacts_dir.rglob("*"))
+            if child.is_file()
+        ]
+        if artifacts_dir.exists()
+        else []
+    )
+
+    snapshot = queue_snapshot(queue_root)
+    relevant_events = [
+        item
+        for item in reversed(tail(200))
+        if job_name in str(item.get("job", ""))
+        or item.get("event") in {"queue_job_failed", "queue_job_done"}
+    ]
+    return {
+        "job_id": job_name,
+        "bucket": bucket,
+        "job": primary,
+        "approval": approval,
+        "failed_sidecar": failed_sidecar,
+        "lock": snapshot.get("lock_status", {}),
+        "paused": snapshot.get("paused", False),
+        "plan": _safe_json(artifacts_dir / "plan.json"),
+        "actions": _load_actions(artifacts_dir / "actions.jsonl"),
+        "stdout": _artifact_text(artifacts_dir / "stdout.txt", max_chars=64 * 1024),
+        "stderr": _artifact_text(artifacts_dir / "stderr.txt", max_chars=64 * 1024),
+        "generated_files": _read_generated_files(artifacts_dir),
+        "artifact_files": artifact_files,
+        "artifacts_dir": str(artifacts_dir),
+        "audit_timeline": relevant_events[:40],
+        "has_approval": bool(approval),
+        "can_cancel": bucket in {"inbox", "pending", "approvals"},
+        "can_retry": bucket == "failed",
+    }
+
+
 def _job_artifact_payload(queue_root: Path, job_name: str) -> dict[str, Any]:
     stem = Path(job_name).stem
     art = queue_root / "artifacts" / stem
@@ -374,7 +474,7 @@ def _build_mission_payload(
 def home(request: Request, created: str = "", error: str = "", mission_created: str = ""):
     queue_root = _queue_root()
     daemon = MissionQueueDaemon(queue_root=queue_root)
-    queue = daemon.status_snapshot(approvals_limit=12, failed_limit=8)
+    queue = queue_snapshot(queue_root)
     queue["pending_approvals"] = daemon.approvals_list()[:12]
     queue["done_jobs"] = [
         p.name
@@ -521,12 +621,64 @@ async def deny_queue_job(ref: str, request: Request):
     return RedirectResponse(url="/", status_code=303)
 
 
-@app.get("/queue/jobs/{job}/detail", response_class=HTMLResponse)
-def queue_job_detail(job: str):
+@app.get("/jobs", response_class=HTMLResponse)
+def jobs_page(request: Request, bucket: str = "pending", q: str = "", n: int = 50):
     queue_root = _queue_root()
-    payload = _job_artifact_payload(queue_root, job)
+    rows = list_jobs(queue_root, bucket=bucket, q=q, limit=n)
+    tmpl = templates.get_template("jobs.html")
+    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    html = tmpl.render(
+        rows=rows,
+        bucket=bucket if bucket in JOB_BUCKETS else "pending",
+        q=q,
+        n=max(1, min(n, 200)),
+        buckets=list(JOB_BUCKETS),
+        csrf_token=csrf_token,
+    )
+    response = HTMLResponse(content=html)
+    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
+    return response
+
+
+@app.get("/jobs/{job_id}", response_class=HTMLResponse)
+def jobs_detail(job_id: str, request: Request):
+    payload = _job_detail_payload(_queue_root(), job_id)
     tmpl = templates.get_template("job_detail.html")
-    return tmpl.render(payload=payload)
+    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    html = tmpl.render(payload=payload, csrf_token=csrf_token)
+    response = HTMLResponse(content=html)
+    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
+    return response
+
+
+@app.get("/queue/jobs/{job}/detail", response_class=HTMLResponse)
+def queue_job_detail(job: str, request: Request):
+    return jobs_detail(job, request)
+
+
+@app.get("/jobs/{job_id}/bundle")
+def job_bundle(job_id: str, request: Request):
+    _require_operator_auth_from_request(request)
+    try:
+        data = build_job_bundle(_queue_root(), job_id)
+    except BundleError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{Path(job_id).stem}-incident.zip"'},
+    )
+
+
+@app.get("/bundle/system")
+def system_bundle(request: Request):
+    _require_operator_auth_from_request(request)
+    data = build_system_bundle(_queue_root())
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="voxera-system-incident.zip"'},
+    )
 
 
 @app.post("/queue/jobs/{ref}/cancel")

@@ -16,6 +16,7 @@ from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .doctor import doctor_sync
+from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from .paths import queue_root_display
 from .setup_wizard import run_setup
 from .skills.registry import SkillRegistry
@@ -25,6 +26,7 @@ from .version import get_version
 console = Console()
 
 RUN_ARG_OPTION = typer.Option(None, "--arg", help="Key=Value args (repeat --arg for multiple).")
+OUT_PATH_OPTION = typer.Option(..., "--out", help="Output zip file path.")
 
 
 def _git_sha() -> str | None:
@@ -93,10 +95,11 @@ def doctor(
     self_test: bool = typer.Option(
         False, "--self-test", help="Run queue/audit/artifact golden-path self-test."
     ),
+    quick: bool = typer.Option(False, "--quick", help="Run fast offline checks only."),
     timeout_s: float = typer.Option(8.0, "--timeout-s", min=1.0, help="Timeout for --self-test."),
 ):
     """Run provider capability tests and write a report."""
-    doctor_sync(self_test=self_test, timeout_s=timeout_s)
+    doctor_sync(self_test=self_test, timeout_s=timeout_s, quick=quick)
 
 
 @app.command()
@@ -359,6 +362,34 @@ def queue_approvals_list(
             f"fs={scope.get('fs_scope', '-')}, net={scope.get('needs_network', False)}",
         )
     console.print(table)
+
+
+@queue_app.command("bundle")
+def queue_bundle(
+    job_id: str | None = typer.Argument(None),
+    system: bool = typer.Option(False, "--system", help="Export overall system bundle."),
+    out: Path = OUT_PATH_OPTION,
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Export a deterministic incident bundle for a job or the whole system."""
+    root = Path(queue_dir)
+    if system:
+        data = build_system_bundle(root)
+    else:
+        if not job_id:
+            raise typer.BadParameter("Provide <job_id> or use --system")
+        try:
+            data = build_job_bundle(root, job_id)
+        except BundleError as exc:
+            console.print(f"[red]ERROR:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(data)
+    console.print(f"Bundle written: {out}")
 
 
 @queue_app.command("init")

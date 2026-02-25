@@ -496,6 +496,42 @@ When preparing a release or changing install/service flows, verify:
 - Ensure branch protection requires the `merge-readiness / merge-readiness` status check so quality + doc/runtime version drift blocks merges.
 
 
+
+
+## Operator Console
+
+The panel now includes a dedicated Jobs console for incident response:
+
+```bash
+# start panel
+voxera panel
+
+# open in browser
+http://127.0.0.1:8844/jobs?bucket=pending&n=50
+```
+
+Key endpoints:
+- `GET /jobs` with query params `bucket=inbox|pending|approvals|done|failed`, `q=<substring>`, `n=<max 200>`.
+- `GET /jobs/{job_id}` for metadata, approval details, artifacts, and audit timeline.
+- `GET /jobs/{job_id}/bundle` to export a per-job incident bundle (`.zip`).
+- `GET /bundle/system` to export a system snapshot bundle (`.zip`).
+
+Auth/CSRF notes:
+- Bundle download endpoints require panel Basic auth (`VOXERA_PANEL_OPERATOR_PASSWORD`, optional `VOXERA_PANEL_OPERATOR_USER`).
+- Mutation routes still require both Basic auth + CSRF token.
+
+CLI equivalents:
+```bash
+voxera queue bundle job-123.json --out /tmp/job-123-incident.zip
+voxera queue bundle --system --out /tmp/voxera-system-incident.zip
+```
+
+Quick offline doctor mode:
+```bash
+voxera doctor --quick
+```
+Runs fast local checks only (queue dirs, lock state, health staleness, panel auth env presence, podman binary) with no model calls.
+
 ## Queue job artifacts
 
 Each queue job now writes a first-class artifact bundle under `~/VoxeraOS/notes/queue/artifacts/<job_id>/` with:

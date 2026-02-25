@@ -276,3 +276,28 @@ def test_queue_unlock_force_removes_live_lock(tmp_path):
     assert result.exit_code == 0
     assert "Force-removed daemon lock." in result.output
     assert not (queue_dir / ".daemon.lock").exists()
+
+
+def test_queue_bundle_job_and_system(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-z.json").write_text('{"goal":"bundle"}', encoding="utf-8")
+    (queue_dir / "artifacts" / "job-z").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "artifacts" / "job-z" / "stdout.txt").write_text("hello", encoding="utf-8")
+
+    out_job = tmp_path / "job.zip"
+    job_res = runner.invoke(
+        cli.app,
+        ["queue", "bundle", "job-z.json", "--out", str(out_job), "--queue-dir", str(queue_dir)],
+    )
+    assert job_res.exit_code == 0
+    assert out_job.exists()
+
+    out_sys = tmp_path / "system.zip"
+    sys_res = runner.invoke(
+        cli.app,
+        ["queue", "bundle", "--system", "--out", str(out_sys), "--queue-dir", str(queue_dir)],
+    )
+    assert sys_res.exit_code == 0
+    assert out_sys.exists()

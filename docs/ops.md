@@ -457,6 +457,61 @@ If fallback frequency spikes, compare by `provider` + `model` and promote/demote
 Operational workflows here do **not** require deleting data under `~/VoxeraOS/notes`.
 
 
+
+
+## Incident bundle export runbook
+
+### Per-job bundle
+
+```bash
+# CLI
+voxera queue bundle <job_id> --out /tmp/<job_id>-incident.zip
+
+# Panel (requires Basic auth)
+GET /jobs/{job_id}/bundle
+```
+
+Bundle includes (size-capped and deterministic):
+- `job.json`
+- optional `approval.json`
+- optional `failed.error.json`
+- capped contents of `artifacts/<job_id>/`
+- `health.json` snapshot
+- `manifest.json` with truncation/byte metadata
+
+### System snapshot bundle
+
+```bash
+# CLI
+voxera queue bundle --system --out /tmp/voxera-system-incident.zip
+
+# Panel (requires Basic auth)
+GET /bundle/system
+```
+
+System bundle contains: `health.json`, `queue_snapshot.json`, `journal_pointer.txt`, `config_pointers.txt`, and `manifest.json` (paths only for config pointers, no secret values).
+
+### Truncation + size troubleshooting
+
+- Per-file cap defaults to 256KB; total bundle cap defaults to 4MB.
+- When exceeded, files are truncated and noted in `manifest.json` (`truncated=true`, original/written bytes).
+- If you need full raw logs, collect artifacts directly from queue paths under controlled access.
+
+## Doctor quick mode
+
+```bash
+voxera doctor --quick
+```
+
+`--quick` is offline-only and does **not** call LLM providers. It checks:
+- queue directories exist + writable (`inbox`, `pending`, `approvals`, `done`, `failed`, `artifacts`, `_archive`)
+- daemon lock status (active/stale/missing)
+- health snapshot freshness
+- panel auth env presence (without printing passwords)
+- podman binary availability
+
+Use full `voxera doctor` when you want provider capability tests; use `--quick` during incidents for immediate local sanity checks.
+
 ## Doctor golden-path self-test
 
 Use `voxera doctor --self-test` to run a tiny safe queue job (`system_check`) and validate:
