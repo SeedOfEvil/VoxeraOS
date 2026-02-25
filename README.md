@@ -44,6 +44,7 @@ voxera queue pause
 voxera queue resume
 voxera queue unlock           # safe: stale/dead locks only
 voxera queue unlock --force   # override live lock (dangerous)
+voxera queue health           # operator health snapshot (lock/auth/csrf counters)
 ```
 
 ## Quick start (dev VM)
@@ -229,6 +230,9 @@ Failed-job sidecar contract and retention:
 - Invalid sidecars are ignored in snapshots and logged as `queue_failed_sidecar_invalid`.
 - Queue status and panel expose sidecar health counters: `failed metadata valid`, `failed metadata invalid`, `failed metadata missing`.
 - `voxera queue status` now also shows active failed-retention policy (`failed retention max age (s)`, `failed retention max count`) and the latest prune-event summary (`removed jobs/sidecars`).
+- Lock/auth observability counters are persisted in `notes/queue/health.json` (shared by daemon + panel).
+- Use `voxera queue health` for a quick operator summary (paused flag, intake path, lock status, counters, and last safe error summary).
+- See `docs/ops.md` Incident Runbook for copy/paste recovery steps.
 - Operator response when invalid rises: inspect `failed/*.error.json`, correlate with `queue_failed_sidecar_invalid` audit events, and quarantine/fix malformed sidecars before retrying jobs.
 - Schema evolution policy: writer is pinned to version `1`, reader uses an explicit supported-version allowlist (currently `[1]`), and unknown future versions are rejected deterministically.
 - Retention pruning keeps newest logical failed units (primary + sidecar) and can be configured with:

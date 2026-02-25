@@ -45,6 +45,8 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert "Approval Command Center" in body
     assert "Active Work" in body
     assert "Mission Library" in body
+    assert "Daemon Lock Event Counters" in body
+    assert "Panel Mutation Security Counters" in body
     assert "Mission Log (last 20 lines)" in body
     assert "line-29" in body
     assert "line-8" not in body
@@ -334,3 +336,52 @@ def test_panel_post_requires_auth_and_csrf(tmp_path, monkeypatch):
         "/queue/create", data={"kind": "goal", "goal": "x"}, headers=_operator_headers()
     )
     assert auth_only.status_code == 403
+
+
+def test_panel_auth_csrf_failures_emit_counters_and_logs(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(panel_module, "log", lambda e: events.append(e))
+
+    client = TestClient(panel_module.app)
+
+    unauth = client.post("/queue/create", data={"kind": "goal", "goal": "x"})
+    assert unauth.status_code == 401
+
+    bad_creds = client.post(
+        "/queue/create",
+        data={"kind": "goal", "goal": "x"},
+        headers=_operator_headers(password="wrong"),
+    )
+    assert bad_creds.status_code == 401
+
+    auth_only = client.post(
+        "/queue/create", data={"kind": "goal", "goal": "x"}, headers=_operator_headers()
+    )
+    assert auth_only.status_code == 403
+
+    ok = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/create",
+        data={"kind": "goal", "goal": "works"},
+    )
+    assert ok.status_code == 303
+
+    health_path = fake_home / "VoxeraOS" / "notes" / "queue" / "health.json"
+    payload = json.loads(health_path.read_text(encoding="utf-8"))
+    counters = payload.get("counters", {})
+    assert counters.get("panel_401_count", 0) >= 2
+    assert counters.get("panel_403_count", 0) >= 1
+    assert counters.get("panel_auth_invalid", 0) >= 1
+    assert counters.get("panel_csrf_missing", 0) >= 1
+    assert counters.get("panel_mutation_allowed", 0) >= 1
+
+    event_names = {str(e.get("event", "")) for e in events}
+    assert "panel_auth_missing" in event_names
+    assert "panel_auth_invalid" in event_names
+    assert "panel_csrf_missing" in event_names
+    assert "panel_mutation_allowed" in event_names

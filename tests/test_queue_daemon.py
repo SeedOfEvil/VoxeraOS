@@ -1608,6 +1608,8 @@ def test_cancel_pending_approval_cleans_markers(tmp_path, monkeypatch):
 def test_run_acquires_and_releases_lock_in_once_mode(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     _stub_planner(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
     queue_dir = tmp_path / "queue"
     (queue_dir / "inbox").mkdir(parents=True)
     (queue_dir / "inbox" / "job1.json").write_text('{"goal":"check machine"}', encoding="utf-8")
@@ -1617,10 +1619,19 @@ def test_run_acquires_and_releases_lock_in_once_mode(tmp_path, monkeypatch):
 
     assert (queue_dir / "done" / "job1.json").exists()
     assert not (queue_dir / ".daemon.lock").exists()
+    counters = daemon.lock_counters_snapshot()
+    assert counters.get("lock_acquire_ok", 0) >= 1
+    assert counters.get("lock_released", 0) >= 1
+    assert (queue_dir / "health.json").exists()
+    emitted = {e.get("event") for e in events}
+    assert "queue_daemon_lock_acquired" in emitted
+    assert "queue_daemon_lock_released" in emitted
 
 
 def test_run_refuses_when_active_lock_exists(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True)
     lock = queue_dir / ".daemon.lock"
@@ -1629,11 +1640,18 @@ def test_run_refuses_when_active_lock_exists(tmp_path, monkeypatch):
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
     with pytest.raises(Exception, match="queue lock already held"):
         daemon.run(once=True)
+    counters = daemon.lock_counters_snapshot()
+    assert counters.get("lock_acquire_fail", 0) >= 1
+    contended = [e for e in events if e.get("event") == "queue_daemon_lock_contended"]
+    assert contended
+    assert contended[-1].get("details", {}).get("existing_pid") == os.getpid()
 
 
 def test_run_reclaims_stale_lock(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     _stub_planner(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
     queue_dir = tmp_path / "queue"
     (queue_dir / "inbox").mkdir(parents=True)
     (queue_dir / "inbox" / "job1.json").write_text('{"goal":"check machine"}', encoding="utf-8")
@@ -1644,10 +1662,17 @@ def test_run_reclaims_stale_lock(tmp_path, monkeypatch):
     daemon.run(once=True)
     assert (queue_dir / "done" / "job1.json").exists()
     assert not lock.exists()
+    counters = daemon.lock_counters_snapshot()
+    assert counters.get("lock_reclaimed", 0) >= 1
+    reclaimed = [e for e in events if e.get("event") == "queue_daemon_lock_reclaimed"]
+    assert reclaimed
+    assert reclaimed[-1].get("details", {}).get("existing_pid") == 999999
 
 
 def test_try_unlock_stale_refuses_live_lock(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True)
     lock = queue_dir / ".daemon.lock"
@@ -1657,10 +1682,16 @@ def test_try_unlock_stale_refuses_live_lock(tmp_path, monkeypatch):
     with pytest.raises(QueueLockError, match="Lock held by live pid="):
         daemon.try_unlock_stale()
     assert lock.exists()
+    counters = daemon.lock_counters_snapshot()
+    assert counters.get("unlock_refused", 0) >= 1
+    refused = [e for e in events if e.get("event") == "queue_daemon_unlock_refused"]
+    assert refused
 
 
 def test_try_unlock_stale_removes_dead_or_stale_lock(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True)
     lock = queue_dir / ".daemon.lock"
@@ -1669,3 +1700,25 @@ def test_try_unlock_stale_removes_dead_or_stale_lock(tmp_path, monkeypatch):
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
     assert daemon.try_unlock_stale() is True
     assert not lock.exists()
+    counters = daemon.lock_counters_snapshot()
+    assert counters.get("unlock_ok", 0) >= 1
+    unlocked = [e for e in events if e.get("event") == "queue_daemon_unlock_ok"]
+    assert unlocked
+
+
+def test_force_unlock_logs_dangerous_event(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    lock = queue_dir / ".daemon.lock"
+    lock.write_text(json.dumps({"pid": 1234, "ts": 1}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    assert daemon.force_unlock() is True
+    emitted = [e for e in events if e.get("event") == "queue_daemon_lock_force_unlocked"]
+    assert emitted
+    assert emitted[-1].get("details", {}).get("dangerous") is True
+    counters = daemon.lock_counters_snapshot()
+    assert counters.get("force_unlock_count", 0) >= 1

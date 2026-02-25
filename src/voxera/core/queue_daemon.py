@@ -12,6 +12,7 @@ from typing import Any
 
 from ..audit import log, tail
 from ..config import load_config
+from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
 from ..paths import queue_root as default_queue_root
 from ..skills.registry import SkillRegistry
 from ..skills.runner import SkillRunner
@@ -273,6 +274,35 @@ class MissionQueueDaemon:
             "queue_root": str(self.queue_root),
         }
 
+    def _log_lock_event(self, event: str, *, details: dict[str, Any] | None = None) -> None:
+        payload: dict[str, Any] = {
+            "event": event,
+            "ts_ms": int(time.time() * 1000),
+            "pid": os.getpid(),
+            "lock": str(self.lock_file.resolve()),
+            "queue_root": str(self.queue_root.resolve()),
+        }
+        if details:
+            payload["details"] = details
+        log(payload)
+
+    def _increment_health_counter(self, key: str, *, last_error: str | None = None) -> None:
+        increment_health_counter(self.queue_root, key, last_error=last_error)
+
+    def _update_daemon_health_state(self, **values: Any) -> None:
+        def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+            payload.update(values)
+            payload["updated_at_ms"] = int(time.time() * 1000)
+            return payload
+
+        update_health_snapshot(self.queue_root, _apply)
+
+    def lock_counters_snapshot(self) -> dict[str, int]:
+        payload = read_health_snapshot(self.queue_root)
+        counters_raw = payload.get("counters")
+        counters: dict[str, Any] = counters_raw if isinstance(counters_raw, dict) else {}
+        return {str(k): int(v or 0) for k, v in counters.items()}
+
     def _read_lock_payload(self) -> dict[str, Any]:
         if not self.lock_file.exists():
             return {}
@@ -301,13 +331,8 @@ class MissionQueueDaemon:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     json.dump(payload, f)
                 self._lock_held = True
-                log(
-                    {
-                        "event": "queue_daemon_lock_acquired",
-                        "lock": str(self.lock_file),
-                        "pid": payload["pid"],
-                    }
-                )
+                self._log_lock_event("queue_daemon_lock_acquired")
+                self._increment_health_counter("lock_acquire_ok")
                 return
             except FileExistsError as exc:
                 existing = self._read_lock_payload()
@@ -317,15 +342,19 @@ class MissionQueueDaemon:
                 alive = self._pid_is_alive(pid)
                 if stale or not alive:
                     self.lock_file.unlink(missing_ok=True)
-                    log(
-                        {
-                            "event": "queue_daemon_lock_reclaimed",
-                            "lock": str(self.lock_file),
-                            "stale": stale,
-                            "existing_pid": pid,
-                        }
+                    self._increment_health_counter("lock_reclaimed")
+                    self._log_lock_event(
+                        "queue_daemon_lock_reclaimed",
+                        details={"stale": stale, "alive": alive, "existing_pid": pid},
                     )
                     continue
+                self._increment_health_counter(
+                    "lock_acquire_fail", last_error=f"queue lock already held by pid={pid}"
+                )
+                self._log_lock_event(
+                    "queue_daemon_lock_contended",
+                    details={"stale": stale, "alive": alive, "existing_pid": pid},
+                )
                 raise QueueLockError(
                     f"queue lock already held by pid={pid}: {self.lock_file}"
                 ) from exc
@@ -335,7 +364,8 @@ class MissionQueueDaemon:
             return
         self.lock_file.unlink(missing_ok=True)
         self._lock_held = False
-        log({"event": "queue_daemon_lock_released", "lock": str(self.lock_file)})
+        self._increment_health_counter("lock_released")
+        self._log_lock_event("queue_daemon_lock_released")
 
     def try_unlock_stale(self) -> bool:
         if not self.lock_file.exists():
@@ -349,17 +379,25 @@ class MissionQueueDaemon:
 
         if stale or not alive:
             self.lock_file.unlink(missing_ok=True)
-            log(
-                {
-                    "event": "queue_daemon_lock_unlocked_stale",
-                    "lock": str(self.lock_file),
+            self._increment_health_counter("unlock_ok")
+            self._log_lock_event(
+                "queue_daemon_unlock_ok",
+                details={
+                    "reason": "stale" if stale else "dead_pid",
                     "stale": stale,
-                    "existing_pid": pid,
                     "alive": alive,
-                }
+                    "existing_pid": pid,
+                },
             )
             return True
 
+        self._increment_health_counter(
+            "unlock_refused", last_error=f"unlock refused: lock held by live pid={pid}"
+        )
+        self._log_lock_event(
+            "queue_daemon_unlock_refused",
+            details={"reason": "live_pid", "stale": stale, "alive": alive, "existing_pid": pid},
+        )
         raise QueueLockError(
             f"Lock held by live pid={pid}. Stop daemon first, or use --force to override."
         )
@@ -368,7 +406,11 @@ class MissionQueueDaemon:
         existed = self.lock_file.exists()
         self.lock_file.unlink(missing_ok=True)
         if existed:
-            log({"event": "queue_daemon_lock_force_unlocked", "lock": str(self.lock_file)})
+            self._increment_health_counter("force_unlock_count")
+            self._log_lock_event(
+                "queue_daemon_lock_force_unlocked",
+                details={"dangerous": True, "reason": "operator_force_unlock"},
+            )
         return existed
 
     def is_paused(self) -> bool:
@@ -884,8 +926,12 @@ class MissionQueueDaemon:
         return sum(1 for _ in directory.glob(pattern))
 
     def _is_primary_job_json(self, path: Path) -> bool:
-        return path.name.endswith(".json") and not path.name.endswith(
-            (".pending.json", ".approval.json", ".error.json", ".tmp.json", ".partial.json")
+        return (
+            path.name.endswith(".json")
+            and path.name != "health.json"
+            and not path.name.endswith(
+                (".pending.json", ".approval.json", ".error.json", ".tmp.json", ".partial.json")
+            )
         )
 
     def _pending_primary_jobs(self) -> list[Path]:
@@ -1084,6 +1130,10 @@ class MissionQueueDaemon:
             "max_age_s": self.failed_retention_max_age_s,
             "max_count": self.failed_retention_max_count,
         }
+        lock_payload = self._read_lock_payload()
+        lock_pid = int(lock_payload.get("pid") or 0)
+        lock_alive = self._pid_is_alive(lock_pid)
+        health = read_health_snapshot(self.queue_root)
         return {
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
@@ -1104,6 +1154,18 @@ class MissionQueueDaemon:
             "artifacts_root": str(self.artifacts),
             "intake_glob": str(self.inbox / "*.json"),
             "paused": self.is_paused(),
+            "daemon_lock_counters": self.lock_counters_snapshot(),
+            "health_path": str((self.queue_root / "health.json").resolve()),
+            "lock_status": {
+                "exists": self.lock_file.exists(),
+                "lock_path": str(self.lock_file.resolve()),
+                "pid": lock_pid,
+                "alive": lock_alive,
+            },
+            "daemon_started_at_ms": health.get("daemon_started_at_ms"),
+            "daemon_pid": health.get("daemon_pid"),
+            "last_error": health.get("last_error", ""),
+            "last_error_ts_ms": health.get("last_error_ts_ms"),
         }
 
     def _resolve_job_ref_in_dirs(self, ref: str, directories: list[Path]) -> Path | None:
@@ -1418,6 +1480,7 @@ class MissionQueueDaemon:
 
     def process_pending_once(self) -> int:
         self.ensure_dirs()
+        self._update_daemon_health_state(last_tick_ts_ms=int(time.time() * 1000))
         self._auto_relocate_legacy_jobs()
         self._auto_relocate_misplaced_pending_jobs()
         if self.is_paused():
@@ -1433,6 +1496,8 @@ class MissionQueueDaemon:
 
     def run(self, once: bool = False) -> None:
         self.ensure_dirs()
+        now_ms = int(time.time() * 1000)
+        self._update_daemon_health_state(daemon_started_at_ms=now_ms, daemon_pid=os.getpid())
         self._acquire_daemon_lock()
         if self.auto_approve_ask and not self.dev_mode:
             log(
