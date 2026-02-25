@@ -517,7 +517,7 @@ Key endpoints:
 - `GET /bundle/system` to export a system snapshot bundle (`.zip`).
 
 Auth/CSRF notes:
-- Bundle download endpoints require panel Basic auth (`VOXERA_PANEL_OPERATOR_PASSWORD`, optional `VOXERA_PANEL_OPERATOR_USER` (defaults to `operator` when unset)).
+- Bundle download endpoints require panel Basic auth (`VOXERA_PANEL_OPERATOR_PASSWORD`, optional `VOXERA_PANEL_OPERATOR_USER` (defaults to `admin` when unset)).
 - Mutation routes still require both Basic auth + CSRF token.
 
 CLI equivalents:
