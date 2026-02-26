@@ -231,6 +231,7 @@ Failed-job sidecar contract and retention:
 - Queue status and panel expose sidecar health counters: `failed metadata valid`, `failed metadata invalid`, `failed metadata missing`.
 - `voxera queue status` now also shows active failed-retention policy (`failed retention max age (s)`, `failed retention max count`) and the latest prune-event summary (`removed jobs/sidecars`).
 - Lock/auth observability counters are persisted in `notes/queue/health.json` (shared by daemon + panel).
+- Health snapshot now also records `last_ok_event` + `last_ok_ts_ms` so operators can confirm recent successful daemon activity; `last_error` remains for failures.
 - Use `voxera queue health` for a quick operator summary (paused flag, intake path, lock status, counters, and last safe error summary).
 - See `docs/ops.md` Incident Runbook for copy/paste recovery steps.
 - Operator response when invalid rises: inspect `failed/*.error.json`, correlate with `queue_failed_sidecar_invalid` audit events, and quarantine/fix malformed sidecars before retrying jobs.
@@ -522,8 +523,8 @@ Auth/CSRF notes:
 
 CLI equivalents:
 ```bash
-voxera queue bundle job-123.json --out /tmp/job-123-incident.zip
-voxera queue bundle --system --out /tmp/voxera-system-incident.zip
+voxera ops bundle job job-123.json
+voxera ops bundle system
 ```
 
 Quick offline doctor mode:
@@ -543,3 +544,15 @@ Each queue job now writes a first-class artifact bundle under `~/VoxeraOS/notes/
 - optional `outputs/generated_files.json`
 
 These artifacts are present for pending, failed, and done queue paths to simplify debugging and audits.
+
+
+### Incident runbook (quick copy/paste)
+
+- Daemon won't start and lock appears held:
+  - `voxera queue status`
+  - `voxera queue unlock` (safe stale/dead pid reclaim)
+  - `voxera queue unlock --force` only when you intentionally override a live holder.
+- Panel `401` means Basic auth failure/missing credentials; `403` means CSRF token missing/mismatch on mutation routes.
+- Ops bundles are written under `notes/queue/_archive/<YYYYMMDD-HHMMSS>/` via:
+  - `voxera ops bundle system`
+  - `voxera ops bundle job <job_ref>`

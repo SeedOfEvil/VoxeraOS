@@ -77,6 +77,10 @@
             <p class="muted mono">{{queue.intake_glob}}</p>
             <p class="kpi-label"><b>Daemon paused</b></p>
             <p>{{queue.paused}}</p>
+            <p class="kpi-label"><b>Last OK</b></p>
+            <p>{{queue.last_ok_event or ""}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% endif %}</p>
+            <p class="kpi-label"><b>Last Error</b></p>
+            <p>{{queue.last_error or ""}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% endif %}</p>
             <div style="display:flex; gap:6px; margin-top:8px;">
               <form method="post" action="/queue/pause">
             <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Pause</button></form>

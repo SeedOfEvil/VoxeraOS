@@ -12,7 +12,13 @@ from typing import Any
 
 from ..audit import log, tail
 from ..config import load_config
-from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
+from ..health import (
+    increment_health_counter,
+    read_health_snapshot,
+    record_health_error,
+    record_health_ok,
+    update_health_snapshot,
+)
 from ..paths import queue_root as default_queue_root
 from ..skills.registry import SkillRegistry
 from ..skills.runner import SkillRunner
@@ -333,6 +339,7 @@ class MissionQueueDaemon:
                 self._lock_held = True
                 self._log_lock_event("queue_daemon_lock_acquired")
                 self._increment_health_counter("lock_acquire_ok")
+                record_health_ok(self.queue_root, "lock_acquire")
                 return
             except FileExistsError as exc:
                 existing = self._read_lock_payload()
@@ -348,9 +355,8 @@ class MissionQueueDaemon:
                         details={"stale": stale, "alive": alive, "existing_pid": pid},
                     )
                     continue
-                self._increment_health_counter(
-                    "lock_acquire_fail", last_error=f"queue lock already held by pid={pid}"
-                )
+                self._increment_health_counter("lock_acquire_fail")
+                record_health_error(self.queue_root, f"queue lock already held by pid={pid}")
                 self._log_lock_event(
                     "queue_daemon_lock_contended",
                     details={"stale": stale, "alive": alive, "existing_pid": pid},
@@ -365,6 +371,7 @@ class MissionQueueDaemon:
         self.lock_file.unlink(missing_ok=True)
         self._lock_held = False
         self._increment_health_counter("lock_released")
+        record_health_ok(self.queue_root, "lock_released")
         self._log_lock_event("queue_daemon_lock_released")
 
     def try_unlock_stale(self) -> dict[str, Any]:
@@ -394,9 +401,8 @@ class MissionQueueDaemon:
             )
             return {"removed": True, "stale": stale, "alive": alive, "pid": pid, "age_s": age_s}
 
-        self._increment_health_counter(
-            "unlock_refused", last_error=f"unlock refused: lock held by live pid={pid}"
-        )
+        self._increment_health_counter("unlock_refused")
+        record_health_error(self.queue_root, f"unlock refused: lock held by live pid={pid}")
         self._log_lock_event(
             "queue_daemon_unlock_refused",
             details={
@@ -1175,6 +1181,8 @@ class MissionQueueDaemon:
             "daemon_pid": health.get("daemon_pid"),
             "last_error": health.get("last_error", ""),
             "last_error_ts_ms": health.get("last_error_ts_ms"),
+            "last_ok_event": health.get("last_ok_event", ""),
+            "last_ok_ts_ms": health.get("last_ok_ts_ms"),
         }
 
     def _resolve_job_ref_in_dirs(self, ref: str, directories: list[Path]) -> Path | None:
@@ -1490,6 +1498,7 @@ class MissionQueueDaemon:
     def process_pending_once(self) -> int:
         self.ensure_dirs()
         self._update_daemon_health_state(last_tick_ts_ms=int(time.time() * 1000))
+        record_health_ok(self.queue_root, "daemon_tick")
         self._auto_relocate_legacy_jobs()
         self._auto_relocate_misplaced_pending_jobs()
         if self.is_paused():
@@ -1556,5 +1565,8 @@ class MissionQueueDaemon:
                 while True:
                     self.process_pending_once()
                     time.sleep(self.poll_interval)
+        except Exception as exc:
+            record_health_error(self.queue_root, f"daemon run error: {exc}")
+            raise
         finally:
             self.release_daemon_lock()

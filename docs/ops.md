@@ -77,6 +77,8 @@ Panel operator notes:
 - Panel home shows pause/resume, cancel/retry actions, and links Done/Failed jobs to artifact-backed detail pages.
 - Queue daemon + panel update a shared lightweight snapshot at `notes/queue/health.json`.
   - Write pattern is atomic (`health.json.tmp` then rename).
+  - `last_ok_event` + `last_ok_ts_ms` indicate recent successful activity (tick/lock/shutdown release).
+  - `last_error` + `last_error_ts_ms` capture latest concise failure context.
   - Concurrent writes use read-modify-write and may rarely lose an increment under heavy contention; counters are still suitable for operational trend visibility.
 
 ### Incident runbook: daemon lock + panel auth/CSRF
@@ -465,7 +467,7 @@ Operational workflows here do **not** require deleting data under `~/VoxeraOS/no
 
 ```bash
 # CLI
-voxera queue bundle <job_id> --out /tmp/<job_id>-incident.zip
+voxera ops bundle job <job_id>
 
 # Panel (requires Basic auth)
 GET /jobs/{job_id}/bundle
@@ -481,15 +483,17 @@ Bundle includes (size-capped and deterministic):
 
 ### System snapshot bundle
 
+Bundles are written to `notes/queue/_archive/<YYYYMMDD-HHMMSS>/`. Prefer using the exact path printed by `voxera ops bundle ...` rather than trying to discover the latest archive via shell globbing.
+
 ```bash
 # CLI
-voxera queue bundle --system --out /tmp/voxera-system-incident.zip
+voxera ops bundle system
 
 # Panel (requires Basic auth)
 GET /bundle/system
 ```
 
-System bundle contains: `health.json`, `queue_snapshot.json`, `journal_pointer.txt`, `config_pointers.txt`, and `manifest.json` (paths only for config pointers, no secret values).
+System bundle contains `manifest.json`, queue snapshots (`queue_status.txt`, `queue_health.json`, lock snapshot), optional `journal_voxera_daemon_tail.txt`, and `panel_log_hint.txt`.
 
 ### Truncation + size troubleshooting
 

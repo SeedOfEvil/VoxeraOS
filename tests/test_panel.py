@@ -29,6 +29,19 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     mission_log = fake_home / "VoxeraOS" / "notes" / "mission-log.md"
     mission_log.parent.mkdir(parents=True, exist_ok=True)
     mission_log.write_text("\n".join(f"line-{i}" for i in range(30)), encoding="utf-8")
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps(
+            {
+                "last_ok_event": "daemon_tick",
+                "last_ok_ts_ms": 123,
+                "last_error": "none",
+                "last_error_ts_ms": 122,
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
 
     client = TestClient(panel_module.app)
@@ -46,6 +59,9 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert "Active Work" in body
     assert "Mission Library" in body
     assert "Daemon Lock Event Counters" in body
+    assert "Last OK" in body
+    assert "daemon_tick @ 123" in body
+    assert "Last Error" in body
     assert "Panel Mutation Security Counters" in body
     assert "Mission Log (last 20 lines)" in body
     assert "line-29" in body
