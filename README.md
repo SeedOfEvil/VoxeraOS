@@ -508,11 +508,11 @@ The panel now includes a dedicated Jobs console for incident response:
 voxera panel
 
 # open in browser
-http://127.0.0.1:8844/jobs?bucket=pending&n=50
+http://127.0.0.1:8844/jobs?bucket=all&n=80
 ```
 
 Key endpoints:
-- `GET /jobs` with query params `bucket=inbox|pending|approvals|done|failed`, `q=<substring>`, `n=<max 200>`.
+- `GET /jobs` with query params `bucket=all|inbox|pending|approvals|done|failed`, `q=<substring>`, `n=<max 200>`.
 - `GET /jobs/{job_id}` for metadata, approval details, artifacts, and audit timeline.
 - `GET /jobs/{job_id}/bundle` to export a per-job incident bundle (`.zip`).
 - `GET /bundle/system` to export a system snapshot bundle (`.zip`).
@@ -535,7 +535,9 @@ Quick offline doctor mode:
 ```bash
 voxera doctor --quick
 ```
-Runs fast local checks only (queue dirs, lock state, health staleness, panel auth env presence, podman binary) with no model calls.
+Runs fast local checks only (lock exists/pid/alive, health `last_ok`/`last_error`, queue counts summary) with no model calls.
+
+Panel bundle downloads write into deterministic incident directories: `notes/queue/_archive/incident-<YYYYMMDD-HHMMSS>-<job_stem_or_system>/`.
 
 ## Queue job artifacts
 

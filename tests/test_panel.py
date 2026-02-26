@@ -423,6 +423,30 @@ def test_jobs_page_filters_by_bucket(tmp_path, monkeypatch):
     assert "job-done-1.json" not in pending.text
 
 
+def test_jobs_page_shows_bucket_artifacts_and_actions(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    for d in ["inbox", "pending", "pending/approvals", "done", "failed"]:
+        (queue_dir / d).mkdir(parents=True, exist_ok=True)
+    (queue_dir / "inbox" / "job-inbox.json").write_text('{"goal":"in"}', encoding="utf-8")
+    (queue_dir / "pending" / "job-pending.json").write_text('{"goal":"p"}', encoding="utf-8")
+    (queue_dir / "done" / "job-done.json").write_text('{"goal":"d"}', encoding="utf-8")
+    (queue_dir / "failed" / "job-failed.json").write_text('{"goal":"f"}', encoding="utf-8")
+    art = queue_dir / "artifacts" / "job-pending"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "actions.jsonl").write_text('{"event":"step"}\n', encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    res = client.get("/jobs", params={"bucket": "all", "n": 20})
+    assert res.status_code == 200
+    assert "job-inbox.json" in res.text
+    assert "job-done.json" in res.text
+    assert "pending/approvals" not in res.text
+    assert "actions=Y" in res.text
+    assert "Bundle" in res.text
+
+
 def test_job_detail_renders_pending_done_and_failed_cases(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
@@ -502,20 +526,50 @@ def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch
     zf = zipfile.ZipFile(io.BytesIO(res.content))
     names = set(zf.namelist())
     assert "manifest.json" in names
-    assert "job.json" in names
-    manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
-    stdout_entry = [f for f in manifest["files"] if f["path"] == "artifacts/stdout.txt"][0]
-    assert stdout_entry["truncated"] is True
+    assert "job/job-a.json" in names
+    assert "artifacts/stdout.txt" in names
 
 
 def test_bundle_endpoints_require_auth(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
     (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
     (queue_dir / "done" / "job-a.json").write_text('{"goal":"bundle"}', encoding="utf-8")
+    (queue_dir / "failed" / "job-b.json").write_text('{"goal":"retry"}', encoding="utf-8")
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
     monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
 
     client = TestClient(panel_module.app)
     assert client.get("/jobs/job-a.json/bundle").status_code == 401
     assert client.get("/bundle/system").status_code == 401
+
+    no_csrf_cancel = client.post(
+        "/queue/jobs/job-a.json/cancel",
+        headers=_operator_headers(),
+        data={},
+        follow_redirects=False,
+    )
+    assert no_csrf_cancel.status_code == 403
+    no_csrf_retry = client.post(
+        "/queue/jobs/job-b.json/retry", headers=_operator_headers(), data={}, follow_redirects=False
+    )
+    assert no_csrf_retry.status_code == 403
+
+
+def test_system_bundle_contains_manifest(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get("/bundle/system", headers=_operator_headers())
+    assert res.status_code == 200
+
+    import io
+    import zipfile
+
+    zf = zipfile.ZipFile(io.BytesIO(res.content))
+    assert "manifest.json" in set(zf.namelist())

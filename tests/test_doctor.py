@@ -330,8 +330,15 @@ def test_doctor_quick_offline_does_not_call_brains(monkeypatch, tmp_path):
     monkeypatch.setattr("voxera.brain.openai_compat.OpenAICompatBrain.capability_test", _never)
     monkeypatch.setattr("voxera.brain.gemini.GeminiBrain.capability_test", _never)
 
+    (queue_root / "health.json").write_text(
+        json.dumps({"last_ok_event": "daemon_tick", "last_ok_ts_ms": 123}), encoding="utf-8"
+    )
+
     checks = run_quick_doctor(queue_root=queue_root)
 
     assert checks
+    details = "\n".join(c["detail"] for c in checks)
+    assert "exists=" in details
+    assert "event=daemon_tick" in details
     assert called["openai"] is False
     assert called["gemini"] is False
