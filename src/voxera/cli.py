@@ -29,6 +29,11 @@ console = Console()
 
 RUN_ARG_OPTION = typer.Option(None, "--arg", help="Key=Value args (repeat --arg for multiple).")
 OUT_PATH_OPTION = typer.Option(..., "--out", help="Output zip file path.")
+OPS_BUNDLE_ARCHIVE_DIR_OPTION = typer.Option(
+    None,
+    "--dir",
+    help="Archive directory for ops bundle outputs. Defaults to VOXERA_OPS_BUNDLE_DIR or notes/queue/_archive/<timestamp>/.",
+)
 
 
 def _git_sha() -> str | None:
@@ -405,10 +410,11 @@ def ops_bundle_system(
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
+    archive_dir: Path | None = OPS_BUNDLE_ARCHIVE_DIR_OPTION,
 ):
-    """Export a system ops bundle under notes/queue/_archive/<timestamp>/."""
-    out = build_ops_system_bundle(Path(queue_dir))
-    console.print(str(out.expanduser().resolve()))
+    """Export a system ops bundle."""
+    out = build_ops_system_bundle(Path(queue_dir), archive_dir=archive_dir)
+    typer.echo(str(out.expanduser().resolve()))
 
 
 @ops_bundle_app.command("job")
@@ -419,10 +425,11 @@ def ops_bundle_job(
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
+    archive_dir: Path | None = OPS_BUNDLE_ARCHIVE_DIR_OPTION,
 ):
-    """Export a per-job ops bundle under notes/queue/_archive/<timestamp>/."""
-    out = build_ops_job_bundle(Path(queue_dir), job_ref)
-    console.print(str(out.expanduser().resolve()))
+    """Export a per-job ops bundle."""
+    out = build_ops_job_bundle(Path(queue_dir), job_ref, archive_dir=archive_dir)
+    typer.echo(str(out.expanduser().resolve()))
 
 
 @queue_app.command("init")

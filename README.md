@@ -525,6 +525,10 @@ CLI equivalents:
 ```bash
 voxera ops bundle job job-123.json
 voxera ops bundle system
+
+# write both bundles into one incident handoff folder
+voxera ops bundle system --dir notes/queue/_archive/INCIDENT-123
+voxera ops bundle job job-123.json --dir notes/queue/_archive/INCIDENT-123
 ```
 
 Quick offline doctor mode:
@@ -553,6 +557,6 @@ These artifacts are present for pending, failed, and done queue paths to simplif
   - `voxera queue unlock` (safe stale/dead pid reclaim)
   - `voxera queue unlock --force` only when you intentionally override a live holder.
 - Panel `401` means Basic auth failure/missing credentials; `403` means CSRF token missing/mismatch on mutation routes.
-- Ops bundles are written under `notes/queue/_archive/<YYYYMMDD-HHMMSS>/` via:
-  - `voxera ops bundle system`
-  - `voxera ops bundle job <job_ref>`
+- Ops bundles default to `notes/queue/_archive/<YYYYMMDD-HHMMSS>/`, or you can force a single incident handoff folder via `--dir` (or `VOXERA_OPS_BUNDLE_DIR`) so system + job zips land together:
+  - `voxera ops bundle system --dir notes/queue/_archive/INCIDENT-123`
+  - `voxera ops bundle job <job_ref> --dir notes/queue/_archive/INCIDENT-123`

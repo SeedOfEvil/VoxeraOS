@@ -89,66 +89,51 @@ echo ":: step: run doctor self-test"
 voxera doctor --self-test | tee /tmp/voxera-doctor-self-test.out
 rg -q "PASS" /tmp/voxera-doctor-self-test.out
 
+archive_dir="$QUEUE_ROOT/_archive/ops-e2e-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$archive_dir"
+echo ":: archive_dir=$archive_dir"
+
 echo ":: step: export system ops bundle"
-system_zip_raw="$(voxera ops bundle system)"
+system_zip_raw="$(voxera ops bundle system --dir "$archive_dir")"
 if ! system_zip="$(capture_zip_path "$system_zip_raw")"; then
-  print_archive_diag "$QUEUE_ROOT/_archive"
+  print_archive_diag "$archive_dir"
   exit 1
 fi
 system_zip="${system_zip/#\~/$HOME}"
-archive_dir="$(dirname "$system_zip")"
-archive_dir="${archive_dir/#\~/$HOME}"
-echo ":: archive_dir=$archive_dir"
-if [[ ! -f "$system_zip" ]]; then
-  echo ":: error: missing system bundle: $system_zip"
-  ls -lah "$archive_dir" || true
-  find "$archive_dir" -maxdepth 1 -type f -print | sort || true
-  exit 1
-fi
+require_file "$system_zip" "system bundle" "$archive_dir"
 
 echo ":: step: export job ops bundle"
 job_ref="$JOB_FILE"
-job_zip_raw="$(voxera ops bundle job "$job_ref")"
+job_zip_raw="$(voxera ops bundle job "$job_ref" --dir "$archive_dir")"
 if ! job_zip="$(capture_zip_path "$job_zip_raw")"; then
   print_archive_diag "$archive_dir"
   exit 1
 fi
 job_zip="${job_zip/#\~/$HOME}"
-if [[ ! -f "$job_zip" ]]; then
-  echo ":: error: missing job bundle: $job_zip"
-  ls -lah "$archive_dir" || true
-  find "$archive_dir" -maxdepth 1 -type f -print | sort || true
-  exit 1
-fi
-
-if [[ "$(dirname "$job_zip")" != "$archive_dir" ]]; then
-  echo ":: warning: job bundle dir differs"
-  echo ":: job_zip=$job_zip"
-  echo ":: archive_dir=$archive_dir"
-fi
+require_file "$job_zip" "job bundle" "$archive_dir"
 
 echo ":: system_zip=$system_zip"
 echo ":: job_zip=$job_zip"
 
 echo ":: step: validate bundle manifests"
 if command -v unzip >/dev/null 2>&1; then
-  if ! unzip -l "$system_zip" | head -n 20 | tee /tmp/e2e-system-zip-list.out | rg -q "manifest.json"; then
+  if ! unzip -l "$system_zip" | tee /tmp/e2e-system-zip-list.out | rg -q "manifest.json"; then
     echo ":: error: manifest missing in system zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
-  if ! unzip -l "$job_zip" | head -n 20 | tee /tmp/e2e-job-zip-list.out | rg -q "manifest.json"; then
+  if ! unzip -l "$job_zip" | tee /tmp/e2e-job-zip-list.out | rg -q "manifest.json"; then
     echo ":: error: manifest missing in job zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
 else
-  if ! python -m zipfile -l "$system_zip" | head -n 20 | tee /tmp/e2e-system-zip-list.out | rg -q "manifest.json"; then
+  if ! python -m zipfile -l "$system_zip" | tee /tmp/e2e-system-zip-list.out | rg -q "manifest.json"; then
     echo ":: error: manifest missing in system zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
-  if ! python -m zipfile -l "$job_zip" | head -n 20 | tee /tmp/e2e-job-zip-list.out | rg -q "manifest.json"; then
+  if ! python -m zipfile -l "$job_zip" | tee /tmp/e2e-job-zip-list.out | rg -q "manifest.json"; then
     echo ":: error: manifest missing in job zip"
     print_archive_diag "$archive_dir"
     exit 1

@@ -55,3 +55,40 @@ def test_ops_bundle_job_missing_primary_has_note(tmp_path):
     with zipfile.ZipFile(out) as zf:
         note = zf.read("notes/job_not_found.txt").decode("utf-8")
         assert "job file not found" in note
+
+
+def test_ops_bundle_respects_explicit_archive_dir(tmp_path):
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "done").mkdir(parents=True)
+    (queue_dir / "done" / "job-a.json").write_text('{"goal":"x"}', encoding="utf-8")
+    archive_dir = tmp_path / "incident-123"
+
+    system_out = build_system_bundle(queue_dir, archive_dir=archive_dir)
+    job_out = build_job_bundle(queue_dir, "job-a.json", archive_dir=archive_dir)
+
+    assert system_out == archive_dir.resolve() / "bundle-system.zip"
+    assert job_out == archive_dir.resolve() / "bundle-job-job-a.zip"
+    assert system_out.exists()
+    assert job_out.exists()
+
+
+def test_ops_bundle_uses_env_archive_dir_when_dir_not_passed(tmp_path, monkeypatch):
+    queue_dir = tmp_path / "queue"
+    env_archive = tmp_path / "env-archive"
+    monkeypatch.setenv("VOXERA_OPS_BUNDLE_DIR", str(env_archive))
+
+    out = build_system_bundle(queue_dir)
+
+    assert out.parent == env_archive.resolve()
+    assert out.exists()
+
+
+def test_ops_bundle_default_archive_under_queue_archive(tmp_path, monkeypatch):
+    queue_dir = tmp_path / "queue"
+    monkeypatch.delenv("VOXERA_OPS_BUNDLE_DIR", raising=False)
+
+    out = build_system_bundle(queue_dir)
+
+    assert out.exists()
+    assert out.name == "bundle-system.zip"
+    assert out.parent.parent == (queue_dir.resolve() / "_archive")

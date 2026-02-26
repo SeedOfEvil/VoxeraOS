@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -321,6 +322,7 @@ def test_ops_bundle_system_and_job_commands(tmp_path, monkeypatch):
 
     sys_res = runner.invoke(cli.app, ["ops", "bundle", "system", "--queue-dir", str(queue_dir)])
     assert sys_res.exit_code == 0
+    assert len(sys_res.output.strip().splitlines()) == 1
     sys_candidates = sorted((queue_dir / "_archive").glob("*/bundle-system.zip"))
     assert sys_candidates
     assert sys_candidates[-1].exists()
@@ -330,6 +332,46 @@ def test_ops_bundle_system_and_job_commands(tmp_path, monkeypatch):
         ["ops", "bundle", "job", "job-z.json", "--queue-dir", str(queue_dir)],
     )
     assert job_res.exit_code == 0
+    assert len(job_res.output.strip().splitlines()) == 1
     job_candidates = sorted((queue_dir / "_archive").glob("*/bundle-job-job-z.zip"))
     assert job_candidates
     assert job_candidates[-1].exists()
+
+
+def test_ops_bundle_system_and_job_with_explicit_dir(tmp_path, monkeypatch):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    archive_dir = tmp_path / "incident-123"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-z.json").write_text('{"goal":"bundle"}', encoding="utf-8")
+
+    monkeypatch.setattr(
+        "voxera.ops_bundle.subprocess.check_output", lambda *args, **kwargs: "journal"
+    )
+
+    sys_res = runner.invoke(
+        cli.app,
+        ["ops", "bundle", "system", "--queue-dir", str(queue_dir), "--dir", str(archive_dir)],
+    )
+    assert sys_res.exit_code == 0
+    system_zip = Path(sys_res.output.strip())
+    assert system_zip == archive_dir.resolve() / "bundle-system.zip"
+    assert system_zip.exists()
+
+    job_res = runner.invoke(
+        cli.app,
+        [
+            "ops",
+            "bundle",
+            "job",
+            "job-z.json",
+            "--queue-dir",
+            str(queue_dir),
+            "--dir",
+            str(archive_dir),
+        ],
+    )
+    assert job_res.exit_code == 0
+    job_zip = Path(job_res.output.strip())
+    assert job_zip == archive_dir.resolve() / "bundle-job-job-z.zip"
+    assert job_zip.exists()
