@@ -58,6 +58,7 @@ def _manifest(queue_root: Path) -> dict[str, Any]:
 
 
 def build_system_bundle(queue_root: Path) -> Path:
+    queue_root = queue_root.expanduser().resolve()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     daemon.ensure_dirs()
     out_dir = _archive_dir(queue_root)
@@ -118,6 +119,7 @@ def build_system_bundle(queue_root: Path) -> Path:
 
 
 def build_job_bundle(queue_root: Path, job_ref: str) -> Path:
+    queue_root = queue_root.expanduser().resolve()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     daemon.ensure_dirs()
     out_dir = _archive_dir(queue_root)

@@ -408,7 +408,7 @@ def ops_bundle_system(
 ):
     """Export a system ops bundle under notes/queue/_archive/<timestamp>/."""
     out = build_ops_system_bundle(Path(queue_dir))
-    console.print(str(out))
+    console.print(str(out.expanduser().resolve()))
 
 
 @ops_bundle_app.command("job")
@@ -422,7 +422,7 @@ def ops_bundle_job(
 ):
     """Export a per-job ops bundle under notes/queue/_archive/<timestamp>/."""
     out = build_ops_job_bundle(Path(queue_dir), job_ref)
-    console.print(str(out))
+    console.print(str(out.expanduser().resolve()))
 
 
 @queue_app.command("init")
