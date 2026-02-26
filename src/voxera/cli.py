@@ -17,6 +17,8 @@ from .core.missions import MissionRunner, get_mission, list_missions
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .doctor import doctor_sync
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
+from .ops_bundle import build_job_bundle as build_ops_job_bundle
+from .ops_bundle import build_system_bundle as build_ops_system_bundle
 from .paths import queue_root_display
 from .setup_wizard import run_setup
 from .skills.registry import SkillRegistry
@@ -77,11 +79,15 @@ app.add_typer(skills_app, name="skills")
 missions_app = typer.Typer(help="Run multi-step built-in missions")
 queue_app = typer.Typer(help="Queue job utilities")
 queue_approvals_app = typer.Typer(help="Resolve pending queue approvals")
+ops_app = typer.Typer(help="Operational incident bundle utilities")
+ops_bundle_app = typer.Typer(help="Export operator bundles")
 inbox_app = typer.Typer(help="Human-friendly queue inbox")
 app.add_typer(missions_app, name="missions")
 app.add_typer(queue_app, name="queue")
+app.add_typer(ops_app, name="ops")
 app.add_typer(inbox_app, name="inbox")
 queue_app.add_typer(queue_approvals_app, name="approvals")
+ops_app.add_typer(ops_bundle_app, name="bundle")
 
 
 @app.command()
@@ -392,6 +398,33 @@ def queue_bundle(
     console.print(f"Bundle written: {out}")
 
 
+@ops_bundle_app.command("system")
+def ops_bundle_system(
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Export a system ops bundle under notes/queue/_archive/<timestamp>/."""
+    out = build_ops_system_bundle(Path(queue_dir))
+    console.print(str(out))
+
+
+@ops_bundle_app.command("job")
+def ops_bundle_job(
+    job_ref: str = typer.Argument(..., help="Job file name/reference."),
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Export a per-job ops bundle under notes/queue/_archive/<timestamp>/."""
+    out = build_ops_job_bundle(Path(queue_dir), job_ref)
+    console.print(str(out))
+
+
 @queue_app.command("init")
 def queue_init(
     queue_dir: str = typer.Option(
@@ -537,6 +570,8 @@ def queue_health(
     console.print(f"Daemon paused: {status.get('paused', False)}")
     console.print(f"Daemon started at ms: {status.get('daemon_started_at_ms')}")
     console.print(f"Daemon pid: {status.get('daemon_pid')}")
+    console.print(f"Last ok event: {status.get('last_ok_event', '')}")
+    console.print(f"Last ok ts ms: {status.get('last_ok_ts_ms')}")
     console.print(f"Last error: {status.get('last_error', '')}")
     console.print(f"Last error ts ms: {status.get('last_error_ts_ms')}")
 

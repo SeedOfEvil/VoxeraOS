@@ -1622,7 +1622,9 @@ def test_run_acquires_and_releases_lock_in_once_mode(tmp_path, monkeypatch):
     counters = daemon.lock_counters_snapshot()
     assert counters.get("lock_acquire_ok", 0) >= 1
     assert counters.get("lock_released", 0) >= 1
-    assert (queue_dir / "health.json").exists()
+    health = json.loads((queue_dir / "health.json").read_text(encoding="utf-8"))
+    assert health.get("last_ok_event")
+    assert isinstance(health.get("last_ok_ts_ms"), int)
     emitted = {e.get("event") for e in events}
     assert "queue_daemon_lock_acquired" in emitted
     assert "queue_daemon_lock_released" in emitted

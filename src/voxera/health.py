@@ -64,3 +64,29 @@ def increment_health_counter(
         return payload
 
     return update_health_snapshot(queue_root, _apply)
+
+
+def record_health_ok(queue_root: Path, event_name: str) -> None:
+    now_ms = int(time.time() * 1000)
+    event = event_name.strip() if event_name else "ok"
+
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        payload["last_ok_event"] = event
+        payload["last_ok_ts_ms"] = now_ms
+        payload["updated_at_ms"] = now_ms
+        return payload
+
+    update_health_snapshot(queue_root, _apply)
+
+
+def record_health_error(queue_root: Path, msg: str) -> None:
+    now_ms = int(time.time() * 1000)
+    clean = " ".join(msg.split()) if msg else "error"
+
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        payload["last_error"] = clean
+        payload["last_error_ts_ms"] = now_ms
+        payload["updated_at_ms"] = now_ms
+        return payload
+
+    update_health_snapshot(queue_root, _apply)
