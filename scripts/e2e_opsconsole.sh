@@ -31,7 +31,7 @@ require_file() {
 capture_zip_path() {
   local raw="$1"
   local extracted
-  extracted="$(printf '%s\n' "$raw" | tr -d '\r' | grep -Eo '(/[^ ]+\.zip|~[^ ]+\.zip)' | tail -n 1)"
+  extracted="$(printf '%s' "$raw" | tr -d '\r\n' | grep -Eo '(/[^ ]+\.zip|~[^ ]+\.zip)' | tail -n 1)"
   if [[ -z "$extracted" ]]; then
     echo ":: error: unable to capture zip path from command output" >&2
     printf '%s\n' "$raw" >&2
