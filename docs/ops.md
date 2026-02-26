@@ -483,11 +483,16 @@ Bundle includes (size-capped and deterministic):
 
 ### System snapshot bundle
 
-Bundles are written to `notes/queue/_archive/<YYYYMMDD-HHMMSS>/`. Prefer using the exact path printed by `voxera ops bundle ...` rather than trying to discover the latest archive via shell globbing.
+Bundles default to `notes/queue/_archive/<YYYYMMDD-HHMMSS>/`. For incident handoff, you can place both system + job bundles in a single folder with `--dir` (or by setting `VOXERA_OPS_BUNDLE_DIR`).
 
 ```bash
 # CLI
 voxera ops bundle system
+voxera ops bundle job <job_id>
+
+# one shared incident folder
+voxera ops bundle system --dir notes/queue/_archive/INCIDENT-123
+voxera ops bundle job <job_id> --dir notes/queue/_archive/INCIDENT-123
 
 # Panel (requires Basic auth)
 GET /bundle/system

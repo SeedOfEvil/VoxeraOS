@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
+import uuid
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +30,28 @@ def _archive_dir(queue_root: Path) -> Path:
     out = queue_root / "_archive" / ts
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def _resolve_archive_dir(queue_root: Path, archive_dir: Path | None) -> Path:
+    if archive_dir is not None:
+        out_dir = archive_dir
+    else:
+        env_dir = os.environ.get("VOXERA_OPS_BUNDLE_DIR", "").strip()
+        out_dir = Path(env_dir) if env_dir else _archive_dir(queue_root)
+    out_dir = out_dir.expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
+
+
+def _write_zip(out: Path, write: Callable[[zipfile.ZipFile], None]) -> None:
+    tmp = out.with_name(f".{out.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with zipfile.ZipFile(tmp, mode="w") as zf:
+            write(zf)
+        tmp.replace(out)
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
 
 
 def _zip_write_bytes(zf: zipfile.ZipFile, arcname: str, data: bytes) -> None:
@@ -57,17 +82,17 @@ def _manifest(queue_root: Path) -> dict[str, Any]:
     }
 
 
-def build_system_bundle(queue_root: Path) -> Path:
+def build_system_bundle(queue_root: Path, archive_dir: Path | None = None) -> Path:
     queue_root = queue_root.expanduser().resolve()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     daemon.ensure_dirs()
-    out_dir = _archive_dir(queue_root)
+    out_dir = _resolve_archive_dir(queue_root, archive_dir)
     out = out_dir / "bundle-system.zip"
 
     status = daemon.status_snapshot(approvals_limit=8, failed_limit=8)
     status_text = json.dumps(status, indent=2, sort_keys=True)
 
-    with zipfile.ZipFile(out, mode="w") as zf:
+    def write(zf: zipfile.ZipFile) -> None:
         _zip_write_bytes(
             zf,
             "manifest.json",
@@ -115,14 +140,16 @@ def build_system_bundle(queue_root: Path) -> Path:
             "panel logs not collected automatically\n",
         )
 
+    _write_zip(out, write)
+
     return out
 
 
-def build_job_bundle(queue_root: Path, job_ref: str) -> Path:
+def build_job_bundle(queue_root: Path, job_ref: str, archive_dir: Path | None = None) -> Path:
     queue_root = queue_root.expanduser().resolve()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     daemon.ensure_dirs()
-    out_dir = _archive_dir(queue_root)
+    out_dir = _resolve_archive_dir(queue_root, archive_dir)
 
     lookup = lookup_job(queue_root, job_ref)
     job_stem = Path(job_ref).stem
@@ -135,7 +162,7 @@ def build_job_bundle(queue_root: Path, job_ref: str) -> Path:
         str(queue_root / "inbox" / f"{job_stem}.json"),
     ]
 
-    with zipfile.ZipFile(out, mode="w") as zf:
+    def write(zf: zipfile.ZipFile) -> None:
         _zip_write_bytes(
             zf,
             "manifest.json",
@@ -188,5 +215,7 @@ def build_job_bundle(queue_root: Path, job_ref: str) -> Path:
             _zip_write_text(
                 zf, "notes/artifacts_not_found.txt", f"artifacts directory missing: {art_dir}\n"
             )
+
+    _write_zip(out, write)
 
     return out
