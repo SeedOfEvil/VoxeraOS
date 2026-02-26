@@ -31,14 +31,13 @@ require_file() {
 capture_zip_path() {
   local raw="$1"
   local extracted
-  extracted="$(printf '%s\n' "$raw" | tr -d '\r' | rg -o '(~|/)[^[:space:]]+\.zip' | tail -n 1)"
+  extracted="$(printf '%s\n' "$raw" | tr -d '\r' | grep -Eo '(/[^ ]+\.zip|~[^ ]+\.zip)' | tail -n 1)"
   if [[ -z "$extracted" ]]; then
-    echo ":: error: unable to capture zip path from command output"
-    printf '%s\n' "$raw"
-    print_archive_diag
-    exit 1
+    echo ":: error: unable to capture zip path from command output" >&2
+    printf '%s\n' "$raw" >&2
+    return 1
   fi
-  echo "$extracted"
+  printf '%s\n' "$extracted"
 }
 
 echo ":: step: ensure queue directories"
@@ -92,19 +91,35 @@ rg -q "PASS" /tmp/voxera-doctor-self-test.out
 
 echo ":: step: export system ops bundle"
 system_zip_raw="$(voxera ops bundle system)"
-system_zip="$(capture_zip_path "$system_zip_raw")"
+if ! system_zip="$(capture_zip_path "$system_zip_raw")"; then
+  print_archive_diag "$QUEUE_ROOT/_archive"
+  exit 1
+fi
 system_zip="${system_zip/#\~/$HOME}"
-require_file "$system_zip" "system bundle"
 archive_dir="$(dirname "$system_zip")"
 archive_dir="${archive_dir/#\~/$HOME}"
 echo ":: archive_dir=$archive_dir"
+if [[ ! -f "$system_zip" ]]; then
+  echo ":: error: missing system bundle: $system_zip"
+  ls -lah "$archive_dir" || true
+  find "$archive_dir" -maxdepth 1 -type f -print | sort || true
+  exit 1
+fi
 
 echo ":: step: export job ops bundle"
 job_ref="$JOB_FILE"
 job_zip_raw="$(voxera ops bundle job "$job_ref")"
-job_zip="$(capture_zip_path "$job_zip_raw")"
+if ! job_zip="$(capture_zip_path "$job_zip_raw")"; then
+  print_archive_diag "$archive_dir"
+  exit 1
+fi
 job_zip="${job_zip/#\~/$HOME}"
-require_file "$job_zip" "job bundle" "$archive_dir"
+if [[ ! -f "$job_zip" ]]; then
+  echo ":: error: missing job bundle: $job_zip"
+  ls -lah "$archive_dir" || true
+  find "$archive_dir" -maxdepth 1 -type f -print | sort || true
+  exit 1
+fi
 
 if [[ "$(dirname "$job_zip")" != "$archive_dir" ]]; then
   echo ":: warning: job bundle dir differs"
