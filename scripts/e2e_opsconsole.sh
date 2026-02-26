@@ -9,7 +9,7 @@ QUEUE_ROOT="${QUEUE_ROOT/#\~/$HOME}"
 
 print_archive_diag() {
   local archive_dir="${1:-$QUEUE_ROOT/_archive}"
-  echo ":: diagnostics: system_zip=${system_zip:-}" 
+  echo ":: diagnostics: system_zip=${system_zip:-}"
   echo ":: diagnostics: job_zip=${job_zip:-}"
   echo ":: diagnostics: archive_dir=$archive_dir"
   ls -lah "$archive_dir" || true
@@ -26,6 +26,19 @@ require_file() {
     print_archive_diag "$diag_dir"
     exit 1
   fi
+}
+
+capture_zip_path() {
+  local raw="$1"
+  local extracted
+  extracted="$(printf '%s\n' "$raw" | tr -d '\r' | rg -o '(~|/)[^[:space:]]+\.zip' | tail -n 1)"
+  if [[ -z "$extracted" ]]; then
+    echo ":: error: unable to capture zip path from command output"
+    printf '%s\n' "$raw"
+    print_archive_diag
+    exit 1
+  fi
+  echo "$extracted"
 }
 
 echo ":: step: ensure queue directories"
@@ -78,7 +91,8 @@ voxera doctor --self-test | tee /tmp/voxera-doctor-self-test.out
 rg -q "PASS" /tmp/voxera-doctor-self-test.out
 
 echo ":: step: export system ops bundle"
-system_zip="$(voxera ops bundle system | tail -n 1)"
+system_zip_raw="$(voxera ops bundle system)"
+system_zip="$(capture_zip_path "$system_zip_raw")"
 system_zip="${system_zip/#\~/$HOME}"
 require_file "$system_zip" "system bundle"
 archive_dir="$(dirname "$system_zip")"
@@ -87,16 +101,15 @@ echo ":: archive_dir=$archive_dir"
 
 echo ":: step: export job ops bundle"
 job_ref="$JOB_FILE"
-job_zip="$(voxera ops bundle job "$job_ref" | tail -n 1)"
+job_zip_raw="$(voxera ops bundle job "$job_ref")"
+job_zip="$(capture_zip_path "$job_zip_raw")"
 job_zip="${job_zip/#\~/$HOME}"
 require_file "$job_zip" "job bundle" "$archive_dir"
 
-system_dir="$(dirname "$system_zip")"
-job_dir="$(dirname "$job_zip")"
-if [[ "$job_dir" != "$archive_dir" ]]; then
-  echo ":: warning: job bundle not in system archive dir"
+if [[ "$(dirname "$job_zip")" != "$archive_dir" ]]; then
+  echo ":: warning: job bundle dir differs"
+  echo ":: job_zip=$job_zip"
   echo ":: archive_dir=$archive_dir"
-  echo ":: job_dir=$job_dir"
 fi
 
 echo ":: system_zip=$system_zip"
