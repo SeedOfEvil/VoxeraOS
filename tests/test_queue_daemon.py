@@ -1698,12 +1698,19 @@ def test_try_unlock_stale_removes_dead_or_stale_lock(tmp_path, monkeypatch):
     lock.write_text(json.dumps({"pid": 999999, "timestamp": 1}), encoding="utf-8")
 
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
-    assert daemon.try_unlock_stale() is True
+    result = daemon.try_unlock_stale()
+    assert result["removed"] is True
+    assert isinstance(result["stale"], bool)
+    assert isinstance(result["alive"], bool)
+    assert isinstance(result["pid"], int)
+    assert isinstance(result["age_s"], float)
     assert not lock.exists()
     counters = daemon.lock_counters_snapshot()
     assert counters.get("unlock_ok", 0) >= 1
     unlocked = [e for e in events if e.get("event") == "queue_daemon_unlock_ok"]
     assert unlocked
+    details = unlocked[-1].get("details", {})
+    assert set(("stale", "alive", "pid", "age_s")).issubset(details)
 
 
 def test_force_unlock_logs_dangerous_event(tmp_path, monkeypatch):

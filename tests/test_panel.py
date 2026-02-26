@@ -9,7 +9,7 @@ from voxera.audit import log
 from voxera.panel import app as panel_module
 
 
-def _operator_headers(user: str = "operator", password: str = "secret") -> dict[str, str]:
+def _operator_headers(user: str = "admin", password: str = "secret") -> dict[str, str]:
     token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
     return {"Authorization": f"Basic {token}"}
 
@@ -385,3 +385,121 @@ def test_panel_auth_csrf_failures_emit_counters_and_logs(tmp_path, monkeypatch):
     assert "panel_auth_invalid" in event_names
     assert "panel_csrf_missing" in event_names
     assert "panel_mutation_allowed" in event_names
+
+
+def test_jobs_page_filters_by_bucket(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-pending-1.json").write_text(
+        json.dumps({"goal": "alpha goal"}), encoding="utf-8"
+    )
+    (queue_dir / "done" / "job-done-1.json").write_text(
+        json.dumps({"goal": "beta goal"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    pending = client.get("/jobs", params={"bucket": "pending", "q": "alpha"})
+    assert pending.status_code == 200
+    assert "job-pending-1.json" in pending.text
+    assert "job-done-1.json" not in pending.text
+
+
+def test_job_detail_renders_pending_done_and_failed_cases(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+
+    (queue_dir / "pending" / "job-pending.json").write_text(
+        '{"goal":"needs approval"}', encoding="utf-8"
+    )
+    (queue_dir / "pending" / "approvals" / "job-pending.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-pending.json",
+                "policy_reason": "network_changes -> ask",
+                "target": {"type": "url", "value": "https://example.com"},
+                "scope": {"fs_scope": "workspace_only", "needs_network": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    (queue_dir / "done" / "job-done.json").write_text('{"goal":"done"}', encoding="utf-8")
+    done_art = queue_dir / "artifacts" / "job-done"
+    done_art.mkdir(parents=True, exist_ok=True)
+    (done_art / "stdout.txt").write_text("ok", encoding="utf-8")
+
+    (queue_dir / "failed" / "job-failed.json").write_text('{"goal":"failed"}', encoding="utf-8")
+    (queue_dir / "failed" / "job-failed.error.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "job": "job-failed.json",
+                "error": "boom",
+                "timestamp_ms": 1700000000000,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    pending = client.get("/jobs/job-pending.json")
+    assert pending.status_code == 200
+    assert "Approval Details" in pending.text
+
+    done = client.get("/jobs/job-done.json")
+    assert done.status_code == 200
+    assert "Artifact Files" in done.text
+
+    failed = client.get("/jobs/job-failed.json")
+    assert failed.status_code == 200
+    assert "Failed Sidecar" in failed.text
+
+
+def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-a.json").write_text('{"goal":"bundle"}', encoding="utf-8")
+    art = queue_dir / "artifacts" / "job-a"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "stdout.txt").write_text("x" * (300 * 1024), encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get("/jobs/job-a.json/bundle", headers=_operator_headers())
+
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/zip")
+
+    import io
+    import zipfile
+
+    zf = zipfile.ZipFile(io.BytesIO(res.content))
+    names = set(zf.namelist())
+    assert "manifest.json" in names
+    assert "job.json" in names
+    manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+    stdout_entry = [f for f in manifest["files"] if f["path"] == "artifacts/stdout.txt"][0]
+    assert stdout_entry["truncated"] is True
+
+
+def test_bundle_endpoints_require_auth(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-a.json").write_text('{"goal":"bundle"}', encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    assert client.get("/jobs/job-a.json/bundle").status_code == 401
+    assert client.get("/bundle/system").status_code == 401

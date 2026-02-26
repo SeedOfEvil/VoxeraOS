@@ -59,7 +59,7 @@ voxera queue cancel <job_id_or_filename>
 voxera queue retry <job_id_or_filename>
 voxera queue pause
 voxera queue resume
-voxera queue unlock           # safe: stale/dead locks only
+voxera queue unlock           # safe: stale/orphaned (dead pid) locks only
 voxera queue unlock --force   # override live lock (dangerous)
 voxera queue health           # summary from notes/queue/health.json
 ```
@@ -68,11 +68,11 @@ Operational effects:
 - `queue cancel` moves matching jobs (inbox/pending/pending approvals/in-flight best effort) into `failed/` with sidecar `error="cancelled by operator"` and cleans pending approval markers.
 - `queue retry` re-queues a failed primary payload into `inbox/` and emits `queue_job_retry` audit event linking old/new attempt.
 - `queue pause` creates `.paused`; daemon still reports status but skips processing new jobs until `queue resume` removes marker.
-- Daemon run loop acquires `notes/queue/.daemon.lock` to prevent multi-consumer races. Stale locks are reclaimed after `VOXERA_QUEUE_LOCK_STALE_S` (default 3600s); use `voxera queue unlock` for safe stale/dead lock recovery; if lock is live, stop daemon first or use `voxera queue unlock --force` as an explicit override.
+- Daemon run loop acquires `notes/queue/.daemon.lock` to prevent multi-consumer races. Stale locks are reclaimed after `VOXERA_QUEUE_LOCK_STALE_S` (default 3600s); use `voxera queue unlock` for safe stale/orphaned lock recovery; if lock is live, stop daemon first or use `voxera queue unlock --force` as an explicit override.
 
 Panel operator notes:
 - Panel mutation routes (`/queue/create`, `/missions/create`) accept `POST` by default.
-- Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `operator`) before starting the panel.
+- Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume, cancel/retry actions, and links Done/Failed jobs to artifact-backed detail pages.
 - Queue daemon + panel update a shared lightweight snapshot at `notes/queue/health.json`.
@@ -456,6 +456,61 @@ If fallback frequency spikes, compare by `provider` + `model` and promote/demote
 
 Operational workflows here do **not** require deleting data under `~/VoxeraOS/notes`.
 
+
+
+
+## Incident bundle export runbook
+
+### Per-job bundle
+
+```bash
+# CLI
+voxera queue bundle <job_id> --out /tmp/<job_id>-incident.zip
+
+# Panel (requires Basic auth)
+GET /jobs/{job_id}/bundle
+```
+
+Bundle includes (size-capped and deterministic):
+- `job.json`
+- optional `approval.json`
+- optional `failed.error.json`
+- capped contents of `artifacts/<job_id>/`
+- `health.json` snapshot
+- `manifest.json` with truncation/byte metadata
+
+### System snapshot bundle
+
+```bash
+# CLI
+voxera queue bundle --system --out /tmp/voxera-system-incident.zip
+
+# Panel (requires Basic auth)
+GET /bundle/system
+```
+
+System bundle contains: `health.json`, `queue_snapshot.json`, `journal_pointer.txt`, `config_pointers.txt`, and `manifest.json` (paths only for config pointers, no secret values).
+
+### Truncation + size troubleshooting
+
+- Per-file cap defaults to 256KB; total bundle cap defaults to 4MB.
+- When exceeded, files are truncated and noted in `manifest.json` (`truncated=true`, original/written bytes).
+- If you need full raw logs, collect artifacts directly from queue paths under controlled access.
+
+## Doctor quick mode
+
+```bash
+voxera doctor --quick
+```
+
+`--quick` is offline-only and does **not** call LLM providers. It checks:
+- queue directories exist + writable (`inbox`, `pending`, `approvals`, `done`, `failed`, `artifacts`, `_archive`)
+- daemon lock status (active/stale/missing)
+- health snapshot freshness
+- panel auth env presence (without printing passwords)
+- podman binary availability
+
+Use full `voxera doctor` when you want provider capability tests; use `--quick` during incidents for immediate local sanity checks.
 
 ## Doctor golden-path self-test
 

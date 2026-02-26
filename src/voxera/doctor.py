@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -17,6 +18,7 @@ from .brain.gemini import GeminiBrain
 from .brain.openai_compat import OpenAICompatBrain
 from .config import capabilities_report_path, load_config
 from .core.queue_daemon import MissionQueueDaemon
+from .health import read_health_snapshot
 
 console = Console()
 
@@ -179,7 +181,11 @@ def print_report(results: dict) -> None:
     console.print(t)
 
 
-def doctor_sync(*, self_test: bool = False, timeout_s: float = 8.0):
+def doctor_sync(*, self_test: bool = False, timeout_s: float = 8.0, quick: bool = False):
+    if quick:
+        checks = run_quick_doctor()
+        print_quick_report(checks)
+        return
     results = asyncio.run(run_doctor())
     if self_test:
         results["self_test"] = run_self_test(timeout_s=timeout_s)
@@ -192,3 +198,112 @@ def doctor_sync(*, self_test: bool = False, timeout_s: float = 8.0):
             console.print("[red]Self-test FAIL[/red]")
             for step in status.get("fixes", []):
                 console.print(f"- {step}")
+
+
+def run_quick_doctor(*, queue_root: Path | None = None) -> list[dict[str, str]]:
+    root = (queue_root or (Path.home() / "VoxeraOS" / "notes" / "queue")).expanduser()
+    daemon = MissionQueueDaemon(queue_root=root)
+    checks: list[dict[str, str]] = []
+
+    for label, path in [
+        ("queue inbox", daemon.inbox),
+        ("queue pending", daemon.pending),
+        ("queue approvals", daemon.approvals),
+        ("queue done", daemon.done),
+        ("queue failed", daemon.failed),
+        ("queue artifacts", daemon.artifacts),
+        ("queue archive", daemon.archive),
+    ]:
+        ok = path.exists() and os.access(path, os.W_OK)
+        checks.append(
+            {
+                "check": label,
+                "status": "ok" if ok else "warn",
+                "detail": f"{path}",
+                "hint": "Run `voxera queue init` to create missing queue dirs." if not ok else "",
+            }
+        )
+
+    lock = daemon.status_snapshot().get("lock_status", {})
+    exists = bool(lock.get("exists"))
+    alive = bool(lock.get("alive"))
+    if exists and alive:
+        checks.append(
+            {
+                "check": "daemon lock",
+                "status": "ok",
+                "detail": f"active pid={lock.get('pid')}",
+                "hint": "",
+            }
+        )
+    elif exists and not alive:
+        checks.append(
+            {
+                "check": "daemon lock",
+                "status": "warn",
+                "detail": "stale lock detected",
+                "hint": "Run `voxera queue unlock` to clear stale lock.",
+            }
+        )
+    else:
+        checks.append(
+            {
+                "check": "daemon lock",
+                "status": "warn",
+                "detail": "no lock file",
+                "hint": "Daemon may be stopped; start with `voxera daemon`.",
+            }
+        )
+
+    health = read_health_snapshot(root)
+    updated_at_ms = int(health.get("updated_at_ms") or 0)
+    age_s = int((time.time() * 1000 - updated_at_ms) / 1000) if updated_at_ms else None
+    stale = age_s is None or age_s > 600
+    checks.append(
+        {
+            "check": "health snapshot",
+            "status": "warn" if stale else "ok",
+            "detail": "missing" if age_s is None else f"age={age_s}s",
+            "hint": "Run daemon or check write permissions for health.json." if stale else "",
+        }
+    )
+
+    if os.getenv("VOXERA_PANEL_ENABLE", "1") == "1":
+        panel_user = bool(os.getenv("VOXERA_PANEL_OPERATOR_USER", "operator"))
+        panel_password = bool(os.getenv("VOXERA_PANEL_OPERATOR_PASSWORD"))
+        checks.append(
+            {
+                "check": "panel auth env",
+                "status": "ok" if panel_user and panel_password else "warn",
+                "detail": "configured"
+                if panel_user and panel_password
+                else "missing operator password",
+                "hint": "Set VOXERA_PANEL_OPERATOR_PASSWORD for panel operator auth."
+                if not panel_password
+                else "",
+            }
+        )
+
+    has_podman = shutil.which("podman") is not None
+    checks.append(
+        {
+            "check": "sandbox podman",
+            "status": "ok" if has_podman else "warn",
+            "detail": "podman available" if has_podman else "podman missing",
+            "hint": "Install rootless podman for sandbox.exec skills." if not has_podman else "",
+        }
+    )
+
+    return checks
+
+
+def print_quick_report(checks: list[dict[str, str]]) -> None:
+    table = Table(title="Voxera Doctor Quick (offline)")
+    table.add_column("Status")
+    table.add_column("Check")
+    table.add_column("Detail")
+    table.add_column("Hint")
+    icon = {"ok": "✅", "warn": "⚠️", "fail": "❌"}
+    for row in checks:
+        table.add_row(icon.get(row["status"], "⚠️"), row["check"], row["detail"], row["hint"])
+    console.print(table)

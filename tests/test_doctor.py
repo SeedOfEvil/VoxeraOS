@@ -304,3 +304,34 @@ def test_run_self_test_returns_fix_steps_when_artifacts_missing(monkeypatch):
     assert result["ok"] is False
     assert result["missing_artifacts"]
     assert result["fixes"]
+
+
+def test_doctor_quick_offline_does_not_call_brains(monkeypatch, tmp_path):
+    from voxera.doctor import run_quick_doctor
+
+    queue_root = tmp_path / "queue"
+    for path in [
+        queue_root / "inbox",
+        queue_root / "pending",
+        queue_root / "pending" / "approvals",
+        queue_root / "done",
+        queue_root / "failed",
+        queue_root / "artifacts",
+        queue_root / "_archive",
+    ]:
+        path.mkdir(parents=True, exist_ok=True)
+
+    called = {"openai": False, "gemini": False}
+
+    async def _never(*args, **kwargs):
+        called["openai"] = True
+        raise AssertionError("should not call OpenAI in quick doctor")
+
+    monkeypatch.setattr("voxera.brain.openai_compat.OpenAICompatBrain.capability_test", _never)
+    monkeypatch.setattr("voxera.brain.gemini.GeminiBrain.capability_test", _never)
+
+    checks = run_quick_doctor(queue_root=queue_root)
+
+    assert checks
+    assert called["openai"] is False
+    assert called["gemini"] is False

@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Jobs</title>
+  <link rel="stylesheet" href="/static/panel.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Jobs</h1>
+    <p><a href="/">← Back to panel</a></p>
+    <form method="get" class="form-row card" action="/jobs" style="margin-bottom:16px;">
+      <label>Bucket
+        <select class="input" name="bucket">
+          {% for opt in buckets %}
+            <option value="{{opt}}" {% if opt == bucket %}selected{% endif %}>{{opt}}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Query
+        <input class="input" type="text" name="q" value="{{q}}" placeholder="job id/title/goal" />
+      </label>
+      <label>Max
+        <input class="input" type="number" min="1" max="200" name="n" value="{{n}}" />
+      </label>
+      <button class="btn" type="submit">Filter</button>
+    </form>
+
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr><th>Job ID</th><th>Bucket</th><th>Title</th><th>Updated</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% if rows|length == 0 %}
+            <tr><td colspan="6">No jobs found.</td></tr>
+          {% else %}
+            {% for row in rows %}
+              <tr>
+                <td><a href="/jobs/{{row.job_id}}">{{row.job_id}}</a></td>
+                <td>{{row.bucket}}</td>
+                <td>{{row.title}}</td>
+                <td>{{row.updated_ts}}</td>
+                <td>{{row.status_summary}}</td>
+                <td><a href="/jobs/{{row.job_id}}">Detail</a></td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

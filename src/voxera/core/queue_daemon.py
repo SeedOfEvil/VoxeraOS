@@ -367,15 +367,16 @@ class MissionQueueDaemon:
         self._increment_health_counter("lock_released")
         self._log_lock_event("queue_daemon_lock_released")
 
-    def try_unlock_stale(self) -> bool:
+    def try_unlock_stale(self) -> dict[str, Any]:
         if not self.lock_file.exists():
-            return False
+            return {"removed": False, "stale": False, "alive": False, "pid": 0, "age_s": 0}
 
         payload = self._read_lock_payload()
         pid = int(payload.get("pid") or 0)
         ts = float(payload.get("ts") or payload.get("timestamp") or 0.0)
         alive = self._pid_is_alive(pid)
-        stale = (time.time() - ts) > self.lock_stale_after_s
+        age_s = max(0.0, time.time() - ts) if ts else 0.0
+        stale = age_s > self.lock_stale_after_s
 
         if stale or not alive:
             self.lock_file.unlink(missing_ok=True)
@@ -386,17 +387,25 @@ class MissionQueueDaemon:
                     "reason": "stale" if stale else "dead_pid",
                     "stale": stale,
                     "alive": alive,
+                    "pid": pid,
+                    "age_s": age_s,
                     "existing_pid": pid,
                 },
             )
-            return True
+            return {"removed": True, "stale": stale, "alive": alive, "pid": pid, "age_s": age_s}
 
         self._increment_health_counter(
             "unlock_refused", last_error=f"unlock refused: lock held by live pid={pid}"
         )
         self._log_lock_event(
             "queue_daemon_unlock_refused",
-            details={"reason": "live_pid", "stale": stale, "alive": alive, "existing_pid": pid},
+            details={
+                "reason": "live_pid",
+                "stale": stale,
+                "alive": alive,
+                "pid": pid,
+                "existing_pid": pid,
+            },
         )
         raise QueueLockError(
             f"Lock held by live pid={pid}. Stop daemon first, or use --force to override."
