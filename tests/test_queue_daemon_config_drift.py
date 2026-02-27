@@ -42,8 +42,8 @@ def test_daemon_config_drift_emits_once_when_changed(tmp_path: Path, monkeypatch
     daemon.settings = load_config(config_path=config_file)
     daemon._snapshot_and_check_config_drift()
 
-    assert (tmp_path / "config_snapshot.json").exists()
-    assert (tmp_path / "config_snapshot.last.json").exists()
+    assert (tmp_path / "_ops" / "config_snapshot.json").exists()
+    assert (tmp_path / "_ops" / "config_snapshot.last.json").exists()
     assert not [e for e in events if e.get("event") == "config_drift_detected"]
 
     daemon_same = MissionQueueDaemon(queue_root=tmp_path)

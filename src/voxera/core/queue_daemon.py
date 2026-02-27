@@ -886,8 +886,20 @@ class MissionQueueDaemon:
                 }
             )
 
+    def _is_snapshot_artifact(self, path: Path) -> bool:
+        name = path.name
+        if not name.endswith(".json"):
+            return False
+        if name == "config_snapshot.json":
+            return True
+        if name.startswith("config_snapshot"):
+            return True
+        return "_ops" in path.parts
+
     def _is_ready_job_file(self, path: Path) -> bool:
         if path.parent != self.inbox or not path.is_file():
+            return False
+        if self._is_snapshot_artifact(path):
             return False
         name = path.name
         if not name.endswith(".json"):
@@ -933,6 +945,7 @@ class MissionQueueDaemon:
         return (
             path.name.endswith(".json")
             and path.name != "health.json"
+            and not self._is_snapshot_artifact(path)
             and not path.name.endswith(
                 (".pending.json", ".approval.json", ".error.json", ".tmp.json", ".partial.json")
             )
@@ -1502,10 +1515,10 @@ class MissionQueueDaemon:
         return processed
 
     def _config_snapshot_path(self) -> Path:
-        return self.queue_root / "config_snapshot.json"
+        return self.queue_root / "_ops" / "config_snapshot.json"
 
     def _config_last_snapshot_path(self) -> Path:
-        return self.queue_root / "config_snapshot.last.json"
+        return self.queue_root / "_ops" / "config_snapshot.last.json"
 
     def _config_drift_note_path(self) -> Path:
         return self.queue_root / "config_drift_note.txt"
@@ -1520,7 +1533,9 @@ class MissionQueueDaemon:
             tmp.unlink(missing_ok=True)
 
     def _snapshot_and_check_config_drift(self) -> None:
-        snapshot_path = write_config_snapshot(self.queue_root, self.settings)
+        snapshot_path = write_config_snapshot(
+            self.queue_root, self.settings, filename="_ops/config_snapshot.json"
+        )
         current_payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
         current_settings = (
             current_payload.get("settings") if isinstance(current_payload, dict) else {}

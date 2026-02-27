@@ -91,15 +91,17 @@ def _manifest(queue_root: Path) -> dict[str, Any]:
 
 
 def _ensure_config_snapshot(queue_root: Path) -> tuple[Path | None, Path | None, str | None]:
-    snapshot = queue_root / "config_snapshot.json"
-    fingerprint = queue_root / "config_snapshot.sha256"
+    snapshot = queue_root / "_ops" / "config_snapshot.json"
+    fingerprint = queue_root / "_ops" / "config_snapshot.sha256"
     note = None
     if not snapshot.exists() or not fingerprint.exists():
         try:
             settings = load_runtime_config()
             if settings.queue_root.expanduser().resolve() != queue_root:
                 settings = load_runtime_config(overrides={"queue_root": queue_root})
-            snapshot = write_config_snapshot(queue_root, settings)
+            snapshot = write_config_snapshot(
+                queue_root, settings, filename="_ops/config_snapshot.json"
+            )
             fingerprint.write_text(config_fingerprint(settings) + "\n", encoding="utf-8")
         except Exception as exc:
             note = f"config snapshot unavailable: {type(exc).__name__}\n"

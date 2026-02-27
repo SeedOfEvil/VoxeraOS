@@ -22,7 +22,7 @@ def _write_runtime_config(path: Path, queue_root: Path, password: str = "secret"
     )
 
 
-def test_config_snapshot_default_writes_to_queue_root_without_queue_jobs(
+def test_config_snapshot_default_writes_to_queue_root_without_queue_intake_side_effects(
     tmp_path: Path, monkeypatch
 ) -> None:
     queue_root = tmp_path / "queue"
@@ -38,7 +38,7 @@ def test_config_snapshot_default_writes_to_queue_root_without_queue_jobs(
     assert len(line) == 1
     out_path = Path(line[0])
     assert out_path.is_absolute()
-    assert out_path == (queue_root / "config_snapshot.json").resolve()
+    assert out_path == (queue_root / "_ops" / "config_snapshot.json").resolve()
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["settings"]["panel_operator_password"] == "***"
     assert "very-secret" not in out_path.read_text(encoding="utf-8")
@@ -46,8 +46,13 @@ def test_config_snapshot_default_writes_to_queue_root_without_queue_jobs(
     for sub in ("inbox", "pending", "done", "failed"):
         assert not (queue_root / sub).exists()
 
+    daemon = cli.MissionQueueDaemon(queue_root=queue_root)
+    daemon.ensure_dirs()
+    daemon.process_pending_once()
+    assert not list((queue_root / "failed").glob("config_snapshot*.json"))
 
-def test_config_snapshot_respects_out_and_dir(tmp_path: Path, monkeypatch) -> None:
+
+def test_config_snapshot_respects_path_override(tmp_path: Path, monkeypatch) -> None:
     queue_root = tmp_path / "queue"
     cfg_path = tmp_path / "runtime.json"
     _write_runtime_config(cfg_path, queue_root)
@@ -55,14 +60,11 @@ def test_config_snapshot_respects_out_and_dir(tmp_path: Path, monkeypatch) -> No
     runner = CliRunner()
 
     out_file = tmp_path / "custom" / "snap.json"
-    out_res = runner.invoke(cli.app, ["config", "snapshot", "--out", str(out_file)])
+    out_res = runner.invoke(cli.app, ["config", "snapshot", "--path", str(out_file)])
     assert out_res.exit_code == 0
     assert Path(out_res.stdout.strip()) == out_file.resolve()
     assert out_file.exists()
 
-    out_dir = tmp_path / "snapshot-dir"
-    dir_res = runner.invoke(cli.app, ["config", "snapshot", "--dir", str(out_dir)])
-    assert dir_res.exit_code == 0
-    expected = out_dir.resolve() / "config_snapshot.json"
-    assert Path(dir_res.stdout.strip()) == expected
-    assert expected.exists()
+    out_res_alias = runner.invoke(cli.app, ["config", "snapshot", "--out", str(out_file)])
+    assert out_res_alias.exit_code == 0
+    assert Path(out_res_alias.stdout.strip()) == out_file.resolve()
