@@ -548,6 +548,14 @@ GET /bundle/system
 System bundle contains `manifest.json`, queue snapshots (`queue_status.txt`, `queue_health.json`, lock snapshot), redacted config snapshots (`snapshots/config_snapshot.json`, `snapshots/config_snapshot.sha256`), optional `journal_voxera_daemon_tail.txt`, and `panel_log_hint.txt`.
 Job bundles include the same redacted config snapshot files under `snapshots/` for operator handoff consistency.
 
+Ops console E2E helper supports a shared bundle output directory via `--dir`:
+
+```bash
+bash scripts/e2e_opsconsole.sh --dir /tmp/inc-test
+```
+
+When `--dir` is provided, the script writes both system and job bundles (and `e2e.log`, if produced) into that directory. Without `--dir`, it keeps the default timestamped path under `notes/queue/_archive/ops-e2e-<ts>/`.
+
 ### Truncation + size troubleshooting
 
 - Per-file cap defaults to 256KB; total bundle cap defaults to 4MB.

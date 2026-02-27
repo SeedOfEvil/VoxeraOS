@@ -7,6 +7,29 @@ cd "$ROOT_DIR"
 QUEUE_ROOT="${VOXERA_QUEUE_ROOT:-$ROOT_DIR/notes/queue}"
 QUEUE_ROOT="${QUEUE_ROOT/#\~/$HOME}"
 
+archive_dir_override=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir)
+      if [[ $# -lt 2 ]]; then
+        echo ":: error: --dir requires a value" >&2
+        exit 2
+      fi
+      archive_dir_override="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--dir <archive_dir>]"
+      exit 0
+      ;;
+    *)
+      echo ":: error: unknown argument: $1" >&2
+      echo "Usage: $0 [--dir <archive_dir>]" >&2
+      exit 2
+      ;;
+  esac
+done
+
 print_archive_diag() {
   local archive_dir="${1:-$QUEUE_ROOT/_archive}"
   echo ":: diagnostics: system_zip=${system_zip:-}"
@@ -89,8 +112,10 @@ echo ":: step: run doctor self-test"
 voxera doctor --self-test | tee /tmp/voxera-doctor-self-test.out
 rg -q "PASS" /tmp/voxera-doctor-self-test.out
 
-archive_dir="$QUEUE_ROOT/_archive/ops-e2e-$(date +%Y%m%d-%H%M%S)"
+archive_dir="${archive_dir_override:-$QUEUE_ROOT/_archive/ops-e2e-$(date +%Y%m%d-%H%M%S)}"
+archive_dir="${archive_dir/#\~/$HOME}"
 mkdir -p "$archive_dir"
+archive_dir="$(cd "$archive_dir" && pwd)"
 echo ":: archive_dir=$archive_dir"
 
 echo ":: step: export system ops bundle"
