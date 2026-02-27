@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from ..audit import log, tail
-from ..config import load_config
+from ..config import load_app_config as load_config
+from ..config import load_config as load_runtime_config
 from ..health import (
     increment_health_counter,
     read_health_snapshot,
@@ -65,7 +66,8 @@ class MissionQueueDaemon:
         self.archive = self.queue_root / "_archive"
         self.pause_marker = self.queue_root / ".paused"
         self.lock_file = self.queue_root / ".daemon.lock"
-        self.lock_stale_after_s = self._env_float("VOXERA_QUEUE_LOCK_STALE_S") or 3600.0
+        self.settings = load_runtime_config()
+        self.lock_stale_after_s = self.settings.queue_lock_stale_s or 3600.0
         self._lock_held = False
         self.poll_interval = poll_interval
         self.stats = QueueStats()
@@ -86,37 +88,17 @@ class MissionQueueDaemon:
         )
         self.cfg = cfg
         self.auto_approve_ask = auto_approve_ask
-        self.dev_mode = os.getenv("VOXERA_DEV_MODE") == "1"
+        self.dev_mode = self.settings.dev_mode
         self.failed_retention_max_age_s = (
             failed_retention_max_age_s
             if failed_retention_max_age_s is not None
-            else self._env_float("VOXERA_QUEUE_FAILED_MAX_AGE_S")
+            else self.settings.queue_failed_max_age_s
         )
         self.failed_retention_max_count = (
             failed_retention_max_count
             if failed_retention_max_count is not None
-            else self._env_int("VOXERA_QUEUE_FAILED_MAX_COUNT")
+            else self.settings.queue_failed_max_count
         )
-
-    def _env_float(self, key: str) -> float | None:
-        raw = os.getenv(key)
-        if not raw:
-            return None
-        try:
-            value = float(raw)
-            return value if value > 0 else None
-        except ValueError:
-            return None
-
-    def _env_int(self, key: str) -> int | None:
-        raw = os.getenv(key)
-        if not raw:
-            return None
-        try:
-            value = int(raw)
-            return value if value > 0 else None
-        except ValueError:
-            return None
 
     def _decision_capability(self, decision) -> str:
         first = (decision.reason or "").split(";", 1)[0].strip()
@@ -854,7 +836,11 @@ class MissionQueueDaemon:
         )
 
     def _notify_pending_approval(self, approval: dict[str, Any]) -> None:
-        if os.getenv("VOXERA_NOTIFY") != "1":
+        notify_override = os.getenv("VOXERA_NOTIFY")
+        notify_enabled = (
+            self.settings.notify_enabled if notify_override is None else notify_override == "1"
+        )
+        if not notify_enabled:
             return
 
         job = str(approval.get("job") or approval.get("job_id") or "unknown-job")

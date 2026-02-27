@@ -7,7 +7,11 @@ This guide covers day-2 operations for VoxeraOS in service mode.
 From repository root:
 
 ```bash
+make dev
+make fmt-check
+make check
 make services-install
+make daemon-restart
 ```
 
 This installs user units from `deploy/systemd/user/` into `~/.config/systemd/user`, rendering
@@ -15,6 +19,32 @@ This installs user units from `deploy/systemd/user/` into `~/.config/systemd/use
 and enables/starts:
 - `voxera-daemon.service`
 - `voxera-panel.service`
+
+
+## Config + env locations
+
+- Use `.env.example` as the template for local values.
+- Keep secrets (for example `VOXERA_PANEL_OPERATOR_PASSWORD`) in `~/.config/voxera/env` when possible.
+- `.env` in the repo is intentionally gitignored for local overrides.
+- Print the effective redacted runtime snapshot with:
+
+```bash
+.venv/bin/voxera config show
+```
+
+Config precedence: CLI overrides > `VOXERA_*` env > `~/.config/voxera/config.json` > built-in defaults.
+
+For deterministic local/CI tests, Make targets run pytest with `VOXERA_LOAD_DOTENV=0` and unset key `VOXERA_*` vars so shell exports and repo `.env` do not alter test outcomes.
+
+Key runtime env vars (defaults):
+- `VOXERA_QUEUE_ROOT` (`~/VoxeraOS/notes/queue`)
+- `VOXERA_PANEL_HOST` (`127.0.0.1`)
+- `VOXERA_PANEL_PORT` (`8844`, `make panel` uses `8787`)
+- `VOXERA_PANEL_OPERATOR_USER` (`admin`)
+- `VOXERA_PANEL_CSRF_ENABLED` (`1`/true by default)
+- `VOXERA_QUEUE_LOCK_STALE_S` (`3600`)
+- `VOXERA_OPS_BUNDLE_DIR` (unset => timestamped `_archive/` path)
+- When using `voxera ops bundle ... --queue-dir`, default archive output stays under that queue root (`<queue_dir>/_archive/<timestamp>/`); use `--dir` to override explicitly.
 
 ## Queue contract + intake flow
 

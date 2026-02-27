@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..audit import log, tail
+from ..config import load_config as load_runtime_config
 from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
 from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import JOB_BUCKETS, list_jobs, lookup_job, queue_snapshot
@@ -51,8 +52,12 @@ CSRF_COOKIE = "voxera_panel_csrf"
 CSRF_FORM_KEY = "csrf_token"
 
 
+def _settings():
+    return load_runtime_config()
+
+
 def _queue_root() -> Path:
-    return Path.home() / "VoxeraOS" / "notes" / "queue"
+    return _settings().queue_root
 
 
 def _missions_dir() -> Path:
@@ -60,7 +65,7 @@ def _missions_dir() -> Path:
 
 
 def _allow_get_mutations() -> bool:
-    return os.getenv("VOXERA_PANEL_ENABLE_GET_MUTATIONS", "0") == "1"
+    return _settings().panel_enable_get_mutations
 
 
 def _request_meta(request: Request) -> dict[str, Any]:
@@ -103,8 +108,9 @@ def _panel_security_snapshot() -> dict[str, Any]:
 
 
 def _operator_credentials(request: Request) -> tuple[str, str]:
-    user = os.getenv("VOXERA_PANEL_OPERATOR_USER") or "admin"
-    password = os.getenv("VOXERA_PANEL_OPERATOR_PASSWORD")
+    settings = _settings()
+    user = settings.panel_operator_user
+    password = settings.panel_operator_password
     if not password:
         _panel_security_counter_incr("panel_401_count", last_error="operator password missing")
         _log_panel_security_event(
@@ -183,6 +189,15 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
 
 async def _require_mutation_guard(request: Request) -> None:
     _require_operator_auth_from_request(request)
+    if not _settings().panel_csrf_enabled:
+        _panel_security_counter_incr("panel_mutation_allowed")
+        _log_panel_security_event(
+            "panel_mutation_allowed",
+            request=request,
+            reason="auth_valid_csrf_disabled",
+            status_code=200,
+        )
+        return
     cookie_token = request.cookies.get(CSRF_COOKIE, "")
     request_token = (request.headers.get("x-csrf-token") or "").strip() or (
         await _request_value(request, CSRF_FORM_KEY, "")

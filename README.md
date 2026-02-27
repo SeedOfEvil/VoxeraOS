@@ -21,16 +21,16 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 
 ## Quick start (Alpha)
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -e ".[dev]"
+make dev
+make fmt-check
+make check
 
 make update
 make services-install
+make daemon-restart
 
-voxera --version
-voxera queue status
+.venv/bin/voxera --version
+.venv/bin/voxera queue status
 voxera inbox add "Write a daily check-in note with priorities and blockers"
 voxera daemon --once
 voxera queue approvals list
@@ -45,6 +45,42 @@ voxera queue resume
 voxera queue unlock           # safe: stale/dead locks only
 voxera queue unlock --force   # override live lock (dangerous)
 voxera queue health           # operator health snapshot (lock/auth/csrf counters)
+```
+
+
+## Runtime config (central loader)
+
+
+### Dev Contract
+- CI may call `make fmt-check`, `make lint`, `make type`, `make test`, `make test-failed-sidecar`, or `make release-check` individually.
+- Each of these targets now depends on `.venv/.dev_installed`, created by `make dev`, so tool binaries (`ruff`, `mypy`, `pytest`) are always present before checks run.
+- `make test`/`make check` run pytest with a sanitized `VOXERA_*` env and `VOXERA_LOAD_DOTENV=0` so local `.env` and shell exports do not leak into CI-style test runs.
+
+### Config Contract
+- Runtime config file path: `~/.config/voxera/config.json` (optional).
+- Precedence is strict and deterministic: **CLI overrides > VOXERA_* env > config file > defaults**.
+- Inspect safely: `voxera config show` (sensitive values redacted as `***`).
+- Validate explicitly: `voxera config validate` (non-zero exit with actionable error details).
+- When `--queue-dir` is provided for `voxera ops bundle ...`, archive defaults are anchored under `<queue_dir>/_archive/...`; `VOXERA_OPS_BUNDLE_DIR` is ignored unless `--dir` is passed.
+
+Example `~/.config/voxera/config.json`:
+```json
+{
+  "panel_host": "127.0.0.1",
+  "panel_port": 8844,
+  "queue_lock_stale_s": 3600,
+  "panel_csrf_enabled": true
+}
+```
+
+
+- Copy `.env.example` to `.env` for local non-secret defaults.
+- Keep secrets out of git; preferred location is `~/.config/voxera/env` (same `KEY=VALUE` format).
+- Runtime settings are loaded by `load_config()` into `VoxeraConfig` and include queue root, panel host/port, operator auth, lock stale window, failed-retention limits, and ops bundle directory.
+- Print a redacted config snapshot for audits with:
+
+```bash
+.venv/bin/voxera config show
 ```
 
 ## Quick start (dev VM)
@@ -318,8 +354,8 @@ and prints install hints when missing.
 
 ### 3) Start the panel (optional)
 ```bash
-voxera panel
-# open http://127.0.0.1:8844
+make panel
+# open http://127.0.0.1:8787
 ```
 
 Panel mutation endpoints (`/queue/create`, `/missions/create`) now use `POST` by default.

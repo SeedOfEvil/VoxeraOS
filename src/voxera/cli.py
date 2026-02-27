@@ -10,7 +10,9 @@ from rich.console import Console
 from rich.table import Table
 
 from .audit import tail
-from .config import load_config
+from .config import load_app_config as load_config
+from .config import load_config as load_runtime_config
+from .config import load_runtime_env, should_load_dotenv
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
@@ -71,12 +73,44 @@ def main(
     ),
 ):
     """Voxera CLI root command group."""
+    if should_load_dotenv():
+        load_runtime_env()
+        load_runtime_env(Path(".env"))
 
 
 @app.command("version")
 def version_cmd():
     """Show Voxera version."""
     console.print(_version_string())
+
+
+config_app = typer.Typer(help="Runtime configuration utilities")
+app.add_typer(config_app, name="config")
+
+
+@config_app.command("show")
+def config_show():
+    """Show resolved runtime config (redacted)."""
+    cfg = load_runtime_config()
+    typer.echo(json.dumps(cfg.to_safe_dict(), sort_keys=True))
+
+
+@app.command("config-show")
+def config_show_legacy():
+    """Backward-compatible alias for `voxera config show`."""
+    cfg = load_runtime_config()
+    typer.echo(json.dumps(cfg.to_safe_dict(), sort_keys=True))
+
+
+@config_app.command("validate")
+def config_validate():
+    """Validate runtime config and exit non-zero on errors."""
+    try:
+        cfg = load_runtime_config()
+    except ValueError as exc:
+        typer.echo(f"ERROR: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps({"status": "ok", "config_path": str(cfg.config_path)}, sort_keys=True))
 
 
 skills_app = typer.Typer(help="Manage skills")
@@ -297,11 +331,20 @@ def audit(n: int = 30):
 
 
 @app.command()
-def panel(host: str = "127.0.0.1", port: int = 8844):
+def panel(
+    host: str | None = typer.Option(None, "--host", help="Panel host override."),
+    port: int | None = typer.Option(None, "--port", help="Panel port override."),
+):
     """Run the minimal approvals/audit panel."""
     import uvicorn
 
-    uvicorn.run("voxera.panel.app:app", host=host, port=port, reload=False)
+    runtime_cfg = load_runtime_config(overrides={"panel_host": host, "panel_port": port})
+    uvicorn.run(
+        "voxera.panel.app:app",
+        host=runtime_cfg.panel_host,
+        port=runtime_cfg.panel_port,
+        reload=False,
+    )
 
 
 @app.command()
@@ -414,7 +457,11 @@ def ops_bundle_system(
 ):
     """Export a system ops bundle."""
     queue_root = Path(queue_dir).expanduser().resolve()
-    out = build_ops_system_bundle(queue_root, archive_dir=archive_dir)
+    out = build_ops_system_bundle(
+        queue_root,
+        archive_dir=archive_dir,
+        prefer_queue_root_archive=True,
+    )
     typer.echo(str(out.resolve()))
 
 
@@ -430,7 +477,12 @@ def ops_bundle_job(
 ):
     """Export a per-job ops bundle."""
     queue_root = Path(queue_dir).expanduser().resolve()
-    out = build_ops_job_bundle(queue_root, job_ref, archive_dir=archive_dir)
+    out = build_ops_job_bundle(
+        queue_root,
+        job_ref,
+        archive_dir=archive_dir,
+        prefer_queue_root_archive=True,
+    )
     typer.echo(str(out.resolve()))
 
 

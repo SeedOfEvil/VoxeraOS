@@ -375,3 +375,21 @@ def test_ops_bundle_system_and_job_with_explicit_dir(tmp_path, monkeypatch):
     job_zip = Path(job_res.output.strip())
     assert job_zip == archive_dir.resolve() / "bundle-job-job-z.zip"
     assert job_zip.exists()
+
+
+def test_ops_bundle_queue_dir_ignores_env_archive_override(tmp_path, monkeypatch):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    env_archive = tmp_path / "global-archive"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-z.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("VOXERA_OPS_BUNDLE_DIR", str(env_archive))
+    monkeypatch.setattr(
+        "voxera.ops_bundle.subprocess.check_output", lambda *args, **kwargs: "journal"
+    )
+
+    res = runner.invoke(cli.app, ["ops", "bundle", "system", "--queue-dir", str(queue_dir)])
+    assert res.exit_code == 0
+    path = Path(res.output.strip())
+    assert str(path).startswith(str((queue_dir / "_archive").resolve()))
+    assert not str(path).startswith(str(env_archive.resolve()))

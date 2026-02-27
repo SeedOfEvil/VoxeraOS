@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import time
 import uuid
@@ -10,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .config import load_config as load_runtime_config
 from .core.queue_daemon import MissionQueueDaemon
 from .core.queue_inspect import lookup_job
 from .version import get_version
@@ -32,12 +32,19 @@ def _archive_dir(queue_root: Path) -> Path:
     return out
 
 
-def _resolve_archive_dir(queue_root: Path, archive_dir: Path | None) -> Path:
+def _resolve_archive_dir(
+    queue_root: Path,
+    archive_dir: Path | None,
+    *,
+    prefer_queue_root_archive: bool = False,
+) -> Path:
     if archive_dir is not None:
         out_dir = archive_dir
+    elif prefer_queue_root_archive:
+        out_dir = _archive_dir(queue_root)
     else:
-        env_dir = os.environ.get("VOXERA_OPS_BUNDLE_DIR", "").strip()
-        out_dir = Path(env_dir) if env_dir else _archive_dir(queue_root)
+        settings = load_runtime_config()
+        out_dir = settings.ops_bundle_dir if settings.ops_bundle_dir else _archive_dir(queue_root)
     out_dir = out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
@@ -82,11 +89,18 @@ def _manifest(queue_root: Path) -> dict[str, Any]:
     }
 
 
-def build_system_bundle(queue_root: Path, archive_dir: Path | None = None) -> Path:
+def build_system_bundle(
+    queue_root: Path,
+    archive_dir: Path | None = None,
+    *,
+    prefer_queue_root_archive: bool = False,
+) -> Path:
     queue_root = queue_root.expanduser().resolve()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     daemon.ensure_dirs()
-    out_dir = _resolve_archive_dir(queue_root, archive_dir)
+    out_dir = _resolve_archive_dir(
+        queue_root, archive_dir, prefer_queue_root_archive=prefer_queue_root_archive
+    )
     out = out_dir / "bundle-system.zip"
 
     status = daemon.status_snapshot(approvals_limit=8, failed_limit=8)
@@ -145,11 +159,19 @@ def build_system_bundle(queue_root: Path, archive_dir: Path | None = None) -> Pa
     return out
 
 
-def build_job_bundle(queue_root: Path, job_ref: str, archive_dir: Path | None = None) -> Path:
+def build_job_bundle(
+    queue_root: Path,
+    job_ref: str,
+    archive_dir: Path | None = None,
+    *,
+    prefer_queue_root_archive: bool = False,
+) -> Path:
     queue_root = queue_root.expanduser().resolve()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     daemon.ensure_dirs()
-    out_dir = _resolve_archive_dir(queue_root, archive_dir)
+    out_dir = _resolve_archive_dir(
+        queue_root, archive_dir, prefer_queue_root_archive=prefer_queue_root_archive
+    )
 
     lookup = lookup_job(queue_root, job_ref)
     job_stem = Path(job_ref).stem
