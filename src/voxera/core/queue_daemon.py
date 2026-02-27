@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from typing import Any
 from ..audit import log, tail
 from ..config import load_app_config as load_config
 from ..config import load_config as load_runtime_config
+from ..config import write_config_fingerprint, write_config_snapshot
 from ..health import (
     increment_health_counter,
     read_health_snapshot,
@@ -883,8 +885,20 @@ class MissionQueueDaemon:
                 }
             )
 
+    def _is_snapshot_artifact(self, path: Path) -> bool:
+        name = path.name
+        if not name.endswith(".json"):
+            return False
+        if name == "config_snapshot.json":
+            return True
+        if name.startswith("config_snapshot"):
+            return True
+        return "_ops" in path.parts
+
     def _is_ready_job_file(self, path: Path) -> bool:
         if path.parent != self.inbox or not path.is_file():
+            return False
+        if self._is_snapshot_artifact(path):
             return False
         name = path.name
         if not name.endswith(".json"):
@@ -930,6 +944,7 @@ class MissionQueueDaemon:
         return (
             path.name.endswith(".json")
             and path.name != "health.json"
+            and not self._is_snapshot_artifact(path)
             and not path.name.endswith(
                 (".pending.json", ".approval.json", ".error.json", ".tmp.json", ".partial.json")
             )
@@ -1498,11 +1513,103 @@ class MissionQueueDaemon:
             processed += 1
         return processed
 
+    def _config_snapshot_path(self) -> Path:
+        return self.queue_root / "_ops" / "config_snapshot.json"
+
+    def _config_last_snapshot_path(self) -> Path:
+        return self.queue_root / "_ops" / "config_snapshot.last.json"
+
+    def _config_last_fingerprint_path(self) -> Path:
+        return self.queue_root / "_ops" / "config_snapshot.last.sha256"
+
+    def _config_drift_note_path(self) -> Path:
+        return self.queue_root / "config_drift_note.txt"
+
+    def _write_text_atomic(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def _snapshot_and_check_config_drift(self) -> None:
+        snapshot_path = write_config_snapshot(
+            self.queue_root, self.settings, filename="_ops/config_snapshot.json"
+        )
+        fingerprint_path = write_config_fingerprint(self.queue_root, self.settings)
+        current_hash = fingerprint_path.read_text(encoding="utf-8").strip()
+
+        current_payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        current_settings = (
+            current_payload.get("settings") if isinstance(current_payload, dict) else {}
+        )
+        if not isinstance(current_settings, dict):
+            current_settings = {}
+
+        last_payload_path = self._config_last_snapshot_path()
+        old_settings: dict[str, Any] = {}
+        if last_payload_path.exists():
+            try:
+                old_payload = json.loads(last_payload_path.read_text(encoding="utf-8"))
+            except Exception:
+                old_payload = {}
+            raw = old_payload.get("settings") if isinstance(old_payload, dict) else {}
+            if isinstance(raw, dict):
+                old_settings = raw
+
+        changed_keys = sorted(
+            key
+            for key in set(old_settings.keys()) | set(current_settings.keys())
+            if old_settings.get(key) != current_settings.get(key)
+        )
+
+        baseline_path = self._config_last_fingerprint_path()
+        baseline_hash = (
+            baseline_path.read_text(encoding="utf-8").strip() if baseline_path.exists() else ""
+        )
+        if baseline_hash:
+            if baseline_hash != current_hash:
+                ts_ms = int(time.time() * 1000)
+                log(
+                    {
+                        "event": "config_drift_detected",
+                        "changed": True,
+                        "changed_keys": changed_keys,
+                        "old_hash": baseline_hash,
+                        "new_hash": current_hash,
+                        "snapshot_path": str(snapshot_path.resolve()),
+                        "queue_root": str(self.queue_root.resolve()),
+                        "daemon_pid": os.getpid(),
+                    }
+                )
+                note = (
+                    f"config drift detected\n"
+                    f"ts_ms={ts_ms}\n"
+                    f"queue_root={self.queue_root.resolve()}\n"
+                    f"snapshot_path={snapshot_path.resolve()}\n"
+                    f"old_hash={baseline_hash}\n"
+                    f"new_hash={current_hash}\n"
+                    f"changed_keys={','.join(changed_keys)}\n"
+                )
+                self._write_text_atomic(self._config_drift_note_path(), note)
+            self._write_text_atomic(baseline_path, current_hash + "\n")
+        else:
+            self._write_text_atomic(baseline_path, current_hash + "\n")
+
+        last_payload = dict(current_payload) if isinstance(current_payload, dict) else {}
+        last_payload["snapshot_hash"] = current_hash
+        self._write_text_atomic(
+            last_payload_path, json.dumps(last_payload, indent=2, sort_keys=True) + "\n"
+        )
+
     def run(self, once: bool = False) -> None:
         self.ensure_dirs()
         now_ms = int(time.time() * 1000)
         self._update_daemon_health_state(daemon_started_at_ms=now_ms, daemon_pid=os.getpid())
         self._acquire_daemon_lock()
+        self._snapshot_and_check_config_drift()
         if self.auto_approve_ask and not self.dev_mode:
             log(
                 {"event": "queue_auto_approve_disabled", "reason": "VOXERA_DEV_MODE is not enabled"}

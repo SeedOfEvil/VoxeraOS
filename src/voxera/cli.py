@@ -12,7 +12,12 @@ from rich.table import Table
 from .audit import tail
 from .config import load_app_config as load_config
 from .config import load_config as load_runtime_config
-from .config import load_runtime_env, should_load_dotenv
+from .config import (
+    load_runtime_env,
+    should_load_dotenv,
+    write_config_fingerprint,
+    write_config_snapshot,
+)
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
@@ -35,6 +40,12 @@ OPS_BUNDLE_ARCHIVE_DIR_OPTION = typer.Option(
     None,
     "--dir",
     help="Archive directory for ops bundle outputs. Defaults to VOXERA_OPS_BUNDLE_DIR or notes/queue/_archive/<timestamp>/.",
+)
+SNAPSHOT_PATH_OPTION = typer.Option(
+    None,
+    "--path",
+    "--out",
+    help="Snapshot output file path. Defaults to <queue_root>/_ops/config_snapshot.json.",
 )
 
 
@@ -100,6 +111,20 @@ def config_show_legacy():
     """Backward-compatible alias for `voxera config show`."""
     cfg = load_runtime_config()
     typer.echo(json.dumps(cfg.to_safe_dict(), sort_keys=True))
+
+
+@config_app.command("snapshot")
+def config_snapshot(path: Path | None = SNAPSHOT_PATH_OPTION) -> None:
+    """Write a redacted runtime config snapshot and print its absolute path."""
+    cfg = load_runtime_config()
+    target = (
+        path.expanduser().resolve()
+        if path is not None
+        else cfg.queue_root / "_ops" / "config_snapshot.json"
+    )
+    written = write_config_snapshot(target.parent, cfg, filename=target.name)
+    write_config_fingerprint(cfg.queue_root, cfg)
+    typer.echo(str(written.resolve()))
 
 
 @config_app.command("validate")

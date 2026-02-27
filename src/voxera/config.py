@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import time
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -258,6 +261,56 @@ def load_runtime_env(path: Path | None = None) -> dict[str, str]:
     for key, value in loaded.items():
         os.environ.setdefault(key, value)
     return loaded
+
+
+def config_fingerprint(settings: VoxeraConfig) -> str:
+    serialized = json.dumps(settings.to_safe_dict(), sort_keys=True)
+    return sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def write_config_fingerprint(
+    queue_root: Path,
+    settings: VoxeraConfig,
+    *,
+    filename: str = "_ops/config_snapshot.sha256",
+) -> Path:
+    queue_root = queue_root.expanduser().resolve()
+    out = queue_root / filename
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_name(f".{out.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(config_fingerprint(settings) + "\n", encoding="utf-8")
+        tmp.replace(out)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return out
+
+
+def write_config_snapshot(
+    queue_root: Path,
+    settings: VoxeraConfig,
+    *,
+    filename: str = "config_snapshot.json",
+) -> Path:
+    queue_root = queue_root.expanduser().resolve()
+    out = queue_root / filename
+    out.parent.mkdir(parents=True, exist_ok=True)
+    generated_at_ms = int(time.time() * 1000)
+    payload = {
+        "schema_version": 1,
+        "generated_at_ms": generated_at_ms,
+        "written_at_ms": generated_at_ms,
+        "config_path": str(settings.config_path),
+        "settings": settings.to_safe_dict(),
+        "sources": dict(settings.sources),
+    }
+    tmp = out.with_name(f".{out.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(out)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return out
 
 
 def default_config_path():

@@ -32,6 +32,14 @@ and enables/starts:
 .venv/bin/voxera config show
 ```
 
+- Persist a redacted config snapshot for incident tooling with:
+
+```bash
+.venv/bin/voxera config snapshot
+```
+
+This writes `notes/queue/_ops/config_snapshot.json` (or `<VOXERA_QUEUE_ROOT>/_ops/config_snapshot.json`) with `settings`, `sources`, `written_at_ms`, and `schema_version=1`, plus `_ops/config_snapshot.sha256`.
+
 Config precedence: CLI overrides > `VOXERA_*` env > `~/.config/voxera/config.json` > built-in defaults.
 
 For deterministic local/CI tests, Make targets run pytest with `VOXERA_LOAD_DOTENV=0` and unset key `VOXERA_*` vars so shell exports and repo `.env` do not alter test outcomes.
@@ -46,6 +54,10 @@ Key runtime env vars (defaults):
 - `VOXERA_OPS_BUNDLE_DIR` (unset => timestamped `_archive/` path)
 - When using `voxera ops bundle ... --queue-dir`, default archive output stays under that queue root (`<queue_dir>/_archive/<timestamp>/`); use `--dir` to override explicitly.
 
+
+Daemon startup writes a fresh redacted `_ops/config_snapshot.json`, `_ops/config_snapshot.sha256`, and baseline `_ops/config_snapshot.last.sha256`. If the effective redacted config fingerprint changes since previous daemon start, Voxera emits exactly one structured audit event (`config_drift_detected`) and writes `config_drift_note.txt` with timestamp and old/new fingerprints. Secrets are never included in these files/events.
+
+Note: systemd user services do not inherit ad-hoc shell exports by default; configure env via Voxera runtime env files/service unit overrides if drift behavior seems unexpected.
 ## Queue contract + intake flow
 
 Use `voxera inbox` as the human-friendly front door for queued goals. Ensure queue folders exist once per machine:
@@ -533,7 +545,8 @@ voxera ops bundle job <job_id> --dir notes/queue/_archive/INCIDENT-123
 GET /bundle/system
 ```
 
-System bundle contains `manifest.json`, queue snapshots (`queue_status.txt`, `queue_health.json`, lock snapshot), optional `journal_voxera_daemon_tail.txt`, and `panel_log_hint.txt`.
+System bundle contains `manifest.json`, queue snapshots (`queue_status.txt`, `queue_health.json`, lock snapshot), redacted config snapshots (`snapshots/config_snapshot.json`, `snapshots/config_snapshot.sha256`), optional `journal_voxera_daemon_tail.txt`, and `panel_log_hint.txt`.
+Job bundles include the same redacted config snapshot files under `snapshots/` for operator handoff consistency.
 
 ### Truncation + size troubleshooting
 
