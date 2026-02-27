@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -14,15 +16,17 @@ from .paths import queue_root as default_queue_root
 DEFAULT_CONFIG_NAME = "config.yml"
 DEFAULT_POLICY_NAME = "policy.yml"
 _DEFAULT_ENV_FILE = Path("~/.config/voxera/env").expanduser()
+_DEFAULT_RUNTIME_CONFIG = Path("~/.config/voxera/config.json").expanduser()
 
 
 @dataclass(frozen=True)
-class VoxeraSettings:
+class VoxeraConfig:
     queue_root: Path
     panel_host: str
     panel_port: int
     panel_operator_user: str
     panel_operator_password: str | None
+    panel_csrf_enabled: bool
     panel_enable_get_mutations: bool
     queue_lock_stale_s: float
     queue_failed_max_age_s: float | None
@@ -30,59 +34,17 @@ class VoxeraSettings:
     ops_bundle_dir: Path | None
     dev_mode: bool
     notify_enabled: bool
+    config_path: Path
+    sources: Mapping[str, str]
 
-    @classmethod
-    def from_env(
-        cls,
-        environ: Mapping[str, str] | None = None,
-        cwd: Path | None = None,
-        home: Path | None = None,
-    ) -> VoxeraSettings:
-        env = dict(environ or os.environ)
-        _ = cwd
-        _ = home
-
-        queue_root = _queue_root_default()
-        queue_root_raw = (env.get("VOXERA_QUEUE_ROOT") or "").strip()
-        if queue_root_raw:
-            queue_root = Path(queue_root_raw).expanduser()
-
-        panel_operator_password = (env.get("VOXERA_PANEL_OPERATOR_PASSWORD") or "").strip() or None
-
-        ops_bundle_raw = (env.get("VOXERA_OPS_BUNDLE_DIR") or "").strip()
-        ops_bundle_dir = Path(ops_bundle_raw).expanduser() if ops_bundle_raw else None
-
-        return cls(
-            queue_root=queue_root,
-            panel_host=(env.get("VOXERA_PANEL_HOST") or "127.0.0.1").strip() or "127.0.0.1",
-            panel_port=_parse_int(env, "VOXERA_PANEL_PORT", default=8844, min_value=1),
-            panel_operator_user=(env.get("VOXERA_PANEL_OPERATOR_USER") or "admin").strip()
-            or "admin",
-            panel_operator_password=panel_operator_password,
-            panel_enable_get_mutations=_parse_bool(
-                env, "VOXERA_PANEL_ENABLE_GET_MUTATIONS", default=False
-            ),
-            queue_lock_stale_s=_parse_float(
-                env, "VOXERA_QUEUE_LOCK_STALE_S", default=3600.0, min_value=0.0
-            ),
-            queue_failed_max_age_s=_parse_optional_float(
-                env, "VOXERA_QUEUE_FAILED_MAX_AGE_S", min_value=0.0
-            ),
-            queue_failed_max_count=_parse_optional_int(
-                env, "VOXERA_QUEUE_FAILED_MAX_COUNT", min_value=1
-            ),
-            ops_bundle_dir=ops_bundle_dir,
-            dev_mode=_parse_bool(env, "VOXERA_DEV_MODE", default=False),
-            notify_enabled=_parse_bool(env, "VOXERA_NOTIFY", default=False),
-        )
-
-    def to_safe_dict(self) -> dict[str, str | int | float | bool | None]:
-        safe: dict[str, str | int | float | bool | None] = {
+    def to_safe_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "queue_root": str(self.queue_root),
             "panel_host": self.panel_host,
             "panel_port": self.panel_port,
             "panel_operator_user": self.panel_operator_user,
             "panel_operator_password": self.panel_operator_password,
+            "panel_csrf_enabled": self.panel_csrf_enabled,
             "panel_enable_get_mutations": self.panel_enable_get_mutations,
             "queue_lock_stale_s": self.queue_lock_stale_s,
             "queue_failed_max_age_s": self.queue_failed_max_age_s,
@@ -90,89 +52,179 @@ class VoxeraSettings:
             "ops_bundle_dir": str(self.ops_bundle_dir) if self.ops_bundle_dir else None,
             "dev_mode": self.dev_mode,
             "notify_enabled": self.notify_enabled,
+            "config_path": str(self.config_path),
+            "sources": dict(self.sources),
         }
-        for key, value in list(safe.items()):
-            if value is None:
-                continue
+        for key in list(payload.keys()):
             lowered = key.lower()
-            if any(token in lowered for token in ("password", "token", "key", "secret")):
-                safe[key] = "***"
-        return safe
+            if (
+                any(token in lowered for token in ("password", "token", "key", "secret"))
+                and payload[key] is not None
+            ):
+                payload[key] = "***"
+        return payload
 
 
-def _queue_root_default() -> Path:
+def resolve_config_path(config_path: Path | None = None) -> Path:
+    return (config_path or _DEFAULT_RUNTIME_CONFIG).expanduser()
+
+
+def load_config(
+    *, overrides: Mapping[str, Any] | None = None, config_path: Path | None = None
+) -> VoxeraConfig:
+    path = resolve_config_path(config_path)
+    file_values = _load_runtime_config_file(path)
+    env = dict(os.environ)
+    override_values = dict(overrides or {})
+
+    defaults: dict[str, Any] = {
+        "queue_root": _queue_root_default(Path.cwd()),
+        "panel_host": "127.0.0.1",
+        "panel_port": 8844,
+        "panel_operator_user": "admin",
+        "panel_operator_password": None,
+        "panel_csrf_enabled": True,
+        "panel_enable_get_mutations": False,
+        "queue_lock_stale_s": 3600.0,
+        "queue_failed_max_age_s": None,
+        "queue_failed_max_count": None,
+        "ops_bundle_dir": None,
+        "dev_mode": False,
+        "notify_enabled": False,
+    }
+
+    env_map: dict[str, str] = {
+        "queue_root": "VOXERA_QUEUE_ROOT",
+        "panel_host": "VOXERA_PANEL_HOST",
+        "panel_port": "VOXERA_PANEL_PORT",
+        "panel_operator_user": "VOXERA_PANEL_OPERATOR_USER",
+        "panel_operator_password": "VOXERA_PANEL_OPERATOR_PASSWORD",
+        "panel_csrf_enabled": "VOXERA_PANEL_CSRF_ENABLED",
+        "panel_enable_get_mutations": "VOXERA_PANEL_ENABLE_GET_MUTATIONS",
+        "queue_lock_stale_s": "VOXERA_QUEUE_LOCK_STALE_S",
+        "queue_failed_max_age_s": "VOXERA_QUEUE_FAILED_MAX_AGE_S",
+        "queue_failed_max_count": "VOXERA_QUEUE_FAILED_MAX_COUNT",
+        "ops_bundle_dir": "VOXERA_OPS_BUNDLE_DIR",
+        "dev_mode": "VOXERA_DEV_MODE",
+        "notify_enabled": "VOXERA_NOTIFY",
+    }
+
+    resolved: dict[str, Any] = {}
+    sources: dict[str, str] = {}
+
+    for field, default_value in defaults.items():
+        value = default_value
+        source = "default"
+        if field in file_values:
+            value = file_values[field]
+            source = f"file:{path}"
+        env_key = env_map[field]
+        env_value = (env.get(env_key) or "").strip()
+        if env_value != "":
+            value = env_value
+            source = f"env:{env_key}"
+        if field in override_values:
+            value = override_values[field]
+            source = "override"
+        resolved[field] = _coerce(field, value)
+        sources[field] = source
+
+    return VoxeraConfig(
+        queue_root=resolved["queue_root"],
+        panel_host=resolved["panel_host"],
+        panel_port=resolved["panel_port"],
+        panel_operator_user=resolved["panel_operator_user"],
+        panel_operator_password=resolved["panel_operator_password"],
+        panel_csrf_enabled=resolved["panel_csrf_enabled"],
+        panel_enable_get_mutations=resolved["panel_enable_get_mutations"],
+        queue_lock_stale_s=resolved["queue_lock_stale_s"],
+        queue_failed_max_age_s=resolved["queue_failed_max_age_s"],
+        queue_failed_max_count=resolved["queue_failed_max_count"],
+        ops_bundle_dir=resolved["ops_bundle_dir"],
+        dev_mode=resolved["dev_mode"],
+        notify_enabled=resolved["notify_enabled"],
+        config_path=path,
+        sources=sources,
+    )
+
+
+def _load_runtime_config_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid runtime config JSON at {path}: {exc.msg}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Invalid runtime config JSON at {path}: expected top-level object")
+    return payload
+
+
+def _queue_root_default(cwd: Path) -> Path:
+    _ = cwd
     return default_queue_root()
 
 
-def _parse_bool(env: Mapping[str, str], key: str, *, default: bool) -> bool:
-    raw = (env.get(key) or "").strip()
-    if raw == "":
-        return default
-    normalized = raw.lower()
-    if normalized in {"1", "true", "yes", "on"}:
+def _parse_bool_value(key: str, value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
         return True
-    if normalized in {"0", "false", "no", "off"}:
+    if text in {"0", "false", "no", "off"}:
         return False
-    raise ValueError(f"Invalid value for {key}: expected boolean, got {raw!r}")
+    raise ValueError(f"Invalid value for {key}: expected boolean, got {value!r}")
 
 
-def _parse_int(
-    env: Mapping[str, str], key: str, *, default: int, min_value: int | None = None
-) -> int:
-    raw = (env.get(key) or "").strip()
-    if raw == "":
-        return default
+def _parse_int_value(key: str, value: Any, *, min_value: int | None = None) -> int:
     try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError(f"Invalid value for {key}: expected int, got {raw!r}") from exc
-    if min_value is not None and value < min_value:
-        raise ValueError(f"Invalid value for {key}: expected >= {min_value}, got {value}")
-    return value
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid value for {key}: expected int, got {value!r}") from exc
+    if min_value is not None and parsed < min_value:
+        raise ValueError(f"Invalid value for {key}: expected >= {min_value}, got {parsed}")
+    return parsed
 
 
-def _parse_optional_int(
-    env: Mapping[str, str], key: str, *, min_value: int | None = None
-) -> int | None:
-    raw = (env.get(key) or "").strip()
-    if raw == "":
-        return None
+def _parse_float_value(key: str, value: Any, *, min_value: float | None = None) -> float:
     try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError(f"Invalid value for {key}: expected int, got {raw!r}") from exc
-    if min_value is not None and value < min_value:
-        raise ValueError(f"Invalid value for {key}: expected >= {min_value}, got {value}")
-    return value
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid value for {key}: expected float, got {value!r}") from exc
+    if min_value is not None and parsed < min_value:
+        raise ValueError(f"Invalid value for {key}: expected >= {min_value}, got {parsed}")
+    return parsed
 
 
-def _parse_float(
-    env: Mapping[str, str], key: str, *, default: float, min_value: float | None = None
-) -> float:
-    raw = (env.get(key) or "").strip()
-    if raw == "":
-        return default
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ValueError(f"Invalid value for {key}: expected float, got {raw!r}") from exc
-    if min_value is not None and value < min_value:
-        raise ValueError(f"Invalid value for {key}: expected >= {min_value}, got {value}")
-    return value
-
-
-def _parse_optional_float(
-    env: Mapping[str, str], key: str, *, min_value: float | None = None
-) -> float | None:
-    raw = (env.get(key) or "").strip()
-    if raw == "":
-        return None
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ValueError(f"Invalid value for {key}: expected float, got {raw!r}") from exc
-    if min_value is not None and value < min_value:
-        raise ValueError(f"Invalid value for {key}: expected >= {min_value}, got {value}")
+def _coerce(field: str, value: Any) -> Any:
+    if field in {"queue_root", "ops_bundle_dir"}:
+        if value in (None, ""):
+            return None if field == "ops_bundle_dir" else _queue_root_default(Path.cwd())
+        return Path(str(value)).expanduser()
+    if field in {"panel_host", "panel_operator_user"}:
+        text = str(value).strip()
+        if not text:
+            if field == "panel_operator_user":
+                return "admin"
+            raise ValueError("Invalid value for panel_host: cannot be empty")
+        return text
+    if field == "panel_operator_password":
+        text = str(value).strip() if value is not None else ""
+        return text or None
+    if field in {"panel_csrf_enabled", "panel_enable_get_mutations", "dev_mode", "notify_enabled"}:
+        return _parse_bool_value(field, value)
+    if field == "panel_port":
+        return _parse_int_value(field, value, min_value=1)
+    if field == "queue_lock_stale_s":
+        return _parse_float_value(field, value, min_value=0.0)
+    if field == "queue_failed_max_age_s":
+        if value in (None, ""):
+            return None
+        return _parse_float_value(field, value, min_value=0.0)
+    if field == "queue_failed_max_count":
+        if value in (None, ""):
+            return None
+        return _parse_int_value(field, value, min_value=1)
     return value
 
 
@@ -206,7 +258,7 @@ def default_config_path():
     return config_dir() / DEFAULT_CONFIG_NAME
 
 
-def load_config(path=None) -> AppConfig:
+def load_app_config(path=None) -> AppConfig:
     ensure_dirs()
     path = path or default_config_path()
     if not path.exists():

@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..audit import log, tail
-from ..config import VoxeraSettings
+from ..config import load_config as load_runtime_config
 from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
 from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import JOB_BUCKETS, list_jobs, lookup_job, queue_snapshot
@@ -52,8 +52,8 @@ CSRF_COOKIE = "voxera_panel_csrf"
 CSRF_FORM_KEY = "csrf_token"
 
 
-def _settings() -> VoxeraSettings:
-    return VoxeraSettings.from_env(cwd=Path.cwd(), home=Path.home())
+def _settings():
+    return load_runtime_config()
 
 
 def _queue_root() -> Path:
@@ -189,6 +189,15 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
 
 async def _require_mutation_guard(request: Request) -> None:
     _require_operator_auth_from_request(request)
+    if not _settings().panel_csrf_enabled:
+        _panel_security_counter_incr("panel_mutation_allowed")
+        _log_panel_security_event(
+            "panel_mutation_allowed",
+            request=request,
+            reason="auth_valid_csrf_disabled",
+            status_code=200,
+        )
+        return
     cookie_token = request.cookies.get(CSRF_COOKIE, "")
     request_token = (request.headers.get("x-csrf-token") or "").strip() or (
         await _request_value(request, CSRF_FORM_KEY, "")

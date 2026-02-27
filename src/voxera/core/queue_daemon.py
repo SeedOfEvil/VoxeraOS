@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from ..audit import log, tail
-from ..config import VoxeraSettings, load_config
+from ..config import load_app_config as load_config
+from ..config import load_config as load_runtime_config
 from ..health import (
     increment_health_counter,
     read_health_snapshot,
@@ -65,7 +66,7 @@ class MissionQueueDaemon:
         self.archive = self.queue_root / "_archive"
         self.pause_marker = self.queue_root / ".paused"
         self.lock_file = self.queue_root / ".daemon.lock"
-        self.settings = VoxeraSettings.from_env()
+        self.settings = load_runtime_config()
         self.lock_stale_after_s = self.settings.queue_lock_stale_s or 3600.0
         self._lock_held = False
         self.poll_interval = poll_interval
@@ -835,7 +836,11 @@ class MissionQueueDaemon:
         )
 
     def _notify_pending_approval(self, approval: dict[str, Any]) -> None:
-        if os.getenv("VOXERA_NOTIFY") != "1":
+        notify_override = os.getenv("VOXERA_NOTIFY")
+        notify_enabled = (
+            self.settings.notify_enabled if notify_override is None else notify_override == "1"
+        )
+        if not notify_enabled:
             return
 
         job = str(approval.get("job") or approval.get("job_id") or "unknown-job")

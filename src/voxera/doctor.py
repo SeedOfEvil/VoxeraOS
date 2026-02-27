@@ -16,7 +16,8 @@ from . import audit
 from .audit import log
 from .brain.gemini import GeminiBrain
 from .brain.openai_compat import OpenAICompatBrain
-from .config import capabilities_report_path, load_config
+from .config import capabilities_report_path
+from .config import load_app_config as load_config
 from .core.queue_daemon import MissionQueueDaemon
 from .health import read_health_snapshot
 

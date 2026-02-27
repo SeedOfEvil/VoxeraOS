@@ -9,7 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .config import VoxeraSettings
+from .config import load_config as load_runtime_config
 from .core.queue_daemon import MissionQueueDaemon
 from .core.queue_inspect import lookup_job
 from .version import get_version
@@ -36,7 +36,7 @@ def _resolve_archive_dir(queue_root: Path, archive_dir: Path | None) -> Path:
     if archive_dir is not None:
         out_dir = archive_dir
     else:
-        settings = VoxeraSettings.from_env()
+        settings = load_runtime_config()
         out_dir = settings.ops_bundle_dir if settings.ops_bundle_dir else _archive_dir(queue_root)
     out_dir = out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)

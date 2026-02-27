@@ -22,6 +22,7 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 ## Quick start (Alpha)
 ```bash
 make dev
+make fmt-check
 make check
 
 make update
@@ -49,13 +50,35 @@ voxera queue health           # operator health snapshot (lock/auth/csrf counter
 
 ## Runtime config (central loader)
 
+
+### Dev Contract
+- CI may call `make fmt-check`, `make lint`, `make type`, `make test`, `make test-failed-sidecar`, or `make release-check` individually.
+- Each of these targets now depends on `.venv/.dev_installed`, created by `make dev`, so tool binaries (`ruff`, `mypy`, `pytest`) are always present before checks run.
+
+### Config Contract
+- Runtime config file path: `~/.config/voxera/config.json` (optional).
+- Precedence is strict and deterministic: **CLI overrides > VOXERA_* env > config file > defaults**.
+- Inspect safely: `voxera config show` (sensitive values redacted as `***`).
+- Validate explicitly: `voxera config validate` (non-zero exit with actionable error details).
+
+Example `~/.config/voxera/config.json`:
+```json
+{
+  "panel_host": "127.0.0.1",
+  "panel_port": 8844,
+  "queue_lock_stale_s": 3600,
+  "panel_csrf_enabled": true
+}
+```
+
+
 - Copy `.env.example` to `.env` for local non-secret defaults.
 - Keep secrets out of git; preferred location is `~/.config/voxera/env` (same `KEY=VALUE` format).
-- Runtime settings are loaded by `VoxeraSettings.from_env()` and include queue root, panel host/port, operator auth, lock stale window, failed-retention limits, and ops bundle directory.
+- Runtime settings are loaded by `load_config()` into `VoxeraConfig` and include queue root, panel host/port, operator auth, lock stale window, failed-retention limits, and ops bundle directory.
 - Print a redacted config snapshot for audits with:
 
 ```bash
-.venv/bin/voxera config-show
+.venv/bin/voxera config show
 ```
 
 ## Quick start (dev VM)

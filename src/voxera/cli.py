@@ -10,7 +10,9 @@ from rich.console import Console
 from rich.table import Table
 
 from .audit import tail
-from .config import VoxeraSettings, load_config, load_runtime_env
+from .config import load_app_config as load_config
+from .config import load_config as load_runtime_config
+from .config import load_runtime_env
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
@@ -81,6 +83,35 @@ def version_cmd():
     console.print(_version_string())
 
 
+config_app = typer.Typer(help="Runtime configuration utilities")
+app.add_typer(config_app, name="config")
+
+
+@config_app.command("show")
+def config_show():
+    """Show resolved runtime config (redacted)."""
+    cfg = load_runtime_config()
+    typer.echo(json.dumps(cfg.to_safe_dict(), sort_keys=True))
+
+
+@app.command("config-show")
+def config_show_legacy():
+    """Backward-compatible alias for `voxera config show`."""
+    cfg = load_runtime_config()
+    typer.echo(json.dumps(cfg.to_safe_dict(), sort_keys=True))
+
+
+@config_app.command("validate")
+def config_validate():
+    """Validate runtime config and exit non-zero on errors."""
+    try:
+        cfg = load_runtime_config()
+    except ValueError as exc:
+        typer.echo(f"ERROR: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps({"status": "ok", "config_path": str(cfg.config_path)}, sort_keys=True))
+
+
 skills_app = typer.Typer(help="Manage skills")
 app.add_typer(skills_app, name="skills")
 missions_app = typer.Typer(help="Run multi-step built-in missions")
@@ -101,13 +132,6 @@ ops_app.add_typer(ops_bundle_app, name="bundle")
 def setup():
     """Run first-run typed setup wizard."""
     asyncio.run(run_setup())
-
-
-@app.command("config-show")
-def config_show():
-    """Show effective runtime config with sensitive fields redacted."""
-    settings = VoxeraSettings.from_env()
-    typer.echo(json.dumps(settings.to_safe_dict(), sort_keys=True))
 
 
 @app.command()
@@ -313,11 +337,11 @@ def panel(
     """Run the minimal approvals/audit panel."""
     import uvicorn
 
-    settings = VoxeraSettings.from_env()
+    runtime_cfg = load_runtime_config(overrides={"panel_host": host, "panel_port": port})
     uvicorn.run(
         "voxera.panel.app:app",
-        host=host or settings.panel_host,
-        port=port or settings.panel_port,
+        host=runtime_cfg.panel_host,
+        port=runtime_cfg.panel_port,
         reload=False,
     )
 

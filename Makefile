@@ -8,39 +8,46 @@ VOXERA_UNITS := voxera-daemon.service voxera-panel.service
 VOXERA_PROJECT_DIR := $(abspath .)
 VENV_BIN := .venv/bin
 PYTHON := $(VENV_BIN)/python
+VENV_PY := $(PYTHON)
 PIP := $(VENV_BIN)/pip
 RUFF := $(VENV_BIN)/ruff
 MYPY := $(VENV_BIN)/mypy
 PYTEST := $(VENV_BIN)/pytest
 VOXERA := $(VENV_BIN)/voxera
+DEV_MARKER := .venv/.dev_installed
 
-venv:
-	@if [ ! -x "$(PYTHON)" ]; then python3 -m venv .venv; fi
-	$(PYTHON) -m pip install --upgrade pip
+$(VENV_PY):
+	@if [ ! -x "$(VENV_PY)" ]; then python3 -m venv .venv; fi
+	$(VENV_PY) -m pip install --upgrade pip
+
+venv: $(VENV_PY)
 
 install: venv
 	$(PIP) install -e .
 
-dev: venv
+$(DEV_MARKER): pyproject.toml $(VENV_PY)
 	$(PIP) install -e ".[dev]"
+	touch $(DEV_MARKER)
+
+dev: $(DEV_MARKER)
 	-$(VENV_BIN)/pre-commit install --hook-type pre-commit --hook-type pre-push
 
-fmt: venv
+fmt: $(DEV_MARKER)
 	$(RUFF) format .
 
-fmt-check: venv
+fmt-check: $(DEV_MARKER)
 	$(RUFF) format --check .
 
-lint: venv
+lint: $(DEV_MARKER)
 	$(RUFF) check .
 
-type: venv
+type: $(DEV_MARKER)
 	$(MYPY) src/voxera
 
-test: venv
+test: $(DEV_MARKER)
 	$(PYTEST) -q
 
-e2e: venv
+e2e: $(DEV_MARKER)
 	bash scripts/e2e_opsconsole.sh
 
 check: fmt-check lint type test
@@ -48,7 +55,7 @@ ifeq ($(CHECK_E2E),1)
 	$(MAKE) e2e
 endif
 
-panel: venv
+panel: $(DEV_MARKER)
 	$(VOXERA) panel --host 127.0.0.1 --port 8787
 
 daemon-restart:
@@ -59,19 +66,19 @@ daemon-restart:
 # Backward-compatible aliases
 quality-check: fmt-check lint type
 
-type-check: venv
+type-check: $(DEV_MARKER)
 	$(PYTHON) scripts/mypy_ratchet.py
 
 # Strict typing target for full-baseline cleanup workstreams.
 type-check-strict: type
 
-update-mypy-baseline: venv
+update-mypy-baseline: $(DEV_MARKER)
 	$(PYTHON) scripts/mypy_ratchet.py --write-baseline
 
-test-failed-sidecar: venv
+test-failed-sidecar: $(DEV_MARKER)
 	$(PYTEST) -q tests/test_queue_daemon.py -k "failed_sidecar_schema_version_policy_rejects_unknown_future_version or queue_failure_lifecycle_smoke_sidecar_snapshot_then_prune"
 
-release-check: venv
+release-check: $(DEV_MARKER)
 	$(PYTEST) -q \
 		tests/test_version_source.py \
 		tests/test_panel.py::test_panel_app_uses_shared_version_source \

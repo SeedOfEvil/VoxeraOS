@@ -8,6 +8,7 @@ From repository root:
 
 ```bash
 make dev
+make fmt-check
 make check
 make services-install
 make daemon-restart
@@ -28,14 +29,17 @@ and enables/starts:
 - Print the effective redacted runtime snapshot with:
 
 ```bash
-.venv/bin/voxera config-show
+.venv/bin/voxera config show
 ```
+
+Config precedence: CLI overrides > `VOXERA_*` env > `~/.config/voxera/config.json` > built-in defaults.
 
 Key runtime env vars (defaults):
 - `VOXERA_QUEUE_ROOT` (`~/VoxeraOS/notes/queue`)
 - `VOXERA_PANEL_HOST` (`127.0.0.1`)
 - `VOXERA_PANEL_PORT` (`8844`, `make panel` uses `8787`)
 - `VOXERA_PANEL_OPERATOR_USER` (`admin`)
+- `VOXERA_PANEL_CSRF_ENABLED` (`1`/true by default)
 - `VOXERA_QUEUE_LOCK_STALE_S` (`3600`)
 - `VOXERA_OPS_BUNDLE_DIR` (unset => timestamped `_archive/` path)
 
