@@ -32,4 +32,6 @@ def test_write_config_snapshot_creates_redacted_payload(tmp_path: Path) -> None:
     assert payload["schema_version"] == 1
     assert payload["settings"]["panel_operator_password"] == "***"
     assert payload["sources"]["panel_operator_password"] == "env:VOXERA_PANEL_OPERATOR_PASSWORD"
+    assert isinstance(payload["generated_at_ms"], int)
     assert isinstance(payload["written_at_ms"], int)
+    assert payload["config_path"] == "/tmp/runtime.json"

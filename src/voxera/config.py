@@ -277,11 +277,14 @@ def write_config_snapshot(
     queue_root = queue_root.expanduser().resolve()
     out = queue_root / filename
     out.parent.mkdir(parents=True, exist_ok=True)
+    generated_at_ms = int(time.time() * 1000)
     payload = {
         "schema_version": 1,
+        "generated_at_ms": generated_at_ms,
+        "written_at_ms": generated_at_ms,
+        "config_path": str(settings.config_path),
         "settings": settings.to_safe_dict(),
         "sources": dict(settings.sources),
-        "written_at_ms": int(time.time() * 1000),
     }
     tmp = out.with_name(f".{out.name}.{uuid.uuid4().hex}.tmp")
     try:

@@ -43,7 +43,7 @@ def test_daemon_config_drift_emits_once_when_changed(tmp_path: Path, monkeypatch
     daemon._snapshot_and_check_config_drift()
 
     assert (tmp_path / "config_snapshot.json").exists()
-    assert (tmp_path / "config_snapshot.sha256").exists()
+    assert (tmp_path / "config_snapshot.last.json").exists()
     assert not [e for e in events if e.get("event") == "config_drift_detected"]
 
     daemon_same = MissionQueueDaemon(queue_root=tmp_path)
@@ -60,8 +60,9 @@ def test_daemon_config_drift_emits_once_when_changed(tmp_path: Path, monkeypatch
     assert len(drift_events) == 1
     drift = drift_events[0]
     assert drift["changed"] is True
-    assert drift["old_fingerprint"] != drift["new_fingerprint"]
+    assert drift["old_hash"] != drift["new_hash"]
+    assert drift["changed_keys"]
     assert "first" not in json.dumps(drift)
     note = (tmp_path / "config_drift_note.txt").read_text(encoding="utf-8")
-    assert "old_fingerprint=" in note
-    assert "new_fingerprint=" in note
+    assert "old_hash=" in note
+    assert "new_hash=" in note

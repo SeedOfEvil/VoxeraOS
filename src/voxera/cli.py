@@ -36,6 +36,8 @@ OPS_BUNDLE_ARCHIVE_DIR_OPTION = typer.Option(
     "--dir",
     help="Archive directory for ops bundle outputs. Defaults to VOXERA_OPS_BUNDLE_DIR or notes/queue/_archive/<timestamp>/.",
 )
+SNAPSHOT_OUT_OPTION = typer.Option(None, "--out", help="Output file path.")
+SNAPSHOT_DIR_OPTION = typer.Option(None, "--dir", help="Output directory path.")
 
 
 def _git_sha() -> str | None:
@@ -103,11 +105,26 @@ def config_show_legacy():
 
 
 @config_app.command("snapshot")
-def config_snapshot() -> None:
+def config_snapshot(
+    out: Path | None = SNAPSHOT_OUT_OPTION,
+    dir: Path | None = SNAPSHOT_DIR_OPTION,
+) -> None:
     """Write a redacted runtime config snapshot and print its absolute path."""
+    if out is not None and dir is not None:
+        raise typer.BadParameter("Use only one of --out or --dir.")
     cfg = load_runtime_config()
-    out = write_config_snapshot(cfg.queue_root, cfg)
-    typer.echo(str(out.resolve()))
+    if out is not None:
+        target = out.expanduser().resolve()
+        queue_root = target.parent
+        filename = target.name
+    elif dir is not None:
+        queue_root = dir.expanduser().resolve()
+        filename = "config_snapshot.json"
+    else:
+        queue_root = cfg.queue_root
+        filename = "config_snapshot.json"
+    written = write_config_snapshot(queue_root, cfg, filename=filename)
+    typer.echo(str(written.resolve()))
 
 
 @config_app.command("validate")
