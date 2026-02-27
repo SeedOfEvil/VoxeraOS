@@ -130,7 +130,7 @@ def _panel_security_snapshot() -> dict[str, Any]:
 
 def _auth_setup_banner() -> dict[str, str] | None:
     settings = _settings()
-    if settings.panel_operator_password:
+    if settings.panel_operator_password not in {None, ""}:
         return None
     return {
         "title": "Setup required: panel operator password is not configured.",

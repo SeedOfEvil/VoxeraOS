@@ -598,7 +598,10 @@ def test_panel_hides_setup_required_banner_when_operator_password_set(tmp_path, 
     monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
 
     client = TestClient(panel_module.app)
-    res = client.get("/")
+    home_res = client.get("/")
+    jobs_res = client.get("/jobs")
 
-    assert res.status_code == 200
-    assert "Setup required: panel operator password is not configured." not in res.text
+    assert home_res.status_code == 200
+    assert jobs_res.status_code == 200
+    assert "Setup required: panel operator password is not configured." not in home_res.text
+    assert "Setup required: panel operator password is not configured." not in jobs_res.text
