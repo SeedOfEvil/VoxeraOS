@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .audit import tail
-from .config import load_config
+from .config import VoxeraSettings, load_config, load_runtime_env
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
@@ -71,6 +71,8 @@ def main(
     ),
 ):
     """Voxera CLI root command group."""
+    load_runtime_env()
+    load_runtime_env(Path(".env"))
 
 
 @app.command("version")
@@ -99,6 +101,13 @@ ops_app.add_typer(ops_bundle_app, name="bundle")
 def setup():
     """Run first-run typed setup wizard."""
     asyncio.run(run_setup())
+
+
+@app.command("config-show")
+def config_show():
+    """Show effective runtime config with sensitive fields redacted."""
+    settings = VoxeraSettings.from_env()
+    typer.echo(json.dumps(settings.to_safe_dict(), sort_keys=True))
 
 
 @app.command()
@@ -297,11 +306,20 @@ def audit(n: int = 30):
 
 
 @app.command()
-def panel(host: str = "127.0.0.1", port: int = 8844):
+def panel(
+    host: str | None = typer.Option(None, "--host", help="Panel host override."),
+    port: int | None = typer.Option(None, "--port", help="Panel port override."),
+):
     """Run the minimal approvals/audit panel."""
     import uvicorn
 
-    uvicorn.run("voxera.panel.app:app", host=host, port=port, reload=False)
+    settings = VoxeraSettings.from_env()
+    uvicorn.run(
+        "voxera.panel.app:app",
+        host=host or settings.panel_host,
+        port=port or settings.panel_port,
+        reload=False,
+    )
 
 
 @app.command()

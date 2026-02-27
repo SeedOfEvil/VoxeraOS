@@ -21,16 +21,15 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 
 ## Quick start (Alpha)
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -e ".[dev]"
+make dev
+make check
 
 make update
 make services-install
+make daemon-restart
 
-voxera --version
-voxera queue status
+.venv/bin/voxera --version
+.venv/bin/voxera queue status
 voxera inbox add "Write a daily check-in note with priorities and blockers"
 voxera daemon --once
 voxera queue approvals list
@@ -45,6 +44,18 @@ voxera queue resume
 voxera queue unlock           # safe: stale/dead locks only
 voxera queue unlock --force   # override live lock (dangerous)
 voxera queue health           # operator health snapshot (lock/auth/csrf counters)
+```
+
+
+## Runtime config (central loader)
+
+- Copy `.env.example` to `.env` for local non-secret defaults.
+- Keep secrets out of git; preferred location is `~/.config/voxera/env` (same `KEY=VALUE` format).
+- Runtime settings are loaded by `VoxeraSettings.from_env()` and include queue root, panel host/port, operator auth, lock stale window, failed-retention limits, and ops bundle directory.
+- Print a redacted config snapshot for audits with:
+
+```bash
+.venv/bin/voxera config-show
 ```
 
 ## Quick start (dev VM)
@@ -318,8 +329,8 @@ and prints install hints when missing.
 
 ### 3) Start the panel (optional)
 ```bash
-voxera panel
-# open http://127.0.0.1:8844
+make panel
+# open http://127.0.0.1:8787
 ```
 
 Panel mutation endpoints (`/queue/create`, `/missions/create`) now use `POST` by default.

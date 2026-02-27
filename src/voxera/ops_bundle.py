@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import time
 import uuid
@@ -10,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .config import VoxeraSettings
 from .core.queue_daemon import MissionQueueDaemon
 from .core.queue_inspect import lookup_job
 from .version import get_version
@@ -36,8 +36,8 @@ def _resolve_archive_dir(queue_root: Path, archive_dir: Path | None) -> Path:
     if archive_dir is not None:
         out_dir = archive_dir
     else:
-        env_dir = os.environ.get("VOXERA_OPS_BUNDLE_DIR", "").strip()
-        out_dir = Path(env_dir) if env_dir else _archive_dir(queue_root)
+        settings = VoxeraSettings.from_env()
+        out_dir = settings.ops_bundle_dir if settings.ops_bundle_dir else _archive_dir(queue_root)
     out_dir = out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
