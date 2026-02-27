@@ -132,13 +132,15 @@ def _auth_setup_banner() -> dict[str, str] | None:
     settings = _settings()
     if settings.panel_operator_password not in {None, ""}:
         return None
+    config_path_hint = str(settings.config_path.expanduser())
     return {
         "title": "Setup required: panel operator password is not configured.",
         "detail": (
             "Mutation routes require Basic auth. Set VOXERA_PANEL_OPERATOR_PASSWORD in your "
-            "user service environment and restart panel + daemon."
+            "user service environment and restart panel + daemon. If VOXERA_LOAD_DOTENV=1, "
+            ".env may override file settings."
         ),
-        "path_hint": "Config file: ~/.config/voxera/config.toml",
+        "path_hint": f"Config file: {config_path_hint}",
         "commands": (
             "systemctl --user edit voxera-panel.service\n"
             "# add [Service] Environment=VOXERA_PANEL_OPERATOR_PASSWORD=<set-a-strong-password>\n"

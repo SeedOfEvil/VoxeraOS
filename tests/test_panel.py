@@ -589,6 +589,9 @@ def test_panel_shows_setup_required_banner_when_operator_password_missing(tmp_pa
     assert jobs_res.status_code == 200
     assert "Setup required: panel operator password is not configured." in home_res.text
     assert "systemctl --user restart voxera-panel.service voxera-daemon.service" in home_res.text
+    expected_config_path = str(panel_module._settings().config_path.expanduser())
+    assert f"Config file: {expected_config_path}" in home_res.text
+    assert "If VOXERA_LOAD_DOTENV=1, .env may override file settings." in home_res.text
     assert "Setup required: panel operator password is not configured." in jobs_res.text
 
 
