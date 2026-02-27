@@ -76,74 +76,82 @@ def list_jobs(
     q: str = "",
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    normalized_bucket = bucket if bucket in JOB_BUCKETS else "pending"
+    normalized_bucket = bucket if bucket in {*JOB_BUCKETS, "all"} else "pending"
     capped = max(1, min(limit, 200))
     needle = q.lower().strip()
 
     daemon = MissionQueueDaemon(queue_root=queue_root)
     approvals_by_job = {item.get("job"): item for item in daemon.approvals_list()}
 
-    dir_for_bucket = {
-        "inbox": queue_root / "inbox",
-        "pending": queue_root / "pending",
-        "approvals": queue_root / "pending",
-        "done": queue_root / "done",
-        "failed": queue_root / "failed",
-    }[normalized_bucket]
+    bucket_order = list(JOB_BUCKETS) if normalized_bucket == "all" else [normalized_bucket]
 
     rows: list[dict[str, Any]] = []
-    for path in sorted(
-        dir_for_bucket.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
-    ):
-        name = path.name
-        if normalized_bucket == "pending" and (
-            name.endswith(".pending.json") or name.endswith(".approval.json")
+    for active_bucket in bucket_order:
+        dir_for_bucket = {
+            "inbox": queue_root / "inbox",
+            "pending": queue_root / "pending",
+            "approvals": queue_root / "pending",
+            "done": queue_root / "done",
+            "failed": queue_root / "failed",
+        }[active_bucket]
+        for path in sorted(
+            dir_for_bucket.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
         ):
-            continue
-        if (
-            normalized_bucket == "approvals"
-            and not (queue_root / "pending" / "approvals" / f"{path.stem}.approval.json").exists()
-        ):
-            continue
-        if normalized_bucket == "failed" and name.endswith(".error.json"):
-            continue
+            name = path.name
+            if active_bucket == "pending" and (
+                name.endswith(".pending.json") or name.endswith(".approval.json")
+            ):
+                continue
+            if (
+                active_bucket == "approvals"
+                and not (
+                    queue_root / "pending" / "approvals" / f"{path.stem}.approval.json"
+                ).exists()
+            ):
+                continue
+            if active_bucket == "failed" and name.endswith(".error.json"):
+                continue
 
-        title = ""
-        goal = ""
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(payload, dict):
-                title = str(payload.get("title") or payload.get("mission_id") or "")
-                goal = str(payload.get("goal") or payload.get("plan_goal") or "")
-        except Exception:
-            pass
+            title = ""
+            goal = ""
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    title = str(payload.get("title") or payload.get("mission_id") or "")
+                    goal = str(payload.get("goal") or payload.get("plan_goal") or "")
+            except Exception:
+                pass
 
-        approval = (
-            approvals_by_job.get(name, {}) if isinstance(approvals_by_job.get(name), dict) else {}
-        )
-        failed_sidecar = queue_root / "failed" / f"{path.stem}.error.json"
-        status = []
-        if approval:
-            status.append("approval pending")
-        if failed_sidecar.exists():
-            status.append("failed metadata")
-        if not status:
-            status.append("ok")
+            approval = (
+                approvals_by_job.get(name, {})
+                if isinstance(approvals_by_job.get(name), dict)
+                else {}
+            )
+            failed_sidecar = queue_root / "failed" / f"{path.stem}.error.json"
+            status = []
+            if approval:
+                status.append("approval pending")
+            if failed_sidecar.exists():
+                status.append("failed metadata")
+            if not status:
+                status.append("ok")
 
-        if needle and needle not in f"{name} {title} {goal}".lower():
-            continue
+            if needle and needle not in f"{name} {title} {goal}".lower():
+                continue
 
-        rows.append(
-            {
-                "job_id": name,
-                "bucket": normalized_bucket,
-                "title": title or "(untitled)",
-                "goal": goal,
-                "updated_ts": int(path.stat().st_mtime),
-                "updated_iso": path.stat().st_mtime,
-                "status_summary": ", ".join(status),
-            }
-        )
+            rows.append(
+                {
+                    "job_id": name,
+                    "bucket": active_bucket,
+                    "title": title or "(untitled)",
+                    "goal": goal,
+                    "updated_ts": int(path.stat().st_mtime),
+                    "updated_iso": path.stat().st_mtime,
+                    "status_summary": ", ".join(status),
+                }
+            )
+            if len(rows) >= capped:
+                break
         if len(rows) >= capped:
             break
     return rows

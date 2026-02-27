@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -20,7 +20,8 @@ from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
 from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import JOB_BUCKETS, list_jobs, lookup_job, queue_snapshot
 from ..health import increment_health_counter, read_health_snapshot
-from ..incident_bundle import BundleError, build_job_bundle, build_system_bundle
+from ..incident_bundle import BundleError
+from ..ops_bundle import build_job_bundle, build_system_bundle
 from ..version import get_version
 
 app = FastAPI(title="Voxera Panel", version=get_version())
@@ -359,6 +360,41 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     }
 
 
+def _incident_archive_dir(queue_root: Path, suffix: str) -> Path:
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    out = queue_root / "_archive" / f"incident-{stamp}-{suffix}"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def _job_artifact_flags(queue_root: Path, job_id: str) -> dict[str, bool]:
+    artifacts_dir = queue_root / "artifacts" / Path(job_id).stem
+    return {
+        "plan": (artifacts_dir / "plan.json").exists(),
+        "actions": (artifacts_dir / "actions.jsonl").exists(),
+        "stdout": (artifacts_dir / "stdout.txt").exists(),
+        "stderr": (artifacts_dir / "stderr.txt").exists(),
+    }
+
+
+def _last_activity(artifacts_dir: Path) -> str:
+    actions = artifacts_dir / "actions.jsonl"
+    if not actions.exists():
+        return ""
+    lines = actions.read_text(encoding="utf-8", errors="replace").splitlines()
+    for line in reversed(lines):
+        if line.strip():
+            return line[:180]
+    return ""
+
+
+def _job_ref_bucket(row: dict[str, Any]) -> str:
+    bucket = str(row.get("bucket") or "")
+    if bucket == "approvals":
+        return "pending/approvals"
+    return bucket
+
+
 def _job_artifact_payload(queue_root: Path, job_name: str) -> dict[str, Any]:
     stem = Path(job_name).stem
     art = queue_root / "artifacts" / stem
@@ -622,17 +658,37 @@ async def deny_queue_job(ref: str, request: Request):
 
 
 @app.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request, bucket: str = "pending", q: str = "", n: int = 50):
+def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
     queue_root = _queue_root()
     rows = list_jobs(queue_root, bucket=bucket, q=q, limit=n)
+    rows_enriched: list[dict[str, Any]] = []
+    for row in rows:
+        job_id = str(row.get("job_id") or "")
+        artifacts_dir = queue_root / "artifacts" / Path(job_id).stem
+        enriched = dict(row)
+        enriched["bucket_ref"] = _job_ref_bucket(row)
+        enriched["artifacts"] = _job_artifact_flags(queue_root, job_id)
+        enriched["last_activity"] = _last_activity(artifacts_dir)
+        rows_enriched.append(enriched)
+
+    log(
+        {
+            "event": "panel_jobs_render",
+            "bucket": bucket,
+            "query": q[:120],
+            "limit": max(1, min(n, 200)),
+            "count": len(rows_enriched),
+        }
+    )
+
     tmpl = templates.get_template("jobs.html")
     csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
     html = tmpl.render(
-        rows=rows,
-        bucket=bucket if bucket in JOB_BUCKETS else "pending",
+        rows=rows_enriched,
+        bucket=bucket if bucket in {*JOB_BUCKETS, "all"} else "pending",
         q=q,
         n=max(1, min(n, 200)),
-        buckets=list(JOB_BUCKETS),
+        buckets=["all", *JOB_BUCKETS],
         csrf_token=csrf_token,
     )
     response = HTMLResponse(content=html)
@@ -659,25 +715,76 @@ def queue_job_detail(job: str, request: Request):
 @app.get("/jobs/{job_id}/bundle")
 def job_bundle(job_id: str, request: Request):
     _require_operator_auth_from_request(request)
+    queue_root = _queue_root()
+    stem = Path(job_id).stem
+    archive_dir = _incident_archive_dir(queue_root, stem or "job")
+    started = time.perf_counter()
+    log(
+        {
+            "event": "bundle_build_started",
+            "bundle": "job",
+            "job_ref": job_id,
+            "archive_dir": str(archive_dir),
+        }
+    )
     try:
-        data = build_job_bundle(_queue_root(), job_id)
-    except BundleError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return Response(
-        content=data,
+        out = build_job_bundle(queue_root, job_id, archive_dir=archive_dir)
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        log(
+            {
+                "event": "bundle_build_failed",
+                "bundle": "job",
+                "job_ref": job_id,
+                "duration_ms": duration_ms,
+                "error": type(exc).__name__,
+            }
+        )
+        if isinstance(exc, BundleError):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    size_bytes = out.stat().st_size
+    log(
+        {
+            "event": "bundle_build_ok",
+            "bundle": "job",
+            "job_ref": job_id,
+            "duration_ms": duration_ms,
+            "bytes": size_bytes,
+            "path": str(out),
+        }
+    )
+    return FileResponse(
+        path=out,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{Path(job_id).stem}-incident.zip"'},
+        filename=out.name,
     )
 
 
 @app.get("/bundle/system")
 def system_bundle(request: Request):
     _require_operator_auth_from_request(request)
-    data = build_system_bundle(_queue_root())
-    return Response(
-        content=data,
+    queue_root = _queue_root()
+    archive_dir = _incident_archive_dir(queue_root, "system")
+    started = time.perf_counter()
+    log({"event": "bundle_build_started", "bundle": "system", "archive_dir": str(archive_dir)})
+    out = build_system_bundle(queue_root, archive_dir=archive_dir)
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    size_bytes = out.stat().st_size
+    log(
+        {
+            "event": "bundle_build_ok",
+            "bundle": "system",
+            "duration_ms": duration_ms,
+            "bytes": size_bytes,
+            "path": str(out),
+        }
+    )
+    return FileResponse(
+        path=out,
         media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="voxera-system-incident.zip"'},
+        filename=out.name,
     )
 
 

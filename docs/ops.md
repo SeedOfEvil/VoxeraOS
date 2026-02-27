@@ -473,6 +473,8 @@ voxera ops bundle job <job_id>
 GET /jobs/{job_id}/bundle
 ```
 
+Panel `/jobs` now shows cross-bucket job rows (inbox/pending/approvals/done/failed) with artifact presence markers (plan/actions/stdout/stderr), last activity from `actions.jsonl`, and direct actions (detail/bundle/cancel/retry).
+
 Bundle includes (size-capped and deterministic):
 - `job.json`
 - optional `approval.json`
@@ -483,7 +485,10 @@ Bundle includes (size-capped and deterministic):
 
 ### System snapshot bundle
 
-Bundles default to `notes/queue/_archive/<YYYYMMDD-HHMMSS>/`. For incident handoff, you can place both system + job bundles in a single folder with `--dir` (or by setting `VOXERA_OPS_BUNDLE_DIR`).
+Panel bundle downloads write to deterministic incident folders:
+`notes/queue/_archive/incident-<YYYYMMDD-HHMMSS>-<job_stem_or_system>/`.
+
+CLI ops bundles default to `notes/queue/_archive/<YYYYMMDD-HHMMSS>/`. For incident handoff, you can place both system + job bundles in a single folder with `--dir` (or by setting `VOXERA_OPS_BUNDLE_DIR`).
 
 ```bash
 # CLI
@@ -512,12 +517,15 @@ System bundle contains `manifest.json`, queue snapshots (`queue_status.txt`, `qu
 voxera doctor --quick
 ```
 
-`--quick` is offline-only and does **not** call LLM providers. It checks:
-- queue directories exist + writable (`inbox`, `pending`, `approvals`, `done`, `failed`, `artifacts`, `_archive`)
-- daemon lock status (active/stale/missing)
-- health snapshot freshness
-- panel auth env presence (without printing passwords)
-- podman binary availability
+`--quick` is offline-only and does **not** call LLM providers. It reports:
+- lock status (`exists`, `pid`, `alive`)
+- health `last_ok_event/last_ok_ts_ms` and `last_error/last_error_ts_ms`
+- queue counts summary (`inbox`, `pending`, `approvals`, `done`, `failed`)
+
+Example details lines:
+- `exists=True pid=12345 alive=True`
+- `event=daemon_tick ts=1730000000000`
+- `inbox=0 pending=1 approvals=0 done=12 failed=2`
 
 Use full `voxera doctor` when you want provider capability tests; use `--quick` during incidents for immediate local sanity checks.
 

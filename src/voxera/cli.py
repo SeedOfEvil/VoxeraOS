@@ -413,8 +413,9 @@ def ops_bundle_system(
     archive_dir: Path | None = OPS_BUNDLE_ARCHIVE_DIR_OPTION,
 ):
     """Export a system ops bundle."""
-    out = build_ops_system_bundle(Path(queue_dir), archive_dir=archive_dir)
-    typer.echo(str(out.expanduser().resolve()))
+    queue_root = Path(queue_dir).expanduser().resolve()
+    out = build_ops_system_bundle(queue_root, archive_dir=archive_dir)
+    typer.echo(str(out.resolve()))
 
 
 @ops_bundle_app.command("job")
@@ -428,8 +429,9 @@ def ops_bundle_job(
     archive_dir: Path | None = OPS_BUNDLE_ARCHIVE_DIR_OPTION,
 ):
     """Export a per-job ops bundle."""
-    out = build_ops_job_bundle(Path(queue_dir), job_ref, archive_dir=archive_dir)
-    typer.echo(str(out.expanduser().resolve()))
+    queue_root = Path(queue_dir).expanduser().resolve()
+    out = build_ops_job_bundle(queue_root, job_ref, archive_dir=archive_dir)
+    typer.echo(str(out.resolve()))
 
 
 @queue_app.command("init")
