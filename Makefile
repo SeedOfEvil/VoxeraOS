@@ -15,6 +15,7 @@ MYPY := $(VENV_BIN)/mypy
 PYTEST := $(VENV_BIN)/pytest
 VOXERA := $(VENV_BIN)/voxera
 DEV_MARKER := .venv/.dev_installed
+TEST_ENV_PREFIX := env -u VOXERA_OPS_BUNDLE_DIR -u VOXERA_QUEUE_LOCK_STALE_S -u VOXERA_QUEUE_FAILED_MAX_AGE_S -u VOXERA_QUEUE_FAILED_MAX_COUNT -u VOXERA_PANEL_HOST -u VOXERA_PANEL_PORT -u VOXERA_PANEL_OPERATOR_USER -u VOXERA_PANEL_OPERATOR_PASSWORD -u VOXERA_PANEL_ENABLE_GET_MUTATIONS -u VOXERA_PANEL_CSRF_ENABLED -u VOXERA_DEV_MODE -u VOXERA_NOTIFY VOXERA_LOAD_DOTENV=0
 
 $(VENV_PY):
 	@if [ ! -x "$(VENV_PY)" ]; then python3 -m venv .venv; fi
@@ -45,7 +46,7 @@ type: $(DEV_MARKER)
 	$(MYPY) src/voxera
 
 test: $(DEV_MARKER)
-	$(PYTEST) -q
+	$(TEST_ENV_PREFIX) $(PYTEST) -q
 
 e2e: $(DEV_MARKER)
 	bash scripts/e2e_opsconsole.sh
@@ -76,10 +77,10 @@ update-mypy-baseline: $(DEV_MARKER)
 	$(PYTHON) scripts/mypy_ratchet.py --write-baseline
 
 test-failed-sidecar: $(DEV_MARKER)
-	$(PYTEST) -q tests/test_queue_daemon.py -k "failed_sidecar_schema_version_policy_rejects_unknown_future_version or queue_failure_lifecycle_smoke_sidecar_snapshot_then_prune"
+	$(TEST_ENV_PREFIX) $(PYTEST) -q tests/test_queue_daemon.py -k "failed_sidecar_schema_version_policy_rejects_unknown_future_version or queue_failure_lifecycle_smoke_sidecar_snapshot_then_prune"
 
 release-check: $(DEV_MARKER)
-	$(PYTEST) -q \
+	$(TEST_ENV_PREFIX) $(PYTEST) -q \
 		tests/test_version_source.py \
 		tests/test_panel.py::test_panel_app_uses_shared_version_source \
 		tests/test_docs_consistency.py \
@@ -88,7 +89,7 @@ release-check: $(DEV_MARKER)
 merge-readiness-check: quality-check release-check
 
 full-validation-check: merge-readiness-check test-failed-sidecar
-	$(PYTEST) -q
+	$(TEST_ENV_PREFIX) $(PYTEST) -q
 	bash scripts/e2e_smoke.sh
 
 update: venv

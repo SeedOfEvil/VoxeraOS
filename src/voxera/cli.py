@@ -12,7 +12,7 @@ from rich.table import Table
 from .audit import tail
 from .config import load_app_config as load_config
 from .config import load_config as load_runtime_config
-from .config import load_runtime_env
+from .config import load_runtime_env, should_load_dotenv
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
@@ -73,8 +73,9 @@ def main(
     ),
 ):
     """Voxera CLI root command group."""
-    load_runtime_env()
-    load_runtime_env(Path(".env"))
+    if should_load_dotenv():
+        load_runtime_env()
+        load_runtime_env(Path(".env"))
 
 
 @app.command("version")
@@ -456,7 +457,11 @@ def ops_bundle_system(
 ):
     """Export a system ops bundle."""
     queue_root = Path(queue_dir).expanduser().resolve()
-    out = build_ops_system_bundle(queue_root, archive_dir=archive_dir)
+    out = build_ops_system_bundle(
+        queue_root,
+        archive_dir=archive_dir,
+        prefer_queue_root_archive=True,
+    )
     typer.echo(str(out.resolve()))
 
 
@@ -472,7 +477,12 @@ def ops_bundle_job(
 ):
     """Export a per-job ops bundle."""
     queue_root = Path(queue_dir).expanduser().resolve()
-    out = build_ops_job_bundle(queue_root, job_ref, archive_dir=archive_dir)
+    out = build_ops_job_bundle(
+        queue_root,
+        job_ref,
+        archive_dir=archive_dir,
+        prefer_queue_root_archive=True,
+    )
     typer.echo(str(out.resolve()))
 
 

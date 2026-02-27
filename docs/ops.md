@@ -34,6 +34,8 @@ and enables/starts:
 
 Config precedence: CLI overrides > `VOXERA_*` env > `~/.config/voxera/config.json` > built-in defaults.
 
+For deterministic local/CI tests, Make targets run pytest with `VOXERA_LOAD_DOTENV=0` and unset key `VOXERA_*` vars so shell exports and repo `.env` do not alter test outcomes.
+
 Key runtime env vars (defaults):
 - `VOXERA_QUEUE_ROOT` (`~/VoxeraOS/notes/queue`)
 - `VOXERA_PANEL_HOST` (`127.0.0.1`)
@@ -42,6 +44,7 @@ Key runtime env vars (defaults):
 - `VOXERA_PANEL_CSRF_ENABLED` (`1`/true by default)
 - `VOXERA_QUEUE_LOCK_STALE_S` (`3600`)
 - `VOXERA_OPS_BUNDLE_DIR` (unset => timestamped `_archive/` path)
+- When using `voxera ops bundle ... --queue-dir`, default archive output stays under that queue root (`<queue_dir>/_archive/<timestamp>/`); use `--dir` to override explicitly.
 
 ## Queue contract + intake flow
 

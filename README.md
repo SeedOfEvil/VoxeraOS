@@ -54,12 +54,14 @@ voxera queue health           # operator health snapshot (lock/auth/csrf counter
 ### Dev Contract
 - CI may call `make fmt-check`, `make lint`, `make type`, `make test`, `make test-failed-sidecar`, or `make release-check` individually.
 - Each of these targets now depends on `.venv/.dev_installed`, created by `make dev`, so tool binaries (`ruff`, `mypy`, `pytest`) are always present before checks run.
+- `make test`/`make check` run pytest with a sanitized `VOXERA_*` env and `VOXERA_LOAD_DOTENV=0` so local `.env` and shell exports do not leak into CI-style test runs.
 
 ### Config Contract
 - Runtime config file path: `~/.config/voxera/config.json` (optional).
 - Precedence is strict and deterministic: **CLI overrides > VOXERA_* env > config file > defaults**.
 - Inspect safely: `voxera config show` (sensitive values redacted as `***`).
 - Validate explicitly: `voxera config validate` (non-zero exit with actionable error details).
+- When `--queue-dir` is provided for `voxera ops bundle ...`, archive defaults are anchored under `<queue_dir>/_archive/...`; `VOXERA_OPS_BUNDLE_DIR` is ignored unless `--dir` is passed.
 
 Example `~/.config/voxera/config.json`:
 ```json

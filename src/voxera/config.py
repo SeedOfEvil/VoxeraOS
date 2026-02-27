@@ -228,6 +228,12 @@ def _coerce(field: str, value: Any) -> Any:
     return value
 
 
+def should_load_dotenv(environ: Mapping[str, str] | None = None) -> bool:
+    env = environ or os.environ
+    raw = str(env.get("VOXERA_LOAD_DOTENV", "1")).strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
 def load_env_file(path: Path) -> dict[str, str]:
     payload: dict[str, str] = {}
     if not path.exists():
