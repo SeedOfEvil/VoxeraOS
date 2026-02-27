@@ -199,23 +199,29 @@ echo ":: job_zip=$job_zip"
 
 echo ":: step: validate bundle manifests"
 if command -v unzip >/dev/null 2>&1; then
-  if ! unzip -l "$system_zip" | tee "$archive_dir/e2e-system-zip-list.out" | rg -q "manifest.json"; then
+  unzip -l "$system_zip" | tee "$archive_dir/e2e-system-zip-list.out"
+  if ! rg -q 'manifest\.json' "$archive_dir/e2e-system-zip-list.out"; then
     echo ":: error: manifest missing in system zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
-  if ! unzip -l "$job_zip" | tee "$archive_dir/e2e-job-zip-list.out" | rg -q "manifest.json"; then
+
+  unzip -l "$job_zip" | tee "$archive_dir/e2e-job-zip-list.out"
+  if ! rg -q 'manifest\.json' "$archive_dir/e2e-job-zip-list.out"; then
     echo ":: error: manifest missing in job zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
 else
-  if ! python -m zipfile -l "$system_zip" | tee "$archive_dir/e2e-system-zip-list.out" | rg -q "manifest.json"; then
+  python -m zipfile -l "$system_zip" | tee "$archive_dir/e2e-system-zip-list.out"
+  if ! rg -q 'manifest\.json' "$archive_dir/e2e-system-zip-list.out"; then
     echo ":: error: manifest missing in system zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
-  if ! python -m zipfile -l "$job_zip" | tee "$archive_dir/e2e-job-zip-list.out" | rg -q "manifest.json"; then
+
+  python -m zipfile -l "$job_zip" | tee "$archive_dir/e2e-job-zip-list.out"
+  if ! rg -q 'manifest\.json' "$archive_dir/e2e-job-zip-list.out"; then
     echo ":: error: manifest missing in job zip"
     print_archive_diag "$archive_dir"
     exit 1
