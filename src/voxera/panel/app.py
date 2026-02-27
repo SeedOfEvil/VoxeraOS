@@ -7,7 +7,7 @@ import secrets
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -52,6 +52,27 @@ CSRF_COOKIE = "voxera_panel_csrf"
 CSRF_FORM_KEY = "csrf_token"
 
 
+class _RequestUrlLike(Protocol):
+    @property
+    def path(self) -> str: ...
+
+
+class _RequestClientLike(Protocol):
+    @property
+    def host(self) -> str: ...
+
+
+class _PanelSecurityRequestLike(Protocol):
+    @property
+    def url(self) -> _RequestUrlLike: ...
+
+    @property
+    def method(self) -> str: ...
+
+    @property
+    def client(self) -> _RequestClientLike | None: ...
+
+
 def _settings():
     return load_runtime_config()
 
@@ -68,7 +89,7 @@ def _allow_get_mutations() -> bool:
     return _settings().panel_enable_get_mutations
 
 
-def _request_meta(request: Request) -> dict[str, Any]:
+def _request_meta(request: _PanelSecurityRequestLike) -> dict[str, Any]:
     return {
         "path": request.url.path,
         "method": request.method,
@@ -79,7 +100,7 @@ def _request_meta(request: Request) -> dict[str, Any]:
 def _log_panel_security_event(
     event: str,
     *,
-    request: Request,
+    request: _PanelSecurityRequestLike,
     reason: str,
     status_code: int,
 ) -> None:
@@ -107,7 +128,7 @@ def _panel_security_snapshot() -> dict[str, Any]:
     return counters if isinstance(counters, dict) else {}
 
 
-def _operator_credentials(request: Request) -> tuple[str, str]:
+def _operator_credentials(request: _PanelSecurityRequestLike) -> tuple[str, str]:
     settings = _settings()
     user = settings.panel_operator_user
     password = settings.panel_operator_password

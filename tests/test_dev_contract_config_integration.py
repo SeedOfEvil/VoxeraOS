@@ -45,9 +45,15 @@ def test_panel_operator_defaults_to_admin_and_missing_password_raises(
     monkeypatch.delenv("VOXERA_PANEL_OPERATOR_PASSWORD", raising=False)
 
     class _Req:
-        url = type("u", (), {"path": "/"})
+        class _URL:
+            path = "/"
+
+        class _Client:
+            host = "127.0.0.1"
+
+        url = _URL()
         method = "GET"
-        client = type("c", (), {"host": "127.0.0.1"})
+        client = _Client()
 
     with pytest.raises(HTTPException) as exc:
         panel_app._operator_credentials(_Req())
