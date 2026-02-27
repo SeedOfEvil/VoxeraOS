@@ -7,6 +7,17 @@ cd "$ROOT_DIR"
 QUEUE_ROOT="${VOXERA_QUEUE_ROOT:-$ROOT_DIR/notes/queue}"
 QUEUE_ROOT="${QUEUE_ROOT/#\~/$HOME}"
 
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [--dir <DIR>]
+
+Options:
+  --dir <DIR>   Write e2e logs, diagnostics, and exported bundles into DIR.
+                Use '--dir -- <DIR>' for paths that start with '-'.
+  --help        Show this help message.
+EOF
+}
+
 print_archive_diag() {
   local archive_dir="${1:-$QUEUE_ROOT/_archive}"
   echo ":: diagnostics: system_zip=${system_zip:-}"
@@ -31,7 +42,26 @@ require_file() {
 capture_zip_path() {
   local raw="$1"
   local extracted
-  extracted="$(printf '%s' "$raw" | tr -d '\r\n' | grep -Eo '(/[^ ]+\.zip|~[^ ]+\.zip)' | tail -n 1)"
+  extracted="$(
+    printf '%s\n' "$raw" \
+      | tr -d '\r' \
+      | awk '
+          /\.zip[[:space:]]*$/ {
+            sub(/[[:space:]]+$/, "", $0)
+            last = $0
+            found = 1
+          }
+          END {
+            if (!found) {
+              exit 1
+            }
+            print last
+          }
+        '
+  )"
+  if [[ "$extracted" == ZIP_PATH=* ]]; then
+    extracted="${extracted#ZIP_PATH=}"
+  fi
   if [[ -z "$extracted" ]]; then
     echo ":: error: unable to capture zip path from command output" >&2
     printf '%s\n' "$raw" >&2
@@ -39,6 +69,61 @@ capture_zip_path() {
   fi
   printf '%s\n' "$extracted"
 }
+
+archive_dir=""
+while (($#)); do
+  case "$1" in
+    --help)
+      usage
+      exit 0
+      ;;
+    --dir)
+      shift
+      if [[ $# -eq 0 ]]; then
+        echo ":: error: --dir requires a value" >&2
+        usage >&2
+        exit 2
+      fi
+      if [[ "$1" == "--" ]]; then
+        shift
+        if [[ $# -eq 0 ]]; then
+          echo ":: error: --dir requires a value after --" >&2
+          usage >&2
+          exit 2
+        fi
+        archive_dir="$1"
+      elif [[ "$1" == -* ]]; then
+        echo ":: error: invalid --dir value: $1" >&2
+        usage >&2
+        exit 2
+      else
+        archive_dir="$1"
+      fi
+      ;;
+    --*)
+      echo ":: error: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      echo ":: error: positional arguments are not supported: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if [[ -z "$archive_dir" ]]; then
+  archive_dir="$QUEUE_ROOT/_archive/ops-e2e-$(date +%Y%m%d-%H%M%S)"
+fi
+archive_dir="${archive_dir/#\~/$HOME}"
+mkdir -p -- "$archive_dir"
+archive_dir="$(cd -- "$archive_dir" && pwd)"
+echo ":: archive_dir=$archive_dir"
+
+E2E_LOG="$archive_dir/e2e.log"
+exec > >(tee -a "$E2E_LOG") 2>&1
 
 echo ":: step: ensure queue directories"
 mkdir -p "$QUEUE_ROOT"/{inbox,pending/approvals,done,failed,artifacts,_archive}
@@ -86,12 +171,9 @@ require_file "$ART_DIR/stdout.txt" "stdout artifact"
 require_file "$ART_DIR/stderr.txt" "stderr artifact"
 
 echo ":: step: run doctor self-test"
-voxera doctor --self-test | tee /tmp/voxera-doctor-self-test.out
-rg -q "PASS" /tmp/voxera-doctor-self-test.out
-
-archive_dir="$QUEUE_ROOT/_archive/ops-e2e-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$archive_dir"
-echo ":: archive_dir=$archive_dir"
+DOCTOR_LOG="$archive_dir/doctor-self-test.out"
+voxera doctor --self-test | tee "$DOCTOR_LOG"
+rg -q "PASS" "$DOCTOR_LOG"
 
 echo ":: step: export system ops bundle"
 system_zip_raw="$(voxera ops bundle system --dir "$archive_dir")"
@@ -117,23 +199,29 @@ echo ":: job_zip=$job_zip"
 
 echo ":: step: validate bundle manifests"
 if command -v unzip >/dev/null 2>&1; then
-  if ! unzip -l "$system_zip" | tee /tmp/e2e-system-zip-list.out | rg -q "manifest.json"; then
+  unzip -l "$system_zip" | tee "$archive_dir/e2e-system-zip-list.out"
+  if ! rg -q 'manifest\.json' "$archive_dir/e2e-system-zip-list.out"; then
     echo ":: error: manifest missing in system zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
-  if ! unzip -l "$job_zip" | tee /tmp/e2e-job-zip-list.out | rg -q "manifest.json"; then
+
+  unzip -l "$job_zip" | tee "$archive_dir/e2e-job-zip-list.out"
+  if ! rg -q 'manifest\.json' "$archive_dir/e2e-job-zip-list.out"; then
     echo ":: error: manifest missing in job zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
 else
-  if ! python -m zipfile -l "$system_zip" | tee /tmp/e2e-system-zip-list.out | rg -q "manifest.json"; then
+  python -m zipfile -l "$system_zip" | tee "$archive_dir/e2e-system-zip-list.out"
+  if ! rg -q 'manifest\.json' "$archive_dir/e2e-system-zip-list.out"; then
     echo ":: error: manifest missing in system zip"
     print_archive_diag "$archive_dir"
     exit 1
   fi
-  if ! python -m zipfile -l "$job_zip" | tee /tmp/e2e-job-zip-list.out | rg -q "manifest.json"; then
+
+  python -m zipfile -l "$job_zip" | tee "$archive_dir/e2e-job-zip-list.out"
+  if ! rg -q 'manifest\.json' "$archive_dir/e2e-job-zip-list.out"; then
     echo ":: error: manifest missing in job zip"
     print_archive_diag "$archive_dir"
     exit 1

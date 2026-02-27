@@ -548,6 +548,20 @@ GET /bundle/system
 System bundle contains `manifest.json`, queue snapshots (`queue_status.txt`, `queue_health.json`, lock snapshot), redacted config snapshots (`snapshots/config_snapshot.json`, `snapshots/config_snapshot.sha256`), optional `journal_voxera_daemon_tail.txt`, and `panel_log_hint.txt`.
 Job bundles include the same redacted config snapshot files under `snapshots/` for operator handoff consistency.
 
+### OpsConsole golden-path e2e script output directory
+
+`scripts/e2e_opsconsole.sh` supports `--dir` to write all script outputs (`e2e.log`, doctor output, zip listings, and both bundle zips) into an operator-selected directory.
+
+```bash
+# path with spaces
+scripts/e2e_opsconsole.sh --dir "/tmp/inc test"
+
+# path starting with dash (requires explicit -- separator)
+scripts/e2e_opsconsole.sh --dir -- /tmp/-weird
+```
+
+Without `--dir`, the script keeps the default archive location under `notes/queue/_archive/ops-e2e-<timestamp>/`.
+
 ### Truncation + size troubleshooting
 
 - Per-file cap defaults to 256KB; total bundle cap defaults to 4MB.
