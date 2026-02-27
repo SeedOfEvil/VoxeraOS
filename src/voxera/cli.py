@@ -12,7 +12,7 @@ from rich.table import Table
 from .audit import tail
 from .config import load_app_config as load_config
 from .config import load_config as load_runtime_config
-from .config import load_runtime_env, should_load_dotenv
+from .config import load_runtime_env, should_load_dotenv, write_config_snapshot
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
@@ -100,6 +100,14 @@ def config_show_legacy():
     """Backward-compatible alias for `voxera config show`."""
     cfg = load_runtime_config()
     typer.echo(json.dumps(cfg.to_safe_dict(), sort_keys=True))
+
+
+@config_app.command("snapshot")
+def config_snapshot() -> None:
+    """Write a redacted runtime config snapshot and print its absolute path."""
+    cfg = load_runtime_config()
+    out = write_config_snapshot(cfg.queue_root, cfg)
+    typer.echo(str(out.resolve()))
 
 
 @config_app.command("validate")

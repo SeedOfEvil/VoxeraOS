@@ -60,6 +60,7 @@ voxera queue health           # operator health snapshot (lock/auth/csrf counter
 - Runtime config file path: `~/.config/voxera/config.json` (optional).
 - Precedence is strict and deterministic: **CLI overrides > VOXERA_* env > config file > defaults**.
 - Inspect safely: `voxera config show` (sensitive values redacted as `***`).
+- Write a redacted runtime snapshot for automation: `voxera config snapshot` (prints absolute path only).
 - Validate explicitly: `voxera config validate` (non-zero exit with actionable error details).
 - When `--queue-dir` is provided for `voxera ops bundle ...`, archive defaults are anchored under `<queue_dir>/_archive/...`; `VOXERA_OPS_BUNDLE_DIR` is ignored unless `--dir` is passed.
 
@@ -81,6 +82,7 @@ Example `~/.config/voxera/config.json`:
 
 ```bash
 .venv/bin/voxera config show
+.venv/bin/voxera config snapshot
 ```
 
 ## Quick start (dev VM)

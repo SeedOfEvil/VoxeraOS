@@ -6,11 +6,13 @@ import os
 import shutil
 import subprocess
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from ..audit import log, tail
+from ..config import config_fingerprint, write_config_snapshot
 from ..config import load_app_config as load_config
 from ..config import load_config as load_runtime_config
 from ..health import (
@@ -1498,11 +1500,57 @@ class MissionQueueDaemon:
             processed += 1
         return processed
 
+    def _config_fingerprint_path(self) -> Path:
+        return self.queue_root / "config_snapshot.sha256"
+
+    def _config_drift_note_path(self) -> Path:
+        return self.queue_root / "config_drift_note.txt"
+
+    def _write_text_atomic(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def _snapshot_and_check_config_drift(self) -> None:
+        snapshot_path = write_config_snapshot(self.queue_root, self.settings)
+        fingerprint_path = self._config_fingerprint_path()
+        previous = None
+        if fingerprint_path.exists():
+            previous = fingerprint_path.read_text(encoding="utf-8").strip() or None
+        current = config_fingerprint(self.settings)
+        self._write_text_atomic(fingerprint_path, current + "\n")
+        if previous and previous != current:
+            ts_ms = int(time.time() * 1000)
+            log(
+                {
+                    "event": "config_drift_detected",
+                    "old_fingerprint": previous,
+                    "new_fingerprint": current,
+                    "changed": True,
+                    "queue_root": str(self.queue_root.resolve()),
+                    "daemon_pid": os.getpid(),
+                    "snapshot": str(snapshot_path.resolve()),
+                }
+            )
+            note = (
+                f"config drift detected\n"
+                f"ts_ms={ts_ms}\n"
+                f"queue_root={self.queue_root.resolve()}\n"
+                f"old_fingerprint={previous}\n"
+                f"new_fingerprint={current}\n"
+            )
+            self._write_text_atomic(self._config_drift_note_path(), note)
+
     def run(self, once: bool = False) -> None:
         self.ensure_dirs()
         now_ms = int(time.time() * 1000)
         self._update_daemon_health_state(daemon_started_at_ms=now_ms, daemon_pid=os.getpid())
         self._acquire_daemon_lock()
+        self._snapshot_and_check_config_drift()
         if self.auto_approve_ask and not self.dev_mode:
             log(
                 {"event": "queue_auto_approve_disabled", "reason": "VOXERA_DEV_MODE is not enabled"}

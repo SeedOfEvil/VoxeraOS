@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .config import config_fingerprint, write_config_snapshot
 from .config import load_config as load_runtime_config
 from .core.queue_daemon import MissionQueueDaemon
 from .core.queue_inspect import lookup_job
@@ -89,6 +90,26 @@ def _manifest(queue_root: Path) -> dict[str, Any]:
     }
 
 
+def _ensure_config_snapshot(queue_root: Path) -> tuple[Path | None, Path | None, str | None]:
+    snapshot = queue_root / "config_snapshot.json"
+    fingerprint = queue_root / "config_snapshot.sha256"
+    note = None
+    if not snapshot.exists() or not fingerprint.exists():
+        try:
+            settings = load_runtime_config()
+            if settings.queue_root.expanduser().resolve() != queue_root:
+                settings = load_runtime_config(overrides={"queue_root": queue_root})
+            snapshot = write_config_snapshot(queue_root, settings)
+            fingerprint.write_text(config_fingerprint(settings) + "\n", encoding="utf-8")
+        except Exception as exc:
+            note = f"config snapshot unavailable: {type(exc).__name__}\n"
+    return (
+        snapshot if snapshot.exists() else None,
+        fingerprint if fingerprint.exists() else None,
+        note,
+    )
+
+
 def build_system_bundle(
     queue_root: Path,
     archive_dir: Path | None = None,
@@ -105,6 +126,7 @@ def build_system_bundle(
 
     status = daemon.status_snapshot(approvals_limit=8, failed_limit=8)
     status_text = json.dumps(status, indent=2, sort_keys=True)
+    config_snapshot, config_fingerprint_path, snapshot_note = _ensure_config_snapshot(queue_root)
 
     def write(zf: zipfile.ZipFile) -> None:
         _zip_write_bytes(
@@ -113,6 +135,27 @@ def build_system_bundle(
             json.dumps(_manifest(queue_root), indent=2, sort_keys=True).encode("utf-8"),
         )
         _zip_write_text(zf, "snapshots/queue_status.txt", status_text + "\n")
+        if config_snapshot is not None:
+            _zip_write_bytes(zf, "snapshots/config_snapshot.json", config_snapshot.read_bytes())
+        else:
+            _zip_write_text(
+                zf,
+                "notes/config_snapshot_missing.txt",
+                snapshot_note or "config snapshot missing\n",
+            )
+
+        if config_fingerprint_path is not None:
+            _zip_write_bytes(
+                zf,
+                "snapshots/config_snapshot.sha256",
+                config_fingerprint_path.read_bytes(),
+            )
+        else:
+            _zip_write_text(
+                zf,
+                "notes/config_snapshot_fingerprint_missing.txt",
+                snapshot_note or "config snapshot fingerprint missing\n",
+            )
 
         health = queue_root / "health.json"
         if health.exists():
@@ -177,6 +220,8 @@ def build_job_bundle(
     job_stem = Path(job_ref).stem
     out = out_dir / f"bundle-job-{job_stem}.zip"
 
+    config_snapshot, config_fingerprint_path, snapshot_note = _ensure_config_snapshot(queue_root)
+
     searched = [
         str(queue_root / "done" / f"{job_stem}.json"),
         str(queue_root / "failed" / f"{job_stem}.json"),
@@ -190,6 +235,28 @@ def build_job_bundle(
             "manifest.json",
             json.dumps(_manifest(queue_root), indent=2, sort_keys=True).encode("utf-8"),
         )
+
+        if config_snapshot is not None:
+            _zip_write_bytes(zf, "snapshots/config_snapshot.json", config_snapshot.read_bytes())
+        else:
+            _zip_write_text(
+                zf,
+                "notes/config_snapshot_missing.txt",
+                snapshot_note or "config snapshot missing\n",
+            )
+
+        if config_fingerprint_path is not None:
+            _zip_write_bytes(
+                zf,
+                "snapshots/config_snapshot.sha256",
+                config_fingerprint_path.read_bytes(),
+            )
+        else:
+            _zip_write_text(
+                zf,
+                "notes/config_snapshot_fingerprint_missing.txt",
+                snapshot_note or "config snapshot fingerprint missing\n",
+            )
 
         if lookup and lookup.primary_path.exists():
             _zip_write_bytes(
