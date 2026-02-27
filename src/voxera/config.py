@@ -268,6 +268,24 @@ def config_fingerprint(settings: VoxeraConfig) -> str:
     return sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def write_config_fingerprint(
+    queue_root: Path,
+    settings: VoxeraConfig,
+    *,
+    filename: str = "_ops/config_snapshot.sha256",
+) -> Path:
+    queue_root = queue_root.expanduser().resolve()
+    out = queue_root / filename
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_name(f".{out.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(config_fingerprint(settings) + "\n", encoding="utf-8")
+        tmp.replace(out)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return out
+
+
 def write_config_snapshot(
     queue_root: Path,
     settings: VoxeraConfig,

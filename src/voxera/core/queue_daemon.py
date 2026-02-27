@@ -8,14 +8,13 @@ import subprocess
 import time
 import uuid
 from dataclasses import dataclass
-from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from ..audit import log, tail
-from ..config import config_fingerprint, write_config_snapshot
 from ..config import load_app_config as load_config
 from ..config import load_config as load_runtime_config
+from ..config import write_config_fingerprint, write_config_snapshot
 from ..health import (
     increment_health_counter,
     read_health_snapshot,
@@ -1520,6 +1519,9 @@ class MissionQueueDaemon:
     def _config_last_snapshot_path(self) -> Path:
         return self.queue_root / "_ops" / "config_snapshot.last.json"
 
+    def _config_last_fingerprint_path(self) -> Path:
+        return self.queue_root / "_ops" / "config_snapshot.last.sha256"
+
     def _config_drift_note_path(self) -> Path:
         return self.queue_root / "config_drift_note.txt"
 
@@ -1536,67 +1538,70 @@ class MissionQueueDaemon:
         snapshot_path = write_config_snapshot(
             self.queue_root, self.settings, filename="_ops/config_snapshot.json"
         )
+        fingerprint_path = write_config_fingerprint(self.queue_root, self.settings)
+        current_hash = fingerprint_path.read_text(encoding="utf-8").strip()
+
         current_payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
         current_settings = (
             current_payload.get("settings") if isinstance(current_payload, dict) else {}
         )
         if not isinstance(current_settings, dict):
             current_settings = {}
-        current_hash = config_fingerprint(self.settings)
 
-        last_path = self._config_last_snapshot_path()
-        old_hash = None
-        changed_keys: list[str] = []
-        if last_path.exists():
+        last_payload_path = self._config_last_snapshot_path()
+        old_settings: dict[str, Any] = {}
+        if last_payload_path.exists():
             try:
-                old_payload = json.loads(last_path.read_text(encoding="utf-8"))
+                old_payload = json.loads(last_payload_path.read_text(encoding="utf-8"))
             except Exception:
                 old_payload = {}
-            old_settings = old_payload.get("settings") if isinstance(old_payload, dict) else {}
-            if not isinstance(old_settings, dict):
-                old_settings = {}
-            old_hash = old_payload.get("snapshot_hash")
-            if not isinstance(old_hash, str) or not old_hash:
-                old_hash = None
-            if old_hash is None:
-                old_hash = sha256(
-                    json.dumps(old_settings, sort_keys=True).encode("utf-8")
-                ).hexdigest()
-            changed_keys = sorted(
-                key
-                for key in set(old_settings.keys()) | set(current_settings.keys())
-                if old_settings.get(key) != current_settings.get(key)
-            )
+            raw = old_payload.get("settings") if isinstance(old_payload, dict) else {}
+            if isinstance(raw, dict):
+                old_settings = raw
 
-        if old_hash and old_hash != current_hash:
-            ts_ms = int(time.time() * 1000)
-            log(
-                {
-                    "event": "config_drift_detected",
-                    "changed": True,
-                    "changed_keys": changed_keys,
-                    "old_hash": old_hash,
-                    "new_hash": current_hash,
-                    "snapshot_path": str(snapshot_path.resolve()),
-                    "queue_root": str(self.queue_root.resolve()),
-                    "daemon_pid": os.getpid(),
-                }
-            )
-            note = (
-                f"config drift detected\n"
-                f"ts_ms={ts_ms}\n"
-                f"queue_root={self.queue_root.resolve()}\n"
-                f"snapshot_path={snapshot_path.resolve()}\n"
-                f"old_hash={old_hash}\n"
-                f"new_hash={current_hash}\n"
-                f"changed_keys={','.join(changed_keys)}\n"
-            )
-            self._write_text_atomic(self._config_drift_note_path(), note)
+        changed_keys = sorted(
+            key
+            for key in set(old_settings.keys()) | set(current_settings.keys())
+            if old_settings.get(key) != current_settings.get(key)
+        )
+
+        baseline_path = self._config_last_fingerprint_path()
+        baseline_hash = (
+            baseline_path.read_text(encoding="utf-8").strip() if baseline_path.exists() else ""
+        )
+        if baseline_hash:
+            if baseline_hash != current_hash:
+                ts_ms = int(time.time() * 1000)
+                log(
+                    {
+                        "event": "config_drift_detected",
+                        "changed": True,
+                        "changed_keys": changed_keys,
+                        "old_hash": baseline_hash,
+                        "new_hash": current_hash,
+                        "snapshot_path": str(snapshot_path.resolve()),
+                        "queue_root": str(self.queue_root.resolve()),
+                        "daemon_pid": os.getpid(),
+                    }
+                )
+                note = (
+                    f"config drift detected\n"
+                    f"ts_ms={ts_ms}\n"
+                    f"queue_root={self.queue_root.resolve()}\n"
+                    f"snapshot_path={snapshot_path.resolve()}\n"
+                    f"old_hash={baseline_hash}\n"
+                    f"new_hash={current_hash}\n"
+                    f"changed_keys={','.join(changed_keys)}\n"
+                )
+                self._write_text_atomic(self._config_drift_note_path(), note)
+            self._write_text_atomic(baseline_path, current_hash + "\n")
+        else:
+            self._write_text_atomic(baseline_path, current_hash + "\n")
 
         last_payload = dict(current_payload) if isinstance(current_payload, dict) else {}
         last_payload["snapshot_hash"] = current_hash
         self._write_text_atomic(
-            last_path, json.dumps(last_payload, indent=2, sort_keys=True) + "\n"
+            last_payload_path, json.dumps(last_payload, indent=2, sort_keys=True) + "\n"
         )
 
     def run(self, once: bool = False) -> None:

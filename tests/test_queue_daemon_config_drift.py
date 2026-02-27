@@ -44,6 +44,8 @@ def test_daemon_config_drift_emits_once_when_changed(tmp_path: Path, monkeypatch
 
     assert (tmp_path / "_ops" / "config_snapshot.json").exists()
     assert (tmp_path / "_ops" / "config_snapshot.last.json").exists()
+    assert (tmp_path / "_ops" / "config_snapshot.sha256").exists()
+    assert (tmp_path / "_ops" / "config_snapshot.last.sha256").exists()
     assert not [e for e in events if e.get("event") == "config_drift_detected"]
 
     daemon_same = MissionQueueDaemon(queue_root=tmp_path)
@@ -51,6 +53,9 @@ def test_daemon_config_drift_emits_once_when_changed(tmp_path: Path, monkeypatch
     daemon_same._snapshot_and_check_config_drift()
     assert len([e for e in events if e.get("event") == "config_drift_detected"]) == 0
 
+    (tmp_path / "_ops" / "config_snapshot.last.sha256").write_text(
+        "0" * 64 + "\n", encoding="utf-8"
+    )
     _runtime_config(config_file, password="first", panel_port=9955)
     daemon_changed = MissionQueueDaemon(queue_root=tmp_path)
     daemon_changed.settings = load_config(config_path=config_file)

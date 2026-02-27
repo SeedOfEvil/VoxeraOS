@@ -38,7 +38,7 @@ and enables/starts:
 .venv/bin/voxera config snapshot
 ```
 
-This writes `notes/queue/_ops/config_snapshot.json` (or `<VOXERA_QUEUE_ROOT>/_ops/config_snapshot.json`) with `settings`, `sources`, `written_at_ms`, and `schema_version=1`.
+This writes `notes/queue/_ops/config_snapshot.json` (or `<VOXERA_QUEUE_ROOT>/_ops/config_snapshot.json`) with `settings`, `sources`, `written_at_ms`, and `schema_version=1`, plus `_ops/config_snapshot.sha256`.
 
 Config precedence: CLI overrides > `VOXERA_*` env > `~/.config/voxera/config.json` > built-in defaults.
 
@@ -55,7 +55,9 @@ Key runtime env vars (defaults):
 - When using `voxera ops bundle ... --queue-dir`, default archive output stays under that queue root (`<queue_dir>/_archive/<timestamp>/`); use `--dir` to override explicitly.
 
 
-Daemon startup writes a fresh redacted `_ops/config_snapshot.json` (plus fingerprint metadata). If the effective redacted config fingerprint changes since previous daemon start, Voxera emits exactly one structured audit event (`config_drift_detected`) and writes `config_drift_note.txt` with timestamp and old/new fingerprints. Secrets are never included in these files/events.
+Daemon startup writes a fresh redacted `_ops/config_snapshot.json`, `_ops/config_snapshot.sha256`, and baseline `_ops/config_snapshot.last.sha256`. If the effective redacted config fingerprint changes since previous daemon start, Voxera emits exactly one structured audit event (`config_drift_detected`) and writes `config_drift_note.txt` with timestamp and old/new fingerprints. Secrets are never included in these files/events.
+
+Note: systemd user services do not inherit ad-hoc shell exports by default; configure env via Voxera runtime env files/service unit overrides if drift behavior seems unexpected.
 ## Queue contract + intake flow
 
 Use `voxera inbox` as the human-friendly front door for queued goals. Ensure queue folders exist once per machine:

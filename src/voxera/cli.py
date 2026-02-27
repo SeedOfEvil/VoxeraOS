@@ -12,7 +12,12 @@ from rich.table import Table
 from .audit import tail
 from .config import load_app_config as load_config
 from .config import load_config as load_runtime_config
-from .config import load_runtime_env, should_load_dotenv, write_config_snapshot
+from .config import (
+    load_runtime_env,
+    should_load_dotenv,
+    write_config_fingerprint,
+    write_config_snapshot,
+)
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
@@ -118,6 +123,7 @@ def config_snapshot(path: Path | None = SNAPSHOT_PATH_OPTION) -> None:
         else cfg.queue_root / "_ops" / "config_snapshot.json"
     )
     written = write_config_snapshot(target.parent, cfg, filename=target.name)
+    write_config_fingerprint(cfg.queue_root, cfg)
     typer.echo(str(written.resolve()))
 
 

@@ -9,8 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .config import config_fingerprint, write_config_snapshot
 from .config import load_config as load_runtime_config
+from .config import write_config_fingerprint, write_config_snapshot
 from .core.queue_daemon import MissionQueueDaemon
 from .core.queue_inspect import lookup_job
 from .version import get_version
@@ -102,7 +102,7 @@ def _ensure_config_snapshot(queue_root: Path) -> tuple[Path | None, Path | None,
             snapshot = write_config_snapshot(
                 queue_root, settings, filename="_ops/config_snapshot.json"
             )
-            fingerprint.write_text(config_fingerprint(settings) + "\n", encoding="utf-8")
+            fingerprint = write_config_fingerprint(queue_root, settings)
         except Exception as exc:
             note = f"config snapshot unavailable: {type(exc).__name__}\n"
     return (

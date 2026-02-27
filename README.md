@@ -85,6 +85,8 @@ Example `~/.config/voxera/config.json`:
 .venv/bin/voxera config snapshot
 ```
 
+This writes `notes/queue/_ops/config_snapshot.json` and `notes/queue/_ops/config_snapshot.sha256` (redacted; deterministic key ordering).
+
 ## Quick start (dev VM)
 ```bash
 python3 -m venv .venv

@@ -40,6 +40,8 @@ def test_config_snapshot_default_writes_to_queue_root_without_queue_intake_side_
     assert out_path.is_absolute()
     assert out_path == (queue_root / "_ops" / "config_snapshot.json").resolve()
     payload = json.loads(out_path.read_text(encoding="utf-8"))
+    sha_path = queue_root / "_ops" / "config_snapshot.sha256"
+    assert sha_path.exists()
     assert payload["settings"]["panel_operator_password"] == "***"
     assert "very-secret" not in out_path.read_text(encoding="utf-8")
 
@@ -64,6 +66,7 @@ def test_config_snapshot_respects_path_override(tmp_path: Path, monkeypatch) -> 
     assert out_res.exit_code == 0
     assert Path(out_res.stdout.strip()) == out_file.resolve()
     assert out_file.exists()
+    assert (queue_root / "_ops" / "config_snapshot.sha256").exists()
 
     out_res_alias = runner.invoke(cli.app, ["config", "snapshot", "--out", str(out_file)])
     assert out_res_alias.exit_code == 0
