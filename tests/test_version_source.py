@@ -4,7 +4,7 @@ from pathlib import Path
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib  # type: ignore[no-redef]
+    import tomli as tomllib
 
 from voxera import __version__
 from voxera.version import _version_from_pyproject, get_version
