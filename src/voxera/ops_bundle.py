@@ -272,16 +272,34 @@ def build_job_bundle(
             )
 
         approval = queue_root / "pending" / "approvals" / f"{job_stem}.approval.json"
-        if approval.exists():
-            _zip_write_bytes(zf, f"job/{approval.name}", approval.read_bytes())
-        else:
-            _zip_write_text(zf, "notes/approval_not_found.txt", "approval artifact not found\n")
-
         sidecar = queue_root / "failed" / f"{job_stem}.error.json"
-        if sidecar.exists():
+        has_approval = approval.exists()
+        has_sidecar = sidecar.exists()
+
+        if has_approval:
+            _zip_write_bytes(zf, f"job/{approval.name}", approval.read_bytes())
+        elif lookup is not None and lookup.bucket == "approvals":
+            _zip_write_text(
+                zf,
+                "notes/approval_missing_unexpected.txt",
+                "approval artifact expected for approvals bucket job but was not found\n",
+            )
+
+        if has_sidecar:
             _zip_write_bytes(zf, f"job/{sidecar.name}", sidecar.read_bytes())
-        else:
-            _zip_write_text(zf, "notes/failed_sidecar_not_found.txt", "failed sidecar not found\n")
+        elif lookup is not None and lookup.bucket == "failed":
+            _zip_write_text(
+                zf,
+                "notes/failed_sidecar_missing_unexpected.txt",
+                "failed sidecar expected for failed bucket job but was not found\n",
+            )
+
+        if not has_approval and not has_sidecar:
+            _zip_write_text(
+                zf,
+                "notes/optional_context_artifacts_absent.txt",
+                "approval + failed sidecar artifacts are optional and absent for this job\n",
+            )
 
         art_dir = queue_root / "artifacts" / job_stem
         names = ["plan.json", "actions.jsonl", "stdout.txt", "stderr.txt", "generated_files.json"]

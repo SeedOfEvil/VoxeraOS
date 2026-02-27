@@ -128,6 +128,26 @@ def _panel_security_snapshot() -> dict[str, Any]:
     return counters if isinstance(counters, dict) else {}
 
 
+def _auth_setup_banner() -> dict[str, str] | None:
+    settings = _settings()
+    if settings.panel_operator_password:
+        return None
+    return {
+        "title": "Setup required: panel operator password is not configured.",
+        "detail": (
+            "Mutation routes require Basic auth. Set VOXERA_PANEL_OPERATOR_PASSWORD in your "
+            "user service environment and restart panel + daemon."
+        ),
+        "path_hint": "Config file: ~/.config/voxera/config.toml",
+        "commands": (
+            "systemctl --user edit voxera-panel.service\n"
+            "# add [Service] Environment=VOXERA_PANEL_OPERATOR_PASSWORD=<set-a-strong-password>\n"
+            "systemctl --user daemon-reload\n"
+            "systemctl --user restart voxera-panel.service voxera-daemon.service"
+        ),
+    }
+
+
 def _operator_credentials(request: _PanelSecurityRequestLike) -> tuple[str, str]:
     settings = _settings()
     user = settings.panel_operator_user
@@ -583,6 +603,7 @@ def home(request: Request, created: str = "", error: str = "", mission_created: 
         recent_activity=recent_activity,
         csrf_token=csrf_token,
         panel_security_counters=_panel_security_snapshot(),
+        auth_setup_banner=_auth_setup_banner(),
     )
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
@@ -726,6 +747,7 @@ def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
         n=max(1, min(n, 200)),
         buckets=["all", *JOB_BUCKETS],
         csrf_token=csrf_token,
+        auth_setup_banner=_auth_setup_banner(),
     )
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")

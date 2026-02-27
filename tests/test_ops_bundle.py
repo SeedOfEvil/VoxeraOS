@@ -92,3 +92,29 @@ def test_ops_bundle_default_archive_under_queue_archive(tmp_path, monkeypatch):
     assert out.exists()
     assert out.name == "bundle-system.zip"
     assert out.parent.parent == (queue_dir.resolve() / "_archive")
+
+
+def test_ops_bundle_job_uses_single_optional_note_for_absent_context_artifacts(tmp_path):
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "done").mkdir(parents=True)
+    (queue_dir / "done" / "job-a.json").write_text('{"goal":"x"}', encoding="utf-8")
+
+    out = build_job_bundle(queue_dir, "job-a.json")
+
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert "notes/optional_context_artifacts_absent.txt" in names
+        assert "notes/approval_not_found.txt" not in names
+        assert "notes/failed_sidecar_not_found.txt" not in names
+
+
+def test_ops_bundle_job_emits_anomaly_note_when_failed_sidecar_expected_but_missing(tmp_path):
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "failed").mkdir(parents=True)
+    (queue_dir / "failed" / "job-a.json").write_text('{"goal":"x"}', encoding="utf-8")
+
+    out = build_job_bundle(queue_dir, "job-a.json")
+
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert "notes/failed_sidecar_missing_unexpected.txt" in names

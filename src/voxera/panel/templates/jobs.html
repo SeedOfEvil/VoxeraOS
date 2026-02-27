@@ -10,6 +10,16 @@
   <div class="container">
     <h1>Jobs</h1>
     <p><a href="/">← Back to panel</a></p>
+
+    {% if auth_setup_banner %}
+      <div class="alert alert-info">
+        <b>{{auth_setup_banner.title}}</b><br/>
+        {{auth_setup_banner.detail}}<br/>
+        <span class="mono">{{auth_setup_banner.path_hint}}</span>
+        <pre>{{auth_setup_banner.commands}}</pre>
+      </div>
+    {% endif %}
+
     <form method="get" class="form-row card" action="/jobs" style="margin-bottom:16px;">
       <label>Bucket
         <select class="input" name="bucket">

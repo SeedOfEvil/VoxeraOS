@@ -573,3 +573,32 @@ def test_system_bundle_contains_manifest(tmp_path, monkeypatch):
 
     zf = zipfile.ZipFile(io.BytesIO(res.content))
     assert "manifest.json" in set(zf.namelist())
+
+
+def test_panel_shows_setup_required_banner_when_operator_password_missing(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.delenv("VOXERA_PANEL_OPERATOR_PASSWORD", raising=False)
+
+    client = TestClient(panel_module.app)
+
+    home_res = client.get("/")
+    jobs_res = client.get("/jobs")
+
+    assert home_res.status_code == 200
+    assert jobs_res.status_code == 200
+    assert "Setup required: panel operator password is not configured." in home_res.text
+    assert "systemctl --user restart voxera-panel.service voxera-daemon.service" in home_res.text
+    assert "Setup required: panel operator password is not configured." in jobs_res.text
+
+
+def test_panel_hides_setup_required_banner_when_operator_password_set(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get("/")
+
+    assert res.status_code == 200
+    assert "Setup required: panel operator password is not configured." not in res.text

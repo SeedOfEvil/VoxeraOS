@@ -22,6 +22,23 @@ from .core.queue_daemon import MissionQueueDaemon
 from .health import read_health_snapshot
 
 console = Console()
+_STALE_LAST_ERROR_THRESHOLD_MS = 5 * 60 * 1000
+
+
+def _as_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compact_duration(ms: int) -> str:
+    seconds = max(0, ms // 1000)
+    hours, rem = divmod(seconds, 3600)
+    minutes, _ = divmod(rem, 60)
+    if hours > 0:
+        return f"{hours}h{minutes}m"
+    return f"{minutes}m"
 
 
 def run_self_test(*, timeout_s: float = 8.0) -> dict[str, Any]:
@@ -205,7 +222,11 @@ def doctor_sync(*, self_test: bool = False, timeout_s: float = 8.0, quick: bool 
                 console.print(f"- {step}")
 
 
-def run_quick_doctor(*, queue_root: Path | None = None) -> list[dict[str, str]]:
+def run_quick_doctor(
+    *,
+    queue_root: Path | None = None,
+    stale_last_error_threshold_ms: int = _STALE_LAST_ERROR_THRESHOLD_MS,
+) -> list[dict[str, str]]:
     root = (queue_root or (Path.home() / "VoxeraOS" / "notes" / "queue")).expanduser()
     daemon = MissionQueueDaemon(queue_root=root)
     checks: list[dict[str, str]] = []
@@ -233,14 +254,33 @@ def run_quick_doctor(*, queue_root: Path | None = None) -> list[dict[str, str]]:
             else "",
         }
     )
+    last_error = str(health.get("last_error", ""))
+    last_error_ts_ms = _as_int(health.get("last_error_ts_ms"))
+    last_ok_ts_ms = _as_int(health.get("last_ok_ts_ms"))
+    error_status = "warn" if bool(last_error) else "ok"
+    error_hint = "Investigate latest daemon/panel errors if this persists." if last_error else ""
+    error_detail = f"error={last_error} ts={health.get('last_error_ts_ms', '')}"
+
+    if (
+        last_error
+        and last_error_ts_ms is not None
+        and last_ok_ts_ms is not None
+        and (last_ok_ts_ms - last_error_ts_ms) > stale_last_error_threshold_ms
+    ):
+        delta_ms = last_ok_ts_ms - last_error_ts_ms
+        error_status = "ok"
+        error_hint = ""
+        error_detail = (
+            f"error={last_error} ts={last_error_ts_ms} "
+            f"(stale; ok newer by {_compact_duration(delta_ms)})"
+        )
+
     checks.append(
         {
             "check": "health last_error",
-            "status": "warn" if bool(health.get("last_error")) else "ok",
-            "detail": f"error={health.get('last_error', '')} ts={health.get('last_error_ts_ms', '')}",
-            "hint": "Investigate latest daemon/panel errors if this persists."
-            if bool(health.get("last_error"))
-            else "",
+            "status": error_status,
+            "detail": error_detail,
+            "hint": error_hint,
         }
     )
 

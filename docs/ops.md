@@ -104,6 +104,7 @@ voxera queue resume
 voxera queue unlock           # safe: stale/orphaned (dead pid) locks only
 voxera queue unlock --force   # override live lock (dangerous)
 voxera queue health           # summary from notes/queue/health.json
+voxera queue lock status      # lock table alias (same lock fields as queue health)
 ```
 
 Operational effects:
@@ -113,6 +114,7 @@ Operational effects:
 - Daemon run loop acquires `notes/queue/.daemon.lock` to prevent multi-consumer races. Stale locks are reclaimed after `VOXERA_QUEUE_LOCK_STALE_S` (default 3600s); use `voxera queue unlock` for safe stale/orphaned lock recovery; if lock is live, stop daemon first or use `voxera queue unlock --force` as an explicit override.
 
 Panel operator notes:
+- Panel shows a **Setup required** banner on `/` and `/jobs` when `VOXERA_PANEL_OPERATOR_PASSWORD` is unset; guidance includes systemd user env + restart commands.
 - Panel mutation routes (`/queue/create`, `/missions/create`) accept `POST` by default.
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
@@ -151,6 +153,7 @@ Panel operator notes:
    ```bash
    voxera audit | rg "panel_(auth_missing|auth_invalid|csrf_missing|csrf_invalid|mutation_allowed|operator_config_error)"
    voxera queue health
+   voxera doctor --quick   # marks last_error as stale when last_ok is newer by >5m
    ```
    - Check `panel_401_count`, `panel_403_count`, `panel_auth_invalid`, `panel_csrf_missing`, and `panel_csrf_invalid` trends.
    - Quick curl sanity test (missing CSRF should return 403):
@@ -546,7 +549,7 @@ GET /bundle/system
 ```
 
 System bundle contains `manifest.json`, queue snapshots (`queue_status.txt`, `queue_health.json`, lock snapshot), redacted config snapshots (`snapshots/config_snapshot.json`, `snapshots/config_snapshot.sha256`), optional `journal_voxera_daemon_tail.txt`, and `panel_log_hint.txt`.
-Job bundles include the same redacted config snapshot files under `snapshots/` for operator handoff consistency.
+Job bundles include the same redacted config snapshot files under `snapshots/` for operator handoff consistency. Optional approval/failed-sidecar files are now quiet on normal success paths (single optional note), with anomaly notes only when a bucket implies an expected missing artifact.
 
 ### OpsConsole golden-path e2e script output directory
 

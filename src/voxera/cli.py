@@ -4,6 +4,7 @@ import asyncio
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -143,6 +144,7 @@ app.add_typer(skills_app, name="skills")
 missions_app = typer.Typer(help="Run multi-step built-in missions")
 queue_app = typer.Typer(help="Queue job utilities")
 queue_approvals_app = typer.Typer(help="Resolve pending queue approvals")
+queue_lock_app = typer.Typer(help="Queue daemon lock utilities")
 ops_app = typer.Typer(help="Operational incident bundle utilities")
 ops_bundle_app = typer.Typer(help="Export operator bundles")
 inbox_app = typer.Typer(help="Human-friendly queue inbox")
@@ -151,6 +153,7 @@ app.add_typer(queue_app, name="queue")
 app.add_typer(ops_app, name="ops")
 app.add_typer(inbox_app, name="inbox")
 queue_app.add_typer(queue_approvals_app, name="approvals")
+queue_app.add_typer(queue_lock_app, name="lock")
 ops_app.add_typer(ops_bundle_app, name="bundle")
 
 
@@ -639,6 +642,32 @@ def queue_status(
     console.print(failed_table)
 
 
+def _render_lock_status(status: dict[str, Any]) -> None:
+    lock = status.get("lock_status", {}) if isinstance(status.get("lock_status"), dict) else {}
+    lock_table = Table(title="Lock Status")
+    lock_table.add_column("Field")
+    lock_table.add_column("Value")
+    lock_table.add_row("lock path", str(lock.get("lock_path", "")))
+    lock_table.add_row("lock exists", str(lock.get("exists", False)))
+    lock_table.add_row("lock pid", str(lock.get("pid", 0)))
+    lock_table.add_row("lock pid alive", str(lock.get("alive", False)))
+    console.print(lock_table)
+
+
+@queue_lock_app.command("status")
+def queue_lock_status(
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Show queue daemon lock status table."""
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    status = daemon.status_snapshot(approvals_limit=3, failed_limit=3)
+    _render_lock_status(status)
+
+
 @queue_app.command("health")
 def queue_health(
     queue_dir: str = typer.Option(
@@ -661,15 +690,7 @@ def queue_health(
     console.print(f"Last error: {status.get('last_error', '')}")
     console.print(f"Last error ts ms: {status.get('last_error_ts_ms')}")
 
-    lock = status.get("lock_status", {}) if isinstance(status.get("lock_status"), dict) else {}
-    lock_table = Table(title="Lock Status")
-    lock_table.add_column("Field")
-    lock_table.add_column("Value")
-    lock_table.add_row("lock path", str(lock.get("lock_path", "")))
-    lock_table.add_row("lock exists", str(lock.get("exists", False)))
-    lock_table.add_row("lock pid", str(lock.get("pid", 0)))
-    lock_table.add_row("lock pid alive", str(lock.get("alive", False)))
-    console.print(lock_table)
+    _render_lock_status(status)
 
     counters = (
         status.get("daemon_lock_counters", {})
