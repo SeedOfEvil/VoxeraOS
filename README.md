@@ -45,6 +45,7 @@ voxera queue resume
 voxera queue unlock           # safe: stale/dead locks only
 voxera queue unlock --force   # override live lock (dangerous)
 voxera queue health           # operator health snapshot (lock/auth/csrf counters)
+voxera queue lock status      # lock table alias from queue health
 ```
 
 
@@ -576,8 +577,10 @@ Quick offline doctor mode:
 voxera doctor --quick
 ```
 Runs fast local checks only (lock exists/pid/alive, health `last_ok`/`last_error`, queue counts summary) with no model calls.
+When `last_ok_ts_ms` is newer than `last_error_ts_ms` by more than 5 minutes, quick doctor marks `last_error` as stale (`stale; ok newer by <delta>`) and downgrades severity.
 
 Panel bundle downloads write into deterministic incident directories: `notes/queue/_archive/incident-<YYYYMMDD-HHMMSS>-<job_stem_or_system>/`.
+Job bundle notes now avoid normal-path noise: optional approval/failed-sidecar notes are collapsed to one optional note, while missing-expected artifacts emit explicit anomaly notes.
 
 ## Queue job artifacts
 
@@ -599,6 +602,7 @@ These artifacts are present for pending, failed, and done queue paths to simplif
   - `voxera queue unlock` (safe stale/dead pid reclaim)
   - `voxera queue unlock --force` only when you intentionally override a live holder.
 - Panel `401` means Basic auth failure/missing credentials; `403` means CSRF token missing/mismatch on mutation routes.
+If `VOXERA_PANEL_OPERATOR_PASSWORD` is missing, panel home/jobs show a Setup required banner with safe systemd user env + restart guidance; no secrets are shown.
 - Ops bundles default to `notes/queue/_archive/<YYYYMMDD-HHMMSS>/`, or you can force a single incident handoff folder via `--dir` (or `VOXERA_OPS_BUNDLE_DIR`) so system + job zips land together:
   - `voxera ops bundle system --dir notes/queue/_archive/INCIDENT-123`
   - `voxera ops bundle job <job_ref> --dir notes/queue/_archive/INCIDENT-123`

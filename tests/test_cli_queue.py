@@ -393,3 +393,26 @@ def test_ops_bundle_queue_dir_ignores_env_archive_override(tmp_path, monkeypatch
     path = Path(res.output.strip())
     assert str(path).startswith(str((queue_dir / "_archive").resolve()))
     assert not str(path).startswith(str(env_archive.resolve()))
+
+
+def test_queue_lock_status_alias_renders_lock_fields(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+
+    result = runner.invoke(cli.app, ["queue", "lock", "status", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "Lock Status" in result.output
+    assert "lock path" in result.output
+    assert "lock exists" in result.output
+    assert "lock pid alive" in result.output
+
+
+def test_queue_help_lists_lock_status_command():
+    runner = CliRunner()
+
+    result = runner.invoke(cli.app, ["queue", "lock", "--help"])
+
+    assert result.exit_code == 0
+    assert "status" in result.output

@@ -27,6 +27,16 @@
     {% endif %}
 
 
+
+    {% if auth_setup_banner %}
+      <div class="alert alert-info">
+        <b>{{auth_setup_banner.title}}</b><br/>
+        {{auth_setup_banner.detail}}<br/>
+        <span class="mono">{{auth_setup_banner.path_hint}}</span>
+        <pre>{{auth_setup_banner.commands}}</pre>
+      </div>
+    {% endif %}
+
     {% if get_mutations_enabled %}
       <div class="alert">Compatibility mode: GET mutation endpoints are enabled for tests/dev only.</div>
     {% endif %}

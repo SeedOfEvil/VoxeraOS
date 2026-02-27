@@ -104,6 +104,7 @@ th, td { border-bottom: 1px solid var(--border); padding: 8px; text-align: left;
 .alert { border-radius: 10px; padding: 10px; margin-bottom: 12px; }
 .alert-success { background: rgba(47, 107, 79, 0.12); border: 1px solid var(--success); }
 .alert-danger { background: rgba(138, 58, 51, 0.14); border: 1px solid var(--danger); }
+.alert-info { background: rgba(63, 95, 127, 0.14); border: 1px solid var(--accent); }
 pre { white-space: pre-wrap; word-break: break-word; background: var(--surface-2); border-radius: 10px; padding: 10px; }
 
 

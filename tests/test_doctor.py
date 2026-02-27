@@ -342,3 +342,83 @@ def test_doctor_quick_offline_does_not_call_brains(monkeypatch, tmp_path):
     assert "event=daemon_tick" in details
     assert called["openai"] is False
     assert called["gemini"] is False
+
+
+def test_doctor_quick_marks_last_error_stale_when_last_ok_is_newer(tmp_path):
+    from voxera.doctor import run_quick_doctor
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_root / "health.json").write_text(
+        json.dumps(
+            {
+                "last_ok_event": "daemon_tick",
+                "last_ok_ts_ms": 10 * 60 * 1000,
+                "last_error": "old issue",
+                "last_error_ts_ms": 1_000,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    checks = run_quick_doctor(queue_root=queue_root)
+
+    last_error = next(item for item in checks if item["check"] == "health last_error")
+    assert last_error["status"] == "ok"
+    assert "stale; ok newer by" in last_error["detail"]
+
+
+def test_doctor_quick_keeps_warning_when_last_error_is_newer(tmp_path):
+    from voxera.doctor import run_quick_doctor
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_root / "health.json").write_text(
+        json.dumps(
+            {
+                "last_ok_event": "daemon_tick",
+                "last_ok_ts_ms": 1_000,
+                "last_error": "recent issue",
+                "last_error_ts_ms": 10 * 60 * 1000,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    checks = run_quick_doctor(queue_root=queue_root)
+
+    last_error = next(item for item in checks if item["check"] == "health last_error")
+    assert last_error["status"] == "warn"
+    assert "stale; ok newer by" not in last_error["detail"]
+
+
+def test_doctor_quick_keeps_warning_when_last_ok_missing(tmp_path):
+    from voxera.doctor import run_quick_doctor
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_root / "health.json").write_text(
+        json.dumps({"last_error": "issue", "last_error_ts_ms": 10_000}),
+        encoding="utf-8",
+    )
+
+    checks = run_quick_doctor(queue_root=queue_root)
+
+    last_error = next(item for item in checks if item["check"] == "health last_error")
+    assert last_error["status"] == "warn"
+
+
+def test_doctor_quick_handles_missing_last_error(tmp_path):
+    from voxera.doctor import run_quick_doctor
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_root / "health.json").write_text(
+        json.dumps({"last_ok_event": "daemon_tick", "last_ok_ts_ms": 10_000}),
+        encoding="utf-8",
+    )
+
+    checks = run_quick_doctor(queue_root=queue_root)
+
+    last_error = next(item for item in checks if item["check"] == "health last_error")
+    assert last_error["status"] == "ok"
