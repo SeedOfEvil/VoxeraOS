@@ -8,7 +8,7 @@ from voxera.skills.arg_normalizer import canonicalize_args
 from voxera_builtin_skills.open_app import ALLOW as OPEN_APP_ALLOWLIST
 
 from ..skills.registry import SkillRegistry
-from .missions import MissionTemplate, list_missions
+from .missions import MissionTemplate, list_missions_best_effort
 
 _SCHEMA_VERSION = 1
 
@@ -21,7 +21,7 @@ def generate_capabilities_snapshot(registry: SkillRegistry | None = None) -> dic
     reg = registry or SkillRegistry()
     manifests = reg.discover()
 
-    missions = sorted(list_missions(), key=lambda mission: mission.id)
+    missions = sorted(list_missions_best_effort(), key=lambda mission: mission.id)
     mission_entries = [
         {
             "id": mission.id,

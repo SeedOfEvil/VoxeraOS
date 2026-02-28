@@ -211,7 +211,7 @@ def _resolve_file_mission(mission_id: str) -> MissionTemplate | None:
     return None
 
 
-def _iter_file_missions() -> list[MissionTemplate]:
+def _iter_file_missions(*, best_effort: bool = False) -> list[MissionTemplate]:
     exts = {".json", ".yaml", ".yml"}
     templates: dict[str, MissionTemplate] = {}
 
@@ -221,7 +221,18 @@ def _iter_file_missions() -> list[MissionTemplate]:
         for path in sorted(base_dir.iterdir(), key=lambda p: (p.stem, p.suffix)):
             if path.suffix not in exts or not path.is_file():
                 continue
-            mission = _parse_mission_file(path, path.stem)
+            try:
+                mission = _parse_mission_file(path, path.stem)
+            except ValueError:
+                if not best_effort:
+                    raise
+                log(
+                    {
+                        "event": "mission_file_skipped_invalid",
+                        "path": str(path),
+                    }
+                )
+                continue
             if mission.id in MISSION_TEMPLATES or mission.id in templates:
                 continue
             templates[mission.id] = mission
@@ -231,6 +242,10 @@ def _iter_file_missions() -> list[MissionTemplate]:
 
 def list_missions() -> list[MissionTemplate]:
     return list(MISSION_TEMPLATES.values()) + _iter_file_missions()
+
+
+def list_missions_best_effort() -> list[MissionTemplate]:
+    return list(MISSION_TEMPLATES.values()) + _iter_file_missions(best_effort=True)
 
 
 def get_mission(mission_id: str) -> MissionTemplate:
