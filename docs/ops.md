@@ -141,6 +141,7 @@ Panel operator notes:
 - Validation failure (empty prompt) redirects to `/` with a clear error banner.
 - Queue flow remains standard: `inbox/` → `pending/approvals/` (when policy requires) → `done/`.
 - `approval_required=true` is a **hard gate**: daemon always blocks in `pending/approvals/` before any planning or execution, even for safe/no-op missions.
+- Panel approval/deny actions resolve queue approvals in a worker thread to avoid event-loop conflicts (`asyncio.run()` cannot execute inside the active FastAPI loop).
 - Artifacts and bundles are available from the Jobs console (`/jobs`, `/jobs/<job>.json`, `/jobs/<job>.json/bundle`).
 
 - Queue daemon + panel update a shared lightweight snapshot at `notes/queue/health.json`.

@@ -915,7 +915,8 @@ def test_panel_approve_accepts_pending_json_variant_ref(tmp_path, monkeypatch):
     (queue_dir / "pending" / "job-variant.json").write_text(
         json.dumps({"mission_id": "system_check", "approval_required": True}), encoding="utf-8"
     )
-    (queue_dir / "pending" / "approvals" / "job-variant.approval.json").write_text(
+    approval_path = queue_dir / "pending" / "approvals" / "job-variant.approval.json"
+    approval_path.write_text(
         json.dumps({"job": "job-variant.json", "step": 0, "skill": "approval_required"}),
         encoding="utf-8",
     )
@@ -929,7 +930,14 @@ def test_panel_approve_accepts_pending_json_variant_ref(tmp_path, monkeypatch):
     )
 
     assert res.status_code == 303
-    assert "flash=approved" in res.headers.get("location", "")
+    location = res.headers.get("location", "")
+    assert "flash=approved" in location
+    assert "flash=approval_invalid" not in location
+    assert not approval_path.exists()
+    assert not (queue_dir / "pending" / "job-variant.json").exists()
+    assert (queue_dir / "done" / "job-variant.json").exists() or (
+        queue_dir / "failed" / "job-variant.json"
+    ).exists()
 
 
 def test_panel_approval_missing_ref_redirects_with_flash_instead_of_500(tmp_path, monkeypatch):

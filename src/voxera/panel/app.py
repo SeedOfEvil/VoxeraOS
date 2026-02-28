@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlencode
 
+import anyio
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -791,11 +792,12 @@ async def approve_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     try:
-        canonical_ref = daemon.canonicalize_approval_ref(ref)
-        daemon.resolve_approval(canonical_ref, approve=True)
+        await anyio.to_thread.run_sync(
+            lambda: daemon.resolve_approval(daemon.canonicalize_approval_ref(ref), approve=True)
+        )
     except FileNotFoundError:
         return await _jobs_redirect(request, "approval_not_found")
-    except (ValueError, RuntimeError):
+    except ValueError:
         return await _jobs_redirect(request, "approval_invalid")
     return await _jobs_redirect(request, "approved")
 
@@ -805,11 +807,14 @@ async def approve_always_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     try:
-        canonical_ref = daemon.canonicalize_approval_ref(ref)
-        daemon.resolve_approval(canonical_ref, approve=True, approve_always=True)
+        await anyio.to_thread.run_sync(
+            lambda: daemon.resolve_approval(
+                daemon.canonicalize_approval_ref(ref), approve=True, approve_always=True
+            )
+        )
     except FileNotFoundError:
         return await _jobs_redirect(request, "approval_not_found")
-    except (ValueError, RuntimeError):
+    except ValueError:
         return await _jobs_redirect(request, "approval_invalid")
     return await _jobs_redirect(request, "approved_always")
 
@@ -819,11 +824,12 @@ async def deny_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     try:
-        canonical_ref = daemon.canonicalize_approval_ref(ref)
-        daemon.resolve_approval(canonical_ref, approve=False)
+        await anyio.to_thread.run_sync(
+            lambda: daemon.resolve_approval(daemon.canonicalize_approval_ref(ref), approve=False)
+        )
     except FileNotFoundError:
         return await _jobs_redirect(request, "approval_not_found")
-    except (ValueError, RuntimeError):
+    except ValueError:
         return await _jobs_redirect(request, "approval_invalid")
     return await _jobs_redirect(request, "denied")
 
