@@ -63,6 +63,7 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert "daemon_tick @ 123" in body
     assert "Last Error" in body
     assert "Panel Mutation Security Counters" in body
+    assert "Create Mission" in body
     assert "Mission Log (last 20 lines)" in body
     assert "line-29" in body
     assert "line-8" not in body
@@ -162,7 +163,7 @@ def test_panel_create_mission_template(tmp_path, monkeypatch):
     res = _authed_csrf_request(
         client,
         "post",
-        "/missions/create",
+        "/missions/templates/create",
         data={
             "mission_id": "custom_status",
             "title": "Custom Status",
@@ -203,7 +204,7 @@ def test_panel_get_mutations_disabled_by_default(tmp_path, monkeypatch):
     queue_res = client.get("/queue/create", follow_redirects=False)
     assert queue_res.status_code == 405
 
-    mission_res = client.get("/missions/create", follow_redirects=False)
+    mission_res = client.get("/missions/templates/create", follow_redirects=False)
     assert mission_res.status_code == 405
 
 
@@ -222,7 +223,7 @@ def test_panel_get_mutations_compat_mode(tmp_path, monkeypatch):
     assert queue_res.status_code == 200
 
     mission_res = client.get(
-        "/missions/create",
+        "/missions/templates/create",
         params={
             "mission_id": "legacy_status",
             "steps_json": '[{"skill_id":"system.status","args":{}}]',
@@ -269,7 +270,10 @@ def test_panel_create_mission_validation_errors(tmp_path, monkeypatch):
     client = TestClient(panel_module.app)
 
     bad_json = _authed_csrf_request(
-        client, "post", "/missions/create", data={"mission_id": "custom_status", "steps_json": "{"}
+        client,
+        "post",
+        "/missions/templates/create",
+        data={"mission_id": "custom_status", "steps_json": "{"},
     )
     assert bad_json.status_code == 303
     assert bad_json.headers["location"] == "/?error=steps_json_invalid"
@@ -277,7 +281,7 @@ def test_panel_create_mission_validation_errors(tmp_path, monkeypatch):
     not_list = _authed_csrf_request(
         client,
         "post",
-        "/missions/create",
+        "/missions/templates/create",
         data={"mission_id": "custom_status", "steps_json": '{"skill_id":"system.status"}'},
     )
     assert not_list.status_code == 303
@@ -286,7 +290,7 @@ def test_panel_create_mission_validation_errors(tmp_path, monkeypatch):
     schema_invalid = _authed_csrf_request(
         client,
         "post",
-        "/missions/create",
+        "/missions/templates/create",
         data={"mission_id": "custom_status", "steps_json": '[{"args":{}}]'},
     )
     assert schema_invalid.status_code == 303
@@ -306,7 +310,7 @@ def test_panel_rejects_invalid_mission_id_values(tmp_path, monkeypatch):
         res = _authed_csrf_request(
             client,
             "post",
-            "/missions/create",
+            "/missions/templates/create",
             data={
                 "mission_id": mission_id,
                 "steps_json": '[{"skill_id":"system.status","args":{}}]',
@@ -337,6 +341,91 @@ def test_panel_job_detail_smoke(tmp_path, monkeypatch):
     assert res.status_code == 200
     assert "stdout" in res.text
     assert "generated" in res.text.lower()
+
+
+def test_panel_create_mission_requires_auth_and_csrf(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    unauth = client.post("/missions/create", data={"prompt": "run status"})
+    assert unauth.status_code == 401
+
+    auth_only = client.post(
+        "/missions/create",
+        data={"prompt": "run status", "approval_required": "1"},
+        headers=_operator_headers(),
+        follow_redirects=False,
+    )
+    assert auth_only.status_code == 403
+
+
+def test_panel_create_mission_prompt_only_writes_inbox_job(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    ok = _authed_csrf_request(
+        client,
+        "post",
+        "/missions/create",
+        data={"prompt": "Open status and summarize health"},
+    )
+    assert ok.status_code == 303
+    assert "created=job-panel-mission-" in ok.headers["location"]
+
+    inbox = fake_home / "VoxeraOS" / "notes" / "queue" / "inbox"
+    jobs = sorted(inbox.glob("job-panel-mission-*.json"))
+    assert len(jobs) == 1
+
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload.get("goal") == "Open status and summarize health"
+    assert isinstance(payload.get("id"), str)
+    assert payload["id"]
+    assert panel_module.MISSION_ID_RE.fullmatch(payload["id"])
+    assert payload.get("approval_required") is True
+
+    for key in ("type", "template", "skill", "mission", "dispatch"):
+        assert key not in payload
+
+
+def test_panel_create_mission_goal_alias_writes_inbox_job(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    ok = _authed_csrf_request(
+        client,
+        "post",
+        "/missions/create",
+        data={"goal": "Goal alias path should work"},
+    )
+    assert ok.status_code == 303
+    assert "created=job-panel-mission-" in ok.headers["location"]
+
+    inbox = fake_home / "VoxeraOS" / "notes" / "queue" / "inbox"
+    jobs = sorted(inbox.glob("job-panel-mission-*.json"))
+    assert len(jobs) == 1
+
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload.get("goal") == "Goal alias path should work"
+    assert isinstance(payload.get("id"), str)
+    assert payload["id"]
+    assert panel_module.MISSION_ID_RE.fullmatch(payload["id"])
+
+
+def test_panel_create_mission_validation_error_redirects(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    res = _authed_csrf_request(client, "post", "/missions/create", data={"prompt": ""})
+    assert res.status_code == 303
+    assert res.headers["location"] == "/?error=panel_prompt_required"
 
 
 def test_panel_post_requires_auth_and_csrf(tmp_path, monkeypatch):

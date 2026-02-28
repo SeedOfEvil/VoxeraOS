@@ -136,35 +136,23 @@
 
       <section class="grid grid-2" style="margin-bottom:16px;">
         <article class="card">
-          <h2>Launch Mission Fast</h2>
-          <form class="form-stack" method="post" action="/queue/create">
+          <h2>Create Mission</h2>
+          <form class="form-stack" method="post" action="/missions/create">
             <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <label>Queue Type
-              <select class="select" name="kind">
-                <option value="goal">Plan from goal</option>
-                <option value="mission">Run predefined mission</option>
-              </select>
+            <label>Prompt / Goal
+              <textarea class="textarea" name="prompt" rows="4" placeholder="Describe what mission should do" required></textarea>
             </label>
-            <div class="form-row">
-              <label>Mission ID
-                <select class="select" name="mission_id">
-                  <option value="">Select mission...</option>
-                  {% for mission in missions %}
-                    <option value="{{mission.id}}">{{mission.id}} — {{mission.title}}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label>Goal (for planner)
-                <input class="input" type="text" name="goal" placeholder="e.g. create a daily check-in and open calendar" />
-              </label>
-            </div>
-            <button class="btn btn-primary" type="submit">Queue Mission</button>
+            <label style="display:flex; gap:8px; align-items:center;">
+              <input type="checkbox" name="approval_required" value="1" checked />
+              Approval required
+            </label>
+            <button class="btn btn-primary" type="submit">Create Mission</button>
           </form>
         </article>
 
         <article class="card">
           <h2>Create Mission Template</h2>
-          <form class="form-stack" method="post" action="/missions/create">
+          <form class="form-stack" method="post" action="/missions/templates/create">
             <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
             <div class="form-row">
               <label>ID <input class="input" type="text" name="mission_id" placeholder="my_mission" required /></label>
