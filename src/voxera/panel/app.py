@@ -753,7 +753,9 @@ def create_mission_get(
 @app.post("/missions/create")
 async def create_mission(request: Request):
     await _require_mutation_guard(request)
-    prompt = await _request_value(request, "prompt", "")
+    prompt = (await _request_value(request, "prompt", "")).strip() or (
+        await _request_value(request, "goal", "")
+    ).strip()
     approval_raw = await _request_value(request, "approval_required", "1")
     return _create_panel_mission_from_values(prompt, approval_raw not in {"0", "false", "off"})
 

@@ -391,6 +391,32 @@ def test_panel_create_mission_prompt_only_writes_inbox_job(tmp_path, monkeypatch
         assert key not in payload
 
 
+def test_panel_create_mission_goal_alias_writes_inbox_job(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    ok = _authed_csrf_request(
+        client,
+        "post",
+        "/missions/create",
+        data={"goal": "Goal alias path should work"},
+    )
+    assert ok.status_code == 303
+    assert "created=job-panel-mission-" in ok.headers["location"]
+
+    inbox = fake_home / "VoxeraOS" / "notes" / "queue" / "inbox"
+    jobs = sorted(inbox.glob("job-panel-mission-*.json"))
+    assert len(jobs) == 1
+
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload.get("goal") == "Goal alias path should work"
+    assert isinstance(payload.get("id"), str)
+    assert payload["id"]
+    assert panel_module.MISSION_ID_RE.fullmatch(payload["id"])
+
+
 def test_panel_create_mission_validation_error_redirects(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
