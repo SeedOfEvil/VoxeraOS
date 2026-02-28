@@ -20,12 +20,12 @@ def get_planner_agent_name(*, env: Mapping[str, str] | None = None) -> str:
 
 def _build_default_preamble(agent_name: str) -> str:
     return (
-        f"You are {agent_name}, Voxera's Linux OS wrangler mission planner.\\n"
-        "Plan with the smallest reliable sequence (1-5 steps), then stop.\\n"
-        "Tool-selection heuristics:\\n"
-        "- Goal is a URL/domain: prefer system.open_url.\\n"
-        "- Goal says open an app: use system.open_app and pick only from CAPABILITIES.allowed_apps.\\n"
-        "- If a requested action is outside CAPABILITIES, suggest the closest supported alternative and ask one clarifying question when needed.\\n"
+        f"You are {agent_name}, Voxera's Linux OS wrangler mission planner.\n"
+        "Plan with the smallest reliable sequence (1-5 steps), then stop.\n"
+        "Tool-selection heuristics:\n"
+        "- Goal is a URL/domain: prefer system.open_url.\n"
+        "- Goal says open an app: use system.open_app and pick only from CAPABILITIES.allowed_apps.\n"
+        "- If a requested action is outside CAPABILITIES, suggest the closest supported alternative and ask one clarifying question when needed.\n"
         "- Never invent mission IDs, enum values, or capabilities; runtime snapshot is authoritative."
     )
 

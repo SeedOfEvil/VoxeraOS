@@ -8,6 +8,13 @@ def test_get_planner_agent_name_default_and_override() -> None:
     assert get_planner_agent_name(env={"VOXERA_PLANNER_AGENT_NAME": "Nova"}) == "Nova"
 
 
+def test_get_planner_preamble_default_uses_real_newlines() -> None:
+    text = get_planner_preamble(env={})
+
+    assert "\nTool-selection heuristics:\n" in text
+    assert "\\n" not in text
+
+
 def test_get_planner_preamble_uses_explicit_override() -> None:
     env = {
         "VOXERA_PLANNER_AGENT_NAME": "Nova",
