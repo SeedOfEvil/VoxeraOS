@@ -50,7 +50,7 @@ def _force_policy_ask(monkeypatch, *, redact_logs=True):
 
 
 def _stub_planner(monkeypatch):
-    async def _fake_plan(goal, cfg, registry, source="cli", job_ref=None):
+    async def _fake_plan(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
         return MissionTemplate(
             id="cloud_planned",
             title="Stub Plan",
@@ -298,7 +298,7 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     approve_job.write_text(json.dumps({"mission_id": "focus_mode"}), encoding="utf-8")
     deny_job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
 
-    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
         return MissionTemplate(
             id="goal_url",
             title="Goal URL",
@@ -867,7 +867,7 @@ def test_resolve_approval_accepts_job_and_approval_filename_variants(tmp_path, m
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
 
-    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
         return MissionTemplate(
             id="goal_url",
             title="Goal URL",
@@ -1292,7 +1292,7 @@ def test_resolve_approval_missing_source_during_done_move_is_non_fatal(tmp_path,
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
 
-    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
         return MissionTemplate(
             id="goal_status",
             title="Goal Status",
@@ -1479,7 +1479,7 @@ def test_pending_approval_payload_includes_target_scope_and_policy_reason(tmp_pa
     job = queue_dir / "approval-url.json"
     job.write_text(json.dumps({"goal": "Open https://example.com"}), encoding="utf-8")
 
-    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
         return MissionTemplate(
             id="goal_url",
             title="Goal URL",
@@ -1513,7 +1513,7 @@ def test_approval_always_grant_allows_matching_scope_only(tmp_path, monkeypatch)
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
 
-    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
         if "example" in goal:
             return MissionTemplate(
                 id="goal_url",
@@ -1562,7 +1562,7 @@ def test_job_artifacts_written_for_done_and_pending(tmp_path, monkeypatch):
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
 
-    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None):
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
         return MissionTemplate(
             id="goal_url",
             title="Goal URL",

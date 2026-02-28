@@ -90,3 +90,33 @@ def record_health_error(queue_root: Path, msg: str) -> None:
         return payload
 
     update_health_snapshot(queue_root, _apply)
+
+
+def record_fallback_transition(
+    queue_root: Path,
+    *,
+    from_tier: str,
+    to_tier: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Record a brain fallback transition in health counters + snapshot."""
+    now_ms = int(time.time() * 1000)
+    reason_lower = reason.lower()
+
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        counters_raw = payload.get("counters")
+        counters: dict[str, Any] = counters_raw if isinstance(counters_raw, dict) else {}
+
+        counters["brain_fallback_count"] = int(counters.get("brain_fallback_count", 0) or 0) + 1
+        reason_key = f"brain_fallback_reason_{reason_lower}"
+        counters[reason_key] = int(counters.get(reason_key, 0) or 0) + 1
+
+        payload["counters"] = counters
+        payload["last_fallback_reason"] = reason
+        payload["last_fallback_from"] = from_tier
+        payload["last_fallback_to"] = to_tier
+        payload["last_fallback_ts_ms"] = now_ms
+        payload["updated_at_ms"] = now_ms
+        return payload
+
+    return update_health_snapshot(queue_root, _apply)

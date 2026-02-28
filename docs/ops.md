@@ -628,13 +628,40 @@ voxera doctor --quick
 - lock status (`exists`, `pid`, `alive`)
 - health `last_ok_event/last_ok_ts_ms` and `last_error/last_error_ts_ms`
 - queue counts summary (`inbox`, `pending`, `approvals`, `done`, `failed`)
+- last brain fallback transition (reason, from/to tier, timestamp)
 
 Example details lines:
 - `exists=True pid=12345 alive=True`
 - `event=daemon_tick ts=1730000000000`
 - `inbox=0 pending=1 approvals=0 done=12 failed=2`
+- `primary -> fast reason=RATE_LIMIT ts=1730000099000` (or `none`)
 
 Use full `voxera doctor` when you want provider capability tests; use `--quick` during incidents for immediate local sanity checks.
+
+## Brain fallback reason observability
+
+When the planner falls back between brain tiers, each transition is classified into a stable reason enum:
+
+- `TIMEOUT` — timeout exceptions or "timed out" messages
+- `AUTH` — HTTP 401/403 or auth-related messages
+- `RATE_LIMIT` — HTTP 429 or rate limit messages
+- `MALFORMED` — JSON decode errors, invalid schema
+- `NETWORK` — DNS, connection refused/reset, connect errors
+- `UNKNOWN` — everything else
+
+Health counters (`voxera queue health`):
+- `brain_fallback_count` — total transitions
+- `brain_fallback_reason_timeout`, `brain_fallback_reason_auth`, `brain_fallback_reason_rate_limit`, `brain_fallback_reason_malformed`, `brain_fallback_reason_network`, `brain_fallback_reason_unknown`
+
+Health snapshot (`health.json`) adds:
+- `last_fallback_reason`, `last_fallback_from`, `last_fallback_to`, `last_fallback_ts_ms`
+
+Audit trail emits `brain_fallback_transition` events with `from_tier`, `to_tier`, `reason`, `attempt_index`, `latency_ms`, `provider`, `model`, and `error_summary` (token-safe; no prompts or response bodies).
+
+Troubleshooting quick reference:
+- `RATE_LIMIT` → API throttling; check provider quota/burst limits.
+- `AUTH` → bad key/config; verify API key and permissions.
+- `TIMEOUT` → network/provider slowness; check connectivity and provider status.
 
 ## Doctor golden-path self-test
 

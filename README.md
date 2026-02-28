@@ -633,8 +633,28 @@ Quick offline doctor mode:
 ```bash
 voxera doctor --quick
 ```
-Runs fast local checks only (lock exists/pid/alive, health `last_ok`/`last_error`, queue counts summary) with no model calls.
+Runs fast local checks only (lock exists/pid/alive, health `last_ok`/`last_error`, queue counts summary, last fallback) with no model calls.
 When `last_ok_ts_ms` is newer than `last_error_ts_ms` by more than 5 minutes, quick doctor marks `last_error` as stale (`stale; ok newer by <delta>`) and downgrades severity.
+
+### Brain fallback reason observability
+
+When the mission planner falls back from one brain tier to another, VoxeraOS classifies the failure into a stable enum:
+
+| Reason | Trigger |
+|---|---|
+| `TIMEOUT` | Timeout exceptions or "timed out" messages |
+| `AUTH` | HTTP 401/403 or auth-related messages |
+| `RATE_LIMIT` | HTTP 429 or rate limit messages |
+| `MALFORMED` | JSON decode errors, invalid schema |
+| `NETWORK` | DNS, connection refused/reset, connect errors |
+| `UNKNOWN` | Everything else |
+
+**Where to check:**
+- `voxera queue health` — counters: `brain_fallback_count`, `brain_fallback_reason_timeout`, etc.
+- `health.json` — `last_fallback_reason`, `last_fallback_from`, `last_fallback_to`, `last_fallback_ts_ms`
+- `voxera doctor --quick` — "Last fallback" line shows most recent transition or "none"
+
+**Troubleshooting:** `RATE_LIMIT` implies API throttling; `AUTH` implies bad key/config; `TIMEOUT` implies network/provider slowness.
 
 Panel bundle downloads write into deterministic incident directories: `notes/queue/_archive/incident-<YYYYMMDD-HHMMSS>-<job_stem_or_system>/`.
 Job bundle notes now avoid normal-path noise: optional approval/failed-sidecar notes are collapsed to one optional note, while missing-expected artifacts emit explicit anomaly notes.

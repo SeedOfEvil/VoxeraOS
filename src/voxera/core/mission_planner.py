@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..audit import log
+from ..brain.fallback import classify_fallback_reason
 from ..brain.gemini import GeminiBrain
 from ..brain.openai_compat import OpenAICompatBrain
+from ..health import record_fallback_transition
 from ..models import AppConfig, BrainConfig
 from ..skills.arg_normalizer import canonicalize_args
 from ..skills.registry import SkillRegistry
@@ -594,6 +596,7 @@ async def plan_mission(
     *,
     source: str = "cli",
     job_ref: str | None = None,
+    queue_root: Path | None = None,
 ) -> MissionTemplate:
     payload = None
     planner_name = None
@@ -676,6 +679,7 @@ async def plan_mission(
         except Exception as exc:
             last_error = str(exc)
             error_class = _classify_planner_error(exc)
+            fallback_reason = classify_fallback_reason(exc)
             attempt_errors.append((candidate.name, error_class))
             latency_ms = int((time.monotonic() - started) * 1000)
             log(
@@ -692,6 +696,37 @@ async def plan_mission(
                     "error": last_error,
                 }
             )
+
+            # Determine next tier for the transition event.
+            next_tier = (
+                candidates[attempt_index].name if attempt_index < len(candidates) else "none"
+            )
+            error_summary = " ".join(str(exc).split())[:120]
+            log(
+                {
+                    "event": "brain_fallback_transition",
+                    "plan_id": plan_id,
+                    "from_tier": candidate.name,
+                    "to_tier": next_tier,
+                    "reason": fallback_reason,
+                    "attempt_index": attempt_index - 1,
+                    "latency_ms": latency_ms,
+                    "provider": candidate.name,
+                    "model": candidate.model,
+                    "error_summary": error_summary,
+                }
+            )
+
+            import contextlib
+
+            _qr = queue_root or Path.home() / "VoxeraOS" / "notes" / "queue"
+            with contextlib.suppress(OSError):
+                record_fallback_transition(
+                    _qr,
+                    from_tier=candidate.name,
+                    to_tier=next_tier,
+                    reason=fallback_reason,
+                )
 
     if payload is None or planner_name is None:
         message = _format_planner_failure_message(attempt_errors)
