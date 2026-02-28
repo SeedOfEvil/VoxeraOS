@@ -230,6 +230,15 @@ The `--dry-run` output includes two top-level fields for auditability:
 - `capabilities_snapshot`: compact runtime metadata (`schema_version`, `generated_ts_ms`) from the snapshot used during planning.
 - `capabilities_used`: sorted, deduplicated list of capability strings referenced by the planned steps.
 
+For deterministic output in CI/golden tests, add `--deterministic`:
+- Sets `capabilities_snapshot.generated_ts_ms` to `0`, making JSON byte-identical across runs.
+- Add `--freeze-capabilities-snapshot` to make it explicit that the snapshot is generated once per invocation (already the default; this flag documents the guarantee).
+
+```bash
+voxera missions plan "open terminal" --dry-run --deterministic
+voxera missions plan "open terminal" --dry-run --deterministic --freeze-capabilities-snapshot
+```
+
 For simple write goals matching patterns like `Write a note to <path> saying: <text>`, `Write <text> to <path>`, or `Create a note/file at <path> with <text>`, Voxera uses a deterministic fast-path before LLM planning and emits exactly one `files.write_text` step (default `mode=overwrite`, or `append` when explicitly requested).
 
 

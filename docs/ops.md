@@ -74,6 +74,10 @@ When running `voxera missions plan --dry-run`, the output JSON includes `capabil
 (schema version + snapshot timestamp) and `capabilities_used` (sorted capability strings used by
 planned steps) to support auditing and operator review of planned step permissions.
 
+Use `--deterministic` for CI/golden outputs and audits: sets `generated_ts_ms=0` so two runs
+produce byte-identical JSON. Use `--freeze-capabilities-snapshot` to assert that the capabilities
+snapshot is not regenerated mid-run (already the default; the flag documents the guarantee).
+
 Planner preamble override env vars (precedence: string > path > generated default):
 - `VOXERA_PLANNER_PREAMBLE`
 - `VOXERA_PLANNER_PREAMBLE_PATH`
