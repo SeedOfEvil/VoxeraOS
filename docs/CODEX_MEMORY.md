@@ -155,3 +155,28 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Added queue status surfacing for failed-retention policy and latest prune-event summary.
 - Exposed the same retention/prune snapshot in panel queue health view.
 - Expanded operator and Ubuntu testing docs with direct triage steps for sidecar-invalid + approvals workflows.
+
+
+## 2026-02-28 — PR #N/A — Full codebase analysis + documentation alignment pass
+- Summary:
+  - Conducted full codebase analysis: 116 source files, 16,642 lines Python, 6,789 lines tests, 170 git commits.
+  - Rewrote `docs/ARCHITECTURE.md` from stub (33 lines) to complete reference doc: 3-layer diagram, full
+    module map with file-level descriptions, tech stack table, data flow, queue lifecycle diagram,
+    config precedence, and validation tiers.
+  - Rewrote `docs/ROADMAP.md`: replaced 4/8/12-week milestone blocks with daily/session-sized goals
+    calibrated for solo development. Items grouped by area: operational hygiene, observability,
+    safety hardening, daemon reliability, planner UX, prompt injection mitigation.
+  - Updated `docs/ROADMAP_0.1.4.md`: marked as shipped, documented all completed items,
+    added "known gaps carried forward" section to track technical debt items going into v0.2.
+  - Expanded `docs/SECURITY.md`: added threat model table with current mitigation status,
+    documented all current controls in detail, added "known gaps" section with planned fixes
+    cross-referenced to ROADMAP.md daily goals, added prioritized hardening backlog (10 items),
+    added operator quick-reference section.
+- Validation:
+  - Docs reviewed against live source code for accuracy.
+  - No runtime behavior changed.
+- Follow-ups:
+  - Replace `PR #N/A` with merged PR number.
+  - Begin Day 1 items from ROADMAP.md: artifact cleanup, `voxera artifacts prune`, `make type-debt`.
+- Risks/notes:
+  - Process and docs only; no code changes in this pass.
