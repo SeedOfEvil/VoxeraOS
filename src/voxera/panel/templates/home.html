@@ -22,6 +22,9 @@
     {% if mission_created %}
       <div class="alert alert-success">Created mission template: <b>{{mission_created}}</b>.</div>
     {% endif %}
+    {% if mission_job_created %}
+      <div class="alert alert-success">Mission created: <b>{{mission_job_created}}</b>.</div>
+    {% endif %}
     {% if error %}
       <div class="alert alert-danger">Action failed: {{error_message or error}}</div>
     {% endif %}
@@ -136,29 +139,68 @@
 
       <section class="grid grid-2" style="margin-bottom:16px;">
         <article class="card">
-          <h2>Launch Mission Fast</h2>
-          <form class="form-stack" method="post" action="/queue/create">
+          <h2>Create Mission</h2>
+          <p class="muted">Create a queue job in one step. Approval is recommended for safety.</p>
+          <div class="mode-tabs" role="tablist" aria-label="Create mission mode">
+            <button class="mode-tab is-active" type="button" data-mission-mode-btn="easy">Easy</button>
+            <button class="mode-tab" type="button" data-mission-mode-btn="default">Default</button>
+            <button class="mode-tab" type="button" data-mission-mode-btn="advanced">Advanced</button>
+          </div>
+          <form class="form-stack" method="post" action="/panel/missions/create">
             <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <label>Queue Type
-              <select class="select" name="kind">
-                <option value="goal">Plan from goal</option>
-                <option value="mission">Run predefined mission</option>
-              </select>
+            <input type="hidden" name="mode" value="easy" data-mission-mode-input />
+            <label>What do you want Voxera to do?
+              <textarea class="textarea" name="prompt" rows="3" placeholder="e.g. Create a demo run, request approval, complete, and package artifacts." required></textarea>
             </label>
-            <div class="form-row">
-              <label>Mission ID
-                <select class="select" name="mission_id">
-                  <option value="">Select mission...</option>
-                  {% for mission in missions %}
-                    <option value="{{mission.id}}">{{mission.id}} — {{mission.title}}</option>
-                  {% endfor %}
+            <div class="mode-panel" data-mission-mode-panel="default-advanced">
+              <div class="form-row">
+                <label>Mission ID (optional)
+                  <input class="input" type="text" name="mission_id" placeholder="demo_bundle_run" />
+                </label>
+                <label>Name / Title (optional)
+                  <input class="input" type="text" name="title" placeholder="Demo bundle run" />
+                </label>
+              </div>
+              <label><input type="checkbox" name="approval_required" value="on" checked /> Approval required</label>
+              <p class="muted">When enabled, jobs pause in pending approvals before sensitive actions run.</p>
+            </div>
+            <div class="mode-panel is-hidden" data-mission-mode-panel="advanced">
+              <div class="form-row">
+                <label>Brain
+                  <select class="select" name="brain">
+                    <option value="">(default)</option>
+                    <option value="primary">primary</option>
+                    <option value="fast">fast</option>
+                    <option value="reasoning">reasoning</option>
+                    <option value="fallback">fallback</option>
+                  </select>
+                </label>
+                <label>Priority
+                  <select class="select" name="priority">
+                    <option value="">(default)</option>
+                    <option value="low">low</option>
+                    <option value="normal">normal</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Tags (comma-separated)
+                  <input class="input" type="text" name="tags" placeholder="demo,approval,bundle" />
+                </label>
+                <label>Target / Scope
+                  <input class="input" type="text" name="target" placeholder="team=ops; env=staging" />
+                </label>
+              </div>
+              <label>Dry run
+                <select class="select" name="dry_run">
+                  <option value="">(default)</option>
+                  <option value="false">false</option>
+                  <option value="true">true</option>
                 </select>
               </label>
-              <label>Goal (for planner)
-                <input class="input" type="text" name="goal" placeholder="e.g. create a daily check-in and open calendar" />
-              </label>
             </div>
-            <button class="btn btn-primary" type="submit">Queue Mission</button>
+            <button class="btn btn-primary" type="submit">Create Mission</button>
           </form>
         </article>
 
@@ -371,6 +413,31 @@
     tabButtons.forEach((button) => {
       button.addEventListener('click', () => activateTab(button.dataset.tabBtn));
     });
+
+    const modeButtons = document.querySelectorAll('[data-mission-mode-btn]');
+    const modeInput = document.querySelector('[data-mission-mode-input]');
+    const defaultAdvancedPanel = document.querySelector('[data-mission-mode-panel="default-advanced"]');
+    const advancedPanel = document.querySelector('[data-mission-mode-panel="advanced"]');
+
+    function activateMissionMode(mode) {
+      modeButtons.forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.missionModeBtn === mode);
+      });
+      if (modeInput) {
+        modeInput.value = mode;
+      }
+      if (defaultAdvancedPanel) {
+        defaultAdvancedPanel.classList.toggle('is-hidden', mode === 'easy');
+      }
+      if (advancedPanel) {
+        advancedPanel.classList.toggle('is-hidden', mode !== 'advanced');
+      }
+    }
+
+    modeButtons.forEach((button) => {
+      button.addEventListener('click', () => activateMissionMode(button.dataset.missionModeBtn));
+    });
+    activateMissionMode('easy');
   </script>
 </body>
 </html>

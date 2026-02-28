@@ -11,6 +11,10 @@
     <h1>Jobs</h1>
     <p><a href="/">← Back to panel</a></p>
 
+    {% if mission_created %}
+      <div class="alert alert-success">Mission created: <b>{{mission_created}}</b>.</div>
+    {% endif %}
+
     {% if auth_setup_banner %}
       <div class="alert alert-info">
         <b>{{auth_setup_banner.title}}</b><br/>

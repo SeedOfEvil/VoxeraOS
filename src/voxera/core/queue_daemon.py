@@ -707,12 +707,32 @@ class MissionQueueDaemon:
 
     def _normalize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         mission_id = payload.get("mission_id", payload.get("mission"))
+        prompt = payload.get("prompt")
         goal = payload.get("goal") if "goal" in payload else payload.get("plan_goal")
+        if goal is None and prompt is not None:
+            goal = prompt
         normalized: dict[str, Any] = {}
         if mission_id is not None:
             normalized["mission_id"] = str(mission_id)
         if goal is not None:
             normalized["goal"] = str(goal)
+
+        if prompt is not None:
+            normalized["prompt"] = str(prompt)
+
+        for key in [
+            "job_version",
+            "created_ts_ms",
+            "source",
+            "approval_required",
+            "tags",
+            "priority",
+            "brain",
+            "dry_run",
+            "target",
+        ]:
+            if key in payload:
+                normalized[key] = payload[key]
 
         title = payload.get("title")
         if title is not None:
@@ -764,6 +784,19 @@ class MissionQueueDaemon:
         self, payload: dict[str, Any], *, job_ref: str
     ) -> MissionTemplate:
         normalized = self._normalize_payload(payload)
+        if normalized.get("source") == "panel" and "goal" in normalized:
+            try:
+                return asyncio.run(
+                    plan_mission(
+                        goal=normalized["goal"],
+                        cfg=self.cfg,
+                        registry=self.mission_runner.skill_runner.registry,
+                        source="queue",
+                        job_ref=job_ref,
+                    )
+                )
+            except MissionPlannerError as exc:
+                raise RuntimeError(str(exc)) from exc
         if "mission_id" in normalized:
             return get_mission(normalized["mission_id"])
         if "steps" in normalized:

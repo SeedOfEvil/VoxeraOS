@@ -1731,3 +1731,60 @@ def test_force_unlock_logs_dangerous_event(tmp_path, monkeypatch):
     assert emitted[-1].get("details", {}).get("dangerous") is True
     counters = daemon.lock_counters_snapshot()
     assert counters.get("force_unlock_count", 0) >= 1
+
+
+def test_queue_daemon_panel_mission_requires_approval_then_completes(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+
+    async def _approval_plan(goal, cfg, registry, source="cli", job_ref=None):
+        return MissionTemplate(
+            id="panel_demo",
+            title="Panel Demo",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+            notes="stub",
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _approval_plan)
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-panel-mission-demo-1.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(
+        json.dumps(
+            {
+                "job_version": 1,
+                "mission_id": "panel-demo",
+                "created_ts_ms": 1700000000000,
+                "source": "panel",
+                "prompt": "Open example for demo",
+                "approval_required": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    processed = daemon.process_pending_once()
+    assert processed == 1
+
+    pending_job = queue_dir / "pending" / "job-panel-mission-demo-1.json"
+    assert pending_job.exists()
+    approval_artifact = (
+        queue_dir / "pending" / "approvals" / "job-panel-mission-demo-1.approval.json"
+    )
+    assert approval_artifact.exists()
+
+    daemon.resolve_approval("job-panel-mission-demo-1", approve=True)
+
+    assert (queue_dir / "done" / "job-panel-mission-demo-1.json").exists()
+    artifacts_dir = queue_dir / "artifacts" / "job-panel-mission-demo-1"
+    assert (artifacts_dir / "plan.json").exists()
+    assert (artifacts_dir / "actions.jsonl").exists()

@@ -6,9 +6,10 @@ import re
 import secrets
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote_plus
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -36,6 +37,7 @@ app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
 APPROVALS: list[dict[str, Any]] = []
 MISSION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+MISSION_SLUG_RE = re.compile(r"[^a-z0-9_-]+")
 
 ERROR_MESSAGES = {
     "goal_required": "Goal is required when queue type is goal.",
@@ -279,6 +281,23 @@ def _validate_mission_id(mission_id: str) -> str:
     return normalized
 
 
+def _sanitize_mission_slug(raw_value: str, *, fallback: str = "mission") -> str:
+    lowered = raw_value.strip().lower().replace(" ", "-")
+    sanitized = MISSION_SLUG_RE.sub("-", lowered)
+    sanitized = re.sub(r"-+", "-", sanitized).strip("-_")
+    if not sanitized:
+        return fallback
+    return sanitized[:63]
+
+
+def _default_mission_slug(prompt: str) -> str:
+    source = prompt.strip()[:48]
+    if not source:
+        source = "mission"
+    stamp = datetime.now(tz=timezone.utc).strftime("%H%M%S")
+    return _sanitize_mission_slug(f"{source}-{stamp}")
+
+
 def _enforce_get_mutations_enabled() -> None:
     if not _allow_get_mutations():
         raise HTTPException(
@@ -308,6 +327,19 @@ def _write_queue_job(payload: dict[str, Any]) -> str:
     job_id = f"job-{int(time.time())}-{uuid.uuid4().hex[:8]}"
     tmp_path = inbox / f".{job_id}.tmp.json"
     final_path = inbox / f"{job_id}.json"
+    tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp_path.replace(final_path)
+    return final_path.name
+
+
+def _write_panel_mission_job(*, mission_slug: str, payload: dict[str, Any]) -> str:
+    queue_root = _queue_root()
+    inbox = queue_root / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    ts_ms = int(time.time() * 1000)
+    filename = f"job-panel-mission-{mission_slug}-{ts_ms}.json"
+    tmp_path = inbox / f".{filename}.tmp"
+    final_path = inbox / filename
     tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp_path.replace(final_path)
     return final_path.name
@@ -565,7 +597,13 @@ def _build_mission_payload(
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, created: str = "", error: str = "", mission_created: str = ""):
+def home(
+    request: Request,
+    created: str = "",
+    error: str = "",
+    mission_created: str = "",
+    mission_job_created: str = "",
+):
     queue_root = _queue_root()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     queue = queue_snapshot(queue_root)
@@ -598,6 +636,7 @@ def home(request: Request, created: str = "", error: str = "", mission_created: 
         missions=missions,
         created=created,
         mission_created=mission_created,
+        mission_job_created=mission_job_created,
         error=error,
         error_message=ERROR_MESSAGES.get(error, "Unexpected panel error." if error else ""),
         get_mutations_enabled=_allow_get_mutations(),
@@ -692,6 +731,79 @@ async def create_mission(request: Request):
     return _create_mission_from_values(mission_id, title, goal, notes, steps_json)
 
 
+@app.post("/panel/missions/create")
+async def create_panel_mission_job(request: Request):
+    await _require_mutation_guard(request)
+    mode = (await _request_value(request, "mode", "easy")).strip().lower()
+    if mode not in {"easy", "default", "advanced"}:
+        mode = "easy"
+
+    prompt = (await _request_value(request, "prompt", "")).strip()
+    if not prompt:
+        return RedirectResponse(url="/?error=goal_required", status_code=303)
+
+    provided_mission_id = (await _request_value(request, "mission_id", "")).strip()
+    mission_slug = _sanitize_mission_slug(provided_mission_id) if provided_mission_id else ""
+    if not mission_slug:
+        mission_slug = _default_mission_slug(await _request_value(request, "title", prompt))
+
+    approval_raw = (await _request_value(request, "approval_required", "on")).strip().lower()
+    approval_required = approval_raw not in {"", "0", "false", "no", "off"}
+
+    created_ts_ms = int(time.time() * 1000)
+    payload: dict[str, Any] = {
+        "job_version": 1,
+        "mission_id": mission_slug,
+        "created_ts_ms": created_ts_ms,
+        "source": "panel",
+        "prompt": prompt,
+        "goal": prompt,
+        "approval_required": approval_required,
+    }
+
+    title = (await _request_value(request, "title", "")).strip()
+    if title:
+        payload["title"] = title
+
+    if mode in {"default", "advanced"}:
+        name = (await _request_value(request, "name", "")).strip()
+        if name and "title" not in payload:
+            payload["title"] = name
+
+    if mode == "advanced":
+        brain = (await _request_value(request, "brain", "")).strip().lower()
+        if brain in {"primary", "fast", "reasoning", "fallback"}:
+            payload["brain"] = brain
+
+        priority = (await _request_value(request, "priority", "")).strip().lower()
+        if priority in {"low", "normal", "high"}:
+            payload["priority"] = priority
+
+        tags_raw = (await _request_value(request, "tags", "")).strip()
+        if tags_raw:
+            tags = [item.strip() for item in tags_raw.split(",") if item.strip()]
+            if tags:
+                payload["tags"] = tags
+
+        dry_run_raw = (await _request_value(request, "dry_run", "")).strip().lower()
+        if dry_run_raw in {"1", "true", "yes", "on"}:
+            payload["dry_run"] = True
+        elif dry_run_raw in {"0", "false", "no", "off"}:
+            payload["dry_run"] = False
+
+        target = (await _request_value(request, "target", "")).strip()
+        if target:
+            payload["target"] = target
+
+    created_job = _write_panel_mission_job(mission_slug=mission_slug, payload=payload)
+    query = quote_plus(created_job)
+    created_msg = quote_plus(payload["mission_id"])
+    return RedirectResponse(
+        url=f"/jobs?q={query}&mission_created={created_msg}",
+        status_code=303,
+    )
+
+
 @app.post("/queue/approvals/{ref}/approve")
 async def approve_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
@@ -717,7 +829,13 @@ async def deny_queue_job(ref: str, request: Request):
 
 
 @app.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
+def jobs_page(
+    request: Request,
+    bucket: str = "all",
+    q: str = "",
+    n: int = 80,
+    mission_created: str = "",
+):
     queue_root = _queue_root()
     rows = list_jobs(queue_root, bucket=bucket, q=q, limit=n)
     rows_enriched: list[dict[str, Any]] = []
@@ -748,6 +866,7 @@ def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
         q=q,
         n=max(1, min(n, 200)),
         buckets=["all", *JOB_BUCKETS],
+        mission_created=mission_created,
         csrf_token=csrf_token,
         auth_setup_banner=_auth_setup_banner(),
     )

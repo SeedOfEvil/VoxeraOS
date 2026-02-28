@@ -56,6 +56,10 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert "Failed retention max age (s)" in body
     assert "Latest prune removed jobs/sidecars" in body
     assert "Approval Command Center" in body
+    assert "Create Mission" in body
+    assert "Easy" in body
+    assert "Default" in body
+    assert "Advanced" in body
     assert "Active Work" in body
     assert "Mission Library" in body
     assert "Daemon Lock Event Counters" in body
@@ -345,13 +349,101 @@ def test_panel_post_requires_auth_and_csrf(tmp_path, monkeypatch):
     monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
     client = TestClient(panel_module.app)
 
-    unauth = client.post("/queue/create", data={"kind": "goal", "goal": "x"})
+    unauth = client.post("/panel/missions/create", data={"prompt": "x"})
     assert unauth.status_code == 401
 
     auth_only = client.post(
-        "/queue/create", data={"kind": "goal", "goal": "x"}, headers=_operator_headers()
+        "/panel/missions/create", data={"prompt": "x"}, headers=_operator_headers()
     )
     assert auth_only.status_code == 403
+
+
+def test_panel_create_mission_easy_and_advanced_payloads(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    easy = _authed_csrf_request(
+        client,
+        "post",
+        "/panel/missions/create",
+        data={
+            "mode": "easy",
+            "prompt": "Create demo artifacts",
+        },
+    )
+    assert easy.status_code == 303
+    assert easy.headers["location"].startswith("/jobs?")
+
+    queue_inbox = fake_home / "VoxeraOS" / "notes" / "queue" / "inbox"
+    jobs = sorted(queue_inbox.glob("job-panel-mission-*.json"))
+    assert len(jobs) == 1
+    easy_payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert easy_payload["job_version"] == 1
+    assert easy_payload["source"] == "panel"
+    assert easy_payload["prompt"] == "Create demo artifacts"
+    assert easy_payload["approval_required"] is True
+    assert easy_payload["mission_id"]
+
+    advanced = _authed_csrf_request(
+        client,
+        "post",
+        "/panel/missions/create",
+        data={
+            "mode": "advanced",
+            "prompt": "Generate bundle and report",
+            "mission_id": "Bundle Demo",
+            "title": "Bundle Demo Job",
+            "approval_required": "off",
+            "brain": "reasoning",
+            "priority": "high",
+            "tags": "demo, bundle , approval",
+            "dry_run": "true",
+            "target": "workspace",
+        },
+    )
+    assert advanced.status_code == 303
+    jobs = sorted(queue_inbox.glob("job-panel-mission-*.json"))
+    assert len(jobs) == 2
+
+    advanced_job = next(
+        path
+        for path in jobs
+        if json.loads(path.read_text(encoding="utf-8")).get("prompt")
+        == "Generate bundle and report"
+    )
+    advanced_payload = json.loads(advanced_job.read_text(encoding="utf-8"))
+    assert advanced_payload["mission_id"] == "bundle-demo"
+    assert advanced_payload["approval_required"] is False
+    assert advanced_payload["brain"] == "reasoning"
+    assert advanced_payload["priority"] == "high"
+    assert advanced_payload["tags"] == ["demo", "bundle", "approval"]
+    assert advanced_payload["dry_run"] is True
+    assert advanced_payload["target"] == "workspace"
+    assert advanced_payload["title"] == "Bundle Demo Job"
+
+
+def test_panel_create_mission_redirect_and_jobs_visibility(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    created = _authed_csrf_request(
+        client,
+        "post",
+        "/panel/missions/create",
+        data={"mode": "easy", "prompt": "Show up in jobs list", "mission_id": "jobs-visible"},
+    )
+    assert created.status_code == 303
+    location = created.headers["location"]
+    assert "/jobs" in location
+
+    jobs_page = client.get(location)
+    assert jobs_page.status_code == 200
+    assert "Mission created: <b>jobs-visible</b>." in jobs_page.text
+    assert "job-panel-mission-jobs-visible" in jobs_page.text
 
 
 def test_panel_auth_csrf_failures_emit_counters_and_logs(tmp_path, monkeypatch):
@@ -401,6 +493,29 @@ def test_panel_auth_csrf_failures_emit_counters_and_logs(tmp_path, monkeypatch):
     assert "panel_auth_invalid" in event_names
     assert "panel_csrf_missing" in event_names
     assert "panel_mutation_allowed" in event_names
+
+
+def test_panel_create_mission_auth_csrf_failures_increment_counters(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    unauth = client.post("/panel/missions/create", data={"mode": "easy", "prompt": "x"})
+    assert unauth.status_code == 401
+
+    auth_only = client.post(
+        "/panel/missions/create",
+        data={"mode": "easy", "prompt": "x"},
+        headers=_operator_headers(),
+    )
+    assert auth_only.status_code == 403
+
+    health_path = fake_home / "VoxeraOS" / "notes" / "queue" / "health.json"
+    payload = json.loads(health_path.read_text(encoding="utf-8"))
+    counters = payload.get("counters", {})
+    assert counters.get("panel_401_count", 0) >= 1
+    assert counters.get("panel_403_count", 0) >= 1
 
 
 def test_jobs_page_filters_by_bucket(tmp_path, monkeypatch):
