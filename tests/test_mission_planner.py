@@ -3,7 +3,12 @@ import json
 
 import pytest
 
-from voxera.core.mission_planner import MissionPlannerError, _parse_planner_json, plan_mission
+from voxera.core.mission_planner import (
+    MissionPlannerError,
+    _parse_planner_json,
+    _plan_payload,
+    plan_mission,
+)
 from voxera.models import AppConfig, BrainConfig
 from voxera.skills.registry import SkillRegistry
 
@@ -1361,3 +1366,32 @@ def test_goal_requests_file_write_for_allowed_notes_goal():
         _goal_requests_file_write("Write a note under the allowed notes directory saying all good.")
         is True
     )
+
+
+class _CaptureBrain:
+    def __init__(self):
+        self.messages = None
+
+    async def generate(self, messages, tools=None):
+        self.messages = messages
+
+        class _Resp:
+            text = '{"title":"ok","steps":[{"skill_id":"system.status","args":{}}]}'
+
+        return _Resp()
+
+
+def test_plan_payload_includes_capabilities_missions_and_allowed_apps():
+    reg = SkillRegistry()
+    reg.discover()
+    brain = _CaptureBrain()
+
+    asyncio.run(_plan_payload(goal="check machine", registry=reg, brain=brain))
+
+    assert brain.messages is not None
+    user_content = next(msg["content"] for msg in brain.messages if msg["role"] == "user")
+    assert "CAPABILITIES (runtime snapshot):" in user_content
+    assert "missions:" in user_content
+    assert "work_mode" in user_content
+    assert "allowed_apps (system.open_app.name):" in user_content
+    assert "firefox" in user_content

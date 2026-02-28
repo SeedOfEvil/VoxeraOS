@@ -114,6 +114,7 @@ def test_approval_required_hard_gate_blocks_before_execution(tmp_path, monkeypat
     approval_artifact = queue_dir / "pending" / "approvals" / "job-hard-gate.approval.json"
     assert pending_job.exists()
     assert approval_artifact.exists()
+    assert not (queue_dir / "pending" / "job-hard-gate.pending.json").exists()
     assert not (queue_dir / "done" / "job-hard-gate.json").exists()
 
     daemon.resolve_approval("job-hard-gate", approve=True)
@@ -1875,3 +1876,86 @@ def test_force_unlock_logs_dangerous_event(tmp_path, monkeypatch):
     assert emitted[-1].get("details", {}).get("dangerous") is True
     counters = daemon.lock_counters_snapshot()
     assert counters.get("force_unlock_count", 0) >= 1
+
+
+def test_queue_daemon_rejects_unknown_mission_id_with_suggestions(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-unknown-mission.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(json.dumps({"mission_id": "work_mod"}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    failed_job = _assert_job_moved(queue_dir / "failed", "job-unknown-mission.json")
+    sidecar = json.loads(failed_job.with_name(f"{failed_job.stem}.error.json").read_text())
+    assert "Invalid mission_id" in sidecar["error"]
+    assert "work_mode" in sidecar["error"]
+
+
+def test_queue_daemon_rejects_invalid_open_app_with_suggestions(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-invalid-app.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(
+        json.dumps(
+            {
+                "title": "bad app",
+                "goal": "invalid app",
+                "steps": [{"skill_id": "system.open_app", "args": {"name": "firefix"}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    failed_job = _assert_job_moved(queue_dir / "failed", "job-invalid-app.json")
+    sidecar = json.loads(failed_job.with_name(f"{failed_job.stem}.error.json").read_text())
+    assert "Invalid step 1 system.open_app app" in sidecar["error"]
+    assert "firefox" in sidecar["error"]
+
+
+def test_resolve_approval_normalizes_pending_json_ref_variant(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-hard.json").write_text(
+        json.dumps({"goal": "check machine", "approval_required": True}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "approvals" / "job-hard.approval.json").write_text(
+        json.dumps({"job": "job-hard.json", "skill": "approval_required"}), encoding="utf-8"
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+
+    assert daemon.resolve_approval("job-hard.pending.json", approve=False) is True
+    _assert_job_moved(queue_dir / "failed", "job-hard.json")
+
+
+def test_hard_gate_removes_duplicate_pending_variant_if_present(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    dup = queue_dir / "pending" / "job-dup.pending.json"
+    dup.write_text('{"stale":true}', encoding="utf-8")
+    job = queue_dir / "inbox" / "job-dup.json"
+    job.parent.mkdir(parents=True, exist_ok=True)
+    job.write_text(json.dumps({"goal": "x", "approval_required": True}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    assert (queue_dir / "pending" / "job-dup.json").exists()
+    assert not (queue_dir / "pending" / "job-dup.pending.json").exists()

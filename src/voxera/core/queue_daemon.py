@@ -25,6 +25,11 @@ from ..health import (
 from ..paths import queue_root as default_queue_root
 from ..skills.registry import SkillRegistry
 from ..skills.runner import SkillRunner
+from .capabilities_snapshot import (
+    generate_capabilities_snapshot,
+    validate_mission_id_against_snapshot,
+    validate_mission_steps_against_snapshot,
+)
 from .mission_planner import MissionPlannerError, plan_mission
 from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
 
@@ -789,13 +794,19 @@ class MissionQueueDaemon:
         self, payload: dict[str, Any], *, job_ref: str
     ) -> MissionTemplate:
         normalized = self._normalize_payload(payload)
+        snapshot = generate_capabilities_snapshot(self.mission_runner.skill_runner.registry)
         if "mission_id" in normalized:
-            return get_mission(normalized["mission_id"])
+            validate_mission_id_against_snapshot(normalized["mission_id"], snapshot)
+            mission = get_mission(normalized["mission_id"])
+            validate_mission_steps_against_snapshot(mission, snapshot)
+            return mission
         if "steps" in normalized:
-            return self._build_inline_mission(normalized, job_ref=job_ref)
+            mission = self._build_inline_mission(normalized, job_ref=job_ref)
+            validate_mission_steps_against_snapshot(mission, snapshot)
+            return mission
         if "goal" in normalized:
             try:
-                return asyncio.run(
+                mission = asyncio.run(
                     plan_mission(
                         goal=normalized["goal"],
                         cfg=self.cfg,
@@ -804,6 +815,8 @@ class MissionQueueDaemon:
                         job_ref=job_ref,
                     )
                 )
+                validate_mission_steps_against_snapshot(mission, snapshot)
+                return mission
             except MissionPlannerError as exc:
                 raise RuntimeError(str(exc)) from exc
         raise ValueError(
@@ -884,15 +897,7 @@ class MissionQueueDaemon:
 
         if artifact_path.exists():
             self._increment_health_counter("approval_gate_already_present")
-            if not meta_path.exists():
-                meta = {
-                    "status": "pending_approval",
-                    "job": job_in_pending.name,
-                    "payload": payload,
-                    "resume_step": 1,
-                    "mission": {},
-                }
-                self._write_text_atomic(meta_path, json.dumps(meta, indent=2))
+            meta_path.unlink(missing_ok=True)
             log(
                 {
                     "event": "queue_approval_gate_already_present",
@@ -922,14 +927,7 @@ class MissionQueueDaemon:
             "ts": time.time(),
         }
         self._write_text_atomic(artifact_path, json.dumps(approval, indent=2))
-        meta = {
-            "status": "pending_approval",
-            "job": job_in_pending.name,
-            "payload": payload,
-            "resume_step": 1,
-            "mission": {},
-        }
-        self._write_text_atomic(meta_path, json.dumps(meta, indent=2))
+        meta_path.unlink(missing_ok=True)
         self._notify_pending_approval(approval)
         self._increment_health_counter("approval_gate_created")
         self._write_action_event(str(job_in_pending), "queue_job_pending_approval", step=0)
@@ -1453,40 +1451,66 @@ class MissionQueueDaemon:
         log({"event": "queue_job_done", "job": str(moved)})
         return True
 
-    def _find_pending_job(self, ref: str) -> Path:
+    def _approval_ref_candidates(self, ref: str) -> list[str]:
+        base = Path(ref.strip()).name
+        if base.endswith(".approval.json"):
+            base = f"{base.removesuffix('.approval.json')}.json"
+
+        candidates = [
+            base,
+            base.replace(".pending.json", ".json"),
+            base.replace(".json", ".pending.json"),
+        ]
+        if "." not in base:
+            candidates.extend([f"{base}.json", f"{base}.pending.json"])
+
+        stem = Path(base).stem.removesuffix(".approval")
+        short = stem.removeprefix("job-")
+        candidates.extend([f"{stem}.json", f"job-{short}.json", f"{short}.json"])
+
+        ordered: list[str] = []
+        for cand in candidates:
+            if cand and cand not in ordered:
+                ordered.append(cand)
+        return ordered
+
+    def canonicalize_approval_ref(self, ref: str) -> str:
+        job, _meta, _artifact = self._resolve_pending_approval_paths(ref)
+        return job.name
+
+    def _resolve_pending_approval_paths(self, ref: str) -> tuple[Path, Path, Path]:
         raw_ref = ref.strip()
         if not raw_ref:
             raise FileNotFoundError("pending job not found: (empty ref)")
 
-        direct = Path(raw_ref).expanduser()
-        if direct.exists() and direct.is_file():
-            if direct.parent == self.pending:
-                return direct
-            if direct.parent == self.approvals:
-                pending_from_approval = (
-                    self.pending / f"{direct.stem.removesuffix('.approval')}.json"
-                )
-                if pending_from_approval.exists():
-                    return pending_from_approval
+        for candidate_name in self._approval_ref_candidates(raw_ref):
+            candidate_path = self.pending / candidate_name
+            if not candidate_path.exists() or not candidate_path.is_file():
+                continue
 
-        base = Path(raw_ref).name
-        stem = Path(base).stem.removesuffix(".approval")
-        short = stem.removeprefix("job-")
-        for cand in {
-            self.pending / base,
-            self.pending / f"{stem}.json",
-            self.pending / f"job-{short}.json",
-            self.pending / f"{short}.json",
-        }:
-            if cand.exists() and cand.is_file():
-                return cand
+            if candidate_name.endswith(".pending.json"):
+                stem = candidate_name.removesuffix(".pending.json")
+                canonical_job = self.pending / f"{stem}.json"
+                job = canonical_job if canonical_job.exists() else candidate_path
+                meta = self.pending / f"{stem}.pending.json"
+                artifact = self.approvals / f"{stem}.approval.json"
+                return job, meta, artifact
 
-        target = base
+            stem = Path(candidate_name).stem
+            job = candidate_path
+            meta = self.pending / f"{stem}.pending.json"
+            artifact = self.approvals / f"{stem}.approval.json"
+            return job, meta, artifact
+
+        # Fallback via approval artifact aliases.
         for artifact in self._iter_approval_artifacts():
-            if target in self._approval_ref_variants(artifact):
-                via_artifact = self.pending / f"{artifact.stem.removesuffix('.approval')}.json"
-                if via_artifact.exists():
-                    return via_artifact
+            if Path(raw_ref).name not in self._approval_ref_variants(artifact):
+                continue
+            stem = artifact.stem.removesuffix(".approval")
+            job = self.pending / f"{stem}.json"
+            meta = self.pending / f"{stem}.pending.json"
+            if job.exists() and job.is_file():
+                return job, meta, self.approvals / f"{stem}.approval.json"
 
         raise FileNotFoundError(f"pending job not found: {ref}")
 
@@ -1499,13 +1523,24 @@ class MissionQueueDaemon:
 
     def resolve_approval(self, ref: str, *, approve: bool, approve_always: bool = False) -> bool:
         self.ensure_dirs()
-        job = self._find_pending_job(ref)
-        meta_path = self.pending / f"{job.stem}.pending.json"
-        artifact_path = self.approvals / f"{job.stem}.approval.json"
-        if not meta_path.exists():
-            raise FileNotFoundError(f"approval metadata missing for {job.name}")
-
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        job, meta_path, artifact_path = self._resolve_pending_approval_paths(ref)
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        else:
+            payload: dict[str, Any] = {}
+            try:
+                loaded = json.loads(job.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    payload = loaded
+            except Exception:
+                payload = {}
+            meta = {
+                "status": "pending_approval",
+                "job": job.name,
+                "payload": payload,
+                "resume_step": 1,
+                "mission": {},
+            }
         if not approve:
             moved = self._move_job(job, self.failed)
             if moved is None:
