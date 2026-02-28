@@ -62,6 +62,7 @@ class MissionQueueDaemon:
         self.inbox = self.queue_root / "inbox"
         self.done = self.queue_root / "done"
         self.failed = self.queue_root / "failed"
+        self.canceled = self.queue_root / "canceled"
         self.pending = self.queue_root / "pending"
         self.approvals = self.pending / "approvals"
         self.artifacts = self.queue_root / "artifacts"
@@ -252,6 +253,7 @@ class MissionQueueDaemon:
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.done.mkdir(parents=True, exist_ok=True)
         self.failed.mkdir(parents=True, exist_ok=True)
+        self.canceled.mkdir(parents=True, exist_ok=True)
         self.pending.mkdir(parents=True, exist_ok=True)
         self.approvals.mkdir(parents=True, exist_ok=True)
         self.artifacts.mkdir(parents=True, exist_ok=True)
@@ -528,7 +530,7 @@ class MissionQueueDaemon:
             ts = int(time.time() * 1000)
             target = target_dir / f"{src.stem}-{ts}{src.suffix}"
         try:
-            shutil.move(str(src), str(target))
+            src.replace(target)
         except FileNotFoundError:
             log(
                 {
@@ -539,6 +541,26 @@ class MissionQueueDaemon:
             )
             return None
         return target
+
+    def _archive_sidecar(self, sidecar: Path, *, reason: str) -> None:
+        if not sidecar.exists():
+            return
+        archive_dir = self.archive / "sidecars"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        stamped = archive_dir / f"{sidecar.stem}-{int(time.time() * 1000)}.json"
+        moved = self._move_job(sidecar, archive_dir)
+        if moved is None:
+            return
+        if moved.suffix != ".json":
+            moved = moved.replace(stamped)
+        log(
+            {
+                "event": "queue_sidecar_archived",
+                "reason": reason,
+                "from": str(sidecar),
+                "to": str(moved),
+            }
+        )
 
     def _failed_error_sidecar(self, failed_job: Path) -> Path:
         return failed_job.with_name(f"{failed_job.stem}.error.json")
@@ -1159,6 +1181,7 @@ class MissionQueueDaemon:
                 "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
                 "done": self._count_files(self.done, "*.json"),
                 "failed": len(failed_files),
+                "canceled": self._count_files(self.canceled, "*.json"),
             },
             **sidecar_health,
             "failed_retention": retention,
@@ -1205,39 +1228,55 @@ class MissionQueueDaemon:
 
     def cancel_job(self, ref: str) -> Path:
         self.ensure_dirs()
-        job = self._resolve_job_ref_in_dirs(ref, [self.inbox, self.pending, self.done, self.failed])
+        job = self._resolve_job_ref_in_dirs(ref, [self.inbox, self.pending])
         if job is None:
             raise FileNotFoundError(f"job not found: {ref}")
 
-        if job.parent == self.failed:
-            return job
-
-        moved = self._move_job(job, self.failed)
+        moved = self._move_job(job, self.canceled)
         if moved is None:
             raise FileNotFoundError(f"job not found: {ref}")
-        self._write_failed_error_sidecar(moved, error="cancelled by operator", payload=None)
         (self.pending / f"{moved.stem}.pending.json").unlink(missing_ok=True)
         (self.approvals / f"{moved.stem}.approval.json").unlink(missing_ok=True)
+        self._archive_sidecar(self._failed_error_sidecar(self.failed / moved.name), reason="cancel")
         log({"event": "queue_job_cancel", "ref": ref, "job": str(moved)})
         return moved
 
     def retry_job(self, ref: str) -> Path:
         self.ensure_dirs()
-        failed_job = self._resolve_job_ref_in_dirs(ref, [self.failed])
-        if failed_job is None:
-            raise FileNotFoundError(f"failed job not found: {ref}")
-        self._failed_error_sidecar(failed_job).unlink(missing_ok=True)
-        moved = self._move_job(failed_job, self.inbox)
+        source_job = self._resolve_job_ref_in_dirs(ref, [self.failed, self.canceled])
+        if source_job is None:
+            raise FileNotFoundError(f"retry job not found: {ref}")
+        self._archive_sidecar(self._failed_error_sidecar(source_job), reason="retry")
+        moved = self._move_job(source_job, self.inbox)
         if moved is None:
-            raise FileNotFoundError(f"failed job not found: {ref}")
+            raise FileNotFoundError(f"retry job not found: {ref}")
         log(
             {
                 "event": "queue_job_retry",
-                "original_failed_job": str(failed_job),
+                "source_job": str(source_job),
                 "new_attempt": str(moved),
             }
         )
         return moved
+
+    def delete_terminal_job(self, ref: str, *, confirm: str) -> str:
+        self.ensure_dirs()
+        job = self._resolve_job_ref_in_dirs(ref, [self.done, self.failed, self.canceled])
+        if job is None:
+            raise FileNotFoundError(f"terminal job not found: {ref}")
+        if confirm != job.name:
+            raise ValueError("delete confirmation mismatch")
+
+        job.unlink(missing_ok=True)
+        if job.parent == self.failed:
+            self._failed_error_sidecar(job).unlink(missing_ok=True)
+        artifacts_dir = self.artifacts / job.stem
+        if artifacts_dir.exists():
+            shutil.rmtree(artifacts_dir)
+        (self.pending / f"{job.stem}.pending.json").unlink(missing_ok=True)
+        (self.approvals / f"{job.stem}.approval.json").unlink(missing_ok=True)
+        log({"event": "queue_job_deleted", "job": str(job), "artifacts_dir": str(artifacts_dir)})
+        return job.name
 
     def process_job_file(self, job_path: Path) -> bool:
         self.ensure_dirs()

@@ -204,7 +204,7 @@ def test_queue_cancel_retry_pause_resume_cli(tmp_path):
         cli.app, ["queue", "cancel", "job-x.json", "--queue-dir", str(queue_dir)]
     )
     assert cancel.exit_code == 0
-    assert (queue_dir / "failed" / "job-x.json").exists()
+    assert (queue_dir / "canceled" / "job-x.json").exists()
 
     retry = runner.invoke(cli.app, ["queue", "retry", "job-x.json", "--queue-dir", str(queue_dir)])
     assert retry.exit_code == 0

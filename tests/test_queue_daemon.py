@@ -507,6 +507,7 @@ def test_status_snapshot_counts_and_pending_parsing(tmp_path, monkeypatch):
         "pending_approvals": 1,
         "done": 1,
         "failed": 1,
+        "canceled": 0,
     }
     assert status["pending_approvals"][0]["skill"] == "system.set_volume"
     assert status["recent_failed"][0] == {"job": "bad1.json", "error": "boom"}
@@ -704,6 +705,7 @@ def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch)
         "pending_approvals": 0,
         "done": 0,
         "failed": 0,
+        "canceled": 0,
     }
     assert status["pending_approvals"] == []
     assert status["recent_failed"] == []
@@ -1581,9 +1583,9 @@ def test_cancel_retry_pause_flow(tmp_path, monkeypatch):
     assert job.exists()
     daemon.resume()
 
-    failed = daemon.cancel_job("cancel-me.json")
-    assert failed.exists()
-    assert (queue_dir / "failed" / "cancel-me.error.json").exists()
+    canceled = daemon.cancel_job("cancel-me.json")
+    assert canceled.exists()
+    assert canceled.parent == queue_dir / "canceled"
 
     retried = daemon.retry_job("cancel-me.json")
     assert retried.exists()
@@ -1602,7 +1604,77 @@ def test_cancel_pending_approval_cleans_markers(tmp_path, monkeypatch):
     daemon.cancel_job("x.json")
     assert not (queue_dir / "pending" / "x.pending.json").exists()
     assert not (queue_dir / "pending" / "approvals" / "x.approval.json").exists()
-    assert (queue_dir / "failed" / "x.error.json").exists()
+    assert (queue_dir / "canceled" / "x.json").exists()
+
+
+def test_retry_supports_failed_and_canceled(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    daemon.ensure_dirs()
+
+    (queue_dir / "failed" / "f.json").write_text('{"goal":"f"}', encoding="utf-8")
+    (queue_dir / "failed" / "f.error.json").write_text(
+        json.dumps(
+            {"schema_version": 1, "job": "f.json", "error": "boom", "timestamp_ms": 1700000000000}
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "canceled" / "c.json").write_text('{"goal":"c"}', encoding="utf-8")
+
+    retried_failed = daemon.retry_job("f.json")
+    retried_canceled = daemon.retry_job("c.json")
+
+    assert retried_failed.parent == queue_dir / "inbox"
+    assert retried_canceled.parent == queue_dir / "inbox"
+    assert not (queue_dir / "failed" / "f.error.json").exists()
+
+
+def test_delete_terminal_job_guards_and_cleanup(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    daemon.ensure_dirs()
+
+    (queue_dir / "done" / "d.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "f.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "f.error.json").write_text(
+        json.dumps(
+            {"schema_version": 1, "job": "f.json", "error": "boom", "timestamp_ms": 1700000000000}
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "canceled" / "c.json").write_text("{}", encoding="utf-8")
+    art = queue_dir / "artifacts" / "d"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "stdout.txt").write_text("ok", encoding="utf-8")
+
+    assert daemon.delete_terminal_job("d.json", confirm="d.json") == "d.json"
+    assert not (queue_dir / "done" / "d.json").exists()
+    assert not art.exists()
+
+    assert daemon.delete_terminal_job("f.json", confirm="f.json") == "f.json"
+    assert not (queue_dir / "failed" / "f.json").exists()
+    assert not (queue_dir / "failed" / "f.error.json").exists()
+
+    assert daemon.delete_terminal_job("c.json", confirm="c.json") == "c.json"
+    assert not (queue_dir / "canceled" / "c.json").exists()
+
+    (queue_dir / "inbox" / "i.json").write_text("{}", encoding="utf-8")
+    try:
+        daemon.delete_terminal_job("i.json", confirm="i.json")
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("expected FileNotFoundError for non-terminal job")
+
+    (queue_dir / "done" / "x.json").write_text("{}", encoding="utf-8")
+    try:
+        daemon.delete_terminal_job("x.json", confirm="nope.json")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for mismatched confirm")
 
 
 def test_run_acquires_and_releases_lock_in_once_mode(tmp_path, monkeypatch):

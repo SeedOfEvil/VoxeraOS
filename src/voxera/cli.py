@@ -735,7 +735,7 @@ def queue_cancel(
     except FileNotFoundError as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1) from exc
-    console.print(f"Cancelled: {moved.name} (moved to failed/)")
+    console.print(f"Cancelled: {moved.name} (moved to canceled/)")
 
 
 @queue_app.command("retry")
