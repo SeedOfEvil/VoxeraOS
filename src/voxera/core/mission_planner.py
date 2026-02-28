@@ -20,6 +20,7 @@ from .capabilities_snapshot import (
     validate_mission_steps_against_snapshot,
 )
 from .missions import MissionStep, MissionTemplate
+from .planner_context import get_planner_agent_name, get_planner_preamble
 
 
 class MissionPlannerError(RuntimeError):
@@ -403,6 +404,21 @@ def _build_brain_candidates(cfg: AppConfig) -> list[_BrainCandidate]:
     ]
 
 
+def _build_planner_user_prompt(goal: str, snapshot: dict, skills_block: str) -> str:
+    agent_name = get_planner_agent_name()
+    preamble = get_planner_preamble()
+    return (
+        f"SYSTEM CONTEXT ({agent_name}):\n"
+        f"{preamble}\n\n"
+        f"{_build_capabilities_prompt_block(snapshot)}\n\n"
+        "TASK:\n"
+        f"Goal: {goal}\n"
+        "Skill catalog:\n"
+        f"{skills_block}\n"
+        "Return only JSON."
+    )
+
+
 async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
     snapshot = generate_capabilities_snapshot(registry)
     skills = sorted(registry.discover().values(), key=lambda m: m.id)
@@ -429,9 +445,10 @@ async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
         },
         {
             "role": "user",
-            "content": (
-                f"Goal: {goal}\nSkill catalog:\n{skills_block}\n"
-                f"{_build_capabilities_prompt_block(snapshot)}\nReturn only JSON."
+            "content": _build_planner_user_prompt(
+                goal=goal,
+                snapshot=snapshot,
+                skills_block=skills_block,
             ),
         },
     ]

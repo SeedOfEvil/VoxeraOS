@@ -637,4 +637,11 @@ voxera ops capabilities
 
 The command prints deterministic JSON with `schema_version`, `generated_ts_ms`, `missions`, `allowed_apps`, and `skills`. Data comes from the real mission catalog, skill manifests, and the `system.open_app` allowlist.
 
-Cloud planner prompts now include a compact `CAPABILITIES` block from this snapshot. Planning and queue execution fail fast when a mission ID is unknown or `system.open_app` targets an app outside `allowed_apps`, with closest-match suggestions for recovery.
+Cloud planner prompts now include a compact `SYSTEM CONTEXT (Vera)` preamble (Linux OS-wrangler doctrine + tool-selection heuristics) before the `CAPABILITIES` block from this snapshot. Planning and queue execution fail fast when a mission ID is unknown or `system.open_app` targets an app outside `allowed_apps`, with closest-match suggestions for recovery.
+
+Planner preamble override knobs:
+- `VOXERA_PLANNER_PREAMBLE` (highest precedence, full preamble string)
+- `VOXERA_PLANNER_PREAMBLE_PATH` (read preamble text from file)
+- fallback generated preamble using `VOXERA_PLANNER_AGENT_NAME` (default `Vera`)
+
+To rename the assistant later without touching prompt code, set `VOXERA_PLANNER_AGENT_NAME`.
