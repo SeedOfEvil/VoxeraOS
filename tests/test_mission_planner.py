@@ -58,6 +58,42 @@ def test_parse_planner_json_rejects_non_object_json():
         _parse_planner_json('[{"skill_id":"system.status","args":{}}]')
 
 
+class _CapturingBrain:
+    def __init__(self, text: str):
+        self.text = text
+        self.messages = None
+
+    async def generate(self, messages, tools=None):
+        self.messages = messages
+
+        class _Resp:
+            def __init__(self, body: str):
+                self.text = body
+
+        return _Resp(self.text)
+
+
+def test_plan_payload_includes_preamble_before_capabilities(monkeypatch):
+    reg = SkillRegistry()
+    reg.discover()
+    brain = _CapturingBrain('{"steps":[{"skill_id":"system.status","args":{}}]}')
+
+    monkeypatch.setenv("VOXERA_PLANNER_AGENT_NAME", "Nova")
+    monkeypatch.setenv("VOXERA_PLANNER_PREAMBLE", "Be concise and deterministic.")
+
+    asyncio.run(_plan_payload("open github.com", registry=reg, brain=brain))
+
+    assert brain.messages is not None
+    user_content = brain.messages[1]["content"]
+    assert "SYSTEM CONTEXT (Nova):" in user_content
+    assert "CAPABILITIES (runtime snapshot):" in user_content
+    assert "TASK:" in user_content
+    assert user_content.index("SYSTEM CONTEXT (Nova):") < user_content.index(
+        "CAPABILITIES (runtime snapshot):"
+    )
+    assert user_content.index("CAPABILITIES (runtime snapshot):") < user_content.index("TASK:")
+
+
 class _FakeBrain:
     def __init__(self, text: str):
         self.text = text

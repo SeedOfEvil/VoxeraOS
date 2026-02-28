@@ -68,7 +68,14 @@ voxera ops capabilities
 
 This prints deterministic JSON (`schema_version`, `generated_ts_ms`, `missions`, `allowed_apps`, `skills`) sourced from the live mission catalog, skill registry manifests, and `system.open_app` allowlist.
 
-Planner prompts include a compact `CAPABILITIES` block from this snapshot so cloud brains are constrained to runtime-known mission IDs and enum-like arguments. Validation also runs before execution: unknown `mission_id` values and invalid `system.open_app` targets fail fast with closest-match suggestions.
+Planner prompts include a compact `SYSTEM CONTEXT (Vera)` preamble plus a `CAPABILITIES` block from this snapshot so cloud brains are constrained to runtime-known mission IDs and enum-like arguments. Validation also runs before execution: unknown `mission_id` values and invalid `system.open_app` targets fail fast with closest-match suggestions.
+
+Planner preamble override env vars (precedence: string > path > generated default):
+- `VOXERA_PLANNER_PREAMBLE`
+- `VOXERA_PLANNER_PREAMBLE_PATH`
+- `VOXERA_PLANNER_AGENT_NAME` (used by generated default; default name is `Vera`)
+
+To rename the assistant later, set `VOXERA_PLANNER_AGENT_NAME`.
 
 Note: systemd user services do not inherit ad-hoc shell exports by default; configure env via Voxera runtime env files/service unit overrides if drift behavior seems unexpected.
 ## Queue contract + intake flow
