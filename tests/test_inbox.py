@@ -19,7 +19,7 @@ def _force_policy_ask(monkeypatch):
 
 
 def _stub_planner(monkeypatch):
-    async def _fake_plan(goal, cfg, registry, source="cli", job_ref=None):
+    async def _fake_plan(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
         return MissionTemplate(
             id="cloud_planned",
             title="Stub Plan",

@@ -813,6 +813,7 @@ class MissionQueueDaemon:
                         registry=self.mission_runner.skill_runner.registry,
                         source="queue",
                         job_ref=job_ref,
+                        queue_root=self.queue_root,
                     )
                 )
                 validate_mission_steps_against_snapshot(mission, snapshot)

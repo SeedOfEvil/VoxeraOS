@@ -762,6 +762,13 @@ def queue_health(
         "panel_csrf_missing",
         "panel_csrf_invalid",
         "panel_auth_invalid",
+        "brain_fallback_count",
+        "brain_fallback_reason_timeout",
+        "brain_fallback_reason_auth",
+        "brain_fallback_reason_rate_limit",
+        "brain_fallback_reason_malformed",
+        "brain_fallback_reason_network",
+        "brain_fallback_reason_unknown",
     ]:
         health_table.add_row(key, str(counters.get(key, 0)))
     console.print(health_table)

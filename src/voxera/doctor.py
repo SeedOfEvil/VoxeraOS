@@ -300,6 +300,31 @@ def run_quick_doctor(
         }
     )
 
+    # --- last fallback transition -------------------------------------------
+    fb_reason = str(health.get("last_fallback_reason", ""))
+    fb_from = str(health.get("last_fallback_from", ""))
+    fb_to = str(health.get("last_fallback_to", ""))
+    fb_ts = health.get("last_fallback_ts_ms", "")
+    if fb_reason:
+        fb_detail = f"{fb_from} -> {fb_to} reason={fb_reason} ts={fb_ts}"
+        fb_hint = (
+            "RATE_LIMIT implies API throttling; AUTH implies bad key/config; "
+            "TIMEOUT implies network/provider slowness."
+            if fb_reason in ("RATE_LIMIT", "AUTH", "TIMEOUT")
+            else ""
+        )
+    else:
+        fb_detail = "none"
+        fb_hint = ""
+    checks.append(
+        {
+            "check": "last fallback",
+            "status": "ok" if not fb_reason else "warn",
+            "detail": fb_detail,
+            "hint": fb_hint,
+        }
+    )
+
     log({"event": "doctor_quick_ok", "queue_root": str(root), "checks": len(checks)})
     return checks
 
