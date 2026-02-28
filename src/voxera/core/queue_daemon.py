@@ -62,6 +62,7 @@ class MissionQueueDaemon:
         self.inbox = self.queue_root / "inbox"
         self.done = self.queue_root / "done"
         self.failed = self.queue_root / "failed"
+        self.canceled = self.queue_root / "canceled"
         self.pending = self.queue_root / "pending"
         self.approvals = self.pending / "approvals"
         self.artifacts = self.queue_root / "artifacts"
@@ -252,6 +253,7 @@ class MissionQueueDaemon:
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.done.mkdir(parents=True, exist_ok=True)
         self.failed.mkdir(parents=True, exist_ok=True)
+        self.canceled.mkdir(parents=True, exist_ok=True)
         self.pending.mkdir(parents=True, exist_ok=True)
         self.approvals.mkdir(parents=True, exist_ok=True)
         self.artifacts.mkdir(parents=True, exist_ok=True)
@@ -1205,17 +1207,18 @@ class MissionQueueDaemon:
 
     def cancel_job(self, ref: str) -> Path:
         self.ensure_dirs()
-        job = self._resolve_job_ref_in_dirs(ref, [self.inbox, self.pending, self.done, self.failed])
+        job = self._resolve_job_ref_in_dirs(
+            ref, [self.inbox, self.pending, self.done, self.failed, self.canceled]
+        )
         if job is None:
             raise FileNotFoundError(f"job not found: {ref}")
 
-        if job.parent == self.failed:
+        if job.parent == self.canceled:
             return job
 
-        moved = self._move_job(job, self.failed)
+        moved = self._move_job(job, self.canceled)
         if moved is None:
             raise FileNotFoundError(f"job not found: {ref}")
-        self._write_failed_error_sidecar(moved, error="cancelled by operator", payload=None)
         (self.pending / f"{moved.stem}.pending.json").unlink(missing_ok=True)
         (self.approvals / f"{moved.stem}.approval.json").unlink(missing_ok=True)
         log({"event": "queue_job_cancel", "ref": ref, "job": str(moved)})
@@ -1223,13 +1226,13 @@ class MissionQueueDaemon:
 
     def retry_job(self, ref: str) -> Path:
         self.ensure_dirs()
-        failed_job = self._resolve_job_ref_in_dirs(ref, [self.failed])
+        failed_job = self._resolve_job_ref_in_dirs(ref, [self.failed, self.canceled])
         if failed_job is None:
-            raise FileNotFoundError(f"failed job not found: {ref}")
+            raise FileNotFoundError(f"failed/canceled job not found: {ref}")
         self._failed_error_sidecar(failed_job).unlink(missing_ok=True)
         moved = self._move_job(failed_job, self.inbox)
         if moved is None:
-            raise FileNotFoundError(f"failed job not found: {ref}")
+            raise FileNotFoundError(f"failed/canceled job not found: {ref}")
         log(
             {
                 "event": "queue_job_retry",

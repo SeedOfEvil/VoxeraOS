@@ -1581,9 +1581,9 @@ def test_cancel_retry_pause_flow(tmp_path, monkeypatch):
     assert job.exists()
     daemon.resume()
 
-    failed = daemon.cancel_job("cancel-me.json")
-    assert failed.exists()
-    assert (queue_dir / "failed" / "cancel-me.error.json").exists()
+    canceled = daemon.cancel_job("cancel-me.json")
+    assert canceled.exists()
+    assert (queue_dir / "canceled" / "cancel-me.json").exists()
 
     retried = daemon.retry_job("cancel-me.json")
     assert retried.exists()
@@ -1602,7 +1602,7 @@ def test_cancel_pending_approval_cleans_markers(tmp_path, monkeypatch):
     daemon.cancel_job("x.json")
     assert not (queue_dir / "pending" / "x.pending.json").exists()
     assert not (queue_dir / "pending" / "approvals" / "x.approval.json").exists()
-    assert (queue_dir / "failed" / "x.error.json").exists()
+    assert (queue_dir / "canceled" / "x.json").exists()
 
 
 def test_run_acquires_and_releases_lock_in_once_mode(tmp_path, monkeypatch):

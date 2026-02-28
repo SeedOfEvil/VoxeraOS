@@ -8,7 +8,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -46,6 +46,8 @@ ERROR_MESSAGES = {
     "steps_json_not_list": "Steps JSON must decode to a JSON list.",
     "mission_schema_invalid": "Mission template failed schema validation.",
     "get_mutation_disabled": "GET mutation endpoints are disabled; submit the form normally.",
+    "delete_not_allowed": "Delete is allowed only for done/failed/canceled jobs.",
+    "delete_confirm_mismatch": "Delete confirmation mismatch: confirm_job_id must match.",
 }
 
 CSRF_COOKIE = "voxera_panel_csrf"
@@ -277,6 +279,22 @@ def _validate_mission_id(mission_id: str) -> str:
     if not MISSION_ID_RE.fullmatch(normalized):
         raise ValueError("mission_id_invalid")
     return normalized
+
+
+def _normalize_mission_mode(value: str) -> str:
+    mode = value.strip().lower()
+    return mode if mode in {"easy", "default", "advanced"} else "easy"
+
+
+def _jobs_redirect_url(request: Request, **extras: str) -> str:
+    params: dict[str, str] = {}
+    for key in ("bucket", "q", "n"):
+        value = request.query_params.get(key, "").strip()
+        if value:
+            params[key] = value
+    params.update({k: v for k, v in extras.items() if v})
+    encoded = urlencode(params)
+    return f"/jobs?{encoded}" if encoded else "/jobs"
 
 
 def _enforce_get_mutations_enabled() -> None:
@@ -565,7 +583,13 @@ def _build_mission_payload(
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, created: str = "", error: str = "", mission_created: str = ""):
+def home(
+    request: Request,
+    created: str = "",
+    error: str = "",
+    mission_created: str = "",
+    mission_mode: str = "easy",
+):
     queue_root = _queue_root()
     daemon = MissionQueueDaemon(queue_root=queue_root)
     queue = queue_snapshot(queue_root)
@@ -588,6 +612,7 @@ def home(request: Request, created: str = "", error: str = "", mission_created: 
     missions = list_missions()
     tmpl = templates.get_template("home.html")
     csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    selected_mode = _normalize_mission_mode(mission_mode)
     html = tmpl.render(
         approvals=APPROVALS,
         audit=tail(50),
@@ -606,6 +631,7 @@ def home(request: Request, created: str = "", error: str = "", mission_created: 
         csrf_token=csrf_token,
         panel_security_counters=_panel_security_snapshot(),
         auth_setup_banner=_auth_setup_banner(),
+        mission_mode=selected_mode,
     )
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
@@ -633,6 +659,51 @@ def _create_queue_job_from_values(kind: str, mission_id: str, goal: str) -> Redi
     return RedirectResponse(url=f"/?created={created}", status_code=303)
 
 
+def _create_mission_queue_job_from_values(values: dict[str, str]) -> RedirectResponse:
+    prompt = values.get("prompt", "").strip()
+    if not prompt:
+        return RedirectResponse(url="/?error=goal_required", status_code=303)
+    mode = _normalize_mission_mode(values.get("mode", "easy"))
+    approval_required = values.get("approval_required", "").strip().lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+
+    payload: dict[str, Any] = {
+        "job_version": 1,
+        "mission_id": values.get("mission_id", "").strip() or f"panel-{uuid.uuid4().hex[:10]}",
+        "created_ts_ms": int(time.time() * 1000),
+        "source": "panel",
+        "prompt": prompt,
+        "approval_required": approval_required,
+    }
+
+    if mode in {"default", "advanced"}:
+        for key in ("title",):
+            value = values.get(key, "").strip()
+            if value:
+                payload[key] = value
+
+    if mode == "advanced":
+        tags = [item.strip() for item in values.get("tags", "").split(",") if item.strip()]
+        if tags:
+            payload["tags"] = tags
+        for key in ("priority", "brain", "target"):
+            value = values.get(key, "").strip()
+            if value:
+                payload[key] = value
+        scope = values.get("scope", "").strip()
+        if scope:
+            payload["scope"] = scope
+        if values.get("dry_run", "").strip().lower() in {"1", "true", "on", "yes"}:
+            payload["dry_run"] = True
+
+    created = _write_queue_job(payload)
+    return RedirectResponse(url=f"/?created={created}&mission_mode={mode}", status_code=303)
+
+
 @app.get("/queue/create")
 def create_queue_job_get(
     request: Request, kind: str = "goal", mission_id: str = "", goal: str = ""
@@ -645,7 +716,24 @@ def create_queue_job_get(
 @app.post("/queue/create")
 async def create_queue_job(request: Request):
     await _require_mutation_guard(request)
+    mode = _normalize_mission_mode(await _request_value(request, "mode", "easy"))
     kind = await _request_value(request, "kind", "goal")
+    prompt = await _request_value(request, "prompt", "")
+    if prompt.strip():
+        fields = {
+            "mode": mode,
+            "prompt": prompt,
+            "mission_id": await _request_value(request, "mission_id", ""),
+            "title": await _request_value(request, "title", ""),
+            "approval_required": await _request_value(request, "approval_required", ""),
+            "tags": await _request_value(request, "tags", ""),
+            "priority": await _request_value(request, "priority", ""),
+            "brain": await _request_value(request, "brain", ""),
+            "target": await _request_value(request, "target", ""),
+            "scope": await _request_value(request, "scope", ""),
+            "dry_run": await _request_value(request, "dry_run", ""),
+        }
+        return _create_mission_queue_job_from_values(fields)
     mission_id = await _request_value(request, "mission_id", "")
     goal = await _request_value(request, "goal", "")
     return _create_queue_job_from_values(kind, mission_id, goal)
@@ -697,7 +785,9 @@ async def approve_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=True)
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(
+        url=_jobs_redirect_url(request, created=f"approved:{Path(ref).name}"), status_code=303
+    )
 
 
 @app.post("/queue/approvals/{ref}/approve-always")
@@ -705,7 +795,10 @@ async def approve_always_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=True, approve_always=True)
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(
+        url=_jobs_redirect_url(request, created=f"approved_always:{Path(ref).name}"),
+        status_code=303,
+    )
 
 
 @app.post("/queue/approvals/{ref}/deny")
@@ -713,11 +806,20 @@ async def deny_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=False)
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(
+        url=_jobs_redirect_url(request, created=f"denied:{Path(ref).name}"), status_code=303
+    )
 
 
 @app.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
+def jobs_page(
+    request: Request,
+    bucket: str = "all",
+    q: str = "",
+    n: int = 80,
+    created: str = "",
+    error: str = "",
+):
     queue_root = _queue_root()
     rows = list_jobs(queue_root, bucket=bucket, q=q, limit=n)
     rows_enriched: list[dict[str, Any]] = []
@@ -750,6 +852,8 @@ def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
         buckets=["all", *JOB_BUCKETS],
         csrf_token=csrf_token,
         auth_setup_banner=_auth_setup_banner(),
+        created=created,
+        error=error,
     )
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
@@ -765,6 +869,20 @@ def jobs_detail(job_id: str, request: Request):
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
     return response
+
+
+@app.get("/jobs/{job_id}/raw")
+def job_raw(job_id: str):
+    lookup = lookup_job(_queue_root(), job_id)
+    if lookup is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return HTMLResponse(f"<pre>{json.dumps(_safe_json(lookup.primary_path), indent=2)}</pre>")
+
+
+@app.get("/jobs/{job_id}/artifacts")
+def job_artifacts(job_id: str):
+    payload = _job_artifact_payload(_queue_root(), job_id)
+    return HTMLResponse(f"<pre>{json.dumps(payload, indent=2)}</pre>")
 
 
 @app.get("/queue/jobs/{job}/detail", response_class=HTMLResponse)
@@ -853,7 +971,9 @@ async def cancel_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.cancel_job(ref)
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(
+        url=_jobs_redirect_url(request, created=f"canceled:{Path(ref).name}"), status_code=303
+    )
 
 
 @app.post("/queue/jobs/{ref}/retry")
@@ -861,7 +981,33 @@ async def retry_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.retry_job(ref)
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(
+        url=_jobs_redirect_url(request, created=f"retried:{Path(ref).name}"), status_code=303
+    )
+
+
+@app.post("/queue/jobs/{ref}/delete")
+async def delete_queue_job(ref: str, request: Request):
+    await _require_mutation_guard(request)
+    confirm_job_id = await _request_value(request, "confirm_job_id", "")
+    normalized_ref = Path(ref).name
+    if confirm_job_id.strip() != normalized_ref:
+        return RedirectResponse(
+            url=_jobs_redirect_url(request, error="delete_confirm_mismatch"), status_code=303
+        )
+    lookup = lookup_job(_queue_root(), normalized_ref)
+    if lookup is None or lookup.bucket not in {"done", "failed", "canceled"}:
+        return RedirectResponse(
+            url=_jobs_redirect_url(request, error="delete_not_allowed"), status_code=303
+        )
+    lookup.primary_path.unlink(missing_ok=True)
+    if lookup.failed_sidecar_path:
+        lookup.failed_sidecar_path.unlink(missing_ok=True)
+    if lookup.approval_path:
+        lookup.approval_path.unlink(missing_ok=True)
+    return RedirectResponse(
+        url=_jobs_redirect_url(request, created=f"deleted:{normalized_ref}"), status_code=303
+    )
 
 
 @app.post("/queue/pause")
@@ -869,7 +1015,9 @@ async def pause_queue(request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.pause()
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(
+        url=_jobs_redirect_url(request, created="queue_paused"), status_code=303
+    )
 
 
 @app.post("/queue/resume")
@@ -877,4 +1025,6 @@ async def resume_queue(request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resume()
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(
+        url=_jobs_redirect_url(request, created="queue_resumed"), status_code=303
+    )

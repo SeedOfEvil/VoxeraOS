@@ -10,6 +10,14 @@
   <div class="container">
     <h1>Jobs</h1>
     <p><a href="/">← Back to panel</a></p>
+    <p><a href="/bundle/system">Download system bundle</a></p>
+
+    {% if created %}
+      <div class="alert alert-success">{{created}}</div>
+    {% endif %}
+    {% if error %}
+      <div class="alert alert-danger">{{error}}</div>
+    {% endif %}
 
     {% if auth_setup_banner %}
       <div class="alert alert-info">
@@ -51,7 +59,7 @@
             {% for row in rows %}
               <tr>
                 <td><a href="/jobs/{{row.job_id}}">{{row.job_id}}</a></td>
-                <td>{{row.bucket_ref}}</td>
+                <td><span class="badge badge-status badge-{{row.bucket}}">{{row.bucket_ref}}</span></td>
                 <td>
                   plan={{ 'Y' if row.artifacts.plan else 'N' }} |
                   actions={{ 'Y' if row.artifacts.actions else 'N' }} |
@@ -62,18 +70,36 @@
                 <td>{{row.updated_ts}}</td>
                 <td>
                   <a href="/jobs/{{row.job_id}}">Detail</a> |
-                  <a href="/jobs/{{row.job_id}}/bundle">Bundle</a>
+                  <a href="/jobs/{{row.job_id}}/bundle">Bundle</a> |
+                  <a href="/jobs/{{row.job_id}}/raw">Raw JSON</a> |
+                  <a href="/jobs/{{row.job_id}}/artifacts">Artifacts</a>
+                  {% if row.bucket == 'approvals' %}
+                  <form method="post" action="/queue/approvals/{{row.job_id}}/approve?bucket={{bucket}}&q={{q}}&n={{n}}" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                    <button class="btn btn-approve" type="submit">Approve</button>
+                  </form>
+                  {% endif %}
                   {% if row.bucket in ['inbox', 'pending', 'approvals'] %}
-                  <form method="post" action="/queue/jobs/{{row.job_id}}/cancel" style="display:inline;">
+                  <form method="post" action="/queue/jobs/{{row.job_id}}/cancel?bucket={{bucket}}&q={{q}}&n={{n}}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
                     <button class="btn btn-deny" type="submit">Cancel</button>
                   </form>
                   {% endif %}
                   {% if row.bucket == 'failed' %}
-                  <form method="post" action="/queue/jobs/{{row.job_id}}/retry" style="display:inline;">
+                  <form method="post" action="/queue/jobs/{{row.job_id}}/retry?bucket={{bucket}}&q={{q}}&n={{n}}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
                     <button class="btn" type="submit">Retry</button>
                   </form>
+                  {% endif %}
+                  {% if row.bucket in ['done', 'failed', 'canceled'] %}
+                  <details style="display:inline-block;">
+                    <summary>Delete</summary>
+                    <form method="post" action="/queue/jobs/{{row.job_id}}/delete?bucket={{bucket}}&q={{q}}&n={{n}}" style="display:inline;">
+                      <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                      <input class="input" type="text" name="confirm_job_id" placeholder="{{row.job_id}}" style="max-width:220px; display:inline-block;"/>
+                      <button class="btn btn-deny" type="submit">Confirm Delete</button>
+                    </form>
+                  </details>
                   {% endif %}
                 </td>
               </tr>

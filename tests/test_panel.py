@@ -68,6 +68,24 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert "line-8" not in body
 
 
+def test_create_mission_modes_render_expected_fields(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    easy = client.get("/", params={"mission_mode": "easy"})
+    assert easy.status_code == 200
+    assert "Brain" not in easy.text
+    assert "Priority" not in easy.text
+    assert "Dry run" not in easy.text
+
+    advanced = client.get("/", params={"mission_mode": "advanced"})
+    assert advanced.status_code == 200
+    assert "Brain" in advanced.text
+    assert "Priority" in advanced.text
+    assert "Dry run" in advanced.text
+
+
 def test_panel_home_shows_not_found_hints(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
@@ -354,6 +372,56 @@ def test_panel_post_requires_auth_and_csrf(tmp_path, monkeypatch):
     assert auth_only.status_code == 403
 
 
+def test_panel_create_mission_job_contract_and_auth(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    unauth = client.post("/queue/create", data={"prompt": "x", "mode": "easy"})
+    assert unauth.status_code == 401
+
+    auth_only = client.post(
+        "/queue/create", data={"prompt": "x", "mode": "easy"}, headers=_operator_headers()
+    )
+    assert auth_only.status_code == 403
+
+    ok = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/create",
+        data={
+            "mode": "advanced",
+            "prompt": "check backups and report",
+            "mission_id": "ops_backup",
+            "title": "Backups audit",
+            "approval_required": "on",
+            "tags": "ops,nightly",
+            "priority": "high",
+            "brain": "reasoning",
+            "target": "host:db-01",
+            "scope": "workspace_only",
+            "dry_run": "on",
+        },
+    )
+    assert ok.status_code == 303
+
+    queued = sorted((fake_home / "VoxeraOS" / "notes" / "queue" / "inbox").glob("*.json"))
+    assert queued
+    payload = json.loads(queued[-1].read_text(encoding="utf-8"))
+    assert payload["job_version"] == 1
+    assert payload["source"] == "panel"
+    assert payload["prompt"] == "check backups and report"
+    assert payload["approval_required"] is True
+    assert payload["title"] == "Backups audit"
+    assert payload["tags"] == ["ops", "nightly"]
+    assert payload["priority"] == "high"
+    assert payload["brain"] == "reasoning"
+    assert payload["target"] == "host:db-01"
+    assert payload["dry_run"] is True
+    assert "created_ts_ms" in payload
+
+
 def test_panel_auth_csrf_failures_emit_counters_and_logs(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
@@ -555,6 +623,85 @@ def test_bundle_endpoints_require_auth(tmp_path, monkeypatch):
         "/queue/jobs/job-b.json/retry", headers=_operator_headers(), data={}, follow_redirects=False
     )
     assert no_csrf_retry.status_code == 403
+
+
+def test_jobs_mutations_preserve_filters_and_show_flash(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "inbox" / "job-a.json").write_text('{"goal":"x"}', encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    cancel = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-a.json/cancel?bucket=inbox&q=job-a&n=7",
+        data={},
+    )
+    assert cancel.status_code == 303
+    assert "bucket=inbox" in cancel.headers["location"]
+    assert "q=job-a" in cancel.headers["location"]
+    assert "n=7" in cancel.headers["location"]
+    assert (queue_dir / "canceled" / "job-a.json").exists()
+
+    jobs = client.get(cancel.headers["location"])
+    assert "canceled:job-a.json" in jobs.text
+
+
+def test_jobs_cancel_retry_approve_and_delete_guards(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-approval.json").write_text('{"goal":"g"}', encoding="utf-8")
+    (queue_dir / "pending" / "job-approval.pending.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "job-approval.approval.json").write_text(
+        json.dumps({"job": "job-approval.json", "reason": "needs approval"}), encoding="utf-8"
+    )
+    (queue_dir / "failed" / "job-failed.json").write_text('{"goal":"x"}', encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    approve = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/approvals/job-approval.json/approve?bucket=approvals",
+        data={},
+    )
+    assert approve.status_code == 303
+
+    retry = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-failed.json/retry?bucket=failed",
+        data={},
+    )
+    assert retry.status_code == 303
+    assert (queue_dir / "inbox" / "job-failed.json").exists()
+
+    done_dir = queue_dir / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    (done_dir / "job-done.json").write_text('{"goal":"done"}', encoding="utf-8")
+    bad_delete = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-done.json/delete?bucket=done",
+        data={"confirm_job_id": "wrong.json"},
+    )
+    assert bad_delete.status_code == 303
+    assert "delete_confirm_mismatch" in bad_delete.headers["location"]
+
+    good_delete = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-done.json/delete?bucket=done",
+        data={"confirm_job_id": "job-done.json"},
+    )
+    assert good_delete.status_code == 303
+    assert not (done_dir / "job-done.json").exists()
 
 
 def test_system_bundle_contains_manifest(tmp_path, monkeypatch):

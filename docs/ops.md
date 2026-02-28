@@ -108,7 +108,7 @@ voxera queue lock status      # lock table alias (same lock fields as queue heal
 ```
 
 Operational effects:
-- `queue cancel` moves matching jobs (inbox/pending/pending approvals/in-flight best effort) into `failed/` with sidecar `error="cancelled by operator"` and cleans pending approval markers.
+- `queue cancel` moves matching jobs (inbox/pending/pending approvals/in-flight best effort) into `canceled/` and cleans pending approval markers.
 - `queue retry` re-queues a failed primary payload into `inbox/` and emits `queue_job_retry` audit event linking old/new attempt.
 - `queue pause` creates `.paused`; daemon still reports status but skips processing new jobs until `queue resume` removes marker.
 - Daemon run loop acquires `notes/queue/.daemon.lock` to prevent multi-consumer races. Stale locks are reclaimed after `VOXERA_QUEUE_LOCK_STALE_S` (default 3600s); use `voxera queue unlock` for safe stale/orphaned lock recovery; if lock is live, stop daemon first or use `voxera queue unlock --force` as an explicit override.
@@ -119,6 +119,8 @@ Panel operator notes:
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume, cancel/retry actions, and links Done/Failed jobs to artifact-backed detail pages.
+- Panel Jobs supports approve/cancel/retry/delete (delete only for done/failed/canceled, with Basic auth + CSRF + explicit `confirm_job_id` guard).
+- Panel mutation redirects use HTTP 303 and preserve `/jobs` filters (`bucket`, `q`, `n`) with a flash banner.
 - Queue daemon + panel update a shared lightweight snapshot at `notes/queue/health.json`.
   - Write pattern is atomic (`health.json.tmp` then rename).
   - `last_ok_event` + `last_ok_ts_ms` indicate recent successful activity (tick/lock/shutdown release).
@@ -518,7 +520,7 @@ voxera ops bundle job <job_id>
 GET /jobs/{job_id}/bundle
 ```
 
-Panel `/jobs` now shows cross-bucket job rows (inbox/pending/approvals/done/failed) with artifact presence markers (plan/actions/stdout/stderr), last activity from `actions.jsonl`, and direct actions (detail/bundle/cancel/retry).
+Panel `/jobs` now shows cross-bucket job rows (inbox/pending/approvals/done/failed/canceled) with artifact presence markers (plan/actions/stdout/stderr), last activity from `actions.jsonl`, and direct actions (detail/raw/artifacts/bundle/approve/cancel/retry/delete).
 
 Bundle includes (size-capped and deterministic):
 - `job.json`

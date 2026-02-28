@@ -7,7 +7,7 @@ from typing import Any
 
 from .queue_daemon import MissionQueueDaemon
 
-JOB_BUCKETS = ("inbox", "pending", "approvals", "done", "failed")
+JOB_BUCKETS = ("inbox", "pending", "approvals", "done", "failed", "canceled")
 
 
 @dataclass(frozen=True)
@@ -34,9 +34,10 @@ def lookup_job(queue_root: Path, job_id: str) -> JobLookup | None:
         "approvals": queue_root / "pending",
         "done": queue_root / "done",
         "failed": queue_root / "failed",
+        "canceled": queue_root / "canceled",
     }
 
-    order = ["inbox", "pending", "done", "failed"]
+    order = ["inbox", "pending", "done", "failed", "canceled"]
     for bucket in order:
         primary = bucket_dirs[bucket] / normalized
         if not primary.exists():
@@ -93,6 +94,7 @@ def list_jobs(
             "approvals": queue_root / "pending",
             "done": queue_root / "done",
             "failed": queue_root / "failed",
+            "canceled": queue_root / "canceled",
         }[active_bucket]
         for path in sorted(
             dir_for_bucket.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True

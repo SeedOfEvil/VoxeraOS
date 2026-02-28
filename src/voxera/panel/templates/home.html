@@ -139,26 +139,59 @@
           <h2>Launch Mission Fast</h2>
           <form class="form-stack" method="post" action="/queue/create">
             <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <label>Queue Type
-              <select class="select" name="kind">
-                <option value="goal">Plan from goal</option>
-                <option value="mission">Run predefined mission</option>
-              </select>
+            <nav class="tabs" aria-label="Create mission modes">
+              <a class="tab-btn {% if mission_mode == 'easy' %}is-active{% endif %}" href="/?mission_mode=easy">Easy</a>
+              <a class="tab-btn {% if mission_mode == 'default' %}is-active{% endif %}" href="/?mission_mode=default">Default</a>
+              <a class="tab-btn {% if mission_mode == 'advanced' %}is-active{% endif %}" href="/?mission_mode=advanced">Advanced</a>
+            </nav>
+
+            <input type="hidden" name="mode" id="mission_mode_input" value="{{mission_mode}}" />
+
+            <label>Prompt
+              <textarea class="textarea" name="prompt" rows="4" placeholder="Describe what the mission should accomplish" required></textarea>
             </label>
-            <div class="form-row">
-              <label>Mission ID
-                <select class="select" name="mission_id">
-                  <option value="">Select mission...</option>
-                  {% for mission in missions %}
-                    <option value="{{mission.id}}">{{mission.id}} — {{mission.title}}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label>Goal (for planner)
-                <input class="input" type="text" name="goal" placeholder="e.g. create a daily check-in and open calendar" />
-              </label>
+
+            <label><input type="checkbox" name="approval_required" checked /> Approval required</label>
+
+            <div data-mission-fields="default" {% if mission_mode == 'easy' %}style="display:none;"{% endif %}>
+              <div class="form-row">
+                <label>Mission ID
+                  <input class="input" type="text" name="mission_id" placeholder="optional mission id" />
+                </label>
+                <label>Title
+                  <input class="input" type="text" name="title" placeholder="optional title" />
+                </label>
+              </div>
             </div>
-            <button class="btn btn-primary" type="submit">Queue Mission</button>
+
+            {% if mission_mode == 'advanced' %}
+            <div data-mission-fields="advanced">
+              <div class="form-row">
+                <label>Brain
+                  <input class="input" type="text" name="brain" placeholder="primary|fast|reasoning|fallback" />
+                </label>
+                <label>Priority
+                  <input class="input" type="text" name="priority" placeholder="low|normal|high" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Tags
+                  <input class="input" type="text" name="tags" placeholder="ops,urgent,nightly" />
+                </label>
+                <label>Target
+                  <input class="input" type="text" name="target" placeholder="host:db-01 or https://..." />
+                </label>
+              </div>
+              <label>Scope
+                <input class="input" type="text" name="scope" placeholder="workspace_only|home_only|system" />
+              </label>
+              <label><input type="checkbox" name="dry_run" /> Dry run</label>
+            </div>
+            {% else %}
+            <div data-mission-fields="advanced" style="display:none;"></div>
+            {% endif %}
+
+            <button class="btn btn-primary" type="submit">Create Mission Job</button>
           </form>
         </article>
 
@@ -370,6 +403,36 @@
 
     tabButtons.forEach((button) => {
       button.addEventListener('click', () => activateTab(button.dataset.tabBtn));
+    });
+
+    const missionModeInput = document.getElementById('mission_mode_input');
+    const missionModeTabs = document.querySelectorAll('[href^="/?mission_mode="]');
+    const defaultFields = document.querySelector('[data-mission-fields="default"]');
+    const advancedFields = document.querySelector('[data-mission-fields="advanced"]');
+
+    function setMissionMode(mode) {
+      if (!missionModeInput) return;
+      missionModeInput.value = mode;
+      missionModeTabs.forEach((tab) => {
+        const active = tab.getAttribute('href') === `/?mission_mode=${mode}`;
+        tab.classList.toggle('is-active', active);
+      });
+      if (defaultFields) {
+        defaultFields.style.display = mode === 'easy' ? 'none' : '';
+      }
+      if (advancedFields) {
+        advancedFields.style.display = mode === 'advanced' ? '' : 'none';
+      }
+    }
+
+    missionModeTabs.forEach((tab) => {
+      tab.addEventListener('click', (event) => {
+        event.preventDefault();
+        const url = new URL(tab.href, window.location.origin);
+        const mode = url.searchParams.get('mission_mode') || 'easy';
+        setMissionMode(mode);
+        window.history.replaceState({}, '', `/?mission_mode=${mode}`);
+      });
     });
   </script>
 </body>

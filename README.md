@@ -337,7 +337,7 @@ Back-compat safety behavior:
 - Mis-dropped `notes/queue/pending/*.json` primary jobs are auto-relocated to `inbox/` on daemon tick (never silently stuck forever).
 
 Operator controls:
-- `voxera queue cancel <job_id_or_filename>` → move job to `failed/` with sidecar `error="cancelled by operator"`.
+- `voxera queue cancel <job_id_or_filename>` → move job to `canceled/` and remove pending approval markers.
 - `voxera queue retry <job_id_or_filename>` → move failed job payload back to `inbox/` and emit `queue_job_retry` audit event.
 - `voxera queue pause` / `voxera queue resume` → create/remove queue pause marker (`.paused`) and stop/start new processing.
 
@@ -553,14 +553,21 @@ http://127.0.0.1:8844/jobs?bucket=all&n=80
 ```
 
 Key endpoints:
-- `GET /jobs` with query params `bucket=all|inbox|pending|approvals|done|failed`, `q=<substring>`, `n=<max 200>`.
+- `GET /jobs` with query params `bucket=all|inbox|pending|approvals|done|failed|canceled`, `q=<substring>`, `n=<max 200>`.
 - `GET /jobs/{job_id}` for metadata, approval details, artifacts, and audit timeline.
 - `GET /jobs/{job_id}/bundle` to export a per-job incident bundle (`.zip`).
+- `GET /jobs/{job_id}/raw` and `GET /jobs/{job_id}/artifacts` for raw operator payload views.
 - `GET /bundle/system` to export a system snapshot bundle (`.zip`).
 
 Auth/CSRF notes:
 - Bundle download endpoints require panel Basic auth (`VOXERA_PANEL_OPERATOR_PASSWORD`, optional `VOXERA_PANEL_OPERATOR_USER` (defaults to `admin` when unset)).
 - Mutation routes still require both Basic auth + CSRF token.
+- Mutations redirect with HTTP 303 back to `/jobs` and preserve active filters (`bucket`, `q`, `n`) with a flash message.
+
+Create Mission modes (progressive enhancement):
+- `easy`: prompt + approval toggle + create.
+- `default`: easy + optional `mission_id` + optional `title`.
+- `advanced`: default + `brain`, `priority`, `tags`, `target`, `scope`, `dry_run`.
 
 CLI equivalents:
 ```bash
