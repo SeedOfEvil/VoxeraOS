@@ -9,7 +9,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -48,6 +48,17 @@ ERROR_MESSAGES = {
     "mission_schema_invalid": "Mission template failed schema validation.",
     "get_mutation_disabled": "GET mutation endpoints are disabled; submit the form normally.",
     "panel_prompt_required": "Prompt / Goal is required.",
+}
+
+FLASH_MESSAGES = {
+    "approved": "Approval granted.",
+    "approved_always": "Approval granted and remembered for matching scope.",
+    "denied": "Approval denied.",
+    "canceled": "Job moved to canceled/.",
+    "retried": "Job re-enqueued into inbox/.",
+    "deleted": "Terminal job deleted.",
+    "cancel_not_found": "Cannot cancel: job was not found in active queue buckets.",
+    "cannot_cancel_terminal": "Cannot cancel terminal jobs. Use retry/delete for failed/canceled/done.",
 }
 
 CSRF_COOKIE = "voxera_panel_csrf"
@@ -447,7 +458,8 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "audit_timeline": relevant_events[:40],
         "has_approval": bool(approval),
         "can_cancel": bucket in {"inbox", "pending", "approvals"},
-        "can_retry": bucket == "failed",
+        "can_retry": bucket in {"failed", "canceled"},
+        "can_delete": bucket in {"done", "failed", "canceled"},
     }
 
 
@@ -484,6 +496,18 @@ def _job_ref_bucket(row: dict[str, Any]) -> str:
     if bucket == "approvals":
         return "pending/approvals"
     return bucket
+
+
+async def _jobs_redirect(request: Request, flash: str) -> RedirectResponse:
+    bucket = (await _request_value(request, "bucket", "all")).strip() or "all"
+    q = (await _request_value(request, "q", "")).strip()
+    n_raw = (await _request_value(request, "n", "80")).strip()
+    try:
+        n = max(1, min(int(n_raw), 200))
+    except ValueError:
+        n = 80
+    query = urlencode({"bucket": bucket, "q": q, "n": n, "flash": flash})
+    return RedirectResponse(url=f"/jobs?{query}", status_code=303)
 
 
 def _job_artifact_payload(queue_root: Path, job_name: str) -> dict[str, Any]:
@@ -765,7 +789,7 @@ async def approve_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=True)
-    return RedirectResponse(url="/", status_code=303)
+    return await _jobs_redirect(request, "approved")
 
 
 @app.post("/queue/approvals/{ref}/approve-always")
@@ -773,7 +797,7 @@ async def approve_always_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=True, approve_always=True)
-    return RedirectResponse(url="/", status_code=303)
+    return await _jobs_redirect(request, "approved_always")
 
 
 @app.post("/queue/approvals/{ref}/deny")
@@ -781,11 +805,11 @@ async def deny_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.resolve_approval(ref, approve=False)
-    return RedirectResponse(url="/", status_code=303)
+    return await _jobs_redirect(request, "denied")
 
 
 @app.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
+def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80, flash: str = ""):
     queue_root = _queue_root()
     rows = list_jobs(queue_root, bucket=bucket, q=q, limit=n)
     rows_enriched: list[dict[str, Any]] = []
@@ -796,6 +820,11 @@ def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
         enriched["bucket_ref"] = _job_ref_bucket(row)
         enriched["artifacts"] = _job_artifact_flags(queue_root, job_id)
         enriched["last_activity"] = _last_activity(artifacts_dir)
+        row_bucket = str(row.get("bucket") or "")
+        enriched["can_cancel"] = row_bucket in {"inbox", "pending", "approvals"}
+        enriched["can_retry"] = row_bucket in {"failed", "canceled"}
+        enriched["can_delete"] = row_bucket in {"done", "failed", "canceled"}
+        enriched["can_bundle"] = row_bucket == "done"
         rows_enriched.append(enriched)
 
     log(
@@ -816,6 +845,7 @@ def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80):
         q=q,
         n=max(1, min(n, 200)),
         buckets=["all", *JOB_BUCKETS],
+        flash=FLASH_MESSAGES.get(flash, ""),
         csrf_token=csrf_token,
         auth_setup_banner=_auth_setup_banner(),
     )
@@ -919,9 +949,19 @@ def system_bundle(request: Request):
 @app.post("/queue/jobs/{ref}/cancel")
 async def cancel_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    daemon.cancel_job(ref)
-    return RedirectResponse(url="/", status_code=303)
+    queue_root = _queue_root()
+    lookup = lookup_job(queue_root, ref)
+    if lookup and lookup.bucket in {"done", "failed", "canceled"}:
+        _panel_security_counter_incr("panel_4xx_count", last_error="cancel_terminal_job_rejected")
+        return await _jobs_redirect(request, "cannot_cancel_terminal")
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    try:
+        daemon.cancel_job(ref)
+    except FileNotFoundError:
+        _panel_security_counter_incr("panel_4xx_count", last_error="cancel_job_not_found")
+        return await _jobs_redirect(request, "cancel_not_found")
+    return await _jobs_redirect(request, "canceled")
 
 
 @app.post("/queue/jobs/{ref}/retry")
@@ -929,7 +969,21 @@ async def retry_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
     daemon.retry_job(ref)
-    return RedirectResponse(url="/", status_code=303)
+    return await _jobs_redirect(request, "retried")
+
+
+@app.post("/queue/jobs/{ref}/delete")
+async def delete_queue_job(ref: str, request: Request):
+    await _require_mutation_guard(request)
+    confirm = await _request_value(request, "confirm", "")
+    daemon = MissionQueueDaemon(queue_root=_queue_root())
+    try:
+        daemon.delete_terminal_job(ref, confirm=confirm)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return await _jobs_redirect(request, "deleted")
 
 
 @app.post("/queue/pause")

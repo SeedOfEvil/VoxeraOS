@@ -144,7 +144,7 @@ This creates (mkdir -p only; never deletes):
 
 Equivalent manual command:
 ```bash
-mkdir -p ~/VoxeraOS/notes/queue/{inbox,pending/approvals,done,failed,artifacts,_archive}
+mkdir -p ~/VoxeraOS/notes/queue/{inbox,pending/approvals,done,failed,canceled,artifacts,_archive}
 ```
 
 Start/restart daemon service:
@@ -261,7 +261,7 @@ Queue status troubleshooting:
 - Approval artifacts are counted from `pending/approvals/*.approval.json`.
 - If an approval artifact is malformed, `voxera queue approvals list` still shows an "(unparseable approval artifact)" row and logs `queue_status_parse_failed` in audit output.
 
-Completed jobs are moved to `done/`; invalid or denied jobs are moved to `failed/`.
+Completed jobs are moved to `done/`; invalid or denied jobs are moved to `failed/`; operator-canceled jobs are moved to `canceled/`.
 
 Failed-job sidecar contract and retention:
 - Optional sidecar path: `failed/<job_stem>.error.json`.
@@ -337,13 +337,13 @@ Back-compat safety behavior:
 - Mis-dropped `notes/queue/pending/*.json` primary jobs are auto-relocated to `inbox/` on daemon tick (never silently stuck forever).
 
 Operator controls:
-- `voxera queue cancel <job_id_or_filename>` → move job to `failed/` with sidecar `error="cancelled by operator"`.
-- `voxera queue retry <job_id_or_filename>` → move failed job payload back to `inbox/` and emit `queue_job_retry` audit event.
+- `voxera queue cancel <job_id_or_filename>` → move active job to `canceled/` and clean pending/approval sidecars.
+- `voxera queue retry <job_id_or_filename>` → move failed/canceled payload back to `inbox/`, archiving prior failure sidecars, and emit `queue_job_retry`.
 - `voxera queue pause` / `voxera queue resume` → create/remove queue pause marker (`.paused`) and stop/start new processing.
 
 Panel updates:
-- Home dashboard exposes pause/resume and cancel/retry actions.
-- Done/Failed rows link to job detail with artifacts (`plan.json`, `actions.jsonl`, `stdout.txt`, `stderr.txt`, `outputs/generated_files.json`).
+- Home dashboard exposes pause/resume and lifecycle actions (approve/deny, cancel, retry, delete).
+- Done/Failed/Canceled rows link to job detail with artifacts (`plan.json`, `actions.jsonl`, `stdout.txt`, `stderr.txt`, `outputs/generated_files.json`).
 
 - Sandbox artifacts: `~/.voxera/artifacts/<job_id>/`
 - Sandbox workspace: `~/.voxera/workspace/<job_id>/`
@@ -565,7 +565,7 @@ http://127.0.0.1:8844/jobs?bucket=all&n=80
 ```
 
 Key endpoints:
-- `GET /jobs` with query params `bucket=all|inbox|pending|approvals|done|failed`, `q=<substring>`, `n=<max 200>`.
+- `GET /jobs` with query params `bucket=all|inbox|pending|approvals|done|failed|canceled`, `q=<substring>`, `n=<max 200>`.
 - `GET /jobs/{job_id}` for metadata, approval details, artifacts, and audit timeline.
 - `GET /jobs/{job_id}/bundle` to export a per-job incident bundle (`.zip`).
 - `GET /bundle/system` to export a system snapshot bundle (`.zip`).
@@ -593,6 +593,14 @@ When `last_ok_ts_ms` is newer than `last_error_ts_ms` by more than 5 minutes, qu
 
 Panel bundle downloads write into deterministic incident directories: `notes/queue/_archive/incident-<YYYYMMDD-HHMMSS>-<job_stem_or_system>/`.
 Job bundle notes now avoid normal-path noise: optional approval/failed-sidecar notes are collapsed to one optional note, while missing-expected artifacts emit explicit anomaly notes.
+
+## Panel job actions
+
+- **Cancel** (`/queue/jobs/{job}/cancel`) moves active jobs from `inbox/` or `pending/` into `canceled/`.
+- Cancel is **active-only**; terminal jobs (`done/`, `failed/`, `canceled/`) are not cancelable and should use retry/delete flows.
+- **Retry** (`/queue/jobs/{job}/retry`) accepts jobs in `failed/` or `canceled/` and re-enqueues them into `inbox/`.
+- **Delete** (`/queue/jobs/{job}/delete`) is terminal-only (`done/`, `failed/`, `canceled/`) and requires exact `confirm=<job_filename>`.
+- Job artifacts live under `~/VoxeraOS/notes/queue/artifacts/<job_stem>/`; per-job bundles are available from `/jobs/<job>.json/bundle`.
 
 ## Queue job artifacts
 

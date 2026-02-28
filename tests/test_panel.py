@@ -644,6 +644,13 @@ def test_bundle_endpoints_require_auth(tmp_path, monkeypatch):
         "/queue/jobs/job-b.json/retry", headers=_operator_headers(), data={}, follow_redirects=False
     )
     assert no_csrf_retry.status_code == 403
+    no_csrf_delete = client.post(
+        "/queue/jobs/job-a.json/delete",
+        headers=_operator_headers(),
+        data={"confirm": "job-a.json"},
+        follow_redirects=False,
+    )
+    assert no_csrf_delete.status_code == 403
 
 
 def test_system_bundle_contains_manifest(tmp_path, monkeypatch):
@@ -697,3 +704,205 @@ def test_panel_hides_setup_required_banner_when_operator_password_set(tmp_path, 
     assert jobs_res.status_code == 200
     assert "Setup required: panel operator password is not configured." not in home_res.text
     assert "Setup required: panel operator password is not configured." not in jobs_res.text
+
+
+def test_cancel_moves_to_canceled_and_hidden_from_active_buckets(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "inbox" / "job-cancel.json").write_text('{"goal":"x"}', encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-cancel.json/cancel",
+        data={"bucket": "pending", "q": "job-cancel", "n": "20"},
+    )
+    assert res.status_code == 303
+    assert "flash=canceled" in res.headers["location"]
+    assert "bucket=pending" in res.headers["location"]
+
+    assert (queue_dir / "canceled" / "job-cancel.json").exists()
+    assert not (queue_dir / "inbox" / "job-cancel.json").exists()
+
+    pending = client.get("/jobs", params={"bucket": "pending"})
+    assert "job-cancel.json" not in pending.text
+    canceled = client.get("/jobs", params={"bucket": "canceled"})
+    assert "job-cancel.json" in canceled.text
+
+
+def test_retry_from_failed_and_canceled_requeues_to_inbox(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "canceled").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-f.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "job-f.error.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "job": "job-f.json",
+                "error": "boom",
+                "timestamp_ms": 1700000000000,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "canceled" / "job-c.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    res_failed = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-f.json/retry",
+        data={"bucket": "failed", "q": "job", "n": "10"},
+    )
+    assert res_failed.status_code == 303
+    assert "flash=retried" in res_failed.headers["location"]
+
+    res_canceled = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-c.json/retry",
+        data={"bucket": "canceled", "q": "job", "n": "10"},
+    )
+    assert res_canceled.status_code == 303
+    assert (queue_dir / "inbox" / "job-f.json").exists()
+    assert (queue_dir / "inbox" / "job-c.json").exists()
+    assert not (queue_dir / "failed" / "job-f.error.json").exists()
+
+
+def test_delete_only_terminal_jobs_and_confirm_match(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    for bucket in ["done", "failed", "canceled", "inbox", "pending", "pending/approvals"]:
+        (queue_dir / bucket).mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-d.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "job-f.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "job-f.error.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "job": "job-f.json",
+                "error": "boom",
+                "timestamp_ms": 1700000000000,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "canceled" / "job-c.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "inbox" / "job-i.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "pending" / "job-p.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "job-a.approval.json").write_text("{}", encoding="utf-8")
+    art = queue_dir / "artifacts" / "job-d"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "stdout.txt").write_text("ok", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    mismatch = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-d.json/delete",
+        data={"confirm": "wrong.json", "bucket": "done", "q": "", "n": "20"},
+    )
+    assert mismatch.status_code == 400
+
+    ok_done = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-d.json/delete",
+        data={"confirm": "job-d.json", "bucket": "done", "q": "", "n": "20"},
+    )
+    assert ok_done.status_code == 303
+    assert not (queue_dir / "done" / "job-d.json").exists()
+    assert not art.exists()
+
+    for job in ["job-f.json", "job-c.json"]:
+        ok = _authed_csrf_request(
+            client,
+            "post",
+            f"/queue/jobs/{job}/delete",
+            data={"confirm": job, "bucket": "all", "q": "", "n": "20"},
+        )
+        assert ok.status_code == 303
+
+    for job in ["job-i.json", "job-p.json", "job-a.json"]:
+        bad = _authed_csrf_request(
+            client,
+            "post",
+            f"/queue/jobs/{job}/delete",
+            data={"confirm": job, "bucket": "all", "q": "", "n": "20"},
+        )
+        assert bad.status_code == 404
+
+
+def test_jobs_page_flash_rendered_from_redirect_param(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    res = client.get("/jobs", params={"flash": "retried"})
+    assert res.status_code == 200
+    assert "Job re-enqueued into inbox/." in res.text
+
+
+def test_cancel_failed_job_redirects_with_flash_instead_of_500(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-failed.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-failed.json/cancel",
+        data={"bucket": "failed", "q": "job", "n": "25"},
+    )
+
+    assert res.status_code == 303
+    assert "flash=cannot_cancel_terminal" in res.headers["location"]
+    assert "bucket=failed" in res.headers["location"]
+
+
+def test_cancel_missing_job_redirects_with_flash_instead_of_500(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/not-there.json/cancel",
+        data={"bucket": "all", "q": "not-there", "n": "25"},
+    )
+
+    assert res.status_code == 303
+    assert "flash=cancel_not_found" in res.headers["location"]
+
+
+def test_jobs_failed_bucket_does_not_render_cancel_button(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-failed.json").write_text('{"goal":"f"}', encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    res = client.get("/jobs", params={"bucket": "failed"})
+
+    assert res.status_code == 200
+    assert "/queue/jobs/job-failed.json/cancel" not in res.text
+    assert "/queue/jobs/job-failed.json/retry" in res.text

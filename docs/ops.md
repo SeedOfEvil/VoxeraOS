@@ -108,8 +108,8 @@ voxera queue lock status      # lock table alias (same lock fields as queue heal
 ```
 
 Operational effects:
-- `queue cancel` moves matching jobs (inbox/pending/pending approvals/in-flight best effort) into `failed/` with sidecar `error="cancelled by operator"` and cleans pending approval markers.
-- `queue retry` re-queues a failed primary payload into `inbox/` and emits `queue_job_retry` audit event linking old/new attempt.
+- `queue cancel` moves matching active jobs (`inbox/`, `pending/`, pending approvals/in-flight best effort) into `canceled/` and cleans pending approval markers.
+- `queue retry` re-queues a `failed/` or `canceled/` primary payload into `inbox/`, archiving prior failed sidecars when present, and emits `queue_job_retry`.
 - `queue pause` creates `.paused`; daemon still reports status but skips processing new jobs until `queue resume` removes marker.
 - Daemon run loop acquires `notes/queue/.daemon.lock` to prevent multi-consumer races. Stale locks are reclaimed after `VOXERA_QUEUE_LOCK_STALE_S` (default 3600s); use `voxera queue unlock` for safe stale/orphaned lock recovery; if lock is live, stop daemon first or use `voxera queue unlock --force` as an explicit override.
 
@@ -119,7 +119,7 @@ Panel operator notes:
 - `/missions/create` is the operator Create Mission intake (Easy mode: prompt-only) and writes deterministic jobs to `notes/queue/inbox/job-panel-mission-<slug>-<ts>.json`.
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
-- Panel home shows pause/resume, cancel/retry actions, and links Done/Failed jobs to artifact-backed detail pages.
+- Panel home shows pause/resume + lifecycle actions (approve/deny, cancel, retry, delete) and links Done/Failed/Canceled jobs to artifact-backed detail pages.
 ### Create Mission (panel) quick runbook
 
 - Open panel home (`/`) and locate **Create Mission**.
@@ -127,6 +127,7 @@ Panel operator notes:
 - Successful submit redirects to `/` with a success banner containing the created filename / mission id.
 - Validation failure (empty prompt) redirects to `/` with a clear error banner.
 - Queue flow remains standard: `inbox/` → `pending/approvals/` (when policy requires) → `done/`.
+- `approval_required=true` is a **hard gate**: daemon always blocks in `pending/approvals/` before any planning or execution, even for safe/no-op missions.
 - Artifacts and bundles are available from the Jobs console (`/jobs`, `/jobs/<job>.json`, `/jobs/<job>.json/bundle`).
 
 - Queue daemon + panel update a shared lightweight snapshot at `notes/queue/health.json`.
@@ -176,6 +177,13 @@ Panel operator notes:
 - Health snapshot: `~/VoxeraOS/notes/queue/health.json`
 - Queue artifacts root: `~/VoxeraOS/notes/queue/artifacts/`
 - Audit log stream (systemd): `journalctl --user -u voxera-daemon.service -u voxera-panel.service -f`
+
+## Panel job actions
+
+- **Cancel**: moves active jobs (`inbox/`, `pending/`) to `canceled/` and removes pending/approval sidecars.
+- **Retry**: allowed from `failed/` and `canceled/`; moves job payload back to `inbox/` and archives old failure sidecars.
+- **Delete**: guarded terminal cleanup for `done/`, `failed/`, `canceled/` only; requires Basic auth + CSRF + exact `confirm` filename.
+- Artifacts: `~/VoxeraOS/notes/queue/artifacts/<job_stem>/`; bundles via `/jobs/<job>.json/bundle` or CLI `voxera ops bundle job <job_id>`.
 
 ## Artifact bundle contract
 
@@ -528,7 +536,7 @@ voxera ops bundle job <job_id>
 GET /jobs/{job_id}/bundle
 ```
 
-Panel `/jobs` now shows cross-bucket job rows (inbox/pending/approvals/done/failed) with artifact presence markers (plan/actions/stdout/stderr), last activity from `actions.jsonl`, and direct actions (detail/bundle/cancel/retry).
+Panel `/jobs` now shows cross-bucket job rows (inbox/pending/approvals/done/failed/canceled) with artifact presence markers (plan/actions/stdout/stderr), last activity from `actions.jsonl`, flash banners, and direct actions (detail/bundle/approve/deny/cancel/retry/delete).
 
 Bundle includes (size-capped and deterministic):
 - `job.json`

@@ -42,6 +42,9 @@
       {% if payload.can_retry %}
       <form method="post" action="/queue/jobs/{{payload.job_id}}/retry"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Retry</button></form>
       {% endif %}
+      {% if payload.can_delete %}
+      <form method="post" action="/queue/jobs/{{payload.job_id}}/delete"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="confirm" value="{{payload.job_id}}" /><button class="btn btn-deny" type="submit">Delete</button></form>
+      {% endif %}
     </div>
   </section>
 
