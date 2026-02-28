@@ -132,7 +132,7 @@ skills/                       — Skill definitions (manifest.yml + .py per skil
 ├── system/window_list/
 └── sandbox/exec/             — Podman-based; rootless; --network=none by default
 
-tests/                        — 32 test files, 6,789 lines
+tests/                        — ~30 test files, ~7k lines (run `cloc --vcs git` for current counts)
 ├── test_mission_planner.py   — Planner fallback chains, error classification, JSON recovery (46 KB)
 ├── test_cli_queue.py         — Queue lifecycle, approvals, retry/cancel/delete (15 KB)
 ├── test_queue_daemon.py      — Failed-sidecar schema v1, retention pruning, lifecycle smoke
@@ -144,7 +144,7 @@ deploy/systemd/user/
 └── voxera-panel.service      — FastAPI panel; requires VOXERA_PANEL_OPERATOR_PASSWORD
 
 docs/                         — Architecture, security, ops, roadmap, memory
-Makefile                      — 35 targets: dev, fmt, lint, type, test, e2e,
+Makefile                      — 30+ targets: dev, fmt, lint, type, test, e2e,
                                 check, panel, services-*, update, release-check,
                                 merge-readiness-check, full-validation-check
 ```

@@ -159,7 +159,8 @@ This file is the single, persistent project memory for Codex-assisted work.
 
 ## 2026-02-28 — PR #N/A — Full codebase analysis + documentation alignment pass
 - Summary:
-  - Conducted full codebase analysis: 116 source files, 16,642 lines Python, 6,789 lines tests, 170 git commits.
+  - Conducted full codebase analysis (as of 2026-02-28): ~120 source files, ~17k lines Python,
+    ~7k lines tests, ~170 git commits. Run `cloc --vcs git` for current counts.
   - Rewrote `docs/ARCHITECTURE.md` from stub (33 lines) to complete reference doc: 3-layer diagram, full
     module map with file-level descriptions, tech stack table, data flow, queue lifecycle diagram,
     config precedence, and validation tiers.
