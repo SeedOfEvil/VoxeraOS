@@ -626,3 +626,15 @@ If `VOXERA_PANEL_OPERATOR_PASSWORD` is missing, panel home/jobs show a Setup req
 - Ops bundles default to `notes/queue/_archive/<YYYYMMDD-HHMMSS>/`, or you can force a single incident handoff folder via `--dir` (or `VOXERA_OPS_BUNDLE_DIR`) so system + job zips land together:
   - `voxera ops bundle system --dir notes/queue/_archive/INCIDENT-123`
   - `voxera ops bundle job <job_ref> --dir notes/queue/_archive/INCIDENT-123`
+
+## Planner runtime capabilities snapshot
+
+Inspect the live runtime catalog that constrains planning/execution:
+
+```bash
+voxera ops capabilities
+```
+
+The command prints deterministic JSON with `schema_version`, `generated_ts_ms`, `missions`, `allowed_apps`, and `skills`. Data comes from the real mission catalog, skill manifests, and the `system.open_app` allowlist.
+
+Cloud planner prompts now include a compact `CAPABILITIES` block from this snapshot. Planning and queue execution fail fast when a mission ID is unknown or `system.open_app` targets an app outside `allowed_apps`, with closest-match suggestions for recovery.

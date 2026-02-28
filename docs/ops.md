@@ -57,6 +57,19 @@ Key runtime env vars (defaults):
 
 Daemon startup writes a fresh redacted `_ops/config_snapshot.json`, `_ops/config_snapshot.sha256`, and baseline `_ops/config_snapshot.last.sha256`. If the effective redacted config fingerprint changes since previous daemon start, Voxera emits exactly one structured audit event (`config_drift_detected`) and writes `config_drift_note.txt` with timestamp and old/new fingerprints. Secrets are never included in these files/events.
 
+
+## Runtime capabilities snapshot for planning
+
+Use the runtime catalog snapshot to inspect exactly what mission planning/execution may target:
+
+```bash
+voxera ops capabilities
+```
+
+This prints deterministic JSON (`schema_version`, `generated_ts_ms`, `missions`, `allowed_apps`, `skills`) sourced from the live mission catalog, skill registry manifests, and `system.open_app` allowlist.
+
+Planner prompts include a compact `CAPABILITIES` block from this snapshot so cloud brains are constrained to runtime-known mission IDs and enum-like arguments. Validation also runs before execution: unknown `mission_id` values and invalid `system.open_app` targets fail fast with closest-match suggestions.
+
 Note: systemd user services do not inherit ad-hoc shell exports by default; configure env via Voxera runtime env files/service unit overrides if drift behavior seems unexpected.
 ## Queue contract + intake flow
 

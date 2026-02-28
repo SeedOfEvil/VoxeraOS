@@ -25,6 +25,11 @@ from ..health import (
 from ..paths import queue_root as default_queue_root
 from ..skills.registry import SkillRegistry
 from ..skills.runner import SkillRunner
+from .capabilities_snapshot import (
+    generate_capabilities_snapshot,
+    validate_mission_id_against_snapshot,
+    validate_mission_steps_against_snapshot,
+)
 from .mission_planner import MissionPlannerError, plan_mission
 from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
 
@@ -789,13 +794,19 @@ class MissionQueueDaemon:
         self, payload: dict[str, Any], *, job_ref: str
     ) -> MissionTemplate:
         normalized = self._normalize_payload(payload)
+        snapshot = generate_capabilities_snapshot(self.mission_runner.skill_runner.registry)
         if "mission_id" in normalized:
-            return get_mission(normalized["mission_id"])
+            validate_mission_id_against_snapshot(normalized["mission_id"], snapshot)
+            mission = get_mission(normalized["mission_id"])
+            validate_mission_steps_against_snapshot(mission, snapshot)
+            return mission
         if "steps" in normalized:
-            return self._build_inline_mission(normalized, job_ref=job_ref)
+            mission = self._build_inline_mission(normalized, job_ref=job_ref)
+            validate_mission_steps_against_snapshot(mission, snapshot)
+            return mission
         if "goal" in normalized:
             try:
-                return asyncio.run(
+                mission = asyncio.run(
                     plan_mission(
                         goal=normalized["goal"],
                         cfg=self.cfg,
@@ -804,6 +815,8 @@ class MissionQueueDaemon:
                         job_ref=job_ref,
                     )
                 )
+                validate_mission_steps_against_snapshot(mission, snapshot)
+                return mission
             except MissionPlannerError as exc:
                 raise RuntimeError(str(exc)) from exc
         raise ValueError(

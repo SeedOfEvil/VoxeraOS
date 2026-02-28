@@ -15,6 +15,10 @@ from ..brain.openai_compat import OpenAICompatBrain
 from ..models import AppConfig, BrainConfig
 from ..skills.arg_normalizer import canonicalize_args
 from ..skills.registry import SkillRegistry
+from .capabilities_snapshot import (
+    generate_capabilities_snapshot,
+    validate_mission_steps_against_snapshot,
+)
 from .missions import MissionStep, MissionTemplate
 
 
@@ -24,6 +28,8 @@ class MissionPlannerError(RuntimeError):
 
 _MAX_STEPS = 5
 _PLANNER_TIMEOUT_SECONDS = 25
+_CAP_DESC_LIMIT = 72
+_CAP_NOTES_LIMIT = 90
 
 
 @dataclass(frozen=True)
@@ -398,6 +404,7 @@ def _build_brain_candidates(cfg: AppConfig) -> list[_BrainCandidate]:
 
 
 async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
+    snapshot = generate_capabilities_snapshot(registry)
     skills = sorted(registry.discover().values(), key=lambda m: m.id)
 
     skills_block = "\n".join(
@@ -422,7 +429,10 @@ async def _plan_payload(goal: str, registry: SkillRegistry, brain) -> dict:
         },
         {
             "role": "user",
-            "content": (f"Goal: {goal}\nSkill catalog:\n{skills_block}\nReturn only JSON."),
+            "content": (
+                f"Goal: {goal}\nSkill catalog:\n{skills_block}\n"
+                f"{_build_capabilities_prompt_block(snapshot)}\nReturn only JSON."
+            ),
         },
     ]
 
@@ -518,6 +528,46 @@ def _normalize_sandbox_exec_step(step: MissionStep) -> MissionStep:
 
     args["command"] = normalized_command
     return MissionStep(skill_id=step.skill_id, args=args)
+
+
+def _truncate(text: str, *, max_len: int) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1].rstrip() + "…"
+
+
+def _build_capabilities_prompt_block(snapshot: dict) -> str:
+    mission_ids = ", ".join(
+        item["id"]
+        for item in snapshot.get("missions", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    )
+    allowed_apps = ", ".join(str(item) for item in snapshot.get("allowed_apps", []))
+    skill_lines = []
+    for item in snapshot.get("skills", []):
+        if not isinstance(item, dict):
+            continue
+        skill_id = str(item.get("id", "")).strip()
+        if not skill_id:
+            continue
+        desc = _truncate(str(item.get("description", "")), max_len=_CAP_DESC_LIMIT)
+        skill_lines.append(f"- {skill_id}: {desc}")
+        if len(skill_lines) >= 12:
+            break
+
+    return (
+        "CAPABILITIES (runtime snapshot):\n"
+        f"missions: {mission_ids}\n"
+        f"allowed_apps (system.open_app.name): {allowed_apps}\n"
+        "constraints:\n"
+        "- Use mission IDs exactly as listed. Do not invent mission_id values.\n"
+        "- For system.open_app, name must be one of allowed_apps.\n"
+        "- If uncertain or missing context, ask for clarification rather than guessing.\n"
+        "skills(sample):\n"
+        f"{chr(10).join(skill_lines)}\n"
+        f"notes: {_truncate('Runtime catalog is authoritative; avoid placeholders.', max_len=_CAP_NOTES_LIMIT)}"
+    )
 
 
 async def plan_mission(
@@ -710,6 +760,18 @@ async def plan_mission(
     rewritten_steps = [_normalize_file_step_paths(step) for step in rewritten_steps]
     rewritten_steps = [_normalize_sandbox_exec_step(step) for step in rewritten_steps]
     rewritten_steps = _rewrite_non_explicit_sandbox_steps(goal, rewritten_steps)
+
+    snapshot = generate_capabilities_snapshot(registry)
+    validate_mission_steps_against_snapshot(
+        MissionTemplate(
+            id="cloud_planned",
+            title=str(title),
+            goal=goal,
+            notes=notes,
+            steps=rewritten_steps,
+        ),
+        snapshot,
+    )
 
     log(
         {

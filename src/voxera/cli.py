@@ -19,6 +19,11 @@ from .config import (
     write_config_fingerprint,
     write_config_snapshot,
 )
+from .core.capabilities_snapshot import (
+    generate_capabilities_snapshot,
+    validate_mission_id_against_snapshot,
+    validate_mission_steps_against_snapshot,
+)
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, get_mission, list_missions
@@ -290,7 +295,9 @@ def missions_plan(
 
     try:
         mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg, source="cli"))
-    except MissionPlannerError as e:
+        snapshot = generate_capabilities_snapshot(reg)
+        validate_mission_steps_against_snapshot(mission, snapshot)
+    except (MissionPlannerError, ValueError) as e:
         console.print(f"[red]ERROR:[/red] {e}")
         raise typer.Exit(code=1) from e
 
@@ -332,8 +339,11 @@ def missions_run(
     )
 
     try:
+        snapshot = generate_capabilities_snapshot(reg)
+        validate_mission_id_against_snapshot(mission_id, snapshot)
         mission = get_mission(mission_id)
-    except KeyError as e:
+        validate_mission_steps_against_snapshot(mission, snapshot)
+    except (KeyError, ValueError) as e:
         console.print(f"[red]ERROR:[/red] {e}")
         raise typer.Exit(code=1) from e
 
@@ -473,6 +483,15 @@ def queue_bundle(
     out.write_bytes(data)
     console.print(f"Bundle written: {out}")
 
+
+
+
+@ops_app.command("capabilities")
+def ops_capabilities():
+    """Print runtime capabilities snapshot JSON."""
+    reg = SkillRegistry()
+    snapshot = generate_capabilities_snapshot(reg)
+    typer.echo(json.dumps(snapshot, sort_keys=True))
 
 @ops_bundle_app.command("system")
 def ops_bundle_system(
