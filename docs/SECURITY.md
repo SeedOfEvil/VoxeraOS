@@ -9,7 +9,7 @@
 | Secret leakage (API keys, tokens) | High | ✅ Keyring + 0600 fallback; redacted in config show/snapshot |
 | Over-permissioned skills | High | ✅ Capability declarations + policy engine |
 | Panel auth brute force | Medium | Partial — password required for mutations; no rate limiting yet |
-| Mid-job daemon crash leaving ambiguous state | Medium | Partial — sidecar emitted; SIGTERM handler not yet graceful |
+| Mid-job daemon crash leaving ambiguous state | Medium | No — no SIGTERM handler; crash leaves job in pending/ with no sidecar guaranteed |
 | Artifact data accumulation | Low | Partial — queue pruned; artifact dirs not auto-cleaned |
 | Dependency supply chain | Low | No signing; standard pip install |
 
@@ -55,12 +55,18 @@ Unknown skill IDs or disallowed app targets are rejected before any execution, w
 - Artifacts stored outside container in `~/.voxera/artifacts/<job_id>/`.
 
 ### Panel auth
-Web panel mutations (job lifecycle, mission create, bundle export) require:
+Web panel mutations (job lifecycle, mission create) require:
 - HTTP Basic auth (`VOXERA_PANEL_OPERATOR_PASSWORD`).
-- CSRF token on all POST routes.
+- CSRF token on all POST mutation routes (enforced by `_require_mutation_guard`).
 
 Read-only panel endpoints (queue status, job list, job detail) are accessible without auth,
 so operators can inspect state safely even from untrusted environments.
+
+**Bundle export endpoints (`GET /jobs/{job_id}/bundle`, `GET /bundle/system`) are GET handlers
+protected by Basic auth only — they do not go through `_require_mutation_guard` and receive
+no CSRF validation.** Each request to these endpoints generates a new archive on disk.
+Operators should be aware these are browser-reachable from any tab that holds a valid session
+cookie, without CSRF protection.
 
 ---
 
@@ -84,10 +90,18 @@ On a shared or remote host, the password endpoint is brute-forceable.
 **Planned fix:** failed-attempt counter with 60-second lockout after 5 failures.
 Lockout events logged as structured audit entries.
 
-### SIGTERM does not gracefully shut down in-flight jobs (tracked: ROADMAP Day 4–5)
-A SIGTERM to the daemon process uses Python's default handler.
-A job mid-execution may leave state in `pending/` (not failed, not done),
-which would be re-processed on next daemon start — potentially re-executing a skill.
+### No SIGTERM handler — crash or stop leaves jobs in ambiguous state (tracked: ROADMAP Day 4–5)
+There is no signal handler in the queue daemon. On SIGTERM (systemd stop, kill) or an unhandled
+crash, the job being processed is left in `pending/` with no failed-sidecar written.
+The sidecar contract only applies to failures handled through the normal code path —
+a mid-job termination bypasses it entirely.
+
+On the next daemon start, the orphaned pending job will be re-picked up and re-executed.
+For non-idempotent skills (file writes, app launches, clipboard) this means double execution.
+
+**Operator note:** if the daemon was stopped or crashed mid-job, check `pending/` for jobs
+that should have completed and inspect audit logs for the last recorded step before deciding
+to retry, cancel, or manually move the job.
 
 **Planned fix:** explicit SIGTERM handler that marks in-flight jobs as failed with
 `reason=shutdown`, releases the queue lock, and exits cleanly within systemd's `TimeoutStopSec`.
