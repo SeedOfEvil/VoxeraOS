@@ -258,6 +258,18 @@ def get_mission(mission_id: str) -> MissionTemplate:
         raise KeyError(f"Unknown mission: {mission_id}") from None
 
 
+def _make_dryrun_deterministic(plan_dict: dict[str, Any]) -> dict[str, Any]:
+    """Scrub non-deterministic fields from a dry-run plan dict in-place.
+
+    Sets capabilities_snapshot.generated_ts_ms to 0.
+    Only called when --deterministic is used; default output is unchanged.
+    """
+    cap_snap = plan_dict.get("capabilities_snapshot")
+    if isinstance(cap_snap, dict) and "generated_ts_ms" in cap_snap:
+        cap_snap["generated_ts_ms"] = 0
+    return plan_dict
+
+
 class MissionRunner:
     def __init__(
         self,

@@ -26,7 +26,7 @@ from .core.capabilities_snapshot import (
 )
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
-from .core.missions import MissionRunner, get_mission, list_missions
+from .core.missions import MissionRunner, _make_dryrun_deterministic, get_mission, list_missions
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .doctor import doctor_sync
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
@@ -279,8 +279,30 @@ def missions_plan(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview a cloud-planned mission without execution."
     ),
+    freeze_capabilities_snapshot: bool = typer.Option(
+        False,
+        "--freeze-capabilities-snapshot",
+        help=(
+            "Guarantee the capabilities snapshot is generated once per invocation "
+            "and reused throughout the planning path (dry-run only)."
+        ),
+    ),
+    deterministic: bool = typer.Option(
+        False,
+        "--deterministic",
+        help=(
+            "Scrub timestamps from dry-run JSON output for byte-identical CI/golden-test output. "
+            "Sets capabilities_snapshot.generated_ts_ms=0. Dry-run only."
+        ),
+    ),
 ):
     """Use the configured cloud brain to create and run a mission plan."""
+    if (deterministic or freeze_capabilities_snapshot) and not dry_run:
+        console.print(
+            "[red]ERROR:[/red] --deterministic and --freeze-capabilities-snapshot require --dry-run."
+        )
+        raise typer.Exit(code=1)
+
     cfg = load_config()
     reg = SkillRegistry()
     reg.discover()
@@ -293,9 +315,12 @@ def missions_plan(
         redact_logs=cfg.privacy.redact_logs,
     )
 
+    snapshot = generate_capabilities_snapshot(reg) if freeze_capabilities_snapshot else None
+
     try:
         mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg, source="cli"))
-        snapshot = generate_capabilities_snapshot(reg)
+        if snapshot is None:
+            snapshot = generate_capabilities_snapshot(reg)
         validate_mission_steps_against_snapshot(mission, snapshot)
     except (MissionPlannerError, ValueError) as e:
         console.print(f"[red]ERROR:[/red] {e}")
@@ -307,7 +332,10 @@ def missions_plan(
 
     if dry_run:
         sim = mission_runner.simulate(mission, snapshot=snapshot)
-        console.print(json.dumps(sim.model_dump(), indent=2, sort_keys=True))
+        out = sim.model_dump()
+        if deterministic:
+            _make_dryrun_deterministic(out)
+        console.print(json.dumps(out, indent=2, sort_keys=True))
         return
 
     rr = mission_runner.run(mission)

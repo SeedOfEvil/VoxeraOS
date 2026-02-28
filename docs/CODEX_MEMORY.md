@@ -181,3 +181,17 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Begin Day 1 items from ROADMAP.md: artifact cleanup, `voxera artifacts prune`, `make type-debt`.
 - Risks/notes:
   - Process and docs only; no code changes in this pass.
+
+### PR #72 – Dry-run determinism: snapshot freeze + deterministic output mode (2026-02-28)
+- Added `--freeze-capabilities-snapshot` and `--deterministic` flags to `voxera missions plan`.
+- Added `_make_dryrun_deterministic()` helper in `src/voxera/core/missions.py` that zeroes
+  `capabilities_snapshot.generated_ts_ms` in dry-run output (only when `--deterministic` is used).
+- Default dry-run output is unchanged; both flags are opt-in.
+- `--freeze-capabilities-snapshot` is a semantic commitment (snapshot already generated once per
+  invocation); no runtime logic change needed.
+- Verified:
+  - `pytest tests/test_dryrun_determinism.py -q` — 4 new tests, all pass.
+  - `ruff format src tests`, `ruff check src tests`, `mypy src` — clean.
+  - `pytest -q` — all existing tests pass.
+- Files changed: `src/voxera/core/missions.py`, `src/voxera/cli.py`,
+  `tests/test_dryrun_determinism.py`, `README.md`, `docs/ops.md`, `docs/CODEX_MEMORY.md`.
