@@ -303,13 +303,21 @@ class MissionRunner:
         except Exception as exc:
             log({"event": "mission_log_error", "mission": mission.id, "error": repr(exc)})
 
-    def simulate(self, mission: MissionTemplate) -> PlanSimulation:
+    def simulate(
+        self, mission: MissionTemplate, *, snapshot: dict[str, Any] | None = None
+    ) -> PlanSimulation:
         steps: list[PlanStep] = []
         approvals_required = 0
         blocked = False
+        # Collect ALL capabilities from each manifest directly. PlanStep.capability holds
+        # only the primary (first sorted) capability, so multi-capability skills like
+        # system.open_url (apps.open + network.change) would be underreported if we
+        # derived capabilities_used from step.capability instead.
+        all_capabilities: set[str] = set()
 
         for ms in mission.steps:
             manifest = self.skill_runner.registry.get(ms.skill_id)
+            all_capabilities.update(manifest.capabilities)
             sim = self.skill_runner.simulate(manifest, args=ms.args, policy=self.policy)
             plan_step = sim.steps[0]
             plan_step.action = f"Run {ms.skill_id}"
@@ -317,6 +325,17 @@ class MissionRunner:
 
             approvals_required += sim.approvals_required
             blocked = blocked or sim.blocked
+
+        # All distinct capability strings across steps (sorted).
+        capabilities_used = sorted(all_capabilities)
+
+        # Compact snapshot metadata: schema_version + generated_ts_ms only.
+        capabilities_snapshot: dict[str, Any] = {}
+        if snapshot is not None:
+            capabilities_snapshot = {
+                "schema_version": snapshot.get("schema_version"),
+                "generated_ts_ms": snapshot.get("generated_ts_ms"),
+            }
 
         summary = "Blocked by policy" if blocked else "Mission ready for execution"
         return PlanSimulation(
@@ -326,6 +345,8 @@ class MissionRunner:
             approvals_required=approvals_required,
             blocked=blocked,
             summary=summary,
+            capabilities_snapshot=capabilities_snapshot,
+            capabilities_used=capabilities_used,
         )
 
     def run(

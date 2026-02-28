@@ -70,6 +70,10 @@ class PlanSimulation(BaseModel):
     approvals_required: int = 0
     blocked: bool = False
     summary: str = ""
+    # Compact metadata from the runtime capabilities snapshot used during planning.
+    capabilities_snapshot: dict[str, Any] = Field(default_factory=dict)
+    # Sorted, distinct capability strings referenced by planned steps.
+    capabilities_used: list[str] = Field(default_factory=list)
 
 
 class Plan(BaseModel):
