@@ -306,8 +306,8 @@ def missions_plan(
     console.print(f"Steps: {len(mission.steps)}")
 
     if dry_run:
-        sim = mission_runner.simulate(mission)
-        console.print(json.dumps(sim.model_dump(), indent=2))
+        sim = mission_runner.simulate(mission, snapshot=snapshot)
+        console.print(json.dumps(sim.model_dump(), indent=2, sort_keys=True))
         return
 
     rr = mission_runner.run(mission)
@@ -348,8 +348,8 @@ def missions_run(
         raise typer.Exit(code=1) from e
 
     if dry_run:
-        sim = mission_runner.simulate(mission)
-        console.print(json.dumps(sim.model_dump(), indent=2))
+        sim = mission_runner.simulate(mission, snapshot=snapshot)
+        console.print(json.dumps(sim.model_dump(), indent=2, sort_keys=True))
         return
 
     rr = mission_runner.run(mission)

@@ -303,7 +303,9 @@ class MissionRunner:
         except Exception as exc:
             log({"event": "mission_log_error", "mission": mission.id, "error": repr(exc)})
 
-    def simulate(self, mission: MissionTemplate) -> PlanSimulation:
+    def simulate(
+        self, mission: MissionTemplate, *, snapshot: dict[str, Any] | None = None
+    ) -> PlanSimulation:
         steps: list[PlanStep] = []
         approvals_required = 0
         blocked = False
@@ -318,6 +320,17 @@ class MissionRunner:
             approvals_required += sim.approvals_required
             blocked = blocked or sim.blocked
 
+        # Distinct capability strings across steps (sorted, None excluded).
+        capabilities_used = sorted({s.capability for s in steps if s.capability is not None})
+
+        # Compact snapshot metadata: schema_version + generated_ts_ms only.
+        capabilities_snapshot: dict[str, Any] = {}
+        if snapshot is not None:
+            capabilities_snapshot = {
+                "schema_version": snapshot.get("schema_version"),
+                "generated_ts_ms": snapshot.get("generated_ts_ms"),
+            }
+
         summary = "Blocked by policy" if blocked else "Mission ready for execution"
         return PlanSimulation(
             title=f"Mission dry-run: {mission.title}",
@@ -326,6 +339,8 @@ class MissionRunner:
             approvals_required=approvals_required,
             blocked=blocked,
             summary=summary,
+            capabilities_snapshot=capabilities_snapshot,
+            capabilities_used=capabilities_used,
         )
 
     def run(

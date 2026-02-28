@@ -226,6 +226,10 @@ voxera missions plan "run a quick health check and open my terminal"
 ```
 This uses your configured `primary` brain provider and still enforces local policy + approvals.
 
+The `--dry-run` output includes two top-level fields for auditability:
+- `capabilities_snapshot`: compact runtime metadata (`schema_version`, `generated_ts_ms`) from the snapshot used during planning.
+- `capabilities_used`: sorted, deduplicated list of capability strings referenced by the planned steps.
+
 For simple write goals matching patterns like `Write a note to <path> saying: <text>`, `Write <text> to <path>`, or `Create a note/file at <path> with <text>`, Voxera uses a deterministic fast-path before LLM planning and emits exactly one `files.write_text` step (default `mode=overwrite`, or `append` when explicitly requested).
 
 

@@ -36,6 +36,8 @@ class SkillRunner:
             skill_id=manifest.id,
             args=args,
             requires_approval=requires_approval,
+            # First capability (sorted for stability); None if skill declares none.
+            capability=sorted(manifest.capabilities)[0] if manifest.capabilities else None,
             risk=manifest.risk,
             policy_decision=policy_decision,
             reason=decision.reason,
