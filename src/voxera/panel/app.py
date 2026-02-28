@@ -59,6 +59,8 @@ FLASH_MESSAGES = {
     "deleted": "Terminal job deleted.",
     "cancel_not_found": "Cannot cancel: job was not found in active queue buckets.",
     "cannot_cancel_terminal": "Cannot cancel terminal jobs. Use retry/delete for failed/canceled/done.",
+    "approval_not_found": "Approval/job reference was not found.",
+    "approval_invalid": "Approval request was invalid.",
 }
 
 CSRF_COOKIE = "voxera_panel_csrf"
@@ -788,7 +790,13 @@ async def create_mission(request: Request):
 async def approve_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
-    daemon.resolve_approval(ref, approve=True)
+    try:
+        canonical_ref = daemon.canonicalize_approval_ref(ref)
+        daemon.resolve_approval(canonical_ref, approve=True)
+    except FileNotFoundError:
+        return await _jobs_redirect(request, "approval_not_found")
+    except (ValueError, RuntimeError):
+        return await _jobs_redirect(request, "approval_invalid")
     return await _jobs_redirect(request, "approved")
 
 
@@ -796,7 +804,13 @@ async def approve_queue_job(ref: str, request: Request):
 async def approve_always_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
-    daemon.resolve_approval(ref, approve=True, approve_always=True)
+    try:
+        canonical_ref = daemon.canonicalize_approval_ref(ref)
+        daemon.resolve_approval(canonical_ref, approve=True, approve_always=True)
+    except FileNotFoundError:
+        return await _jobs_redirect(request, "approval_not_found")
+    except (ValueError, RuntimeError):
+        return await _jobs_redirect(request, "approval_invalid")
     return await _jobs_redirect(request, "approved_always")
 
 
@@ -804,7 +818,13 @@ async def approve_always_queue_job(ref: str, request: Request):
 async def deny_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
     daemon = MissionQueueDaemon(queue_root=_queue_root())
-    daemon.resolve_approval(ref, approve=False)
+    try:
+        canonical_ref = daemon.canonicalize_approval_ref(ref)
+        daemon.resolve_approval(canonical_ref, approve=False)
+    except FileNotFoundError:
+        return await _jobs_redirect(request, "approval_not_found")
+    except (ValueError, RuntimeError):
+        return await _jobs_redirect(request, "approval_invalid")
     return await _jobs_redirect(request, "denied")
 
 

@@ -906,3 +906,39 @@ def test_jobs_failed_bucket_does_not_render_cancel_button(tmp_path, monkeypatch)
     assert res.status_code == 200
     assert "/queue/jobs/job-failed.json/cancel" not in res.text
     assert "/queue/jobs/job-failed.json/retry" in res.text
+
+
+def test_panel_approve_accepts_pending_json_variant_ref(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-variant.json").write_text(
+        json.dumps({"mission_id": "system_check", "approval_required": True}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "approvals" / "job-variant.approval.json").write_text(
+        json.dumps({"job": "job-variant.json", "step": 0, "skill": "approval_required"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client, "post", "/queue/approvals/job-variant.pending.json/approve", data={}
+    )
+
+    assert res.status_code == 303
+    assert "flash=approved" in res.headers.get("location", "")
+
+
+def test_panel_approval_missing_ref_redirects_with_flash_instead_of_500(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    res = _authed_csrf_request(client, "post", "/queue/approvals/missing.json/approve", data={})
+
+    assert res.status_code == 303
+    assert "flash=approval_not_found" in res.headers.get("location", "")
