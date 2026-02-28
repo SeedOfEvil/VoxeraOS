@@ -852,3 +852,57 @@ def test_jobs_page_flash_rendered_from_redirect_param(tmp_path, monkeypatch):
     res = client.get("/jobs", params={"flash": "retried"})
     assert res.status_code == 200
     assert "Job re-enqueued into inbox/." in res.text
+
+
+def test_cancel_failed_job_redirects_with_flash_instead_of_500(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-failed.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-failed.json/cancel",
+        data={"bucket": "failed", "q": "job", "n": "25"},
+    )
+
+    assert res.status_code == 303
+    assert "flash=cannot_cancel_terminal" in res.headers["location"]
+    assert "bucket=failed" in res.headers["location"]
+
+
+def test_cancel_missing_job_redirects_with_flash_instead_of_500(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/not-there.json/cancel",
+        data={"bucket": "all", "q": "not-there", "n": "25"},
+    )
+
+    assert res.status_code == 303
+    assert "flash=cancel_not_found" in res.headers["location"]
+
+
+def test_jobs_failed_bucket_does_not_render_cancel_button(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-failed.json").write_text('{"goal":"f"}', encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    res = client.get("/jobs", params={"bucket": "failed"})
+
+    assert res.status_code == 200
+    assert "/queue/jobs/job-failed.json/cancel" not in res.text
+    assert "/queue/jobs/job-failed.json/retry" in res.text

@@ -597,6 +597,7 @@ Job bundle notes now avoid normal-path noise: optional approval/failed-sidecar n
 ## Panel job actions
 
 - **Cancel** (`/queue/jobs/{job}/cancel`) moves active jobs from `inbox/` or `pending/` into `canceled/`.
+- Cancel is **active-only**; terminal jobs (`done/`, `failed/`, `canceled/`) are not cancelable and should use retry/delete flows.
 - **Retry** (`/queue/jobs/{job}/retry`) accepts jobs in `failed/` or `canceled/` and re-enqueues them into `inbox/`.
 - **Delete** (`/queue/jobs/{job}/delete`) is terminal-only (`done/`, `failed/`, `canceled/`) and requires exact `confirm=<job_filename>`.
 - Job artifacts live under `~/VoxeraOS/notes/queue/artifacts/<job_stem>/`; per-job bundles are available from `/jobs/<job>.json/bundle`.

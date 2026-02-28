@@ -57,6 +57,8 @@ FLASH_MESSAGES = {
     "canceled": "Job moved to canceled/.",
     "retried": "Job re-enqueued into inbox/.",
     "deleted": "Terminal job deleted.",
+    "cancel_not_found": "Cannot cancel: job was not found in active queue buckets.",
+    "cannot_cancel_terminal": "Cannot cancel terminal jobs. Use retry/delete for failed/canceled/done.",
 }
 
 CSRF_COOKIE = "voxera_panel_csrf"
@@ -818,6 +820,11 @@ def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80, f
         enriched["bucket_ref"] = _job_ref_bucket(row)
         enriched["artifacts"] = _job_artifact_flags(queue_root, job_id)
         enriched["last_activity"] = _last_activity(artifacts_dir)
+        row_bucket = str(row.get("bucket") or "")
+        enriched["can_cancel"] = row_bucket in {"inbox", "pending", "approvals"}
+        enriched["can_retry"] = row_bucket in {"failed", "canceled"}
+        enriched["can_delete"] = row_bucket in {"done", "failed", "canceled"}
+        enriched["can_bundle"] = row_bucket == "done"
         rows_enriched.append(enriched)
 
     log(
@@ -942,8 +949,18 @@ def system_bundle(request: Request):
 @app.post("/queue/jobs/{ref}/cancel")
 async def cancel_queue_job(ref: str, request: Request):
     await _require_mutation_guard(request)
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    daemon.cancel_job(ref)
+    queue_root = _queue_root()
+    lookup = lookup_job(queue_root, ref)
+    if lookup and lookup.bucket in {"done", "failed", "canceled"}:
+        _panel_security_counter_incr("panel_4xx_count", last_error="cancel_terminal_job_rejected")
+        return await _jobs_redirect(request, "cannot_cancel_terminal")
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    try:
+        daemon.cancel_job(ref)
+    except FileNotFoundError:
+        _panel_security_counter_incr("panel_4xx_count", last_error="cancel_job_not_found")
+        return await _jobs_redirect(request, "cancel_not_found")
     return await _jobs_redirect(request, "canceled")
 
 
