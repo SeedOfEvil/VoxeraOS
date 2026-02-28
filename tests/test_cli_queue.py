@@ -20,6 +20,7 @@ def test_queue_init_creates_expected_directories(tmp_path):
     assert (queue_dir / "pending" / "approvals").exists()
     assert (queue_dir / "done").exists()
     assert (queue_dir / "failed").exists()
+    assert (queue_dir / "canceled").exists()
 
 
 def test_queue_init_is_idempotent(tmp_path):
@@ -35,6 +36,21 @@ def test_queue_init_is_idempotent(tmp_path):
     assert (queue_dir / "pending" / "approvals").exists()
     assert (queue_dir / "done").exists()
     assert (queue_dir / "failed").exists()
+    assert (queue_dir / "canceled").exists()
+
+
+def test_queue_status_shows_canceled_bucket_count(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "canceled").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "canceled" / "job-a.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "canceled" / "job-b.json").write_text("{}", encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["queue", "status", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "canceled/" in result.output
+    assert "2" in result.output
 
 
 def test_queue_approval_list_job_value_can_be_used_with_approve(tmp_path):
