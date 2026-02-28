@@ -82,12 +82,16 @@ def _format_validation_error(subject: str, value: str, options: list[str]) -> st
 
 
 def validate_mission_id_against_snapshot(mission_id: str, snapshot: dict[str, Any]) -> None:
-    known_ids = [item.get("id", "") for item in snapshot.get("missions", []) if isinstance(item, dict)]
+    known_ids = [
+        item.get("id", "") for item in snapshot.get("missions", []) if isinstance(item, dict)
+    ]
     if mission_id not in known_ids:
         raise ValueError(_format_validation_error("mission_id", mission_id, known_ids))
 
 
-def validate_mission_steps_against_snapshot(mission: MissionTemplate, snapshot: dict[str, Any]) -> None:
+def validate_mission_steps_against_snapshot(
+    mission: MissionTemplate, snapshot: dict[str, Any]
+) -> None:
     allowed_apps = [str(item) for item in snapshot.get("allowed_apps", [])]
     for index, step in enumerate(mission.steps, start=1):
         if step.skill_id != "system.open_app":

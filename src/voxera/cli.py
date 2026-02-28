@@ -484,14 +484,13 @@ def queue_bundle(
     console.print(f"Bundle written: {out}")
 
 
-
-
 @ops_app.command("capabilities")
 def ops_capabilities():
     """Print runtime capabilities snapshot JSON."""
     reg = SkillRegistry()
     snapshot = generate_capabilities_snapshot(reg)
     typer.echo(json.dumps(snapshot, sort_keys=True))
+
 
 @ops_bundle_app.command("system")
 def ops_bundle_system(
