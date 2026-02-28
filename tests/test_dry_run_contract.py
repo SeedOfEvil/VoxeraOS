@@ -45,6 +45,27 @@ def test_dry_run_open_app_capability_and_risk(monkeypatch):
     assert sim.capabilities_used == sorted(sim.capabilities_used)
 
 
+def test_dry_run_multi_capability_skill_all_capabilities_in_used():
+    """system.open_url declares ['apps.open', 'network.change']. Both must appear in
+    capabilities_used even though PlanStep.capability only holds the primary one."""
+    mission_runner, _ = _make_runner()
+
+    mission = MissionTemplate(
+        id="t",
+        title="T",
+        goal="open url",
+        steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+    )
+    sim = mission_runner.simulate(mission)
+
+    # Primary (first sorted) capability on the step itself.
+    assert sim.steps[0].capability == "apps.open"
+    # Top-level summary must include ALL declared capabilities, not just the primary.
+    assert "apps.open" in sim.capabilities_used
+    assert "network.change" in sim.capabilities_used
+    assert sim.capabilities_used == sorted(sim.capabilities_used)
+
+
 def test_dry_run_no_capability_skill_capability_is_null():
     """A skill with no declared capabilities must have capability==None,
     and capabilities_used must be empty (that step contributes nothing)."""
