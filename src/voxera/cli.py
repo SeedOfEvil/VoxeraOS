@@ -297,6 +297,12 @@ def missions_plan(
     ),
 ):
     """Use the configured cloud brain to create and run a mission plan."""
+    if (deterministic or freeze_capabilities_snapshot) and not dry_run:
+        console.print(
+            "[red]ERROR:[/red] --deterministic and --freeze-capabilities-snapshot require --dry-run."
+        )
+        raise typer.Exit(code=1)
+
     cfg = load_config()
     reg = SkillRegistry()
     reg.discover()
@@ -309,9 +315,12 @@ def missions_plan(
         redact_logs=cfg.privacy.redact_logs,
     )
 
+    snapshot = generate_capabilities_snapshot(reg) if freeze_capabilities_snapshot else None
+
     try:
         mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg, source="cli"))
-        snapshot = generate_capabilities_snapshot(reg)
+        if snapshot is None:
+            snapshot = generate_capabilities_snapshot(reg)
         validate_mission_steps_against_snapshot(mission, snapshot)
     except (MissionPlannerError, ValueError) as e:
         console.print(f"[red]ERROR:[/red] {e}")

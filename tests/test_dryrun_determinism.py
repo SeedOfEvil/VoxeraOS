@@ -1,13 +1,17 @@
 """Tests for --deterministic dry-run mode (PR #72).
 
 Proves byte-identical JSON output when --deterministic is active,
-timestamp scrubbing, and no-capability skill behavior.
+timestamp scrubbing, no-capability skill behavior, and that both flags
+are rejected when --dry-run is not supplied.
 """
 
 from __future__ import annotations
 
 import json
 
+from typer.testing import CliRunner
+
+from voxera import cli
 from voxera.core.capabilities_snapshot import generate_capabilities_snapshot
 from voxera.core.missions import (
     MissionRunner,
@@ -18,6 +22,8 @@ from voxera.core.missions import (
 from voxera.models import PolicyApprovals
 from voxera.skills.registry import SkillRegistry
 from voxera.skills.runner import SkillRunner
+
+_cli_runner = CliRunner()
 
 
 def _make_runner() -> tuple[MissionRunner, SkillRegistry]:
@@ -91,3 +97,19 @@ def test_deterministic_no_capability_skill():
     _make_dryrun_deterministic(out)
     assert out["capabilities_used"] == []
     assert out["steps"][0]["capability"] is None
+
+
+def test_deterministic_without_dry_run_rejected():
+    """--deterministic without --dry-run must exit 1 with a clear error."""
+    result = _cli_runner.invoke(cli.app, ["missions", "plan", "open terminal", "--deterministic"])
+    assert result.exit_code == 1
+    assert "--dry-run" in result.output
+
+
+def test_freeze_snapshot_without_dry_run_rejected():
+    """--freeze-capabilities-snapshot without --dry-run must exit 1 with a clear error."""
+    result = _cli_runner.invoke(
+        cli.app, ["missions", "plan", "open terminal", "--freeze-capabilities-snapshot"]
+    )
+    assert result.exit_code == 1
+    assert "--dry-run" in result.output
