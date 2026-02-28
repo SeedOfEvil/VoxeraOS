@@ -744,6 +744,9 @@ class MissionQueueDaemon:
         if steps is not None:
             normalized["steps"] = steps
 
+        if "approval_required" in payload:
+            normalized["approval_required"] = payload.get("approval_required") is True
+
         return normalized
 
     def _build_inline_mission(self, payload: dict[str, Any], *, job_ref: str) -> MissionTemplate:
@@ -858,6 +861,94 @@ class MissionQueueDaemon:
         (self.pending / f"{job_in_pending.stem}.pending.json").write_text(
             json.dumps(meta, indent=2), encoding="utf-8"
         )
+
+    def _is_hard_approval_required(self, payload: dict[str, Any]) -> bool:
+        return bool(payload.get("approval_required") is True)
+
+    def _ensure_hard_approval_gate(self, job_path: Path, *, payload: dict[str, Any]) -> bool:
+        if not self._is_hard_approval_required(payload):
+            self._increment_health_counter("approval_gate_skipped_no_flag")
+            log({"event": "queue_approval_gate_skipped_no_flag", "job": str(job_path)})
+            return False
+
+        if job_path.parent == self.inbox:
+            moved = self._move_job(job_path, self.pending)
+            if moved is None:
+                return True
+            job_in_pending = moved
+        else:
+            job_in_pending = job_path
+
+        artifact_path = self.approvals / f"{job_in_pending.stem}.approval.json"
+        meta_path = self.pending / f"{job_in_pending.stem}.pending.json"
+
+        if artifact_path.exists():
+            self._increment_health_counter("approval_gate_already_present")
+            if not meta_path.exists():
+                meta = {
+                    "status": "pending_approval",
+                    "job": job_in_pending.name,
+                    "payload": payload,
+                    "resume_step": 1,
+                    "mission": {},
+                }
+                self._write_text_atomic(meta_path, json.dumps(meta, indent=2))
+            log(
+                {
+                    "event": "queue_approval_gate_already_present",
+                    "job": str(job_in_pending),
+                    "artifact": str(artifact_path),
+                }
+            )
+            return True
+
+        approval = {
+            "job": job_in_pending.name,
+            "job_path": str(job_in_pending),
+            "job_id": job_in_pending.stem,
+            "mission_id": payload.get("mission_id"),
+            "goal": payload.get("goal"),
+            "step": 0,
+            "skill": "approval_required",
+            "args": {},
+            "reason": "approval_required=true hard gate",
+            "policy_reason": "approval_required=true hard gate",
+            "capability": "approval_required",
+            "target": {"type": "unknown", "value": ""},
+            "fs_scope": "workspace_only",
+            "needs_network": False,
+            "scope": {"fs_scope": "workspace_only", "needs_network": False},
+            "status": "pending_approval",
+            "ts": time.time(),
+        }
+        self._write_text_atomic(artifact_path, json.dumps(approval, indent=2))
+        meta = {
+            "status": "pending_approval",
+            "job": job_in_pending.name,
+            "payload": payload,
+            "resume_step": 1,
+            "mission": {},
+        }
+        self._write_text_atomic(meta_path, json.dumps(meta, indent=2))
+        self._notify_pending_approval(approval)
+        self._increment_health_counter("approval_gate_created")
+        self._write_action_event(str(job_in_pending), "queue_job_pending_approval", step=0)
+        log(
+            {
+                "event": "queue_approval_gate_created",
+                "job": str(job_in_pending),
+                "reason": "approval_required=true hard gate",
+            }
+        )
+        log(
+            {
+                "event": "queue_job_pending_approval",
+                "job": str(job_in_pending),
+                "step": 0,
+                "reason": "approval_required=true hard gate",
+            }
+        )
+        return True
 
     def _notify_pending_approval(self, approval: dict[str, Any]) -> None:
         notify_override = os.getenv("VOXERA_NOTIFY")
@@ -1288,6 +1379,8 @@ class MissionQueueDaemon:
         try:
             payload = self._load_job_payload_with_retry(job_path)
             payload = self._normalize_payload(payload)
+            if self._ensure_hard_approval_gate(job_path, payload=payload):
+                return False
             mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
             self._write_plan_artifact(str(job_path), payload=payload, mission=mission)
         except Exception as exc:
@@ -1467,21 +1560,29 @@ class MissionQueueDaemon:
                 scope=approval_data.get("scope", {}),
             )
         mission_data = meta.get("mission", {})
-        steps = [
-            MissionStep(skill_id=item["skill_id"], args=item.get("args", {}))
-            for item in mission_data.get("steps", [])
-        ]
-        mission = MissionTemplate(
-            id=mission_data.get("id", payload.get("mission_id", "queue_mission")),
-            title=mission_data.get("title", "Queued Mission"),
-            goal=mission_data.get("goal", payload.get("goal", "")),
-            notes=mission_data.get("notes"),
-            steps=steps,
-        )
+        steps_raw = mission_data.get("steps", []) if isinstance(mission_data, dict) else []
+        if isinstance(steps_raw, list) and steps_raw:
+            steps = [
+                MissionStep(skill_id=item["skill_id"], args=item.get("args", {}))
+                for item in steps_raw
+            ]
+            mission = MissionTemplate(
+                id=mission_data.get("id", payload.get("mission_id", "queue_mission")),
+                title=mission_data.get("title", "Queued Mission"),
+                goal=mission_data.get("goal", payload.get("goal", "")),
+                notes=mission_data.get("notes"),
+                steps=steps,
+            )
+            resume_step = int(meta.get("resume_step", 1) or 1)
+        else:
+            source_payload = payload if isinstance(payload, dict) else {}
+            mission = self._build_mission_for_payload(source_payload, job_ref=str(job))
+            resume_step = 1
         self.current_job_ref = str(job)
-        resume_step = int(meta.get("resume_step", 1) or 1)
         resume_skill = (
-            meta.get("mission", {}).get("steps", [{}])[max(resume_step - 1, 0)].get("skill_id", "")
+            mission.steps[max(resume_step - 1, 0)].skill_id
+            if mission.steps and max(resume_step - 1, 0) < len(mission.steps)
+            else ""
         )
         self._approved_steps.add((str(job), resume_step, resume_skill))
         rr = self.mission_runner.run(

@@ -95,6 +95,78 @@ def test_queue_daemon_processes_goal_to_done(tmp_path, monkeypatch):
     assert (queue_dir / "done" / "job1.json").exists()
 
 
+def test_approval_required_hard_gate_blocks_before_execution(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "inbox" / "job-hard-gate.json").write_text(
+        json.dumps({"goal": "health status", "approval_required": True}),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    pending_job = queue_dir / "pending" / "job-hard-gate.json"
+    approval_artifact = queue_dir / "pending" / "approvals" / "job-hard-gate.approval.json"
+    assert pending_job.exists()
+    assert approval_artifact.exists()
+    assert not (queue_dir / "done" / "job-hard-gate.json").exists()
+
+    daemon.resolve_approval("job-hard-gate", approve=True)
+    assert (queue_dir / "done" / "job-hard-gate.json").exists()
+
+
+def test_approval_required_false_runs_without_hard_gate(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "inbox" / "job-no-hard-gate.json").write_text(
+        json.dumps({"goal": "health status", "approval_required": False}),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    assert (queue_dir / "done" / "job-no-hard-gate.json").exists()
+    assert not (queue_dir / "pending" / "job-no-hard-gate.json").exists()
+    assert not (queue_dir / "pending" / "approvals" / "job-no-hard-gate.approval.json").exists()
+
+
+def test_approval_required_hard_gate_is_idempotent_across_ticks(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "inbox" / "job-hard-gate-idem.json").write_text(
+        json.dumps({"goal": "health status", "approval_required": True}),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+    artifact = queue_dir / "pending" / "approvals" / "job-hard-gate-idem.approval.json"
+    assert artifact.exists()
+    first = artifact.read_text(encoding="utf-8")
+
+    daemon.process_pending_once()
+
+    artifacts = list(
+        (queue_dir / "pending" / "approvals").glob("job-hard-gate-idem*.approval.json")
+    )
+    assert len(artifacts) == 1
+    assert artifact.read_text(encoding="utf-8") == first
+
+
 def test_queue_daemon_rejects_invalid_schema_with_clear_error(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     events = []
