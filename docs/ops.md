@@ -115,10 +115,20 @@ Operational effects:
 
 Panel operator notes:
 - Panel shows a **Setup required** banner on `/` and `/jobs` when `VOXERA_PANEL_OPERATOR_PASSWORD` is unset; guidance includes systemd user env + restart commands.
-- Panel mutation routes (`/queue/create`, `/missions/create`) accept `POST` by default.
+- Panel mutation routes (`/queue/create`, `/missions/create`, `/missions/templates/create`) accept `POST` by default.
+- `/missions/create` is the operator Create Mission intake (Easy mode: prompt-only) and writes deterministic jobs to `notes/queue/inbox/job-panel-mission-<slug>-<ts>.json`.
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume, cancel/retry actions, and links Done/Failed jobs to artifact-backed detail pages.
+### Create Mission (panel) quick runbook
+
+- Open panel home (`/`) and locate **Create Mission**.
+- Fill **Prompt / Goal** (required), keep **Approval required** toggle on by default, then submit.
+- Successful submit redirects to `/` with a success banner containing the created filename / mission id.
+- Validation failure (empty prompt) redirects to `/` with a clear error banner.
+- Queue flow remains standard: `inbox/` → `pending/approvals/` (when policy requires) → `done/`.
+- Artifacts and bundles are available from the Jobs console (`/jobs`, `/jobs/<job>.json`, `/jobs/<job>.json/bundle`).
+
 - Queue daemon + panel update a shared lightweight snapshot at `notes/queue/health.json`.
   - Write pattern is atomic (`health.json.tmp` then rename).
   - `last_ok_event` + `last_ok_ts_ms` indicate recent successful activity (tick/lock/shutdown release).

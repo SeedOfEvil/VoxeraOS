@@ -363,11 +363,23 @@ make panel
 # open http://127.0.0.1:8787
 ```
 
-Panel mutation endpoints (`/queue/create`, `/missions/create`) now use `POST` by default.
+Panel mutation endpoints (`/queue/create`, `/missions/create`, `/missions/templates/create`) now use `POST` by default.
 Legacy GET-based mutation compatibility can be enabled only for test/dev workflows:
 ```bash
 VOXERA_PANEL_ENABLE_GET_MUTATIONS=1 voxera panel
 ```
+
+### Create Mission (panel)
+1. Open `/` in the panel and use **Create Mission**.
+2. Enter only **Prompt / Goal** (required).
+3. Leave **Approval required** on (default) unless you intentionally want to skip explicit approval expectation metadata.
+4. Submit with **Create Mission**.
+
+The panel writes a deterministic inbox job at:
+`~/VoxeraOS/notes/queue/inbox/job-panel-mission-<slug>-<ts>.json`
+
+Lifecycle stays the same: `inbox/` → `pending/approvals/` (if policy asks) → `done/`.
+Use `/jobs/<job>.json` for per-job artifacts and `/jobs/<job>.json/bundle` for handoff bundles.
 
 ## Updating VoxeraOS (Alpha)
 

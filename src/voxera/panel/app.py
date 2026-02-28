@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -46,6 +47,7 @@ ERROR_MESSAGES = {
     "steps_json_not_list": "Steps JSON must decode to a JSON list.",
     "mission_schema_invalid": "Mission template failed schema validation.",
     "get_mutation_disabled": "GET mutation endpoints are disabled; submit the form normally.",
+    "panel_prompt_required": "Prompt / Goal is required.",
 }
 
 CSRF_COOKIE = "voxera_panel_csrf"
@@ -311,6 +313,37 @@ def _write_queue_job(payload: dict[str, Any]) -> str:
     tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp_path.replace(final_path)
     return final_path.name
+
+
+def _write_panel_mission_job(*, prompt: str, approval_required: bool) -> tuple[str, str]:
+    queue_root = _queue_root()
+    inbox = queue_root / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+
+    normalized_prompt = prompt.strip()
+    slug = re.sub(r"[^a-z0-9_-]+", "-", normalized_prompt.lower()).strip("-")
+    slug = slug[:32] or "mission"
+    ts = int(time.time())
+    suffix = hashlib.sha1(normalized_prompt.encode("utf-8")).hexdigest()[:6]
+    mission_id = re.sub(r"[^a-z0-9_-]+", "-", f"{slug}-{suffix}-{ts}").strip("-")
+
+    payload = {
+        "id": mission_id,
+        "goal": normalized_prompt,
+        "approval_required": approval_required,
+    }
+
+    base_name = f"job-panel-mission-{slug}-{ts}"
+    final_path = inbox / f"{base_name}.json"
+    counter = 1
+    while final_path.exists():
+        final_path = inbox / f"{base_name}-{counter}.json"
+        counter += 1
+
+    tmp_path = inbox / f".{final_path.stem}.tmp.json"
+    tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp_path.replace(final_path)
+    return final_path.name, mission_id
 
 
 def _artifact_text(path: Path, *, max_chars: int = 8000) -> str:
@@ -651,7 +684,7 @@ async def create_queue_job(request: Request):
     return _create_queue_job_from_values(kind, mission_id, goal)
 
 
-def _create_mission_from_values(
+def _create_mission_template_from_values(
     mission_id: str, title: str, goal: str, notes: str, steps_json: str
 ) -> RedirectResponse:
     normalized_id = mission_id.strip()
@@ -667,8 +700,8 @@ def _create_mission_from_values(
     return RedirectResponse(url=f"/?mission_created={normalized_id}", status_code=303)
 
 
-@app.get("/missions/create")
-def create_mission_get(
+@app.get("/missions/templates/create")
+def create_mission_template_get(
     request: Request,
     mission_id: str = "",
     title: str = "",
@@ -678,18 +711,51 @@ def create_mission_get(
 ):
     _enforce_get_mutations_enabled()
     _require_operator_auth_from_request(request)
-    return _create_mission_from_values(mission_id, title, goal, notes, steps_json)
+    return _create_mission_template_from_values(mission_id, title, goal, notes, steps_json)
 
 
-@app.post("/missions/create")
-async def create_mission(request: Request):
+@app.post("/missions/templates/create")
+async def create_mission_template(request: Request):
     await _require_mutation_guard(request)
     mission_id = await _request_value(request, "mission_id", "")
     title = await _request_value(request, "title", "")
     goal = await _request_value(request, "goal", "")
     notes = await _request_value(request, "notes", "")
     steps_json = await _request_value(request, "steps_json", "[]")
-    return _create_mission_from_values(mission_id, title, goal, notes, steps_json)
+    return _create_mission_template_from_values(mission_id, title, goal, notes, steps_json)
+
+
+def _create_panel_mission_from_values(prompt: str, approval_required: bool) -> RedirectResponse:
+    normalized_prompt = prompt.strip()
+    if not normalized_prompt:
+        return RedirectResponse(url="/?error=panel_prompt_required", status_code=303)
+    created, mission_id = _write_panel_mission_job(
+        prompt=normalized_prompt,
+        approval_required=approval_required,
+    )
+    return RedirectResponse(
+        url=f"/?created={created}&mission_created={mission_id}",
+        status_code=303,
+    )
+
+
+@app.get("/missions/create")
+def create_mission_get(
+    request: Request,
+    prompt: str = "",
+    approval_required: str = "1",
+):
+    _enforce_get_mutations_enabled()
+    _require_operator_auth_from_request(request)
+    return _create_panel_mission_from_values(prompt, approval_required != "0")
+
+
+@app.post("/missions/create")
+async def create_mission(request: Request):
+    await _require_mutation_guard(request)
+    prompt = await _request_value(request, "prompt", "")
+    approval_raw = await _request_value(request, "approval_required", "1")
+    return _create_panel_mission_from_values(prompt, approval_raw not in {"0", "false", "off"})
 
 
 @app.post("/queue/approvals/{ref}/approve")
