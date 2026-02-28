@@ -19,6 +19,26 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 - ✅ Human-friendly inbox entry point (`voxera inbox add`, `voxera inbox list`) for queueing goals
 - ✅ Update flow (`make update`) and systemd user service lifecycle (`make services-install`, status/restart/stop)
 
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Language | Python ≥ 3.10 |
+| CLI | Typer + Rich |
+| Data models | Pydantic v2 |
+| Web panel | FastAPI + Uvicorn + Jinja2 |
+| HTTP client | httpx (async) |
+| Config / secrets | platformdirs + keyring + 0600 file |
+| AI backends | Google Gemini, OpenAI-compat (OpenRouter, Ollama, local) |
+| Sandbox | Podman (rootless, `--network=none` by default) |
+| Service management | systemd user units |
+| Linting + format | Ruff |
+| Type checking | Mypy + ratchet baseline |
+| Tests | pytest + pytest-asyncio |
+
+For the full module map, data flow diagram, queue lifecycle, and config precedence details,
+see `docs/ARCHITECTURE.md`.
+
 ## Quick start (Alpha)
 ```bash
 make dev
@@ -483,11 +503,23 @@ print(rr.ok, rr.data["artifacts_dir"])
 - `:Z` SELinux mount suffix is used for Podman volume labeling; this is compatible on non-SELinux systems as well.
 
 ## Roadmap (user-visible milestones)
-- **Next 4 weeks:** clearer queue reliability signals in CLI/panel and operator workflows.
-- **Next 8 weeks:** structured mission planning previews with safer dry-run simulation UX.
-- **Next 12 weeks:** stronger OpenAI-compatible provider behavior and broader mission catalog coverage.
 
-See `docs/ROADMAP.md` for measurable 4/8/12-week outcomes, and `docs/ROADMAP_0.1.4.md` for the locked stability/UX scope and release checklist.
+Active work is organized as daily/session goals in `docs/ROADMAP.md`.
+
+**Near-term (this week):**
+- Artifact directory cleanup tied to failed-job retention pruner.
+- `voxera artifacts prune` CLI command and `voxera queue prune` with flags.
+- Brain fallback error classification surfaced in `voxera doctor`.
+- Panel auth rate limiting and graceful SIGTERM handling in daemon.
+
+**Next 1–2 weeks:**
+- Dry-run simulation UX polish and structured planning previews.
+- Ollama / OpenAI-compat hardening and mission catalog expansion (10+ missions).
+
+**v0.3:** Voice stack (STT/TTS, wake word, voice-first command loop).
+**v0.4:** Signed skills, marketplace, ISO/image packaging.
+
+See `docs/ROADMAP.md` for the full daily goal breakdown and `docs/ROADMAP_0.1.4.md` for what shipped in v0.1.4.
 
 ---
 **Alpha v0.1.4** is the trustworthy daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion.
