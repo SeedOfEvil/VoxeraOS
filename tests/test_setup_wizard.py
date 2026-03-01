@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from rich.text import Text
+
 from voxera import setup_wizard
 
 
@@ -27,7 +29,8 @@ def test_provider_key_choice_keep_returns_existing(monkeypatch):
     )
 
     assert resolved == "OPENROUTER_API_KEY"
-    assert calls[0] == "Auth for OpenRouter [[keep/skip/replace]]"
+    assert isinstance(calls[0], Text)
+    assert calls[0].plain == "Auth for OpenRouter [keep/skip/replace]"
 
 
 def test_provider_key_choice_skip_clears_existing(monkeypatch):
@@ -64,7 +67,8 @@ def test_provider_key_choice_set_when_missing(monkeypatch):
     resolved = setup_wizard._apply_provider_key_choice(_provider(), existing_ref=None)
 
     assert resolved == "OPENROUTER_API_KEY"
-    assert calls[0] == "Auth for OpenRouter [[skip/set]]"
+    assert isinstance(calls[0], Text)
+    assert calls[0].plain == "Auth for OpenRouter [skip/set]"
 
 
 def test_confirm_write_config_defaults_to_keep_existing(tmp_path, monkeypatch):

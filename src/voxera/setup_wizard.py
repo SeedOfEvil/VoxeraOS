@@ -9,6 +9,7 @@ import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
+from rich.text import Text
 
 from .config import capabilities_report_path, default_config_path, save_config, save_policy
 from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig
@@ -165,7 +166,7 @@ def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | 
     has_existing_ref = bool(existing_ref)
     if has_existing_ref:
         choice = Prompt.ask(
-            f"Auth for {provider.label} [[keep/skip/replace]]",
+            Text(f"Auth for {provider.label} [keep/skip/replace]"),
             choices=["keep", "skip", "replace"],
             default="keep",
             show_choices=False,
@@ -182,7 +183,7 @@ def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | 
         return replacement_ref or provider.env_ref
 
     choice = Prompt.ask(
-        f"Auth for {provider.label} [[skip/set]]",
+        Text(f"Auth for {provider.label} [skip/set]"),
         choices=["skip", "set"],
         default="skip",
         show_choices=False,
