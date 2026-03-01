@@ -30,6 +30,7 @@ from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, _make_dryrun_deterministic, get_mission, list_missions
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .core.queue_hygiene import TERMINAL_BUCKETS, prune_queue_buckets
+from .core.queue_reconcile import reconcile_queue
 from .doctor import doctor_sync
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from .ops_bundle import build_job_bundle as build_ops_job_bundle
@@ -1195,3 +1196,71 @@ def queue_prune(
 
     if dry_run and total_selected > 0:
         console.print("[yellow]Hint:[/yellow] Run with --yes to perform deletion.")
+
+
+@queue_app.command("reconcile")
+def queue_reconcile(
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable JSON report.",
+    ),
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue root directory to scan for hygiene issues.",
+    ),
+) -> None:
+    """Scan queue directory and report hygiene issues. Report-only; no changes made.
+
+    Detects four categories of issues:
+
+    \b
+    1. Orphan sidecars (.error.json / .state.json) in terminal buckets without
+       a matching primary job file in the same bucket.
+    2. Orphan approvals in pending/approvals/ without a corresponding pending job.
+    3. Orphan artifact candidates under artifacts/ with no matching job across
+       any bucket (labeled conservatively as candidates).
+    4. Duplicate job filenames (job-*.json) appearing in more than one bucket.
+
+    Missing directories are treated as 0 issues — no error is raised.
+    """
+    queue_root_path = Path(queue_dir).expanduser().resolve()
+    report = reconcile_queue(queue_root_path)
+
+    if json_out:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    counts = report["issue_counts"]
+    examples = report["examples"]
+
+    console.print(f"Queue root: {queue_root_path}")
+    console.print()
+
+    total = sum(counts.values())
+    if total == 0:
+        console.print("[green]Queue looks clean — no hygiene issues detected.[/green]")
+    else:
+        console.print(f"[yellow]Issues found:[/yellow] {total} total")
+    console.print()
+
+    path_issue_labels: list[tuple[str, str]] = [
+        ("orphan_sidecars", "Orphan sidecars (terminal buckets)"),
+        ("orphan_approvals", "Orphan approvals (pending/approvals/)"),
+        ("orphan_artifacts_candidate", "Orphan artifact candidates (artifacts/)"),
+    ]
+    for key, label in path_issue_labels:
+        count = counts[key]
+        console.print(f"  {label}: {count}")
+        for path in examples[key]:
+            console.print(f"    {path}")
+
+    dup_count = counts["duplicate_jobs"]
+    console.print(f"  Duplicate job filenames across buckets: {dup_count}")
+    for entry in examples["duplicate_jobs"]:
+        buckets_str = ", ".join(entry["buckets"])
+        console.print(f"    {entry['job_name']} — buckets: {buckets_str}")
+
+    console.print()
+    console.print("[dim]Report-only; no changes made.[/dim]")
