@@ -30,7 +30,7 @@ from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, _make_dryrun_deterministic, get_mission, list_missions
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .core.queue_hygiene import TERMINAL_BUCKETS, prune_queue_buckets
-from .core.queue_reconcile import reconcile_queue
+from .core.queue_reconcile import quarantine_reconcile_fixes, reconcile_queue
 from .doctor import doctor_sync
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from .ops_bundle import build_job_bundle as build_ops_job_bundle
@@ -1210,8 +1210,27 @@ def queue_reconcile(
         "--queue-dir",
         help="Queue root directory to scan for hygiene issues.",
     ),
+    fix: bool = typer.Option(
+        False,
+        "--fix",
+        help="Enable fix mode: quarantine safe orphan files. Without --yes, runs as a dry-run preview.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Actually perform quarantine moves. Required with --fix to apply changes.",
+    ),
+    quarantine_dir: str = typer.Option(
+        "",
+        "--quarantine-dir",
+        help=(
+            "Directory to quarantine orphan files into. "
+            "Must be within --queue-dir. "
+            "Default: <queue-dir>/quarantine/reconcile-YYYYMMDD-HHMMSS/"
+        ),
+    ),
 ) -> None:
-    """Scan queue directory and report hygiene issues. Report-only; no changes made.
+    """Scan queue directory and report hygiene issues. Report-only by default; no changes made.
 
     Detects four categories of issues:
 
@@ -1224,18 +1243,89 @@ def queue_reconcile(
     4. Duplicate job filenames (job-*.json) appearing in more than one bucket.
 
     Missing directories are treated as 0 issues — no error is raised.
+
+    \b
+    Fix mode (--fix):
+      Without --yes: preview what WOULD be quarantined (dry-run).
+      With --yes:    move orphan sidecars + orphan approvals into quarantine dir.
+    Artifacts and duplicates are never auto-fixed — report-only for those.
+    No deletions are ever performed; quarantined files can be restored manually.
     """
+    from .core.queue_reconcile import _default_quarantine_dir
+
     queue_root_path = Path(queue_dir).expanduser().resolve()
     report = reconcile_queue(queue_root_path)
 
+    # Resolve quarantine directory.
+    q_dir: Path | None = None
+    if fix:
+        if quarantine_dir:
+            q_dir = Path(quarantine_dir).expanduser().resolve()
+        else:
+            q_dir = _default_quarantine_dir(queue_root_path)
+        # Safety: quarantine_dir must be within queue_root_path.
+        try:
+            q_dir.relative_to(queue_root_path)
+        except ValueError as exc:
+            typer.echo(
+                f"Error: --quarantine-dir must be within --queue-dir ({queue_root_path}).",
+                err=True,
+            )
+            raise typer.Exit(code=1) from exc
+
+    dry_run = not yes
+    mode = "report" if not fix else ("fix_preview" if dry_run else "fix_applied")
+
+    fix_results: dict[str, Any] = {}
+    if fix and q_dir is not None:
+        fix_results = quarantine_reconcile_fixes(
+            queue_root_path,
+            q_dir,
+            dry_run=dry_run,
+        )
+
     if json_out:
-        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+        out: dict[str, Any] = {
+            "status": "ok",
+            "queue_dir": str(queue_root_path),
+            "mode": mode,
+            "quarantine_dir": str(q_dir) if q_dir is not None else None,
+            "issue_counts": report["issue_counts"],
+            "examples": report["examples"],
+        }
+        if fix_results:
+            out["fix_counts"] = {
+                "orphan_sidecars_quarantined": fix_results["orphan_sidecars_quarantined"],
+                "orphan_sidecars_would_quarantine": fix_results["orphan_sidecars_would_quarantine"],
+                "orphan_approvals_quarantined": fix_results["orphan_approvals_quarantined"],
+                "orphan_approvals_would_quarantine": fix_results[
+                    "orphan_approvals_would_quarantine"
+                ],
+            }
+            out["quarantined_paths"] = fix_results["quarantined_paths"]
+        else:
+            out["fix_counts"] = {
+                "orphan_sidecars_quarantined": 0,
+                "orphan_sidecars_would_quarantine": 0,
+                "orphan_approvals_quarantined": 0,
+                "orphan_approvals_would_quarantine": 0,
+            }
+            out["quarantined_paths"] = []
+        typer.echo(json.dumps(out, indent=2, sort_keys=True))
         return
 
     counts = report["issue_counts"]
     examples = report["examples"]
 
     console.print(f"Queue root: {queue_root_path}")
+    if fix:
+        console.print(f"Quarantine dir: {q_dir}")
+        if dry_run:
+            console.print("[yellow]Mode: fix preview (dry-run — no changes made)[/yellow]")
+        else:
+            console.print("[cyan]Mode: fix applied[/cyan]")
+    else:
+        console.print("[dim]Mode: report-only[/dim]")
     console.print()
 
     total = sum(counts.values())
@@ -1248,7 +1338,7 @@ def queue_reconcile(
     path_issue_labels: list[tuple[str, str]] = [
         ("orphan_sidecars", "Orphan sidecars (terminal buckets)"),
         ("orphan_approvals", "Orphan approvals (pending/approvals/)"),
-        ("orphan_artifacts_candidate", "Orphan artifact candidates (artifacts/)"),
+        ("orphan_artifacts_candidate", "Orphan artifact candidates (artifacts/) [report-only]"),
     ]
     for key, label in path_issue_labels:
         count = counts[key]
@@ -1257,10 +1347,49 @@ def queue_reconcile(
             console.print(f"    {path}")
 
     dup_count = counts["duplicate_jobs"]
-    console.print(f"  Duplicate job filenames across buckets: {dup_count}")
+    console.print(f"  Duplicate job filenames across buckets: {dup_count} [report-only]")
     for entry in examples["duplicate_jobs"]:
         buckets_str = ", ".join(entry["buckets"])
         console.print(f"    {entry['job_name']} — buckets: {buckets_str}")
 
+    if fix and fix_results:
+        console.print()
+        if dry_run:
+            console.print(
+                f"  Would quarantine orphan sidecars: "
+                f"{fix_results['orphan_sidecars_would_quarantine']}"
+            )
+            console.print(
+                f"  Would quarantine orphan approvals: "
+                f"{fix_results['orphan_approvals_would_quarantine']}"
+            )
+            paths = fix_results["quarantined_paths"]
+            if paths:
+                console.print("  Preview (up to 10 paths that would move):")
+                for p in paths:
+                    console.print(f"    {p}")
+            console.print()
+            console.print("[yellow]Hint:[/yellow] Run with --fix --yes to apply quarantine.")
+        else:
+            console.print(
+                f"  Quarantined orphan sidecars: {fix_results['orphan_sidecars_quarantined']}"
+            )
+            console.print(
+                f"  Quarantined orphan approvals: {fix_results['orphan_approvals_quarantined']}"
+            )
+            paths = fix_results["quarantined_paths"]
+            if paths:
+                console.print("  Quarantined paths (up to 10):")
+                for p in paths:
+                    console.print(f"    {p}")
+            if fix_results.get("errors"):
+                for err in fix_results["errors"]:
+                    console.print(f"  [red]Warning:[/red] {err}")
+
     console.print()
-    console.print("[dim]Report-only; no changes made.[/dim]")
+    if fix and not dry_run:
+        console.print(
+            "[dim]No deletions performed; quarantined files can be restored manually.[/dim]"
+        )
+    else:
+        console.print("[dim]Report-only; no changes made.[/dim]")

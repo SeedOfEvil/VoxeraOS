@@ -301,3 +301,265 @@ def test_missing_directories_no_error(tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert all(v == 0 for v in data["issue_counts"].values())
+
+
+# ---------------------------------------------------------------------------
+# Fix mode helpers
+# ---------------------------------------------------------------------------
+
+
+def _run_reconcile_fix(
+    tmp_path: Path,
+    *,
+    yes: bool = False,
+    quarantine_dir: str = "",
+    use_json: bool = True,
+) -> tuple[int, dict]:
+    """Invoke `voxera queue reconcile --fix [--yes] [--quarantine-dir D] --json --queue-dir P`."""
+    runner = CliRunner()
+    args = ["queue", "reconcile", "--fix", "--queue-dir", str(tmp_path)]
+    if yes:
+        args.append("--yes")
+    if quarantine_dir:
+        args += ["--quarantine-dir", quarantine_dir]
+    if use_json:
+        args.append("--json")
+    result = runner.invoke(cli.app, args)
+    data = json.loads(result.output) if use_json else {}
+    return result.exit_code, data
+
+
+# ---------------------------------------------------------------------------
+# Fix mode test 1: --fix without --yes is a dry-run (preview); no FS changes
+# ---------------------------------------------------------------------------
+
+
+def test_fix_preview_does_not_change_filesystem(tmp_path: Path) -> None:
+    """--fix without --yes must not move any files (pure preview)."""
+    failed_dir = tmp_path / "failed"
+    sidecar = _make_sidecar(failed_dir, "job-orphan.error.json")
+    approvals_dir = tmp_path / "pending" / "approvals"
+    approval = _make_approval(approvals_dir, "job-gone.approval.json")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=False)
+
+    assert exit_code == 0
+    # Files must still exist in their original locations.
+    assert sidecar.exists(), "Orphan sidecar was moved in preview mode!"
+    assert approval.exists(), "Orphan approval was moved in preview mode!"
+    # Output indicates preview mode.
+    assert data["mode"] == "fix_preview"
+    # Would-quarantine counts reflect the orphans.
+    fc = data["fix_counts"]
+    assert fc["orphan_sidecars_would_quarantine"] == 1
+    assert fc["orphan_approvals_would_quarantine"] == 1
+    # No actual quarantine happened.
+    assert fc["orphan_sidecars_quarantined"] == 0
+    assert fc["orphan_approvals_quarantined"] == 0
+
+
+def test_fix_preview_human_output_indicates_preview(tmp_path: Path) -> None:
+    """Human output for --fix (no --yes) contains 'preview' or 'dry-run'."""
+    failed_dir = tmp_path / "failed"
+    _make_sidecar(failed_dir, "job-orphan.error.json")
+
+    exit_code, _ = _run_reconcile_fix(tmp_path, yes=False, use_json=False)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["queue", "reconcile", "--fix", "--queue-dir", str(tmp_path)],
+    )
+    assert result.exit_code == 0
+    output_lower = result.output.lower()
+    assert "preview" in output_lower or "dry-run" in output_lower or "dry run" in output_lower
+
+
+# ---------------------------------------------------------------------------
+# Fix mode test 2: --fix --yes quarantines only safe orphans
+# ---------------------------------------------------------------------------
+
+
+def test_fix_yes_quarantines_orphan_sidecar_and_approval(tmp_path: Path) -> None:
+    """--fix --yes moves orphan sidecar + orphan approval; originals are gone."""
+    failed_dir = tmp_path / "failed"
+    sidecar = _make_sidecar(failed_dir, "job-orphan.error.json")
+    approvals_dir = tmp_path / "pending" / "approvals"
+    approval = _make_approval(approvals_dir, "job-gone.approval.json")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=True)
+
+    assert exit_code == 0
+    assert data["mode"] == "fix_applied"
+    fc = data["fix_counts"]
+    assert fc["orphan_sidecars_quarantined"] == 1
+    assert fc["orphan_approvals_quarantined"] == 1
+    # Originals must be gone.
+    assert not sidecar.exists(), "Orphan sidecar still exists after quarantine!"
+    assert not approval.exists(), "Orphan approval still exists after quarantine!"
+    # Quarantined copies must exist.
+    q_dir = Path(data["quarantine_dir"])
+    assert q_dir.exists()
+    quarantined = list(q_dir.rglob("*.json"))
+    assert len(quarantined) == 2, f"Expected 2 quarantined files, got: {quarantined}"
+
+
+def test_fix_yes_does_not_quarantine_artifact_candidates(tmp_path: Path) -> None:
+    """Artifact candidates are never moved in fix mode (report-only category)."""
+    artifacts_dir = tmp_path / "artifacts"
+    artifact_entry = _make_artifact_dir(artifacts_dir, "job-orphan-art")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=True)
+
+    assert exit_code == 0
+    # Artifact directory must still be present.
+    assert artifact_entry.exists(), "Artifact candidate was moved — must not be!"
+    # Issue still reported but not fixed.
+    assert data["issue_counts"]["orphan_artifacts_candidate"] == 1
+    assert data["fix_counts"]["orphan_sidecars_quarantined"] == 0
+    assert data["fix_counts"]["orphan_approvals_quarantined"] == 0
+
+
+def test_fix_yes_does_not_quarantine_duplicates(tmp_path: Path) -> None:
+    """Duplicate job files are never moved in fix mode (report-only category)."""
+    _make_job(tmp_path / "done", "job-dup.json")
+    _make_job(tmp_path / "failed", "job-dup.json")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=True)
+
+    assert exit_code == 0
+    assert (tmp_path / "done" / "job-dup.json").exists()
+    assert (tmp_path / "failed" / "job-dup.json").exists()
+    assert data["issue_counts"]["duplicate_jobs"] == 1
+    assert data["fix_counts"]["orphan_sidecars_quarantined"] == 0
+    assert data["fix_counts"]["orphan_approvals_quarantined"] == 0
+
+
+def test_fix_yes_paired_sidecar_not_quarantined(tmp_path: Path) -> None:
+    """A sidecar paired with its primary job must NOT be quarantined."""
+    failed_dir = tmp_path / "failed"
+    _make_job(failed_dir, "job-ok.json")
+    sidecar = _make_sidecar(failed_dir, "job-ok.error.json")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=True)
+
+    assert exit_code == 0
+    assert sidecar.exists(), "Paired sidecar was incorrectly quarantined!"
+    assert data["fix_counts"]["orphan_sidecars_quarantined"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Fix mode test 3: Quarantine dir is under queue_dir and has deterministic format
+# ---------------------------------------------------------------------------
+
+
+def test_quarantine_dir_default_under_queue_dir(tmp_path: Path) -> None:
+    """Default quarantine directory is created inside queue_dir with correct prefix."""
+    failed_dir = tmp_path / "failed"
+    _make_sidecar(failed_dir, "job-stray.error.json")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=True)
+
+    assert exit_code == 0
+    q_dir_str = data["quarantine_dir"]
+    assert q_dir_str is not None
+    q_dir = Path(q_dir_str)
+    # Must be within queue_dir.
+    q_dir.relative_to(tmp_path)  # raises ValueError if not under tmp_path
+    # Must match expected prefix pattern: <queue_dir>/quarantine/reconcile-
+    assert str(q_dir).startswith(str(tmp_path / "quarantine" / "reconcile-"))
+
+
+def test_quarantine_dir_custom_within_queue_dir(tmp_path: Path) -> None:
+    """A custom --quarantine-dir within queue_dir is accepted."""
+    failed_dir = tmp_path / "failed"
+    _make_sidecar(failed_dir, "job-stray.error.json")
+    custom_q = str(tmp_path / "my-quarantine")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=True, quarantine_dir=custom_q)
+
+    assert exit_code == 0
+    assert data["quarantine_dir"] == custom_q
+    assert Path(custom_q).exists()
+
+
+def test_quarantine_dir_outside_queue_dir_rejected(tmp_path: Path) -> None:
+    """A --quarantine-dir outside queue_dir must be rejected with exit code 1."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as external:
+        runner = CliRunner()
+        result = runner.invoke(
+            cli.app,
+            [
+                "queue",
+                "reconcile",
+                "--fix",
+                "--yes",
+                "--queue-dir",
+                str(tmp_path),
+                "--quarantine-dir",
+                external,
+            ],
+        )
+        assert result.exit_code == 1
+
+
+# ---------------------------------------------------------------------------
+# Fix mode test 4: JSON output has required schema fields for fix mode
+# ---------------------------------------------------------------------------
+
+
+def test_json_fix_preview_schema(tmp_path: Path) -> None:
+    """JSON output in fix_preview mode has mode, quarantine_dir, and fix_counts."""
+    failed_dir = tmp_path / "failed"
+    _make_sidecar(failed_dir, "job-orphan.error.json")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=False)
+
+    assert exit_code == 0
+    assert data["status"] == "ok"
+    assert data["mode"] == "fix_preview"
+    assert data["quarantine_dir"] is not None
+    assert "fix_counts" in data
+    fc = data["fix_counts"]
+    assert set(fc.keys()) == {
+        "orphan_sidecars_quarantined",
+        "orphan_sidecars_would_quarantine",
+        "orphan_approvals_quarantined",
+        "orphan_approvals_would_quarantine",
+    }
+    assert "quarantined_paths" in data
+    assert isinstance(data["quarantined_paths"], list)
+
+
+def test_json_fix_applied_schema(tmp_path: Path) -> None:
+    """JSON output in fix_applied mode has correct mode and quarantined paths."""
+    failed_dir = tmp_path / "failed"
+    _make_sidecar(failed_dir, "job-orphan.error.json")
+    approvals_dir = tmp_path / "pending" / "approvals"
+    _make_approval(approvals_dir, "job-missing.approval.json")
+
+    exit_code, data = _run_reconcile_fix(tmp_path, yes=True)
+
+    assert exit_code == 0
+    assert data["mode"] == "fix_applied"
+    assert data["quarantine_dir"] is not None
+    fc = data["fix_counts"]
+    assert fc["orphan_sidecars_quarantined"] == 1
+    assert fc["orphan_approvals_quarantined"] == 1
+    # quarantined_paths must be a sorted list (deterministic).
+    paths = data["quarantined_paths"]
+    assert isinstance(paths, list)
+    assert paths == sorted(paths)
+
+
+def test_json_report_mode_fix_counts_are_zero(tmp_path: Path) -> None:
+    """JSON output in report-only mode always has zeroed fix_counts."""
+    exit_code, data = _run_reconcile(tmp_path)
+
+    assert exit_code == 0
+    assert data["mode"] == "report"
+    fc = data["fix_counts"]
+    assert all(v == 0 for v in fc.values())
+    assert data["quarantine_dir"] is None
+    assert data["quarantined_paths"] == []

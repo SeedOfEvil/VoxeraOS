@@ -399,7 +399,7 @@ running.
 |---|---|
 | `voxera artifacts prune` | Delete stale artifact directories under `notes/queue/artifacts/`. |
 | `voxera queue prune` | Remove stale job files from terminal buckets (`done/`, `failed/`, `canceled/`). |
-| `voxera queue reconcile` | Report-only scan for orphans and duplicates; **no changes made**. |
+| `voxera queue reconcile` | Scan for orphans and duplicates; report-only by default. Add `--fix` to preview quarantine actions; add `--fix --yes` to apply. |
 
 Retention rules can be persisted in `~/.config/voxera/config.json`:
 
@@ -459,11 +459,11 @@ Env vars (override config file):
 - `VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS`
 - `VOXERA_QUEUE_PRUNE_MAX_COUNT`
 
-## Queue reconcile (report-only)
+## Queue reconcile
 
-`voxera queue reconcile` is a **read-only** hygiene diagnostic that scans the
-queue directory and reports issues without making any changes.  Safe to run at
-any time, even while the daemon is running.
+`voxera queue reconcile` is a queue hygiene diagnostic that scans the queue
+directory and reports issues.  **Default behavior is report-only — no changes
+are made.**  Safe to run at any time, even while the daemon is running.
 
 Detects four categories of issues:
 
@@ -479,7 +479,7 @@ Detects four categories of issues:
 Missing directories are treated as 0 issues — no error is raised.
 
 ```bash
-# Human-readable summary
+# Human-readable summary (report-only)
 voxera queue reconcile
 
 # Override queue root
@@ -492,12 +492,47 @@ voxera queue reconcile --json
 voxera queue reconcile --json | python -m json.tool
 ```
 
-The JSON output schema is stable:
+### Fix mode (quarantine-first)
+
+`--fix` enables quarantine fix mode for the two safest orphan categories:
+orphan sidecars in terminal buckets and orphan approvals.  Artifact candidates
+and duplicates remain report-only (too ambiguous for auto-fix).
+
+**Without `--yes`**, fix mode is a **dry-run preview** — prints what *would* be
+quarantined and exits 0 with no filesystem changes.
+
+**With `--yes`**, orphan files are *moved* (not deleted) into a quarantine
+directory under the queue root, preserving relative paths.  No data is ever
+deleted; quarantined files can be restored manually.
+
+```bash
+# Preview what would be quarantined (dry-run; no changes)
+voxera queue reconcile --fix
+
+# Apply quarantine (moves orphan sidecars + approvals)
+voxera queue reconcile --fix --yes
+```
+
+The quarantine directory defaults to:
+
+```
+<queue-dir>/quarantine/reconcile-YYYYMMDD-HHMMSS/
+```
+
+Use `--quarantine-dir` to override (must remain within `--queue-dir`):
+
+```bash
+voxera queue reconcile --fix --yes --quarantine-dir /path/to/queue/my-quarantine
+```
+
+The JSON output schema is stable and extended with fix-mode fields:
 
 ```json
 {
   "status": "ok",
   "queue_dir": "/path/to/queue",
+  "mode": "report | fix_preview | fix_applied",
+  "quarantine_dir": null,
   "issue_counts": {
     "orphan_sidecars": 0,
     "orphan_approvals": 0,
@@ -509,12 +544,21 @@ The JSON output schema is stable:
     "orphan_approvals": [],
     "orphan_artifacts_candidate": [],
     "duplicate_jobs": []
-  }
+  },
+  "fix_counts": {
+    "orphan_sidecars_quarantined": 0,
+    "orphan_sidecars_would_quarantine": 0,
+    "orphan_approvals_quarantined": 0,
+    "orphan_approvals_would_quarantine": 0
+  },
+  "quarantined_paths": []
 }
 ```
 
-Human output includes up to 10 example paths per issue type and always ends
-with: **"Report-only; no changes made."**
+Human output includes up to 10 example paths per issue type.  In report-only
+mode it always ends with: **"Report-only; no changes made."**  In fix-applied
+mode it ends with: **"No deletions performed; quarantined files can be restored
+manually."**
 
 ## Information sources (keep in sync)
 
