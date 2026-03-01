@@ -1,10 +1,17 @@
 # Roadmap
 
-## Current baseline — Alpha v0.1.4 (shipped)
+## Current baseline — Alpha v0.1.5 (shipped)
 
-All v0.1.4 scope is complete. See `docs/ROADMAP_0.1.4.md` for locked acceptance criteria and release checklist.
+All v0.1.5 scope is complete. See `docs/ROADMAP_0.1.5.md` for locked acceptance criteria and release checklist.
+For the previous release, see `docs/ROADMAP_0.1.4.md`.
 
-**What shipped:**
+**What shipped in v0.1.5:**
+- `voxera artifacts prune`: operator-grade hygiene for `notes/queue/artifacts/`, dry-run by default, `--yes` to delete
+- `--max-age-days` and `--max-count` flags with union selection policy
+- `artifacts_retention_days` / `artifacts_retention_max_count` in runtime config + env vars
+- Version bump to 0.1.5
+
+**What shipped in v0.1.4:**
 - Setup wizard (TUI), provider abstraction (cloud / local)
 - Skill runner + policy gate + approval workflow
 - Queue daemon with failed-sidecar schema v1, retention pruning, health snapshots
@@ -25,7 +32,7 @@ Each item below is a self-contained improvement that can ship independently.
 **Day 1**
 - [ ] Tie artifact directory cleanup (`~/.voxera/artifacts/<job_id>/`) to the failed-job retention pruner.
       When a failed job is pruned, delete its artifact directory in the same pass.
-- [ ] Add `voxera artifacts prune` CLI command: dry-run by default, `--yes` to execute.
+- [x] Add `voxera artifacts prune` CLI command: dry-run by default, `--yes` to execute. *(shipped in v0.1.5)*
 - [ ] Add `make type-debt` target: count and print number of entries in `tools/mypy-baseline.txt`.
       Surface as a CI annotation on PRs that touch typed modules.
 

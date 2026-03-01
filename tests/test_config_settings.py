@@ -60,6 +60,8 @@ def test_config_redacts_sensitive_fields() -> None:
         queue_lock_stale_s=3600.0,
         queue_failed_max_age_s=None,
         queue_failed_max_count=None,
+        artifacts_retention_days=None,
+        artifacts_retention_max_count=None,
         ops_bundle_dir=None,
         dev_mode=False,
         notify_enabled=False,

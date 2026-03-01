@@ -1,8 +1,9 @@
-# Voxera OS Alpha v0.1.4 — Voice-first AI Control Plane (Stability + UX Baseline)
+# Voxera OS Alpha v0.1.5 — Voice-first AI Control Plane (Artifacts Hygiene + Retention CLI)
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is **Voxera OS Alpha v0.1.4**: a stability + UX baseline release with typed first-run setup (`voxera setup`), cloud-planned missions,
-a queue daemon with approval inbox, queue status + panel insights, update tooling, systemd user services, and pluggable “brain” providers.
+This repo is **Voxera OS Alpha v0.1.5**: adds `voxera artifacts prune` for operator-grade artifact hygiene with configurable
+retention policies, on top of the v0.1.4 stability + UX baseline (typed first-run setup, cloud-planned missions,
+queue daemon with approval inbox, queue status + panel insights, update tooling, systemd user services, and pluggable “brain” providers).
 
 **Names**
 - OS: **Voxera OS**
@@ -10,7 +11,7 @@ a queue daemon with approval inbox, queue status + panel insights, update toolin
 - Wake word (planned): **“Hey Voxera”**
 - CLI: `voxera`
 
-## What works in Alpha v0.1.4 (daily-driver baseline)
+## What works in Alpha v0.1.5 (daily-driver baseline)
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
 - ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
@@ -532,10 +533,10 @@ Active work is organized as daily/session goals in `docs/ROADMAP.md`.
 **v0.3:** Voice stack (STT/TTS, wake word, voice-first command loop).
 **v0.4:** Signed skills, marketplace, ISO/image packaging.
 
-See `docs/ROADMAP.md` for the full daily goal breakdown and `docs/ROADMAP_0.1.4.md` for what shipped in v0.1.4.
+See `docs/ROADMAP.md` for the full daily goal breakdown, `docs/ROADMAP_0.1.5.md` for what shipped in v0.1.5, and `docs/ROADMAP_0.1.4.md` for what shipped in v0.1.4.
 
 ---
-**Alpha v0.1.4** is the trustworthy daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion.
+**Alpha v0.1.5** adds operator-grade artifact hygiene (`voxera artifacts prune`) on top of the trustworthy v0.1.4 daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 
@@ -679,6 +680,44 @@ Each queue job now writes a first-class artifact bundle under `~/VoxeraOS/notes/
 
 These artifacts are present for pending, failed, and done queue paths to simplify debugging and audits.
 
+### Artifact pruning (`voxera artifacts prune`)
+
+The `voxera artifacts prune` command deletes stale entries from `notes/queue/artifacts/`.
+**Default is always dry-run** — no deletion happens without `--yes`.
+
+```bash
+# Dry-run: preview what would be pruned (safe, no changes)
+voxera artifacts prune --max-age-days 30
+
+# Dry-run: keep newest 50, prune the rest (no changes)
+voxera artifacts prune --max-count 50
+
+# Union rule: prune entries older than 30 days OR outside top-50 newest
+voxera artifacts prune --max-age-days 30 --max-count 50
+
+# Actually delete (requires --yes)
+voxera artifacts prune --max-age-days 30 --yes
+
+# Machine-readable JSON summary
+voxera artifacts prune --max-age-days 30 --json
+
+# Override queue root for testing
+voxera artifacts prune --queue-dir /tmp/test-queue --max-age-days 1
+```
+
+**Config** (`~/.config/voxera/config.json`):
+```json
+{
+  "artifacts_retention_days": 30,
+  "artifacts_retention_max_count": 100
+}
+```
+Or via env: `VOXERA_ARTIFACTS_RETENTION_DAYS=30`, `VOXERA_ARTIFACTS_RETENTION_MAX_COUNT=100`.
+CLI flags always override config values. If neither is set, the command prints
+`"no pruning rules configured"` and exits 0 (safe default).
+
+**Selection policy:** union — an artifact is selected for pruning if it exceeds
+*either* the age rule or the count rule.
 
 ### Incident runbook (quick copy/paste)
 
