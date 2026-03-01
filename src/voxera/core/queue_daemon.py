@@ -42,6 +42,10 @@ _FAILED_SIDECAR_SCHEMA_WRITE_VERSION = 1
 _FAILED_SIDECAR_SCHEMA_READ_VERSIONS = {_FAILED_SIDECAR_SCHEMA_WRITE_VERSION}
 _FAILED_TIMESTAMP_MS_MIN = 10**12
 _APPROVAL_GRANTS_FILE = "grants.json"
+_STARTUP_RECOVERY_REASON = "recovered_after_restart"
+_STARTUP_RECOVERY_MESSAGE = (
+    "daemon recovered from unclean shutdown; job marked failed deterministically"
+)
 
 
 class QueueLockError(RuntimeError):
@@ -288,8 +292,14 @@ class MissionQueueDaemon:
             payload["details"] = details
         log(payload)
 
-    def _increment_health_counter(self, key: str, *, last_error: str | None = None) -> None:
-        increment_health_counter(self.queue_root, key, last_error=last_error)
+    def _increment_health_counter(
+        self,
+        key: str,
+        *,
+        amount: int = 1,
+        last_error: str | None = None,
+    ) -> None:
+        increment_health_counter(self.queue_root, key, amount=amount, last_error=last_error)
 
     def _update_daemon_health_state(self, **values: Any) -> None:
         def _apply(payload: dict[str, Any]) -> dict[str, Any]:
@@ -606,6 +616,237 @@ class MissionQueueDaemon:
                 "to": str(moved),
             }
         )
+
+    def _deterministic_target_path(
+        self,
+        target_dir: Path,
+        file_name: str,
+        *,
+        suffix_tag: str,
+    ) -> Path:
+        base = Path(file_name)
+        candidate = target_dir / base.name
+        if not candidate.exists():
+            return candidate
+
+        index = 1
+        while True:
+            indexed = target_dir / f"{base.stem}-{suffix_tag}-{index}{base.suffix}"
+            if not indexed.exists():
+                return indexed
+            index += 1
+
+    def _safe_relative_to_queue(self, entry: Path) -> Path:
+        queue_resolved = self.queue_root.resolve()
+        if entry.is_symlink():
+            location = entry.expanduser().absolute()
+            if not location.is_relative_to(queue_resolved):
+                raise ValueError(f"path escapes queue root: {entry}")
+            return location.relative_to(queue_resolved)
+
+        resolved = entry.resolve()
+        if not resolved.is_relative_to(queue_resolved):
+            raise ValueError(f"path escapes queue root: {entry}")
+        return resolved.relative_to(queue_resolved)
+
+    def _quarantine_startup_recovery_path(self, src: Path, recovery_root: Path) -> Path:
+        relative = self._safe_relative_to_queue(src)
+        destination = recovery_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(destination))
+        return destination
+
+    def _detected_inflight_pending_jobs(self) -> list[dict[str, Any]]:
+        detected: list[dict[str, Any]] = []
+        for job in self._pending_primary_jobs():
+            detected_state_files: list[str] = []
+            pending_meta = self.pending / f"{job.stem}.pending.json"
+            if pending_meta.exists() and pending_meta.is_file():
+                detected_state_files.append(str(pending_meta.relative_to(self.queue_root)))
+            pending_state = self.pending / f"{job.stem}.state.json"
+            if pending_state.exists() and pending_state.is_file():
+                detected_state_files.append(str(pending_state.relative_to(self.queue_root)))
+
+            if not detected_state_files:
+                continue
+
+            artifacts_dir = self.artifacts / job.stem
+            detected_artifacts_paths: list[str] = []
+            if artifacts_dir.exists() and artifacts_dir.is_dir():
+                detected_artifacts_paths.append(str(artifacts_dir.relative_to(self.queue_root)))
+
+            detected.append(
+                {
+                    "job": job,
+                    "job_id": job.stem,
+                    "original_bucket": "pending",
+                    "detected_state_files": sorted(detected_state_files),
+                    "detected_artifacts_paths": sorted(detected_artifacts_paths),
+                }
+            )
+        return sorted(detected, key=lambda item: str(item["job"]))
+
+    def _collect_orphan_approval_files(self) -> list[Path]:
+        orphans: list[Path] = []
+        if not self.approvals.exists():
+            return orphans
+        for artifact in self._iter_approval_artifacts():
+            if artifact.is_dir():
+                continue
+            stem = artifact.stem.removesuffix(".approval")
+            pending_job = self.pending / f"{stem}.json"
+            if not pending_job.exists():
+                orphans.append(artifact)
+        return sorted(orphans)
+
+    def _collect_orphan_state_files(self) -> list[Path]:
+        search_dirs = [
+            self.queue_root,
+            self.inbox,
+            self.pending,
+            self.done,
+            self.failed,
+            self.canceled,
+        ]
+        existing_jobs = {
+            p.name
+            for bucket in (self.inbox, self.pending, self.done, self.failed, self.canceled)
+            for p in bucket.glob("*.json")
+            if p.is_file() and self._is_primary_job_json(p)
+        }
+        orphans: list[Path] = []
+        for directory in search_dirs:
+            if not directory.exists() or not directory.is_dir():
+                continue
+            for state_file in sorted(directory.glob("*.state.json")):
+                if not state_file.is_file() and not state_file.is_symlink():
+                    continue
+                job_name = f"{state_file.name.removesuffix('.state.json')}.json"
+                if job_name not in existing_jobs:
+                    orphans.append(state_file)
+        return sorted(set(orphans), key=lambda p: str(p))
+
+    def recover_on_startup(self, *, now_ms: int | None = None) -> dict[str, Any]:
+        self.ensure_dirs()
+        recovery_ts_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        recovery_root = self.queue_root / "recovery" / f"startup-{recovery_ts_ms}"
+
+        inflight_jobs = self._detected_inflight_pending_jobs()
+        failed_jobs: list[str] = []
+        failed_details: list[dict[str, Any]] = []
+        quarantined_paths: list[str] = []
+
+        for item in inflight_jobs:
+            job_path = item["job"]
+            if not isinstance(job_path, Path) or not job_path.exists():
+                continue
+            target = self._deterministic_target_path(
+                self.failed, job_path.name, suffix_tag="recovered"
+            )
+            moved = self._move_job(job_path, target.parent)
+            if moved is None:
+                continue
+            if moved != target:
+                moved = moved.replace(target)
+
+            detail = {
+                "reason": _STARTUP_RECOVERY_REASON,
+                "message": _STARTUP_RECOVERY_MESSAGE,
+                "original_bucket": item["original_bucket"],
+                "detected_state_files": item["detected_state_files"],
+                "detected_artifacts_paths": item["detected_artifacts_paths"],
+            }
+            self._write_failed_error_sidecar(
+                moved,
+                error=f"{_STARTUP_RECOVERY_REASON}: {_STARTUP_RECOVERY_MESSAGE}",
+                payload=detail,
+            )
+
+            for state_file in item["detected_state_files"]:
+                candidate = self.queue_root / state_file
+                if candidate.exists() or candidate.is_symlink():
+                    destination = self._quarantine_startup_recovery_path(candidate, recovery_root)
+                    quarantined_paths.append(str(destination.relative_to(self.queue_root)))
+
+            approval = self.approvals / f"{job_path.stem}.approval.json"
+            if approval.exists() or approval.is_symlink():
+                destination = self._quarantine_startup_recovery_path(approval, recovery_root)
+                quarantined_paths.append(str(destination.relative_to(self.queue_root)))
+
+            failed_jobs.append(moved.stem)
+            failed_details.append(
+                {
+                    "job_id": moved.stem,
+                    "failed_path": str(moved.relative_to(self.queue_root)),
+                    "reason": _STARTUP_RECOVERY_REASON,
+                    "message": _STARTUP_RECOVERY_MESSAGE,
+                    "original_bucket": item["original_bucket"],
+                    "detected_state_files": item["detected_state_files"],
+                    "detected_artifacts_paths": item["detected_artifacts_paths"],
+                }
+            )
+
+        orphan_approvals = self._collect_orphan_approval_files()
+        orphan_states = self._collect_orphan_state_files()
+        for src in [*orphan_approvals, *orphan_states]:
+            if not (src.exists() or src.is_symlink()):
+                continue
+            destination = self._quarantine_startup_recovery_path(src, recovery_root)
+            quarantined_paths.append(str(destination.relative_to(self.queue_root)))
+
+        counts = {
+            "jobs_failed": len(failed_jobs),
+            "orphan_approvals_quarantined": len(orphan_approvals),
+            "orphan_state_files_quarantined": len(orphan_states),
+            "total_quarantined": len(quarantined_paths),
+        }
+        summary = (
+            "startup recovery complete: "
+            f"jobs_failed={counts['jobs_failed']}, "
+            f"orphan_approvals_quarantined={counts['orphan_approvals_quarantined']}, "
+            f"orphan_state_files_quarantined={counts['orphan_state_files_quarantined']}"
+        )
+        report = {
+            "ts_ms": recovery_ts_ms,
+            "policy": "fail_fast",
+            "reason": _STARTUP_RECOVERY_REASON,
+            "message": _STARTUP_RECOVERY_MESSAGE,
+            "counts": counts,
+            "jobs_failed": sorted(failed_jobs),
+            "failed_details": sorted(failed_details, key=lambda item: str(item["job_id"])),
+            "quarantined_paths": sorted(quarantined_paths),
+            "recovery_dir": (
+                str(recovery_root.relative_to(self.queue_root)) if quarantined_paths else None
+            ),
+        }
+
+        self._increment_health_counter("startup_recovery_runs")
+        if counts["jobs_failed"]:
+            self._increment_health_counter(
+                "startup_recovery_jobs_failed", amount=counts["jobs_failed"]
+            )
+        if counts["total_quarantined"]:
+            self._increment_health_counter(
+                "startup_recovery_orphans_quarantined", amount=counts["total_quarantined"]
+            )
+        self._update_daemon_health_state(
+            last_startup_recovery_ts=recovery_ts_ms,
+            last_startup_recovery_counts=counts,
+            last_startup_recovery_summary=summary,
+        )
+        log(
+            {
+                "event": "daemon_startup_recovery",
+                "ts_ms": recovery_ts_ms,
+                "policy": "fail_fast",
+                "reason": _STARTUP_RECOVERY_REASON,
+                "counts": counts,
+                "affected_job_ids": sorted(failed_jobs),
+                "action": "failed_or_quarantined",
+                "recovery_dir": report["recovery_dir"],
+            }
+        )
+        return report
 
     def _failed_error_sidecar(self, failed_job: Path) -> Path:
         return failed_job.with_name(f"{failed_job.stem}.error.json")
@@ -1896,6 +2137,7 @@ class MissionQueueDaemon:
             shutdown_requested=False,
         )
         self._acquire_daemon_lock()
+        self.recover_on_startup()
         self._snapshot_and_check_config_drift()
 
         previous_sigterm = signal.getsignal(signal.SIGTERM)
