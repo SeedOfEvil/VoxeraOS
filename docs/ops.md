@@ -86,6 +86,34 @@ Planner preamble override env vars (precedence: string > path > generated defaul
 To rename the assistant later, set `VOXERA_PLANNER_AGENT_NAME`.
 
 Note: systemd user services do not inherit ad-hoc shell exports by default; configure env via Voxera runtime env files/service unit overrides if drift behavior seems unexpected.
+
+## Onboarding + Demo
+
+Use `voxera setup` for first-run app config (`~/.config/voxera/config.yml`) while keeping runtime ops configuration in `~/.config/voxera/config.json` (optional/operator-managed).
+
+Provider auth choices are intentionally non-destructive:
+- Keep current (default when already configured)
+- Skip for now (continue with offline demo flows)
+- Enter new/replace key (explicit only)
+
+Run the guided checklist:
+
+```bash
+voxera demo
+voxera demo --online
+```
+
+Then use operational hygiene commands:
+
+```bash
+voxera queue status
+voxera queue reconcile
+voxera queue reconcile --fix
+voxera queue prune
+voxera artifacts prune
+voxera doctor --quick
+voxera doctor --self-test
+```
 ## Queue contract + intake flow
 
 Use `voxera inbox` as the human-friendly front door for queued goals. Ensure queue folders exist once per machine:

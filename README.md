@@ -143,6 +143,27 @@ voxera doctor --self-test
 ```
 to verify each configured model endpoint.
 
+### Quick Demo (safe + repeatable)
+Use the guided demo checklist to exercise queue + approval flows without destructive actions:
+
+```bash
+voxera demo
+voxera demo --online
+```
+
+- `voxera demo` is offline-first and marks provider readiness as `SKIPPED`.
+- `voxera demo --online` opts into provider readiness checks; missing keys remain `SKIPPED` (not failure).
+- Demo jobs are created with a deterministic prefix (`demo-basic-*`, `demo-approval-*`), and approval demo jobs set `approval_required=true`.
+
+Setup wizard UX is non-destructive for provider credentials/config:
+- **Keep current** (default when configured)
+- **Skip for now** (continue offline)
+- **Enter new / replace key** (explicit only)
+
+Config separation remains:
+- App/brain setup: `~/.config/voxera/config.yml`
+- Runtime ops config (operator-managed): `~/.config/voxera/config.json`
+
 ### 2) Try basic commands
 ```bash
 voxera status
