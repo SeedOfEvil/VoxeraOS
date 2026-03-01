@@ -39,12 +39,21 @@ def _entry_size(entry: Path) -> int:
 
 
 def _is_safe(entry: Path, root: Path) -> bool:
-    """Return True iff entry is safely inside root (no symlink escape)."""
+    """Return True iff entry physically resides inside root (no symlink escape).
+
+    For symlinks: checks the link's parent directory (not the target).
+    For non-symlinks: resolves fully to prevent bind-mount/hardlink escapes.
+    root must already be fully resolved.
+    """
     try:
+        if entry.is_symlink():
+            # Resolve only the parent directory the link lives in.
+            # Never resolve the symlink itself — that gives the target.
+            return entry.parent.resolve() == root
         resolved = entry.resolve()
     except OSError:
         return False
-    return str(resolved).startswith(str(root.resolve()))
+    return str(resolved).startswith(str(root) + "/")
 
 
 def prune_artifacts(

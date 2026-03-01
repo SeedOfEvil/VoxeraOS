@@ -191,3 +191,41 @@ def test_prune_json_output(tmp_path: Path) -> None:
     assert data["total_candidates"] == 4
     assert data["pruned_count"] == 2
     assert data["reclaimed_bytes"] > 0
+
+
+def test_prune_yes_deletes_symlink_with_outside_target(tmp_path: Path) -> None:
+    """Symlink inside artifacts/ pointing to outside target must be unlinked, not skipped.
+
+    Regression test: _is_safe() previously resolved the symlink (following the target),
+    saw the target was outside artifacts root, and skipped the deletion. Fix: check the
+    link's parent directory (not the target) for containment.
+    """
+    queue_dir = tmp_path / "queue"
+    artifacts_dir = queue_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    # Target lives OUTSIDE artifacts root
+    outside_target = tmp_path / "DO_NOT_DELETE.txt"
+    outside_target.write_text("important", encoding="utf-8")
+
+    # Create symlink inside artifacts/
+    link = artifacts_dir / "escape.link"
+    link.symlink_to(outside_target)
+
+    # Stamp symlink mtime as 2 days ago without following the link
+    old_mtime = time.time() - 86400 * 2
+    os.utime(link, (old_mtime, old_mtime), follow_symlinks=False)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["artifacts", "prune", "--max-age-days", "1", "--yes", "--queue-dir", str(queue_dir)],
+    )
+
+    assert result.exit_code == 0, result.output
+    # The symlink itself must be gone (use is_symlink — not exists — for 3.10 compat)
+    assert not link.is_symlink(), "symlink must have been deleted"
+    # The target outside artifacts root must be untouched
+    assert outside_target.exists(), "target outside artifacts root must not be deleted"
+    # Output confirms 1 pruned
+    assert "1" in result.output
