@@ -20,6 +20,8 @@ def test_write_config_snapshot_creates_redacted_payload(tmp_path: Path) -> None:
         queue_failed_max_count=None,
         artifacts_retention_days=None,
         artifacts_retention_max_count=None,
+        queue_prune_max_age_days=None,
+        queue_prune_max_count=None,
         ops_bundle_dir=None,
         dev_mode=False,
         notify_enabled=False,

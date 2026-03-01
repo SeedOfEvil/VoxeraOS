@@ -389,6 +389,48 @@ ls ~/VoxeraOS/notes/queue/failed/*.error.json
 - `VOXERA_QUEUE_FAILED_MAX_AGE_S`
 - `VOXERA_QUEUE_FAILED_MAX_COUNT`
 
+## Queue prune
+
+Remove stale jobs from terminal buckets (`done/`, `failed/`, `canceled/`).
+`inbox/` and `pending/` are **never** touched.
+
+```bash
+# dry-run preview (safe default — nothing is deleted)
+voxera queue prune --max-age-days 14
+
+# execute deletion
+voxera queue prune --max-age-days 14 --yes
+
+# keep only the newest 200 jobs per bucket
+voxera queue prune --max-count 200 --yes
+
+# combine both rules (union: prune if either rule matches)
+voxera queue prune --max-age-days 30 --max-count 500 --yes
+
+# machine-readable summary
+voxera queue prune --max-age-days 14 --json
+```
+
+Rules can also be persisted in `~/.config/voxera/config.json` so operators
+don't need to repeat flags:
+
+```json
+{
+  "queue_prune_max_age_days": 30,
+  "queue_prune_max_count": 500
+}
+```
+
+CLI flags take precedence over config values.  If neither flags nor config is
+set, the command exits 0 with a "no rules configured" message.
+
+When pruning a job, matching sidecars in the same bucket are also removed
+(e.g. `job-XYZ.error.json`, `job-XYZ.state.json`).
+
+Env vars (override config file):
+- `VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS`
+- `VOXERA_QUEUE_PRUNE_MAX_COUNT`
+
 ## Information sources (keep in sync)
 
 For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:
