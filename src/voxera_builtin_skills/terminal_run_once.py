@@ -13,7 +13,7 @@ def run(keep_open: bool = True) -> RunResult:
     lines = [
         "clear",
         "echo '--- Voxera Terminal Demo ---'",
-        'echo \'Command: echo "Hello, world!"\'',
+        "echo 'Command: echo \"Hello, world!\"'",
         'echo "Hello, world!"',
     ]
     if keep_open:

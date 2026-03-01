@@ -8,8 +8,9 @@ from voxera_builtin_skills.terminal_run_once import run
 def test_run_opens_gnome_terminal():
     mock_popen = MagicMock()
 
-    with patch("shutil.which", return_value="/usr/bin/gnome-terminal"), patch(
-        "subprocess.Popen", mock_popen
+    with (
+        patch("shutil.which", return_value="/usr/bin/gnome-terminal"),
+        patch("subprocess.Popen", mock_popen),
     ):
         result = run()
 
@@ -26,8 +27,9 @@ def test_run_opens_gnome_terminal():
 def test_run_script_contains_hello_world_and_press_enter():
     mock_popen = MagicMock()
 
-    with patch("shutil.which", return_value="/usr/bin/gnome-terminal"), patch(
-        "subprocess.Popen", mock_popen
+    with (
+        patch("shutil.which", return_value="/usr/bin/gnome-terminal"),
+        patch("subprocess.Popen", mock_popen),
     ):
         result = run(keep_open=True)
 
@@ -41,8 +43,9 @@ def test_run_script_contains_hello_world_and_press_enter():
 def test_run_without_keep_open_has_no_press_enter():
     mock_popen = MagicMock()
 
-    with patch("shutil.which", return_value="/usr/bin/gnome-terminal"), patch(
-        "subprocess.Popen", mock_popen
+    with (
+        patch("shutil.which", return_value="/usr/bin/gnome-terminal"),
+        patch("subprocess.Popen", mock_popen),
     ):
         result = run(keep_open=False)
 
