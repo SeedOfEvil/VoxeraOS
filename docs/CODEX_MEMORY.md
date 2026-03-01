@@ -182,6 +182,27 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Risks/notes:
   - Process and docs only; no code changes in this pass.
 
+## 2026-03-01 — PR #N/A — v0.1.5: artifacts prune + retention CLI
+- Summary:
+  - Bumped version from 0.1.4 to 0.1.5 in `pyproject.toml`, `README.md`, and docs.
+  - Added `voxera artifacts prune` CLI command: dry-run by default, `--yes` to delete, union
+    selection policy for `--max-age-days` and `--max-count` flags, `--json` for machine-readable output.
+  - Added `artifacts_retention_days` and `artifacts_retention_max_count` to `VoxeraConfig` with
+    corresponding env vars (`VOXERA_ARTIFACTS_RETENTION_DAYS`, `VOXERA_ARTIFACTS_RETENTION_MAX_COUNT`).
+  - Created `src/voxera/core/artifacts.py` with `prune_artifacts()` pure logic function.
+  - Added `docs/ROADMAP_0.1.5.md` (locked scope) and updated `docs/ROADMAP.md` to v0.1.5 baseline.
+- Validation:
+  - `ruff format src tests && ruff check src tests` — clean.
+  - `mypy src/voxera tests` — no new errors beyond baseline.
+  - `pytest -q` — all tests pass including 7 new artifact-prune tests.
+- Follow-ups:
+  - Tie artifact cleanup to failed-job retention pruner (when failed job is pruned, delete artifact dir).
+  - Add `voxera queue prune` command for failed job files (Day 2 ROADMAP item).
+  - Add `make type-debt` target (Day 1 ROADMAP item).
+- Risks/notes:
+  - Prune is always dry-run without `--yes`; safe by design.
+  - Union policy documented in help text and README.
+
 ### PR #72 – Dry-run determinism: snapshot freeze + deterministic output mode (2026-02-28)
 - Added `--freeze-capabilities-snapshot` and `--deterministic` flags to `voxera missions plan`.
 - Added `_make_dryrun_deterministic()` helper in `src/voxera/core/missions.py` that zeroes

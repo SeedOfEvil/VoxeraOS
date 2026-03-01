@@ -19,6 +19,7 @@ from .config import (
     write_config_fingerprint,
     write_config_snapshot,
 )
+from .core.artifacts import format_bytes, prune_artifacts
 from .core.capabilities_snapshot import (
     generate_capabilities_snapshot,
     validate_mission_id_against_snapshot,
@@ -144,6 +145,8 @@ def config_validate():
     typer.echo(json.dumps({"status": "ok", "config_path": str(cfg.config_path)}, sort_keys=True))
 
 
+artifacts_app = typer.Typer(help="Artifact management utilities")
+app.add_typer(artifacts_app, name="artifacts")
 skills_app = typer.Typer(help="Manage skills")
 app.add_typer(skills_app, name="skills")
 missions_app = typer.Typer(help="Run multi-step built-in missions")
@@ -976,3 +979,104 @@ def inbox_list(
 
     for missing in missing_dirs:
         console.print(f"[yellow]Hint:[/yellow] missing directory: {missing}")
+
+
+@artifacts_app.command("prune")
+def artifacts_prune(
+    max_age_days: int | None = typer.Option(
+        None,
+        "--max-age-days",
+        min=1,
+        help="Prune artifacts older than this many days.",
+    ),
+    max_count: int | None = typer.Option(
+        None,
+        "--max-count",
+        min=1,
+        help="Keep newest N artifacts; prune the rest.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Perform deletion. Without this flag, only a dry-run preview is shown.",
+    ),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable JSON summary.",
+    ),
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing the artifacts/ subdirectory.",
+    ),
+) -> None:
+    """Prune job artifacts. Dry-run by default; use --yes to delete.
+
+    Scans notes/queue/artifacts/ (or <queue-dir>/artifacts/) for stale entries.
+    Selection policy: union — an artifact is pruned if it exceeds *either*
+    --max-age-days OR is outside the newest --max-count entries.
+
+    CLI flags override values from ~/.config/voxera/config.json:
+      artifacts_retention_days, artifacts_retention_max_count.
+
+    If neither flags nor config is set, prints a message and exits 0 (safe default).
+    """
+    cfg = load_runtime_config()
+
+    # CLI flags take precedence over config
+    effective_age_days = max_age_days if max_age_days is not None else cfg.artifacts_retention_days
+    effective_max_count = max_count if max_count is not None else cfg.artifacts_retention_max_count
+
+    artifacts_root = Path(queue_dir).expanduser().resolve() / "artifacts"
+    max_age_s = float(effective_age_days) * 86400.0 if effective_age_days is not None else None
+
+    result = prune_artifacts(
+        artifacts_root,
+        max_age_s=max_age_s,
+        max_count=effective_max_count,
+        dry_run=not yes,
+    )
+
+    if json_out:
+        typer.echo(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    status = result["status"]
+
+    if status == "no_artifacts_dir":
+        console.print(f"No artifacts directory at {artifacts_root} — nothing to prune.")
+        return
+
+    if status == "no_rules":
+        console.print(
+            "No pruning rules configured. Set --max-age-days or --max-count, "
+            "or add artifacts_retention_days / artifacts_retention_max_count to "
+            "~/.config/voxera/config.json."
+        )
+        return
+
+    dry_run: bool = result["dry_run"]
+    total: int = result["total_candidates"]
+    pruned: int = result["pruned_count"]
+    reclaimed: int = result["reclaimed_bytes"]
+
+    prefix = "[dim](dry-run)[/dim] " if dry_run else ""
+    action = "Would prune" if dry_run else "Pruned"
+
+    console.print(f"{prefix}Artifacts root: {artifacts_root}")
+    console.print(f"{prefix}Total candidates: {total}")
+    console.print(f"{prefix}{action}: {pruned}")
+    console.print(f"{prefix}Reclaimed: {format_bytes(reclaimed)}")
+
+    top: list[dict[str, Any]] = result.get("top_entries", [])
+    if top:
+        table = Table(title="Top Artifacts by Size")
+        table.add_column("Name")
+        table.add_column("Size", justify="right")
+        for entry in top:
+            table.add_row(entry["name"], format_bytes(entry["bytes"]))
+        console.print(table)
+
+    if dry_run and pruned > 0:
+        console.print("[yellow]Hint:[/yellow] Run with --yes to perform deletion.")
