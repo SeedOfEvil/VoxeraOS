@@ -280,3 +280,69 @@ def test_inbox_and_pending_not_touched(tmp_path: Path) -> None:
     # inbox and pending must be completely untouched
     assert inbox_job.exists(), "inbox job must not be deleted"
     assert pending_job.exists(), "pending job must not be deleted"
+
+
+# ---------------------------------------------------------------------------
+# Regression: sidecars must NOT be counted as primary job candidates
+# ---------------------------------------------------------------------------
+
+
+def test_sidecars_not_counted_as_primary_candidates(tmp_path: Path) -> None:
+    """job-b.error.json / job-b.state.json must NOT inflate candidate counts.
+
+    Regression test for the glob bug where ``job-*.json`` would match sidecar
+    filenames, causing inflated candidate counts and spurious "unsafe path"
+    warnings when the sidecar was already deleted via the primary job's prune.
+    """
+    qd = _queue_dir(tmp_path)
+    now = time.time()
+    old_mtime = now - 86400 * 5  # 5 days ago — older than any threshold we use
+
+    failed_dir = qd / "failed"
+    job = _make_job(failed_dir, "job-b.json", mtime=old_mtime)
+    error_sidecar = _make_sidecar(failed_dir, "job-b", ".error.json", mtime=old_mtime)
+    state_sidecar = _make_sidecar(failed_dir, "job-b", ".state.json", mtime=old_mtime)
+
+    runner = CliRunner()
+
+    # 1. Dry-run: candidates and selected must both be 1 (not 3).
+    result_dry = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "prune",
+            "--max-age-days",
+            "1",
+            "--json",
+            "--queue-dir",
+            str(qd),
+        ],
+    )
+    assert result_dry.exit_code == 0, result_dry.output
+    data = json.loads(result_dry.output)
+    failed_counts = data["per_bucket"]["failed"]
+    assert failed_counts["candidates"] == 1, (
+        f"expected 1 candidate (primary job only), got {failed_counts['candidates']}"
+    )
+    assert failed_counts["selected"] == 1, f"expected 1 selected, got {failed_counts['selected']}"
+
+    # 2. Execute: all three files deleted, errors list is empty.
+    result_yes = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "prune",
+            "--max-age-days",
+            "1",
+            "--yes",
+            "--json",
+            "--queue-dir",
+            str(qd),
+        ],
+    )
+    assert result_yes.exit_code == 0, result_yes.output
+    yes_data = json.loads(result_yes.output)
+    assert yes_data["errors"] == [], f"unexpected errors: {yes_data['errors']}"
+    assert not job.exists(), "primary job must be deleted"
+    assert not error_sidecar.exists(), "error sidecar must be deleted"
+    assert not state_sidecar.exists(), "state sidecar must be deleted"

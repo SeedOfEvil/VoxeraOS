@@ -104,6 +104,9 @@ def list_jobs_in_bucket(queue_dir: Path, bucket: str) -> list[JobEntry]:
     entries: list[JobEntry] = []
     try:
         for job in bucket_dir.glob(_JOB_GLOB):
+            # Skip sidecar files — they match "job-*.json" but are not primary jobs.
+            if any(job.name.endswith(s) for s in _SIDECAR_SUFFIXES):
+                continue
             mtime = _entry_mtime(job)
             sidecars = _find_sidecars(job)
             entries.append(
@@ -174,6 +177,9 @@ def safe_delete_entry(path: Path, root: Path) -> bool:
         return False
     try:
         path.unlink()
+        return True
+    except FileNotFoundError:
+        # Already gone — treat as success; no warning needed.
         return True
     except OSError:
         return False
