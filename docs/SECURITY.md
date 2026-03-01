@@ -9,8 +9,8 @@
 | Secret leakage (API keys, tokens) | High | ✅ Keyring + 0600 fallback; redacted in config show/snapshot |
 | Over-permissioned skills | High | ✅ Capability declarations + policy engine |
 | Panel auth brute force | Medium | Partial — password required for mutations; no rate limiting yet |
-| Mid-job daemon crash leaving ambiguous state | Medium | No — no SIGTERM handler; crash leaves job in pending/ with no sidecar guaranteed |
-| Artifact data accumulation | Low | Partial — queue pruned; artifact dirs not auto-cleaned |
+| Mid-job daemon crash leaving ambiguous state | Medium | ✅ Graceful SIGTERM handler (PR #80) + deterministic startup recovery (PR #81) |
+| Artifact data accumulation | Low | ✅ `voxera artifacts prune` (v0.1.5) + `voxera queue prune` (v0.1.6) available |
 | Dependency supply chain | Low | No signing; standard pip install |
 
 ---
@@ -68,11 +68,28 @@ no CSRF validation.** Each request to these endpoints generates a new archive on
 Operators should be aware these are browser-reachable from any tab that holds a valid session
 cookie, without CSRF protection.
 
+### Graceful daemon shutdown + startup recovery (FIXED — PR #80, #81)
+The queue daemon now handles `SIGTERM`/`SIGINT` explicitly:
+- Stops intake of new inbox jobs immediately on signal.
+- Marks any in-flight job as `failed/` with `reason=shutdown` and writes a structured sidecar.
+- Releases the daemon lock and exits cleanly within systemd's `TimeoutStopSec`.
+
+On next daemon start, a deterministic recovery pass runs before any intake:
+- Pending jobs with in-flight state markers are moved to `failed/` with `reason=recovered_after_restart`.
+- Orphan approvals and state files are quarantined under `recovery/startup-<ts>/` (never deleted).
+- Recovery is audited via `daemon_startup_recovery` event with counters.
+
+### Brain fallback classification (FIXED — PR #73)
+Brain fallback exceptions are classified into a stable enum before being surfaced:
+`TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN`.
+Reason and tier transition are logged to `health.json` and surfaced in `voxera queue health`
+and `voxera doctor --quick`.
+
 ---
 
 ## Known gaps (being tracked in ROADMAP.md)
 
-### Prompt injection surface (tracked: ROADMAP Day 6–7)
+### Prompt injection surface (tracked: ROADMAP Day 1–2)
 User-controlled goal strings are embedded in the LLM prompt without length capping
 or structural delimiters. A carefully crafted goal or a document read by `files.read_text`
 and used in a plan context could influence planner output.
@@ -83,43 +100,12 @@ and approval requirements catch unexpected execution patterns.
 **Planned fix:** length cap on goal strings (2,000 chars), `[USER DATA: ...]` delimiters
 in preamble to structurally separate system context from user input.
 
-### Panel auth has no rate limiting (tracked: ROADMAP Day 4)
+### Panel auth has no rate limiting (tracked: ROADMAP Day 2–3)
 Repeated failed Basic auth attempts are logged but not rate-limited.
 On a shared or remote host, the password endpoint is brute-forceable.
 
 **Planned fix:** failed-attempt counter with 60-second lockout after 5 failures.
 Lockout events logged as structured audit entries.
-
-### No SIGTERM handler — crash or stop leaves jobs in ambiguous state (tracked: ROADMAP Day 4–5)
-There is no signal handler in the queue daemon. On SIGTERM (systemd stop, kill) or an unhandled
-crash, the job being processed is left in `pending/` with no failed-sidecar written.
-The sidecar contract only applies to failures handled through the normal code path —
-a mid-job termination bypasses it entirely.
-
-On the next daemon start, the orphaned pending job will be re-picked up and re-executed.
-For non-idempotent skills (file writes, app launches, clipboard) this means double execution.
-
-**Operator note:** if the daemon was stopped or crashed mid-job, check `pending/` for jobs
-that should have completed and inspect audit logs for the last recorded step before deciding
-to retry, cancel, or manually move the job.
-
-**Planned fix:** explicit SIGTERM handler that marks in-flight jobs as failed with
-`reason=shutdown`, releases the queue lock, and exits cleanly within systemd's `TimeoutStopSec`.
-
-### Artifact directories are not auto-pruned (tracked: ROADMAP Day 1)
-`~/.voxera/artifacts/<job_id>/` directories accumulate without cleanup.
-Failed-job retention pruning removes queue files but leaves artifact dirs behind.
-
-**Planned fix:** tie artifact dir cleanup to the retention pruner;
-add `voxera artifacts prune` CLI command.
-
-### Brain fallback errors are unstructured (tracked: ROADMAP Day 2–3)
-Fallback chain catches `except Exception` broadly.
-The reason for fallback (timeout, auth, rate limit, malformed output) is not
-classified or surfaced in a structured way, making postmortems harder.
-
-**Planned fix:** classify into `TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | UNKNOWN` enum;
-log as structured JSON; surface in `voxera doctor` and health snapshots.
 
 ---
 
@@ -127,22 +113,26 @@ log as structured JSON; surface in `voxera doctor` and health snapshots.
 
 1. **Goal string sanitization + length cap** — prompt injection defense layer.
 2. **Panel auth rate limiting** — prevent brute force on operator password.
-3. **Graceful SIGTERM handler** — prevent double-execution after daemon crash.
-4. **Artifact directory auto-pruning** — prevent unbounded disk growth.
-5. **LLM rate limiter** — prevent runaway planner calls from burning API quota.
-6. **Eager skill manifest validation** — catch broken manifests at startup, not mid-job.
-7. **Podman seccomp / AppArmor profiles** — tighten sandbox beyond `--read-only`.
-8. **Signed skills + integrity verification** — prevent tampered skill entrypoints.
-9. **Redaction pipeline for audit logs and telemetry** — strip PII and secrets from logs.
-10. **Safe-mode boot** — limited skill set, no network, confirmation-only execution.
+3. **LLM rate limiter** — prevent runaway planner calls from burning API quota.
+4. **Eager skill manifest validation** — catch broken manifests at startup, not mid-job.
+5. **Podman seccomp / AppArmor profiles** — tighten sandbox beyond `--read-only`.
+6. **Signed skills + integrity verification** — prevent tampered skill entrypoints.
+7. **Redaction pipeline for audit logs and telemetry** — strip PII and secrets from logs.
+8. **Safe-mode boot** — limited skill set, no network, confirmation-only execution.
+
+Previously tracked items now resolved:
+- ~~Graceful SIGTERM handler~~ — FIXED in PR #80–#81 (graceful shutdown + startup recovery).
+- ~~Artifact directory auto-pruning~~ — FIXED in v0.1.5 (`voxera artifacts prune`) + v0.1.6 (`voxera queue prune`).
+- ~~Brain fallback errors unstructured~~ — FIXED in PR #73 (`BrainFallbackReason` enum).
 
 ---
 
 ## For operators
 
 - Run `voxera doctor` before starting the daemon to verify endpoint health and auth.
-- Use `voxera queue health` for a quick lock/auth/counter snapshot during incidents.
+- Use `voxera queue health` for a quick lock/auth/counter/fallback snapshot during incidents.
 - Panel mutations require `VOXERA_PANEL_OPERATOR_PASSWORD` — if not set, the panel shows a setup-required banner with no secrets displayed.
 - Audit JSONL logs are at `~/.voxera/data/audit/`. Never delete these during incident triage.
 - For incident response, use `voxera ops bundle system` and `voxera ops bundle job <job>` to capture a point-in-time snapshot.
+- Use `voxera queue reconcile` to detect orphan sidecars or approval mismatches after unclean shutdowns.
 - See `docs/ops.md` for the full incident runbook.

@@ -128,8 +128,11 @@ Queue directory contract (`~/VoxeraOS/notes/queue`):
 - `pending/approvals/`
 - `done/`
 - `failed/`
+- `canceled/` (operator-canceled jobs; move to `inbox/` via `voxera queue retry`)
 - `artifacts/`
 - `_archive/`
+- `recovery/` (created by daemon startup recovery; quarantines orphan approvals + state files — never deleted)
+- `quarantine/` (created by `voxera queue reconcile --fix --yes`; quarantines orphan sidecars — never deleted)
 
 Backwards-compatible safety behavior:
 - Legacy drops in `notes/queue/*.json` are auto-relocated to `inbox/` with audit event `queue_job_autorelocate`.

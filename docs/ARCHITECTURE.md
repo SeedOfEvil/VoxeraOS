@@ -76,6 +76,8 @@ src/voxera/
 ├── setup_wizard.py           — Interactive TUI first-run setup (voxera setup)
 ├── doctor.py                 — Diagnostic CLI: endpoint health, model test,
 │                               lock/auth checks, quick offline mode
+├── demo.py                   — Guided onboarding checklist (offline + online modes);
+│                               creates deterministic demo jobs without destructive actions
 ├── incident_bundle.py        — Per-job incident bundle (zip export)
 ├── ops_bundle.py             — System snapshot bundle export
 │
@@ -95,6 +97,10 @@ src/voxera/
 │   │                           failed-job sidecars, retention pruning, health tracking
 │   ├── queue_inspect.py      — Queue status snapshots; bucket filtering
 │   │                           (inbox / pending / done / failed / canceled)
+│   ├── queue_hygiene.py      — `voxera queue prune`: removes stale job files from terminal
+│   │                           buckets (done/failed/canceled); sidecar-aware; dry-run default
+│   ├── queue_reconcile.py    — `voxera queue reconcile`: report-only orphan/duplicate detector;
+│   │                           quarantine-first fix mode (`--fix [--yes]`); symlink-safe
 │   ├── router.py             — Intent routing: CLI / voice / panel inputs
 │   ├── inbox.py              — Atomic job intake; human-friendly entry point
 │   ├── capabilities_snapshot.py — Runtime catalog: missions, skills, allowed_apps;
@@ -189,6 +195,12 @@ Makefile                      — 30+ targets: dev, fmt, lint, type, test, e2e,
 ## Queue / Job Lifecycle
 
 ```
+Daemon startup
+    │  acquire flock exclusive lock (.daemon.lock)
+    │  run startup recovery:
+    │    pending + in-flight markers → failed/ + sidecar (reason=recovered_after_restart)
+    │    orphan approvals / state files → recovery/startup-<ts>/ quarantine
+    ▼
 inbox/*.json
     │  daemon tick (every 1s)
     ▼
@@ -198,10 +210,21 @@ policy gate
     │           (resume on approve, move to failed/ on deny)
     └── deny  → failed/ + error sidecar (schema v1)
 
-failed/*.json + failed/*.error.json (sidecar)
-    │  retention pruner: max-age + max-count
+SIGTERM / SIGINT
+    │  stop intake; mark in-flight job failed/ + sidecar (reason=shutdown)
+    │  release lock; exit cleanly within TimeoutStopSec
     ▼
-pruned (oldest logical units removed first)
+canceled/ (operator cancel via CLI or panel)
+
+failed/*.json + failed/*.error.json (sidecar)
+    │  voxera queue prune: max-age-days + max-count (terminal buckets only)
+    ▼
+pruned (oldest logical units removed first; symlink-safe)
+
+notes/queue/quarantine/  (voxera queue reconcile --fix --yes)
+    │  orphan sidecars + orphan approvals moved here; never deleted
+    ▼
+operator can restore manually or prune explicitly
 ```
 
 ---

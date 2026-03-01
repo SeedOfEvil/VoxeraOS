@@ -182,7 +182,7 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Risks/notes:
   - Process and docs only; no code changes in this pass.
 
-## 2026-03-01 — PR #N/A — v0.1.5: artifacts prune + retention CLI
+## 2026-03-01 — PR #74 — v0.1.5: artifacts prune + retention CLI
 - Summary:
   - Bumped version from 0.1.4 to 0.1.5 in `pyproject.toml`, `README.md`, and docs.
   - Added `voxera artifacts prune` CLI command: dry-run by default, `--yes` to delete, union
@@ -216,3 +216,173 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest -q` — all existing tests pass.
 - Files changed: `src/voxera/core/missions.py`, `src/voxera/cli.py`,
   `tests/test_dryrun_determinism.py`, `README.md`, `docs/ops.md`, `docs/CODEX_MEMORY.md`.
+
+## 2026-03-01 — PR #73 — Structured brain fallback reasons + health/doctor surfacing
+- Summary:
+  - Added stable `BrainFallbackReason` enum: `TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN`.
+  - All exception paths in `openai_compat.py` and `gemini.py` classified into the enum before bubbling up.
+  - Surfaced last fallback reason, source tier, and destination tier in `voxera queue health` and `health.json`.
+  - Added per-reason health counters (`brain_fallback_reason_timeout`, `_auth`, `_rate_limit`, etc.).
+  - `voxera doctor --quick` shows "Last fallback" line with most recent transition or "none".
+- Validation:
+  - `pytest -q tests/test_brain_fallback.py` — passes (new tests for each reason class).
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - Surface fallback reason counters on panel home dashboard (tracked in Ops visibility milestone).
+- Risks/notes:
+  - Existing `UNKNOWN` fallback events remain in audit logs; no migration needed.
+- Files changed: `src/voxera/brain/openai_compat.py`, `src/voxera/brain/gemini.py`,
+  `src/voxera/health.py`, `src/voxera/cli.py`, `src/voxera/doctor.py`,
+  `tests/test_brain_fallback.py`.
+
+## 2026-03-01 — PR #75 — `voxera queue prune` command (terminal buckets only)
+- Summary:
+  - Added `voxera queue prune` CLI command that removes stale job files from terminal buckets
+    (`done/`, `failed/`, `canceled/`). `inbox/` and `pending/` are never touched.
+  - Dry-run by default; `--yes` to execute deletions.
+  - Flags: `--max-age-days`, `--max-count`, `--json`, `--queue-dir`.
+  - Matching sidecars (`.error.json`, `.state.json`) removed in the same pass as their primary job.
+  - Env vars: `VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS`, `VOXERA_QUEUE_PRUNE_MAX_COUNT`.
+  - Runtime config keys: `queue_prune_max_age_days`, `queue_prune_max_count`.
+  - Fixed: sidecars excluded from primary job enumeration to avoid double-counting.
+  - Fixed: `safe_delete` tolerates already-deleted files gracefully.
+- Validation:
+  - `pytest -q tests/test_cli_queue.py` — passes (new prune lifecycle tests).
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - Expose latest prune result in `voxera queue status` output.
+  - Tie artifact dir cleanup to failed-job pruner pass.
+- Risks/notes:
+  - Union policy (age OR count) documented in help text and ops.md.
+- Files changed: `src/voxera/core/queue_hygiene.py` (new), `src/voxera/cli.py`,
+  `src/voxera/config.py`, `docs/ops.md`, `README.md`.
+
+## 2026-03-01 — PR #76 — `voxera queue reconcile` report-only diagnostic
+- Summary:
+  - Added `voxera queue reconcile` as a read-only queue hygiene diagnostic.
+  - Detects four issue categories: orphan sidecars, orphan approvals, orphan artifact candidates,
+    duplicate job filenames across buckets.
+  - Report-only by default — no filesystem changes in default mode.
+  - `--json` flag emits stable JSON schema for automation.
+  - Safe to run while daemon is running.
+- Validation:
+  - `pytest -q tests/test_cli_queue.py` — passes (new reconcile tests).
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - Add fix/quarantine mode (tracked in PR #78).
+- Risks/notes:
+  - Missing queue directories are treated as 0 issues (no error raised).
+- Files changed: `src/voxera/core/queue_reconcile.py` (new), `src/voxera/cli.py`, `docs/ops.md`.
+
+## 2026-03-01 — PR #77 — Config path standardization (config.json)
+- Summary:
+  - Standardized all CLI help text, log messages, and documentation to consistently reference
+    `~/.config/voxera/config.json` (not `config.yml` or ambiguous paths) for the runtime ops config.
+  - Updated `docs/ops.md`, `README.md`, and affected CLI modules for consistency.
+- Validation:
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Documentation-only change + CLI string cleanup; no runtime behavior changed.
+- Files changed: `src/voxera/cli.py`, `README.md`, `docs/ops.md`.
+
+## 2026-03-01 — PR #78 — Queue reconcile quarantine-first fix mode
+- Summary:
+  - Extended `voxera queue reconcile` with `--fix` flag enabling quarantine-first fix mode.
+  - Without `--yes`: fix mode is a dry-run preview — prints what *would* be quarantined, exits 0.
+  - With `--yes`: orphan sidecars in terminal buckets and orphan approvals are *moved* (not deleted)
+    into `<queue-dir>/quarantine/reconcile-YYYYMMDD-HHMMSS/` preserving relative paths.
+  - `--quarantine-dir` override supported (must remain within `--queue-dir`).
+  - Stable JSON output schema extended with `mode`, `fix_counts`, and `quarantined_paths` fields.
+  - Artifact candidates and duplicates remain report-only (too ambiguous for auto-fix).
+- Validation:
+  - `pytest -q tests/test_cli_queue.py` — passes.
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - Symlink safety in quarantine paths (tracked in PR #79).
+- Risks/notes:
+  - No data is ever deleted; quarantined files can be restored manually.
+- Files changed: `src/voxera/core/queue_reconcile.py`, `src/voxera/cli.py`, `docs/ops.md`.
+
+## 2026-03-01 — PR #79 — Reconcile symlink orphan fix (safe relative path for quarantine)
+- Summary:
+  - Fixed reconcile fix mode to never follow symlinks when computing the safe relative path for
+    quarantine destination. Prevents symlink traversal outside the queue root.
+  - Resolves edge case where orphan sidecar is itself a symlink pointing outside `queue-dir`.
+- Validation:
+  - `pytest -q tests/test_cli_queue.py` — passes.
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Security-adjacent fix; no user-visible behavior change for normal (non-symlink) orphans.
+- Files changed: `src/voxera/core/queue_reconcile.py`.
+
+## 2026-03-01 — PR #80 — Daemon lock hardening + graceful SIGTERM shutdown
+- Summary:
+  - Hardened daemon lock: `flock`-based exclusive lock with PID validation, stale-window detection
+    (configurable via `VOXERA_QUEUE_LOCK_STALE_S`), and structured audit event on contention.
+  - Added explicit `SIGTERM`/`SIGINT` handler: sets shutdown flag immediately, stops intake of new
+    inbox jobs, and handles any in-flight job deterministically as `failed/` with
+    `error="shutdown: daemon shutdown requested"` plus a structured sidecar payload.
+  - Health snapshot records `last_shutdown_ts`, `last_shutdown_reason`, and (if affected)
+    `last_shutdown_job` + `last_shutdown_outcome=failed_shutdown`.
+  - Concurrent daemon startup exits cleanly (non-zero) without disrupting the running daemon.
+- Validation:
+  - `pytest -q tests/test_queue_daemon.py` — passes (new lock + shutdown tests).
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - Deterministic startup recovery for jobs that were in-flight at shutdown (PR #81).
+- Risks/notes:
+  - Fixes SECURITY.md known gap: "No SIGTERM handler — crash or stop leaves jobs in ambiguous state".
+- Files changed: `src/voxera/core/queue_daemon.py`, `src/voxera/health.py`,
+  `tests/test_queue_daemon.py`.
+
+## 2026-03-01 — PR #81 — Deterministic daemon startup recovery
+- Summary:
+  - Added startup recovery pass that runs before any inbox intake on daemon start.
+  - Policy: fail-fast. Any `pending/` job with in-flight state markers (`*.pending.json`,
+    `*.state.json`) is moved to `failed/` with a structured sidecar:
+    `reason="recovered_after_restart"`, includes `original_bucket`, `detected_state_files`,
+    and best-effort `detected_artifacts_paths`.
+  - Orphan approvals (`pending/approvals/*.approval.json` with no matching pending job) are
+    quarantined under `recovery/startup-<ts>/pending/approvals/` (never deleted).
+  - Orphan state files are quarantined under `recovery/startup-<ts>/...`.
+  - Recovery emits audit event `daemon_startup_recovery` and increments health counters
+    (`startup_recovery_runs`, `startup_recovery_jobs_failed`, `startup_recovery_orphans_quarantined`).
+  - Health fields updated: `last_startup_recovery_ts`, `last_startup_recovery_counts`,
+    `last_startup_recovery_summary`.
+- Validation:
+  - `pytest -q tests/test_queue_daemon.py` — passes (new recovery scenario tests).
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - Surface `last_startup_recovery_counts` in panel dashboard (tracked in Ops visibility milestone).
+- Risks/notes:
+  - Recovery is deterministic and conservative: orphans are quarantined not deleted.
+  - Double-execution risk for non-idempotent skills is eliminated for the shutdown-then-restart path.
+- Files changed: `src/voxera/core/queue_daemon.py`, `src/voxera/health.py`,
+  `src/voxera/audit.py`, `tests/test_queue_daemon.py`, `docs/ops.md`.
+
+## 2026-03-01 — PR #82 — `voxera demo` guided checklist + modernized setup wizard
+- Summary:
+  - Added `voxera demo` CLI command: guided onboarding checklist that exercises queue + approval flows
+    without destructive actions. Creates jobs with deterministic prefixes (`demo-basic-*`,
+    `demo-approval-*`). Offline by default (provider readiness marked `SKIPPED`).
+  - `voxera demo --online` opts into provider readiness checks; missing keys remain `SKIPPED`
+    (not failure) so demo always completes.
+  - Modernized setup wizard UX: auth prompt choices rendered with explicit labels
+    (Keep current / Skip for now / Enter new / replace key) to avoid terminal rendering ambiguity.
+  - Setup choices are intentionally non-destructive: existing credentials are never overwritten
+    without an explicit "Enter new" selection.
+  - Fixed: demo overall status aggregation for skipped online checks (skipped ≠ failed).
+- Validation:
+  - `pytest -q tests/test_demo_cli.py tests/test_setup_wizard.py` — passes (new demo + wizard tests).
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - Replace PR #N/A with the merged PR number.
+  - Add `voxera demo` to UBUNTU_TESTING.md validation checklist.
+- Risks/notes:
+  - Demo creates real queue jobs; operators should run `voxera queue prune` after extended demo sessions.
+- Files changed: `src/voxera/demo.py` (new), `src/voxera/setup_wizard.py`, `src/voxera/cli.py`,
+  `tests/test_demo_cli.py`, `tests/test_setup_wizard.py`, `README.md`, `docs/ops.md`.
