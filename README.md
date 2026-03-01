@@ -733,11 +733,15 @@ and env vars (`VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS`, `VOXERA_QUEUE_PRUNE_MAX_COUNT`)
 
 ### Queue hygiene diagnostic (`voxera queue reconcile`)
 
-`voxera queue reconcile` is a **report-only** queue hygiene diagnostic —
-read-only, no changes made. Detects orphan sidecars, orphan approvals, orphan
+`voxera queue reconcile` is a queue hygiene diagnostic — **report-only by
+default** (no changes made). Detects orphan sidecars, orphan approvals, orphan
 artifact candidates, and duplicate job filenames across buckets. Output includes
 human-readable summaries and an optional stable JSON schema (`--json`).
-See `docs/ops.md` ("Queue reconcile (report-only)") for full reference and examples.
+
+Add `--fix` to preview quarantine actions (dry-run); add `--fix --yes` to move
+orphan sidecars and approvals into a quarantine folder under the queue root.
+No data is ever deleted — quarantined files can be restored manually.
+See `docs/ops.md` ("Queue reconcile") for full reference, JSON schema, and examples.
 
 ### Incident runbook (quick copy/paste)
 

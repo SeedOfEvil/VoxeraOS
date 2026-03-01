@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -196,4 +198,121 @@ def reconcile_queue(queue_dir: Path) -> dict[str, Any]:
     }
 
 
-__all__ = ["reconcile_queue"]
+def _default_quarantine_dir(queue_dir: Path) -> Path:
+    """Return a deterministic default quarantine directory under queue_dir."""
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return queue_dir / "quarantine" / f"reconcile-{ts}"
+
+
+def _safe_relative(path: Path, queue_dir: Path) -> Path:
+    """Return path relative to queue_dir; raise ValueError if it escapes."""
+    resolved = path.resolve()
+    queue_resolved = queue_dir.resolve()
+    try:
+        return resolved.relative_to(queue_resolved)
+    except ValueError as exc:
+        raise ValueError(f"Path escape detected: {path} is not under {queue_dir}") from exc
+
+
+def _quarantine_file(src: Path, queue_dir: Path, quarantine_dir: Path) -> Path:
+    """Move src into quarantine_dir preserving relative path under queue_dir.
+
+    Returns the destination path.  Raises OSError on move failure.
+    Never follows symlinks (symlinks are quarantined as-is, not dereferenced).
+    """
+    rel = _safe_relative(src, queue_dir)
+    dest = quarantine_dir / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # shutil.move handles cross-device moves gracefully.
+    shutil.move(str(src), str(dest))
+    return dest
+
+
+def quarantine_reconcile_fixes(
+    queue_dir: Path,
+    quarantine_dir: Path,
+    *,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Quarantine safe orphan files found by re-scanning the queue directory.
+
+    Quarantines two conservative categories only:
+
+    1. Orphan sidecars in terminal buckets (no matching primary job).
+    2. Orphan approvals in pending/approvals/ (no corresponding pending job).
+
+    Artifact candidates and duplicate jobs are intentionally left as report-only.
+
+    Args:
+        queue_dir: Queue root directory (already resolved).
+        quarantine_dir: Directory to move orphan files into.  Must be under
+            queue_dir (caller is responsible for validation).
+        dry_run: When True, no files are moved; returns would-quarantine counts.
+
+    Returns:
+        A dict with keys:
+            ``orphan_sidecars_quarantined``, ``orphan_approvals_quarantined``
+            (actual counts when dry_run=False, else 0)
+            ``orphan_sidecars_would_quarantine``, ``orphan_approvals_would_quarantine``
+            (always set; equals actual counts when dry_run=False)
+            ``quarantined_paths``: sorted list of paths (up to _MAX_EXAMPLES),
+                actual when dry_run=False else would-quarantine paths.
+    """
+    # Re-run detection to get the complete set (report stores only up to _MAX_EXAMPLES).
+    all_orphan_sidecars = sorted(_detect_orphan_sidecars(queue_dir))
+    all_orphan_approvals = sorted(_detect_orphan_approvals(queue_dir))
+
+    quarantined: list[str] = []
+    errors: list[str] = []
+
+    if dry_run:
+        return {
+            "orphan_sidecars_quarantined": 0,
+            "orphan_approvals_quarantined": 0,
+            "orphan_sidecars_would_quarantine": len(all_orphan_sidecars),
+            "orphan_approvals_would_quarantine": len(all_orphan_approvals),
+            "quarantined_paths": sorted(
+                (all_orphan_sidecars + all_orphan_approvals)[:_MAX_EXAMPLES]
+            ),
+            "errors": [],
+        }
+
+    sidecar_count = 0
+    approval_count = 0
+
+    quarantine_dir.mkdir(parents=True, exist_ok=True)
+
+    for path_str in all_orphan_sidecars:
+        src = Path(path_str)
+        if not src.exists():
+            # File disappeared mid-run; non-fatal.
+            continue
+        try:
+            dest = _quarantine_file(src, queue_dir, quarantine_dir)
+            quarantined.append(str(dest))
+            sidecar_count += 1
+        except OSError as exc:
+            errors.append(f"sidecar {path_str}: {exc}")
+
+    for path_str in all_orphan_approvals:
+        src = Path(path_str)
+        if not src.exists():
+            continue
+        try:
+            dest = _quarantine_file(src, queue_dir, quarantine_dir)
+            quarantined.append(str(dest))
+            approval_count += 1
+        except OSError as exc:
+            errors.append(f"approval {path_str}: {exc}")
+
+    return {
+        "orphan_sidecars_quarantined": sidecar_count,
+        "orphan_approvals_quarantined": approval_count,
+        "orphan_sidecars_would_quarantine": sidecar_count,
+        "orphan_approvals_would_quarantine": approval_count,
+        "quarantined_paths": sorted(quarantined)[:_MAX_EXAMPLES],
+        "errors": errors,
+    }
+
+
+__all__ = ["quarantine_reconcile_fixes", "reconcile_queue"]
