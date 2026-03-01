@@ -165,7 +165,7 @@ def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | 
     has_existing_ref = bool(existing_ref)
     if has_existing_ref:
         choice = Prompt.ask(
-            f"Auth for {provider.label} [keep/skip/replace]",
+            f"Auth for {provider.label} [[keep/skip/replace]]",
             choices=["keep", "skip", "replace"],
             default="keep",
             show_choices=False,
@@ -182,7 +182,7 @@ def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | 
         return replacement_ref or provider.env_ref
 
     choice = Prompt.ask(
-        f"Auth for {provider.label} [skip/set]",
+        f"Auth for {provider.label} [[skip/set]]",
         choices=["skip", "set"],
         default="skip",
         show_choices=False,
