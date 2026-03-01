@@ -1,17 +1,23 @@
 # Roadmap
 
-## Current baseline — Alpha v0.1.5 (shipped)
+## Current baseline — post Alpha v0.1.5 (active development)
 
-All v0.1.5 scope is complete. See `docs/ROADMAP_0.1.5.md` for locked acceptance criteria and release checklist.
-For the previous release, see `docs/ROADMAP_0.1.4.md`.
+**Released in v0.1.5:**
+- `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.
+- `artifacts_retention_days` / `artifacts_retention_max_count` in runtime config + env vars.
 
-**What shipped in v0.1.5:**
-- `voxera artifacts prune`: operator-grade hygiene for `notes/queue/artifacts/`, dry-run by default, `--yes` to delete
-- `--max-age-days` and `--max-count` flags with union selection policy
-- `artifacts_retention_days` / `artifacts_retention_max_count` in runtime config + env vars
-- Version bump to 0.1.5
+**Shipped since v0.1.5 (unreleased, in codebase):**
+- Daemon reliability: single-writer lock hardening, graceful SIGTERM shutdown with structured sidecar,
+  deterministic startup recovery with orphan quarantine.
+- Queue hygiene toolchain: `voxera queue prune` (terminal buckets) + `voxera queue reconcile`
+  (report-only + quarantine-first fix mode) + symlink-safe quarantine paths.
+- Brain fallback observability: `TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN` enum
+  surfaced in health/doctor.
+- Config path standardization across all CLI and documentation surfaces.
+- `voxera demo` guided onboarding checklist (offline + online modes, non-destructive).
+- Modernized setup wizard with non-destructive credential handling (keep/skip/replace).
 
-**What shipped in v0.1.4:**
+**Released in v0.1.4:**
 - Setup wizard (TUI), provider abstraction (cloud / local)
 - Skill runner + policy gate + approval workflow
 - Queue daemon with failed-sidecar schema v1, retention pruning, health snapshots
@@ -20,84 +26,117 @@ For the previous release, see `docs/ROADMAP_0.1.4.md`.
 - `voxera doctor` with quick offline mode and structured health output
 - Mypy ratchet baseline + merge-readiness CI gate + pre-push parity
 
+See `docs/ROADMAP_0.1.6.md` for the full planned scope of the upcoming v0.1.6 release.
+
 ---
 
-## Active work — v0.2 build-out
+## Active work — v0.1.6 build-out
 
 This is a solo project. Goals are sized for daily or multi-day sessions, not sprints.
-Each item below is a self-contained improvement that can ship independently.
+Each item below maps to a planned PR in `docs/ROADMAP_0.1.6.md`.
 
-### Operational hygiene (do first — low risk, high value)
+### Security hardening (do first — closes highest-risk surface)
 
-**Day 1**
-- [ ] Tie artifact directory cleanup (`~/.voxera/artifacts/<job_id>/`) to the failed-job retention pruner.
-      When a failed job is pruned, delete its artifact directory in the same pass.
-- [x] Add `voxera artifacts prune` CLI command: dry-run by default, `--yes` to execute. *(shipped in v0.1.5)*
-- [ ] Add `make type-debt` target: count and print number of entries in `tools/mypy-baseline.txt`.
-      Surface as a CI annotation on PRs that touch typed modules.
+**Day 1 — Goal string sanitization (PR #83)**
+- [ ] Sanitize user-controlled goal strings before embedding in LLM prompt.
+- [ ] Reject goals over 2,000 characters with a clear, actionable error.
+- [ ] Strip control characters; normalize whitespace.
+- [ ] Add tests for injection-shaped inputs, overlength goals, and Unicode edge cases.
 
-**Day 2**
-- [ ] Add CLI flags `--max-age` and `--max-count` to a new `voxera queue prune` command
-      so retention policy can be tuned without setting env vars.
-- [ ] Expose prune result in `voxera queue status` output (items pruned, space reclaimed).
+**Day 2 — Structural delimiters in preamble (PR #84)**
+- [ ] Wrap user content with `[USER DATA START]` / `[USER DATA END]` markers in planner preamble.
+- [ ] Update `src/voxera/core/planner_context.py` to emit delimiters.
+- [ ] Verify existing planner tests pass; add a test confirming delimiter presence.
+- [ ] Update `docs/SECURITY.md` known gaps to mark prompt injection as FIXED.
 
-### Observability hardening
+**Day 2–3 — Panel auth rate limiting (PR #85)**
+- [ ] Track failed Basic auth attempts per IP in `health.json`.
+- [ ] Return 429 + `Retry-After: 60` after 5 failures within 60 seconds.
+- [ ] Emit `panel_auth_lockout` audit events (ip, attempt_count).
+- [ ] Surface lockout status in `voxera queue health` and `voxera doctor --quick`.
 
-**Day 2–3**
-- [ ] Classify brain fallback reasons into a structured enum:
-      `TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | UNKNOWN`.
-- [ ] Log fallback transitions as structured JSON events (reason, tier, latency_ms).
-- [ ] Surface latest fallback reason and tier in `voxera doctor` output and health snapshots.
-- [ ] Add `brain_fallback_reason` counter to `voxera queue health` output.
+### Ops visibility in panel (highest user-visible value)
 
-### Safety hardening
+**Day 3–4 — Panel home health widget (PR #86)**
+- [ ] Add collapsible "Daemon Health" widget to panel home sourced from `health.json`.
+- [ ] Fields: lock status, last fallback (reason/tier/ts), last recovery (job/orphan counts), last shutdown.
+- [ ] Neutral display when fields are null/empty (no provider config, fresh install).
+- [ ] Daemon state badge: `healthy` / `degraded` / `unknown`.
 
-**Day 3**
-- [ ] Validate all skill manifests eagerly at daemon startup (not lazily at job execution time).
-- [ ] Surface invalid manifests in `voxera doctor` output with fix hints.
-- [ ] Fail fast (daemon exits with non-zero) if a required built-in skill has a broken manifest.
+**Day 4 — Panel hygiene status + trigger page (PR #87)**
+- [ ] Add `/hygiene` panel page showing last prune result + last reconcile result.
+- [ ] "Run prune (dry-run)" and "Run reconcile" buttons that surface results inline.
+- [ ] Store last results in `health.json` under `last_prune_result` / `last_reconcile_result`.
 
-**Day 4**
-- [ ] Add failed-attempt rate limiter on panel Basic auth: 5 failed attempts → 60-second lockout.
-- [ ] Log lockout events as structured audit entries (`panel_auth_lockout`, ip, attempt_count).
-- [ ] Add LLM call rate limiter (token bucket) around `brain.generate()`.
-      Default: 30 calls/minute. Configurable via `VOXERA_BRAIN_RATE_LIMIT_RPM`.
+**Day 5 — Recovery + quarantine inspector in panel (PR #88)**
+- [ ] Add `/recovery` panel page listing `recovery/` and `quarantine/` directory contents.
+- [ ] Show file size, timestamp, and type (approval/state) for each entry.
+- [ ] "Download as ZIP" button per recovery/quarantine session.
 
-### Daemon reliability
+### Daemon health + long-run behavior
 
-**Day 4–5**
-- [ ] Install SIGTERM handler in queue daemon:
-      (1) stop accepting new jobs, (2) let in-flight job finish or mark it failed with
-      `reason=shutdown`, (3) release lock and exit cleanly.
-- [ ] Verify systemd `TimeoutStopSec` compliance: daemon stops within 10 seconds of SIGTERM.
-- [ ] Add `shutdown_reason` field to failed-job sidecars emitted during graceful shutdown.
+**Day 5–6 — Health degradation state tracking (PR #89)**
+- [ ] Track `consecutive_brain_failures` counter in `health.json`.
+- [ ] Set `daemon_state = "degraded"` when counter >= 3; reset on successful mission.
+- [ ] Surface `daemon_state` in `voxera queue health` and `voxera doctor --quick`.
 
-### Planner UX
+**Day 6 — Brain backoff on repeated failures (PR #90)**
+- [ ] Add configurable delay between brain calls on consecutive fallbacks.
+- [ ] Default schedule: 2s (after 3), 8s (after 5), 30s (after 10), cap at 60s.
+- [ ] Configurable via `VOXERA_BRAIN_BACKOFF_BASE_S` / `VOXERA_BRAIN_BACKOFF_MAX_S`.
+- [ ] Emit `brain_backoff_applied` audit event with `attempt` and `wait_s`.
 
-**Day 5–7**
-- [ ] Dry-run simulation mode: output deterministic plan (every skill + args) before execution.
-      `voxera missions plan "<goal>" --dry-run` already exists; harden the output format.
-- [ ] Structured planning preview: separate sections for "will execute" vs "requires approval".
-- [ ] Add `--plan-only` flag to `voxera daemon --once` to show planned steps without running.
+**Day 6–7 — Structured shutdown outcome in `voxera queue health` (PR #91)**
+- [ ] Surface `last_shutdown_outcome`, `last_shutdown_job`, `last_shutdown_reason`, `last_shutdown_ts`
+      in `voxera queue health` human-readable and `--json` output.
+- [ ] Verify systemd `TimeoutStopSec` compliance (clean exit within 10s of SIGTERM).
 
-### Prompt injection mitigation
+### CI hardening & release packaging
 
-**Day 6–7**
-- [ ] Sanitize and length-cap goal strings before embedding in LLM prompt.
-      Reject goals over 2,000 characters with a clear error.
-- [ ] Mark user-controlled content with `[USER DATA: ...]` delimiters in the preamble
-      so the LLM receives structural separation between system context and user input.
-- [ ] Add test: very long or injection-shaped goal strings are rejected or truncated cleanly.
+**Day 7–8 — Golden file validation CI (PR #92)**
+- [ ] Add `tests/golden/` with committed dry-run output files.
+- [ ] Add `make golden-update` (explicit regeneration) and `make golden-check` (CI gate).
+- [ ] Wire `make golden-check` into the merge-readiness CI workflow.
+- [ ] Use `--deterministic` flag for timestamp-independent golden outputs.
+
+**Day 8 — Release packaging polish (PR #93)**
+- [ ] Add `scripts/release_notes.py` — generates release notes from `CODEX_MEMORY.md`.
+- [ ] Add `make release-notes` target outputting `docs/RELEASE_NOTES_<version>.md`.
+- [ ] Polish `make release-check`: validate `pyproject.toml`, README header, ROADMAP baseline all agree.
+
+### Provider / model UX
+
+**Day 9 — Keyring credential workflow improvements (PR #94)**
+- [ ] Show keyring availability at setup start (available / unavailable + file fallback).
+- [ ] After entering a new key: test against provider before saving; show pass/fail.
+- [ ] Show current key status (keyring / file / not set) per configured provider.
+
+**Day 9–10 — Provider profiles (named presets) (PR #95)**
+- [ ] Add preset profile templates: `openrouter-4tier`, `ollama-local`, `gemini-only`.
+- [ ] Store templates in `config-templates/profiles/`.
+- [ ] Wire `voxera setup --profile <name>` to apply preset without interactive prompts.
+
+### New utility commands
+
+**Day 10 — `voxera skills validate` (PR #96)**
+- [ ] New CLI command: validate all skill manifests eagerly without launching daemon.
+- [ ] Checks: required fields, entrypoint importable, capability declarations valid.
+- [ ] Integrate into `voxera doctor` output ("Skills: N valid, M invalid").
+- [ ] Emit `skill_manifest_invalid` audit events for each broken manifest.
+
+**Day 11 — LLM rate limiter (PR #97)**
+- [ ] Add token-bucket rate limiter around `brain.generate()` calls.
+- [ ] Default: 30 RPM. Configurable via `VOXERA_BRAIN_RATE_LIMIT_RPM`.
+- [ ] Emit `brain_rate_limited` audit event when limit exceeded.
+- [ ] Surface current RPM + limit in `voxera queue health`.
 
 ---
 
-## Near-term milestones (next 1–2 weeks)
-
-These are larger and depend on day-by-day items above being stable.
+## Near-term milestones (next 2–3 weeks)
 
 **E2E test environment**
 - [ ] Docker/Podman-based test env with Xvfb, wmctrl, xclip for clipboard/window skills.
-- [ ] `make e2e-full` target that explicitly requires the display stack (distinct from CI-safe `make e2e`).
+- [ ] `make e2e-full` target that explicitly requires the display stack.
 - [ ] CI optional job that runs `e2e-full` on Ubuntu with display setup.
 
 **Ollama / OpenAI-compat hardening**
@@ -112,20 +151,29 @@ These are larger and depend on day-by-day items above being stable.
 
 ---
 
-## v0.2 milestone (target: 2–3 weeks out)
+## v0.1.6 milestone (target: 2–3 weeks out)
 
-Scope lock (analogous to v0.1.4 stability lock):
-- All operational hygiene items above shipped and tested.
-- Dry-run simulation mode stable.
-- 10+ documented missions.
-- Ollama fallback chain validated.
-- Artifact cleanup and retention CLI flags merged.
+See `docs/ROADMAP_0.1.6.md` for full planned scope and acceptance criteria.
 
 Success metrics:
-- `voxera queue prune --dry-run` shows correct retention preview.
-- `voxera doctor` shows brain tier health including last fallback reason.
-- All built-in skills pass eager manifest validation on daemon start.
-- SIGTERM to daemon results in clean exit within 10 seconds.
+- Injection-shaped goals are rejected / sanitized before reaching the LLM.
+- Panel home shows full daemon health at a glance (lock/fallback/recovery/shutdown/state).
+- 3+ consecutive brain failures trigger degraded state; backoff delays applied.
+- `make golden-check` passes in CI; `make release-check` validates all versioned surfaces.
+- `voxera skills validate` surfaces broken manifests; skills health visible in doctor.
+
+---
+
+## v0.2 milestone — Panel-first UX + mission catalog
+
+After v0.1.6, the next milestone focuses on the panel becoming the primary operator interface
+and the mission catalog becoming a curated library of daily-driver automations.
+
+- Full panel-based mission authoring (drag-and-drop step builder, template picker).
+- Mission catalog: 25+ documented missions with tags, difficulty ratings, and test data.
+- Panel mobile-responsive layout for tablet/phone approval workflows.
+- Mission marketplace: share and discover community missions with signature verification.
+- E2E test environment (Podman + Xvfb) fully integrated into CI.
 
 ---
 
@@ -138,7 +186,7 @@ Success metrics:
 - Voice → router → plan → execute loop with audio confirmation.
 - Fallback to panel/CLI if voice confidence is low.
 
-This is the largest feature block. Audio stack is currently a placeholder in `src/voxera/audio/`.
+Audio stack is currently a placeholder in `src/voxera/audio/`.
 
 ---
 
@@ -151,24 +199,25 @@ This is the largest feature block. Audio stack is currently a placeholder in `sr
 
 ---
 
-## Delivery guardrails (always-on, non-roadmap-critical)
+## Delivery guardrails (always-on)
 
 - **Merge gate:** `make merge-readiness-check` is required before every PR.
 - **Mypy ratchet:** `tools/mypy-baseline.txt` — never bulk-reset; triage before refresh.
-- **Type-debt visibility:** track baseline entry count with `make type-debt` (to be added, Day 1).
-- **Docs hygiene:** every feature PR lands with matching roadmap + memory + docs updates.
+- **Docs hygiene:** every feature PR lands with matching roadmap + CODEX_MEMORY + docs updates.
 - **Release smoke:** `make full-validation-check` before cutting any release tag.
 - **No-skip policy:** never use `--no-verify` on commits; fix the hook, don't bypass it.
 
 ---
 
-## Recently completed (v0.1.4)
+## Recently completed (post v0.1.5, pre v0.1.6)
 
-- Planner preamble customization: Vera persona, configurable agent name, prompt ordering.
-- Runtime capabilities snapshot: guardrails for mission IDs and `system.open_app` targets.
-- Panel job lifecycle parity: cancel, retry, delete, approval resolution, canceled bucket.
-- Failed-sidecar schema v1: writer pin + reader allowlist, retention pruner (paired/orphan-aware).
-- Mypy ratchet baseline + merge-readiness CI gate + pre-push hook parity.
-- Incident bundle export: per-job and system snapshot zips from CLI and panel.
-- Queue observability: retention policy and prune event summary in `voxera queue status`.
-- Health snapshots: `last_ok_event` + `last_ok_ts_ms` so operators confirm recent daemon activity.
+- Daemon lock hardening: single-writer `flock`-based lock with PID validation and stale detection.
+- Graceful SIGTERM shutdown: in-flight job marked `failed/` with `reason=shutdown`, sidecar written.
+- Deterministic startup recovery: pending in-flight markers → `failed/`+sidecar, orphans → quarantine.
+- Queue hygiene: `voxera queue prune` (terminal buckets, dry-run default, max-age + max-count flags).
+- Queue diagnostics: `voxera queue reconcile` (report-only + quarantine-first fix mode).
+- Symlink-safe quarantine: reconcile fix mode never follows symlinks outside queue root.
+- Brain fallback classification: `TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN`.
+- Config path standardization: all CLI and docs consistently reference `config.json` for ops config.
+- `voxera demo` guided checklist: offline (default) and online modes, safe repeatable demo jobs.
+- Modernized setup wizard: non-destructive credential choices (keep current / skip / enter new).

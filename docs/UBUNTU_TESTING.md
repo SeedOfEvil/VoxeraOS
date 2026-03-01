@@ -1,6 +1,6 @@
 # Ubuntu Testing Guide
 
-Use this checklist to run Voxera OS Alpha v0.1.4 end-to-end on an Ubuntu machine.
+Use this checklist to run Voxera OS Alpha v0.1.6 end-to-end on an Ubuntu machine.
 
 ## 1) System prerequisites
 
@@ -53,7 +53,17 @@ voxera run system.status
 ```
 
 
-## 5b) Install rootless Podman for sandbox skills
+## 5b) Run the guided demo (safe smoke check)
+
+```bash
+voxera demo
+```
+
+- Runs offline by default — no provider config required.
+- Creates demo jobs (`demo-basic-*`, `demo-approval-*`) and validates queue + approval flows.
+- Use `voxera demo --online` to additionally check provider readiness (missing keys remain `SKIPPED`, not failure).
+
+## 5c) Install rootless Podman for sandbox skills
 
 ```bash
 sudo apt install -y podman uidmap slirp4netns fuse-overlayfs
@@ -123,3 +133,19 @@ If `failed metadata invalid` is non-zero, inspect malformed sidecars in:
 Retention behavior is controlled by:
 - `VOXERA_QUEUE_FAILED_MAX_AGE_S`
 - `VOXERA_QUEUE_FAILED_MAX_COUNT`
+
+## 10) Queue hygiene verification
+
+```bash
+# Dry-run preview — no changes made
+voxera queue prune --max-age-days 30
+
+# Report-only queue diagnostic
+voxera queue reconcile
+```
+
+Expected output from `voxera queue prune` (dry-run): summary of jobs that *would* be pruned with
+counts per bucket. No deletions without `--yes`.
+
+Expected output from `voxera queue reconcile`: issue counts for orphan sidecars, orphan approvals,
+artifact candidates, and duplicate jobs. Should show 0 issues on a clean queue.

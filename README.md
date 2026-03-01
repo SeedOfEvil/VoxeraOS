@@ -1,9 +1,12 @@
-# Voxera OS Alpha v0.1.5 — Voice-first AI Control Plane (Artifacts Hygiene + Retention CLI)
+# Voxera OS Alpha v0.1.5 — Voice-first AI Control Plane
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is **Voxera OS Alpha v0.1.5**: adds `voxera artifacts prune` for operator-grade artifact hygiene with configurable
-retention policies, on top of the v0.1.4 stability + UX baseline (typed first-run setup, cloud-planned missions,
-queue daemon with approval inbox, queue status + panel insights, update tooling, systemd user services, and pluggable “brain” providers).
+This repo is **Voxera OS Alpha v0.1.5** with active post-release development. Current codebase includes daemon
+reliability hardening (single-writer lock, graceful SIGTERM shutdown, deterministic startup recovery), queue hygiene
+toolchain (`voxera queue prune`, `voxera queue reconcile`), brain fallback observability, and guided demo/onboarding
+(`voxera demo`), on top of the v0.1.5 artifacts hygiene baseline and v0.1.4 stability + UX baseline (typed first-run
+setup, cloud-planned missions, queue daemon with approval inbox, queue status + panel insights, update tooling, systemd
+user services, and pluggable “brain” providers). **v0.1.6 is in active planning** — see `docs/ROADMAP_0.1.6.md`.
 
 **Names**
 - OS: **Voxera OS**
@@ -11,7 +14,7 @@ queue daemon with approval inbox, queue status + panel insights, update tooling,
 - Wake word (planned): **“Hey Voxera”**
 - CLI: `voxera`
 
-## What works in Alpha v0.1.5 (daily-driver baseline)
+## What works now (daily-driver baseline)
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
 - ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
@@ -19,6 +22,12 @@ queue daemon with approval inbox, queue status + panel insights, update tooling,
 - ✅ DEV-only auto-approve gating for `system.settings` only (`VOXERA_DEV_MODE=1` + `--auto-approve-ask`)
 - ✅ Human-friendly inbox entry point (`voxera inbox add`, `voxera inbox list`) for queueing goals
 - ✅ Update flow (`make update`) and systemd user service lifecycle (`make services-install`, status/restart/stop)
+- ✅ `voxera demo` guided onboarding checklist — offline by default, `--online` for provider checks
+- ✅ `voxera artifacts prune` and `voxera queue prune` for operator hygiene (dry-run by default, `--yes` to execute)
+- ✅ `voxera queue reconcile` for queue diagnostics and quarantine-first orphan fix
+- ✅ Daemon reliability: single-writer lock with stale detection, graceful SIGTERM shutdown, deterministic startup recovery
+- ✅ Brain fallback reasons classified and surfaced (`TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN`)
+- ✅ Modernized setup wizard with non-destructive credential handling (keep/skip/replace)
 
 ## Tech stack
 
@@ -386,8 +395,11 @@ Expected: first run moves to `pending/` + writes `pending/approvals/*.approval.j
   - `pending/approvals/`
   - `done/`
   - `failed/`
+  - `canceled/` (operator-canceled jobs)
   - `artifacts/`
   - `_archive/`
+  - `recovery/` (created by daemon startup recovery; quarantines orphan files — never deleted)
+  - `quarantine/` (created by `voxera queue reconcile --fix --yes`; quarantines orphan sidecars — never deleted)
 
 Queue intake is unambiguous: drop primary jobs in `notes/queue/inbox/*.json`.
 Back-compat safety behavior:
@@ -544,23 +556,21 @@ print(rr.ok, rr.data["artifacts_dir"])
 
 Active work is organized as daily/session goals in `docs/ROADMAP.md`.
 
-**Near-term (this week):**
-- Artifact directory cleanup tied to failed-job retention pruner.
-- `voxera artifacts prune` CLI command and `voxera queue prune` with flags.
-- Brain fallback error classification surfaced in `voxera doctor`.
-- Panel auth rate limiting and graceful SIGTERM handling in daemon.
-
-**Next 1–2 weeks:**
-- Dry-run simulation UX polish and structured planning previews.
-- Ollama / OpenAI-compat hardening and mission catalog expansion (10+ missions).
+**Near-term (v0.2 active work):**
+- Prompt injection hardening: goal string sanitization + structural `[USER DATA: ...]` delimiters.
+- Ops visibility in panel: surface reconcile/prune/recovery/fallback/lock/shutdown status on dashboard.
+- CI hardening: golden file validation, versioned release notes, `make release-check` polish.
+- Model/provider UX: keyring workflow improvements, provider profiles, safer online readiness checks.
+- Long-run daemon behavior: health degradation tracking, backoff on repeated brain failures.
 
 **v0.3:** Voice stack (STT/TTS, wake word, voice-first command loop).
 **v0.4:** Signed skills, marketplace, ISO/image packaging.
 
-See `docs/ROADMAP.md` for the full daily goal breakdown, `docs/ROADMAP_0.1.5.md` for what shipped in v0.1.5, and `docs/ROADMAP_0.1.4.md` for what shipped in v0.1.4.
+See `docs/ROADMAP.md` for the full daily goal breakdown and `docs/ROADMAP_0.1.6.md` for the upcoming v0.1.6 planned scope.
+Previous releases: `docs/ROADMAP_0.1.5.md` (artifacts prune), `docs/ROADMAP_0.1.4.md` (stability + UX baseline).
 
 ---
-**Alpha v0.1.5** adds operator-grade artifact hygiene (`voxera artifacts prune`) on top of the trustworthy v0.1.4 daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion.
+**Alpha v0.1.5** with ongoing post-release development adds daemon reliability hardening, queue hygiene toolchain (`voxera queue prune`, `voxera queue reconcile`), brain fallback observability, and guided demo/onboarding (`voxera demo`) on top of the v0.1.4 daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion. **v0.1.6** is the next planned release — see `docs/ROADMAP_0.1.6.md`.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 
