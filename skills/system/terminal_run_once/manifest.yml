@@ -1,0 +1,12 @@
+id: system.terminal_run_once
+name: Terminal Run Once (Hello World)
+description: Opens a terminal window and runs a safe hello-world command (prints command then executes).
+entrypoint: voxera_builtin_skills.terminal_run_once:run
+capabilities: ["apps.open"]
+risk: medium
+exec_mode: local
+args:
+  keep_open:
+    type: boolean
+    required: false
+    default: true
