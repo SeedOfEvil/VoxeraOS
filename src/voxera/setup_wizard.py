@@ -13,7 +13,6 @@ from rich.prompt import Confirm, Prompt
 from .config import capabilities_report_path, default_config_path, save_config, save_policy
 from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig
 from .paths import ensure_dirs
-from .secrets import set_secret
 
 console = Console()
 
@@ -164,27 +163,38 @@ def _provider_catalog() -> list[ProviderChoice]:
 
 def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | None) -> str | None:
     has_existing_ref = bool(existing_ref)
-    default_choice = "keep" if has_existing_ref else "skip"
+    if has_existing_ref:
+        choice = Prompt.ask(
+            f"Auth for {provider.label}: [keep/skip/replace]",
+            choices=["keep", "skip", "replace"],
+            default="keep",
+            show_choices=False,
+        )
+        if choice == "keep":
+            return existing_ref
+        if choice == "skip":
+            return None
+
+        replacement_ref = Prompt.ask(
+            f"Enter env/key reference for {provider.label}",
+            default=provider.env_ref,
+        ).strip()
+        return replacement_ref or provider.env_ref
+
     choice = Prompt.ask(
-        f"{provider.label} auth",
-        choices=["keep", "skip", "replace"],
-        default=default_choice,
+        f"Auth for {provider.label}: [skip/set]",
+        choices=["skip", "set"],
+        default="skip",
         show_choices=False,
     )
-    if choice == "keep":
-        return existing_ref
     if choice == "skip":
         return None
 
-    key_value = Prompt.ask(
-        f"Enter {provider.env_ref} value (stored securely when possible)",
-        password=True,
-    )
-    set_secret(provider.env_ref, key_value)
-    console.print(
-        f"Stored {provider.env_ref}. You can also export it in your shell if preferred for runtime."
-    )
-    return provider.env_ref
+    new_ref = Prompt.ask(
+        f"Enter env/key reference for {provider.label}",
+        default=provider.env_ref,
+    ).strip()
+    return new_ref or provider.env_ref
 
 
 def _configure_provider_catalog(cfg: AppConfig) -> None:

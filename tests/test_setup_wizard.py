@@ -3,65 +3,61 @@ from pathlib import Path
 from voxera import setup_wizard
 
 
+def _provider() -> setup_wizard.ProviderChoice:
+    return setup_wizard.ProviderChoice(
+        slug="openrouter",
+        label="OpenRouter",
+        env_ref="OPENROUTER_API_KEY",
+        brain_type="openai_compat",
+        default_model="openai/gpt-4o-mini",
+    )
+
+
 def test_provider_key_choice_keep_returns_existing(monkeypatch):
-    monkeypatch.setattr(setup_wizard.Prompt, "ask", lambda *args, **kwargs: "keep")
+    calls: list[str] = []
+
+    def _ask(prompt: str, **kwargs):
+        calls.append(prompt)
+        return "keep"
+
+    monkeypatch.setattr(setup_wizard.Prompt, "ask", _ask)
 
     resolved = setup_wizard._apply_provider_key_choice(
-        setup_wizard.ProviderChoice(
-            slug="openrouter",
-            label="OpenRouter",
-            env_ref="OPENROUTER_API_KEY",
-            brain_type="openai_compat",
-            default_model="openai/gpt-4o-mini",
-        ),
-        existing_ref="OPENROUTER_API_KEY",
+        _provider(), existing_ref="OPENROUTER_API_KEY"
     )
 
     assert resolved == "OPENROUTER_API_KEY"
+    assert calls[0] == "Auth for OpenRouter: [keep/skip/replace]"
 
 
-def test_provider_key_choice_skip_returns_none(monkeypatch):
+def test_provider_key_choice_skip_clears_existing(monkeypatch):
     monkeypatch.setattr(setup_wizard.Prompt, "ask", lambda *args, **kwargs: "skip")
 
     resolved = setup_wizard._apply_provider_key_choice(
-        setup_wizard.ProviderChoice(
-            slug="openai",
-            label="OpenAI",
-            env_ref="OPENAI_API_KEY",
-            brain_type="openai_compat",
-            default_model="gpt-4o-mini",
-        ),
-        existing_ref=None,
+        _provider(), existing_ref="OPENROUTER_API_KEY"
     )
 
     assert resolved is None
 
 
-def test_provider_key_choice_replace_sets_secret(monkeypatch):
-    answers = iter(["replace", "sk-test"])
+def test_provider_key_choice_replace_uses_new_reference(monkeypatch):
+    answers = iter(["replace", "OPENROUTER_ALT_KEY"])
     monkeypatch.setattr(setup_wizard.Prompt, "ask", lambda *args, **kwargs: next(answers))
-    called = {}
-
-    def _fake_set_secret(ref: str, value: str) -> str:
-        called["ref"] = ref
-        called["value"] = value
-        return f"keyring:{ref}"
-
-    monkeypatch.setattr(setup_wizard, "set_secret", _fake_set_secret)
 
     resolved = setup_wizard._apply_provider_key_choice(
-        setup_wizard.ProviderChoice(
-            slug="anthropic",
-            label="Anthropic",
-            env_ref="ANTHROPIC_API_KEY",
-            brain_type="openai_compat",
-            default_model="anthropic/claude-3.7-sonnet",
-        ),
-        existing_ref="ANTHROPIC_API_KEY",
+        _provider(), existing_ref="OPENROUTER_API_KEY"
     )
 
-    assert resolved == "ANTHROPIC_API_KEY"
-    assert called == {"ref": "ANTHROPIC_API_KEY", "value": "sk-test"}
+    assert resolved == "OPENROUTER_ALT_KEY"
+
+
+def test_provider_key_choice_set_when_missing(monkeypatch):
+    answers = iter(["set", "OPENROUTER_API_KEY"])
+    monkeypatch.setattr(setup_wizard.Prompt, "ask", lambda *args, **kwargs: next(answers))
+
+    resolved = setup_wizard._apply_provider_key_choice(_provider(), existing_ref=None)
+
+    assert resolved == "OPENROUTER_API_KEY"
 
 
 def test_confirm_write_config_defaults_to_keep_existing(tmp_path, monkeypatch):
