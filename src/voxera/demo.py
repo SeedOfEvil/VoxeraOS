@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Literal
 
 from .config import load_config
-from .secrets import get_secret
 
 Status = Literal["PASS", "FAIL", "SKIPPED"]
 
@@ -93,9 +92,7 @@ def run_demo(*, queue_dir: Path | None = None, online: bool = False, yes: bool =
         checks.append(ChecklistItem(name="demo jobs", status="FAIL", detail=str(exc)))
 
     if online:
-        available = [
-            ref for ref in _provider_envs() if os.environ.get(ref) or (get_secret(ref) is not None)
-        ]
+        available = [ref for ref in _provider_envs() if os.environ.get(ref)]
         if available:
             checks.append(
                 ChecklistItem(
@@ -148,7 +145,7 @@ def run_demo(*, queue_dir: Path | None = None, online: bool = False, yes: bool =
                     cleanup_removed += 1
 
     statuses = [item.status for item in checks]
-    overall = "fail" if "FAIL" in statuses else ("partial" if "SKIPPED" in statuses else "pass")
+    overall = "fail" if "FAIL" in statuses else ("partial" if "SKIPPED" in statuses else "ok")
     return {
         "status": overall,
         "queue_dir": str(resolved_queue),
