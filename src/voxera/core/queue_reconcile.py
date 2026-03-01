@@ -205,11 +205,24 @@ def _default_quarantine_dir(queue_dir: Path) -> Path:
 
 
 def _safe_relative(path: Path, queue_dir: Path) -> Path:
-    """Return path relative to queue_dir; raise ValueError if it escapes."""
+    """Return path relative to queue_dir; raise ValueError if it escapes.
+
+    For symlinks: validates containment using the symlink's own filesystem
+    location (not its target) so that symlinks pointing outside queue_dir can
+    still be safely quarantined as filesystem entries.
+    For non-symlinks: uses resolve() as before.
+    """
+    queue_root = queue_dir.resolve()
+    if path.is_symlink():
+        # Do NOT dereference the symlink – absolute() resolves parent directory
+        # components without following the final symlink entry itself.
+        loc = path.expanduser().absolute()
+        if not loc.is_relative_to(queue_root):
+            raise ValueError(f"Path escape detected: {path} is not under {queue_dir}")
+        return loc.relative_to(queue_root)
     resolved = path.resolve()
-    queue_resolved = queue_dir.resolve()
     try:
-        return resolved.relative_to(queue_resolved)
+        return resolved.relative_to(queue_root)
     except ValueError as exc:
         raise ValueError(f"Path escape detected: {path} is not under {queue_dir}") from exc
 
@@ -284,8 +297,8 @@ def quarantine_reconcile_fixes(
 
     for path_str in all_orphan_sidecars:
         src = Path(path_str)
-        if not src.exists():
-            # File disappeared mid-run; non-fatal.
+        if not src.exists() and not src.is_symlink():
+            # Entry disappeared mid-run (dangling symlinks still qualify); non-fatal.
             continue
         try:
             dest = _quarantine_file(src, queue_dir, quarantine_dir)
@@ -296,7 +309,7 @@ def quarantine_reconcile_fixes(
 
     for path_str in all_orphan_approvals:
         src = Path(path_str)
-        if not src.exists():
+        if not src.exists() and not src.is_symlink():
             continue
         try:
             dest = _quarantine_file(src, queue_dir, quarantine_dir)
