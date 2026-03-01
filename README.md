@@ -728,6 +728,14 @@ bucket are removed alongside their primary job files. See `docs/ops.md` for full
 flag reference, config keys (`queue_prune_max_age_days`, `queue_prune_max_count`),
 and env vars (`VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS`, `VOXERA_QUEUE_PRUNE_MAX_COUNT`).
 
+### Queue hygiene diagnostic (`voxera queue reconcile`)
+
+`voxera queue reconcile` is a **report-only** queue hygiene diagnostic —
+read-only, no changes made. Detects orphan sidecars, orphan approvals, orphan
+artifact candidates, and duplicate job filenames across buckets. Output includes
+human-readable summaries and an optional stable JSON schema (`--json`).
+See `docs/ops.md` ("Queue reconcile (report-only)") for full reference and examples.
+
 ### Incident runbook (quick copy/paste)
 
 - Daemon won't start and lock appears held:

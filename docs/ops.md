@@ -431,6 +431,63 @@ Env vars (override config file):
 - `VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS`
 - `VOXERA_QUEUE_PRUNE_MAX_COUNT`
 
+## Queue reconcile (report-only)
+
+`voxera queue reconcile` is a **read-only** hygiene diagnostic that scans the
+queue directory and reports issues without making any changes.  Safe to run at
+any time, even while the daemon is running.
+
+Detects four categories of issues:
+
+1. **Orphan sidecars** — `.error.json` / `.state.json` in `done/`, `failed/`,
+   or `canceled/` whose primary `job-XYZ.json` is missing from the same bucket.
+2. **Orphan approvals** — files in `pending/approvals/` with no corresponding
+   `pending/job-*.json`.
+3. **Orphan artifact candidates** — direct children of `artifacts/` with no
+   matching job file across any bucket (reported conservatively as candidates).
+4. **Duplicate job filenames** — `job-*.json` appearing in more than one bucket
+   (`inbox/`, `pending/`, `done/`, `failed/`, `canceled/`).
+
+Missing directories are treated as 0 issues — no error is raised.
+
+```bash
+# Human-readable summary
+voxera queue reconcile
+
+# Override queue root
+voxera queue reconcile --queue-dir /path/to/queue
+
+# Machine-readable JSON (stable schema)
+voxera queue reconcile --json
+
+# Pretty-print JSON
+voxera queue reconcile --json | python -m json.tool
+```
+
+The JSON output schema is stable:
+
+```json
+{
+  "status": "ok",
+  "queue_dir": "/path/to/queue",
+  "issue_counts": {
+    "orphan_sidecars": 0,
+    "orphan_approvals": 0,
+    "orphan_artifacts_candidate": 0,
+    "duplicate_jobs": 0
+  },
+  "examples": {
+    "orphan_sidecars": [],
+    "orphan_approvals": [],
+    "orphan_artifacts_candidate": [],
+    "duplicate_jobs": []
+  }
+}
+```
+
+Human output includes up to 10 example paths per issue type and always ends
+with: **"Report-only; no changes made."**
+
 ## Information sources (keep in sync)
 
 For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:
