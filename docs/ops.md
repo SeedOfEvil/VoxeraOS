@@ -389,6 +389,34 @@ ls ~/VoxeraOS/notes/queue/failed/*.error.json
 - `VOXERA_QUEUE_FAILED_MAX_AGE_S`
 - `VOXERA_QUEUE_FAILED_MAX_COUNT`
 
+## Operator hygiene (quick reference)
+
+Keep the system clean with three routine commands. All are **dry-run by default** — no
+deletions happen without `--yes`. Safe to run at any time, including while the daemon is
+running.
+
+| Command | What it does |
+|---|---|
+| `voxera artifacts prune` | Delete stale artifact directories under `notes/queue/artifacts/`. |
+| `voxera queue prune` | Remove stale job files from terminal buckets (`done/`, `failed/`, `canceled/`). |
+| `voxera queue reconcile` | Report-only scan for orphans and duplicates; **no changes made**. |
+
+Retention rules can be persisted in `~/.config/voxera/config.json`:
+
+```json
+{
+  "artifacts_retention_days": 30,
+  "artifacts_retention_max_count": 100,
+  "queue_prune_max_age_days": 30,
+  "queue_prune_max_count": 500
+}
+```
+
+CLI flags always override config values. If neither flags nor config is set, each command
+prints `"no pruning rules configured"` and exits 0. See the sections below for full flag
+references and env-var overrides.
+
+
 ## Queue prune
 
 Remove stale jobs from terminal buckets (`done/`, `failed/`, `canceled/`).

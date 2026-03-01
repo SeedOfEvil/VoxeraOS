@@ -38,7 +38,8 @@ voxera setup
 ```
 
 This writes local config/state files:
-- `~/.config/voxera/config.yml`
+- `~/.config/voxera/config.yml` (app config: brain/mode/privacy settings)
+- `~/.config/voxera/config.json` (runtime ops config: panel/queue settings; optional, create to override defaults)
 - `~/.config/voxera/policy.yml`
 - `~/.local/share/voxera/capabilities.json`
 - `~/.local/share/voxera/audit/*.jsonl`

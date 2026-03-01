@@ -16,7 +16,8 @@ voxera setup
 ```
 
 ## Output files
-- Config: `~/.config/voxera/config.yml`
+- App config (brain/mode/privacy): `~/.config/voxera/config.yml`
+- Runtime ops config (panel/queue, optional): `~/.config/voxera/config.json`
 - Policy: `~/.config/voxera/policy.yml`
 - Capability report: `~/.local/share/voxera/capabilities.json`
 - Audit: `~/.local/share/voxera/audit/*.jsonl`
