@@ -31,6 +31,7 @@ from .core.missions import MissionRunner, _make_dryrun_deterministic, get_missio
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .core.queue_hygiene import TERMINAL_BUCKETS, prune_queue_buckets
 from .core.queue_reconcile import quarantine_reconcile_fixes, reconcile_queue
+from .demo import run_demo
 from .doctor import doctor_sync
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from .ops_bundle import build_job_bundle as build_ops_job_bundle
@@ -56,6 +57,7 @@ SNAPSHOT_PATH_OPTION = typer.Option(
     "--out",
     help="Snapshot output file path. Defaults to <queue_root>/_ops/config_snapshot.json.",
 )
+DEMO_QUEUE_DIR_OPTION = typer.Option(None, "--queue-dir", help="Queue directory path.")
 
 
 def _git_sha() -> str | None:
@@ -183,6 +185,49 @@ def doctor(
 ):
     """Run provider capability tests and write a report."""
     doctor_sync(self_test=self_test, timeout_s=timeout_s, quick=quick)
+
+
+@app.command("demo")
+def demo_cmd(
+    queue_dir: Path | None = DEMO_QUEUE_DIR_OPTION,
+    online: bool = typer.Option(
+        False, "--online", help="Opt in to online/provider readiness checks."
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Perform optional actions (demo-only cleanup). Without this, optional actions are preview-only.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit stable JSON output."),
+):
+    """Run a safe 5-minute guided demo checklist."""
+    result = run_demo(queue_dir=queue_dir, online=online, yes=yes)
+    if json_output:
+        typer.echo(json.dumps(result, sort_keys=True))
+        return
+
+    table = Table(title="Voxera Demo Checklist")
+    table.add_column("Check")
+    table.add_column("Status")
+    table.add_column("Detail")
+    for check in result["checks"]:
+        table.add_row(str(check["name"]), str(check["status"]), str(check["detail"]))
+    console.print(table)
+
+    if result["created_jobs"]:
+        console.print("Created demo jobs:")
+        for job_name in result["created_jobs"]:
+            console.print(f"- {job_name}")
+
+    cleanup = result["cleanup"]
+    if cleanup["performed"]:
+        console.print(f"Optional cleanup removed {cleanup['removed']} demo-scoped item(s).")
+    else:
+        console.print(
+            "Optional cleanup skipped (run with --yes to remove demo-* items created for demos)."
+        )
+
+    console.print(f"Overall demo status: {result['status']}")
 
 
 @app.command()
