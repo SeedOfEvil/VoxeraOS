@@ -36,6 +36,8 @@ class VoxeraConfig:
     queue_failed_max_count: int | None
     artifacts_retention_days: int | None
     artifacts_retention_max_count: int | None
+    queue_prune_max_age_days: int | None
+    queue_prune_max_count: int | None
     ops_bundle_dir: Path | None
     dev_mode: bool
     notify_enabled: bool
@@ -56,6 +58,8 @@ class VoxeraConfig:
             "queue_failed_max_count": self.queue_failed_max_count,
             "artifacts_retention_days": self.artifacts_retention_days,
             "artifacts_retention_max_count": self.artifacts_retention_max_count,
+            "queue_prune_max_age_days": self.queue_prune_max_age_days,
+            "queue_prune_max_count": self.queue_prune_max_count,
             "ops_bundle_dir": str(self.ops_bundle_dir) if self.ops_bundle_dir else None,
             "dev_mode": self.dev_mode,
             "notify_enabled": self.notify_enabled,
@@ -97,6 +101,8 @@ def load_config(
         "queue_failed_max_count": None,
         "artifacts_retention_days": None,
         "artifacts_retention_max_count": None,
+        "queue_prune_max_age_days": None,
+        "queue_prune_max_count": None,
         "ops_bundle_dir": None,
         "dev_mode": False,
         "notify_enabled": False,
@@ -115,6 +121,8 @@ def load_config(
         "queue_failed_max_count": "VOXERA_QUEUE_FAILED_MAX_COUNT",
         "artifacts_retention_days": "VOXERA_ARTIFACTS_RETENTION_DAYS",
         "artifacts_retention_max_count": "VOXERA_ARTIFACTS_RETENTION_MAX_COUNT",
+        "queue_prune_max_age_days": "VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS",
+        "queue_prune_max_count": "VOXERA_QUEUE_PRUNE_MAX_COUNT",
         "ops_bundle_dir": "VOXERA_OPS_BUNDLE_DIR",
         "dev_mode": "VOXERA_DEV_MODE",
         "notify_enabled": "VOXERA_NOTIFY",
@@ -153,6 +161,8 @@ def load_config(
         queue_failed_max_count=resolved["queue_failed_max_count"],
         artifacts_retention_days=resolved["artifacts_retention_days"],
         artifacts_retention_max_count=resolved["artifacts_retention_max_count"],
+        queue_prune_max_age_days=resolved["queue_prune_max_age_days"],
+        queue_prune_max_count=resolved["queue_prune_max_count"],
         ops_bundle_dir=resolved["ops_bundle_dir"],
         dev_mode=resolved["dev_mode"],
         notify_enabled=resolved["notify_enabled"],
@@ -243,6 +253,14 @@ def _coerce(field: str, value: Any) -> Any:
             return None
         return _parse_int_value(field, value, min_value=1)
     if field == "artifacts_retention_max_count":
+        if value in (None, ""):
+            return None
+        return _parse_int_value(field, value, min_value=1)
+    if field == "queue_prune_max_age_days":
+        if value in (None, ""):
+            return None
+        return _parse_int_value(field, value, min_value=1)
+    if field == "queue_prune_max_count":
         if value in (None, ""):
             return None
         return _parse_int_value(field, value, min_value=1)

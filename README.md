@@ -719,6 +719,15 @@ CLI flags always override config values. If neither is set, the command prints
 **Selection policy:** union — an artifact is selected for pruning if it exceeds
 *either* the age rule or the count rule.
 
+### Queue pruning (`voxera queue prune`)
+
+Removes stale job files from terminal buckets (`done/`, `failed/`, `canceled/`).
+`inbox/` and `pending/` are **never** touched. Dry-run by default; pass `--yes` to
+delete. Matching sidecars (`job-XYZ.error.json`, `job-XYZ.state.json`) in the same
+bucket are removed alongside their primary job files. See `docs/ops.md` for full
+flag reference, config keys (`queue_prune_max_age_days`, `queue_prune_max_count`),
+and env vars (`VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS`, `VOXERA_QUEUE_PRUNE_MAX_COUNT`).
+
 ### Incident runbook (quick copy/paste)
 
 - Daemon won't start and lock appears held:

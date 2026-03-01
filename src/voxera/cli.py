@@ -29,6 +29,7 @@ from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, _make_dryrun_deterministic, get_mission, list_missions
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
+from .core.queue_hygiene import TERMINAL_BUCKETS, prune_queue_buckets
 from .doctor import doctor_sync
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from .ops_bundle import build_job_bundle as build_ops_job_bundle
@@ -1079,4 +1080,118 @@ def artifacts_prune(
         console.print(table)
 
     if dry_run and pruned > 0:
+        console.print("[yellow]Hint:[/yellow] Run with --yes to perform deletion.")
+
+
+@queue_app.command("prune")
+def queue_prune(
+    max_age_days: int | None = typer.Option(
+        None,
+        "--max-age-days",
+        min=1,
+        help="Prune jobs older than this many days (terminal buckets only).",
+    ),
+    max_count: int | None = typer.Option(
+        None,
+        "--max-count",
+        min=1,
+        help="Keep newest N jobs per bucket; prune the rest.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Perform deletion. Without this flag, only a dry-run preview is shown.",
+    ),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable JSON summary.",
+    ),
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue root directory containing done/, failed/, canceled/ subdirectories.",
+    ),
+) -> None:
+    """Prune terminal queue buckets. Dry-run by default; use --yes to delete.
+
+    Scans done/, failed/, and canceled/ under the queue root for stale job
+    files (job-*.json).  inbox/ and pending/ are never touched.
+
+    Selection policy: union — a job is pruned if it exceeds *either*
+    --max-age-days OR is outside the newest --max-count entries per bucket.
+
+    CLI flags override values from ~/.config/voxera/config.json:
+      queue_prune_max_age_days, queue_prune_max_count.
+
+    If neither flags nor config is set, prints a message and exits 0 (safe default).
+    """
+    cfg = load_runtime_config()
+
+    # CLI flags take precedence over config
+    effective_age_days = max_age_days if max_age_days is not None else cfg.queue_prune_max_age_days
+    effective_max_count = max_count if max_count is not None else cfg.queue_prune_max_count
+
+    queue_root_path = Path(queue_dir).expanduser().resolve()
+
+    result = prune_queue_buckets(
+        queue_root_path,
+        buckets=TERMINAL_BUCKETS,
+        max_age_days=effective_age_days,
+        max_count=effective_max_count,
+        dry_run=not yes,
+    )
+
+    if json_out:
+        # Include human-readable status field
+        output: dict[str, Any] = {
+            "status": "dry_run" if result["dry_run"] else "deleted",
+            "queue_dir": result["queue_dir"],
+            "buckets_processed": list(TERMINAL_BUCKETS),
+            "per_bucket": result["per_bucket"],
+            "reclaimed_bytes": result["reclaimed_bytes"],
+            "errors": result["errors"],
+        }
+        if result["status"] == "no_rules":
+            output["status"] = "no_rules"
+        typer.echo(json.dumps(output, indent=2, sort_keys=True))
+        return
+
+    if result["status"] == "no_rules":
+        console.print(
+            "No pruning rules configured. Set --max-age-days or --max-count, "
+            "or add queue_prune_max_age_days / queue_prune_max_count to "
+            "~/.config/voxera/config.json."
+        )
+        return
+
+    dry_run: bool = result["dry_run"]
+    prefix = "[dim](dry-run)[/dim] " if dry_run else ""
+    action = "Would prune" if dry_run else "Pruned"
+    total_selected = 0
+    total_reclaimed: int = result["reclaimed_bytes"]
+
+    console.print(f"{prefix}Queue root: {queue_root_path}")
+    console.print(f"{prefix}Buckets: {', '.join(TERMINAL_BUCKETS)}")
+
+    per_bucket: dict[str, dict[str, int]] = result["per_bucket"]
+    for bucket in TERMINAL_BUCKETS:
+        counts = per_bucket.get(bucket, {"candidates": 0, "selected": 0, "pruned": 0})
+        candidates = counts["candidates"]
+        selected = counts["selected"]
+        pruned = counts["pruned"]
+        total_selected += pruned
+        console.print(
+            f"{prefix}  {bucket}/: {candidates} candidates, "
+            f"{selected} selected, {pruned} {action.lower()}"
+        )
+
+    console.print(f"{prefix}Total {action.lower()}: {total_selected}")
+    console.print(f"{prefix}Reclaimed: {format_bytes(total_reclaimed)}")
+
+    errors: list[str] = result.get("errors", [])
+    for err in errors:
+        console.print(f"[red]Warning:[/red] {err}")
+
+    if dry_run and total_selected > 0:
         console.print("[yellow]Hint:[/yellow] Run with --yes to perform deletion.")
