@@ -316,6 +316,15 @@ def _rewrite_non_explicit_file_reads(goal: str, steps: list[MissionStep]) -> lis
     return rewritten
 
 
+def _match_terminal_hello_world(goal: str) -> bool:
+    lower = goal.lower()
+    if "terminal" not in lower:
+        return False
+    if "hello world" not in lower and "hello-world" not in lower:
+        return False
+    return any(word in lower for word in ("open", "launch", "start"))
+
+
 def _extract_simple_write_args(goal: str) -> dict[str, str] | None:
     text = goal.strip()
     if not text:
@@ -653,6 +662,41 @@ async def plan_mission(
             goal=goal,
             steps=steps,
             notes="Deterministic simple-write planning path.",
+        )
+
+    if _match_terminal_hello_world(goal):
+        log(
+            {
+                "event": "planner_selected",
+                "plan_id": plan_id,
+                "provider": "deterministic_terminal_demo",
+                "model": "deterministic",
+                "attempt": 1,
+                "error_class": "none",
+                "latency_ms": 0,
+                "fallback_used": False,
+            }
+        )
+        steps = [MissionStep(skill_id="system.terminal_run_once", args={"keep_open": True})]
+        log(
+            {
+                "event": "plan_built",
+                "plan_id": plan_id,
+                "provider": "deterministic_terminal_demo",
+                "model": "deterministic",
+                "attempt": 1,
+                "error_class": "none",
+                "latency_ms": 0,
+                "fallback_used": False,
+                "steps": len(steps),
+            }
+        )
+        return MissionTemplate(
+            id="cloud_planned",
+            title="Terminal Hello World Demo",
+            goal=goal,
+            steps=steps,
+            notes="Deterministic terminal hello-world demo path.",
         )
 
     candidates = _build_brain_candidates(cfg)
