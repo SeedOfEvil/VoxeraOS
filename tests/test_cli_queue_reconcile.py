@@ -563,3 +563,41 @@ def test_json_report_mode_fix_counts_are_zero(tmp_path: Path) -> None:
     assert all(v == 0 for v in fc.values())
     assert data["quarantine_dir"] is None
     assert data["quarantined_paths"] == []
+
+
+# ---------------------------------------------------------------------------
+# Regression: symlink orphan quarantine (HF — fix --yes symlink crash)
+# ---------------------------------------------------------------------------
+
+
+def test_fix_yes_quarantines_symlink_orphan_without_following_target(tmp_path: Path) -> None:
+    """--fix --yes quarantines a symlink orphan without touching its target.
+
+    Repro for: _safe_relative() followed symlinks via resolve(), causing
+    "path escape detected" when the symlink target was outside queue_dir.
+    """
+    external_target = tmp_path.parent / "DO_NOT_DELETE_symlink_test.txt"
+    external_target.write_text("do not delete", encoding="utf-8")
+    try:
+        failed_dir = tmp_path / "failed"
+        failed_dir.mkdir(parents=True, exist_ok=True)
+        symlink_orphan = failed_dir / "job-orphan.error.json"
+        symlink_orphan.symlink_to(external_target)
+
+        exit_code, data = _run_reconcile_fix(tmp_path, yes=True)
+
+        # Must not crash.
+        assert exit_code == 0, f"Command crashed; output: {data}"
+        # External target must be untouched.
+        assert external_target.exists(), "External target was deleted — must never happen!"
+        # Symlink must have been moved out of failed/.
+        assert not symlink_orphan.exists(), "Symlink orphan still in failed/ after quarantine"
+        assert not symlink_orphan.is_symlink(), "Symlink still exists at original location"
+        # Quarantined entry must exist under quarantine dir and still be a symlink.
+        q_dir = Path(data["quarantine_dir"])
+        quarantined_link = q_dir / "failed" / "job-orphan.error.json"
+        assert quarantined_link.is_symlink(), "Quarantined entry is not a symlink"
+        # One sidecar quarantined.
+        assert data["fix_counts"]["orphan_sidecars_quarantined"] == 1
+    finally:
+        external_target.unlink(missing_ok=True)
