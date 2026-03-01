@@ -141,6 +141,14 @@ Operational effects:
 - `queue pause` creates `.paused`; daemon still reports status but skips processing new jobs until `queue resume` removes marker.
 - Daemon run loop acquires `notes/queue/.daemon.lock` with an OS-level exclusive file lock (`flock`) to enforce single-writer processing. If another live daemon holds the lock, startup records `lock_state=locked_by_other`, logs contention, and exits non-zero.
 - On `SIGTERM`/`SIGINT`, daemon sets shutdown state immediately, stops intake of new inbox jobs, and handles any in-flight job deterministically as `failed/` with error reason `shutdown: daemon shutdown requested` (plus error sidecar payload). Health snapshot records `last_shutdown_ts`, `last_shutdown_reason`, and (if affected) `last_shutdown_job` + `last_shutdown_outcome=failed_shutdown`.
+- On startup, daemon runs deterministic recovery before intake:
+  - **Policy: fail-fast**. Any pending job with in-flight markers (`pending/<job>.pending.json` or `pending/<job>.state.json`) is moved to `failed/` with a structured sidecar payload:
+    - `reason="recovered_after_restart"`
+    - `message="daemon recovered from unclean shutdown; job marked failed deterministically"`
+    - includes `original_bucket`, `detected_state_files`, and best-effort `detected_artifacts_paths`.
+  - Orphan approvals (`pending/approvals/*.approval.json` without matching `pending/<job>.json`) are quarantined (never deleted) under `recovery/startup-<ts>/pending/approvals/`.
+  - Orphan state files (`*.state.json` referencing missing jobs) are quarantined (never deleted) under `recovery/startup-<ts>/...`.
+  - Recovery emits audit event `daemon_startup_recovery`, increments counters (`startup_recovery_runs`, `startup_recovery_jobs_failed`, `startup_recovery_orphans_quarantined`), and updates health fields (`last_startup_recovery_ts`, `last_startup_recovery_counts`, `last_startup_recovery_summary`).
 - Use `voxera queue unlock` for safe stale/orphaned lock recovery; if lock is live, stop daemon first or use `voxera queue unlock --force` as an explicit override.
 
 Panel operator notes:

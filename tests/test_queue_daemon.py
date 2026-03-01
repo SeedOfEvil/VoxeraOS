@@ -1876,6 +1876,94 @@ def test_shutdown_during_inflight_job_marks_failed_deterministically(tmp_path, m
     assert health.get("last_shutdown_outcome") == "failed_shutdown"
 
 
+def test_startup_recovery_fails_inflight_pending_job(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    events = []
+    monkeypatch.setattr("voxera.core.queue_daemon.log", lambda e: events.append(e))
+
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending").mkdir(parents=True)
+    (queue_dir / "failed").mkdir(parents=True)
+    (queue_dir / "pending" / "job-recover.json").write_text('{"goal":"recover"}', encoding="utf-8")
+    (queue_dir / "pending" / "job-recover.pending.json").write_text(
+        json.dumps({"status": "pending_approval"}), encoding="utf-8"
+    )
+    (queue_dir / "artifacts" / "job-recover").mkdir(parents=True)
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    report = daemon.recover_on_startup(now_ms=1700000000123)
+
+    failed_job = queue_dir / "failed" / "job-recover.json"
+    sidecar_path = queue_dir / "failed" / "job-recover.error.json"
+    assert failed_job.exists()
+    assert sidecar_path.exists()
+    assert not (queue_dir / "pending" / "job-recover.json").exists()
+    assert not (queue_dir / "pending" / "job-recover.pending.json").exists()
+
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert sidecar["payload"]["reason"] == "recovered_after_restart"
+    assert sidecar["payload"]["original_bucket"] == "pending"
+    assert sidecar["payload"]["detected_state_files"] == ["pending/job-recover.pending.json"]
+
+    assert report["policy"] == "fail_fast"
+    assert report["counts"]["jobs_failed"] == 1
+    assert report["jobs_failed"] == ["job-recover"]
+
+    health = json.loads((queue_dir / "health.json").read_text(encoding="utf-8"))
+    assert health["last_startup_recovery_ts"] == 1700000000123
+    assert health["last_startup_recovery_counts"]["jobs_failed"] == 1
+    assert "jobs_failed=1" in health["last_startup_recovery_summary"]
+
+    recovery_events = [e for e in events if e.get("event") == "daemon_startup_recovery"]
+    assert recovery_events
+    assert recovery_events[-1]["counts"]["jobs_failed"] == 1
+
+
+def test_startup_recovery_quarantines_orphan_approvals(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    approvals = queue_dir / "pending" / "approvals"
+    approvals.mkdir(parents=True)
+    orphan = approvals / "job-orphan.approval.json"
+    orphan.write_text(json.dumps({"job": "job-orphan.json"}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    report = daemon.recover_on_startup(now_ms=1700000000456)
+
+    dest = (
+        queue_dir
+        / "recovery"
+        / "startup-1700000000456"
+        / "pending"
+        / "approvals"
+        / "job-orphan.approval.json"
+    )
+    assert not orphan.exists()
+    assert dest.exists()
+    assert report["counts"]["orphan_approvals_quarantined"] == 1
+    assert (
+        "recovery/startup-1700000000456/pending/approvals/job-orphan.approval.json"
+        in report["quarantined_paths"]
+    )
+
+
+def test_startup_recovery_quarantines_orphan_state_files(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True)
+    orphan_state = queue_dir / "job-missing.state.json"
+    orphan_state.write_text(json.dumps({"job": "job-missing.json"}), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    report = daemon.recover_on_startup(now_ms=1700000000789)
+
+    dest = queue_dir / "recovery" / "startup-1700000000789" / "job-missing.state.json"
+    assert not orphan_state.exists()
+    assert dest.exists()
+    assert report["counts"]["orphan_state_files_quarantined"] == 1
+    assert "recovery/startup-1700000000789/job-missing.state.json" in report["quarantined_paths"]
+
+
 def test_run_reclaims_stale_lock(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     _stub_planner(monkeypatch)
