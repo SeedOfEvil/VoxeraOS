@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import os
 import shutil
+import signal
 import subprocess
 import time
 import uuid
@@ -77,9 +79,12 @@ class MissionQueueDaemon:
         self.settings = load_runtime_config()
         self.lock_stale_after_s = self.settings.queue_lock_stale_s or 3600.0
         self._lock_held = False
+        self._lock_fd: int | None = None
         self.poll_interval = poll_interval
         self.stats = QueueStats()
         self.current_job_ref: str | None = None
+        self._shutdown_requested = False
+        self._shutdown_reason: str | None = None
         self._approved_steps: set[tuple[str, int, str]] = set()
 
         cfg = load_config()
@@ -322,48 +327,83 @@ class MissionQueueDaemon:
     def _acquire_daemon_lock(self) -> None:
         self.ensure_dirs()
         payload = self._lock_payload()
-        while True:
-            try:
-                fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(payload, f)
-                self._lock_held = True
-                self._log_lock_event("queue_daemon_lock_acquired")
-                self._increment_health_counter("lock_acquire_ok")
-                record_health_ok(self.queue_root, "lock_acquire")
-                return
-            except FileExistsError as exc:
-                existing = self._read_lock_payload()
-                pid = int(existing.get("pid") or 0)
-                ts = float(existing.get("ts") or 0.0)
-                stale = (time.time() - ts) > self.lock_stale_after_s
-                alive = self._pid_is_alive(pid)
-                if stale or not alive:
-                    self.lock_file.unlink(missing_ok=True)
-                    self._increment_health_counter("lock_reclaimed")
-                    self._log_lock_event(
-                        "queue_daemon_lock_reclaimed",
-                        details={"stale": stale, "alive": alive, "existing_pid": pid},
-                    )
-                    continue
-                self._increment_health_counter("lock_acquire_fail")
-                record_health_error(self.queue_root, f"queue lock already held by pid={pid}")
-                self._log_lock_event(
-                    "queue_daemon_lock_contended",
-                    details={"stale": stale, "alive": alive, "existing_pid": pid},
-                )
-                raise QueueLockError(
-                    f"queue lock already held by pid={pid}: {self.lock_file}"
-                ) from exc
+        fd = os.open(self.lock_file, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            os.close(fd)
+            existing = self._read_lock_payload()
+            pid = int(existing.get("pid") or 0)
+            alive = self._pid_is_alive(pid)
+            self._increment_health_counter("lock_acquire_fail")
+            self._update_daemon_health_state(lock_state="locked_by_other", lock_holder_pid=pid)
+            record_health_error(self.queue_root, f"queue lock already held by pid={pid}")
+            self._log_lock_event(
+                "queue_daemon_lock_contended",
+                details={"alive": alive, "existing_pid": pid},
+            )
+            raise QueueLockError(f"queue lock already held by pid={pid}: {self.lock_file}") from exc
+
+        existing = self._read_lock_payload()
+        existing_pid = int(existing.get("pid") or 0)
+        existing_ts = float(existing.get("ts") or 0.0)
+        existing_stale = (
+            (time.time() - existing_ts) > self.lock_stale_after_s if existing_ts else False
+        )
+        existing_alive = self._pid_is_alive(existing_pid) if existing_pid else False
+        if existing and (existing_stale or not existing_alive):
+            self._increment_health_counter("lock_reclaimed")
+            self._log_lock_event(
+                "queue_daemon_lock_reclaimed",
+                details={
+                    "stale": existing_stale,
+                    "alive": existing_alive,
+                    "existing_pid": existing_pid,
+                },
+            )
+        os.ftruncate(fd, 0)
+        os.write(fd, json.dumps(payload).encode("utf-8"))
+        os.fsync(fd)
+        self._lock_fd = fd
+        self._lock_held = True
+        self._update_daemon_health_state(lock_state="active", lock_holder_pid=os.getpid())
+        self._log_lock_event("queue_daemon_lock_acquired")
+        self._increment_health_counter("lock_acquire_ok")
+        record_health_ok(self.queue_root, "lock_acquire")
 
     def release_daemon_lock(self) -> None:
         if not self._lock_held:
             return
-        self.lock_file.unlink(missing_ok=True)
+        if self._lock_fd is not None:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+            os.close(self._lock_fd)
+            self._lock_fd = None
         self._lock_held = False
+        self._update_daemon_health_state(lock_state="released")
         self._increment_health_counter("lock_released")
         record_health_ok(self.queue_root, "lock_released")
         self._log_lock_event("queue_daemon_lock_released")
+
+    def request_shutdown(self, reason: str) -> None:
+        if self._shutdown_requested:
+            return
+        now_ms = int(time.time() * 1000)
+        normalized = reason.upper()
+        self._shutdown_requested = True
+        self._shutdown_reason = normalized
+        self._update_daemon_health_state(
+            shutdown_requested=True,
+            last_shutdown_ts=now_ms,
+            last_shutdown_reason=normalized,
+        )
+        log(
+            {
+                "event": "queue_daemon_shutdown_requested",
+                "reason": normalized,
+                "job": self.current_job_ref,
+                "ts_ms": now_ms,
+            }
+        )
 
     def try_unlock_stale(self) -> dict[str, Any]:
         if not self.lock_file.exists():
@@ -651,8 +691,8 @@ class MissionQueueDaemon:
         if payload is not None:
             details["payload"] = payload
         self._validate_failed_error_sidecar(details, expected_job=failed_job.name)
-        self._failed_error_sidecar(failed_job).write_text(
-            json.dumps(details, indent=2), encoding="utf-8"
+        self._write_text_atomic(
+            self._failed_error_sidecar(failed_job), json.dumps(details, indent=2)
         )
 
     def prune_failed_artifacts(
@@ -1293,6 +1333,11 @@ class MissionQueueDaemon:
             },
             "daemon_started_at_ms": health.get("daemon_started_at_ms"),
             "daemon_pid": health.get("daemon_pid"),
+            "lock_state": health.get("lock_state"),
+            "last_shutdown_ts": health.get("last_shutdown_ts"),
+            "last_shutdown_reason": health.get("last_shutdown_reason"),
+            "last_shutdown_job": health.get("last_shutdown_job"),
+            "last_shutdown_outcome": health.get("last_shutdown_outcome"),
             "last_error": health.get("last_error", ""),
             "last_error_ts_ms": health.get("last_error_ts_ms"),
             "last_ok_event": health.get("last_ok_event", ""),
@@ -1368,6 +1413,52 @@ class MissionQueueDaemon:
         log({"event": "queue_job_deleted", "job": str(job), "artifacts_dir": str(artifacts_dir)})
         return job.name
 
+    def _shutdown_failure_payload(self) -> dict[str, Any]:
+        return {
+            "reason": "shutdown",
+            "message": "daemon shutdown requested",
+            "signal": self._shutdown_reason or "UNKNOWN",
+        }
+
+    def _finalize_job_shutdown_failure(
+        self,
+        job_path: Path,
+        *,
+        signal_reason: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> Path | None:
+        moved = self._move_job(job_path, self.failed)
+        if moved is None:
+            return None
+        shutdown_payload = self._shutdown_failure_payload()
+        reason = shutdown_payload["reason"]
+        message = shutdown_payload["message"]
+        self._write_failed_error_sidecar(
+            moved,
+            error=f"{reason}: {message}",
+            payload={**(payload or {}), "shutdown": shutdown_payload},
+        )
+        self.stats.failed += 1
+        self._write_action_event(str(moved), "queue_job_failed", error=f"{reason}: {message}")
+        now_ms = int(time.time() * 1000)
+        self._update_daemon_health_state(
+            last_shutdown_ts=now_ms,
+            last_shutdown_reason=(signal_reason or self._shutdown_reason or "UNKNOWN"),
+            last_shutdown_job=moved.name,
+            last_shutdown_outcome="failed_shutdown",
+        )
+        log(
+            {
+                "event": "queue_job_failed_shutdown",
+                "job": str(moved),
+                "error": reason,
+                "message": message,
+                "signal": signal_reason or self._shutdown_reason,
+            }
+        )
+        self.prune_failed_artifacts()
+        return moved
+
     def process_job_file(self, job_path: Path) -> bool:
         self.ensure_dirs()
         if not job_path.exists():
@@ -1375,6 +1466,9 @@ class MissionQueueDaemon:
 
         self.current_job_ref = str(job_path)
         log({"event": "queue_job_received", "job": str(job_path)})
+        if self._shutdown_requested:
+            log({"event": "queue_job_skipped_shutdown", "job": str(job_path)})
+            return False
         try:
             payload = self._load_job_payload_with_retry(job_path)
             payload = self._normalize_payload(payload)
@@ -1413,6 +1507,11 @@ class MissionQueueDaemon:
             }
         )
         rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
+        if self._shutdown_requested:
+            self._finalize_job_shutdown_failure(
+                job_path, signal_reason=self._shutdown_reason, payload=payload
+            )
+            return False
         if rr.data.get("status") == "pending_approval":
             moved = self._move_job(job_path, self.pending)
             if moved is None:
@@ -1678,11 +1777,17 @@ class MissionQueueDaemon:
         record_health_ok(self.queue_root, "daemon_tick")
         self._auto_relocate_legacy_jobs()
         self._auto_relocate_misplaced_pending_jobs()
+        if self._shutdown_requested:
+            log({"event": "queue_daemon_intake_stopped", "reason": self._shutdown_reason})
+            return 0
         if self.is_paused():
             log({"event": "queue_tick_paused", "queue": str(self.inbox)})
             return 0
         processed = 0
         for job in sorted(self.inbox.glob("*.json")):
+            if self._shutdown_requested:
+                log({"event": "queue_daemon_intake_stopped", "reason": self._shutdown_reason})
+                break
             if not self._is_ready_job_file(job):
                 continue
             self.process_job_file(job)
@@ -1782,10 +1887,26 @@ class MissionQueueDaemon:
 
     def run(self, once: bool = False) -> None:
         self.ensure_dirs()
+        self._shutdown_requested = False
+        self._shutdown_reason = None
         now_ms = int(time.time() * 1000)
-        self._update_daemon_health_state(daemon_started_at_ms=now_ms, daemon_pid=os.getpid())
+        self._update_daemon_health_state(
+            daemon_started_at_ms=now_ms,
+            daemon_pid=os.getpid(),
+            shutdown_requested=False,
+        )
         self._acquire_daemon_lock()
         self._snapshot_and_check_config_drift()
+
+        previous_sigterm = signal.getsignal(signal.SIGTERM)
+        previous_sigint = signal.getsignal(signal.SIGINT)
+
+        def _handle_shutdown(signum, _frame):
+            reason = signal.Signals(signum).name
+            self.request_shutdown(reason)
+
+        signal.signal(signal.SIGTERM, _handle_shutdown)
+        signal.signal(signal.SIGINT, _handle_shutdown)
         if self.auto_approve_ask and not self.dev_mode:
             log(
                 {"event": "queue_auto_approve_disabled", "reason": "VOXERA_DEV_MODE is not enabled"}
@@ -1815,6 +1936,8 @@ class MissionQueueDaemon:
                         if event.is_directory:
                             return
                         path = Path(event.src_path)
+                        if daemon._shutdown_requested:
+                            return
                         if daemon._is_ready_job_file(path):
                             daemon.process_job_file(path)
 
@@ -1824,18 +1947,22 @@ class MissionQueueDaemon:
                 log({"event": "queue_watch_mode", "mode": "watchdog"})
                 self.process_pending_once()
                 try:
-                    while True:
+                    while not self._shutdown_requested:
                         time.sleep(self.poll_interval)
                 finally:
                     observer.stop()
                     observer.join()
             except ImportError:
                 log({"event": "queue_watch_mode", "mode": "poll"})
-                while True:
+                while not self._shutdown_requested:
                     self.process_pending_once()
+                    if self._shutdown_requested:
+                        break
                     time.sleep(self.poll_interval)
         except Exception as exc:
             record_health_error(self.queue_root, f"daemon run error: {exc}")
             raise
         finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
+            signal.signal(signal.SIGINT, previous_sigint)
             self.release_daemon_lock()

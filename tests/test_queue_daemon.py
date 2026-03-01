@@ -1,3 +1,4 @@
+import fcntl
 import json
 import os
 import sys
@@ -1763,7 +1764,7 @@ def test_run_acquires_and_releases_lock_in_once_mode(tmp_path, monkeypatch):
     daemon.run(once=True)
 
     assert (queue_dir / "done" / "job1.json").exists()
-    assert not (queue_dir / ".daemon.lock").exists()
+    assert (queue_dir / ".daemon.lock").exists()
     counters = daemon.lock_counters_snapshot()
     assert counters.get("lock_acquire_ok", 0) >= 1
     assert counters.get("lock_released", 0) >= 1
@@ -1782,16 +1783,97 @@ def test_run_refuses_when_active_lock_exists(tmp_path, monkeypatch):
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True)
     lock = queue_dir / ".daemon.lock"
-    lock.write_text(json.dumps({"pid": os.getpid(), "ts": time.time()}), encoding="utf-8")
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.ftruncate(fd, 0)
+        os.write(fd, json.dumps({"pid": os.getpid(), "ts": time.time()}).encode("utf-8"))
 
-    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
-    with pytest.raises(Exception, match="queue lock already held"):
-        daemon.run(once=True)
+        daemon = MissionQueueDaemon(
+            queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md"
+        )
+        with pytest.raises(Exception, match="queue lock already held"):
+            daemon.run(once=True)
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
     counters = daemon.lock_counters_snapshot()
     assert counters.get("lock_acquire_fail", 0) >= 1
     contended = [e for e in events if e.get("event") == "queue_daemon_lock_contended"]
     assert contended
     assert contended[-1].get("details", {}).get("existing_pid") == os.getpid()
+
+
+def test_run_refuses_when_os_lock_is_held_by_other_process(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True)
+    (queue_dir / "inbox" / "job1.json").write_text('{"goal":"check machine"}', encoding="utf-8")
+
+    lock_path = queue_dir / ".daemon.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.ftruncate(fd, 0)
+        os.write(fd, json.dumps({"pid": os.getpid(), "ts": time.time()}).encode("utf-8"))
+
+        daemon = MissionQueueDaemon(
+            queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md"
+        )
+        with pytest.raises(QueueLockError, match="queue lock already held"):
+            daemon.run(once=True)
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+    assert (queue_dir / "inbox" / "job1.json").exists()
+    assert not (queue_dir / "done" / "job1.json").exists()
+
+
+def test_shutdown_request_stops_intake(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True)
+    (queue_dir / "inbox" / "job1.json").write_text('{"goal":"check machine"}', encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    daemon.request_shutdown("SIGTERM")
+    processed = daemon.process_pending_once()
+
+    assert processed == 0
+    assert (queue_dir / "inbox" / "job1.json").exists()
+    assert not (queue_dir / "done" / "job1.json").exists()
+
+
+def test_shutdown_during_inflight_job_marks_failed_deterministically(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True)
+    job = queue_dir / "inbox" / "job1.json"
+    job.write_text('{"goal":"check machine"}', encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+
+    def _run_with_shutdown(*_args, **_kwargs):
+        daemon.request_shutdown("SIGTERM")
+        return RunResult(ok=True, data={"results": []})
+
+    monkeypatch.setattr(daemon.mission_runner, "run", _run_with_shutdown)
+
+    assert daemon.process_job_file(job) is False
+    failed_job = queue_dir / "failed" / "job1.json"
+    assert failed_job.exists()
+    sidecar = json.loads((queue_dir / "failed" / "job1.error.json").read_text(encoding="utf-8"))
+    assert sidecar["error"] == "shutdown: daemon shutdown requested"
+    assert sidecar["payload"]["shutdown"]["reason"] == "shutdown"
+    health = json.loads((queue_dir / "health.json").read_text(encoding="utf-8"))
+    assert health.get("last_shutdown_reason") == "SIGTERM"
+    assert health.get("last_shutdown_job") == "job1.json"
+    assert health.get("last_shutdown_outcome") == "failed_shutdown"
 
 
 def test_run_reclaims_stale_lock(tmp_path, monkeypatch):
@@ -1808,7 +1890,7 @@ def test_run_reclaims_stale_lock(tmp_path, monkeypatch):
     daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
     daemon.run(once=True)
     assert (queue_dir / "done" / "job1.json").exists()
-    assert not lock.exists()
+    assert lock.exists()
     counters = daemon.lock_counters_snapshot()
     assert counters.get("lock_reclaimed", 0) >= 1
     reclaimed = [e for e in events if e.get("event") == "queue_daemon_lock_reclaimed"]
