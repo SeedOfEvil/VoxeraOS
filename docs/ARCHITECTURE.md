@@ -213,7 +213,8 @@ CLI flags (highest)
     │
 VOXERA_* environment variables
     │
-~/.config/voxera/config.json (or .yml)
+~/.config/voxera/config.json   (runtime ops config; panel/queue settings, JSON only)
+~/.config/voxera/config.yml    (app config; brain/mode/privacy; written by voxera setup)
     │
 Built-in defaults (lowest)
 ```

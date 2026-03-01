@@ -122,8 +122,11 @@ pip install -e ".[dev]"
 voxera setup
 ```
 This writes config to:
-- `~/.config/voxera/config.yml`
+- `~/.config/voxera/config.yml` (app/brain config: brain provider, mode, privacy settings)
 - secrets stored via `keyring` when possible; otherwise a 0600 fallback file
+
+The runtime ops config (`~/.config/voxera/config.json`) is separate and optional — create it to
+override panel/queue defaults. See the **Runtime config** section above and `docs/ops.md`.
 
 
 ### OpenRouter recommended setup

@@ -170,7 +170,8 @@ async def run_setup() -> AppConfig:
     capabilities_report_path().write_text(json.dumps(cap, indent=2), encoding="utf-8")
 
     console.print("\n✅ Setup complete.")
-    console.print("Config: ~/.config/voxera/config.yml")
+    console.print("App config (brain/mode/privacy): ~/.config/voxera/config.yml")
+    console.print("Runtime ops config (panel/queue, optional): ~/.config/voxera/config.json")
     console.print("Policy: ~/.config/voxera/policy.yml")
     console.print("Capabilities: ~/.local/share/voxera/capabilities.json\n")
     return cfg

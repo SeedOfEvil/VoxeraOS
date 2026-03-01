@@ -208,7 +208,8 @@ or check ~/.local/state/voxera for daemon logs.
         _zip_writestr(zf, "journal_pointer.txt", journal_note)
 
         config_note = b"""Config pointers only (contents intentionally omitted):
-- ~/.config/voxera/config.yaml
+- ~/.config/voxera/config.json     (runtime ops config: panel/queue settings)
+- ~/.config/voxera/config.yml      (app config: brain/mode/privacy; written by voxera setup)
 - ~/.config/voxera/secrets.env
 - ~/VoxeraOS/notes/queue/health.json
 """
