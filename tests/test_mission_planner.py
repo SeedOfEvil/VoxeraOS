@@ -5,9 +5,11 @@ import pytest
 
 from voxera.core.mission_planner import (
     MissionPlannerError,
+    _build_planner_user_prompt,
     _parse_planner_json,
     _plan_payload,
     plan_mission,
+    sanitize_goal_for_prompt,
 )
 from voxera.models import AppConfig, BrainConfig
 from voxera.skills.registry import SkillRegistry
@@ -71,6 +73,59 @@ class _CapturingBrain:
                 self.text = body
 
         return _Resp(self.text)
+
+
+def test_sanitize_goal_for_prompt_strips_control_chars_and_ansi_and_normalizes_whitespace():
+    goal = "open terminal \n\n\x00\x1b[31m  hello   world\t\t PLEASE"
+
+    assert sanitize_goal_for_prompt(goal) == "open terminal hello world PLEASE"
+
+
+def test_plan_mission_rejects_overlength_goal_before_brain_call(monkeypatch):
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    called = False
+
+    def _build_candidates(_cfg):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr("voxera.core.mission_planner._build_brain_candidates", _build_candidates)
+
+    with pytest.raises(MissionPlannerError) as exc_info:
+        asyncio.run(plan_mission("a" * 2001, cfg=cfg, registry=reg))
+
+    message = str(exc_info.value)
+    assert "Max is 2000" in message
+    assert "Tip: put long logs/config into an attachment/artifact and reference it." in message
+    assert called is False
+
+
+def test_build_planner_user_prompt_sanitizes_goal_string_for_embedding():
+    goal = "open terminal \n\n\x00\x1b[31m  hello   world\t\t PLEASE"
+
+    prompt = _build_planner_user_prompt(goal=goal, snapshot={"skills": []}, skills_block="- sample")
+
+    goal_line = next(line for line in prompt.splitlines() if line.startswith("Goal: "))
+    embedded_goal = goal_line[len("Goal: ") :]
+
+    assert "\x00" not in embedded_goal
+    assert "\x1b" not in embedded_goal
+    assert "\t" not in embedded_goal
+    assert "\n" not in embedded_goal
+    assert "  " not in embedded_goal
+    assert embedded_goal == "open terminal hello world PLEASE"
 
 
 def test_plan_payload_includes_preamble_before_capabilities(monkeypatch):

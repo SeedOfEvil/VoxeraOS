@@ -27,7 +27,14 @@ user services, and pluggable “brain” providers). **v0.1.6 is in active plann
 - ✅ `voxera queue reconcile` for queue diagnostics and quarantine-first orphan fix
 - ✅ Daemon reliability: single-writer lock with stale detection, graceful SIGTERM shutdown, deterministic startup recovery
 - ✅ Brain fallback reasons classified and surfaced (`TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN`)
+- ✅ Planner prompt hardening: goals over 2,000 chars are rejected preflight; embedded goals are sanitized (ASCII control-char stripping + whitespace normalization)
 - ✅ Modernized setup wizard with non-destructive credential handling (keep/skip/replace)
+
+
+## Security notes (planner hardening)
+- Mission planning rejects overlength goals (>2,000 chars) before any cloud brain/provider call.
+- User goal text embedded in planner prompts is sanitized to remove ASCII control chars and normalize whitespace.
+- See `docs/SECURITY.md` for threat model and operator guidance.
 
 ## Tech stack
 

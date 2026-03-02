@@ -38,10 +38,10 @@ Each item below maps to a planned PR in `docs/ROADMAP_0.1.6.md`.
 ### Security hardening (do first — closes highest-risk surface)
 
 **Day 1 — Goal string sanitization (PR #83)**
-- [ ] Sanitize user-controlled goal strings before embedding in LLM prompt.
-- [ ] Reject goals over 2,000 characters with a clear, actionable error.
-- [ ] Strip control characters; normalize whitespace.
-- [ ] Add tests for injection-shaped inputs, overlength goals, and Unicode edge cases.
+- [x] Sanitize user-controlled goal strings before embedding in LLM prompt.
+- [x] Reject goals over 2,000 characters with a clear, actionable error.
+- [x] Strip control characters; normalize whitespace.
+- [ ] Add Unicode edge-case tests (injection-shaped and overlength tests are complete in PR #83).
 
 **Day 2 — Structural delimiters in preamble (PR #84)**
 - [ ] Wrap user content with `[USER DATA START]` / `[USER DATA END]` markers in planner preamble.

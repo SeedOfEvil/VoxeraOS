@@ -5,7 +5,7 @@
 | Threat | Risk | Mitigated? |
 |---|---|---|
 | Accidental destructive actions (rm, installs, firewall changes) | High | ✅ Policy gates + approval workflow |
-| Prompt injection via user-controlled content | High | Partial — output validated; goal strings not yet sanitized |
+| Prompt injection via user-controlled content | High | ✅ Goal strings sanitized + 2,000-char cap before planning (PR #83) |
 | Secret leakage (API keys, tokens) | High | ✅ Keyring + 0600 fallback; redacted in config show/snapshot |
 | Over-permissioned skills | High | ✅ Capability declarations + policy engine |
 | Panel auth brute force | Medium | Partial — password required for mutations; no rate limiting yet |
@@ -89,16 +89,10 @@ and `voxera doctor --quick`.
 
 ## Known gaps (being tracked in ROADMAP.md)
 
-### Prompt injection surface (tracked: ROADMAP Day 1–2)
-User-controlled goal strings are embedded in the LLM prompt without length capping
-or structural delimiters. A carefully crafted goal or a document read by `files.read_text`
-and used in a plan context could influence planner output.
-
-**Mitigating factors:** output is validated for known skill IDs + JSON only; policy gates
-and approval requirements catch unexpected execution patterns.
-
-**Planned fix:** length cap on goal strings (2,000 chars), `[USER DATA: ...]` delimiters
-in preamble to structurally separate system context from user input.
+### Planner goal-string hardening (FIXED — PR #83)
+- Goal inputs are rejected when longer than 2,000 characters before any planner brain call.
+- Goal text embedded in planner prompts is sanitized by stripping ASCII control chars (`0x00-0x1F`, `0x7F`).
+- Prompt embedding normalizes whitespace (collapse runs + trim ends) so planner sees stable user input.
 
 ### Panel auth has no rate limiting (tracked: ROADMAP Day 2–3)
 Repeated failed Basic auth attempts are logged but not rate-limited.

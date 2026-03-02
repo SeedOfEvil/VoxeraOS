@@ -33,6 +33,14 @@ _MAX_STEPS = 5
 _PLANNER_TIMEOUT_SECONDS = 25
 _CAP_DESC_LIMIT = 72
 _CAP_NOTES_LIMIT = 90
+GOAL_MAX_LEN = 2000
+
+
+def sanitize_goal_for_prompt(goal: str) -> str:
+    """Security: remove ASCII control chars / ANSI escapes and normalize whitespace."""
+    without_controls = re.sub(r"[\x00-\x1f\x7f]", "", goal)
+    without_ansi_sequences = re.sub(r"\[[0-?]*[ -/]*[@-~]", "", without_controls)
+    return " ".join(without_ansi_sequences.split())
 
 
 @dataclass(frozen=True)
@@ -418,12 +426,13 @@ def _build_brain_candidates(cfg: AppConfig) -> list[_BrainCandidate]:
 def _build_planner_user_prompt(goal: str, snapshot: dict, skills_block: str) -> str:
     agent_name = get_planner_agent_name()
     preamble = get_planner_preamble()
+    sanitized_goal = sanitize_goal_for_prompt(goal)
     return (
         f"SYSTEM CONTEXT ({agent_name}):\n"
         f"{preamble}\n\n"
         f"{_build_capabilities_prompt_block(snapshot)}\n\n"
         "TASK:\n"
-        f"Goal: {goal}\n"
+        f"Goal: {sanitized_goal}\n"
         "Skill catalog:\n"
         f"{skills_block}\n"
         "Return only JSON."
@@ -607,6 +616,12 @@ async def plan_mission(
     job_ref: str | None = None,
     queue_root: Path | None = None,
 ) -> MissionTemplate:
+    if len(goal) > GOAL_MAX_LEN:
+        raise MissionPlannerError(
+            f"Goal is too long ({len(goal)} chars). Max is 2000. "
+            "Tip: put long logs/config into an attachment/artifact and reference it."
+        )
+
     payload = None
     planner_name = None
     last_error = None

@@ -2,6 +2,37 @@
 
 This file is the single, persistent project memory for Codex-assisted work.
 
+## 2026-03-02 — PR #N/A — PR #83 follow-up: ANSI sequence cleanup + informational docs refresh
+- Summary:
+  - Tightened planner goal sanitization to remove ANSI/CSI escape remnants (e.g., `\x1b[31m` no longer leaves `[31m` in prompt text).
+  - Strengthened mission-planner tests with a direct `sanitize_goal_for_prompt()` assertion and strict expected prompt goal text.
+  - Updated informational docs (`README.md`, `docs/ROADMAP.md`) to reflect shipped planner hardening status and remaining Unicode test follow-up.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - Add Unicode edge-case sanitization tests under planner hardening backlog.
+- Risks/notes:
+  - ANSI-removal regex is intentionally conservative and scoped to prompt-sanitization output only.
+
+## 2026-03-02 — PR #83 — Planner goal sanitization + 2,000-char preflight cap
+- Summary:
+  - Added planner goal hardening in `mission_planner`: reject goals over 2,000 chars before any provider selection or brain calls.
+  - Added `sanitize_goal_for_prompt()` to remove ASCII control chars and normalize whitespace before embedding user goals in planner prompts.
+  - Added mission-planner tests for overlength rejection (with no brain invocation) and prompt sanitization behavior on injection-shaped input.
+  - Updated security docs to record the shipped control and retire the previous "planned fix" note.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - Consider adding structural user-data delimiters in planner prompts as a defense-in-depth layer.
+- Risks/notes:
+  - Goal sanitization is prompt-scoped; deterministic goal parsing paths intentionally continue using raw input semantics.
+
 ## How to use this file
 - Before starting any task, read this file first.
 - After every merged PR, append a new entry using the template below.
