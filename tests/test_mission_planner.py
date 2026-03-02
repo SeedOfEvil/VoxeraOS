@@ -1026,7 +1026,9 @@ def test_plan_mission_normalizes_sandbox_exec_string_command_to_argv(monkeypatch
     step = mission.steps[0]
     assert step.skill_id == "sandbox.exec"
     assert isinstance(step.args["command"], list)
-    assert step.args["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
+    # canonicalize_argv (shlex.split) runs before _normalize_sandbox_exec_step,
+    # so string commands are tokenised into argv — not wrapped in bash -lc.
+    assert step.args["command"] == ["echo", "HELLO-ARGV"]
 
 
 def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
@@ -1063,7 +1065,9 @@ def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
         asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
 
 
-def test_plan_mission_rejects_invalid_sandbox_exec_command_list(monkeypatch):
+def test_plan_mission_strips_whitespace_tokens_from_sandbox_exec_command_list(monkeypatch):
+    """Whitespace-only tokens in a command list are silently stripped by canonicalize_argv;
+    the plan succeeds with the remaining non-empty tokens."""
     cfg = AppConfig(
         brain={
             "primary": BrainConfig(
@@ -1093,8 +1097,86 @@ def test_plan_mission_rejects_invalid_sandbox_exec_command_list(monkeypatch):
         ],
     )
 
-    with pytest.raises(MissionPlannerError, match="sandbox.exec command must be a non-empty list"):
+    # The whitespace token "  " is stripped by canonicalize_argv; the plan succeeds.
+    mission = asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
+    step = mission.steps[0]
+    assert step.skill_id == "sandbox.exec"
+    assert step.args["command"] == ["bash", "echo HELLO-ARGV"]
+
+
+def test_plan_mission_sandbox_exec_argv_alias_is_accepted(monkeypatch):
+    """MANUAL REPRO BUG B: a planner step using 'argv' alias is normalised to 'command'."""
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "model": "primary-model",
+                    "brain": _FakeBrain(
+                        '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"argv":["bash","-lc","echo hello"]}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
+    step = mission.steps[0]
+    assert step.skill_id == "sandbox.exec"
+    assert step.args["command"] == ["bash", "-lc", "echo hello"]
+
+
+def test_plan_mission_sandbox_exec_all_whitespace_list_raises_actionable_error(monkeypatch):
+    """MANUAL REPRO BUG A: ['   ', ''] raises MissionPlannerError with actionable message."""
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "model": "primary-model",
+                    "brain": _FakeBrain(
+                        '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"command":["   ",""]}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    with pytest.raises(MissionPlannerError) as exc_info:
         asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
+    # Error must be actionable — include the example command
+    assert "Provide args.command" in str(exc_info.value)
+    assert "bash" in str(exc_info.value)
 
 
 def test_plan_mission_keeps_explicit_shell_intent_for_sandbox_exec(monkeypatch):

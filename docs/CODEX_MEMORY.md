@@ -98,6 +98,29 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Filesystem-based checks are resilient to changes in CLI output format or
     approval artifact naming conventions that previously caused hangs.
 
+## 2026-03-02 — PR #N/A — fix(sandbox.exec): canonicalize_argv — accept aliases, shlex.split strings, strip empty tokens, fail fast on empty argv
+- Summary:
+  - Introduced `canonicalize_argv(args)` in `src/voxera/skills/arg_normalizer.py` as the single source of truth for sandbox command normalisation.
+  - Accepts keys in priority order: `command` (canonical), `argv`, `cmd` (compatibility aliases).
+  - String values are tokenised with `shlex.split` (no implicit `bash -lc` wrapper).
+  - List values: all elements must be `str`; empty/whitespace-only tokens are silently stripped.
+  - Raises `ValueError` with an actionable message when the final argv is empty, missing, or contains non-string tokens.
+  - Applied in `PodmanSandboxRunner.run()` (execution path) and `canonicalize_args("sandbox.exec")` (SkillRunner pre-flight path) — two-layer defence.
+  - Bug symptom fixed: intermittent `RuntimeError('sandbox.exec command must be a non-empty list of strings.')` from planners or tools that emit `argv`/`cmd` aliases or include empty string tokens.
+  - Updated `tests/test_execution.py` (new alias/empty-token tests, error-message assertions) and created `tests/test_sandbox_exec_args.py` (33 targeted unit tests for `canonicalize_argv`).
+  - Updated `tests/test_mission_planner.py` and `tests/test_queue_daemon.py` for behaviour change: string commands are now shlex-split (not wrapped in `bash -lc`); whitespace-only list tokens are stripped instead of rejected.
+  - Docs updated: `README.md` (sandbox.exec input format table + examples), `docs/SECURITY.md` (canonicalize_argv validation contract), `docs/ROADMAP_0.1.6.md` (marked shipped).
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest` (all tests pass)
+  - `make merge-readiness-check`
+- Follow-ups:
+  - Replace `PR #N/A` with the merged PR number.
+- Risks/notes:
+  - Behaviour change: string `"echo hello"` is now tokenised to `["echo", "hello"]` (not `["bash","-lc","echo hello"]`). Callers wanting shell interpretation should pass `["bash","-lc","echo hello"]` explicitly. The mission planner already produces list form, so no production regression is expected.
+  - Empty/whitespace tokens in lists are silently stripped (previously rejected by `_normalize_sandbox_exec_step`). This is a deliberate robustness choice at the execution layer.
+
 ## How to use this file
 - Before starting any task, read this file first.
 - After every merged PR, append a new entry using the template below.

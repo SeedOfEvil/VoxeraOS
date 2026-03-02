@@ -67,6 +67,24 @@ Unknown skill IDs or disallowed app targets are rejected before any execution, w
 - `:Z` SELinux labeling on volume mounts.
 - Artifacts stored outside container in `~/.voxera/artifacts/<job_id>/`.
 
+#### sandbox.exec command arg validation (`canonicalize_argv`)
+All `sandbox.exec` command arguments are normalised through `canonicalize_argv` before execution:
+- Accepted keys (priority order): `command`, `argv`, `cmd`.
+- String values are tokenised with `shlex.split` (no implicit shell wrapper).
+- List values: all elements must be strings; empty/whitespace-only tokens are silently stripped.
+- If the final argv is empty, missing, or contains non-string tokens, execution fails fast with a clear error:
+  `"sandbox.exec command must be a non-empty list of strings. Provide args.command as a list like ['bash','-lc','echo hello'] or a non-empty string."`
+- `shell=True` is never used; the argv list is passed directly to Podman.
+
+Canonical best-practice format:
+```json
+{"skill_id": "sandbox.exec", "args": {"command": ["bash", "-lc", "echo hello"]}}
+```
+Non-shell direct exec (no bash wrapper needed):
+```json
+{"skill_id": "sandbox.exec", "args": {"command": ["ip", "a"]}}
+```
+
 ### Panel auth rate limiting
 Panel Basic-auth failures are tracked per client IP in `health.json` under `panel_auth`:
 - `failures_by_ip`: rolling failure counters (`count`, `first_ts_ms`, `last_ts_ms`)

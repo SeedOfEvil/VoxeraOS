@@ -541,9 +541,21 @@ podman info --debug | head
 ```
 
 ### Run sandbox.exec
-`sandbox.exec` always runs in the Podman backend and requires `command` as an array (list) of strings.
+`sandbox.exec` runs in the Podman backend. The canonical input format is `command` as a `list[str]`.
+Accepted key aliases (`argv`, `cmd`) and string values are resolved before execution via `canonicalize_argv`.
 
-Example (Python API):
+| Input format | Example | Notes |
+|---|---|---|
+| `list[str]` (**canonical**) | `["bash", "-lc", "echo hello"]` | Preferred; unambiguous |
+| `list[str]` (direct) | `["ip", "a"]` | Non-shell exec, no wrapper needed |
+| `str` | `"echo hello"` | Tokenised via `shlex.split` → `["echo", "hello"]` |
+| `argv` alias | `{"argv": ["ip", "a"]}` | Resolved to `command` key |
+| `cmd` alias | `{"cmd": ["ls", "-la"]}` | Resolved to `command` key |
+
+Empty tokens in a list (`["", "ip", "a"]`) are silently stripped before execution.
+If the final argv is empty or missing, execution fails fast with a clear, actionable error message.
+
+Example (Python API — canonical form):
 ```python
 from voxera.models import AppConfig
 from voxera.skills.registry import SkillRegistry
@@ -551,8 +563,13 @@ from voxera.skills.runner import SkillRunner
 
 reg = SkillRegistry(); reg.discover()
 runner = SkillRunner(reg, config=AppConfig())
+# Canonical: explicit argv list
 rr = runner.run(reg.get("sandbox.exec"), {"command": ["bash", "-lc", "echo hi; touch /work/ok"]}, AppConfig().policy)
 print(rr.ok, rr.data["artifacts_dir"])
+
+# Non-shell example (direct exec, no bash wrapper)
+rr2 = runner.run(reg.get("sandbox.exec"), {"command": ["ip", "a"]}, AppConfig().policy)
+print(rr2.ok)
 ```
 
 ### Security model
