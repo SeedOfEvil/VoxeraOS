@@ -194,3 +194,58 @@ def test_sandbox_exec_all_empty_tokens_returns_error(monkeypatch):
 
     assert result.ok is False
     assert "non-empty list of strings" in result.error
+
+
+def test_sandbox_exec_whitespace_and_empty_tokens_fail_with_actionable_message(monkeypatch):
+    """MANUAL REPRO BUG A: ["   ", ""] must fail fast with actionable message (not reach crun)."""
+    monkeypatch.setattr(PodmanSandboxRunner, "_assert_available", lambda self: None)
+    runner = PodmanSandboxRunner()
+
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"command": ["   ", ""]},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-bugA",
+    )
+
+    assert result.ok is False
+    # Must contain the actionable hint — not just the short form
+    assert "Provide args.command" in result.error
+    assert "bash" in result.error  # the example command
+
+
+def test_sandbox_exec_argv_alias_end_to_end(monkeypatch, tmp_path: Path):
+    """MANUAL REPRO BUG B: {"argv": [...]} must reach Podman and succeed."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    captured = _patch_successful_run(monkeypatch)
+
+    runner = PodmanSandboxRunner()
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"argv": ["bash", "-lc", "echo hello"]},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-bugB-argv",
+    )
+
+    assert result.ok is True
+    assert captured["cmd"][-3:] == ["bash", "-lc", "echo hello"]
+
+
+def test_sandbox_exec_cmd_alias_end_to_end(monkeypatch, tmp_path: Path):
+    """{"cmd": [...]} must reach Podman and succeed (mirrors argv alias BUG B)."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    captured = _patch_successful_run(monkeypatch)
+
+    runner = PodmanSandboxRunner()
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"cmd": ["ip", "a"]},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-bugB-cmd",
+    )
+
+    assert result.ok is True
+    assert captured["cmd"][-2:] == ["ip", "a"]

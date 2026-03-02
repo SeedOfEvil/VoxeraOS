@@ -15,7 +15,7 @@ from ..brain.gemini import GeminiBrain
 from ..brain.openai_compat import OpenAICompatBrain
 from ..health import record_fallback_transition
 from ..models import AppConfig, BrainConfig
-from ..skills.arg_normalizer import canonicalize_args
+from ..skills.arg_normalizer import canonicalize_args, canonicalize_argv
 from ..skills.registry import SkillRegistry
 from .capabilities_snapshot import (
     generate_capabilities_snapshot,
@@ -95,7 +95,10 @@ def _normalize_step_args(raw_args: object, expected_args: list[str]) -> dict:
     if not expected_args:
         return raw_args
 
-    alias_map = {"content": "text", "body": "text"}
+    # Canonical key aliases: aliases are expanded to the canonical name when the
+    # canonical name is an expected parameter but the alias was used instead.
+    # "argv" and "cmd" are accepted aliases for "command" (e.g. sandbox.exec).
+    alias_map = {"content": "text", "body": "text", "argv": "command", "cmd": "command"}
     expanded = dict(raw_args)
     for alias, canonical in alias_map.items():
         if canonical in expected_args and canonical not in expanded and alias in expanded:
@@ -543,31 +546,23 @@ def _normalize_file_step_paths(step: MissionStep) -> MissionStep:
 
 
 def _normalize_sandbox_exec_step(step: MissionStep) -> MissionStep:
+    """Normalise sandbox.exec step args using the canonical canonicalize_argv helper.
+
+    Accepts ``command``, ``argv``, and ``cmd`` key aliases, tokenises strings via
+    shlex.split, strips whitespace-only tokens, and raises MissionPlannerError (with
+    the same actionable message as the execution-layer check) when the final argv would
+    be empty or contains non-string tokens.
+    """
     if step.skill_id != "sandbox.exec":
         return step
 
     args = dict(step.args)
-    command = args.get("command")
-    if isinstance(command, str):
-        command_text = command.strip()
-        if not command_text:
-            raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-        args["command"] = ["bash", "-lc", command_text]
-        return MissionStep(skill_id=step.skill_id, args=args)
+    try:
+        argv = canonicalize_argv(args)
+    except ValueError as exc:
+        raise MissionPlannerError(str(exc)) from exc
 
-    if not isinstance(command, list) or not command:
-        raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-
-    normalized_command: list[str] = []
-    for part in command:
-        if not isinstance(part, str):
-            raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-        normalized_part = part.strip()
-        if not normalized_part:
-            raise MissionPlannerError("sandbox.exec command must be a non-empty list of strings.")
-        normalized_command.append(normalized_part)
-
-    args["command"] = normalized_command
+    args["command"] = argv
     return MissionStep(skill_id=step.skill_id, args=args)
 
 

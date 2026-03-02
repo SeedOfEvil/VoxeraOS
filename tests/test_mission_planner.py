@@ -1104,6 +1104,81 @@ def test_plan_mission_strips_whitespace_tokens_from_sandbox_exec_command_list(mo
     assert step.args["command"] == ["bash", "echo HELLO-ARGV"]
 
 
+def test_plan_mission_sandbox_exec_argv_alias_is_accepted(monkeypatch):
+    """MANUAL REPRO BUG B: a planner step using 'argv' alias is normalised to 'command'."""
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "model": "primary-model",
+                    "brain": _FakeBrain(
+                        '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"argv":["bash","-lc","echo hello"]}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    mission = asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
+    step = mission.steps[0]
+    assert step.skill_id == "sandbox.exec"
+    assert step.args["command"] == ["bash", "-lc", "echo hello"]
+
+
+def test_plan_mission_sandbox_exec_all_whitespace_list_raises_actionable_error(monkeypatch):
+    """MANUAL REPRO BUG A: ['   ', ''] raises MissionPlannerError with actionable message."""
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat",
+                model="test-model",
+                base_url="https://example.test/v1",
+            )
+        }
+    )
+    reg = SkillRegistry()
+    reg.discover()
+
+    monkeypatch.setattr(
+        "voxera.core.mission_planner._build_brain_candidates",
+        lambda _cfg: [
+            type(
+                "C",
+                (),
+                {
+                    "name": "primary",
+                    "model": "primary-model",
+                    "brain": _FakeBrain(
+                        '{"title":"Shell","steps":[{"skill_id":"sandbox.exec","args":{"command":["   ",""]}}]}'
+                    ),
+                },
+            )()
+        ],
+    )
+
+    with pytest.raises(MissionPlannerError) as exc_info:
+        asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
+    # Error must be actionable — include the example command
+    assert "Provide args.command" in str(exc_info.value)
+    assert "bash" in str(exc_info.value)
+
+
 def test_plan_mission_keeps_explicit_shell_intent_for_sandbox_exec(monkeypatch):
     cfg = AppConfig(
         brain={
