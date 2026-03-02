@@ -950,3 +950,125 @@ def test_panel_approval_missing_ref_redirects_with_flash_instead_of_500(tmp_path
 
     assert res.status_code == 303
     assert "flash=approval_not_found" in res.headers.get("location", "")
+
+
+def test_panel_auth_lockout_after_10_failures(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    now = {"ms": 1_700_000_000_000}
+    monkeypatch.setattr(panel_module, "_now_ms", lambda: now["ms"])
+
+    client = TestClient(panel_module.app)
+    for _ in range(9):
+        res = client.post(
+            "/queue/create",
+            data={"kind": "goal", "goal": "x"},
+            headers=_operator_headers(password="wrong"),
+        )
+        assert res.status_code == 401
+        now["ms"] += 1_000
+
+    tenth = client.post(
+        "/queue/create",
+        data={"kind": "goal", "goal": "x"},
+        headers=_operator_headers(password="wrong"),
+    )
+    assert tenth.status_code == 429
+    assert tenth.headers.get("Retry-After") == "60"
+
+
+def test_panel_auth_lockout_blocks_subsequent_requests(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    now = {"ms": 1_700_000_000_000}
+    monkeypatch.setattr(panel_module, "_now_ms", lambda: now["ms"])
+
+    client = TestClient(panel_module.app)
+    for _ in range(10):
+        client.post(
+            "/queue/create",
+            data={"kind": "goal", "goal": "x"},
+            headers=_operator_headers(password="wrong"),
+        )
+        now["ms"] += 1_000
+
+    blocked = client.post(
+        "/queue/create",
+        data={"kind": "goal", "goal": "x"},
+        headers=_operator_headers(password="wrong"),
+    )
+    assert blocked.status_code == 429
+    assert blocked.headers.get("Retry-After") == "60"
+
+
+def test_panel_auth_lockout_resets_after_window(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    now = {"ms": 1_700_000_000_000}
+    monkeypatch.setattr(panel_module, "_now_ms", lambda: now["ms"])
+
+    client = TestClient(panel_module.app)
+    for _ in range(10):
+        client.post(
+            "/queue/create",
+            data={"kind": "goal", "goal": "x"},
+            headers=_operator_headers(password="wrong"),
+        )
+        now["ms"] += 1_000
+
+    now["ms"] += 61_000
+    after_lockout = client.post(
+        "/queue/create",
+        data={"kind": "goal", "goal": "x"},
+        headers=_operator_headers(password="wrong"),
+    )
+    assert after_lockout.status_code == 401
+
+    for _ in range(8):
+        now["ms"] += 1_000
+        res = client.post(
+            "/queue/create",
+            data={"kind": "goal", "goal": "x"},
+            headers=_operator_headers(password="wrong"),
+        )
+        assert res.status_code == 401
+
+    now["ms"] += 61_000
+    reset_attempt = client.post(
+        "/queue/create",
+        data={"kind": "goal", "goal": "x"},
+        headers=_operator_headers(password="wrong"),
+    )
+    assert reset_attempt.status_code == 401
+
+
+def test_health_snapshot_contains_panel_auth_state(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    now = {"ms": 1_700_000_000_000}
+    monkeypatch.setattr(panel_module, "_now_ms", lambda: now["ms"])
+
+    client = TestClient(panel_module.app)
+    for _ in range(10):
+        client.post(
+            "/queue/create",
+            data={"kind": "goal", "goal": "x"},
+            headers=_operator_headers(password="wrong"),
+        )
+        now["ms"] += 1_000
+
+    health_path = fake_home / "VoxeraOS" / "notes" / "queue" / "health.json"
+    payload = json.loads(health_path.read_text(encoding="utf-8"))
+    panel_auth = payload.get("panel_auth", {})
+    lockouts = panel_auth.get("lockouts_by_ip", {})
+    assert lockouts
+    row = next(iter(lockouts.values()))
+    assert int(row.get("until_ts_ms", 0)) > now["ms"]

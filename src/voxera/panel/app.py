@@ -22,7 +22,7 @@ from ..config import load_config as load_runtime_config
 from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
 from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import JOB_BUCKETS, list_jobs, lookup_job, queue_snapshot
-from ..health import increment_health_counter, read_health_snapshot
+from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
 from ..incident_bundle import BundleError
 from ..ops_bundle import build_job_bundle, build_system_bundle
 from ..version import get_version
@@ -66,6 +66,11 @@ FLASH_MESSAGES = {
 
 CSRF_COOKIE = "voxera_panel_csrf"
 CSRF_FORM_KEY = "csrf_token"
+PANEL_AUTH_FAIL_THRESHOLD = 10
+PANEL_AUTH_WINDOW_S = 60
+PANEL_AUTH_LOCKOUT_S = 60
+_PANEL_AUTH_PRUNE_TTL_MS = 10 * 60 * 1000
+_PANEL_AUTH_MAX_TRACKED_IPS = 200
 
 
 class _RequestUrlLike(Protocol):
@@ -91,6 +96,141 @@ class _PanelSecurityRequestLike(Protocol):
 
 def _settings():
     return load_runtime_config()
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _client_ip(request: Request) -> str:
+    trust_proxy = os.getenv("VOXERA_PANEL_TRUST_PROXY", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if trust_proxy:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        first = forwarded.split(",", 1)[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "unknown"
+
+
+def _prune_panel_auth_maps(store: dict[str, Any], *, now_ms: int) -> None:
+    cutoff_ms = now_ms - _PANEL_AUTH_PRUNE_TTL_MS
+
+    failures_raw = store.get("failures_by_ip")
+    failures = failures_raw if isinstance(failures_raw, dict) else {}
+    for ip, row in list(failures.items()):
+        if not isinstance(row, dict):
+            failures.pop(ip, None)
+            continue
+        if int(row.get("last_ts_ms", 0) or 0) < cutoff_ms:
+            failures.pop(ip, None)
+    if len(failures) > _PANEL_AUTH_MAX_TRACKED_IPS:
+        ordered = sorted(failures.items(), key=lambda item: int(item[1].get("last_ts_ms", 0) or 0))
+        for ip, _ in ordered[: len(failures) - _PANEL_AUTH_MAX_TRACKED_IPS]:
+            failures.pop(ip, None)
+
+    lockouts_raw = store.get("lockouts_by_ip")
+    lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
+    for ip, row in list(lockouts.items()):
+        if not isinstance(row, dict):
+            lockouts.pop(ip, None)
+            continue
+        last_event_ts = int(row.get("last_event_ts_ms", 0) or 0)
+        until_ts = int(row.get("until_ts_ms", 0) or 0)
+        if max(last_event_ts, until_ts) < cutoff_ms:
+            lockouts.pop(ip, None)
+    if len(lockouts) > _PANEL_AUTH_MAX_TRACKED_IPS:
+        ordered = sorted(
+            lockouts.items(), key=lambda item: int(item[1].get("last_event_ts_ms", 0) or 0)
+        )
+        for ip, _ in ordered[: len(lockouts) - _PANEL_AUTH_MAX_TRACKED_IPS]:
+            lockouts.pop(ip, None)
+
+    store["failures_by_ip"] = failures
+    store["lockouts_by_ip"] = lockouts
+
+
+def _panel_auth_state_update(
+    queue_root: Path,
+    *,
+    ip: str,
+    now_ms: int,
+    auth_success: bool,
+) -> dict[str, Any]:
+    ip_key = ip.strip() or "unknown"
+    window_ms = PANEL_AUTH_WINDOW_S * 1000
+    lockout_ms = PANEL_AUTH_LOCKOUT_S * 1000
+
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        panel_auth_raw = payload.get("panel_auth")
+        panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
+        _prune_panel_auth_maps(panel_auth, now_ms=now_ms)
+
+        failures = panel_auth.get("failures_by_ip", {})
+        lockouts = panel_auth.get("lockouts_by_ip", {})
+
+        if auth_success:
+            failures.pop(ip_key, None)
+            lockout = lockouts.get(ip_key)
+            if isinstance(lockout, dict) and now_ms >= int(lockout.get("until_ts_ms", 0) or 0):
+                lockouts.pop(ip_key, None)
+        else:
+            row = failures.get(ip_key)
+            if not isinstance(row, dict):
+                row = {"count": 0, "first_ts_ms": now_ms, "last_ts_ms": now_ms}
+            first_ts = int(row.get("first_ts_ms", now_ms) or now_ms)
+            count = int(row.get("count", 0) or 0)
+            if now_ms - first_ts > window_ms:
+                count = 1
+                first_ts = now_ms
+            else:
+                count += 1
+            failures[ip_key] = {"count": count, "first_ts_ms": first_ts, "last_ts_ms": now_ms}
+            if count >= PANEL_AUTH_FAIL_THRESHOLD:
+                prev = lockouts.get(ip_key)
+                prev_count = int(prev.get("count", 0) or 0) if isinstance(prev, dict) else 0
+                lockouts[ip_key] = {
+                    "until_ts_ms": now_ms + lockout_ms,
+                    "count": prev_count + 1,
+                    "last_event_ts_ms": now_ms,
+                }
+
+        panel_auth["failures_by_ip"] = failures
+        panel_auth["lockouts_by_ip"] = lockouts
+        payload["panel_auth"] = panel_auth
+        payload["updated_at_ms"] = now_ms
+        return payload
+
+    return update_health_snapshot(queue_root, _apply)
+
+
+def _panel_auth_state_prune(queue_root: Path, *, now_ms: int) -> dict[str, Any]:
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        panel_auth_raw = payload.get("panel_auth")
+        panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
+        _prune_panel_auth_maps(panel_auth, now_ms=now_ms)
+        payload["panel_auth"] = panel_auth
+        payload["updated_at_ms"] = now_ms
+        return payload
+
+    return update_health_snapshot(queue_root, _apply)
+
+
+def _active_lockout_until_ms(*, queue_root: Path, ip: str, now_ms: int) -> int | None:
+    payload = _panel_auth_state_prune(queue_root, now_ms=now_ms)
+    panel_auth_raw = payload.get("panel_auth")
+    panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
+    lockouts_raw = panel_auth.get("lockouts_by_ip")
+    lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
+    row = lockouts.get(ip.strip() or "unknown")
+    if not isinstance(row, dict):
+        return None
+    until = int(row.get("until_ts_ms", 0) or 0)
+    return until if now_ms < until else None
 
 
 def _queue_root() -> Path:
@@ -187,7 +327,19 @@ def _operator_credentials(request: _PanelSecurityRequestLike) -> tuple[str, str]
 
 def _require_operator_basic_auth(request: Request, authorization: str | None) -> None:
     user, password = _operator_credentials(request)
+    now_ms = _now_ms()
+    ip = _client_ip(request)
+    lockout_until_ms = _active_lockout_until_ms(queue_root=_queue_root(), ip=ip, now_ms=now_ms)
+    if lockout_until_ms is not None:
+        _panel_security_counter_incr("panel_429_count")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many authentication attempts",
+            headers={"Retry-After": str(PANEL_AUTH_LOCKOUT_S)},
+        )
+
     if not authorization:
+        _panel_auth_state_update(queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
         _panel_security_counter_incr("panel_401_count", last_error="missing authorization")
         _log_panel_security_event(
             "panel_auth_missing", request=request, reason="missing_authorization", status_code=401
@@ -201,6 +353,7 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
 
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "basic" or not token:
+        _panel_auth_state_update(queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
         _panel_security_counter_incr(
             "panel_auth_invalid", last_error="invalid authentication scheme"
         )
@@ -216,6 +369,7 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
     try:
         decoded = base64.b64decode(token).decode("utf-8")
     except Exception as exc:
+        _panel_auth_state_update(queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
         _panel_security_counter_incr(
             "panel_auth_invalid", last_error="invalid authorization header"
         )
@@ -232,6 +386,38 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
     if not (
         secrets.compare_digest(got_user, user) and secrets.compare_digest(got_password, password)
     ):
+        payload = _panel_auth_state_update(
+            queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=False
+        )
+        panel_auth_raw = payload.get("panel_auth")
+        panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
+        failures_raw = panel_auth.get("failures_by_ip")
+        failures = failures_raw if isinstance(failures_raw, dict) else {}
+        ip_key = ip.strip() or "unknown"
+        failure_row_raw = failures.get(ip_key)
+        failure_row = failure_row_raw if isinstance(failure_row_raw, dict) else {}
+        lockouts_raw = panel_auth.get("lockouts_by_ip")
+        lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
+        lockout_row = lockouts.get(ip_key) if isinstance(lockouts.get(ip_key), dict) else None
+        if lockout_row is not None and now_ms < int(lockout_row.get("until_ts_ms", 0) or 0):
+            attempt_count = int(failure_row.get("count", 0) or 0)
+            _panel_security_counter_incr("panel_429_count")
+            log(
+                {
+                    "event": "panel_auth_lockout",
+                    "ts_ms": now_ms,
+                    "ip": ip,
+                    "attempt_count": attempt_count,
+                    "window_s": PANEL_AUTH_WINDOW_S,
+                    "lockout_s": PANEL_AUTH_LOCKOUT_S,
+                }
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="too many authentication attempts",
+                headers={"Retry-After": str(PANEL_AUTH_LOCKOUT_S)},
+            )
+
         _panel_security_counter_incr(
             "panel_auth_invalid", last_error="invalid operator credentials"
         )
@@ -244,6 +430,8 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
             detail="invalid operator credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
+
+    _panel_auth_state_update(queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=True)
 
 
 async def _require_mutation_guard(request: Request) -> None:
