@@ -7,6 +7,7 @@ import re
 import secrets
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlencode
@@ -303,6 +304,105 @@ def _auth_setup_banner() -> dict[str, str] | None:
             "systemctl --user daemon-reload\n"
             "systemctl --user restart voxera-panel.service voxera-daemon.service"
         ),
+    }
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _format_ts(ts_ms: int | None) -> str:
+    if ts_ms is None or ts_ms <= 0:
+        return "—"
+    return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _format_age(age_s: int | None) -> str:
+    if age_s is None or age_s < 0:
+        return "—"
+    if age_s < 60:
+        return f"{age_s}s"
+    minutes, seconds = divmod(age_s, 60)
+    if seconds:
+        return f"{minutes}m {seconds}s"
+    return f"{minutes}m"
+
+
+def _daemon_health_view(health: dict[str, Any]) -> dict[str, Any]:
+    lock_raw = health.get("lock_status")
+    lock: dict[str, Any] = lock_raw if isinstance(lock_raw, dict) else {}
+    lock_state = str(health.get("lock_state") or "").strip().lower()
+    lock_status = str(lock.get("status") or "").strip().lower()
+    if lock_status not in {"held", "stale", "clear"}:
+        if lock_state in {"active", "locked_by_other"}:
+            lock_status = "held"
+        elif lock_state in {"stale", "reclaimed"}:
+            lock_status = "stale"
+        else:
+            lock_status = "clear"
+
+    lock_pid = _coerce_int(lock.get("pid"))
+    if lock_pid is None:
+        lock_pid = _coerce_int(health.get("lock_holder_pid"))
+
+    fallback_reason = health.get("last_fallback_reason")
+    fallback_tier = health.get("last_fallback_to")
+    fallback_ts = _coerce_int(health.get("last_fallback_ts_ms"))
+    has_fallback = any([fallback_reason, fallback_tier, fallback_ts])
+
+    startup_recovery = health.get("last_startup_recovery")
+    if isinstance(startup_recovery, dict):
+        recovery_counts = startup_recovery.get("counts")
+        recovery_ts = _coerce_int(startup_recovery.get("ts_ms"))
+    else:
+        recovery_counts = health.get("last_startup_recovery_counts")
+        recovery_ts = _coerce_int(health.get("last_startup_recovery_ts"))
+    counts = recovery_counts if isinstance(recovery_counts, dict) else {}
+    recovery_job_count = _coerce_int(counts.get("jobs_failed")) or 0
+    orphan_count = (_coerce_int(counts.get("orphan_approvals_quarantined")) or 0) + (
+        _coerce_int(counts.get("orphan_state_files_quarantined")) or 0
+    )
+    has_recovery = any([recovery_job_count, orphan_count, recovery_ts])
+
+    shutdown_outcome = str(health.get("last_shutdown_outcome") or "").strip() or "unknown"
+    shutdown_ts = _coerce_int(health.get("last_shutdown_ts"))
+
+    stale_age_s = _coerce_int(lock.get("stale_age_s"))
+
+    return {
+        "lock_status": lock_status,
+        "lock_pid": lock_pid,
+        "lock_stale_age_s": stale_age_s,
+        "lock_stale_age_label": _format_age(stale_age_s),
+        "last_brain_fallback": {
+            "present": has_fallback,
+            "tier": str(fallback_tier or "—"),
+            "reason": str(fallback_reason or "—"),
+            "ts": _format_ts(fallback_ts),
+        },
+        "last_startup_recovery": {
+            "present": has_recovery,
+            "job_count": recovery_job_count,
+            "orphan_count": orphan_count,
+            "ts": _format_ts(recovery_ts),
+        },
+        "last_shutdown": {
+            "present": shutdown_outcome != "unknown" or shutdown_ts is not None,
+            "outcome": shutdown_outcome,
+            "ts": _format_ts(shutdown_ts),
+        },
+        "daemon_state": str(health.get("daemon_state") or "healthy"),
     }
 
 
@@ -834,6 +934,7 @@ def home(request: Request, created: str = "", error: str = "", mission_created: 
     active_jobs, recent_activity = _build_activity(audit_events)
 
     missions = list_missions()
+    daemon_health = _daemon_health_view(read_health_snapshot(queue_root))
     tmpl = templates.get_template("home.html")
     csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
     html = tmpl.render(
@@ -854,6 +955,7 @@ def home(request: Request, created: str = "", error: str = "", mission_created: 
         csrf_token=csrf_token,
         panel_security_counters=_panel_security_snapshot(),
         auth_setup_banner=_auth_setup_banner(),
+        daemon_health=daemon_health,
     )
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")

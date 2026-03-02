@@ -113,3 +113,19 @@ pre { white-space: pre-wrap; word-break: break-word; background: var(--surface-2
 .tab-btn.is-active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .tab-panel.is-hidden { display: none; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+.daemon-health-widget > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.daemon-health-widget > summary h2 {
+  margin: 0;
+}
+
+.daemon-health-grid {
+  margin-top: 12px;
+}

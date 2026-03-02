@@ -83,6 +83,74 @@ def test_panel_home_shows_not_found_hints(tmp_path, monkeypatch):
     assert "Active Work" in body
 
 
+def test_home_renders_daemon_health_widget_with_empty_health(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/")
+
+    assert res.status_code == 200
+    body = res.text
+    assert "Daemon Health" in body
+    assert "notes/queue/health.json" in body
+    assert "No recent fallbacks." in body
+    assert "clean" in body
+    assert "unknown" in body
+    assert "Status" in body
+    assert "clear" in body
+    assert "healthy" in body
+
+
+def test_home_renders_daemon_health_widget_with_fields(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps(
+            {
+                "lock_status": {"status": "stale", "pid": 4321, "stale_age_s": 125},
+                "last_fallback_to": "fallback",
+                "last_fallback_reason": "RATE_LIMIT",
+                "last_fallback_ts_ms": 1700000000000,
+                "last_startup_recovery_counts": {
+                    "jobs_failed": 2,
+                    "orphan_approvals_quarantined": 1,
+                    "orphan_state_files_quarantined": 3,
+                },
+                "last_startup_recovery_ts": 1700000001000,
+                "last_shutdown_outcome": "failed_shutdown",
+                "last_shutdown_ts": 1700000002000,
+                "daemon_state": "degraded",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/")
+
+    assert res.status_code == 200
+    body = res.text
+    assert "Daemon Health" in body
+    assert "stale" in body
+    assert "4321" in body
+    assert "2m 5s" in body
+    assert "fallback" in body
+    assert "RATE_LIMIT" in body
+    assert "2023-11-14 22:13:20 UTC" in body
+    assert "job_count" in body
+    assert ">2<" in body
+    assert "orphan_count" in body
+    assert ">4<" in body
+    assert "failed_shutdown" in body
+    assert "degraded" in body
+
+
 def test_panel_can_click_approve_pending_queue_job(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

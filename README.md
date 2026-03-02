@@ -19,6 +19,7 @@ user services, and pluggable “brain” providers). **v0.1.6 is in progress** (
 - ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
 - ✅ Queue status UX (`voxera queue status`) and panel insights for pending approvals/audit
+- ✅ Panel home Daemon Health widget (collapsible) from `notes/queue/health.json` only: lock status/PID/stale age, last brain fallback, startup recovery summary, shutdown outcome, daemon state
 - ✅ DEV-only auto-approve gating for `system.settings` only (`VOXERA_DEV_MODE=1` + `--auto-approve-ask`)
 - ✅ Human-friendly inbox entry point (`voxera inbox add`, `voxera inbox list`) for queueing goals
 - ✅ Update flow (`make update`) and systemd user service lifecycle (`make services-install`, status/restart/stop)
@@ -349,6 +350,8 @@ Failed-job sidecar contract and retention:
 - Queue status and panel expose sidecar health counters: `failed metadata valid`, `failed metadata invalid`, `failed metadata missing`.
 - `voxera queue status` now also shows active failed-retention policy (`failed retention max age (s)`, `failed retention max count`) and the latest prune-event summary (`removed jobs/sidecars`).
 - Lock/auth observability counters are persisted in `notes/queue/health.json` (shared by daemon + panel).
+- Panel home (`/`) includes a collapsible **Daemon Health** widget sourced strictly from `notes/queue/health.json` at request time (no daemon RPC calls), so it remains available in panel-only deployments.
+- Widget fields: lock status (`held`/`stale`/`clear`) with PID/stale age, last brain fallback (tier/reason/timestamp), last startup recovery (job_count/orphan_count/timestamp), last shutdown outcome (outcome/timestamp), daemon state (defaults to `healthy` when absent).
 - Health snapshot now also records `last_ok_event` + `last_ok_ts_ms` so operators can confirm recent successful daemon activity; `last_error` remains for failures.
 - Use `voxera queue health` for a quick operator summary (paused flag, intake path, lock status, counters, and last safe error summary).
 - See `docs/ops.md` Incident Runbook for copy/paste recovery steps.

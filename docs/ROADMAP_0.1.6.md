@@ -48,8 +48,8 @@ reliability story before the v0.3 voice expansion.
 
 ### Pillar 2 — Ops visibility in panel
 
-#### P2.1 — Panel home health widget (PLANNED)
-- Add a collapsible "Daemon Health" widget to the panel home (`/`) showing:
+#### P2.1 — Panel home health widget (SHIPPED)
+- Added a collapsible "Daemon Health" widget to the panel home (`/`) showing:
   - Lock status (held/stale/clear) + lock PID + stale age
   - Last brain fallback (reason, tier, timestamp) or "no recent fallbacks"
   - Last startup recovery (job count, orphan count, timestamp) or "clean"
@@ -174,7 +174,7 @@ reliability story before the v0.3 voice expansion.
 - ⏳ Lockout events appear in audit log.
 
 ### Ops visibility
-- ⏳ Panel home shows daemon health widget with lock/fallback/recovery/shutdown fields.
+- ✅ Panel home shows daemon health widget with lock/fallback/recovery/shutdown fields.
 - ⏳ Panel hygiene page surfaces last prune + reconcile results and trigger buttons.
 - ⏳ Panel recovery page lists `recovery/` and `quarantine/` contents.
 

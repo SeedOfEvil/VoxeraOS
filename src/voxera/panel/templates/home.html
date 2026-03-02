@@ -50,6 +50,8 @@
     </nav>
 
     <section class="tab-panel" data-tab-panel="control">
+      {% include "_daemon_health_widget.html" %}
+
       <section class="grid grid-3" style="margin-bottom:16px;">
         <article class="card"><p class="kpi">{{queue.counts.pending}}</p><p class="kpi-label">Pending Jobs</p></article>
         <article class="card"><p class="kpi">{{queue.counts.pending_approvals}}</p><p class="kpi-label">Approval Inbox</p></article>
