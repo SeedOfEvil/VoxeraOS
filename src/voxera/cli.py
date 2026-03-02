@@ -773,10 +773,34 @@ def queue_health(
         "--queue-dir",
         help="Queue directory containing JSON mission jobs.",
     ),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ):
     """Show daemon/panel health counters and lock status."""
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
     status = daemon.status_snapshot(approvals_limit=3, failed_limit=3)
+
+    panel_auth_raw = status.get("panel_auth")
+    panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
+    lockouts_raw = panel_auth.get("lockouts_by_ip")
+    lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
+    now_ms = int(__import__("time").time() * 1000)
+    active_lockouts = {
+        ip: row
+        for ip, row in lockouts.items()
+        if isinstance(row, dict) and now_ms < int(row.get("until_ts_ms", 0) or 0)
+    }
+    next_lockout_expiry_ts_ms = min(
+        (int(row.get("until_ts_ms", 0) or 0) for row in active_lockouts.values()), default=None
+    )
+
+    if json_output:
+        out = dict(status)
+        out["panel_auth_lockouts"] = {
+            "locked_out_ips": len(active_lockouts),
+            "next_expiry_ts_ms": next_lockout_expiry_ts_ms,
+        }
+        typer.echo(json.dumps(out, sort_keys=True))
+        return
 
     console.print(f"Health snapshot: {status.get('health_path', '')}")
     console.print(f"Queue intake: {status.get('intake_glob', '')}")
@@ -787,6 +811,8 @@ def queue_health(
     console.print(f"Last ok ts ms: {status.get('last_ok_ts_ms')}")
     console.print(f"Last error: {status.get('last_error', '')}")
     console.print(f"Last error ts ms: {status.get('last_error_ts_ms')}")
+    console.print(f"Panel auth locked_out_ips: {len(active_lockouts)}")
+    console.print(f"Panel auth next_lockout_expiry_ts_ms: {next_lockout_expiry_ts_ms}")
 
     _render_lock_status(status)
 
@@ -812,6 +838,7 @@ def queue_health(
         "panel_csrf_missing",
         "panel_csrf_invalid",
         "panel_auth_invalid",
+        "panel_429_count",
         "brain_fallback_count",
         "brain_fallback_reason_timeout",
         "brain_fallback_reason_auth",

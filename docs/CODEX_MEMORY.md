@@ -468,3 +468,11 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `make merge-readiness-check`
 - Follow-ups:
   - Replace PR placeholder with merged PR number.
+
+
+## PR: security(panel) rate limit failed Basic auth attempts per IP (10/60s) with 429 + Retry-After + health/audit surfaces (P1.3)
+- **What changed:** Added per-IP panel auth failure tracking and lockout enforcement in panel Basic auth. After 10 failed attempts within 60s, requests return `429` with `Retry-After: 60`. Added structured audit event `panel_auth_lockout`.
+- **Health/ops visibility:** Added `panel_auth` state (`failures_by_ip`, `lockouts_by_ip`) to `health.json` with pruning and bounded IP tracking; surfaced lockout summary in `voxera queue health` (human + `--json`) and `voxera doctor --quick`.
+- **Robustness:** Health snapshot writer now ensures parent directories exist before atomic replace.
+- **Tests:** Added panel auth lockout tests for threshold trigger, subsequent block, reset behavior, and health snapshot state.
+- **Commands run:** `ruff format .`, `ruff check .`, `pytest`, `make merge-readiness-check`.

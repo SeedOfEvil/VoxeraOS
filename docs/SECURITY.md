@@ -12,7 +12,7 @@ When using OpenRouter via the OpenAI-compatible adapter, VoxeraOS sends `HTTP-Re
 | Prompt injection via user-controlled content | High | ✅ Goal strings sanitized + 2,000-char cap before planning (PR #83) |
 | Secret leakage (API keys, tokens) | High | ✅ Keyring + 0600 fallback; redacted in config show/snapshot |
 | Over-permissioned skills | High | ✅ Capability declarations + policy engine |
-| Panel auth brute force | Medium | Partial — password required for mutations; no rate limiting yet |
+| Panel auth brute force | Medium | ✅ Per-IP failed-auth lockout (10 attempts / 60s) with HTTP 429 + `Retry-After: 60` + audit/health surfaces |
 | Mid-job daemon crash leaving ambiguous state | Medium | ✅ Graceful SIGTERM handler (PR #80) + deterministic startup recovery (PR #81) |
 | Artifact data accumulation | Low | ✅ `voxera artifacts prune` (v0.1.5) + `voxera queue prune` (v0.1.6) available |
 | Dependency supply chain | Low | No signing; standard pip install |
@@ -66,6 +66,20 @@ Unknown skill IDs or disallowed app targets are rejected before any execution, w
 - Only `~/.voxera/workspace/<job_id>/` mounted writable to `/work`.
 - `:Z` SELinux labeling on volume mounts.
 - Artifacts stored outside container in `~/.voxera/artifacts/<job_id>/`.
+
+### Panel auth rate limiting
+Panel Basic-auth failures are tracked per client IP in `health.json` under `panel_auth`:
+- `failures_by_ip`: rolling failure counters (`count`, `first_ts_ms`, `last_ts_ms`)
+- `lockouts_by_ip`: lockout windows (`until_ts_ms`, `count`, `last_event_ts_ms`)
+
+Policy:
+- `FAIL_THRESHOLD = 10` failed attempts
+- `WINDOW_S = 60` seconds
+- `LOCKOUT_S = 60` seconds
+
+When an IP crosses the threshold inside the window, panel auth returns HTTP `429` and sets
+`Retry-After: 60`. Lockout events are emitted as structured audit records (`panel_auth_lockout`)
+with `ip`, `attempt_count`, `window_s`, and `lockout_s`.
 
 ### Panel auth
 Web panel mutations (job lifecycle, mission create) require:

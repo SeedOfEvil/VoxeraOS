@@ -1583,6 +1583,9 @@ class MissionQueueDaemon:
             "last_error_ts_ms": health.get("last_error_ts_ms"),
             "last_ok_event": health.get("last_ok_event", ""),
             "last_ok_ts_ms": health.get("last_ok_ts_ms"),
+            "panel_auth": health.get("panel_auth")
+            if isinstance(health.get("panel_auth"), dict)
+            else {},
         }
 
     def _resolve_job_ref_in_dirs(self, ref: str, directories: list[Path]) -> Path | None:

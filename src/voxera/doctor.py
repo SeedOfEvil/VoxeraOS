@@ -284,6 +284,25 @@ def run_quick_doctor(
         }
     )
 
+    panel_auth_raw = health.get("panel_auth")
+    panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
+    lockouts_raw = panel_auth.get("lockouts_by_ip")
+    lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
+    now_ms = int(time.time() * 1000)
+    active_lockouts = {
+        ip: row
+        for ip, row in lockouts.items()
+        if isinstance(row, dict) and now_ms < int(row.get("until_ts_ms", 0) or 0)
+    }
+    checks.append(
+        {
+            "check": "panel auth",
+            "status": "warn" if active_lockouts else "ok",
+            "detail": f"locked_out_ips={len(active_lockouts)}",
+            "hint": "Investigate repeated failed panel login attempts." if active_lockouts else "",
+        }
+    )
+
     snap = daemon.status_snapshot()
     checks.append(
         {

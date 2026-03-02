@@ -27,6 +27,7 @@ def read_health_snapshot(queue_root: Path) -> dict[str, Any]:
 def write_health_snapshot(queue_root: Path, payload: dict[str, Any]) -> None:
     queue_root.mkdir(parents=True, exist_ok=True)
     path = health_path(queue_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     tmp.replace(path)

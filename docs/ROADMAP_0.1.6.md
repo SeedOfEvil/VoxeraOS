@@ -36,12 +36,12 @@ reliability story before the v0.3 voice expansion.
 - Document delimiter format in `docs/SECURITY.md`.
 - Acceptance: planner preamble output includes delimiter markers; existing tests unaffected.
 
-#### P1.3 — Panel auth rate limiting (PLANNED)
+#### P1.3 — Panel auth rate limiting (SHIPPED)
 - Track failed Basic auth attempts per IP in the health snapshot.
-- After 5 failures within 60 seconds: return 429 + `Retry-After: 60` header.
+- After 10 failures within 60 seconds: return 429 + `Retry-After: 60` header.
 - Lockout events emitted as structured audit entries (`panel_auth_lockout`, ip, attempt_count).
 - Lockout status visible in `voxera queue health` and `voxera doctor --quick`.
-- Acceptance: 6 rapid failed auth attempts trigger lockout; correct 429 response returned.
+- Acceptance: 10 rapid failed auth attempts trigger lockout; correct 429 response returned.
 
 ---
 
@@ -169,7 +169,7 @@ reliability story before the v0.3 voice expansion.
 ### Security
 - ✅ Goal strings over 2,000 characters are rejected with a clear error before reaching the LLM.
 - ⏳ Planner preamble includes `[USER DATA START]` / `[USER DATA END]` delimiters.
-- ⏳ 6 rapid failed panel auth attempts trigger 429 lockout with `Retry-After` header.
+- ✅ 10 rapid failed panel auth attempts trigger 429 lockout with `Retry-After: 60` header and per-IP lockout tracking in health snapshot.
 - ⏳ Lockout events appear in audit log.
 
 ### Ops visibility
