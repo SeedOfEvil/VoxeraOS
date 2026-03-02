@@ -106,6 +106,10 @@ Each item below maps to a planned PR in `docs/ROADMAP_0.1.6.md`.
 
 ### Provider / model UX
 
+**Shipped — OpenRouter default attribution headers (PR #TBD)**
+- [x] OpenRouter calls now auto-include app attribution headers by default (`HTTP-Referer`, `X-OpenRouter-Title`, `X-Title`) with invisible setup UX.
+- [x] User/provider header overrides remain respected; defaults apply only when keys are absent.
+
 **Day 9 — Keyring credential workflow improvements (PR #94)**
 - [ ] Show keyring availability at setup start (available / unavailable + file fallback).
 - [ ] After entering a new key: test against provider before saving; show pass/fail.

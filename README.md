@@ -148,9 +148,12 @@ override panel/queue defaults. See the **Runtime config** section above and `doc
 ### OpenRouter recommended setup
 `voxera setup` now includes an **OpenRouter** cloud option and configures:
 - Base URL: `https://openrouter.ai/api/v1`
-- Headers: `HTTP-Referer` and `X-Title`
 - Brain tiers: `primary`, `fast`, `reasoning`, `fallback`
+- Automatic attribution headers on OpenRouter calls: `HTTP-Referer=https://voxeraos.ca`, `X-OpenRouter-Title=VoxeraOS` (and `X-Title=VoxeraOS` for compatibility)
 - Gemini provider is supported for mission planning and participates in the same fallback chain as OpenAI-compatible providers.
+
+OpenRouter attribution is automatic and invisible during setup so usage appears as **VoxeraOS (voxeraos.ca)** by default.
+To override defaults, set `VOXERA_APP_URL` and/or `VOXERA_APP_TITLE`, or define provider `extra_headers` in config (explicit headers win).
 
 After setup, run:
 ```bash
