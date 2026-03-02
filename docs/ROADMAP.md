@@ -63,11 +63,11 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 
 ### Ops visibility in panel (highest user-visible value)
 
-**P2.1 — Panel home health widget (PLANNED)**
-- [ ] Add collapsible "Daemon Health" widget to panel home sourced from `health.json`.
-- [ ] Fields: lock status, last fallback (reason/tier/ts), last recovery (job/orphan counts), last shutdown.
-- [ ] Neutral display when fields are null/empty (no provider config, fresh install).
-- [ ] Daemon state badge: `healthy` / `degraded` / `unknown`.
+**P2.1 — Panel home health widget (SHIPPED)**
+- [x] Add collapsible "Daemon Health" widget to panel home sourced from `health.json`.
+- [x] Fields: lock status, last fallback (reason/tier/ts), last recovery (job/orphan counts), last shutdown.
+- [x] Neutral display when fields are null/empty (no provider config, fresh install).
+- [x] Daemon state badge from health snapshot with `healthy` default and future `degraded` support.
 
 **P2.2 — Panel hygiene status + trigger page (PLANNED)**
 - [ ] Add `/hygiene` panel page showing last prune result + last reconcile result.

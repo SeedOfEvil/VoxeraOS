@@ -166,6 +166,8 @@ voxera queue health           # summary from notes/queue/health.json
 voxera queue lock status      # lock table alias (same lock fields as queue health)
 ```
 
+Panel home (`/`) now includes a collapsible **Daemon Health** widget sourced only from `notes/queue/health.json` (no daemon RPC calls), so it is safe/usable even when running panel-only deployments.
+
 Operational effects:
 - `queue cancel` moves matching active jobs (`inbox/`, `pending/`, pending approvals/in-flight best effort) into `canceled/` and cleans pending approval markers.
 - `queue retry` re-queues a `failed/` or `canceled/` primary payload into `inbox/`, archiving prior failed sidecars when present, and emits `queue_job_retry`.

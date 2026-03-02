@@ -2,6 +2,22 @@
 
 This file is the single, persistent project memory for Codex-assisted work.
 
+## 2026-03-02 — PR #N/A — feat(panel): add home Daemon Health widget sourced from health.json (P2.1)
+- Summary:
+  - Added a collapsible **Daemon Health** widget on panel home (`/`) using only `read_health_snapshot()` data from `notes/queue/health.json` (no daemon calls), with neutral placeholders for missing fields.
+  - Added `_daemon_health_view()` normalization in panel app for lock status/PID/stale age, last fallback, startup recovery, shutdown outcome, and daemon state (`healthy` default).
+  - Added panel tests covering empty/minimal health snapshots and populated snapshots, verifying neutral and populated rendering paths.
+  - Updated informational docs (README + ROADMAP + SECURITY) so operators can discover the widget and panel-only safety behavior.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - Replace `PR #N/A` with the merged PR number.
+- Risks/notes:
+  - Widget intentionally reflects persisted snapshot state; freshness depends on latest `health.json` writes.
+
 ## 2026-03-02 — PR #N/A — security(planner): wrap user goal in [USER DATA START]/[USER DATA END] delimiters (P1.2)
 - Summary:
   - Added planner prompt boundary constants and wrapped embedded sanitized goal text in a single `[USER DATA START]` / `[USER DATA END]` region.

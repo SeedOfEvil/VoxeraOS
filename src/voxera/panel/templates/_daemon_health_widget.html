@@ -1,0 +1,53 @@
+<section class="card" style="margin-bottom:16px;">
+  <details class="daemon-health-widget">
+    <summary>
+      <h2>Daemon Health</h2>
+      <span class="badge">{{daemon_health.daemon_state}}</span>
+    </summary>
+    <p class="muted">Snapshot from <span class="mono">notes/queue/health.json</span> (no daemon calls).</p>
+
+    <div class="grid grid-2 daemon-health-grid">
+      <article>
+        <h3>Lock status</h3>
+        <p class="kpi-label"><b>Status</b></p>
+        <p>{{daemon_health.lock_status}}</p>
+        <p class="kpi-label"><b>Lock PID</b></p>
+        <p>{{daemon_health.lock_pid if daemon_health.lock_pid is not none else "—"}}</p>
+        <p class="kpi-label"><b>Stale age</b></p>
+        <p>{{daemon_health.lock_stale_age_label}}</p>
+      </article>
+
+      <article>
+        <h3>Last brain fallback</h3>
+        {% if daemon_health.last_brain_fallback.present %}
+          <p class="kpi-label"><b>Tier</b></p><p>{{daemon_health.last_brain_fallback.tier}}</p>
+          <p class="kpi-label"><b>Reason</b></p><p>{{daemon_health.last_brain_fallback.reason}}</p>
+          <p class="kpi-label"><b>Timestamp</b></p><p>{{daemon_health.last_brain_fallback.ts}}</p>
+        {% else %}
+          <p class="muted">No recent fallbacks.</p>
+        {% endif %}
+      </article>
+
+      <article>
+        <h3>Last startup recovery</h3>
+        {% if daemon_health.last_startup_recovery.present %}
+          <p class="kpi-label"><b>job_count</b></p><p>{{daemon_health.last_startup_recovery.job_count}}</p>
+          <p class="kpi-label"><b>orphan_count</b></p><p>{{daemon_health.last_startup_recovery.orphan_count}}</p>
+          <p class="kpi-label"><b>Timestamp</b></p><p>{{daemon_health.last_startup_recovery.ts}}</p>
+        {% else %}
+          <p class="muted">clean</p>
+        {% endif %}
+      </article>
+
+      <article>
+        <h3>Last shutdown outcome</h3>
+        {% if daemon_health.last_shutdown.present %}
+          <p class="kpi-label"><b>Outcome</b></p><p>{{daemon_health.last_shutdown.outcome}}</p>
+          <p class="kpi-label"><b>Timestamp</b></p><p>{{daemon_health.last_shutdown.ts}}</p>
+        {% else %}
+          <p class="muted">unknown</p>
+        {% endif %}
+      </article>
+    </div>
+  </details>
+</section>

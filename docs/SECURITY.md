@@ -85,6 +85,16 @@ Non-shell direct exec (no bash wrapper needed):
 {"skill_id": "sandbox.exec", "args": {"command": ["ip", "a"]}}
 ```
 
+### Panel daemon health widget data source
+Panel home (`/`) now includes a collapsible **Daemon Health** widget that reads only the local
+health snapshot file (`notes/queue/health.json`) through shared health-loader utilities.
+
+Security and deployment implications:
+- No direct daemon RPC or background daemon call is performed by the panel for this widget.
+- The widget is read-only and reflects persisted snapshot data only.
+- Panel-only deployments remain safe/supported: if the daemon is not running, neutral placeholders
+  are shown without failing requests.
+
 ### Panel auth rate limiting
 Panel Basic-auth failures are tracked per client IP in `health.json` under `panel_auth`:
 - `failures_by_ip`: rolling failure counters (`count`, `first_ts_ms`, `last_ts_ms`)
@@ -139,12 +149,6 @@ and `voxera doctor --quick`.
 - Goal text embedded in planner prompts is sanitized by stripping ASCII control chars (`0x00-0x1F`, `0x7F`).
 - Prompt embedding normalizes whitespace (collapse runs + trim ends) so planner sees stable user input.
 
-### Panel auth has no rate limiting (tracked: ROADMAP Day 2–3)
-Repeated failed Basic auth attempts are logged but not rate-limited.
-On a shared or remote host, the password endpoint is brute-forceable.
-
-**Planned fix:** failed-attempt counter with 60-second lockout after 5 failures.
-Lockout events logged as structured audit entries.
 
 ---
 
