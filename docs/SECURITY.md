@@ -36,6 +36,15 @@ Every action is logged to JSONL (`~/.voxera/data/audit/YYYY-MM-DD.jsonl`) with:
 skill ID, args (sanitized), result, policy decision, timestamp, job ID.
 Audit log entries are append-only; nothing is deleted by the runtime.
 
+### Planner Prompt Boundaries
+User-controlled planner fields are wrapped with explicit delimiters:
+- `[USER DATA START]`
+- `[USER DATA END]`
+
+Planner instructions require the model to treat everything inside this bounded region as **untrusted user data** and to never follow instructions found there.
+
+This boundary control complements existing goal hardening: sanitize control/ANSI characters and enforce a 2,000-character goal length cap before planner calls.
+
 ### Planner output validation
 The mission planner only accepts:
 - Valid JSON (with malformed-JSON recovery fallback).

@@ -2,6 +2,22 @@
 
 This file is the single, persistent project memory for Codex-assisted work.
 
+## 2026-03-02 — PR #N/A — security(planner): wrap user goal in [USER DATA START]/[USER DATA END] delimiters (P1.2)
+- Summary:
+  - Added planner prompt boundary constants and wrapped embedded sanitized goal text in a single `[USER DATA START]` / `[USER DATA END]` region.
+  - Updated default planner preamble guidance to explicitly treat bounded user-data content as untrusted and non-instructional.
+  - Expanded mission planner tests to verify delimiter presence/order/scope and that injection-shaped goal content appears only inside the bounded region.
+  - Documented planner prompt boundary hardening in `docs/SECURITY.md` as a complement to sanitization and length caps.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - Replace `PR #N/A` with the merged PR number.
+- Risks/notes:
+  - Prompt boundary hardening is structural defense-in-depth; deterministic runtime validation rules remain unchanged.
+
 ## 2026-03-02 — PR #N/A — docs(roadmap): sync v0.1.6 with shipped reality + config hygiene planning
 - Summary:
   - Synced v0.1.6 roadmap docs from "planning" to "in progress" and added a concise shipped-so-far block for already merged work.
