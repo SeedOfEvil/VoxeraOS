@@ -1,3 +1,7 @@
+## OpenRouter attribution headers
+
+When using OpenRouter via the OpenAI-compatible adapter, VoxeraOS sends `HTTP-Referer` and title headers (`X-OpenRouter-Title` plus compatibility `X-Title`) as app attribution metadata. These values are non-secret metadata and are not API credentials.
+
 # Security & Safety
 
 ## Threat model

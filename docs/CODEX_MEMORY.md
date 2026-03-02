@@ -417,3 +417,22 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Demo creates real queue jobs; operators should run `voxera queue prune` after extended demo sessions.
 - Files changed: `src/voxera/demo.py` (new), `src/voxera/setup_wizard.py`, `src/voxera/cli.py`,
   `tests/test_demo_cli.py`, `tests/test_setup_wizard.py`, `README.md`, `docs/ops.md`.
+
+## 2026-03-02 — PR #TBD — OpenRouter invisible default attribution headers
+- Summary:
+  - Removed setup wizard prompts for OpenRouter attribution headers; OpenRouter setup now asks only for model tiering + key reference.
+  - Added central OpenRouter detection in `OpenAICompatBrain` and automatic default attribution headers for all OpenRouter requests:
+    - `HTTP-Referer=https://voxeraos.ca`
+    - `X-OpenRouter-Title=VoxeraOS`
+    - `X-Title=VoxeraOS` (compatibility)
+  - Added optional environment overrides: `VOXERA_APP_URL`, `VOXERA_APP_TITLE`.
+  - Ensured `extra_headers` cannot override `Authorization` or `Content-Type`.
+  - Added tests for default injection, user override behavior, and non-OpenRouter behavior.
+  - Updated README/SECURITY/ROADMAP docs to document behavior and shipped provider UX improvement.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - Replace PR placeholder with merged PR number.

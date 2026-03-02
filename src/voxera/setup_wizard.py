@@ -78,14 +78,11 @@ def _policy_defaults() -> PolicyApprovals:
 def _configure_openrouter_brains(cfg: AppConfig, api_key_ref: str) -> None:
     console.print(
         Panel(
-            "OpenRouter recommended setup: register app headers + multiple model tiers.",
+            "OpenRouter recommended setup: multiple model tiers with automatic app attribution.",
             title="OpenRouter",
         )
     )
     base_url = "https://openrouter.ai/api/v1"
-    referer = Prompt.ask("HTTP-Referer header (your app URL)", default="https://localhost")
-    title = Prompt.ask("X-Title header (your app name)", default="Voxera OS")
-    headers = {"HTTP-Referer": referer, "X-Title": title}
 
     fast_model = Prompt.ask("Fast/general model", default="google/gemini-2.5-flash")
     balanced_model = Prompt.ask("Balanced quality model", default="openai/gpt-4o-mini")
@@ -97,28 +94,24 @@ def _configure_openrouter_brains(cfg: AppConfig, api_key_ref: str) -> None:
         model=balanced_model,
         base_url=base_url,
         api_key_ref=api_key_ref,
-        extra_headers=headers,
     )
     cfg.brain["fast"] = BrainConfig(
         type="openai_compat",
         model=fast_model,
         base_url=base_url,
         api_key_ref=api_key_ref,
-        extra_headers=headers,
     )
     cfg.brain["reasoning"] = BrainConfig(
         type="openai_compat",
         model=reasoning_model,
         base_url=base_url,
         api_key_ref=api_key_ref,
-        extra_headers=headers,
     )
     cfg.brain["fallback"] = BrainConfig(
         type="openai_compat",
         model=fallback_model,
         base_url=base_url,
         api_key_ref=api_key_ref,
-        extra_headers=headers,
     )
 
 

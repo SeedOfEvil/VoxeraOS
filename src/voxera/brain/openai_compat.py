@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -7,6 +8,9 @@ import httpx
 from ..secrets import get_secret
 from .base import BrainResponse, ToolSpec
 from .json_recovery import recover_json_object
+
+DEFAULT_APP_URL = "https://voxeraos.ca"
+DEFAULT_APP_TITLE = "VoxeraOS"
 
 
 class OpenAICompatBrain:
@@ -43,12 +47,33 @@ class OpenAICompatBrain:
     def _headers(self) -> dict[str, str]:
         hdr = {"Content-Type": "application/json"}
         for k, v in self.extra_headers.items():
-            if v:
+            if v and k not in {"Authorization", "Content-Type"}:
                 hdr[k] = v
 
         if self.api_key_ref:
             hdr["Authorization"] = f"Bearer {self._resolve_api_key()}"
+
+        if self._is_openrouter_request():
+            app_url = os.getenv("VOXERA_APP_URL") or DEFAULT_APP_URL
+            app_title = os.getenv("VOXERA_APP_TITLE") or DEFAULT_APP_TITLE
+
+            if "HTTP-Referer" not in hdr:
+                hdr["HTTP-Referer"] = app_url
+
+            openrouter_title = hdr.get("X-OpenRouter-Title")
+            x_title = hdr.get("X-Title")
+            if openrouter_title is None and x_title is None:
+                hdr["X-OpenRouter-Title"] = app_title
+                hdr["X-Title"] = app_title
+            elif openrouter_title is None and x_title is not None:
+                hdr["X-OpenRouter-Title"] = x_title
+            elif openrouter_title is not None and x_title is None:
+                hdr["X-Title"] = openrouter_title
+
         return hdr
+
+    def _is_openrouter_request(self) -> bool:
+        return "openrouter.ai" in self.base_url.rstrip("/").lower()
 
     async def generate(
         self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
