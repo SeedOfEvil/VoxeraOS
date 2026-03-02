@@ -65,6 +65,39 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Risks/notes:
   - Goal sanitization is prompt-scoped; deterministic goal parsing paths intentionally continue using raw input semantics.
 
+## 2026-03-02 — PR #N/A — test(e2e): fix approval wait hang in scripts/e2e_golden4.sh
+- Summary:
+  - Replaced CLI-table-parsing approval detection in `e2e_golden4.sh` with a
+    direct filesystem check on the deterministic approval artifact path
+    (`pending/approvals/job-e2e-open.approval.json`), mirroring the approach
+    already used in `e2e_opsconsole.sh`.
+  - Introduced two explicit phases: PHASE A (detect approval state, bounded
+    at 120 s) and PHASE B (wait for job lifecycle to advance to done/failed
+    after operator panel approval, bounded at 300 s).
+  - Added `dump_diag` helper that prints queue status, approvals list, and
+    all relevant directory listings on any timeout or failure, giving
+    actionable diagnostics without needing to re-run.
+  - Fixed the final settle loop: now exits non-zero (exit 1) with a clear
+    summary when the 4-job done-count is not reached within 120 s, instead
+    of silently falling through.
+  - Added `PANEL_PORT` detection via `VOXERA_PANEL_PORT` env var (falling
+    back to default 8844) and prints the exact panel URL when approval is
+    needed.
+  - No production code changed; only `scripts/e2e_golden4.sh` touched.
+- Validation:
+  - `ruff format --check .` — clean (96 files already formatted).
+  - `ruff check .` — All checks passed.
+  - `pytest` — 371 passed, 2 skipped.
+  - `make merge-readiness-check` — clean.
+- Follow-ups:
+  - Replace `PR #N/A` with the merged PR number.
+- Risks/notes:
+  - The e2e script is now interactive for the approval step: a human must
+    approve via the Panel. PHASE B has a 300 s timeout so unattended runs
+    fail with diagnostics rather than hanging indefinitely.
+  - Filesystem-based checks are resilient to changes in CLI output format or
+    approval artifact naming conventions that previously caused hangs.
+
 ## How to use this file
 - Before starting any task, read this file first.
 - After every merged PR, append a new entry using the template below.

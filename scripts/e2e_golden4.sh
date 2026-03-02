@@ -43,6 +43,23 @@ cat > notes/queue/job-e2e-open.json <<'JSON'
 { "id":"e2e-open", "goal":"Open https://example.com in the controlled browser." }
 JSON
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+QUEUE_ROOT="$(realpath notes/queue)"
+JOB_REF="e2e-open"
+JOB_STEM="job-${JOB_REF}"
+
+# Filesystem-based paths — these are deterministic and don't rely on CLI
+# table parsing or ANSI-output heuristics.
+APPROVAL_ARTIFACT="${QUEUE_ROOT}/pending/approvals/${JOB_STEM}.approval.json"
+DONE_FILE="${QUEUE_ROOT}/done/${JOB_STEM}.json"
+FAILED_DIR="${QUEUE_ROOT}/failed"
+
+# Panel port: prefer env var (matches daemon startup), fall back to default.
+PANEL_PORT="${VOXERA_PANEL_PORT:-8844}"
+
 queue_status() { ./.venv/bin/voxera queue status; }
 
 bucket_count() {
@@ -76,6 +93,38 @@ print_counts() {
   echo "counts: pending=$(bucket_count "pending/") approvals=$(bucket_count "pending/approvals/") done=$(bucket_count "done/") failed=$(bucket_count "failed/")"
 }
 
+# Filesystem-based: is the approval artifact present for our job?
+approval_artifact_present() {
+  [ -f "${APPROVAL_ARTIFACT}" ]
+}
+
+# Filesystem-based: has the job reached a terminal state (done or failed)?
+# Checks both exact filename and timestamped collision variants.
+job_in_done() {
+  [ -f "${DONE_FILE}" ] || \
+    ls "${QUEUE_ROOT}/done/${JOB_STEM}"*.json 2>/dev/null | head -n1 | grep -q .
+}
+
+job_in_failed() {
+  [ -f "${FAILED_DIR}/${JOB_STEM}.json" ] || \
+    ls "${FAILED_DIR}/${JOB_STEM}"*.json 2>/dev/null | head -n1 | grep -q .
+}
+
+dump_diag() {
+  echo "--- queue status ---"
+  queue_status || true
+  echo "--- approvals list ---"
+  ./.venv/bin/voxera queue approvals list || true
+  echo "--- pending dir ---"
+  ls -la "${QUEUE_ROOT}/pending/" 2>/dev/null || true
+  echo "--- approvals dir ---"
+  ls -la "${QUEUE_ROOT}/pending/approvals/" 2>/dev/null || true
+  echo "--- done dir ---"
+  ls -la "${QUEUE_ROOT}/done/" 2>/dev/null || true
+  echo "--- failed dir ---"
+  ls -la "${FAILED_DIR}/" 2>/dev/null || true
+}
+
 echo "==> Wait for jobs to be seen (pending/ or approvals/ nonzero)"
 wait_until 30 1 "queue sees jobs" \
   '[ "$(bucket_count "pending/")" -gt 0 ] || [ "$(bucket_count "pending/approvals/")" -gt 0 ]'
@@ -83,23 +132,143 @@ wait_until 30 1 "queue sees jobs" \
 queue_status
 ./.venv/bin/voxera queue approvals list
 
-echo "==> Wait until e2e-open hits approvals inbox"
-wait_until 60 1 "e2e-open in approvals" \
-  './.venv/bin/voxera queue approvals list | rg -q "job-e2e-open\.json|e2e-open"'
+# ---------------------------------------------------------------------------
+# PHASE A: Wait until e2e-open reaches awaiting-approval state.
+#
+# Uses a direct filesystem check on the approval artifact path, which is
+# deterministic and does not rely on CLI table parsing or path heuristics.
+# The artifact is written by the daemon at a fixed location derived from the
+# job filename — no guessing required.
+# ---------------------------------------------------------------------------
 
-echo "==> Approve e2e-open"
-./.venv/bin/voxera queue approvals approve job-e2e-open.json
+PHASE_A_TIMEOUT=120
 
-echo "==> Wait for jobs to settle (expect done=4, failed=0, approvals=0, pending=0)"
-for _ in $(seq 1 120); do
+echo ""
+echo "==> [PHASE A] Waiting for ${JOB_STEM} to reach awaiting-approval state..."
+
+phase_a_start="$(date +%s)"
+while true; do
+  if approval_artifact_present; then
+    echo ""
+    echo "==> [PHASE A] ${JOB_STEM} is now awaiting approval"
+    print_counts
+    break
+  fi
+
+  now="$(date +%s)"
+  elapsed=$((now - phase_a_start))
+
+  if [ "${elapsed}" -ge "${PHASE_A_TIMEOUT}" ]; then
+    echo ""
+    echo "TIMEOUT [PHASE A]: ${JOB_STEM} did not reach approval state within ${PHASE_A_TIMEOUT}s"
+    dump_diag
+    exit 1
+  fi
+
+  # Print progress every 10 s so the terminal is not silent.
+  if [ "${elapsed}" -gt 0 ] && [ $((elapsed % 10)) -eq 0 ]; then
+    echo "  [PHASE A] still waiting... ${elapsed}s / ${PHASE_A_TIMEOUT}s"
+    print_counts
+  fi
+
+  sleep 1
+done
+
+# ---------------------------------------------------------------------------
+# Instruct operator to approve via the Panel.
+# The script now enters PHASE B and waits for the job lifecycle to advance
+# rather than checking for any specific approval artifact file.
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "################################################################"
+echo "  APPROVAL REQUIRED"
+echo "  Approve '${JOB_STEM}' via the Panel now:"
+echo "  http://127.0.0.1:${PANEL_PORT}/"
+echo "################################################################"
+echo ""
+
+# ---------------------------------------------------------------------------
+# PHASE B: Wait for e2e-open to leave the approval gate and finish.
+#
+# Polls the filesystem for the job's terminal-state files (done/ or failed/).
+# This is lifecycle-based: we do not care about intermediate approval file
+# paths or how the panel writes its response — we only observe whether the
+# job reached a terminal bucket.
+# ---------------------------------------------------------------------------
+
+PHASE_B_TIMEOUT=300
+
+echo "==> [PHASE B] Waiting for ${JOB_STEM} to complete after approval (timeout ${PHASE_B_TIMEOUT}s)..."
+
+phase_b_start="$(date +%s)"
+while true; do
+  if job_in_done; then
+    echo ""
+    echo "==> [PHASE B] ${JOB_STEM} reached done"
+    break
+  fi
+
+  if job_in_failed; then
+    echo ""
+    echo "==> [PHASE B] ${JOB_STEM} reached failed — check diagnostics below"
+    dump_diag
+    exit 1
+  fi
+
+  now="$(date +%s)"
+  elapsed=$((now - phase_b_start))
+
+  if [ "${elapsed}" -ge "${PHASE_B_TIMEOUT}" ]; then
+    echo ""
+    echo "TIMEOUT [PHASE B]: ${JOB_STEM} did not finish within ${PHASE_B_TIMEOUT}s after approval"
+    dump_diag
+    exit 1
+  fi
+
+  # Print progress every 15 s.
+  if [ "${elapsed}" -gt 0 ] && [ $((elapsed % 15)) -eq 0 ]; then
+    echo "  [PHASE B] still waiting... ${elapsed}s / ${PHASE_B_TIMEOUT}s"
+    print_counts
+  fi
+
+  sleep 1
+done
+
+queue_status
+
+# ---------------------------------------------------------------------------
+# Final settle: wait for all 4 jobs to reach done with no failures.
+# ---------------------------------------------------------------------------
+
+echo "==> Wait for all jobs to settle (expect done=4, failed=0, approvals=0, pending=0)"
+
+SETTLE_TIMEOUT=120
+settle_start="$(date +%s)"
+
+while true; do
   print_counts
   d="$(bucket_count "done/")"
   f="$(bucket_count "failed/")"
   p="$(bucket_count "pending/")"
   a="$(bucket_count "pending/approvals/")"
-  if [ "$d" -eq 4 ] && [ "$f" -eq 0 ] && [ "$p" -eq 0 ] && [ "$a" -eq 0 ]; then
+
+  if [ "${d}" -eq 4 ] && [ "${f}" -eq 0 ] && [ "${p}" -eq 0 ] && [ "${a}" -eq 0 ]; then
     break
   fi
+
+  now="$(date +%s)"
+  elapsed=$((now - settle_start))
+
+  if [ "${elapsed}" -ge "${SETTLE_TIMEOUT}" ]; then
+    echo ""
+    echo "TIMEOUT: jobs did not settle to expected state within ${SETTLE_TIMEOUT}s"
+    echo "  expected: done=4 failed=0 pending=0 approvals=0"
+    echo "  actual:   done=${d} failed=${f} pending=${p} approvals=${a}"
+    dump_diag
+    exit 1
+  fi
+
   sleep 1
 done
 
