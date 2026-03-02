@@ -33,23 +33,29 @@ See `docs/ROADMAP_0.1.6.md` for the full planned scope of the upcoming v0.1.6 re
 ## Active work — v0.1.6 build-out
 
 This is a solo project. Goals are sized for daily or multi-day sessions, not sprints.
-Each item below maps to a planned PR in `docs/ROADMAP_0.1.6.md`.
+Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
+
+### Shipped so far (since v0.1.5)
+
+- ✅ Goal string sanitization + 2,000-char preflight cap (planner hardening; tests + docs)
+- ✅ OpenRouter automatic app attribution headers (`voxeraos.ca` + `VoxeraOS`; invisible defaults; overrides preserved)
+- ✅ Terminal hello-world deterministic demo skill (`system.terminal_run_once`)
 
 ### Security hardening (do first — closes highest-risk surface)
 
-**Day 1 — Goal string sanitization (PR #83)**
+**P1.1 — Goal string sanitization (SHIPPED)**
 - [x] Sanitize user-controlled goal strings before embedding in LLM prompt.
 - [x] Reject goals over 2,000 characters with a clear, actionable error.
 - [x] Strip control characters; normalize whitespace.
-- [ ] Add Unicode edge-case tests (injection-shaped and overlength tests are complete in PR #83).
+- [ ] Add Unicode edge-case tests (injection-shaped and overlength tests are already complete).
 
-**Day 2 — Structural delimiters in preamble (PR #84)**
+**P1.2 — Structural delimiters in preamble (PLANNED)**
 - [ ] Wrap user content with `[USER DATA START]` / `[USER DATA END]` markers in planner preamble.
 - [ ] Update `src/voxera/core/planner_context.py` to emit delimiters.
 - [ ] Verify existing planner tests pass; add a test confirming delimiter presence.
 - [ ] Update `docs/SECURITY.md` known gaps to mark prompt injection as FIXED.
 
-**Day 2–3 — Panel auth rate limiting (PR #85)**
+**P1.3 — Panel auth rate limiting (PLANNED)**
 - [ ] Track failed Basic auth attempts per IP in `health.json`.
 - [ ] Return 429 + `Retry-After: 60` after 5 failures within 60 seconds.
 - [ ] Emit `panel_auth_lockout` audit events (ip, attempt_count).
@@ -57,78 +63,85 @@ Each item below maps to a planned PR in `docs/ROADMAP_0.1.6.md`.
 
 ### Ops visibility in panel (highest user-visible value)
 
-**Day 3–4 — Panel home health widget (PR #86)**
+**P2.1 — Panel home health widget (PLANNED)**
 - [ ] Add collapsible "Daemon Health" widget to panel home sourced from `health.json`.
 - [ ] Fields: lock status, last fallback (reason/tier/ts), last recovery (job/orphan counts), last shutdown.
 - [ ] Neutral display when fields are null/empty (no provider config, fresh install).
 - [ ] Daemon state badge: `healthy` / `degraded` / `unknown`.
 
-**Day 4 — Panel hygiene status + trigger page (PR #87)**
+**P2.2 — Panel hygiene status + trigger page (PLANNED)**
 - [ ] Add `/hygiene` panel page showing last prune result + last reconcile result.
 - [ ] "Run prune (dry-run)" and "Run reconcile" buttons that surface results inline.
 - [ ] Store last results in `health.json` under `last_prune_result` / `last_reconcile_result`.
 
-**Day 5 — Recovery + quarantine inspector in panel (PR #88)**
+**P2.3 — Recovery + quarantine inspector in panel (PLANNED)**
 - [ ] Add `/recovery` panel page listing `recovery/` and `quarantine/` directory contents.
 - [ ] Show file size, timestamp, and type (approval/state) for each entry.
 - [ ] "Download as ZIP" button per recovery/quarantine session.
 
 ### Daemon health + long-run behavior
 
-**Day 5–6 — Health degradation state tracking (PR #89)**
+**P3.1 — Health degradation state tracking (PLANNED)**
 - [ ] Track `consecutive_brain_failures` counter in `health.json`.
 - [ ] Set `daemon_state = "degraded"` when counter >= 3; reset on successful mission.
 - [ ] Surface `daemon_state` in `voxera queue health` and `voxera doctor --quick`.
 
-**Day 6 — Brain backoff on repeated failures (PR #90)**
+**P3.2 — Brain backoff on repeated failures (PLANNED)**
 - [ ] Add configurable delay between brain calls on consecutive fallbacks.
 - [ ] Default schedule: 2s (after 3), 8s (after 5), 30s (after 10), cap at 60s.
 - [ ] Configurable via `VOXERA_BRAIN_BACKOFF_BASE_S` / `VOXERA_BRAIN_BACKOFF_MAX_S`.
 - [ ] Emit `brain_backoff_applied` audit event with `attempt` and `wait_s`.
 
-**Day 6–7 — Structured shutdown outcome in `voxera queue health` (PR #91)**
+**P3.3 — Structured shutdown outcome in `voxera queue health` (PLANNED)**
 - [ ] Surface `last_shutdown_outcome`, `last_shutdown_job`, `last_shutdown_reason`, `last_shutdown_ts`
       in `voxera queue health` human-readable and `--json` output.
 - [ ] Verify systemd `TimeoutStopSec` compliance (clean exit within 10s of SIGTERM).
 
 ### CI hardening & release packaging
 
-**Day 7–8 — Golden file validation CI (PR #92)**
+**P4.1 — Golden file validation CI (PLANNED)**
 - [ ] Add `tests/golden/` with committed dry-run output files.
 - [ ] Add `make golden-update` (explicit regeneration) and `make golden-check` (CI gate).
 - [ ] Wire `make golden-check` into the merge-readiness CI workflow.
 - [ ] Use `--deterministic` flag for timestamp-independent golden outputs.
 
-**Day 8 — Release packaging polish (PR #93)**
+**P4.2 — Release packaging polish (PLANNED)**
 - [ ] Add `scripts/release_notes.py` — generates release notes from `CODEX_MEMORY.md`.
 - [ ] Add `make release-notes` target outputting `docs/RELEASE_NOTES_<version>.md`.
 - [ ] Polish `make release-check`: validate `pyproject.toml`, README header, ROADMAP baseline all agree.
 
 ### Provider / model UX
 
-**Shipped — OpenRouter default attribution headers (PR #TBD)**
+**P5.0 — OpenRouter default attribution headers (SHIPPED)**
 - [x] OpenRouter calls now auto-include app attribution headers by default (`HTTP-Referer`, `X-OpenRouter-Title`, `X-Title`) with invisible setup UX.
 - [x] User/provider header overrides remain respected; defaults apply only when keys are absent.
 
-**Day 9 — Keyring credential workflow improvements (PR #94)**
+**P5.1 — Keyring credential workflow improvements (PLANNED)**
 - [ ] Show keyring availability at setup start (available / unavailable + file fallback).
 - [ ] After entering a new key: test against provider before saving; show pass/fail.
 - [ ] Show current key status (keyring / file / not set) per configured provider.
 
-**Day 9–10 — Provider profiles (named presets) (PR #95)**
+**P5.2 — Provider profiles (named presets) (PLANNED)**
 - [ ] Add preset profile templates: `openrouter-4tier`, `ollama-local`, `gemini-only`.
 - [ ] Store templates in `config-templates/profiles/`.
 - [ ] Wire `voxera setup --profile <name>` to apply preset without interactive prompts.
 
+**P5.3 — Config hygiene: auto-upgrade legacy placeholder defaults (PLANNED)**
+- [ ] Treat legacy placeholder headers as "unset" (`HTTP-Referer: https://localhost` variants, `X-Title: Voxera OS`).
+- [ ] For OpenRouter requests, auto-fill current defaults when placeholders are detected (`HTTP-Referer=https://voxeraos.ca`, `X-OpenRouter-Title` + `X-Title` = `VoxeraOS`).
+- [ ] Preserve real user overrides (upgrade placeholder values only).
+- [ ] Surface a small note/warning in `voxera doctor --quick` when legacy defaults are detected.
+- [ ] Acceptance: localhost referer in config still yields OpenRouter attribution as VoxeraOS without manual edits.
+
 ### New utility commands
 
-**Day 10 — `voxera skills validate` (PR #96)**
+**P6.1 — `voxera skills validate` (PLANNED)**
 - [ ] New CLI command: validate all skill manifests eagerly without launching daemon.
 - [ ] Checks: required fields, entrypoint importable, capability declarations valid.
 - [ ] Integrate into `voxera doctor` output ("Skills: N valid, M invalid").
 - [ ] Emit `skill_manifest_invalid` audit events for each broken manifest.
 
-**Day 11 — LLM rate limiter (PR #97)**
+**P6.2 — LLM rate limiter (PLANNED)**
 - [ ] Add token-bucket rate limiter around `brain.generate()` calls.
 - [ ] Default: 30 RPM. Configurable via `VOXERA_BRAIN_RATE_LIMIT_RPM`.
 - [ ] Emit `brain_rate_limited` audit event when limit exceeded.

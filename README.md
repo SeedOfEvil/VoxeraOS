@@ -6,7 +6,7 @@ reliability hardening (single-writer lock, graceful SIGTERM shutdown, determinis
 toolchain (`voxera queue prune`, `voxera queue reconcile`), brain fallback observability, and guided demo/onboarding
 (`voxera demo`), on top of the v0.1.5 artifacts hygiene baseline and v0.1.4 stability + UX baseline (typed first-run
 setup, cloud-planned missions, queue daemon with approval inbox, queue status + panel insights, update tooling, systemd
-user services, and pluggable “brain” providers). **v0.1.6 is in active planning** — see `docs/ROADMAP_0.1.6.md`.
+user services, and pluggable “brain” providers). **v0.1.6 is in progress** (some items shipped, remaining items planned) — see `docs/ROADMAP_0.1.6.md`.
 
 **Names**
 - OS: **Voxera OS**
@@ -580,7 +580,7 @@ See `docs/ROADMAP.md` for the full daily goal breakdown and `docs/ROADMAP_0.1.6.
 Previous releases: `docs/ROADMAP_0.1.5.md` (artifacts prune), `docs/ROADMAP_0.1.4.md` (stability + UX baseline).
 
 ---
-**Alpha v0.1.5** with ongoing post-release development adds daemon reliability hardening, queue hygiene toolchain (`voxera queue prune`, `voxera queue reconcile`), brain fallback observability, and guided demo/onboarding (`voxera demo`) on top of the v0.1.4 daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion. **v0.1.6** is the next planned release — see `docs/ROADMAP_0.1.6.md`.
+**Alpha v0.1.5** with ongoing post-release development adds daemon reliability hardening, queue hygiene toolchain (`voxera queue prune`, `voxera queue reconcile`), brain fallback observability, and guided demo/onboarding (`voxera demo`) on top of the v0.1.4 daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion. **v0.1.6** is in progress (some items shipped; remaining items planned) — see `docs/ROADMAP_0.1.6.md`.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 
