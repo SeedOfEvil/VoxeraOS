@@ -2,6 +2,22 @@
 
 This file is the single, persistent project memory for Codex-assisted work.
 
+## 2026-03-02 — PR #N/A — docs(roadmap): sync v0.1.6 with shipped reality + config hygiene planning
+- Summary:
+  - Synced v0.1.6 roadmap docs from "planning" to "in progress" and added a concise shipped-so-far block for already merged work.
+  - Replaced drifting PR-number labels with stable roadmap IDs (`P1.x`..`P6.x`) and tagged scope items as `(SHIPPED)` vs `(PLANNED)`.
+  - Added a new planned Provider UX item for config hygiene: auto-upgrade legacy placeholder OpenRouter attribution defaults while preserving real user overrides.
+  - Updated v0.1.6 acceptance criteria markers to reflect current reality (`✅` shipped vs `⏳` planned).
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - Replace `PR #N/A` with the merged PR number.
+- Risks/notes:
+  - Documentation-only change to reduce plan drift and preserve truthful release tracking.
+
 ## 2026-03-02 — PR #N/A — PR #83 follow-up: ANSI sequence cleanup + informational docs refresh
 - Summary:
   - Tightened planner goal sanitization to remove ANSI/CSI escape remnants (e.g., `\x1b[31m` no longer leaves `[31m` in prompt text).
