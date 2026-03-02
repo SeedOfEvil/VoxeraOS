@@ -1456,7 +1456,9 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
         def run(manifest, args, fn, cfg, job_id):
             assert manifest.id == "sandbox.exec"
             assert isinstance(args.get("command"), list)
-            assert args["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
+            # canonicalize_argv (shlex.split) runs before _normalize_sandbox_exec_step;
+            # string "echo HELLO-ARGV" is tokenised to ["echo", "HELLO-ARGV"].
+            assert args["command"] == ["echo", "HELLO-ARGV"]
             return RunResult(ok=True, output="ok")
 
     monkeypatch.setattr("voxera.skills.runner.select_runner", lambda _manifest: _Runner())
@@ -1470,7 +1472,8 @@ def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
         for event in events
         if event.get("event") == "skill_start" and event.get("skill") == "sandbox.exec"
     )
-    assert skill_start["args"]["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
+    # canonicalize_argv (shlex.split) tokenises the string before execution.
+    assert skill_start["args"]["command"] == ["echo", "HELLO-ARGV"]
 
 
 def test_pending_approval_payload_includes_target_scope_and_policy_reason(tmp_path, monkeypatch):

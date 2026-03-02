@@ -73,7 +73,8 @@ def test_sandbox_exec_command_list_is_accepted(monkeypatch, tmp_path: Path):
     assert captured["cmd"][-2:] == ["echo", "hello"]
 
 
-def test_sandbox_exec_command_string_is_converted_to_shell_argv(monkeypatch, tmp_path: Path):
+def test_sandbox_exec_command_string_is_converted_via_shlex_split(monkeypatch, tmp_path: Path):
+    """String command is tokenised with shlex.split (not wrapped in bash -lc)."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     captured = _patch_successful_run(monkeypatch)
 
@@ -87,13 +88,11 @@ def test_sandbox_exec_command_string_is_converted_to_shell_argv(monkeypatch, tmp
     )
 
     assert result.ok is True
-    assert captured["cmd"][-3:] == ["bash", "-lc", "echo 'Checking the page title...'"]
-    command_text = Path(result.data["command_path"]).read_text(encoding="utf-8")
-    assert "shell_command: echo 'Checking the page title...'" in command_text
-    assert "argv:" in command_text
+    # shlex.split("echo 'Checking the page title...'") → ["echo", "Checking the page title..."]
+    assert captured["cmd"][-2:] == ["echo", "Checking the page title..."]
 
 
-def test_sandbox_exec_empty_or_whitespace_command_string_returns_existing_error(monkeypatch):
+def test_sandbox_exec_empty_or_whitespace_command_string_returns_error(monkeypatch):
     monkeypatch.setattr(PodmanSandboxRunner, "_assert_available", lambda self: None)
     runner = PodmanSandboxRunner()
 
@@ -106,13 +105,14 @@ def test_sandbox_exec_empty_or_whitespace_command_string_returns_existing_error(
             job_id="job-empty",
         )
         assert result.ok is False
-        assert result.error == "sandbox.exec requires command as a non-empty list of strings"
+        assert "non-empty list of strings" in result.error
 
 
-def test_sandbox_exec_invalid_command_type_returns_existing_error(monkeypatch):
+def test_sandbox_exec_invalid_command_type_returns_error(monkeypatch):
     monkeypatch.setattr(PodmanSandboxRunner, "_assert_available", lambda self: None)
     runner = PodmanSandboxRunner()
 
+    # 123 → int value; {"cmd": "echo hi"} → dict value (not the cmd alias); ["echo", 1] → non-str token
     for command in [123, {"cmd": "echo hi"}, ["echo", 1]]:
         result = runner.run(
             manifest=_sandbox_manifest(),
@@ -122,4 +122,75 @@ def test_sandbox_exec_invalid_command_type_returns_existing_error(monkeypatch):
             job_id="job-bad-type",
         )
         assert result.ok is False
-        assert result.error == "sandbox.exec requires command as a non-empty list of strings"
+        assert "non-empty list of strings" in result.error
+
+
+def test_sandbox_exec_argv_alias_is_accepted(monkeypatch, tmp_path: Path):
+    """'argv' key is resolved to 'command' before execution."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    captured = _patch_successful_run(monkeypatch)
+
+    runner = PodmanSandboxRunner()
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"argv": ["echo", "hello"]},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-argv-alias",
+    )
+
+    assert result.ok is True
+    assert captured["cmd"][-2:] == ["echo", "hello"]
+
+
+def test_sandbox_exec_cmd_alias_is_accepted(monkeypatch, tmp_path: Path):
+    """'cmd' key is resolved to 'command' before execution."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    captured = _patch_successful_run(monkeypatch)
+
+    runner = PodmanSandboxRunner()
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"cmd": ["ls", "-la"]},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-cmd-alias",
+    )
+
+    assert result.ok is True
+    assert captured["cmd"][-2:] == ["ls", "-la"]
+
+
+def test_sandbox_exec_empty_tokens_stripped_from_list(monkeypatch, tmp_path: Path):
+    """Empty string tokens in a list command are silently stripped."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    captured = _patch_successful_run(monkeypatch)
+
+    runner = PodmanSandboxRunner()
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"command": ["", "echo", "", "hello"]},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-empty-tokens",
+    )
+
+    assert result.ok is True
+    assert captured["cmd"][-2:] == ["echo", "hello"]
+
+
+def test_sandbox_exec_all_empty_tokens_returns_error(monkeypatch):
+    """A list of only empty/whitespace tokens fails with a clear error."""
+    monkeypatch.setattr(PodmanSandboxRunner, "_assert_available", lambda self: None)
+    runner = PodmanSandboxRunner()
+
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"command": ["", " ", "\t"]},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-all-empty",
+    )
+
+    assert result.ok is False
+    assert "non-empty list of strings" in result.error

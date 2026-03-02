@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..models import AppConfig, RunResult, SkillManifest
+from .arg_normalizer import canonicalize_argv
 
 DEFAULT_ENV_ALLOWLIST = {
     "LANG",
@@ -181,24 +182,11 @@ class PodmanSandboxRunner(SandboxRunner):
         job_id: str,
     ) -> RunResult:
         self._assert_available()
-        command = args.get("command")
-        shell_command: str | None = None
-        if isinstance(command, str):
-            shell_command = command.strip()
-            if not shell_command:
-                return RunResult(
-                    ok=False, error="sandbox.exec requires command as a non-empty list of strings"
-                )
-            shell_binary = "bash" if shutil.which("bash") is not None else "sh"
-            command = [shell_binary, "-lc", shell_command]
-        elif (
-            not isinstance(command, list)
-            or not command
-            or not all(isinstance(x, str) for x in command)
-        ):
-            return RunResult(
-                ok=False, error="sandbox.exec requires command as a non-empty list of strings"
-            )
+        try:
+            command = canonicalize_argv(args)
+        except ValueError as exc:
+            return RunResult(ok=False, error=str(exc))
+        args = {**args, "command": command}
 
         timeout_s = int(args.get("timeout_s", 60))
         if timeout_s <= 0:
@@ -255,13 +243,7 @@ class PodmanSandboxRunner(SandboxRunner):
         podman_cmd.extend(command)
 
         sanitized_podman = " ".join(shlex.quote(arg) for arg in sanitize_command(podman_cmd))
-        if shell_command is None:
-            command_path.write_text(sanitized_podman, encoding="utf-8")
-        else:
-            command_path.write_text(
-                f"shell_command: {shell_command}\nargv: {sanitized_podman}",
-                encoding="utf-8",
-            )
+        command_path.write_text(sanitized_podman, encoding="utf-8")
 
         try:
             proc = subprocess.run(

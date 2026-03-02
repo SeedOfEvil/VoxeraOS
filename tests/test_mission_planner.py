@@ -1026,7 +1026,9 @@ def test_plan_mission_normalizes_sandbox_exec_string_command_to_argv(monkeypatch
     step = mission.steps[0]
     assert step.skill_id == "sandbox.exec"
     assert isinstance(step.args["command"], list)
-    assert step.args["command"] == ["bash", "-lc", "echo HELLO-ARGV"]
+    # canonicalize_argv (shlex.split) runs before _normalize_sandbox_exec_step,
+    # so string commands are tokenised into argv — not wrapped in bash -lc.
+    assert step.args["command"] == ["echo", "HELLO-ARGV"]
 
 
 def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
@@ -1063,7 +1065,9 @@ def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
         asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
 
 
-def test_plan_mission_rejects_invalid_sandbox_exec_command_list(monkeypatch):
+def test_plan_mission_strips_whitespace_tokens_from_sandbox_exec_command_list(monkeypatch):
+    """Whitespace-only tokens in a command list are silently stripped by canonicalize_argv;
+    the plan succeeds with the remaining non-empty tokens."""
     cfg = AppConfig(
         brain={
             "primary": BrainConfig(
@@ -1093,8 +1097,11 @@ def test_plan_mission_rejects_invalid_sandbox_exec_command_list(monkeypatch):
         ],
     )
 
-    with pytest.raises(MissionPlannerError, match="sandbox.exec command must be a non-empty list"):
-        asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
+    # The whitespace token "  " is stripped by canonicalize_argv; the plan succeeds.
+    mission = asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
+    step = mission.steps[0]
+    assert step.skill_id == "sandbox.exec"
+    assert step.args["command"] == ["bash", "echo HELLO-ARGV"]
 
 
 def test_plan_mission_keeps_explicit_shell_intent_for_sandbox_exec(monkeypatch):

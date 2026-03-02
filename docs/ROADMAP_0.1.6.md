@@ -19,6 +19,7 @@ reliability story before the v0.3 voice expansion.
 - ✅ Goal string sanitization + 2,000-char preflight cap (planner hardening; tests + docs)
 - ✅ OpenRouter automatic app attribution headers (`voxeraos.ca` + `VoxeraOS`; invisible defaults; overrides preserved)
 - ✅ Terminal hello-world deterministic demo skill (`system.terminal_run_once`)
+- ✅ `sandbox.exec` argv canonicalisation (`canonicalize_argv`): accept `command`/`argv`/`cmd` aliases, shlex.split strings, strip empty tokens, fail fast with actionable error on empty argv
 
 ---
 
