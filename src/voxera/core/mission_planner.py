@@ -34,6 +34,8 @@ _PLANNER_TIMEOUT_SECONDS = 25
 _CAP_DESC_LIMIT = 72
 _CAP_NOTES_LIMIT = 90
 GOAL_MAX_LEN = 2000
+USER_DATA_START = "[USER DATA START]"
+USER_DATA_END = "[USER DATA END]"
 
 
 def sanitize_goal_for_prompt(goal: str) -> str:
@@ -432,7 +434,9 @@ def _build_planner_user_prompt(goal: str, snapshot: dict, skills_block: str) -> 
         f"{preamble}\n\n"
         f"{_build_capabilities_prompt_block(snapshot)}\n\n"
         "TASK:\n"
+        f"{USER_DATA_START}\n"
         f"Goal: {sanitized_goal}\n"
+        f"{USER_DATA_END}\n"
         "Skill catalog:\n"
         f"{skills_block}\n"
         "Return only JSON."
