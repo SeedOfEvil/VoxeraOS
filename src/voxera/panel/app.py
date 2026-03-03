@@ -701,21 +701,46 @@ def _trim_tail(value: str, *, max_chars: int = 2000) -> str:
     return text[-max_chars:]
 
 
+def _repo_root_for_panel_subprocess() -> Path:
+    env_root = os.getenv("VOXERA_REPO_ROOT", "").strip()
+    if env_root:
+        candidate = Path(env_root).expanduser().resolve()
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+
+    default_root = Path(__file__).resolve().parents[3]
+    if default_root.exists() and default_root.is_dir():
+        return default_root
+    return Path.cwd()
+
+
 def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, Any]:
+    run_cwd = _repo_root_for_panel_subprocess()
     commands = [
-        ["voxera", *args, "--queue-dir", str(queue_root)],
         [sys.executable, "-m", "voxera.cli", *args, "--queue-dir", str(queue_root)],
+        ["voxera", *args, "--queue-dir", str(queue_root)],
     ]
-    last_error = ""
+    attempted: list[dict[str, Any]] = []
+
     for cmd in commands:
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=run_cwd)
         except FileNotFoundError as exc:
-            last_error = str(exc)
+            attempted.append(
+                {
+                    "cmd": cmd,
+                    "cwd": str(run_cwd),
+                    "exit_code": None,
+                    "stderr_tail": _trim_tail(str(exc)),
+                    "stdout_tail": "",
+                }
+            )
             continue
 
         stdout = proc.stdout or ""
         stderr = proc.stderr or ""
+        stdout_tail = _trim_tail(stdout)
+        stderr_tail = _trim_tail(stderr)
         try:
             parsed = json.loads(stdout) if stdout.strip() else {}
         except json.JSONDecodeError:
@@ -724,19 +749,55 @@ def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, A
             parsed = {}
 
         ok = proc.returncode == 0 and bool(parsed)
-        return {
+        result = {
             "ok": ok,
             "result": parsed,
-            "stderr_tail": _trim_tail(stderr),
+            "exit_code": int(proc.returncode),
+            "stderr_tail": stderr_tail,
+            "stdout_tail": stdout_tail,
+            "cmd": cmd,
+            "cwd": str(run_cwd),
+            "attempted": attempted,
             "error": "" if ok else _trim_tail(stderr or stdout or "command failed"),
         }
+        if not ok:
+            log(
+                {
+                    "event": "panel_hygiene_command_failed",
+                    "cmd": cmd,
+                    "rc": int(proc.returncode),
+                    "stderr_tail": stderr_tail,
+                    "stdout_tail": stdout_tail,
+                    "cwd": str(run_cwd),
+                }
+            )
+        return result
 
-    return {
+    last_attempt = attempted[-1] if attempted else {}
+    error_tail = _trim_tail(
+        str(last_attempt.get("stderr_tail") or "voxera CLI executable not found")
+    )
+    failure = {
         "ok": False,
         "result": {},
-        "stderr_tail": _trim_tail(last_error or "voxera CLI executable not found"),
-        "error": _trim_tail(last_error or "voxera CLI executable not found"),
+        "exit_code": None,
+        "stderr_tail": error_tail,
+        "stdout_tail": "",
+        "cmd": last_attempt.get("cmd", commands[0]),
+        "cwd": str(run_cwd),
+        "attempted": attempted,
+        "error": error_tail,
     }
+    log(
+        {
+            "event": "panel_hygiene_command_failed",
+            "cmd": failure["cmd"],
+            "rc": None,
+            "stderr_tail": error_tail,
+            "cwd": str(run_cwd),
+        }
+    )
+    return failure
 
 
 def _write_hygiene_result(queue_root: Path, key: str, result: dict[str, Any]) -> None:
@@ -1353,6 +1414,10 @@ async def hygiene_prune_dry_run(request: Request):
         "removed_sidecars": 0,
         "reclaimed_bytes": parsed.get("reclaimed_bytes"),
         "by_bucket": per_bucket,
+        "exit_code": run.get("exit_code"),
+        "cmd": run.get("cmd"),
+        "cwd": run.get("cwd"),
+        "stdout_tail": run.get("stdout_tail", ""),
     }
     if run["stderr_tail"]:
         result["stderr_tail"] = run["stderr_tail"]
@@ -1376,6 +1441,10 @@ async def hygiene_reconcile(request: Request):
         "ts_ms": _now_ms(),
         "ok": bool(run["ok"]),
         "issue_counts": issue_counts,
+        "exit_code": run.get("exit_code"),
+        "cmd": run.get("cmd"),
+        "cwd": run.get("cwd"),
+        "stdout_tail": run.get("stdout_tail", ""),
     }
     if run["stderr_tail"]:
         result["stderr_tail"] = run["stderr_tail"]

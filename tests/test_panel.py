@@ -1173,7 +1173,14 @@ def test_hygiene_prune_dry_run_endpoint_writes_health(tmp_path, monkeypatch):
         )
         stderr = ""
 
-    monkeypatch.setattr(panel_module.subprocess, "run", lambda *args, **kwargs: _Proc())
+    captured: dict[str, object] = {}
+
+    def _fake_run(*args, **kwargs):
+        captured["cmd"] = args[0]
+        captured["cwd"] = kwargs.get("cwd")
+        return _Proc()
+
+    monkeypatch.setattr(panel_module.subprocess, "run", _fake_run)
 
     client = TestClient(panel_module.app)
     res = _authed_csrf_request(client, "post", "/hygiene/prune-dry-run", data={})
@@ -1184,6 +1191,9 @@ def test_hygiene_prune_dry_run_endpoint_writes_health(tmp_path, monkeypatch):
     assert payload["result"]["mode"] == "dry-run"
     assert payload["result"]["would_remove_jobs"] == 3
     assert payload["result"]["ts_ms"] > 0
+    assert captured["cmd"][0] == panel_module.sys.executable
+    assert captured["cmd"][1:3] == ["-m", "voxera.cli"]
+    assert payload["result"]["cwd"] == str(captured["cwd"])
 
     health = json.loads((fake_home / "VoxeraOS" / "notes" / "queue" / "health.json").read_text())
     assert "last_prune_result" in health
@@ -1200,7 +1210,14 @@ def test_hygiene_reconcile_endpoint_writes_health(tmp_path, monkeypatch):
         stdout = json.dumps({"issue_counts": {"orphan_sidecars": 2, "duplicate_jobs": 1}})
         stderr = ""
 
-    monkeypatch.setattr(panel_module.subprocess, "run", lambda *args, **kwargs: _Proc())
+    captured: dict[str, object] = {}
+
+    def _fake_run(*args, **kwargs):
+        captured["cmd"] = args[0]
+        captured["cwd"] = kwargs.get("cwd")
+        return _Proc()
+
+    monkeypatch.setattr(panel_module.subprocess, "run", _fake_run)
 
     client = TestClient(panel_module.app)
     res = _authed_csrf_request(client, "post", "/hygiene/reconcile", data={})
@@ -1210,6 +1227,9 @@ def test_hygiene_reconcile_endpoint_writes_health(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert payload["result"]["issue_counts"]["orphan_sidecars"] == 2
     assert payload["result"]["ts_ms"] > 0
+    assert captured["cmd"][0] == panel_module.sys.executable
+    assert captured["cmd"][1:3] == ["-m", "voxera.cli"]
+    assert payload["result"]["cwd"] == str(captured["cwd"])
 
     health = json.loads((fake_home / "VoxeraOS" / "notes" / "queue" / "health.json").read_text())
     assert "last_reconcile_result" in health
@@ -1224,3 +1244,59 @@ def test_hygiene_endpoints_require_auth(tmp_path, monkeypatch):
 
     assert client.post("/hygiene/prune-dry-run").status_code == 401
     assert client.post("/hygiene/reconcile").status_code == 401
+
+
+def test_hygiene_prune_dry_run_failure_includes_debug_fields_and_writes_health(
+    tmp_path, monkeypatch
+):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    class _Proc:
+        returncode = 2
+        stdout = ""
+        stderr = "prune failed: missing config\nextra context"
+
+    monkeypatch.setattr(panel_module.subprocess, "run", lambda *args, **kwargs: _Proc())
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/hygiene/prune-dry-run", data={})
+
+    assert res.status_code == 500
+    payload = res.json()
+    assert payload["ok"] is False
+    assert payload["result"]["error"]
+    assert payload["result"]["exit_code"] == 2
+    assert "prune failed" in payload["result"]["stderr_tail"]
+
+    health = json.loads((fake_home / "VoxeraOS" / "notes" / "queue" / "health.json").read_text())
+    assert health["last_prune_result"]["exit_code"] == 2
+    assert "prune failed" in health["last_prune_result"]["stderr_tail"]
+
+
+def test_hygiene_reconcile_failure_includes_debug_fields_and_writes_health(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    class _Proc:
+        returncode = 1
+        stdout = ""
+        stderr = "reconcile failed: bad path"
+
+    monkeypatch.setattr(panel_module.subprocess, "run", lambda *args, **kwargs: _Proc())
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/hygiene/reconcile", data={})
+
+    assert res.status_code == 500
+    payload = res.json()
+    assert payload["ok"] is False
+    assert payload["result"]["error"]
+    assert payload["result"]["exit_code"] == 1
+    assert "reconcile failed" in payload["result"]["stderr_tail"]
+
+    health = json.loads((fake_home / "VoxeraOS" / "notes" / "queue" / "health.json").read_text())
+    assert health["last_reconcile_result"]["exit_code"] == 1
+    assert "reconcile failed" in health["last_reconcile_result"]["stderr_tail"]

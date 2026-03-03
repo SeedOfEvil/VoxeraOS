@@ -70,7 +70,10 @@
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
-          throw new Error((data.result && data.result.error) || 'request failed');
+          const result = data.result || {};
+          const rc = result.exit_code ?? 'n/a';
+          const firstLine = String(result.stderr_tail || result.error || 'request failed').split('\n')[0];
+          throw new Error(`rc=${rc} ${firstLine}`.trim());
         }
         render(data.result);
       } catch (err) {
