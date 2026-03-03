@@ -108,10 +108,10 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 
 ### Daemon health + long-run behavior
 
-**P3.1 — Health degradation state tracking (PLANNED)**
-- [ ] Track `consecutive_brain_failures` counter in `health.json`.
-- [ ] Set `daemon_state = "degraded"` when counter >= 3; reset on successful mission.
-- [ ] Surface `daemon_state` in `voxera queue health` and `voxera doctor --quick`.
+**P3.1 — Health degradation state tracking (SHIPPED)**
+- [x] Track `consecutive_brain_failures` counter in `health.json` (always present, default `0`).
+- [x] Set `daemon_state = "degraded"` when counter >= 3 plan-attempt fallback events; reset to `healthy` with counter `0` on successful mission completion (`DONE`).
+- [x] Health snapshot now includes `daemon_state`, `consecutive_brain_failures`, and optional `degraded_since_ts` / `degraded_reason` for operator interpretation.
 
 **P3.2 — Brain backoff on repeated failures (PLANNED)**
 - [ ] Add configurable delay between brain calls on consecutive fallbacks.

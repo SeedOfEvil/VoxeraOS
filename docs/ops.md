@@ -911,7 +911,10 @@ Panel home (`/`) shows a collapsible **Daemon Health** widget. Data source: `not
 | **Last brain fallback** | `last_fallback_reason`, `last_fallback_from`, `last_fallback_to`, `last_fallback_ts_ms` | Tier transition summary (e.g. `primary → fast, TIMEOUT`) or "no recent fallbacks". |
 | **Startup recovery** | `last_startup_recovery_ts`, `last_startup_recovery_counts` | Count of jobs failed + orphans quarantined on last daemon start; "clean" when zero. |
 | **Last shutdown** | `last_shutdown_ts`, `last_shutdown_reason`, `last_shutdown_outcome` | Outcome of last daemon stop: `clean_shutdown` or `failed_shutdown`; includes timestamp. |
-| **Daemon state** | `daemon_state` | `healthy` (default) or `degraded` (future: set by P3.1 when consecutive failures ≥ 3). |
+| **Daemon state** | `daemon_state` | `healthy` (default) or `degraded` (set after 3 consecutive plan-attempt brain fallback events; resets to `healthy` on mission success). |
+
+| **Consecutive brain failures** | `consecutive_brain_failures` | Counter of consecutive plan-attempt fallback events (always present; default `0`). |
+| **Degraded metadata** | `degraded_since_ts`, `degraded_reason` | Present as `null` while healthy; when degraded, indicates when state first flipped and why (`consecutive_brain_fallbacks`). |
 
 Neutral placeholders are shown for any field that is null/empty (fresh install or daemon not yet run).
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import json
 import re
@@ -13,7 +14,7 @@ from ..audit import log
 from ..brain.fallback import classify_fallback_reason
 from ..brain.gemini import GeminiBrain
 from ..brain.openai_compat import OpenAICompatBrain
-from ..health import record_fallback_transition
+from ..health import record_fallback_transition, record_plan_attempt_fallback
 from ..models import AppConfig, BrainConfig
 from ..skills.arg_normalizer import canonicalize_args, canonicalize_argv
 from ..skills.registry import SkillRegistry
@@ -714,6 +715,7 @@ async def plan_mission(
         )
 
     candidates = _build_brain_candidates(cfg)
+    had_fallback_event = False
     for attempt_index, candidate in enumerate(candidates, start=1):
         fallback_used = attempt_index > 1
         started = time.monotonic()
@@ -775,8 +777,7 @@ async def plan_mission(
                 }
             )
 
-            import contextlib
-
+            had_fallback_event = True
             _qr = queue_root or Path.home() / "VoxeraOS" / "notes" / "queue"
             with contextlib.suppress(OSError):
                 record_fallback_transition(
@@ -785,6 +786,11 @@ async def plan_mission(
                     to_tier=next_tier,
                     reason=fallback_reason,
                 )
+
+    if had_fallback_event:
+        _qr = queue_root or Path.home() / "VoxeraOS" / "notes" / "queue"
+        with contextlib.suppress(OSError):
+            record_plan_attempt_fallback(_qr)
 
     if payload is None or planner_name is None:
         message = _format_planner_failure_message(attempt_errors)

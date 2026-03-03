@@ -1,3 +1,19 @@
+## 2026-03-03 — P3.1 — daemon_state degraded after 3 consecutive brain fallbacks
+- **What changed**
+  - Added health snapshot normalization + degradation state machine in `src/voxera/health.py` so `health.json` always includes: `consecutive_brain_failures`, `daemon_state`, `degraded_since_ts`, `degraded_reason`.
+  - Added `update_degradation_state(...)`, `record_plan_attempt_fallback(...)`, and `record_mission_success(...)` as single-source helpers.
+  - Wired mission planning flow (`src/voxera/core/mission_planner.py`) to record one degradation fallback event per plan attempt if any brain fallback transition occurred.
+  - Wired queue daemon success paths (`src/voxera/core/queue_daemon.py`) to reset degradation state on successful mission completion (`DONE`).
+- **Tests added**
+  - Extended `tests/test_brain_fallback.py` with deterministic unit coverage for degradation state transitions and a lightweight health snapshot integration check (3 fallback events => degraded; success reset => healthy).
+- **How to validate locally**
+  - `source .venv/bin/activate`
+  - `python -m pip install -e .`
+  - `ruff format .`
+  - `ruff check . --fix`
+  - `make merge-readiness-check`
+  - `pytest`
+
 
 ## 2026-03-03 — Panel recovery/quarantine inspector (P2.3)
 - Added panel `/recovery` read-only inspector for `notes/queue/recovery/` + `notes/queue/quarantine/`.
