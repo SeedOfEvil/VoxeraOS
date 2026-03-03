@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
+import zipfile
 
 from fastapi.testclient import TestClient
 
@@ -1347,3 +1349,75 @@ def test_hygiene_reconcile_rc0_invalid_json_is_classified(tmp_path, monkeypatch)
     assert payload["result"]["error"] == "json parse failed"
     assert payload["result"]["exit_code"] == 0
     assert payload["result"]["stdout_tail"] == "{not-json}"
+
+
+def test_recovery_page_renders_empty_state(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/recovery")
+
+    assert res.status_code == 200
+    assert "No recovery sessions found." in res.text
+    assert "No quarantine sessions found." in res.text
+
+
+def test_recovery_page_lists_sessions_and_sizes(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "recovery" / "session-a").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "recovery" / "session-a" / "file1.txt").write_text("one", encoding="utf-8")
+    (queue_dir / "recovery" / "session-a" / "file2.txt").write_text("two", encoding="utf-8")
+    (queue_dir / "quarantine" / "session-q").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "quarantine" / "session-q" / "q1.txt").write_text("q", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/recovery")
+
+    assert res.status_code == 200
+    assert "session-a" in res.text
+    assert "session-q" in res.text
+    assert "Download ZIP" in res.text
+
+
+def test_download_zip_for_directory(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    session = queue_dir / "recovery" / "session-a"
+    session.mkdir(parents=True, exist_ok=True)
+    (session / "a.txt").write_text("alpha", encoding="utf-8")
+    (session / "b.txt").write_text("beta", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get("/recovery/download/recovery/session-a", headers=_operator_headers())
+
+    assert res.status_code == 200
+    assert res.headers.get("content-type", "").startswith("application/zip")
+    with zipfile.ZipFile(io.BytesIO(res.content), "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == ["a.txt", "b.txt"]
+
+
+def test_download_rejects_path_traversal(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+
+    res_parent = client.get("/recovery/download/recovery/..", headers=_operator_headers())
+    assert res_parent.status_code == 404
+
+    res_missing = client.get("/recovery/download/recovery/not-found", headers=_operator_headers())
+    assert res_missing.status_code == 404
+
+    res_with_slash = client.get(
+        "/recovery/download/recovery/session-a/extra", headers=_operator_headers()
+    )
+    assert res_with_slash.status_code == 404

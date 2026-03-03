@@ -71,7 +71,7 @@ Health degradation (P3.x) is deferred to v0.2.
 - Results stored in `health.json` under `last_prune_result` and `last_reconcile_result`.
 - Acceptance: buttons invoke commands and surface results without page reload (HTMX or polling).
 
-#### P2.3 — Recovery + quarantine inspector in panel (PLANNED)
+#### P2.3 — Recovery + quarantine inspector in panel (SHIPPED)
 - Add `/recovery` page showing:
   - All files under `notes/queue/recovery/` with size, timestamp, and type (approval/state).
   - All files under `notes/queue/quarantine/` with size and timestamp.
@@ -198,7 +198,7 @@ Health degradation (P3.x) is deferred to v0.2.
 ### Ops visibility
 - ✅ Panel home shows daemon health widget with lock/fallback/recovery/shutdown fields (PR #92).
 - ✅ Panel hygiene page (`/hygiene`) surfaces last prune + reconcile results and trigger buttons with async in-page updates (PR #93).
-- ⏳ Panel recovery page lists `recovery/` and `quarantine/` contents — DEFERRED to v0.2 (P2.3).
+- ✅ Panel recovery page (`/recovery`) lists `recovery/` and `quarantine/` sessions/loose files with metadata and per-item ZIP download (P2.3).
 
 ### Health degradation (DEFERRED to v0.2)
 - ⏳ 3 consecutive brain fallbacks set `daemon_state = "degraded"` in health snapshot (P3.1).

@@ -1,3 +1,12 @@
+
+## 2026-03-03 — Panel recovery/quarantine inspector (P2.3)
+- Added panel `/recovery` read-only inspector for `notes/queue/recovery/` + `notes/queue/quarantine/`.
+- Added `/recovery/download/{bucket}/{name}` operator-auth ZIP downloads with traversal protections,
+  symlink exclusion, deterministic ordering, and size/file-count safety limits.
+- Added panel tests for empty state, listing, ZIP download validity, and traversal rejection.
+- Updated docs: README, ops, SECURITY, ROADMAP, ROADMAP_0.1.6.
+- Validation commands run: `ruff format .`, `ruff check .`, `pytest`, `make merge-readiness-check`.
+
 ## 2026-03-03 — PR #N/A — docs(release): bump version to 0.1.6 + refresh internal docs/roadmap
 - Summary:
   - Bumped `pyproject.toml` version from `0.1.5` to `0.1.6`; updated description string.

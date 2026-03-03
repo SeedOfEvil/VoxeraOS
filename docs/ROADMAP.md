@@ -101,10 +101,10 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 - [x] Store last results in `health.json` under `last_prune_result` / `last_reconcile_result`.
 - [x] Async page updates after trigger actions (no full reload).
 
-**P2.3 — Recovery + quarantine inspector in panel (PLANNED)**
-- [ ] Add `/recovery` panel page listing `recovery/` and `quarantine/` directory contents.
-- [ ] Show file size, timestamp, and type (approval/state) for each entry.
-- [ ] "Download as ZIP" button per recovery/quarantine session.
+**P2.3 — Recovery + quarantine inspector in panel (SHIPPED)**
+- [x] Add `/recovery` panel page listing `recovery/` and `quarantine/` directory contents.
+- [x] Show file/dir metadata (size, timestamp, kind, file count) for each entry.
+- [x] "Download ZIP" button per recovery/quarantine session/loose item with operator-auth protection.
 
 ### Daemon health + long-run behavior
 
