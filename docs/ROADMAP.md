@@ -69,10 +69,11 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 - [x] Neutral display when fields are null/empty (no provider config, fresh install).
 - [x] Daemon state badge from health snapshot with `healthy` default and future `degraded` support.
 
-**P2.2 — Panel hygiene status + trigger page (PLANNED)**
-- [ ] Add `/hygiene` panel page showing last prune result + last reconcile result.
-- [ ] "Run prune (dry-run)" and "Run reconcile" buttons that surface results inline.
-- [ ] Store last results in `health.json` under `last_prune_result` / `last_reconcile_result`.
+**P2.2 — Panel hygiene status + trigger page (SHIPPED)**
+- [x] Added `/hygiene` panel page showing last prune result + last reconcile result.
+- [x] "Run prune (dry-run)" and "Run reconcile" buttons that surface results inline.
+- [x] Store last results in `health.json` under `last_prune_result` / `last_reconcile_result`.
+- [x] Async page updates after trigger actions (no full reload).
 
 **P2.3 — Recovery + quarantine inspector in panel (PLANNED)**
 - [ ] Add `/recovery` panel page listing `recovery/` and `quarantine/` directory contents.

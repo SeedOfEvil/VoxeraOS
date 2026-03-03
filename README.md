@@ -351,6 +351,7 @@ Failed-job sidecar contract and retention:
 - `voxera queue status` now also shows active failed-retention policy (`failed retention max age (s)`, `failed retention max count`) and the latest prune-event summary (`removed jobs/sidecars`).
 - Lock/auth observability counters are persisted in `notes/queue/health.json` (shared by daemon + panel).
 - Panel home (`/`) includes a collapsible **Daemon Health** widget sourced strictly from `notes/queue/health.json` at request time (no daemon RPC calls), so it remains available in panel-only deployments.
+- Panel hygiene page (`/hygiene`) shows the latest `voxera queue prune --dry-run --json` and `voxera queue reconcile --json` snapshots and provides operator-trigger buttons for both actions with in-page async refresh.
 - Widget fields: lock status (`held`/`stale`/`clear`) with PID/stale age, last brain fallback (tier/reason/timestamp), last startup recovery (job_count/orphan_count/timestamp), last shutdown outcome (outcome/timestamp), daemon state (defaults to `healthy` when absent).
 - Health snapshot now also records `last_ok_event` + `last_ok_ts_ms` so operators can confirm recent successful daemon activity; `last_error` remains for failures.
 - Use `voxera queue health` for a quick operator summary (paused flag, intake path, lock status, counters, and last safe error summary).

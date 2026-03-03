@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Voxera Panel · Hygiene</title>
+  <link rel="stylesheet" href="/static/panel.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <div>
+        <h1 class="title">Queue Hygiene</h1>
+        <p class="subtitle">Run safe queue diagnostics and preview prune impact without daemon RPCs.</p>
+      </div>
+      <a class="btn" href="/">Back to Home</a>
+    </header>
+
+    <div id="hygiene-error" class="alert alert-danger" style="display:none;"></div>
+
+    <section class="grid grid-2">
+      <article class="card">
+        <h2>Queue prune (dry-run)</h2>
+        <p class="muted" id="prune-summary">{% if last_prune_result %}{{last_prune_result}}{% else %}No runs yet.{% endif %}</p>
+        <button id="prune-btn" class="btn btn-primary" type="button">Run prune (dry-run)</button>
+      </article>
+
+      <article class="card">
+        <h2>Queue reconcile</h2>
+        <p class="muted" id="reconcile-summary">{% if last_reconcile_result %}{{last_reconcile_result}}{% else %}No runs yet.{% endif %}</p>
+        <button id="reconcile-btn" class="btn btn-primary" type="button">Run reconcile</button>
+      </article>
+    </section>
+  </div>
+
+  <script>
+    const csrfToken = "{{csrf_token}}";
+
+    function fmtTs(ms) {
+      if (!ms) return 'n/a';
+      try { return new Date(ms).toISOString(); } catch { return String(ms); }
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('hygiene-error');
+      box.style.display = 'block';
+      box.textContent = msg;
+    }
+
+    function clearError() {
+      const box = document.getElementById('hygiene-error');
+      box.style.display = 'none';
+      box.textContent = '';
+    }
+
+    async function runAction(btnId, url, render) {
+      clearError();
+      const btn = document.getElementById(btnId);
+      const previous = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'running…';
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRF-Token': csrfToken,
+          },
+          body: new URLSearchParams({csrf_token: csrfToken}),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error((data.result && data.result.error) || 'request failed');
+        }
+        render(data.result);
+      } catch (err) {
+        showError('Action failed: ' + (err && err.message ? err.message : 'unknown error'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = previous;
+      }
+    }
+
+    document.getElementById('prune-btn').addEventListener('click', () => {
+      runAction('prune-btn', '/hygiene/prune-dry-run', (r) => {
+        const msg = `ok=${r.ok} mode=${r.mode} would_remove_jobs=${r.would_remove_jobs || 0} reclaimed_bytes=${r.reclaimed_bytes ?? 'n/a'} at=${fmtTs(r.ts_ms)}`;
+        document.getElementById('prune-summary').textContent = msg;
+      });
+    });
+
+    document.getElementById('reconcile-btn').addEventListener('click', () => {
+      runAction('reconcile-btn', '/hygiene/reconcile', (r) => {
+        const msg = `ok=${r.ok} issue_counts=${JSON.stringify(r.issue_counts || {})} at=${fmtTs(r.ts_ms)}`;
+        document.getElementById('reconcile-summary').textContent = msg;
+      });
+    });
+  </script>
+</body>
+</html>

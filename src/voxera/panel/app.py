@@ -5,6 +5,8 @@ import json
 import os
 import re
 import secrets
+import subprocess
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -14,7 +16,7 @@ from urllib.parse import parse_qs, urlencode
 
 import anyio
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -692,6 +694,60 @@ def _read_generated_files(artifacts_dir: Path) -> list[str]:
     return [str(item) for item in payload] if isinstance(payload, list) else []
 
 
+def _trim_tail(value: str, *, max_chars: int = 2000) -> str:
+    text = value.strip()
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
+
+
+def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, Any]:
+    commands = [
+        ["voxera", *args, "--queue-dir", str(queue_root)],
+        [sys.executable, "-m", "voxera.cli", *args, "--queue-dir", str(queue_root)],
+    ]
+    last_error = ""
+    for cmd in commands:
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        except FileNotFoundError as exc:
+            last_error = str(exc)
+            continue
+
+        stdout = proc.stdout or ""
+        stderr = proc.stderr or ""
+        try:
+            parsed = json.loads(stdout) if stdout.strip() else {}
+        except json.JSONDecodeError:
+            parsed = {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+        ok = proc.returncode == 0 and bool(parsed)
+        return {
+            "ok": ok,
+            "result": parsed,
+            "stderr_tail": _trim_tail(stderr),
+            "error": "" if ok else _trim_tail(stderr or stdout or "command failed"),
+        }
+
+    return {
+        "ok": False,
+        "result": {},
+        "stderr_tail": _trim_tail(last_error or "voxera CLI executable not found"),
+        "error": _trim_tail(last_error or "voxera CLI executable not found"),
+    }
+
+
+def _write_hygiene_result(queue_root: Path, key: str, result: dict[str, Any]) -> None:
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        payload[key] = result
+        payload["updated_at_ms"] = _now_ms()
+        return payload
+
+    update_health_snapshot(queue_root, _apply)
+
+
 def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     lookup = lookup_job(queue_root, job_id)
     if lookup is None:
@@ -1260,6 +1316,74 @@ def system_bundle(request: Request):
         media_type="application/zip",
         filename=out.name,
     )
+
+
+@app.get("/hygiene", response_class=HTMLResponse)
+def hygiene_page(request: Request):
+    queue_root = _queue_root()
+    health = read_health_snapshot(queue_root)
+    tmpl = templates.get_template("hygiene.html")
+    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    html = tmpl.render(
+        last_prune_result=health.get("last_prune_result"),
+        last_reconcile_result=health.get("last_reconcile_result"),
+        csrf_token=csrf_token,
+    )
+    response = HTMLResponse(content=html)
+    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
+    return response
+
+
+@app.post("/hygiene/prune-dry-run")
+async def hygiene_prune_dry_run(request: Request):
+    await _require_mutation_guard(request)
+    queue_root = _queue_root()
+    run = _run_queue_hygiene_command(queue_root, ["queue", "prune", "--dry-run", "--json"])
+    parsed = run["result"]
+    per_bucket = parsed.get("per_bucket") if isinstance(parsed.get("per_bucket"), dict) else {}
+    removed_jobs = int(
+        sum(int((per_bucket.get(b) or {}).get("pruned", 0) or 0) for b in per_bucket)
+    )
+    result = {
+        "ts_ms": _now_ms(),
+        "mode": "dry-run",
+        "ok": bool(run["ok"]),
+        "removed_jobs": 0,
+        "would_remove_jobs": removed_jobs,
+        "removed_sidecars": 0,
+        "reclaimed_bytes": parsed.get("reclaimed_bytes"),
+        "by_bucket": per_bucket,
+    }
+    if run["stderr_tail"]:
+        result["stderr_tail"] = run["stderr_tail"]
+    if not run["ok"]:
+        result["error"] = run["error"]
+    _write_hygiene_result(queue_root, "last_prune_result", result)
+    status_code = 200 if run["ok"] else 500
+    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=status_code)
+
+
+@app.post("/hygiene/reconcile")
+async def hygiene_reconcile(request: Request):
+    await _require_mutation_guard(request)
+    queue_root = _queue_root()
+    run = _run_queue_hygiene_command(queue_root, ["queue", "reconcile", "--json"])
+    parsed = run["result"]
+    issue_counts = (
+        parsed.get("issue_counts") if isinstance(parsed.get("issue_counts"), dict) else {}
+    )
+    result = {
+        "ts_ms": _now_ms(),
+        "ok": bool(run["ok"]),
+        "issue_counts": issue_counts,
+    }
+    if run["stderr_tail"]:
+        result["stderr_tail"] = run["stderr_tail"]
+    if not run["ok"]:
+        result["error"] = run["error"]
+    _write_hygiene_result(queue_root, "last_reconcile_result", result)
+    status_code = 200 if run["ok"] else 500
+    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=status_code)
 
 
 @app.post("/queue/jobs/{ref}/cancel")

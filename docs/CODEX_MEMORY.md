@@ -1,3 +1,21 @@
+## 2026-03-02 — PR #N/A — feat(panel): add /hygiene page showing last prune/reconcile + trigger buttons (P2.2)
+
+- What changed:
+  - Added Panel `/hygiene` page with two action cards: queue prune (dry-run) and queue reconcile.
+  - Added POST endpoints `/hygiene/prune-dry-run` and `/hygiene/reconcile` guarded by operator auth + CSRF mutation guard.
+  - Endpoints execute local CLI subprocess commands (`voxera queue prune --dry-run --json`, `voxera queue reconcile --json`), parse JSON, and persist compact results into `notes/queue/health.json` under `last_prune_result` and `last_reconcile_result`.
+  - Added minimal JS fetch flow to update summaries in-place without full page reload, including running/disabled states and neutral error banner.
+  - Added home quicklink to `/hygiene`.
+- Why:
+  - Gives operators panel-only queue hygiene observability and safe trigger actions without daemon RPC dependency.
+- Tests:
+  - Added panel tests for neutral rendering, prune endpoint write path, reconcile endpoint write path, and auth requirements.
+- Commands run:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+
 # Codex Memory Log
 
 This file is the single, persistent project memory for Codex-assisted work.

@@ -179,3 +179,14 @@ Previously tracked items now resolved:
 - For incident response, use `voxera ops bundle system` and `voxera ops bundle job <job>` to capture a point-in-time snapshot.
 - Use `voxera queue reconcile` to detect orphan sidecars or approval mismatches after unclean shutdowns.
 - See `docs/ops.md` for the full incident runbook.
+
+
+## Panel hygiene triggers safety model
+
+The panel `/hygiene` actions are intentionally constrained:
+
+- They invoke local CLI subprocess commands (`voxera queue prune --dry-run --json` and `voxera queue reconcile --json`) rather than daemon RPC calls.
+- Prune is forced to dry-run/report mode only in panel flow; no deletion is performed.
+- Reconcile endpoint runs report-only analysis (`--json` without fix/apply flags).
+- Results are persisted into `notes/queue/health.json` (`last_prune_result`, `last_reconcile_result`) using the same atomic health snapshot write path used elsewhere.
+- POST triggers are mutation-guarded by operator auth (+ CSRF when enabled).

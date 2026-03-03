@@ -1140,3 +1140,87 @@ def test_health_snapshot_contains_panel_auth_state(tmp_path, monkeypatch):
     assert lockouts
     row = next(iter(lockouts.values()))
     assert int(row.get("until_ts_ms", 0)) > now["ms"]
+
+
+def test_hygiene_page_renders_with_no_results(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/hygiene")
+
+    assert res.status_code == 200
+    assert "Queue Hygiene" in res.text
+    assert "No runs yet." in res.text
+
+
+def test_hygiene_prune_dry_run_endpoint_writes_health(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    class _Proc:
+        returncode = 0
+        stdout = json.dumps(
+            {
+                "status": "dry_run",
+                "per_bucket": {"done": {"pruned": 2}, "failed": {"pruned": 1}},
+                "reclaimed_bytes": 123,
+            }
+        )
+        stderr = ""
+
+    monkeypatch.setattr(panel_module.subprocess, "run", lambda *args, **kwargs: _Proc())
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/hygiene/prune-dry-run", data={})
+
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["ok"] is True
+    assert payload["result"]["mode"] == "dry-run"
+    assert payload["result"]["would_remove_jobs"] == 3
+    assert payload["result"]["ts_ms"] > 0
+
+    health = json.loads((fake_home / "VoxeraOS" / "notes" / "queue" / "health.json").read_text())
+    assert "last_prune_result" in health
+    assert health["last_prune_result"]["would_remove_jobs"] == 3
+
+
+def test_hygiene_reconcile_endpoint_writes_health(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    class _Proc:
+        returncode = 0
+        stdout = json.dumps({"issue_counts": {"orphan_sidecars": 2, "duplicate_jobs": 1}})
+        stderr = ""
+
+    monkeypatch.setattr(panel_module.subprocess, "run", lambda *args, **kwargs: _Proc())
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/hygiene/reconcile", data={})
+
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["ok"] is True
+    assert payload["result"]["issue_counts"]["orphan_sidecars"] == 2
+    assert payload["result"]["ts_ms"] > 0
+
+    health = json.loads((fake_home / "VoxeraOS" / "notes" / "queue" / "health.json").read_text())
+    assert "last_reconcile_result" in health
+    assert health["last_reconcile_result"]["issue_counts"]["duplicate_jobs"] == 1
+
+
+def test_hygiene_endpoints_require_auth(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    assert client.post("/hygiene/prune-dry-run").status_code == 401
+    assert client.post("/hygiene/reconcile").status_code == 401
