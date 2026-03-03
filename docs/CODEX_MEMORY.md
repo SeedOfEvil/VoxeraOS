@@ -1,4 +1,24 @@
-## 2026-03-02 — PR #N/A — feat(panel): add /hygiene page showing last prune/reconcile + trigger buttons (P2.2)
+## 2026-03-03 — PR #N/A — docs(release): bump version to 0.1.6 + refresh internal docs/roadmap
+- Summary:
+  - Bumped `pyproject.toml` version from `0.1.5` to `0.1.6`; updated description string.
+  - Updated `README.md` title/header and summary paragraphs to reflect v0.1.6 as the current release.
+  - Updated `docs/ROADMAP.md`: baseline now "post Alpha v0.1.6"; marked P1.2, P1.3 SHIPPED; added Support/Infra section documenting PR #90 and PR #91; updated milestone section to SHIPPED; archived v0.1.5 completed items.
+  - Updated `docs/ROADMAP_0.1.6.md`: status changed from IN PROGRESS to SHIPPED; P1.2 marked SHIPPED; added Support/Infra shipped section; pillar headers 3-6 marked DEFERRED to v0.2; acceptance criteria updated to reflect delivered vs deferred items.
+  - Updated `docs/SECURITY.md`: fixed PR references (goal sanitization = PR #85, prompt boundaries = PR #88); updated hardening backlog to move resolved items to "Previously resolved"; added mention of prompt boundaries in goal-hardening known-gaps section.
+  - Updated `docs/ops.md`: added Panel Daemon Health widget section with field reference table and data-freshness note; expanded Panel queue hygiene section with reconcile `issue_counts` schema, safety model table, and how-it-works detail.
+  - Updated `docs/CODEX_MEMORY.md`: filled in all `PR #N/A` entries with real PR numbers; updated PR #83 → PR #85 for goal sanitization; added new entries for PR #84, PR #86, PR #89.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+  - `make release-check`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Documentation-only and version-surface change; no runtime behavior changed.
+
+## 2026-03-02 — PR #93 — feat(panel): add /hygiene page showing last prune/reconcile + trigger buttons (P2.2)
 
 - What changed:
   - Added Panel `/hygiene` page with two action cards: queue prune (dry-run) and queue reconcile.
@@ -20,7 +40,7 @@
 
 This file is the single, persistent project memory for Codex-assisted work.
 
-## 2026-03-02 — PR #N/A — feat(panel): add home Daemon Health widget sourced from health.json (P2.1)
+## 2026-03-02 — PR #92 — feat(panel): add home Daemon Health widget sourced from health.json (P2.1)
 - Summary:
   - Added a collapsible **Daemon Health** widget on panel home (`/`) using only `read_health_snapshot()` data from `notes/queue/health.json` (no daemon calls), with neutral placeholders for missing fields.
   - Added `_daemon_health_view()` normalization in panel app for lock status/PID/stale age, last fallback, startup recovery, shutdown outcome, and daemon state (`healthy` default).
@@ -32,11 +52,11 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest`
   - `make merge-readiness-check`
 - Follow-ups:
-  - Replace `PR #N/A` with the merged PR number.
+  - None.
 - Risks/notes:
   - Widget intentionally reflects persisted snapshot state; freshness depends on latest `health.json` writes.
 
-## 2026-03-02 — PR #N/A — security(planner): wrap user goal in [USER DATA START]/[USER DATA END] delimiters (P1.2)
+## 2026-03-02 — PR #88 — security(planner): wrap user goal in [USER DATA START]/[USER DATA END] delimiters (P1.2)
 - Summary:
   - Added planner prompt boundary constants and wrapped embedded sanitized goal text in a single `[USER DATA START]` / `[USER DATA END]` region.
   - Updated default planner preamble guidance to explicitly treat bounded user-data content as untrusted and non-instructional.
@@ -48,11 +68,11 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest`
   - `make merge-readiness-check`
 - Follow-ups:
-  - Replace `PR #N/A` with the merged PR number.
+  - None.
 - Risks/notes:
   - Prompt boundary hardening is structural defense-in-depth; deterministic runtime validation rules remain unchanged.
 
-## 2026-03-02 — PR #N/A — docs(roadmap): sync v0.1.6 with shipped reality + config hygiene planning
+## 2026-03-02 — PR #87 — docs(roadmap): sync v0.1.6 with shipped reality + config hygiene planning
 - Summary:
   - Synced v0.1.6 roadmap docs from "planning" to "in progress" and added a concise shipped-so-far block for already merged work.
   - Replaced drifting PR-number labels with stable roadmap IDs (`P1.x`..`P6.x`) and tagged scope items as `(SHIPPED)` vs `(PLANNED)`.
@@ -64,11 +84,11 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest`
   - `make merge-readiness-check`
 - Follow-ups:
-  - Replace `PR #N/A` with the merged PR number.
+  - None.
 - Risks/notes:
   - Documentation-only change to reduce plan drift and preserve truthful release tracking.
 
-## 2026-03-02 — PR #N/A — PR #83 follow-up: ANSI sequence cleanup + informational docs refresh
+## 2026-03-02 — PR #85 follow-up — ANSI sequence cleanup + informational docs refresh
 - Summary:
   - Tightened planner goal sanitization to remove ANSI/CSI escape remnants (e.g., `\x1b[31m` no longer leaves `[31m` in prompt text).
   - Strengthened mission-planner tests with a direct `sanitize_goal_for_prompt()` assertion and strict expected prompt goal text.
@@ -83,7 +103,7 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Risks/notes:
   - ANSI-removal regex is intentionally conservative and scoped to prompt-sanitization output only.
 
-## 2026-03-02 — PR #83 — Planner goal sanitization + 2,000-char preflight cap
+## 2026-03-02 — PR #85 — Planner goal sanitization + 2,000-char preflight cap
 - Summary:
   - Added planner goal hardening in `mission_planner`: reject goals over 2,000 chars before any provider selection or brain calls.
   - Added `sanitize_goal_for_prompt()` to remove ASCII control chars and normalize whitespace before embedding user goals in planner prompts.
@@ -95,11 +115,11 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest`
   - `make merge-readiness-check`
 - Follow-ups:
-  - Consider adding structural user-data delimiters in planner prompts as a defense-in-depth layer.
+  - Added structural user-data delimiters in planner prompts as defense-in-depth (shipped in PR #88).
 - Risks/notes:
   - Goal sanitization is prompt-scoped; deterministic goal parsing paths intentionally continue using raw input semantics.
 
-## 2026-03-02 — PR #N/A — test(e2e): fix approval wait hang in scripts/e2e_golden4.sh
+## 2026-03-02 — PR #90 — test(e2e): fix approval wait hang in scripts/e2e_golden4.sh
 - Summary:
   - Replaced CLI-table-parsing approval detection in `e2e_golden4.sh` with a
     direct filesystem check on the deterministic approval artifact path
@@ -124,7 +144,7 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest` — 371 passed, 2 skipped.
   - `make merge-readiness-check` — clean.
 - Follow-ups:
-  - Replace `PR #N/A` with the merged PR number.
+  - None.
 - Risks/notes:
   - The e2e script is now interactive for the approval step: a human must
     approve via the Panel. PHASE B has a 300 s timeout so unattended runs
@@ -132,7 +152,56 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Filesystem-based checks are resilient to changes in CLI output format or
     approval artifact naming conventions that previously caused hangs.
 
-## 2026-03-02 — PR #N/A — fix(sandbox.exec): canonicalize_argv — accept aliases, shlex.split strings, strip empty tokens, fail fast on empty argv
+## 2026-03-02 — PR #89 — security(panel): auth lockout 10/60s → HTTP 429 + Retry-After + health/audit/doctor surfaces (P1.3)
+- Summary:
+  - Implemented per-IP failed Basic auth tracking in `health.json` under `panel_auth`: `failures_by_ip` (rolling counters) and `lockouts_by_ip` (lockout windows).
+  - Policy: `FAIL_THRESHOLD = 10` attempts within `WINDOW_S = 60` seconds triggers a `LOCKOUT_S = 60` second lockout.
+  - Panel auth returns HTTP `429` with `Retry-After: 60` header during lockout period; 401 outside lockout.
+  - Emits structured `panel_auth_lockout` audit events with `ip`, `attempt_count`, `window_s`, and `lockout_s`.
+  - Lockout status surfaced in `voxera queue health` and `voxera doctor --quick` output.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Tracking is per-IP via health.json; concurrent panel instances on same machine share lockout state via atomic health snapshot write.
+
+## 2026-03-02 — PR #86 — feat(brain): OpenRouter invisible attribution defaults (voxeraos.ca + VoxeraOS)
+- Summary:
+  - OpenRouter calls now auto-include `HTTP-Referer: https://voxeraos.ca`, `X-OpenRouter-Title: VoxeraOS`, and `X-Title: VoxeraOS` as app attribution metadata by default.
+  - Defaults are invisible to users: only applied when the corresponding header keys are absent from the request config.
+  - Real user-provided overrides are always respected; defaults never overwrite explicit values.
+  - Non-secret metadata; not included in audit redaction.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - P5.3 (config hygiene auto-upgrade for legacy placeholder defaults) tracked in v0.2 scope.
+- Risks/notes:
+  - Attribution values are informational metadata for OpenRouter dashboards; no auth or privacy impact.
+
+## 2026-03-02 — PR #84 — feat(skills): terminal_run_once deterministic hello-world demo + deterministic planner route
+- Summary:
+  - Added `system.terminal_run_once` skill: deterministic terminal demo that runs a hello-world command and exits.
+  - Added a deterministic planner route for simple terminal/hello-world goals that bypasses cloud brain calls, producing a predictable single-step plan for offline demo and CI golden tests.
+  - Skill registered in the built-in skill registry; planner route gated behind `--deterministic` flag or specific goal patterns.
+  - Used in `voxera demo` checklist for a reliable offline-first demo flow.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+  - `make merge-readiness-check`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Deterministic planner route is intentionally limited in scope; complex goals still go through cloud brain.
+
+## 2026-03-02 — PR #91 — fix(sandbox.exec): canonicalize_argv — accept aliases, shlex.split strings, strip empty tokens, fail fast on empty argv
 - Summary:
   - Introduced `canonicalize_argv(args)` in `src/voxera/skills/arg_normalizer.py` as the single source of truth for sandbox command normalisation.
   - Accepts keys in priority order: `command` (canonical), `argv`, `cmd` (compatibility aliases).
@@ -150,7 +219,7 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest` (all tests pass)
   - `make merge-readiness-check`
 - Follow-ups:
-  - Replace `PR #N/A` with the merged PR number.
+  - None.
 - Risks/notes:
   - Behaviour change: string `"echo hello"` is now tokenised to `["echo", "hello"]` (not `["bash","-lc","echo hello"]`). Callers wanting shell interpretation should pass `["bash","-lc","echo hello"]` explicitly. The mission planner already produces list form, so no production regression is expected.
   - Empty/whitespace tokens in lists are silently stripped (previously rejected by `_normalize_sandbox_exec_step`). This is a deliberate robustness choice at the execution layer.
