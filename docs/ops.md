@@ -895,3 +895,14 @@ Queue approval artifacts now write scope in two locations for compatibility:
 - nested: `scope.fs_scope`, `scope.needs_network`
 
 Readers prefer top-level keys when present and fall back to nested `scope.*` for older artifacts.
+
+
+## Panel queue hygiene workflow
+
+- Open the Panel at `/hygiene` to view the latest queue hygiene snapshots from `notes/queue/health.json`.
+- Use **Run prune (dry-run)** to execute `voxera queue prune --json` via local CLI invocation; prune is dry-run by default and panel never passes `--yes`, so this path is report-only and never deletes data.
+- Use **Run reconcile** to execute `voxera queue reconcile --json` via local CLI invocation; this is read/analysis-only.
+- Results are merged into health snapshot keys:
+  - `last_prune_result`
+  - `last_reconcile_result`
+- UI updates asynchronously after each run (no full page reload).

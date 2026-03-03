@@ -346,3 +346,32 @@ def test_sidecars_not_counted_as_primary_candidates(tmp_path: Path) -> None:
     assert not job.exists(), "primary job must be deleted"
     assert not error_sidecar.exists(), "error sidecar must be deleted"
     assert not state_sidecar.exists(), "state sidecar must be deleted"
+
+
+def test_json_output_non_empty_and_panel_fields(tmp_path: Path) -> None:
+    qd = _queue_dir(tmp_path)
+    done_dir = qd / "done"
+    _make_job(done_dir, "job-a.json", mtime=time.time() - 86400 * 3)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "prune",
+            "--max-age-days",
+            "1",
+            "--json",
+            "--queue-dir",
+            str(qd),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.output.strip()
+    data = json.loads(result.output)
+    assert "by_bucket" in data
+    assert "would_remove_jobs" in data
+    assert "removed_jobs" in data
+    assert "removed_sidecars" in data
+    assert "ts_ms" in data

@@ -44,6 +44,13 @@ from .version import get_version
 
 console = Console()
 
+
+def _now_ms() -> int:
+    import time
+
+    return int(time.time() * 1000)
+
+
 RUN_ARG_OPTION = typer.Option(None, "--arg", help="Key=Value args (repeat --arg for multiple).")
 OUT_PATH_OPTION = typer.Option(..., "--out", help="Output zip file path.")
 OPS_BUNDLE_ARCHIVE_DIR_OPTION = typer.Option(
@@ -1216,14 +1223,23 @@ def queue_prune(
     )
 
     if json_out:
-        # Include human-readable status field
+        # Include stable machine-readable fields for panel + operators.
+        per_bucket_json: dict[str, dict[str, int]] = result["per_bucket"]
+        removed_jobs = int(
+            sum(int((per_bucket_json.get(b) or {}).get("pruned", 0) or 0) for b in per_bucket_json)
+        )
         output: dict[str, Any] = {
             "status": "dry_run" if result["dry_run"] else "deleted",
             "queue_dir": result["queue_dir"],
             "buckets_processed": list(TERMINAL_BUCKETS),
-            "per_bucket": result["per_bucket"],
+            "per_bucket": per_bucket_json,
+            "by_bucket": per_bucket_json,
+            "removed_jobs": 0 if result["dry_run"] else removed_jobs,
+            "would_remove_jobs": removed_jobs if result["dry_run"] else 0,
+            "removed_sidecars": 0,
             "reclaimed_bytes": result["reclaimed_bytes"],
             "errors": result["errors"],
+            "ts_ms": _now_ms(),
         }
         if result["status"] == "no_rules":
             output["status"] = "no_rules"
@@ -1364,6 +1380,7 @@ def queue_reconcile(
             "quarantine_dir": str(q_dir) if q_dir is not None else None,
             "issue_counts": report["issue_counts"],
             "examples": report["examples"],
+            "ts_ms": _now_ms(),
         }
         if fix_results:
             out["fix_counts"] = {
@@ -1465,3 +1482,7 @@ def queue_reconcile(
         )
     else:
         console.print("[dim]Report-only; no changes made.[/dim]")
+
+
+if __name__ == "__main__":
+    app()

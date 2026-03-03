@@ -58,7 +58,7 @@ reliability story before the v0.3 voice expansion.
 - Sourced from `health.json`; no daemon call needed — safe for panel-only deployments.
 - Acceptance: widget renders on home with all fields; empty/null fields show a neutral state.
 
-#### P2.2 — Panel hygiene status + trigger page (PLANNED)
+#### P2.2 — Panel hygiene status + trigger page (SHIPPED)
 - Add `/hygiene` page to panel with:
   - Last `voxera queue prune` result (timestamp, pruned count per bucket, reclaimed bytes).
   - Last `voxera queue reconcile` result (timestamp, issue counts per category).
@@ -175,7 +175,7 @@ reliability story before the v0.3 voice expansion.
 
 ### Ops visibility
 - ✅ Panel home shows daemon health widget with lock/fallback/recovery/shutdown fields.
-- ⏳ Panel hygiene page surfaces last prune + reconcile results and trigger buttons.
+- ✅ Panel hygiene page (`/hygiene`) now surfaces last prune + reconcile results and trigger buttons with async in-page updates.
 - ⏳ Panel recovery page lists `recovery/` and `quarantine/` contents.
 
 ### Health degradation

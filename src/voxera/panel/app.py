@@ -5,6 +5,8 @@ import json
 import os
 import re
 import secrets
+import subprocess
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -14,7 +16,7 @@ from urllib.parse import parse_qs, urlencode
 
 import anyio
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -692,6 +694,135 @@ def _read_generated_files(artifacts_dir: Path) -> list[str]:
     return [str(item) for item in payload] if isinstance(payload, list) else []
 
 
+def _trim_tail(value: str, *, max_chars: int = 2000) -> str:
+    text = value.strip()
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
+
+
+def _repo_root_for_panel_subprocess() -> Path:
+    env_root = os.getenv("VOXERA_REPO_ROOT", "").strip()
+    if env_root:
+        candidate = Path(env_root).expanduser().resolve()
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+
+    default_root = Path(__file__).resolve().parents[3]
+    if default_root.exists() and default_root.is_dir():
+        return default_root
+    return Path.cwd()
+
+
+def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, Any]:
+    run_cwd = _repo_root_for_panel_subprocess()
+    commands = [
+        [sys.executable, "-m", "voxera.cli", *args, "--queue-dir", str(queue_root)],
+        ["voxera", *args, "--queue-dir", str(queue_root)],
+    ]
+    attempted: list[dict[str, Any]] = []
+
+    for cmd in commands:
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=run_cwd)
+        except FileNotFoundError as exc:
+            attempted.append(
+                {
+                    "cmd": cmd,
+                    "cwd": str(run_cwd),
+                    "exit_code": None,
+                    "stderr_tail": _trim_tail(str(exc)),
+                    "stdout_tail": "",
+                }
+            )
+            continue
+
+        stdout = proc.stdout or ""
+        stderr = proc.stderr or ""
+        stdout_tail = _trim_tail(stdout)
+        stderr_tail = _trim_tail(stderr)
+
+        result: dict[str, Any] = {
+            "ok": False,
+            "result": {},
+            "exit_code": int(proc.returncode),
+            "stderr_tail": stderr_tail,
+            "stdout_tail": stdout_tail,
+            "cmd": cmd,
+            "cwd": str(run_cwd),
+            "attempted": attempted,
+            "error": "",
+        }
+
+        if proc.returncode != 0:
+            result["error"] = _trim_tail(stderr or stdout or "command failed")
+        else:
+            if not stdout.strip():
+                result["error"] = "no json output"
+            else:
+                try:
+                    parsed = json.loads(stdout)
+                except json.JSONDecodeError:
+                    result["error"] = "json parse failed"
+                else:
+                    if not isinstance(parsed, dict):
+                        result["error"] = "json parse failed"
+                    else:
+                        result["ok"] = True
+                        result["result"] = parsed
+
+        if not result["ok"]:
+            log(
+                {
+                    "event": "panel_hygiene_command_failed",
+                    "cmd": cmd,
+                    "rc": int(proc.returncode),
+                    "stderr_tail": stderr_tail,
+                    "stdout_tail": stdout_tail,
+                    "error": result["error"],
+                    "cwd": str(run_cwd),
+                }
+            )
+        return result
+
+    last_attempt = attempted[-1] if attempted else {}
+    error_tail = _trim_tail(
+        str(last_attempt.get("stderr_tail") or "voxera CLI executable not found")
+    )
+    failure = {
+        "ok": False,
+        "result": {},
+        "exit_code": None,
+        "stderr_tail": error_tail,
+        "stdout_tail": "",
+        "cmd": last_attempt.get("cmd", commands[0]),
+        "cwd": str(run_cwd),
+        "attempted": attempted,
+        "error": error_tail,
+    }
+    log(
+        {
+            "event": "panel_hygiene_command_failed",
+            "cmd": failure["cmd"],
+            "rc": None,
+            "stderr_tail": error_tail,
+            "stdout_tail": "",
+            "error": failure["error"],
+            "cwd": str(run_cwd),
+        }
+    )
+    return failure
+
+
+def _write_hygiene_result(queue_root: Path, key: str, result: dict[str, Any]) -> None:
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        payload[key] = result
+        payload["updated_at_ms"] = _now_ms()
+        return payload
+
+    update_health_snapshot(queue_root, _apply)
+
+
 def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     lookup = lookup_job(queue_root, job_id)
     if lookup is None:
@@ -1260,6 +1391,80 @@ def system_bundle(request: Request):
         media_type="application/zip",
         filename=out.name,
     )
+
+
+@app.get("/hygiene", response_class=HTMLResponse)
+def hygiene_page(request: Request):
+    queue_root = _queue_root()
+    health = read_health_snapshot(queue_root)
+    tmpl = templates.get_template("hygiene.html")
+    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    html = tmpl.render(
+        last_prune_result=health.get("last_prune_result"),
+        last_reconcile_result=health.get("last_reconcile_result"),
+        csrf_token=csrf_token,
+    )
+    response = HTMLResponse(content=html)
+    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
+    return response
+
+
+@app.post("/hygiene/prune-dry-run")
+async def hygiene_prune_dry_run(request: Request):
+    await _require_mutation_guard(request)
+    queue_root = _queue_root()
+    run = _run_queue_hygiene_command(queue_root, ["queue", "prune", "--json"])
+    parsed = run["result"]
+    per_bucket = parsed.get("per_bucket") if isinstance(parsed.get("per_bucket"), dict) else {}
+    removed_jobs = int(
+        sum(int((per_bucket.get(b) or {}).get("pruned", 0) or 0) for b in per_bucket)
+    )
+    result = {
+        "ts_ms": _now_ms(),
+        "mode": "dry-run",
+        "ok": bool(run["ok"]),
+        "removed_jobs": 0,
+        "would_remove_jobs": removed_jobs,
+        "removed_sidecars": 0,
+        "reclaimed_bytes": parsed.get("reclaimed_bytes"),
+        "by_bucket": per_bucket,
+        "exit_code": run.get("exit_code"),
+        "cmd": run.get("cmd"),
+        "cwd": run.get("cwd"),
+        "stdout_tail": run.get("stdout_tail", ""),
+    }
+    if run["stderr_tail"]:
+        result["stderr_tail"] = run["stderr_tail"]
+    if not run["ok"]:
+        result["error"] = run["error"]
+    _write_hygiene_result(queue_root, "last_prune_result", result)
+    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=200)
+
+
+@app.post("/hygiene/reconcile")
+async def hygiene_reconcile(request: Request):
+    await _require_mutation_guard(request)
+    queue_root = _queue_root()
+    run = _run_queue_hygiene_command(queue_root, ["queue", "reconcile", "--json"])
+    parsed = run["result"]
+    issue_counts = (
+        parsed.get("issue_counts") if isinstance(parsed.get("issue_counts"), dict) else {}
+    )
+    result = {
+        "ts_ms": _now_ms(),
+        "ok": bool(run["ok"]),
+        "issue_counts": issue_counts,
+        "exit_code": run.get("exit_code"),
+        "cmd": run.get("cmd"),
+        "cwd": run.get("cwd"),
+        "stdout_tail": run.get("stdout_tail", ""),
+    }
+    if run["stderr_tail"]:
+        result["stderr_tail"] = run["stderr_tail"]
+    if not run["ok"]:
+        result["error"] = run["error"]
+    _write_hygiene_result(queue_root, "last_reconcile_result", result)
+    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=200)
 
 
 @app.post("/queue/jobs/{ref}/cancel")
