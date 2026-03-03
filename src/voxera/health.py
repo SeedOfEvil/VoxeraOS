@@ -7,6 +7,58 @@ from pathlib import Path
 from typing import Any
 
 HEALTH_FILE_NAME = "health.json"
+_DEGRADED_THRESHOLD = 3
+
+
+def _normalize_health_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    consecutive_failures = int(normalized.get("consecutive_brain_failures", 0) or 0)
+    normalized["consecutive_brain_failures"] = max(consecutive_failures, 0)
+
+    daemon_state = str(normalized.get("daemon_state") or "healthy").lower()
+    if daemon_state not in {"healthy", "degraded"}:
+        daemon_state = "healthy"
+    normalized["daemon_state"] = daemon_state
+
+    degraded_since_ts = normalized.get("degraded_since_ts")
+    normalized["degraded_since_ts"] = (
+        float(degraded_since_ts) if isinstance(degraded_since_ts, (int, float)) else None
+    )
+
+    degraded_reason = normalized.get("degraded_reason")
+    normalized["degraded_reason"] = str(degraded_reason) if degraded_reason else None
+    return normalized
+
+
+def update_degradation_state(
+    state: dict[str, Any],
+    *,
+    fallback_event: bool,
+    mission_success: bool,
+    now_fn: Callable[[], float] = time.time,
+) -> dict[str, Any]:
+    """Update health degradation fields from fallback/success events."""
+    next_state = _normalize_health_snapshot(state)
+
+    if mission_success:
+        next_state["consecutive_brain_failures"] = 0
+        next_state["daemon_state"] = "healthy"
+        next_state["degraded_since_ts"] = None
+        next_state["degraded_reason"] = None
+        return next_state
+
+    if not fallback_event:
+        return next_state
+
+    next_state["consecutive_brain_failures"] = (
+        int(next_state["consecutive_brain_failures"] or 0) + 1
+    )
+    if int(next_state["consecutive_brain_failures"] or 0) >= _DEGRADED_THRESHOLD:
+        if next_state.get("daemon_state") != "degraded":
+            next_state["degraded_since_ts"] = float(now_fn())
+        next_state["daemon_state"] = "degraded"
+        next_state["degraded_reason"] = "brain_fallbacks"
+    return next_state
 
 
 def health_path(queue_root: Path) -> Path:
@@ -16,12 +68,14 @@ def health_path(queue_root: Path) -> Path:
 def read_health_snapshot(queue_root: Path) -> dict[str, Any]:
     path = health_path(queue_root)
     if not path.exists():
-        return {}
+        return _normalize_health_snapshot({})
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
+        return _normalize_health_snapshot({})
+    if not isinstance(payload, dict):
+        return _normalize_health_snapshot({})
+    return _normalize_health_snapshot(payload)
 
 
 def write_health_snapshot(queue_root: Path, payload: dict[str, Any]) -> None:
@@ -29,7 +83,10 @@ def write_health_snapshot(queue_root: Path, payload: dict[str, Any]) -> None:
     path = health_path(queue_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.write_text(
+        json.dumps(_normalize_health_snapshot(payload), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     tmp.replace(path)
 
 
@@ -39,9 +96,40 @@ def update_health_snapshot(
 ) -> dict[str, Any]:
     current = read_health_snapshot(queue_root)
     updated = updater(dict(current))
-    final_payload = updated if isinstance(updated, dict) else current
+    final_payload = _normalize_health_snapshot(updated if isinstance(updated, dict) else current)
     write_health_snapshot(queue_root, final_payload)
     return final_payload
+
+
+def record_brain_fallback_attempt(
+    queue_root: Path,
+    *,
+    now_fn: Callable[[], float] = time.time,
+) -> dict[str, Any]:
+    now_ms = int(now_fn() * 1000)
+
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        updated = update_degradation_state(
+            payload,
+            fallback_event=True,
+            mission_success=False,
+            now_fn=now_fn,
+        )
+        updated["updated_at_ms"] = now_ms
+        return updated
+
+    return update_health_snapshot(queue_root, _apply)
+
+
+def record_mission_success(queue_root: Path) -> dict[str, Any]:
+    now_ms = int(time.time() * 1000)
+
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        updated = update_degradation_state(payload, fallback_event=False, mission_success=True)
+        updated["updated_at_ms"] = now_ms
+        return updated
+
+    return update_health_snapshot(queue_root, _apply)
 
 
 def increment_health_counter(

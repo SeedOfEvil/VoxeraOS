@@ -644,3 +644,22 @@ This file is the single, persistent project memory for Codex-assisted work.
 - **Robustness:** Health snapshot writer now ensures parent directories exist before atomic replace.
 - **Tests:** Added panel auth lockout tests for threshold trigger, subsequent block, reset behavior, and health snapshot state.
 - **Commands run:** `ruff format .`, `ruff check .`, `pytest`, `make merge-readiness-check`.
+
+
+## 2026-03-03 — PR #TBD — feat(P3.1): daemon_state degraded after 3 consecutive brain fallbacks
+- Summary:
+  - Added degradation state machine in `src/voxera/health.py` (`update_degradation_state`) and normalized health snapshot defaults so `consecutive_brain_failures` + `daemon_state` are always present, with nullable `degraded_since_ts`/`degraded_reason`.
+  - Wired fallback streak increments into planner fallback transition handling (`record_brain_fallback_attempt`) and reset-on-success into queue DONE transitions (`record_mission_success`) including approval-resume completion path.
+  - Expanded deterministic tests in `tests/test_brain_fallback.py` for threshold, reset, persistence, timestamp semantics, and snapshot integration.
+  - Updated `docs/ROADMAP.md`, `docs/ROADMAP_0.1.6.md`, and `docs/ops.md` to mark/document shipped P3.1 behavior and operator interpretation.
+- Validation:
+  - `source .venv/bin/activate`
+  - `python -m pip install -e .`
+  - `ruff format .`
+  - `ruff check . --fix`
+  - `make merge-readiness-check`
+  - `pytest`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Fallback streak increments once per fallback transition event recorded by planner attempts; mission success clears state only when a job reaches `done/`.

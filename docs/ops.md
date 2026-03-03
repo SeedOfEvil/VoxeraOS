@@ -911,9 +911,19 @@ Panel home (`/`) shows a collapsible **Daemon Health** widget. Data source: `not
 | **Last brain fallback** | `last_fallback_reason`, `last_fallback_from`, `last_fallback_to`, `last_fallback_ts_ms` | Tier transition summary (e.g. `primary → fast, TIMEOUT`) or "no recent fallbacks". |
 | **Startup recovery** | `last_startup_recovery_ts`, `last_startup_recovery_counts` | Count of jobs failed + orphans quarantined on last daemon start; "clean" when zero. |
 | **Last shutdown** | `last_shutdown_ts`, `last_shutdown_reason`, `last_shutdown_outcome` | Outcome of last daemon stop: `clean_shutdown` or `failed_shutdown`; includes timestamp. |
-| **Daemon state** | `daemon_state` | `healthy` (default) or `degraded` (future: set by P3.1 when consecutive failures ≥ 3). |
+| **Daemon state** | `daemon_state` | `healthy` (default) or `degraded` after 3 consecutive brain fallback events. |
 
 Neutral placeholders are shown for any field that is null/empty (fresh install or daemon not yet run).
+
+Additional degradation fields in `health.json`:
+- `consecutive_brain_failures` (int): increments once per fallback plan attempt, resets to `0` on successful mission completion.
+- `degraded_since_ts` (float\|null): epoch seconds when the daemon first entered degraded state for the current streak.
+- `degraded_reason` (str\|null): currently `brain_fallbacks` when degraded from fallback streaks.
+
+Operator interpretation:
+- `daemon_state=healthy` + `consecutive_brain_failures=0`: normal/cleared state.
+- non-zero `consecutive_brain_failures` + `healthy`: warning streak below threshold.
+- `daemon_state=degraded`: at least 3 consecutive fallback attempts have occurred; investigate provider health/credentials/network before queue pressure increases.
 
 ### Data freshness
 

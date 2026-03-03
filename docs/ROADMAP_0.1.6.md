@@ -101,12 +101,12 @@ Health degradation (P3.x) is deferred to v0.2.
 
 ### Pillar 3 — Health degradation + long-run daemon behavior (DEFERRED to v0.2)
 
-#### P3.1 — Health degradation state tracking (PLANNED)
-- Track consecutive brain fallback count in `health.json` under `consecutive_brain_failures`.
-- When `consecutive_brain_failures >= 3`, set `daemon_state = "degraded"` in health snapshot.
-- When a mission completes successfully, reset counter and restore `daemon_state = "healthy"`.
-- Surface `daemon_state` in `voxera queue health` and `voxera doctor --quick`.
-- Acceptance: 3 consecutive fallback events set state to `degraded`; success resets.
+#### P3.1 — Health degradation state tracking (SHIPPED)
+- `health.json` always includes `consecutive_brain_failures` (int) and `daemon_state` (`healthy`/`degraded`).
+- Optional nullable context fields: `degraded_since_ts`, `degraded_reason`.
+- After 3 consecutive fallback events, snapshot state becomes `daemon_state = "degraded"`.
+- On successful mission completion (`done/` transition), the counter resets to `0` and state returns to `healthy`.
+- Deterministic tests cover thresholding, reset behavior, and timestamp semantics.
 
 #### P3.2 — Brain backoff on repeated failures (PLANNED)
 - Add configurable delay between brain calls when consecutive fallbacks exceed a threshold.
@@ -201,7 +201,7 @@ Health degradation (P3.x) is deferred to v0.2.
 - ✅ Panel recovery page (`/recovery`) lists `recovery/` and `quarantine/` sessions/loose files with metadata and per-item ZIP download (P2.3).
 
 ### Health degradation (DEFERRED to v0.2)
-- ⏳ 3 consecutive brain fallbacks set `daemon_state = "degraded"` in health snapshot (P3.1).
+- ✅ 3 consecutive brain fallbacks set `daemon_state = "degraded"` in health snapshot; success resets counter/state (P3.1).
 - ⏳ Backoff delays applied between brain calls after repeated fallbacks (P3.2).
 - ⏳ `voxera queue health` shows last shutdown outcome with job and reason (P3.3).
 
