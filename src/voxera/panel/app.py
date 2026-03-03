@@ -741,26 +741,37 @@ def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, A
         stderr = proc.stderr or ""
         stdout_tail = _trim_tail(stdout)
         stderr_tail = _trim_tail(stderr)
-        try:
-            parsed = json.loads(stdout) if stdout.strip() else {}
-        except json.JSONDecodeError:
-            parsed = {}
-        if not isinstance(parsed, dict):
-            parsed = {}
 
-        ok = proc.returncode == 0 and bool(parsed)
-        result = {
-            "ok": ok,
-            "result": parsed,
+        result: dict[str, Any] = {
+            "ok": False,
+            "result": {},
             "exit_code": int(proc.returncode),
             "stderr_tail": stderr_tail,
             "stdout_tail": stdout_tail,
             "cmd": cmd,
             "cwd": str(run_cwd),
             "attempted": attempted,
-            "error": "" if ok else _trim_tail(stderr or stdout or "command failed"),
+            "error": "",
         }
-        if not ok:
+
+        if proc.returncode != 0:
+            result["error"] = _trim_tail(stderr or stdout or "command failed")
+        else:
+            if not stdout.strip():
+                result["error"] = "no json output"
+            else:
+                try:
+                    parsed = json.loads(stdout)
+                except json.JSONDecodeError:
+                    result["error"] = "json parse failed"
+                else:
+                    if not isinstance(parsed, dict):
+                        result["error"] = "json parse failed"
+                    else:
+                        result["ok"] = True
+                        result["result"] = parsed
+
+        if not result["ok"]:
             log(
                 {
                     "event": "panel_hygiene_command_failed",
@@ -768,6 +779,7 @@ def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, A
                     "rc": int(proc.returncode),
                     "stderr_tail": stderr_tail,
                     "stdout_tail": stdout_tail,
+                    "error": result["error"],
                     "cwd": str(run_cwd),
                 }
             )
@@ -794,6 +806,8 @@ def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, A
             "cmd": failure["cmd"],
             "rc": None,
             "stderr_tail": error_tail,
+            "stdout_tail": "",
+            "error": failure["error"],
             "cwd": str(run_cwd),
         }
     )

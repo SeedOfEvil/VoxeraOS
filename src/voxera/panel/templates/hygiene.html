@@ -72,7 +72,7 @@
         if (!res.ok || !data.ok) {
           const result = data.result || {};
           const rc = result.exit_code ?? 'n/a';
-          const firstLine = String(result.stderr_tail || result.error || 'request failed').split('\n')[0];
+          const firstLine = String(result.error || result.stderr_tail || 'request failed').split('\n')[0];
           throw new Error(`rc=${rc} ${firstLine}`.trim());
         }
         render(data.result);

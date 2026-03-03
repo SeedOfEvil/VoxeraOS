@@ -1300,3 +1300,49 @@ def test_hygiene_reconcile_failure_includes_debug_fields_and_writes_health(tmp_p
     health = json.loads((fake_home / "VoxeraOS" / "notes" / "queue" / "health.json").read_text())
     assert health["last_reconcile_result"]["exit_code"] == 1
     assert "reconcile failed" in health["last_reconcile_result"]["stderr_tail"]
+
+
+def test_hygiene_prune_rc0_empty_stdout_is_classified(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = "ran but no json"
+
+    monkeypatch.setattr(panel_module.subprocess, "run", lambda *args, **kwargs: _Proc())
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/hygiene/prune-dry-run", data={})
+
+    assert res.status_code == 500
+    payload = res.json()
+    assert payload["ok"] is False
+    assert payload["result"]["error"] == "no json output"
+    assert payload["result"]["exit_code"] == 0
+    assert payload["result"]["stderr_tail"] == "ran but no json"
+
+
+def test_hygiene_reconcile_rc0_invalid_json_is_classified(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    class _Proc:
+        returncode = 0
+        stdout = "{not-json}"
+        stderr = ""
+
+    monkeypatch.setattr(panel_module.subprocess, "run", lambda *args, **kwargs: _Proc())
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/hygiene/reconcile", data={})
+
+    assert res.status_code == 500
+    payload = res.json()
+    assert payload["ok"] is False
+    assert payload["result"]["error"] == "json parse failed"
+    assert payload["result"]["exit_code"] == 0
+    assert payload["result"]["stdout_tail"] == "{not-json}"
