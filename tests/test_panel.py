@@ -1263,7 +1263,7 @@ def test_hygiene_prune_dry_run_failure_includes_debug_fields_and_writes_health(
     client = TestClient(panel_module.app)
     res = _authed_csrf_request(client, "post", "/hygiene/prune-dry-run", data={})
 
-    assert res.status_code == 500
+    assert res.status_code == 200
     payload = res.json()
     assert payload["ok"] is False
     assert payload["result"]["error"]
@@ -1290,7 +1290,7 @@ def test_hygiene_reconcile_failure_includes_debug_fields_and_writes_health(tmp_p
     client = TestClient(panel_module.app)
     res = _authed_csrf_request(client, "post", "/hygiene/reconcile", data={})
 
-    assert res.status_code == 500
+    assert res.status_code == 200
     payload = res.json()
     assert payload["ok"] is False
     assert payload["result"]["error"]
@@ -1317,7 +1317,7 @@ def test_hygiene_prune_rc0_empty_stdout_is_classified(tmp_path, monkeypatch):
     client = TestClient(panel_module.app)
     res = _authed_csrf_request(client, "post", "/hygiene/prune-dry-run", data={})
 
-    assert res.status_code == 500
+    assert res.status_code == 200
     payload = res.json()
     assert payload["ok"] is False
     assert payload["result"]["error"] == "no json output"
@@ -1340,7 +1340,7 @@ def test_hygiene_reconcile_rc0_invalid_json_is_classified(tmp_path, monkeypatch)
     client = TestClient(panel_module.app)
     res = _authed_csrf_request(client, "post", "/hygiene/reconcile", data={})
 
-    assert res.status_code == 500
+    assert res.status_code == 200
     payload = res.json()
     assert payload["ok"] is False
     assert payload["result"]["error"] == "json parse failed"

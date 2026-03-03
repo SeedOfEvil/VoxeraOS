@@ -601,3 +601,12 @@ def test_fix_yes_quarantines_symlink_orphan_without_following_target(tmp_path: P
         assert data["fix_counts"]["orphan_sidecars_quarantined"] == 1
     finally:
         external_target.unlink(missing_ok=True)
+
+
+def test_reconcile_json_output_non_empty_with_ts(tmp_path: Path) -> None:
+    exit_code, data = _run_reconcile(tmp_path)
+    assert exit_code == 0
+    assert isinstance(data, dict)
+    assert data
+    assert "issue_counts" in data
+    assert "ts_ms" in data

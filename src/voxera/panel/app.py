@@ -1438,8 +1438,7 @@ async def hygiene_prune_dry_run(request: Request):
     if not run["ok"]:
         result["error"] = run["error"]
     _write_hygiene_result(queue_root, "last_prune_result", result)
-    status_code = 200 if run["ok"] else 500
-    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=status_code)
+    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=200)
 
 
 @app.post("/hygiene/reconcile")
@@ -1465,8 +1464,7 @@ async def hygiene_reconcile(request: Request):
     if not run["ok"]:
         result["error"] = run["error"]
     _write_hygiene_result(queue_root, "last_reconcile_result", result)
-    status_code = 200 if run["ok"] else 500
-    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=status_code)
+    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=200)
 
 
 @app.post("/queue/jobs/{ref}/cancel")
