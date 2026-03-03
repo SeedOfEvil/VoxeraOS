@@ -185,7 +185,7 @@ Previously tracked items now resolved:
 
 The panel `/hygiene` actions are intentionally constrained:
 
-- They invoke local CLI subprocess commands (`voxera queue prune --dry-run --json` and `voxera queue reconcile --json`) rather than daemon RPC calls.
+- They invoke local CLI subprocess commands (`voxera queue prune --json` (dry-run by default, no `--yes`) and `voxera queue reconcile --json`) rather than daemon RPC calls.
 - Prune is forced to dry-run/report mode only in panel flow; no deletion is performed.
 - Reconcile endpoint runs report-only analysis (`--json` without fix/apply flags).
 - Results are persisted into `notes/queue/health.json` (`last_prune_result`, `last_reconcile_result`) using the same atomic health snapshot write path used elsewhere.

@@ -1193,6 +1193,7 @@ def test_hygiene_prune_dry_run_endpoint_writes_health(tmp_path, monkeypatch):
     assert payload["result"]["ts_ms"] > 0
     assert captured["cmd"][0] == panel_module.sys.executable
     assert captured["cmd"][1:3] == ["-m", "voxera.cli"]
+    assert "--dry-run" not in captured["cmd"]
     assert payload["result"]["cwd"] == str(captured["cwd"])
 
     health = json.loads((fake_home / "VoxeraOS" / "notes" / "queue" / "health.json").read_text())

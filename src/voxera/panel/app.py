@@ -1413,7 +1413,7 @@ def hygiene_page(request: Request):
 async def hygiene_prune_dry_run(request: Request):
     await _require_mutation_guard(request)
     queue_root = _queue_root()
-    run = _run_queue_hygiene_command(queue_root, ["queue", "prune", "--dry-run", "--json"])
+    run = _run_queue_hygiene_command(queue_root, ["queue", "prune", "--json"])
     parsed = run["result"]
     per_bucket = parsed.get("per_bucket") if isinstance(parsed.get("per_bucket"), dict) else {}
     removed_jobs = int(
