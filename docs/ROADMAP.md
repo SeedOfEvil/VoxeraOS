@@ -1,12 +1,18 @@
 # Roadmap
 
-## Current baseline — post Alpha v0.1.5 (active development)
+## Current baseline — post Alpha v0.1.6 (active development)
+
+**Released in v0.1.6:**
+- Security hardening: goal sanitization + 2,000-char cap, `[USER DATA START]`/`[USER DATA END]` prompt boundaries, panel auth lockout (10 attempts/60s window → HTTP 429 + `Retry-After: 60`).
+- Ops visibility: panel Daemon Health widget (health.json-sourced, no daemon calls), panel `/hygiene` page (prune dry-run + reconcile trigger, results in health.json).
+- `sandbox.exec` argv canonicalization (`canonicalize_argv`): `command`/`argv`/`cmd` aliases, shlex.split strings, strip empty tokens, fail-fast on empty argv.
+- Deterministic terminal demo skill (`system.terminal_run_once`) + deterministic planner route.
+- OpenRouter invisible attribution headers (`voxeraos.ca` + `VoxeraOS`; invisible defaults; overrides preserved).
+- Reliability: e2e_golden4 approval hang fix (filesystem-based detection, phase timeouts, diagnostics).
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.
 - `artifacts_retention_days` / `artifacts_retention_max_count` in runtime config + env vars.
-
-**Shipped since v0.1.5 (unreleased, in codebase):**
 - Daemon reliability: single-writer lock hardening, graceful SIGTERM shutdown with structured sidecar,
   deterministic startup recovery with orphan quarantine.
 - Queue hygiene toolchain: `voxera queue prune` (terminal buckets) + `voxera queue reconcile`
@@ -30,46 +36,66 @@ See `docs/ROADMAP_0.1.6.md` for the full planned scope of the upcoming v0.1.6 re
 
 ---
 
-## Active work — v0.1.6 build-out
+## Active work — v0.2 build-out
 
 This is a solo project. Goals are sized for daily or multi-day sessions, not sprints.
 Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 
-### Shipped so far (since v0.1.5)
+### All v0.1.6 items shipped
 
-- ✅ Goal string sanitization + 2,000-char preflight cap (planner hardening; tests + docs)
-- ✅ OpenRouter automatic app attribution headers (`voxeraos.ca` + `VoxeraOS`; invisible defaults; overrides preserved)
-- ✅ Terminal hello-world deterministic demo skill (`system.terminal_run_once`)
+- ✅ Goal string sanitization + 2,000-char preflight cap — PR #85
+- ✅ `[USER DATA START]`/`[USER DATA END]` structural delimiters in planner preamble — PR #88
+- ✅ Panel auth lockout: 10 failures/60s window → HTTP 429 + `Retry-After: 60` — PR #89
+- ✅ Panel Daemon Health widget (health.json-sourced, no daemon RPC) — PR #92
+- ✅ Panel `/hygiene` page (prune dry-run + reconcile trigger, results in health.json) — PR #93
+- ✅ `sandbox.exec` argv canonicalization (`canonicalize_argv`) — PR #91
+- ✅ Terminal hello-world deterministic demo skill (`system.terminal_run_once`) — PR #84
+- ✅ OpenRouter automatic app attribution headers — PR #86
+- ✅ e2e_golden4 approval hang fix (filesystem-based detection, phase timeouts, diagnostics) — PR #90
 
-### Security hardening (do first — closes highest-risk surface)
+### Support/Infra shipped (reliability work)
+
+**PR #90 — e2e_golden4 approval hang fix (SHIPPED)**
+- [x] Replaced CLI-table-parsing approval detection with filesystem-based artifact check.
+- [x] Added PHASE A (detect approval, 120s timeout) and PHASE B (wait for lifecycle, 300s timeout).
+- [x] Added `dump_diag` helper for actionable diagnostics on failure.
+- [x] Fixed settle loop: exits non-zero with clear summary on timeout.
+
+**PR #91 — sandbox.exec canonicalize_argv (SHIPPED)**
+- [x] `canonicalize_argv(args)` as single source of truth for sandbox command normalization.
+- [x] Accepts `command`/`argv`/`cmd` priority-order aliases.
+- [x] String values tokenized with `shlex.split`; empty tokens silently stripped.
+- [x] Fails fast with actionable error on empty/missing/non-string argv.
+- [x] Two-layer defense: `PodmanSandboxRunner.run()` + `canonicalize_args()` pre-flight.
+
+### Security hardening (SHIPPED in v0.1.6)
 
 **P1.1 — Goal string sanitization (SHIPPED)**
 - [x] Sanitize user-controlled goal strings before embedding in LLM prompt.
 - [x] Reject goals over 2,000 characters with a clear, actionable error.
 - [x] Strip control characters; normalize whitespace.
-- [ ] Add Unicode edge-case tests (injection-shaped and overlength tests are already complete).
 
-**P1.2 — Structural delimiters in preamble (PLANNED)**
-- [ ] Wrap user content with `[USER DATA START]` / `[USER DATA END]` markers in planner preamble.
-- [ ] Update `src/voxera/core/planner_context.py` to emit delimiters.
-- [ ] Verify existing planner tests pass; add a test confirming delimiter presence.
-- [ ] Update `docs/SECURITY.md` known gaps to mark prompt injection as FIXED.
+**P1.2 — Structural delimiters in preamble (SHIPPED)**
+- [x] Wrap user content with `[USER DATA START]` / `[USER DATA END]` markers in planner preamble.
+- [x] Updated `src/voxera/core/planner_context.py` to emit delimiters.
+- [x] Existing planner tests pass; added test confirming delimiter presence.
+- [x] Updated `docs/SECURITY.md` to document prompt boundary control.
 
-**P1.3 — Panel auth rate limiting (PLANNED)**
-- [ ] Track failed Basic auth attempts per IP in `health.json`.
-- [ ] Return 429 + `Retry-After: 60` after 5 failures within 60 seconds.
-- [ ] Emit `panel_auth_lockout` audit events (ip, attempt_count).
-- [ ] Surface lockout status in `voxera queue health` and `voxera doctor --quick`.
+**P1.3 — Panel auth rate limiting (SHIPPED)**
+- [x] Track failed Basic auth attempts per IP in `health.json`.
+- [x] Return 429 + `Retry-After: 60` after 10 failures within 60 seconds.
+- [x] Emit `panel_auth_lockout` audit events (ip, attempt_count).
+- [x] Surface lockout status in `voxera queue health` and `voxera doctor --quick`.
 
-### Ops visibility in panel (highest user-visible value)
+### Ops visibility in panel (SHIPPED in v0.1.6)
 
-**P2.1 — Panel home health widget (SHIPPED)**
+**P2.1 — Panel home health widget (SHIPPED — PR #92)**
 - [x] Add collapsible "Daemon Health" widget to panel home sourced from `health.json`.
 - [x] Fields: lock status, last fallback (reason/tier/ts), last recovery (job/orphan counts), last shutdown.
 - [x] Neutral display when fields are null/empty (no provider config, fresh install).
 - [x] Daemon state badge from health snapshot with `healthy` default and future `degraded` support.
 
-**P2.2 — Panel hygiene status + trigger page (SHIPPED)**
+**P2.2 — Panel hygiene status + trigger page (SHIPPED — PR #93)**
 - [x] Added `/hygiene` panel page showing last prune result + last reconcile result.
 - [x] "Run prune (dry-run)" and "Run reconcile" buttons that surface results inline.
 - [x] Store last results in `health.json` under `last_prune_result` / `last_reconcile_result`.
@@ -169,16 +195,21 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 
 ---
 
-## v0.1.6 milestone (target: 2–3 weeks out)
+## v0.1.6 milestone (SHIPPED)
 
-See `docs/ROADMAP_0.1.6.md` for full planned scope and acceptance criteria.
+See `docs/ROADMAP_0.1.6.md` for full shipped scope and acceptance criteria.
 
-Success metrics:
-- Injection-shaped goals are rejected / sanitized before reaching the LLM.
-- Panel home shows full daemon health at a glance (lock/fallback/recovery/shutdown/state).
-- 3+ consecutive brain failures trigger degraded state; backoff delays applied.
-- `make golden-check` passes in CI; `make release-check` validates all versioned surfaces.
-- `voxera skills validate` surfaces broken manifests; skills health visible in doctor.
+Delivered:
+- ✅ Injection-shaped goals are rejected / sanitized before reaching the LLM (+ prompt boundaries).
+- ✅ Panel home shows full daemon health at a glance (lock/fallback/recovery/shutdown/state).
+- ✅ Panel auth lockout prevents brute-force on operator password.
+- ✅ `/hygiene` page surfaces prune + reconcile results and trigger buttons.
+- ✅ `sandbox.exec` argv canonicalization prevents malformed command execution.
+
+Not in v0.1.6 scope (carried to v0.2):
+- 3+ consecutive brain failures triggering degraded state (P3.x).
+- `make golden-check` CI gate (P4.x).
+- `voxera skills validate` command (P6.x).
 
 ---
 
@@ -227,7 +258,19 @@ Audio stack is currently a placeholder in `src/voxera/audio/`.
 
 ---
 
-## Recently completed (post v0.1.5, pre v0.1.6)
+## Recently completed (v0.1.6 release)
+
+- Goal sanitization + 2,000-char cap: injection-shaped goals rejected before any brain calls (PR #85).
+- `[USER DATA START]`/`[USER DATA END]` prompt boundaries: structural separation of user data in planner preamble (PR #88).
+- Panel auth lockout: 10 failures/60s → HTTP 429 + `Retry-After: 60` + audit events (PR #89).
+- Panel Daemon Health widget: lock status, fallback, recovery, shutdown from `health.json` only (PR #92).
+- Panel `/hygiene` page: prune dry-run + reconcile trigger; results persisted to `health.json` (PR #93).
+- `sandbox.exec` argv canonicalization: `command`/`argv`/`cmd` aliases, shlex.split, fail-fast (PR #91).
+- `system.terminal_run_once` deterministic demo skill + deterministic planner route (PR #84).
+- OpenRouter invisible attribution headers (`voxeraos.ca` + `VoxeraOS`) (PR #86).
+- e2e_golden4 approval hang fix: filesystem-based detection, PHASE A/B timeouts, diagnostics (PR #90).
+
+## Completed in v0.1.5 (archived)
 
 - Daemon lock hardening: single-writer `flock`-based lock with PID validation and stale detection.
 - Graceful SIGTERM shutdown: in-flight job marked `failed/` with `reason=shutdown`, sidecar written.

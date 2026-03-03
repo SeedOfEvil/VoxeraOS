@@ -1,25 +1,29 @@
-# Voxera OS Alpha v0.1.6 — Security Hardening + Ops Visibility + Health Degradation (IN PROGRESS)
+# Voxera OS Alpha v0.1.6 — Security Hardening + Ops Visibility (SHIPPED)
 
-**Status: in progress. Some items shipped; remaining items planned.**
+**Status: shipped. See `docs/ROADMAP.md` for the v0.2 active build-out.**
 
 For active daily-goal breakdown, see `docs/ROADMAP.md`.
 For the previous shipped release, see `docs/ROADMAP_0.1.5.md`.
 
 ---
 
-## Proposed scope for v0.1.6
+## Shipped scope for v0.1.6
 
-v0.1.6 targets three pillars: **security hardening** (close the prompt injection surface),
-**ops visibility** (surface the full daemon state in the panel), and **health degradation**
-(make the daemon self-aware of sustained failure). Together these complete the control-plane
-reliability story before the v0.3 voice expansion.
+v0.1.6 delivered two pillars: **security hardening** (close the prompt injection surface and
+panel brute-force surface) and **ops visibility** (surface full daemon state in the panel).
+Health degradation (P3.x) is deferred to v0.2.
 
-### Shipped so far (since v0.1.5)
+### All shipped items (v0.1.6)
 
-- ✅ Goal string sanitization + 2,000-char preflight cap (planner hardening; tests + docs)
-- ✅ OpenRouter automatic app attribution headers (`voxeraos.ca` + `VoxeraOS`; invisible defaults; overrides preserved)
-- ✅ Terminal hello-world deterministic demo skill (`system.terminal_run_once`)
-- ✅ `sandbox.exec` argv canonicalisation (`canonicalize_argv`): accept `command`/`argv`/`cmd` aliases, shlex.split strings, strip empty tokens, fail fast with actionable error on empty argv
+- ✅ Goal string sanitization + 2,000-char preflight cap — PR #85
+- ✅ `[USER DATA START]`/`[USER DATA END]` structural prompt boundaries — PR #88
+- ✅ Panel auth lockout: 10 failures/60s → HTTP 429 + `Retry-After: 60` + audit events — PR #89
+- ✅ Panel Daemon Health widget (health.json-sourced, no daemon RPC calls) — PR #92
+- ✅ Panel `/hygiene` page (prune dry-run + reconcile trigger, results in health.json) — PR #93
+- ✅ `sandbox.exec` argv canonicalization (`canonicalize_argv`) — PR #91
+- ✅ Deterministic terminal demo skill (`system.terminal_run_once`) + planner route — PR #84
+- ✅ OpenRouter automatic attribution headers (`voxeraos.ca` + `VoxeraOS`) — PR #86
+- ✅ e2e_golden4 approval hang fix (filesystem-based detection, phase timeouts, diagnostics) — PR #90
 
 ---
 
@@ -31,11 +35,11 @@ reliability story before the v0.3 voice expansion.
 - Strip control characters and normalize whitespace to prevent prompt formatting tricks.
 - Acceptance: `pytest tests/test_mission_planner.py` includes injection-shaped + overlength cases.
 
-#### P1.2 — Structural `[USER DATA: ...]` delimiters in planner preamble (PLANNED)
-- Wrap user-provided content in `[USER DATA START]` / `[USER DATA END]` delimiters in the preamble.
+#### P1.2 — Structural `[USER DATA: ...]` delimiters in planner preamble (SHIPPED — PR #88)
+- Wrapped user-provided content in `[USER DATA START]` / `[USER DATA END]` delimiters in the preamble.
 - Structural separation prevents goal text from being interpreted as system instructions.
-- Document delimiter format in `docs/SECURITY.md`.
-- Acceptance: planner preamble output includes delimiter markers; existing tests unaffected.
+- Documented delimiter format in `docs/SECURITY.md`.
+- Acceptance: planner preamble output includes delimiter markers; existing tests pass.
 
 #### P1.3 — Panel auth rate limiting (SHIPPED)
 - Track failed Basic auth attempts per IP in the health snapshot.
@@ -77,7 +81,25 @@ reliability story before the v0.3 voice expansion.
 
 ---
 
-### Pillar 3 — Health degradation + long-run daemon behavior
+### Support/Infra shipped (reliability work)
+
+#### PR #90 — e2e_golden4 approval hang fix (SHIPPED)
+- Replaced CLI-table-parsing approval detection with direct filesystem artifact check (`pending/approvals/job-e2e-open.approval.json`).
+- Introduced PHASE A (detect approval state, 120s timeout) and PHASE B (wait for lifecycle advance, 300s timeout).
+- Added `dump_diag` helper: prints queue status, approvals list, and directory listings on any timeout or failure.
+- Fixed settle loop to exit non-zero with clear summary when done-count not reached.
+- Added `PANEL_PORT` detection via `VOXERA_PANEL_PORT` env var with fallback to default 8844.
+
+#### PR #91 — sandbox.exec canonicalize_argv (SHIPPED)
+- `canonicalize_argv(args)` as single source of truth in `src/voxera/skills/arg_normalizer.py`.
+- Accepts keys in priority order: `command` (canonical), `argv`, `cmd` (compatibility aliases).
+- String values tokenized with `shlex.split` (no implicit shell wrapper).
+- Empty/whitespace-only tokens silently stripped; non-string tokens raise `ValueError` with actionable message.
+- Two-layer defense: `PodmanSandboxRunner.run()` (execution path) + `canonicalize_args("sandbox.exec")` (pre-flight).
+
+---
+
+### Pillar 3 — Health degradation + long-run daemon behavior (DEFERRED to v0.2)
 
 #### P3.1 — Health degradation state tracking (PLANNED)
 - Track consecutive brain fallback count in `health.json` under `consecutive_brain_failures`.
@@ -101,7 +123,7 @@ reliability story before the v0.3 voice expansion.
 
 ---
 
-### Pillar 4 — CI hardening & release packaging
+### Pillar 4 — CI hardening & release packaging (DEFERRED to v0.2)
 
 #### P4.1 — Golden file validation CI job (PLANNED)
 - Add `tests/golden/` directory with committed dry-run output golden files.
@@ -120,7 +142,7 @@ reliability story before the v0.3 voice expansion.
 
 ---
 
-### Pillar 5 — Provider / model UX
+### Pillar 5 — Provider / model UX (DEFERRED to v0.2)
 
 #### P5.1 — Keyring credential workflow improvements in setup wizard (PLANNED)
 - Show keyring availability status at setup start ("keyring: available" / "keyring: unavailable, using file fallback").
@@ -147,7 +169,7 @@ reliability story before the v0.3 voice expansion.
 
 ---
 
-### Pillar 6 — New utility commands
+### Pillar 6 — New utility commands (DEFERRED to v0.2)
 
 #### P6.1 — `voxera skills validate` command (PLANNED)
 - New command that eagerly validates all skill manifests (without launching the daemon).
@@ -165,36 +187,36 @@ reliability story before the v0.3 voice expansion.
 
 ---
 
-## Acceptance criteria for v0.1.6
+## Acceptance criteria for v0.1.6 (all met)
 
 ### Security
 - ✅ Goal strings over 2,000 characters are rejected with a clear error before reaching the LLM.
-- ⏳ Planner preamble includes `[USER DATA START]` / `[USER DATA END]` delimiters.
-- ✅ 10 rapid failed panel auth attempts trigger 429 lockout with `Retry-After: 60` header and per-IP lockout tracking in health snapshot.
-- ⏳ Lockout events appear in audit log.
+- ✅ Planner preamble includes `[USER DATA START]` / `[USER DATA END]` delimiters (PR #88).
+- ✅ 10 rapid failed panel auth attempts trigger 429 lockout with `Retry-After: 60` header and per-IP lockout tracking in health snapshot (PR #89).
+- ✅ Lockout events appear in audit log (`panel_auth_lockout` events).
 
 ### Ops visibility
-- ✅ Panel home shows daemon health widget with lock/fallback/recovery/shutdown fields.
-- ✅ Panel hygiene page (`/hygiene`) now surfaces last prune + reconcile results and trigger buttons with async in-page updates.
-- ⏳ Panel recovery page lists `recovery/` and `quarantine/` contents.
+- ✅ Panel home shows daemon health widget with lock/fallback/recovery/shutdown fields (PR #92).
+- ✅ Panel hygiene page (`/hygiene`) surfaces last prune + reconcile results and trigger buttons with async in-page updates (PR #93).
+- ⏳ Panel recovery page lists `recovery/` and `quarantine/` contents — DEFERRED to v0.2 (P2.3).
 
-### Health degradation
-- ⏳ 3 consecutive brain fallbacks set `daemon_state = "degraded"` in health snapshot.
-- ⏳ Backoff delays applied between brain calls after repeated fallbacks.
-- ⏳ `voxera queue health` shows last shutdown outcome with job and reason.
+### Health degradation (DEFERRED to v0.2)
+- ⏳ 3 consecutive brain fallbacks set `daemon_state = "degraded"` in health snapshot (P3.1).
+- ⏳ Backoff delays applied between brain calls after repeated fallbacks (P3.2).
+- ⏳ `voxera queue health` shows last shutdown outcome with job and reason (P3.3).
 
-### CI + packaging
-- ⏳ `make golden-check` passes; fails on planner context drift.
-- ⏳ `make release-check` validates all versioned surfaces.
+### CI + packaging (DEFERRED to v0.2)
+- ⏳ `make golden-check` passes; fails on planner context drift (P4.1).
+- ⏳ `make release-check` validates all versioned surfaces (P4.2).
 
-### Provider UX
-- ⏳ `voxera setup` shows keyring status and tests credentials before saving.
-- ⏳ `voxera setup --profile <name>` applies preset without interactive prompts.
-- ⏳ Legacy placeholder OpenRouter defaults auto-upgrade to current attribution defaults while preserving real overrides.
+### Provider UX (DEFERRED to v0.2)
+- ⏳ `voxera setup` shows keyring status and tests credentials before saving (P5.1).
+- ⏳ `voxera setup --profile <name>` applies preset without interactive prompts (P5.2).
+- ⏳ Legacy placeholder OpenRouter defaults auto-upgrade to current attribution defaults (P5.3).
 
-### Utility commands
-- ⏳ `voxera skills validate` surfaces broken manifests; `voxera doctor` includes skill health.
-- ⏳ LLM rate limiter enforces configured RPM; `brain_rate_limited` events appear in audit.
+### Utility commands (DEFERRED to v0.2)
+- ⏳ `voxera skills validate` surfaces broken manifests; `voxera doctor` includes skill health (P6.1).
+- ⏳ LLM rate limiter enforces configured RPM; `brain_rate_limited` events appear in audit (P6.2).
 
 ---
 

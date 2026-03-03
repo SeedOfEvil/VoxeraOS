@@ -9,7 +9,7 @@ When using OpenRouter via the OpenAI-compatible adapter, VoxeraOS sends `HTTP-Re
 | Threat | Risk | Mitigated? |
 |---|---|---|
 | Accidental destructive actions (rm, installs, firewall changes) | High | ✅ Policy gates + approval workflow |
-| Prompt injection via user-controlled content | High | ✅ Goal strings sanitized + 2,000-char cap before planning (PR #83) |
+| Prompt injection via user-controlled content | High | ✅ Goal strings sanitized + 2,000-char cap before planning (PR #85) + `[USER DATA START]`/`[USER DATA END]` prompt boundaries (PR #88) |
 | Secret leakage (API keys, tokens) | High | ✅ Keyring + 0600 fallback; redacted in config show/snapshot |
 | Over-permissioned skills | High | ✅ Capability declarations + policy engine |
 | Panel auth brute force | Medium | ✅ Per-IP failed-auth lockout (10 attempts / 60s) with HTTP 429 + `Retry-After: 60` + audit/health surfaces |
@@ -144,26 +144,29 @@ and `voxera doctor --quick`.
 
 ## Known gaps (being tracked in ROADMAP.md)
 
-### Planner goal-string hardening (FIXED — PR #83)
+### Planner goal-string hardening (FIXED — PR #85 + PR #88)
 - Goal inputs are rejected when longer than 2,000 characters before any planner brain call.
 - Goal text embedded in planner prompts is sanitized by stripping ASCII control chars (`0x00-0x1F`, `0x7F`).
 - Prompt embedding normalizes whitespace (collapse runs + trim ends) so planner sees stable user input.
+- User goal text is structurally isolated with `[USER DATA START]`/`[USER DATA END]` delimiters so the model treats it as untrusted input, not system instructions.
 
 
 ---
 
 ## Hardening backlog (ordered by priority)
 
-1. **Goal string sanitization + length cap** — prompt injection defense layer.
-2. **Panel auth rate limiting** — prevent brute force on operator password.
-3. **LLM rate limiter** — prevent runaway planner calls from burning API quota.
-4. **Eager skill manifest validation** — catch broken manifests at startup, not mid-job.
-5. **Podman seccomp / AppArmor profiles** — tighten sandbox beyond `--read-only`.
-6. **Signed skills + integrity verification** — prevent tampered skill entrypoints.
-7. **Redaction pipeline for audit logs and telemetry** — strip PII and secrets from logs.
-8. **Safe-mode boot** — limited skill set, no network, confirmation-only execution.
+1. **LLM rate limiter** — prevent runaway planner calls from burning API quota (P6.2, v0.2).
+2. **Eager skill manifest validation** — catch broken manifests at startup, not mid-job (P6.1, v0.2).
+3. **Health degradation state tracking** — surface `daemon_state=degraded` after consecutive failures (P3.1, v0.2).
+4. **Podman seccomp / AppArmor profiles** — tighten sandbox beyond `--read-only`.
+5. **Signed skills + integrity verification** — prevent tampered skill entrypoints (v0.4).
+6. **Redaction pipeline for audit logs and telemetry** — strip PII and secrets from logs.
+7. **Safe-mode boot** — limited skill set, no network, confirmation-only execution (v0.4).
 
 Previously tracked items now resolved:
+- ~~Goal string sanitization + length cap~~ — FIXED in PR #85 (2,000-char cap + control-char stripping).
+- ~~Structural prompt injection delimiters~~ — FIXED in PR #88 (`[USER DATA START]`/`[USER DATA END]`).
+- ~~Panel auth rate limiting~~ — FIXED in PR #89 (10/60s → HTTP 429 + `Retry-After: 60`).
 - ~~Graceful SIGTERM handler~~ — FIXED in PR #80–#81 (graceful shutdown + startup recovery).
 - ~~Artifact directory auto-pruning~~ — FIXED in v0.1.5 (`voxera artifacts prune`) + v0.1.6 (`voxera queue prune`).
 - ~~Brain fallback errors unstructured~~ — FIXED in PR #73 (`BrainFallbackReason` enum).

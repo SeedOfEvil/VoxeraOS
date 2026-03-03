@@ -1,12 +1,13 @@
-# Voxera OS Alpha v0.1.5 — Voice-first AI Control Plane
+# Voxera OS Alpha v0.1.6 — Voice-first AI Control Plane
 
 Voxera OS is an **AI-controlled OS experience** built as a reliable *control plane* on top of a standard Linux substrate.
-This repo is **Voxera OS Alpha v0.1.5** with active post-release development. Current codebase includes daemon
-reliability hardening (single-writer lock, graceful SIGTERM shutdown, deterministic startup recovery), queue hygiene
-toolchain (`voxera queue prune`, `voxera queue reconcile`), brain fallback observability, and guided demo/onboarding
-(`voxera demo`), on top of the v0.1.5 artifacts hygiene baseline and v0.1.4 stability + UX baseline (typed first-run
-setup, cloud-planned missions, queue daemon with approval inbox, queue status + panel insights, update tooling, systemd
-user services, and pluggable “brain” providers). **v0.1.6 is in progress** (some items shipped, remaining items planned) — see `docs/ROADMAP_0.1.6.md`.
+This repo is **Voxera OS Alpha v0.1.6** — the security hardening + ops visibility release. v0.1.6 ships: planner goal
+sanitization + 2,000-char cap, `[USER DATA START]`/`[USER DATA END]` prompt boundaries, panel auth lockout (10/60s → 429
++ `Retry-After`), panel Daemon Health widget (health.json-sourced), panel `/hygiene` page, `sandbox.exec` argv
+canonicalization, deterministic terminal demo skill, and OpenRouter invisible attribution. Built on the v0.1.5 artifacts
+hygiene baseline and v0.1.4 stability + UX baseline (typed first-run setup, cloud-planned missions, queue daemon with
+approval inbox, queue status + panel insights, update tooling, systemd user services, and pluggable “brain” providers).
+See `docs/ROADMAP_0.1.6.md` for the full shipped scope.
 
 **Names**
 - OS: **Voxera OS**
@@ -597,11 +598,11 @@ Active work is organized as daily/session goals in `docs/ROADMAP.md`.
 **v0.3:** Voice stack (STT/TTS, wake word, voice-first command loop).
 **v0.4:** Signed skills, marketplace, ISO/image packaging.
 
-See `docs/ROADMAP.md` for the full daily goal breakdown and `docs/ROADMAP_0.1.6.md` for the upcoming v0.1.6 planned scope.
-Previous releases: `docs/ROADMAP_0.1.5.md` (artifacts prune), `docs/ROADMAP_0.1.4.md` (stability + UX baseline).
+See `docs/ROADMAP.md` for the full daily goal breakdown and `docs/ROADMAP_0.1.6.md` for the v0.1.6 shipped scope.
+Previous releases: `docs/ROADMAP_0.1.6.md` (security hardening + ops visibility), `docs/ROADMAP_0.1.5.md` (artifacts prune), `docs/ROADMAP_0.1.4.md` (stability + UX baseline).
 
 ---
-**Alpha v0.1.5** with ongoing post-release development adds daemon reliability hardening, queue hygiene toolchain (`voxera queue prune`, `voxera queue reconcile`), brain fallback observability, and guided demo/onboarding (`voxera demo`) on top of the v0.1.4 daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion. **v0.1.6** is in progress (some items shipped; remaining items planned) — see `docs/ROADMAP_0.1.6.md`.
+**Alpha v0.1.6** ships security hardening (goal sanitization + 2,000-char cap, prompt boundaries, panel auth lockout with 429/Retry-After), ops visibility (Daemon Health widget, `/hygiene` page), `sandbox.exec` argv canonicalization, deterministic terminal demo skill, and OpenRouter invisible attribution — on top of the v0.1.5 artifacts hygiene + v0.1.4 daily-driver baseline: stable queue operations, clearer UX, and strong safety gates before broader voice expansion. See `docs/ROADMAP_0.1.6.md` for the full shipped scope.
 
 `files.write_text` now supports `mode=overwrite|append` for note updates, and mission runs append summaries to `~/VoxeraOS/notes/mission-log.md` (redacted when `privacy.redact_logs` is enabled).
 

@@ -166,7 +166,7 @@ voxera queue health           # summary from notes/queue/health.json
 voxera queue lock status      # lock table alias (same lock fields as queue health)
 ```
 
-Panel home (`/`) now includes a collapsible **Daemon Health** widget sourced only from `notes/queue/health.json` (no daemon RPC calls), so it is safe/usable even when running panel-only deployments.
+Panel home (`/`) now includes a collapsible **Daemon Health** widget sourced only from `notes/queue/health.json` (no daemon RPC calls), so it is safe/usable even when running panel-only deployments. See [Panel Daemon Health widget](#panel-daemon-health-widget) for field reference.
 
 Operational effects:
 - `queue cancel` moves matching active jobs (`inbox/`, `pending/`, pending approvals/in-flight best effort) into `canceled/` and cleans pending approval markers.
@@ -897,12 +897,64 @@ Queue approval artifacts now write scope in two locations for compatibility:
 Readers prefer top-level keys when present and fall back to nested `scope.*` for older artifacts.
 
 
+## Panel Daemon Health widget
+
+Panel home (`/`) shows a collapsible **Daemon Health** widget. Data source: `notes/queue/health.json` read via `read_health_snapshot()`. No daemon RPC calls are performed; the widget is safe for panel-only deployments where the daemon is not running.
+
+### Field reference
+
+| Field | Source key(s) in health.json | Meaning |
+|---|---|---|
+| **Lock status** | `lock_state`, `lock_pid`, `lock_stale_age_s` | `held` / `stale` / `clear`. `stale` means lock file exists but PID is dead. |
+| **Lock PID** | `lock_pid` | PID holding the daemon lock; `—` when not held. |
+| **Stale age** | `lock_stale_age_s` | Seconds since lock became stale; shown only when `lock_state=stale`. |
+| **Last brain fallback** | `last_fallback_reason`, `last_fallback_from`, `last_fallback_to`, `last_fallback_ts_ms` | Tier transition summary (e.g. `primary → fast, TIMEOUT`) or "no recent fallbacks". |
+| **Startup recovery** | `last_startup_recovery_ts`, `last_startup_recovery_counts` | Count of jobs failed + orphans quarantined on last daemon start; "clean" when zero. |
+| **Last shutdown** | `last_shutdown_ts`, `last_shutdown_reason`, `last_shutdown_outcome` | Outcome of last daemon stop: `clean_shutdown` or `failed_shutdown`; includes timestamp. |
+| **Daemon state** | `daemon_state` | `healthy` (default) or `degraded` (future: set by P3.1 when consecutive failures ≥ 3). |
+
+Neutral placeholders are shown for any field that is null/empty (fresh install or daemon not yet run).
+
+### Data freshness
+
+The widget reflects the most recent `health.json` write. The daemon and panel both write to this file atomically (`health.json.tmp` → rename). If the daemon is not running, the widget still renders the last snapshot — staleness is not surfaced explicitly in v0.1.6.
+
+---
+
 ## Panel queue hygiene workflow
 
-- Open the Panel at `/hygiene` to view the latest queue hygiene snapshots from `notes/queue/health.json`.
-- Use **Run prune (dry-run)** to execute `voxera queue prune --json` via local CLI invocation; prune is dry-run by default and panel never passes `--yes`, so this path is report-only and never deletes data.
-- Use **Run reconcile** to execute `voxera queue reconcile --json` via local CLI invocation; this is read/analysis-only.
-- Results are merged into health snapshot keys:
-  - `last_prune_result`
-  - `last_reconcile_result`
+The panel `/hygiene` page gives operators a read-safe window into queue hygiene state and allows triggering diagnostic runs without daemon RPC or terminal access.
+
+### How it works
+
+- **Page source**: reads `last_prune_result` and `last_reconcile_result` from `notes/queue/health.json`.
+- **Run prune (dry-run)**: POSTs to `/hygiene/prune-dry-run`. Panel invokes `voxera queue prune --json` as a local CLI subprocess. **Prune is always dry-run from the panel — no `--yes` flag is passed, so no data is deleted.** This is a report-only operation.
+- **Run reconcile**: POSTs to `/hygiene/reconcile`. Panel invokes `voxera queue reconcile --json` as a local CLI subprocess. This is a read/analysis-only scan that never modifies files.
+- Results are JSON-parsed and merged atomically into `notes/queue/health.json` under:
+  - `last_prune_result` — prune dry-run summary (timestamp, per-bucket candidates, reclaimed bytes estimate).
+  - `last_reconcile_result` — reconcile scan summary (timestamp, `issue_counts` per category).
+- The page JS updates result sections in-place without a full reload; buttons disable during the run and re-enable on completion.
+- Both POST endpoints require operator Basic auth + CSRF mutation guard.
+
+### Reconcile issue_counts schema
+
+`last_reconcile_result.issue_counts` is a dict keyed by issue category:
+
+| Category | Meaning |
+|---|---|
+| `orphan_sidecars` | `.error.json`/`.state.json` in terminal buckets with no matching primary job |
+| `orphan_approvals` | Files in `pending/approvals/` with no corresponding `pending/job-*.json` |
+| `orphan_artifact_candidates` | Direct children of `artifacts/` with no matching job in any bucket |
+| `duplicate_job_filenames` | `job-*.json` appearing in more than one bucket |
+
+A zero count for all categories means the queue is clean.
+
+### Safety model summary
+
+| Action | Deletes data? | Requires `--yes`? | Panel uses `--yes`? |
+|---|---|---|---|
+| Prune dry-run (panel button) | No | N/A | No — dry-run only |
+| Prune with deletion (CLI) | Yes | Yes | Never |
+| Reconcile (panel button) | No | N/A | No |
+| Reconcile fix+apply (CLI) | No (quarantine move) | Yes | Never |
 - UI updates asynchronously after each run (no full page reload).
