@@ -958,3 +958,22 @@ A zero count for all categories means the queue is clean.
 | Reconcile (panel button) | No | N/A | No |
 | Reconcile fix+apply (CLI) | No (quarantine move) | Yes | Never |
 - UI updates asynchronously after each run (no full page reload).
+
+## Panel recovery inspector (`/recovery`)
+
+The panel includes a read-only **Recovery Inspector** page at `/recovery` for operator triage of queue safety buckets:
+
+- `notes/queue/recovery/`
+- `notes/queue/quarantine/`
+
+Behavior:
+
+- Lists immediate child directories (session-style layout) and loose files (legacy layout).
+- Shows name, modified timestamp, total size (bytes), and file count.
+- Provides **Download ZIP** per row via `/recovery/download/{bucket}/{name}`.
+- Download endpoint is operator-auth protected and validates:
+  - bucket in `{recovery, quarantine}`
+  - `name` is a single path segment
+  - resolved path remains inside the allowed bucket root
+- ZIP generation skips symlinks and enforces archive safety limits (file count + total bytes).
+- Panel flow is read-only: no delete, move, or reconcile operations are performed by this page.

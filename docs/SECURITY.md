@@ -193,3 +193,25 @@ The panel `/hygiene` actions are intentionally constrained:
 - Reconcile endpoint runs report-only analysis (`--json` without fix/apply flags).
 - Results are persisted into `notes/queue/health.json` (`last_prune_result`, `last_reconcile_result`) using the same atomic health snapshot write path used elsewhere.
 - POST triggers are mutation-guarded by operator auth (+ CSRF when enabled).
+
+
+### Panel recovery/quarantine inspector safety model
+
+The panel `/recovery` surface is intentionally read-only and panel-only safe:
+
+- No daemon RPC calls.
+- No queue mutations (no delete/move/write of queue content).
+- Data source is filesystem listing only under:
+  - `notes/queue/recovery/`
+  - `notes/queue/quarantine/`
+
+ZIP downloads (`/recovery/download/{bucket}/{name}`) enforce:
+
+- Strict bucket allowlist: `recovery` or `quarantine`.
+- `name` must be exactly one path segment (no slash/backslash traversal).
+- Resolved target path must remain under bucket root (`Path.resolve()` + containment check).
+- Symlinks are excluded from listings and skipped during ZIP construction.
+- Archive bounds to reduce abuse risk: max 5,000 files and 250MB source payload per ZIP.
+
+This provides operator access to recovery artifacts without introducing queue mutation risk.
+
