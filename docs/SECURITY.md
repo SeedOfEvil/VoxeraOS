@@ -129,6 +129,11 @@ The queue daemon now handles `SIGTERM`/`SIGINT` explicitly:
 - Marks any in-flight job as `failed/` with `reason=shutdown` and writes a structured sidecar.
 - Releases the daemon lock and exits cleanly within systemd's `TimeoutStopSec`.
 
+Shutdown context is persisted in `health.json` (`last_shutdown_outcome`, `last_shutdown_ts`,
+`last_shutdown_reason`, `last_shutdown_job`) and surfaced read-only in queue/doctor/panel.
+Treat `last_shutdown_reason` as operator-facing diagnostic text and avoid embedding secrets in
+exception messages.
+
 On next daemon start, a deterministic recovery pass runs before any intake:
 - Pending jobs with in-flight state markers are moved to `failed/` with `reason=recovered_after_restart`.
 - Orphan approvals and state files are quarantined under `recovery/startup-<ts>/` (never deleted).
@@ -215,4 +220,3 @@ ZIP downloads (`/recovery/download/{bucket}/{name}`) enforce:
 - Archive bounds to reduce abuse risk: max 5,000 files and 250MB source payload per ZIP.
 
 This provides operator access to recovery artifacts without introducing queue mutation risk.
-

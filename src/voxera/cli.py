@@ -821,6 +821,15 @@ def queue_health(
     console.print(f"Panel auth locked_out_ips: {len(active_lockouts)}")
     console.print(f"Panel auth next_lockout_expiry_ts_ms: {next_lockout_expiry_ts_ms}")
 
+    shutdown_table = Table(title="Last Shutdown")
+    shutdown_table.add_column("Field")
+    shutdown_table.add_column("Value")
+    shutdown_table.add_row("outcome", str(status.get("last_shutdown_outcome") or "(none)"))
+    shutdown_table.add_row("ts", str(status.get("last_shutdown_ts")))
+    shutdown_table.add_row("reason", str(status.get("last_shutdown_reason") or "(none)"))
+    shutdown_table.add_row("job", str(status.get("last_shutdown_job") or "(none)"))
+    console.print(shutdown_table)
+
     _render_lock_status(status)
 
     counters = (

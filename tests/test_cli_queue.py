@@ -432,3 +432,54 @@ def test_queue_help_lists_lock_status_command():
 
     assert result.exit_code == 0
     assert "status" in result.output
+
+
+def test_queue_health_prints_last_shutdown_block(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps(
+            {
+                "last_shutdown_outcome": "clean",
+                "last_shutdown_ts": 1700000000.5,
+                "last_shutdown_reason": "SIGTERM",
+                "last_shutdown_job": "job-a.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "health", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "Last Shutdown" in result.output
+    assert "clean" in result.output
+    assert "SIGTERM" in result.output
+    assert "job-a.json" in result.output
+
+
+def test_queue_health_json_includes_last_shutdown_fields(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps(
+            {
+                "last_shutdown_outcome": "failed_shutdown",
+                "last_shutdown_ts": 1700000200.0,
+                "last_shutdown_reason": "RuntimeError: boom",
+                "last_shutdown_job": "job-b.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "health", "--json", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["last_shutdown_outcome"] == "failed_shutdown"
+    assert payload["last_shutdown_reason"] == "RuntimeError: boom"
+    assert payload["last_shutdown_job"] == "job-b.json"
+    assert payload["last_shutdown_ts"] == 1700000200.0

@@ -13,6 +13,8 @@ _BRAIN_BACKOFF_BASE_ENV = "VOXERA_BRAIN_BACKOFF_BASE_S"
 _BRAIN_BACKOFF_MAX_ENV = "VOXERA_BRAIN_BACKOFF_MAX_S"
 _BRAIN_BACKOFF_BASE_DEFAULT_S = 2
 _BRAIN_BACKOFF_MAX_DEFAULT_S = 60
+_LAST_SHUTDOWN_REASON_MAX_LEN = 240
+_LAST_SHUTDOWN_OUTCOMES = {"clean", "failed_shutdown", "startup_recovered"}
 
 
 def _safe_int(value: Any, default: int) -> int:
@@ -50,6 +52,7 @@ def _normalize_health_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     normalized["brain_backoff_wait_s"] = compute_brain_backoff_s(
         normalized["consecutive_brain_failures"]
     )
+    normalized["brain_backoff_active"] = normalized["brain_backoff_wait_s"] > 0
 
     daemon_state = str(normalized.get("daemon_state") or "healthy").lower()
     if daemon_state not in {"healthy", "degraded"}:
@@ -73,7 +76,55 @@ def _normalize_health_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         if isinstance(backoff_last_applied_ts, (int, float))
         else None
     )
+
+    shutdown_outcome = normalized.get("last_shutdown_outcome")
+    if shutdown_outcome in _LAST_SHUTDOWN_OUTCOMES:
+        normalized["last_shutdown_outcome"] = shutdown_outcome
+    else:
+        normalized["last_shutdown_outcome"] = None
+
+    shutdown_ts = normalized.get("last_shutdown_ts")
+    normalized["last_shutdown_ts"] = (
+        float(shutdown_ts) if isinstance(shutdown_ts, (int, float)) else None
+    )
+
+    shutdown_reason = normalized.get("last_shutdown_reason")
+    normalized["last_shutdown_reason"] = str(shutdown_reason) if shutdown_reason else None
+
+    shutdown_job = normalized.get("last_shutdown_job")
+    normalized["last_shutdown_job"] = str(shutdown_job) if shutdown_job else None
     return normalized
+
+
+def _compact_reason(reason: str | None) -> str | None:
+    if not reason:
+        return None
+    compact = " ".join(str(reason).split()).strip()
+    if not compact:
+        return None
+    if len(compact) <= _LAST_SHUTDOWN_REASON_MAX_LEN:
+        return compact
+    return compact[: _LAST_SHUTDOWN_REASON_MAX_LEN - 1] + "…"
+
+
+def record_last_shutdown(
+    queue_root: Path,
+    *,
+    outcome: str,
+    reason: str | None,
+    job: str | None,
+    now_fn: Callable[[], float] = time.time,
+) -> dict[str, Any]:
+    normalized_outcome = outcome if outcome in _LAST_SHUTDOWN_OUTCOMES else "failed_shutdown"
+
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        payload["last_shutdown_outcome"] = normalized_outcome
+        payload["last_shutdown_ts"] = float(now_fn())
+        payload["last_shutdown_reason"] = _compact_reason(reason)
+        payload["last_shutdown_job"] = str(job) if job else None
+        return payload
+
+    return update_health_snapshot(queue_root, _apply)
 
 
 def update_degradation_state(

@@ -422,3 +422,31 @@ def test_doctor_quick_handles_missing_last_error(tmp_path):
 
     last_error = next(item for item in checks if item["check"] == "health last_error")
     assert last_error["status"] == "ok"
+
+
+def test_doctor_quick_includes_last_shutdown_summary(tmp_path):
+    from voxera.doctor import run_quick_doctor
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_root / "health.json").write_text(
+        json.dumps(
+            {
+                "last_ok_event": "daemon_tick",
+                "last_ok_ts_ms": 10_000,
+                "last_shutdown_outcome": "clean",
+                "last_shutdown_ts": 1700000000.0,
+                "last_shutdown_reason": "SIGTERM",
+                "last_shutdown_job": "job-1.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    checks = run_quick_doctor(queue_root=queue_root)
+
+    last_shutdown = next(item for item in checks if item["check"] == "last shutdown")
+    assert last_shutdown["status"] == "ok"
+    assert "outcome=clean" in last_shutdown["detail"]
+    assert "reason=SIGTERM" in last_shutdown["detail"]
+    assert "job=job-1.json" in last_shutdown["detail"]

@@ -1984,6 +1984,41 @@ def test_shutdown_during_inflight_job_marks_failed_deterministically(tmp_path, m
     assert health.get("last_shutdown_outcome") == "failed_shutdown"
 
 
+def test_current_job_ref_cleared_after_job_completion(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True)
+    job = queue_dir / "inbox" / "job1.json"
+    job.write_text('{"goal":"check machine"}', encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+
+    assert daemon.process_job_file(job) is True
+    assert daemon.current_job_ref is None
+
+
+def test_clean_shutdown_does_not_reuse_stale_last_shutdown_job(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_planner(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True)
+    job = queue_dir / "inbox" / "job1.json"
+    job.write_text('{"goal":"check machine"}', encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    assert daemon.process_job_file(job) is True
+    assert daemon.current_job_ref is None
+
+    daemon.request_shutdown("SIGTERM")
+    daemon._record_clean_shutdown("SIGTERM")
+
+    health = json.loads((queue_dir / "health.json").read_text(encoding="utf-8"))
+    assert health.get("last_shutdown_outcome") == "clean"
+    assert health.get("last_shutdown_reason") == "SIGTERM"
+    assert health.get("last_shutdown_job") is None
+
+
 def test_startup_recovery_fails_inflight_pending_job(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     events = []

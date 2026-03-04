@@ -24,6 +24,7 @@ from ..health import (
     record_brain_backoff_applied,
     record_health_error,
     record_health_ok,
+    record_last_shutdown,
     record_mission_success,
     update_health_snapshot,
 )
@@ -49,6 +50,7 @@ _STARTUP_RECOVERY_REASON = "recovered_after_restart"
 _STARTUP_RECOVERY_MESSAGE = (
     "daemon recovered from unclean shutdown; job marked failed deterministically"
 )
+_SHUTDOWN_REASON_MAX_LEN = 240
 
 
 class QueueLockError(RuntimeError):
@@ -400,22 +402,37 @@ class MissionQueueDaemon:
     def request_shutdown(self, reason: str) -> None:
         if self._shutdown_requested:
             return
-        now_ms = int(time.time() * 1000)
         normalized = reason.upper()
         self._shutdown_requested = True
         self._shutdown_reason = normalized
-        self._update_daemon_health_state(
-            shutdown_requested=True,
-            last_shutdown_ts=now_ms,
-            last_shutdown_reason=normalized,
-        )
+        self._update_daemon_health_state(shutdown_requested=True)
         log(
             {
                 "event": "queue_daemon_shutdown_requested",
                 "reason": normalized,
                 "job": self.current_job_ref,
-                "ts_ms": now_ms,
+                "ts_ms": int(time.time() * 1000),
             }
+        )
+
+    def _record_clean_shutdown(self, reason: str) -> None:
+        snapshot = read_health_snapshot(self.queue_root)
+        if snapshot.get("last_shutdown_outcome") == "failed_shutdown":
+            return
+        record_last_shutdown(
+            self.queue_root,
+            outcome="clean",
+            reason=reason,
+            job=self.current_job_ref,
+        )
+
+    def _record_failed_shutdown(self, exc: Exception) -> None:
+        reason = f"{type(exc).__name__}: {str(exc).strip()}"
+        record_last_shutdown(
+            self.queue_root,
+            outcome="failed_shutdown",
+            reason=reason[:_SHUTDOWN_REASON_MAX_LEN],
+            job=self.current_job_ref,
         )
 
     def try_unlock_stale(self) -> dict[str, Any]:
@@ -1701,12 +1718,12 @@ class MissionQueueDaemon:
         )
         self.stats.failed += 1
         self._write_action_event(str(moved), "queue_job_failed", error=f"{reason}: {message}")
-        now_ms = int(time.time() * 1000)
-        self._update_daemon_health_state(
-            last_shutdown_ts=now_ms,
-            last_shutdown_reason=(signal_reason or self._shutdown_reason or "UNKNOWN"),
-            last_shutdown_job=moved.name,
-            last_shutdown_outcome="failed_shutdown",
+        self._update_daemon_health_state(shutdown_requested=True)
+        record_last_shutdown(
+            self.queue_root,
+            outcome="failed_shutdown",
+            reason=signal_reason or self._shutdown_reason or "UNKNOWN",
+            job=moved.name,
         )
         log(
             {
@@ -1726,92 +1743,98 @@ class MissionQueueDaemon:
             return False
 
         self.current_job_ref = str(job_path)
-        log({"event": "queue_job_received", "job": str(job_path)})
-        if self._shutdown_requested:
-            log({"event": "queue_job_skipped_shutdown", "job": str(job_path)})
-            return False
         try:
-            payload = self._load_job_payload_with_retry(job_path)
-            payload = self._normalize_payload(payload)
-            if self._ensure_hard_approval_gate(job_path, payload=payload):
+            log({"event": "queue_job_received", "job": str(job_path)})
+            if self._shutdown_requested:
+                log({"event": "queue_job_skipped_shutdown", "job": str(job_path)})
                 return False
-            mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
-            self._write_plan_artifact(str(job_path), payload=payload, mission=mission)
-        except Exception as exc:
+
+            try:
+                payload = self._load_job_payload_with_retry(job_path)
+                payload = self._normalize_payload(payload)
+                if self._ensure_hard_approval_gate(job_path, payload=payload):
+                    return False
+                mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
+                self._write_plan_artifact(str(job_path), payload=payload, mission=mission)
+            except Exception as exc:
+                log(
+                    {
+                        "event": "queue_job_invalid",
+                        "job": str(job_path),
+                        "filename": job_path.name,
+                        "reason": repr(exc),
+                    }
+                )
+                moved = self._move_job(job_path, self.failed)
+                if moved is None:
+                    return False
+                sidecar_payload = (
+                    payload if "payload" in locals() and isinstance(payload, dict) else None
+                )
+                self._write_failed_error_sidecar(moved, error=repr(exc), payload=sidecar_payload)
+                self.stats.failed += 1
+                log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
+                self.prune_failed_artifacts()
+                return False
+
+            kind = "mission_id" if payload.get("mission_id") else "goal"
             log(
                 {
-                    "event": "queue_job_invalid",
-                    "job": str(job_path),
-                    "filename": job_path.name,
-                    "reason": repr(exc),
+                    "event": "queue_job_started",
+                    "kind": kind,
+                    "mission": payload.get("mission_id"),
+                    "goal": payload.get("goal"),
                 }
             )
-            moved = self._move_job(job_path, self.failed)
+            rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
+            if self._shutdown_requested:
+                self._finalize_job_shutdown_failure(
+                    job_path, signal_reason=self._shutdown_reason, payload=payload
+                )
+                return False
+            if rr.data.get("status") == "pending_approval":
+                moved = self._move_job(job_path, self.pending)
+                if moved is None:
+                    return False
+                self._write_pending_artifacts(
+                    moved, payload=payload, mission=mission, run_data=rr.data
+                )
+                self._write_action_event(
+                    str(moved), "queue_job_pending_approval", step=rr.data.get("step")
+                )
+                log(
+                    {
+                        "event": "queue_job_pending_approval",
+                        "job": str(moved),
+                        "step": rr.data.get("step"),
+                        "reason": rr.data.get("reason"),
+                    }
+                )
+                return False
+
+            if not rr.ok:
+                moved = self._move_job(job_path, self.failed)
+                if moved is None:
+                    return False
+                error_text = rr.error or "mission failed"
+                self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
+                self.stats.failed += 1
+                log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
+                self._write_action_event(str(moved), "queue_job_failed", error=error_text)
+                self.prune_failed_artifacts()
+                return False
+
+            moved = self._move_job(job_path, self.done)
             if moved is None:
                 return False
-            sidecar_payload = (
-                payload if "payload" in locals() and isinstance(payload, dict) else None
-            )
-            self._write_failed_error_sidecar(moved, error=repr(exc), payload=sidecar_payload)
-            self.stats.failed += 1
-            log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
-            self.prune_failed_artifacts()
-            return False
-
-        kind = "mission_id" if payload.get("mission_id") else "goal"
-        log(
-            {
-                "event": "queue_job_started",
-                "kind": kind,
-                "mission": payload.get("mission_id"),
-                "goal": payload.get("goal"),
-            }
-        )
-        rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
-        if self._shutdown_requested:
-            self._finalize_job_shutdown_failure(
-                job_path, signal_reason=self._shutdown_reason, payload=payload
-            )
-            return False
-        if rr.data.get("status") == "pending_approval":
-            moved = self._move_job(job_path, self.pending)
-            if moved is None:
-                return False
-            self._write_pending_artifacts(moved, payload=payload, mission=mission, run_data=rr.data)
-            self._write_action_event(
-                str(moved), "queue_job_pending_approval", step=rr.data.get("step")
-            )
-            log(
-                {
-                    "event": "queue_job_pending_approval",
-                    "job": str(moved),
-                    "step": rr.data.get("step"),
-                    "reason": rr.data.get("reason"),
-                }
-            )
-            return False
-
-        if not rr.ok:
-            moved = self._move_job(job_path, self.failed)
-            if moved is None:
-                return False
-            error_text = rr.error or "mission failed"
-            self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
-            self.stats.failed += 1
-            log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
-            self._write_action_event(str(moved), "queue_job_failed", error=error_text)
-            self.prune_failed_artifacts()
-            return False
-
-        moved = self._move_job(job_path, self.done)
-        if moved is None:
-            return False
-        self.stats.processed += 1
-        self._write_run_streams(str(moved), rr.data)
-        self._write_action_event(str(moved), "queue_job_done")
-        log({"event": "queue_job_done", "job": str(moved)})
-        record_mission_success(self.queue_root)
-        return True
+            self.stats.processed += 1
+            self._write_run_streams(str(moved), rr.data)
+            self._write_action_event(str(moved), "queue_job_done")
+            log({"event": "queue_job_done", "job": str(moved)})
+            record_mission_success(self.queue_root)
+            return True
+        finally:
+            self.current_job_ref = None
 
     def _approval_ref_candidates(self, ref: str) -> list[str]:
         base = Path(ref.strip()).name
@@ -1976,63 +1999,68 @@ class MissionQueueDaemon:
             mission = self._build_mission_for_payload(source_payload, job_ref=str(job))
             resume_step = 1
         self.current_job_ref = str(job)
-        resume_skill = (
-            mission.steps[max(resume_step - 1, 0)].skill_id
-            if mission.steps and max(resume_step - 1, 0) < len(mission.steps)
-            else ""
-        )
-        self._approved_steps.add((str(job), resume_step, resume_skill))
-        rr = self.mission_runner.run(
-            mission,
-            start_step=resume_step,
-            context={"queue_job": str(job), "approval_resumed": True},
-        )
-        if rr.data.get("status") == "pending_approval":
-            self._write_pending_artifacts(job, payload=payload, mission=mission, run_data=rr.data)
-            log(
-                {
-                    "event": "queue_job_pending_approval",
-                    "job": str(job),
-                    "step": rr.data.get("step"),
-                    "reason": rr.data.get("reason"),
-                }
+        try:
+            resume_skill = (
+                mission.steps[max(resume_step - 1, 0)].skill_id
+                if mission.steps and max(resume_step - 1, 0) < len(mission.steps)
+                else ""
             )
-            self._write_action_event(
-                str(job), "queue_job_pending_approval", step=rr.data.get("step")
+            self._approved_steps.add((str(job), resume_step, resume_skill))
+            rr = self.mission_runner.run(
+                mission,
+                start_step=resume_step,
+                context={"queue_job": str(job), "approval_resumed": True},
             )
-            return False
-        if not rr.ok:
-            moved = self._move_job(job, self.failed)
+            if rr.data.get("status") == "pending_approval":
+                self._write_pending_artifacts(
+                    job, payload=payload, mission=mission, run_data=rr.data
+                )
+                log(
+                    {
+                        "event": "queue_job_pending_approval",
+                        "job": str(job),
+                        "step": rr.data.get("step"),
+                        "reason": rr.data.get("reason"),
+                    }
+                )
+                self._write_action_event(
+                    str(job), "queue_job_pending_approval", step=rr.data.get("step")
+                )
+                return False
+            if not rr.ok:
+                moved = self._move_job(job, self.failed)
+                if moved is None:
+                    meta_path.unlink(missing_ok=True)
+                    artifact_path.unlink(missing_ok=True)
+                    return False
+                error_text = rr.error or "mission failed"
+                self._write_failed_error_sidecar(
+                    moved, error=error_text, payload=payload if isinstance(payload, dict) else None
+                )
+                self.stats.failed += 1
+                log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
+                self._write_run_streams(str(moved), rr.data)
+                self._write_action_event(str(moved), "queue_job_failed", error=error_text)
+                self.prune_failed_artifacts()
+                meta_path.unlink(missing_ok=True)
+                artifact_path.unlink(missing_ok=True)
+                return False
+
+            moved = self._move_job(job, self.done)
             if moved is None:
                 meta_path.unlink(missing_ok=True)
                 artifact_path.unlink(missing_ok=True)
                 return False
-            error_text = rr.error or "mission failed"
-            self._write_failed_error_sidecar(
-                moved, error=error_text, payload=payload if isinstance(payload, dict) else None
-            )
-            self.stats.failed += 1
-            log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
+            self.stats.processed += 1
             self._write_run_streams(str(moved), rr.data)
-            self._write_action_event(str(moved), "queue_job_failed", error=error_text)
-            self.prune_failed_artifacts()
+            self._write_action_event(str(moved), "queue_job_done", via="approval_inbox")
+            log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
+            record_mission_success(self.queue_root)
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
-            return False
-
-        moved = self._move_job(job, self.done)
-        if moved is None:
-            meta_path.unlink(missing_ok=True)
-            artifact_path.unlink(missing_ok=True)
-            return False
-        self.stats.processed += 1
-        self._write_run_streams(str(moved), rr.data)
-        self._write_action_event(str(moved), "queue_job_done", via="approval_inbox")
-        log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
-        record_mission_success(self.queue_root)
-        meta_path.unlink(missing_ok=True)
-        artifact_path.unlink(missing_ok=True)
-        return True
+            return True
+        finally:
+            self.current_job_ref = None
 
     def process_pending_once(self) -> int:
         self.ensure_dirs()
@@ -2224,9 +2252,14 @@ class MissionQueueDaemon:
                         break
                     time.sleep(self.poll_interval)
         except Exception as exc:
+            self._record_failed_shutdown(exc)
             record_health_error(self.queue_root, f"daemon run error: {exc}")
             raise
         finally:
             signal.signal(signal.SIGTERM, previous_sigterm)
             signal.signal(signal.SIGINT, previous_sigint)
             self.release_daemon_lock()
+            if self._shutdown_requested:
+                self._record_clean_shutdown(self._shutdown_reason or "graceful_stop")
+            elif once:
+                self._record_clean_shutdown("graceful_stop")

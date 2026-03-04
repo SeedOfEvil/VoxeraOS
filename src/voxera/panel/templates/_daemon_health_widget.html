@@ -44,6 +44,8 @@
         {% if daemon_health.last_shutdown.present %}
           <p class="kpi-label"><b>Outcome</b></p><p>{{daemon_health.last_shutdown.outcome}}</p>
           <p class="kpi-label"><b>Timestamp</b></p><p>{{daemon_health.last_shutdown.ts}}</p>
+          <p class="kpi-label"><b>Reason</b></p><p>{{daemon_health.last_shutdown.reason}}</p>
+          <p class="kpi-label"><b>Job</b></p><p>{{daemon_health.last_shutdown.job}}</p>
         {% else %}
           <p class="muted">unknown</p>
         {% endif %}
