@@ -115,11 +115,13 @@ Health degradation (P3.x) is deferred to v0.2.
 - Daemon planning now enforces computed wait via a single pre-plan sleep when repeated failures persist.
 - `health.json` adds `brain_backoff_last_applied_s`/`brain_backoff_last_applied_ts` for observability of the latest applied delay.
 
-#### P3.3 — Structured shutdown outcome in `voxera queue health` (PLANNED)
-- Surface `last_shutdown_outcome`, `last_shutdown_job`, `last_shutdown_reason`, and
-  `last_shutdown_ts` in the `voxera queue health` human-readable output.
-- Include these fields in the JSON output of `voxera queue health --json`.
-- Acceptance: after a graceful SIGTERM, `voxera queue health` shows the shutdown context.
+#### P3.3 — Structured shutdown outcome in `voxera queue health` (SHIPPED)
+- `health.json` now always contains `last_shutdown_outcome`, `last_shutdown_job`,
+  `last_shutdown_reason`, and `last_shutdown_ts` with deterministic defaults.
+- `voxera queue health` (human + `--json`), `voxera doctor --quick`, and panel home widget
+  surface the same persisted shutdown context.
+- Graceful/failure stop paths record deterministic shutdown outcome and reason/job context
+  whenever state write is possible.
 
 ---
 
@@ -203,7 +205,7 @@ Health degradation (P3.x) is deferred to v0.2.
 ### Health degradation (DEFERRED to v0.2)
 - ✅ 3 consecutive brain fallbacks set `daemon_state = "degraded"` in health snapshot; success resets counter/state (P3.1).
 - ✅ Health snapshot now reports computed `brain_backoff_wait_s` from repeated fallback counts, with env-configurable base/max knobs (P3.2 computation/reporting scope).
-- ⏳ `voxera queue health` shows last shutdown outcome with job and reason (P3.3).
+- ✅ `voxera queue health`/`doctor --quick`/panel home show persisted last shutdown context from `health.json` (P3.3).
 
 ### CI + packaging (DEFERRED to v0.2)
 - ⏳ `make golden-check` passes; fails on planner context drift (P4.1).

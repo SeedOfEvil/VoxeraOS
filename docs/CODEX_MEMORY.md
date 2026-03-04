@@ -693,3 +693,12 @@ This file is the single, persistent project memory for Codex-assisted work.
   - None.
 - Risks/notes:
   - Fallback streak increments once per fallback transition event recorded by planner attempts; mission success clears state only when a job reaches `done/`.
+
+## 2026-03-04 — P3.3 shipped: persisted last shutdown outcome across daemon/CLI/panel
+
+- Added deterministic health snapshot keys: `last_shutdown_outcome`, `last_shutdown_ts`, `last_shutdown_reason`, `last_shutdown_job` with always-present normalization defaults (`null`).
+- Added `record_last_shutdown(...)` helper in `src/voxera/health.py` (bounded reason text, explicit outcome allowlist: `clean`, `failed_shutdown`, `startup_recovered`, injectable `now_fn` for deterministic tests).
+- Daemon stop-path hooks now write persisted shutdown context for graceful stops and failure paths where state write remains possible; in-flight shutdown failures continue to mark jobs failed deterministically and now persist via shared helper.
+- Operator surfaces updated to read from `health.json`: `voxera queue health` (new Last Shutdown block + JSON parity), `voxera doctor --quick` (last shutdown one-line summary), panel home Daemon Health widget (adds shutdown reason/job display).
+- Added/updated tests for normalization defaults, shutdown recording helper behavior, queue health output, quick doctor summary line, and panel rendering of shutdown reason/job.
+- Validation commands: `ruff format .`, `ruff check . --fix`, targeted `pytest` for touched suites, and `make merge-readiness-check`.

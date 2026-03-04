@@ -303,6 +303,26 @@ def run_quick_doctor(
         }
     )
 
+    shutdown_outcome = health.get("last_shutdown_outcome")
+    shutdown_detail = (
+        "none"
+        if not shutdown_outcome
+        else "outcome={outcome} ts={ts} reason={reason} job={job}".format(
+            outcome=shutdown_outcome,
+            ts=health.get("last_shutdown_ts"),
+            reason=health.get("last_shutdown_reason") or "-",
+            job=health.get("last_shutdown_job") or "-",
+        )
+    )
+    checks.append(
+        {
+            "check": "last shutdown",
+            "status": "ok",
+            "detail": shutdown_detail,
+            "hint": "",
+        }
+    )
+
     snap = daemon.status_snapshot()
     checks.append(
         {

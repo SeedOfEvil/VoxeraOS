@@ -24,6 +24,7 @@ from ..health import (
     record_brain_backoff_applied,
     record_health_error,
     record_health_ok,
+    record_last_shutdown,
     record_mission_success,
     update_health_snapshot,
 )
@@ -49,6 +50,7 @@ _STARTUP_RECOVERY_REASON = "recovered_after_restart"
 _STARTUP_RECOVERY_MESSAGE = (
     "daemon recovered from unclean shutdown; job marked failed deterministically"
 )
+_SHUTDOWN_REASON_MAX_LEN = 240
 
 
 class QueueLockError(RuntimeError):
@@ -400,22 +402,37 @@ class MissionQueueDaemon:
     def request_shutdown(self, reason: str) -> None:
         if self._shutdown_requested:
             return
-        now_ms = int(time.time() * 1000)
         normalized = reason.upper()
         self._shutdown_requested = True
         self._shutdown_reason = normalized
-        self._update_daemon_health_state(
-            shutdown_requested=True,
-            last_shutdown_ts=now_ms,
-            last_shutdown_reason=normalized,
-        )
+        self._update_daemon_health_state(shutdown_requested=True)
         log(
             {
                 "event": "queue_daemon_shutdown_requested",
                 "reason": normalized,
                 "job": self.current_job_ref,
-                "ts_ms": now_ms,
+                "ts_ms": int(time.time() * 1000),
             }
+        )
+
+    def _record_clean_shutdown(self, reason: str) -> None:
+        snapshot = read_health_snapshot(self.queue_root)
+        if snapshot.get("last_shutdown_outcome") == "failed_shutdown":
+            return
+        record_last_shutdown(
+            self.queue_root,
+            outcome="clean",
+            reason=reason,
+            job=self.current_job_ref,
+        )
+
+    def _record_failed_shutdown(self, exc: Exception) -> None:
+        reason = f"{type(exc).__name__}: {str(exc).strip()}"
+        record_last_shutdown(
+            self.queue_root,
+            outcome="failed_shutdown",
+            reason=reason[:_SHUTDOWN_REASON_MAX_LEN],
+            job=self.current_job_ref,
         )
 
     def try_unlock_stale(self) -> dict[str, Any]:
@@ -1701,12 +1718,12 @@ class MissionQueueDaemon:
         )
         self.stats.failed += 1
         self._write_action_event(str(moved), "queue_job_failed", error=f"{reason}: {message}")
-        now_ms = int(time.time() * 1000)
-        self._update_daemon_health_state(
-            last_shutdown_ts=now_ms,
-            last_shutdown_reason=(signal_reason or self._shutdown_reason or "UNKNOWN"),
-            last_shutdown_job=moved.name,
-            last_shutdown_outcome="failed_shutdown",
+        self._update_daemon_health_state(shutdown_requested=True)
+        record_last_shutdown(
+            self.queue_root,
+            outcome="failed_shutdown",
+            reason=signal_reason or self._shutdown_reason or "UNKNOWN",
+            job=moved.name,
         )
         log(
             {
@@ -2224,9 +2241,14 @@ class MissionQueueDaemon:
                         break
                     time.sleep(self.poll_interval)
         except Exception as exc:
+            self._record_failed_shutdown(exc)
             record_health_error(self.queue_root, f"daemon run error: {exc}")
             raise
         finally:
             signal.signal(signal.SIGTERM, previous_sigterm)
             signal.signal(signal.SIGINT, previous_sigint)
             self.release_daemon_lock()
+            if self._shutdown_requested:
+                self._record_clean_shutdown(self._shutdown_reason or "graceful_stop")
+            elif once:
+                self._record_clean_shutdown("graceful_stop")

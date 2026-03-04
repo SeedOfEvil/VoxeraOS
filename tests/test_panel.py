@@ -125,7 +125,9 @@ def test_home_renders_daemon_health_widget_with_fields(tmp_path, monkeypatch):
                 },
                 "last_startup_recovery_ts": 1700000001000,
                 "last_shutdown_outcome": "failed_shutdown",
-                "last_shutdown_ts": 1700000002000,
+                "last_shutdown_ts": 1700000002.0,
+                "last_shutdown_reason": "KeyboardInterrupt",
+                "last_shutdown_job": "job-5.json",
                 "daemon_state": "degraded",
             }
         ),
@@ -150,6 +152,8 @@ def test_home_renders_daemon_health_widget_with_fields(tmp_path, monkeypatch):
     assert "orphan_count" in body
     assert ">4<" in body
     assert "failed_shutdown" in body
+    assert "KeyboardInterrupt" in body
+    assert "job-5.json" in body
     assert "degraded" in body
 
 

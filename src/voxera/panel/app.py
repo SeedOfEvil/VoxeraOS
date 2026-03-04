@@ -341,6 +341,12 @@ def _format_ts(ts_ms: int | None) -> str:
     return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+def _format_ts_seconds(ts_s: float | None) -> str:
+    if ts_s is None or ts_s <= 0:
+        return "—"
+    return datetime.fromtimestamp(ts_s, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 def _format_age(age_s: int | None) -> str:
     if age_s is None or age_s < 0:
         return "—"
@@ -389,7 +395,10 @@ def _daemon_health_view(health: dict[str, Any]) -> dict[str, Any]:
     has_recovery = any([recovery_job_count, orphan_count, recovery_ts])
 
     shutdown_outcome = str(health.get("last_shutdown_outcome") or "").strip() or "unknown"
-    shutdown_ts = _coerce_int(health.get("last_shutdown_ts"))
+    shutdown_ts_raw = health.get("last_shutdown_ts")
+    shutdown_ts = float(shutdown_ts_raw) if isinstance(shutdown_ts_raw, (int, float)) else None
+    shutdown_reason = str(health.get("last_shutdown_reason") or "").strip() or "—"
+    shutdown_job = str(health.get("last_shutdown_job") or "").strip() or "—"
 
     stale_age_s = _coerce_int(lock.get("stale_age_s"))
 
@@ -413,7 +422,9 @@ def _daemon_health_view(health: dict[str, Any]) -> dict[str, Any]:
         "last_shutdown": {
             "present": shutdown_outcome != "unknown" or shutdown_ts is not None,
             "outcome": shutdown_outcome,
-            "ts": _format_ts(shutdown_ts),
+            "ts": _format_ts_seconds(shutdown_ts),
+            "reason": shutdown_reason,
+            "job": shutdown_job,
         },
         "daemon_state": str(health.get("daemon_state") or "healthy"),
     }

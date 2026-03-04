@@ -357,9 +357,10 @@ Failed-job sidecar contract and retention:
 - Panel home (`/`) includes a collapsible **Daemon Health** widget sourced strictly from `notes/queue/health.json` at request time (no daemon RPC calls), so it remains available in panel-only deployments.
 - Panel hygiene page (`/hygiene`) shows the latest `voxera queue prune --json` (dry-run by default; panel never passes `--yes`) and `voxera queue reconcile --json` snapshots and provides operator-trigger buttons for both actions with in-page async refresh.
 - Panel recovery inspector (`/recovery`) provides a read-only listing of `notes/queue/recovery/` and `notes/queue/quarantine/` sessions (or loose files) and per-item ZIP downloads for operator triage.
-- Widget fields: lock status (`held`/`stale`/`clear`) with PID/stale age, last brain fallback (tier/reason/timestamp), last startup recovery (job_count/orphan_count/timestamp), last shutdown outcome (outcome/timestamp), daemon state (defaults to `healthy` when absent).
+- Widget fields: lock status (`held`/`stale`/`clear`) with PID/stale age, last brain fallback (tier/reason/timestamp), last startup recovery (job_count/orphan_count/timestamp), last shutdown outcome (outcome/timestamp/reason/job), daemon state (defaults to `healthy` when absent).
 - Health snapshot ops signals: `daemon_state`, `consecutive_brain_failures`, `brain_backoff_wait_s` (computed wait in seconds), and last-applied fields `brain_backoff_last_applied_s`/`brain_backoff_last_applied_ts` when sleep is enforced before planning.
 - Health snapshot now also records `last_ok_event` + `last_ok_ts_ms` so operators can confirm recent successful daemon activity; `last_error` remains for failures.
+- Health snapshot shutdown keys are always present with deterministic defaults (`null`): `last_shutdown_outcome`, `last_shutdown_ts`, `last_shutdown_reason`, `last_shutdown_job`. Outcome allowlist: `clean`, `failed_shutdown`, `startup_recovered`.
 - Use `voxera queue health` for a quick operator summary (paused flag, intake path, lock status, counters, and last safe error summary).
 - See `docs/ops.md` Incident Runbook for copy/paste recovery steps.
 - Operator response when invalid rises: inspect `failed/*.error.json`, correlate with `queue_failed_sidecar_invalid` audit events, and quarantine/fix malformed sidecars before retrying jobs.
@@ -705,7 +706,7 @@ Quick offline doctor mode:
 ```bash
 voxera doctor --quick
 ```
-Runs fast local checks only (lock exists/pid/alive, health `last_ok`/`last_error`, queue counts summary, last fallback) with no model calls.
+Runs fast local checks only (lock exists/pid/alive, health `last_ok`/`last_error`, queue counts summary, last fallback, last shutdown summary) with no model calls.
 When `last_ok_ts_ms` is newer than `last_error_ts_ms` by more than 5 minutes, quick doctor marks `last_error` as stale (`stale; ok newer by <delta>`) and downgrades severity.
 
 ### Brain fallback reason observability

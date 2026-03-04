@@ -119,9 +119,8 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 - [x] Daemon planning path now applies `time.sleep(wait_s)` before `plan_mission(...)` when computed wait is > 0, at most once per plan attempt (orchestration layer only).
 - [x] `health.json` always includes `brain_backoff_wait_s` and now tracks `brain_backoff_last_applied_s` + `brain_backoff_last_applied_ts` (defaults `0`/`null`, keep-last-known when no new sleep).
 
-**P3.3 — Structured shutdown outcome in `voxera queue health` (PLANNED)**
-- [ ] Surface `last_shutdown_outcome`, `last_shutdown_job`, `last_shutdown_reason`, `last_shutdown_ts`
-      in `voxera queue health` human-readable and `--json` output.
+**P3.3 — Structured shutdown outcome in `voxera queue health` (SHIPPED)**
+- [x] Persist `last_shutdown_outcome`, `last_shutdown_job`, `last_shutdown_reason`, `last_shutdown_ts` in `health.json` with deterministic defaults and surface the same fields in `voxera queue health`, `voxera doctor --quick`, and panel home widget (health.json sourced only).
 - [ ] Verify systemd `TimeoutStopSec` compliance (clean exit within 10s of SIGTERM).
 
 ### CI hardening & release packaging

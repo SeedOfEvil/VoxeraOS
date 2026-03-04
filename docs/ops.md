@@ -175,7 +175,7 @@ Operational effects:
 - `queue retry` re-queues a `failed/` or `canceled/` primary payload into `inbox/`, archiving prior failed sidecars when present, and emits `queue_job_retry`.
 - `queue pause` creates `.paused`; daemon still reports status but skips processing new jobs until `queue resume` removes marker.
 - Daemon run loop acquires `notes/queue/.daemon.lock` with an OS-level exclusive file lock (`flock`) to enforce single-writer processing. If another live daemon holds the lock, startup records `lock_state=locked_by_other`, logs contention, and exits non-zero.
-- On `SIGTERM`/`SIGINT`, daemon sets shutdown state immediately, stops intake of new inbox jobs, and handles any in-flight job deterministically as `failed/` with error reason `shutdown: daemon shutdown requested` (plus error sidecar payload). Health snapshot records `last_shutdown_ts`, `last_shutdown_reason`, and (if affected) `last_shutdown_job` + `last_shutdown_outcome=failed_shutdown`.
+- On `SIGTERM`/`SIGINT`, daemon sets shutdown state immediately, stops intake of new inbox jobs, and handles any in-flight job deterministically as `failed/` with error reason `shutdown: daemon shutdown requested` (plus error sidecar payload). Health snapshot records `last_shutdown_outcome`, `last_shutdown_ts` (epoch seconds), `last_shutdown_reason`, and `last_shutdown_job` (always-present keys with null defaults).
 - On startup, daemon runs deterministic recovery before intake:
   - **Policy: fail-fast**. Any pending job with in-flight markers (`pending/<job>.pending.json` or `pending/<job>.state.json`) is moved to `failed/` with a structured sidecar payload:
     - `reason="recovered_after_restart"`
@@ -208,6 +208,8 @@ Panel operator notes:
   - Write pattern is atomic (`health.json.tmp` then rename).
   - `last_ok_event` + `last_ok_ts_ms` indicate recent successful activity (tick/lock/shutdown release).
   - `last_error` + `last_error_ts_ms` capture latest concise failure context.
+  - Last shutdown keys are always present: `last_shutdown_outcome` (`clean`/`failed_shutdown`/`startup_recovered`), `last_shutdown_ts` (epoch seconds), `last_shutdown_reason`, `last_shutdown_job`.
+  - Quick inspect: `cat notes/queue/health.json | jq '{last_shutdown_outcome,last_shutdown_ts,last_shutdown_reason,last_shutdown_job}'`.
   - Concurrent writes use read-modify-write and may rarely lose an increment under heavy contention; counters are still suitable for operational trend visibility.
 
 ### Incident runbook: daemon lock + panel auth/CSRF
