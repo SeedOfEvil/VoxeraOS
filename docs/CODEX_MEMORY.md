@@ -1,4 +1,16 @@
 
+## 2026-03-04 — PR #N/A — test: isolate health snapshot writes during pytest
+- Summary:
+  - Added `_health_snapshot_path(queue_root)` private helper in `src/voxera/health.py` that returns `Path(VOXERA_HEALTH_PATH)` when that env var is non-empty, and falls back to `queue_root / "health.json"` otherwise.
+  - Updated `health_path(queue_root)` to delegate to `_health_snapshot_path()` so all callers (`read_health_snapshot`, `write_health_snapshot`, and every record_* helper) automatically honour the override.
+  - Added `_isolate_health_snapshot` `autouse=True` fixture in `tests/conftest.py`: sets `VOXERA_HEALTH_PATH` to a per-test temp file and seeds it with a normalised empty snapshot; runs after `_sanitize_voxera_env` so the env var survives the sanitise pass.
+  - Added `tests/test_health_snapshot_isolation.py` with four regression tests: repo file not written by fallback records, env var is set for every test, writes land in isolated path (not `queue_root/health.json`), and isolation is independent across tests.
+  - Updated `docs/ops.md`: added a "Testing" subsection explaining `VOXERA_HEALTH_PATH` isolation; added `VOXERA_HEALTH_PATH` to key runtime env vars list.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+
 ## 2026-03-04 — PR #N/A — feat(P3.2): apply brain backoff sleep on repeated brain failures
 - Summary:
   - Applied brain backoff at daemon orchestration layer in `src/voxera/core/queue_daemon.py` immediately before queue-driven `plan_mission(...)` attempts.

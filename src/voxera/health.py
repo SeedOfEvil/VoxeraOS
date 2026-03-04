@@ -158,8 +158,21 @@ def update_degradation_state(
     return next_state
 
 
-def health_path(queue_root: Path) -> Path:
+def _health_snapshot_path(queue_root: Path) -> Path:
+    """Return the health snapshot path, honouring VOXERA_HEALTH_PATH override if set.
+
+    When ``VOXERA_HEALTH_PATH`` is non-empty, that path is used instead of the
+    default ``queue_root/health.json``.  This lets test suites redirect writes
+    to a temporary location without touching the real operator snapshot.
+    """
+    env_val = os.environ.get("VOXERA_HEALTH_PATH", "").strip()
+    if env_val:
+        return Path(env_val).expanduser().resolve()
     return queue_root / HEALTH_FILE_NAME
+
+
+def health_path(queue_root: Path) -> Path:
+    return _health_snapshot_path(queue_root)
 
 
 def read_health_snapshot(queue_root: Path) -> dict[str, Any]:
