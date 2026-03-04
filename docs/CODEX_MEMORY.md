@@ -1,4 +1,18 @@
 
+## 2026-03-04 — PR #N/A — feat(P3.2): compute brain backoff wait from consecutive failures
+- Summary:
+  - Added deterministic `compute_brain_backoff_s(consecutive_brain_failures)` in `src/voxera/health.py` with ladder semantics: `<3 => 0`, `>=3 => base`, `>=5 => 4*base`, `>=10 => 15*base`, capped by max.
+  - Added safe env parsing for `VOXERA_BRAIN_BACKOFF_BASE_S` (default `2`) and `VOXERA_BRAIN_BACKOFF_MAX_S` (default `60`), with invalid values falling back to defaults and negative values clamped to `0`.
+  - Extended health snapshot normalization so `brain_backoff_wait_s` is always present and derived from `consecutive_brain_failures`, including normalization of older snapshots missing the new field.
+  - Expanded deterministic unit tests in `tests/test_brain_fallback.py` for ladder mapping, cap behavior, env overrides, invalid/negative env handling, and snapshot integration.
+  - Updated informational docs (`README.md`, `docs/ops.md`, `docs/ROADMAP.md`, `docs/ROADMAP_0.1.6.md`) to reflect reporting-only backoff computation scope.
+- Validation:
+  - `ruff format .`
+  - `ruff check . --fix`
+  - `pytest`
+  - `make merge-readiness-check`
+
+
 ## 2026-03-03 — Panel recovery/quarantine inspector (P2.3)
 - Added panel `/recovery` read-only inspector for `notes/queue/recovery/` + `notes/queue/quarantine/`.
 - Added `/recovery/download/{bucket}/{name}` operator-auth ZIP downloads with traversal protections,

@@ -108,12 +108,11 @@ Health degradation (P3.x) is deferred to v0.2.
 - On successful mission completion (`done/` transition), the counter resets to `0` and state returns to `healthy`.
 - Deterministic tests cover thresholding, reset behavior, and timestamp semantics.
 
-#### P3.2 — Brain backoff on repeated failures (PLANNED)
-- Add configurable delay between brain calls when consecutive fallbacks exceed a threshold.
-- Default backoff: 2s after 3 failures, 8s after 5, 30s after 10. Cap at 60s.
-- Configurable via `VOXERA_BRAIN_BACKOFF_BASE_S` and `VOXERA_BRAIN_BACKOFF_MAX_S`.
-- Backoff events emitted to audit log (`brain_backoff_applied`, attempt, wait_s).
-- Acceptance: consecutive-failure scenario shows increasing delays between plan attempts.
+#### P3.2 — Brain backoff computation + reporting (SHIPPED)
+- Added deterministic `compute_brain_backoff_s(consecutive_brain_failures)` ladder used for health reporting.
+- Added env knobs `VOXERA_BRAIN_BACKOFF_BASE_S` (default `2`) and `VOXERA_BRAIN_BACKOFF_MAX_S` (default `60`) with safe parsing and non-negative clamping.
+- `health.json` always includes `brain_backoff_wait_s` computed from `consecutive_brain_failures`.
+- Scope is reporting-only in this release (no daemon sleep/delay behavior).
 
 #### P3.3 — Structured shutdown outcome in `voxera queue health` (PLANNED)
 - Surface `last_shutdown_outcome`, `last_shutdown_job`, `last_shutdown_reason`, and
@@ -202,7 +201,7 @@ Health degradation (P3.x) is deferred to v0.2.
 
 ### Health degradation (DEFERRED to v0.2)
 - ✅ 3 consecutive brain fallbacks set `daemon_state = "degraded"` in health snapshot; success resets counter/state (P3.1).
-- ⏳ Backoff delays applied between brain calls after repeated fallbacks (P3.2).
+- ✅ Health snapshot now reports computed `brain_backoff_wait_s` from repeated fallback counts, with env-configurable base/max knobs (P3.2 computation/reporting scope).
 - ⏳ `voxera queue health` shows last shutdown outcome with job and reason (P3.3).
 
 ### CI + packaging (DEFERRED to v0.2)

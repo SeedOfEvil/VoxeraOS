@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -8,12 +9,47 @@ from typing import Any
 
 HEALTH_FILE_NAME = "health.json"
 _DEGRADED_THRESHOLD = 3
+_BRAIN_BACKOFF_BASE_ENV = "VOXERA_BRAIN_BACKOFF_BASE_S"
+_BRAIN_BACKOFF_MAX_ENV = "VOXERA_BRAIN_BACKOFF_MAX_S"
+_BRAIN_BACKOFF_BASE_DEFAULT_S = 2
+_BRAIN_BACKOFF_MAX_DEFAULT_S = 60
+
+
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_env_int(name: str, default: int) -> int:
+    return _safe_int(os.getenv(name), default)
+
+
+def compute_brain_backoff_s(consecutive_brain_failures: int) -> int:
+    failures = max(_safe_int(consecutive_brain_failures, 0), 0)
+    base_s = max(_read_env_int(_BRAIN_BACKOFF_BASE_ENV, _BRAIN_BACKOFF_BASE_DEFAULT_S), 0)
+    max_s = max(_read_env_int(_BRAIN_BACKOFF_MAX_ENV, _BRAIN_BACKOFF_MAX_DEFAULT_S), 0)
+
+    wait_s = 0
+    if failures >= 10:
+        wait_s = 15 * base_s
+    elif failures >= 5:
+        wait_s = 4 * base_s
+    elif failures >= 3:
+        wait_s = base_s
+
+    wait_s = max(wait_s, 0)
+    return min(wait_s, max_s)
 
 
 def _normalize_health_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
-    consecutive_failures = int(normalized.get("consecutive_brain_failures", 0) or 0)
+    consecutive_failures = _safe_int(normalized.get("consecutive_brain_failures", 0) or 0, 0)
     normalized["consecutive_brain_failures"] = max(consecutive_failures, 0)
+    normalized["brain_backoff_wait_s"] = compute_brain_backoff_s(
+        normalized["consecutive_brain_failures"]
+    )
 
     daemon_state = str(normalized.get("daemon_state") or "healthy").lower()
     if daemon_state not in {"healthy", "degraded"}:
