@@ -108,11 +108,12 @@ Health degradation (P3.x) is deferred to v0.2.
 - On successful mission completion (`done/` transition), the counter resets to `0` and state returns to `healthy`.
 - Deterministic tests cover thresholding, reset behavior, and timestamp semantics.
 
-#### P3.2 — Brain backoff computation + reporting (SHIPPED)
+#### P3.2 — Brain backoff computation + applied planning sleep (SHIPPED)
 - Added deterministic `compute_brain_backoff_s(consecutive_brain_failures)` ladder used for health reporting.
 - Added env knobs `VOXERA_BRAIN_BACKOFF_BASE_S` (default `2`) and `VOXERA_BRAIN_BACKOFF_MAX_S` (default `60`) with safe parsing and non-negative clamping.
 - `health.json` always includes `brain_backoff_wait_s` computed from `consecutive_brain_failures`.
-- Scope is reporting-only in this release (no daemon sleep/delay behavior).
+- Daemon planning now enforces computed wait via a single pre-plan sleep when repeated failures persist.
+- `health.json` adds `brain_backoff_last_applied_s`/`brain_backoff_last_applied_ts` for observability of the latest applied delay.
 
 #### P3.3 — Structured shutdown outcome in `voxera queue health` (PLANNED)
 - Surface `last_shutdown_outcome`, `last_shutdown_job`, `last_shutdown_reason`, and

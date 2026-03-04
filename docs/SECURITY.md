@@ -158,10 +158,11 @@ and `voxera doctor --quick`.
 1. **LLM rate limiter** — prevent runaway planner calls from burning API quota (P6.2, v0.2).
 2. **Eager skill manifest validation** — catch broken manifests at startup, not mid-job (P6.1, v0.2).
 3. **Health degradation state tracking** — surface `daemon_state=degraded` after consecutive failures (P3.1, v0.2).
-4. **Podman seccomp / AppArmor profiles** — tighten sandbox beyond `--read-only`.
-5. **Signed skills + integrity verification** — prevent tampered skill entrypoints (v0.4).
-6. **Redaction pipeline for audit logs and telemetry** — strip PII and secrets from logs.
-7. **Safe-mode boot** — limited skill set, no network, confirmation-only execution (v0.4).
+4. **Brain planning backoff enforcement** — daemon applies bounded sleep before planning on repeated brain failures; latest applied delay is recorded in `health.json` (`brain_backoff_last_applied_s`, `brain_backoff_last_applied_ts`).
+5. **Podman seccomp / AppArmor profiles** — tighten sandbox beyond `--read-only`.
+6. **Signed skills + integrity verification** — prevent tampered skill entrypoints (v0.4).
+7. **Redaction pipeline for audit logs and telemetry** — strip PII and secrets from logs.
+8. **Safe-mode boot** — limited skill set, no network, confirmation-only execution (v0.4).
 
 Previously tracked items now resolved:
 - ~~Goal string sanitization + length cap~~ — FIXED in PR #85 (2,000-char cap + control-char stripping).

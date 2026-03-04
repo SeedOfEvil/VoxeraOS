@@ -96,6 +96,111 @@ def test_queue_daemon_processes_goal_to_done(tmp_path, monkeypatch):
     assert (queue_dir / "done" / "job1.json").exists()
 
 
+def test_queue_daemon_planning_backoff_no_sleep_below_threshold(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    slept: list[float] = []
+    monkeypatch.setattr("voxera.core.queue_daemon.time.sleep", lambda secs: slept.append(secs))
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
+        return MissionTemplate(
+            id="cloud_planned",
+            title="Stub Plan",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.status", args={})],
+            notes="stub",
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    for failures in (0, 2):
+        health_payload = {"consecutive_brain_failures": failures}
+        (queue_dir / "health.json").write_text(json.dumps(health_payload), encoding="utf-8")
+        job = queue_dir / f"job-{failures}.json"
+        job.write_text(json.dumps({"goal": f"check machine {failures}"}), encoding="utf-8")
+
+        daemon = MissionQueueDaemon(
+            queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+        )
+        daemon.process_pending_once()
+
+        assert (queue_dir / "done" / f"job-{failures}.json").exists()
+
+    assert slept == []
+
+
+def test_queue_daemon_planning_backoff_sleeps_once_and_updates_health(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps({"consecutive_brain_failures": 3}), encoding="utf-8"
+    )
+    (queue_dir / "job-backoff.json").write_text(
+        json.dumps({"goal": "check machine"}), encoding="utf-8"
+    )
+
+    slept: list[float] = []
+    monkeypatch.setattr("voxera.core.queue_daemon.time.sleep", lambda secs: slept.append(secs))
+    monkeypatch.setattr("voxera.core.queue_daemon.time.time", lambda: 456.0)
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
+        return MissionTemplate(
+            id="cloud_planned",
+            title="Stub Plan",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.status", args={})],
+            notes="stub",
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    assert slept == [2]
+    health = json.loads((queue_dir / "health.json").read_text(encoding="utf-8"))
+    assert health["brain_backoff_last_applied_s"] == 2
+    assert health["brain_backoff_last_applied_ts"] == 456.0
+
+
+def test_queue_daemon_backoff_sleep_occurs_once_per_plan_attempt(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps({"consecutive_brain_failures": 10}), encoding="utf-8"
+    )
+    (queue_dir / "job-once.json").write_text(
+        json.dumps({"goal": "check machine"}), encoding="utf-8"
+    )
+
+    slept: list[float] = []
+    monkeypatch.setattr("voxera.core.queue_daemon.time.sleep", lambda secs: slept.append(secs))
+
+    async def _goal_planner(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
+        return MissionTemplate(
+            id="cloud_planned",
+            title="Stub Plan",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.status", args={})],
+            notes="stub",
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _goal_planner)
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    assert slept == [30]
+
+
 def test_approval_required_hard_gate_blocks_before_execution(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     _stub_planner(monkeypatch)

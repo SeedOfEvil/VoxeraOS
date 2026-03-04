@@ -21,6 +21,7 @@ from voxera.brain.fallback import (
 from voxera.health import (
     compute_brain_backoff_s,
     read_health_snapshot,
+    record_brain_backoff_applied,
     record_brain_fallback_attempt,
     record_fallback_transition,
     record_mission_success,
@@ -446,3 +447,35 @@ class TestBackoffSnapshotIntegration:
 
         assert "brain_backoff_wait_s" in snap
         assert snap["brain_backoff_wait_s"] == compute_brain_backoff_s(10)
+
+
+class TestBackoffLastAppliedSnapshot:
+    def test_defaults_present_with_deterministic_values(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+
+        snap = read_health_snapshot(queue_root)
+
+        assert snap["brain_backoff_last_applied_s"] == 0
+        assert snap["brain_backoff_last_applied_ts"] is None
+
+    def test_record_backoff_applied_updates_last_applied_fields(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+
+        record_brain_backoff_applied(queue_root, wait_s=8, now_ts=123.5)
+        snap = read_health_snapshot(queue_root)
+
+        assert snap["brain_backoff_last_applied_s"] == 8
+        assert snap["brain_backoff_last_applied_ts"] == 123.5
+
+    def test_no_sleep_path_keeps_last_applied_values(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+
+        record_brain_backoff_applied(queue_root, wait_s=2, now_ts=99.0)
+        record_mission_success(queue_root)
+        snap = read_health_snapshot(queue_root)
+
+        assert snap["brain_backoff_last_applied_s"] == 2
+        assert snap["brain_backoff_last_applied_ts"] == 99.0
