@@ -18,7 +18,13 @@ from voxera.brain.fallback import (
     UNKNOWN,
     classify_fallback_reason,
 )
-from voxera.health import read_health_snapshot, record_fallback_transition
+from voxera.health import (
+    read_health_snapshot,
+    record_brain_fallback_attempt,
+    record_fallback_transition,
+    record_mission_success,
+    update_degradation_state,
+)
 
 # ---------------------------------------------------------------------------
 # 1. Classifier correctness for each enum category
@@ -261,3 +267,102 @@ class TestDoctorQuickFallback:
 
         fallback_check = next(item for item in checks if item["check"] == "last fallback")
         assert "AUTH implies bad key/config" in fallback_check["hint"]
+
+
+class TestDegradationStateMachine:
+    def test_fallback_three_times_sets_degraded(self):
+        state: dict[str, object] = {}
+        for _ in range(3):
+            state = update_degradation_state(
+                state, fallback_event=True, mission_success=False, now_fn=lambda: 100.0
+            )
+
+        assert state["consecutive_brain_failures"] == 3
+        assert state["daemon_state"] == "degraded"
+
+    def test_two_fallbacks_then_success_resets_healthy(self):
+        state: dict[str, object] = {}
+        state = update_degradation_state(state, fallback_event=True, mission_success=False)
+        state = update_degradation_state(state, fallback_event=True, mission_success=False)
+        state = update_degradation_state(state, fallback_event=False, mission_success=True)
+
+        assert state["consecutive_brain_failures"] == 0
+        assert state["daemon_state"] == "healthy"
+        assert state["degraded_since_ts"] is None
+        assert state["degraded_reason"] is None
+
+    def test_degraded_persists_for_fourth_and_fifth_fallback(self):
+        state: dict[str, object] = {}
+        for _ in range(5):
+            state = update_degradation_state(
+                state, fallback_event=True, mission_success=False, now_fn=lambda: 200.0
+            )
+
+        assert state["consecutive_brain_failures"] == 5
+        assert state["daemon_state"] == "degraded"
+
+    def test_degraded_since_set_once_on_transition(self):
+        calls = {"count": 0}
+
+        def _now() -> float:
+            calls["count"] += 1
+            return 33.0
+
+        state: dict[str, object] = {}
+        state = update_degradation_state(
+            state, fallback_event=True, mission_success=False, now_fn=_now
+        )
+        state = update_degradation_state(
+            state, fallback_event=True, mission_success=False, now_fn=_now
+        )
+        state = update_degradation_state(
+            state, fallback_event=True, mission_success=False, now_fn=_now
+        )
+        first = state["degraded_since_ts"]
+        state = update_degradation_state(
+            state, fallback_event=True, mission_success=False, now_fn=lambda: 99.0
+        )
+
+        assert calls["count"] == 1
+        assert first == 33.0
+        assert state["degraded_since_ts"] == 33.0
+
+
+class TestDegradationIntegration:
+    def test_three_fallback_events_write_degraded_health_snapshot(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+
+        record_brain_fallback_attempt(queue_root, now_fn=lambda: 100.0)
+        record_brain_fallback_attempt(queue_root, now_fn=lambda: 101.0)
+        record_brain_fallback_attempt(queue_root, now_fn=lambda: 102.0)
+
+        snap = read_health_snapshot(queue_root)
+        assert snap["consecutive_brain_failures"] == 3
+        assert snap["daemon_state"] == "degraded"
+
+    def test_success_resets_degraded_state(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+
+        for _ in range(3):
+            record_brain_fallback_attempt(queue_root, now_fn=lambda: 50.0)
+        record_mission_success(queue_root)
+
+        snap = read_health_snapshot(queue_root)
+        assert snap["consecutive_brain_failures"] == 0
+        assert snap["daemon_state"] == "healthy"
+        assert snap["degraded_since_ts"] is None
+
+
+class TestHealthSnapshotDefaults:
+    def test_health_snapshot_always_contains_degradation_fields(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+
+        snap = read_health_snapshot(queue_root)
+
+        assert snap["consecutive_brain_failures"] == 0
+        assert snap["daemon_state"] == "healthy"
+        assert snap["degraded_since_ts"] is None
+        assert snap["degraded_reason"] is None

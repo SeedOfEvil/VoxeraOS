@@ -22,6 +22,7 @@ from ..health import (
     read_health_snapshot,
     record_health_error,
     record_health_ok,
+    record_mission_success,
     update_health_snapshot,
 )
 from ..paths import queue_root as default_queue_root
@@ -1793,6 +1794,7 @@ class MissionQueueDaemon:
         self._write_run_streams(str(moved), rr.data)
         self._write_action_event(str(moved), "queue_job_done")
         log({"event": "queue_job_done", "job": str(moved)})
+        record_mission_success(self.queue_root)
         return True
 
     def _approval_ref_candidates(self, ref: str) -> list[str]:
@@ -2011,6 +2013,7 @@ class MissionQueueDaemon:
         self._write_run_streams(str(moved), rr.data)
         self._write_action_event(str(moved), "queue_job_done", via="approval_inbox")
         log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
+        record_mission_success(self.queue_root)
         meta_path.unlink(missing_ok=True)
         artifact_path.unlink(missing_ok=True)
         return True

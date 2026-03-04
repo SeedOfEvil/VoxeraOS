@@ -13,7 +13,7 @@ from ..audit import log
 from ..brain.fallback import classify_fallback_reason
 from ..brain.gemini import GeminiBrain
 from ..brain.openai_compat import OpenAICompatBrain
-from ..health import record_fallback_transition
+from ..health import record_brain_fallback_attempt, record_fallback_transition
 from ..models import AppConfig, BrainConfig
 from ..skills.arg_normalizer import canonicalize_args, canonicalize_argv
 from ..skills.registry import SkillRegistry
@@ -785,6 +785,7 @@ async def plan_mission(
                     to_tier=next_tier,
                     reason=fallback_reason,
                 )
+                record_brain_fallback_attempt(_qr)
 
     if payload is None or planner_name is None:
         message = _format_planner_failure_message(attempt_errors)
