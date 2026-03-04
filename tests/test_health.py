@@ -1,6 +1,4 @@
-import json
-
-from voxera.health import _normalize_health_snapshot, record_last_shutdown
+from voxera.health import _normalize_health_snapshot, read_health_snapshot, record_last_shutdown
 
 
 def test_health_normalization_adds_last_shutdown_defaults():
@@ -52,7 +50,7 @@ def test_record_last_shutdown_clean_and_failed(tmp_path):
     assert failed["last_shutdown_ts"] == 200.5
     assert failed["last_shutdown_job"] == "job-9.json"
 
-    data = json.loads((queue_root / "health.json").read_text(encoding="utf-8"))
+    data = read_health_snapshot(queue_root)
     assert data["last_shutdown_outcome"] == "failed_shutdown"
 
 

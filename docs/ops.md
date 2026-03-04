@@ -44,8 +44,18 @@ Config precedence: CLI overrides > `VOXERA_*` env > `~/.config/voxera/config.jso
 
 For deterministic local/CI tests, Make targets run pytest with `VOXERA_LOAD_DOTENV=0` and unset key `VOXERA_*` vars so shell exports and repo `.env` do not alter test outcomes.
 
+### Testing
+
+Tests isolate the operator health snapshot via the `VOXERA_HEALTH_PATH` environment variable.  The `conftest.py` `_isolate_health_snapshot` fixture sets this automatically for every test.
+
+Path-precedence rules (applied inside `health.py`):
+- **Explicit `queue_root`**: any call that receives an explicit `queue_root: Path` always uses `queue_root/health.json` and **ignores** `VOXERA_HEALTH_PATH`.  This preserves pre-seeded test fixtures and is the common case for unit and integration tests.
+- **Default-path flows** (no explicit `queue_root`): `VOXERA_HEALTH_PATH` is honoured when set, preventing operator / panel / CLI default-path flows from writing to `notes/queue/health.json` during a test run.
+- **Production** (unset `VOXERA_HEALTH_PATH`): reads and writes use `notes/queue/health.json` as before; no behavior change.
+
 Key runtime env vars (defaults):
 - `VOXERA_QUEUE_ROOT` (`~/VoxeraOS/notes/queue`)
+- `VOXERA_HEALTH_PATH` (unset — override health snapshot file path; used in tests via `conftest.py`)
 - `VOXERA_PANEL_HOST` (`127.0.0.1`)
 - `VOXERA_PANEL_PORT` (`8844`, `make panel` uses `8787`)
 - `VOXERA_PANEL_OPERATOR_USER` (`admin`)

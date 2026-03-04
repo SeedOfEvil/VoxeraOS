@@ -158,12 +158,41 @@ def update_degradation_state(
     return next_state
 
 
+def _default_operator_queue_root() -> Path:
+    """Return the default operator queue root without importing platformdirs."""
+    return Path.home() / "VoxeraOS" / "notes" / "queue"
+
+
+def _health_snapshot_path(queue_root: Path | None = None) -> Path:
+    """Return the health snapshot path.
+
+    Precedence rules (in order):
+
+    1. If *queue_root* is explicitly provided (not ``None``), always return
+       ``queue_root / health.json``.  ``VOXERA_HEALTH_PATH`` is **ignored**
+       so that callers with an explicit temp directory are never redirected
+       elsewhere (preserves pre-seeded test data in queue_root).
+    2. If *queue_root* is ``None``, honour ``VOXERA_HEALTH_PATH`` when set
+       and non-empty (test isolation for operator / panel / CLI default-path
+       flows that do not pass an explicit queue root).
+    3. If *queue_root* is ``None`` and ``VOXERA_HEALTH_PATH`` is unset, fall
+       back to the default operator queue root
+       (``~/VoxeraOS/notes/queue/health.json``).
+    """
+    if queue_root is not None:
+        return queue_root / HEALTH_FILE_NAME
+    env_val = os.environ.get("VOXERA_HEALTH_PATH", "").strip()
+    if env_val:
+        return Path(env_val).expanduser().resolve()
+    return _default_operator_queue_root() / HEALTH_FILE_NAME
+
+
 def health_path(queue_root: Path) -> Path:
-    return queue_root / HEALTH_FILE_NAME
+    return _health_snapshot_path(queue_root)
 
 
-def read_health_snapshot(queue_root: Path) -> dict[str, Any]:
-    path = health_path(queue_root)
+def read_health_snapshot(queue_root: Path | None = None) -> dict[str, Any]:
+    path = _health_snapshot_path(queue_root)
     if not path.exists():
         return _normalize_health_snapshot({})
     try:
@@ -175,9 +204,8 @@ def read_health_snapshot(queue_root: Path) -> dict[str, Any]:
     return _normalize_health_snapshot(payload)
 
 
-def write_health_snapshot(queue_root: Path, payload: dict[str, Any]) -> None:
-    queue_root.mkdir(parents=True, exist_ok=True)
-    path = health_path(queue_root)
+def write_health_snapshot(queue_root: Path | None, payload: dict[str, Any]) -> None:
+    path = _health_snapshot_path(queue_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
@@ -188,7 +216,7 @@ def write_health_snapshot(queue_root: Path, payload: dict[str, Any]) -> None:
 
 
 def update_health_snapshot(
-    queue_root: Path,
+    queue_root: Path | None,
     updater: Callable[[dict[str, Any]], dict[str, Any] | None],
 ) -> dict[str, Any]:
     current = read_health_snapshot(queue_root)
@@ -199,7 +227,7 @@ def update_health_snapshot(
 
 
 def record_brain_fallback_attempt(
-    queue_root: Path,
+    queue_root: Path | None,
     *,
     now_fn: Callable[[], float] = time.time,
 ) -> dict[str, Any]:
@@ -295,7 +323,7 @@ def record_health_error(queue_root: Path, msg: str) -> None:
 
 
 def record_fallback_transition(
-    queue_root: Path,
+    queue_root: Path | None,
     *,
     from_tier: str,
     to_tier: str,

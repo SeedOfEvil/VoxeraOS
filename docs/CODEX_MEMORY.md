@@ -1,4 +1,19 @@
 
+## 2026-03-04 — PR #N/A — test: isolate health snapshot writes during pytest (surgical fix)
+- Summary:
+  - Corrected `_health_snapshot_path` precedence in `src/voxera/health.py`:
+    - **Explicit `queue_root` (not None)**: always returns `queue_root / "health.json"`; `VOXERA_HEALTH_PATH` is **ignored**.  Prevents the env var from hijacking tests that pre-seed their own temp queue directories.
+    - **`queue_root=None` (default-path flows)**: honours `VOXERA_HEALTH_PATH` when set, then falls back to `~/VoxeraOS/notes/queue/health.json`.
+  - Added `_default_operator_queue_root()` inline helper (no `platformdirs` import) for the None-path fallback.
+  - Added `_isolate_health_snapshot` `autouse=True` fixture in `tests/conftest.py`; depends on `_sanitize_voxera_env` for correct ordering.
+  - Updated `tests/test_health_snapshot_isolation.py`: replaced old `test_health_writes_go_to_isolated_path_not_queue_root` with `test_explicit_queue_root_wins_over_voxera_health_path`, asserting that explicit queue_root writes land in `queue_root/health.json` and do not modify the VOXERA_HEALTH_PATH file.
+  - Updated `tests/test_health.py`: uses `read_health_snapshot()` instead of a direct file read.
+  - Updated `docs/ops.md` Testing section with three-level precedence rules.
+- Validation:
+  - `ruff format .`
+  - `ruff check .`
+  - `pytest`
+
 ## 2026-03-04 — PR #N/A — feat(P3.2): apply brain backoff sleep on repeated brain failures
 - Summary:
   - Applied brain backoff at daemon orchestration layer in `src/voxera/core/queue_daemon.py` immediately before queue-driven `plan_mission(...)` attempts.
