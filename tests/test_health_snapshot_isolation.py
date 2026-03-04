@@ -69,9 +69,10 @@ class TestHealthSnapshotIsolation:
             f"VOXERA_HEALTH_PATH file was not seeded by the isolation fixture: {health_file}"
         )
 
-    def test_health_writes_go_to_isolated_path_not_queue_root(self, tmp_path: Path) -> None:
-        """Writes land in VOXERA_HEALTH_PATH; queue_root/health.json is never created."""
+    def test_explicit_queue_root_wins_over_voxera_health_path(self, tmp_path: Path) -> None:
+        """Explicit queue_root always writes to queue_root/health.json; VOXERA_HEALTH_PATH is ignored."""
         isolated_path = Path(os.environ["VOXERA_HEALTH_PATH"])
+        isolated_mtime_before = isolated_path.stat().st_mtime
 
         queue_root = tmp_path / "queue"
         queue_root.mkdir()
@@ -79,15 +80,17 @@ class TestHealthSnapshotIsolation:
         for _ in range(3):
             record_brain_fallback_attempt(queue_root)
 
-        # The isolated file should have the accumulated state.
+        # Writes went to queue_root/health.json (explicit path wins).
+        assert (queue_root / "health.json").exists(), (
+            "write_health_snapshot did not write to queue_root/health.json "
+            "when an explicit queue_root was provided"
+        )
         snap = read_health_snapshot(queue_root)
         assert snap["consecutive_brain_failures"] == 3
-        assert isolated_path.exists()
 
-        # queue_root/health.json must not exist — writes were redirected.
-        assert not (queue_root / "health.json").exists(), (
-            "write_health_snapshot wrote to queue_root/health.json "
-            "instead of VOXERA_HEALTH_PATH — isolation is broken"
+        # VOXERA_HEALTH_PATH (isolated file) was NOT modified by explicit-queue_root calls.
+        assert isolated_path.stat().st_mtime == isolated_mtime_before, (
+            "VOXERA_HEALTH_PATH should not be modified when an explicit queue_root is used"
         )
 
     def test_isolation_is_independent_across_tests(self, tmp_path: Path) -> None:

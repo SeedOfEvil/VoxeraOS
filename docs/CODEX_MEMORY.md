@@ -1,11 +1,14 @@
 
-## 2026-03-04 — PR #N/A — test: isolate health snapshot writes during pytest
+## 2026-03-04 — PR #N/A — test: isolate health snapshot writes during pytest (surgical fix)
 - Summary:
-  - Added `_health_snapshot_path(queue_root)` private helper in `src/voxera/health.py` that returns `Path(VOXERA_HEALTH_PATH)` when that env var is non-empty, and falls back to `queue_root / "health.json"` otherwise.
-  - Updated `health_path(queue_root)` to delegate to `_health_snapshot_path()` so all callers (`read_health_snapshot`, `write_health_snapshot`, and every record_* helper) automatically honour the override.
-  - Added `_isolate_health_snapshot` `autouse=True` fixture in `tests/conftest.py`: sets `VOXERA_HEALTH_PATH` to a per-test temp file and seeds it with a normalised empty snapshot; runs after `_sanitize_voxera_env` so the env var survives the sanitise pass.
-  - Added `tests/test_health_snapshot_isolation.py` with four regression tests: repo file not written by fallback records, env var is set for every test, writes land in isolated path (not `queue_root/health.json`), and isolation is independent across tests.
-  - Updated `docs/ops.md`: added a "Testing" subsection explaining `VOXERA_HEALTH_PATH` isolation; added `VOXERA_HEALTH_PATH` to key runtime env vars list.
+  - Corrected `_health_snapshot_path` precedence in `src/voxera/health.py`:
+    - **Explicit `queue_root` (not None)**: always returns `queue_root / "health.json"`; `VOXERA_HEALTH_PATH` is **ignored**.  Prevents the env var from hijacking tests that pre-seed their own temp queue directories.
+    - **`queue_root=None` (default-path flows)**: honours `VOXERA_HEALTH_PATH` when set, then falls back to `~/VoxeraOS/notes/queue/health.json`.
+  - Added `_default_operator_queue_root()` inline helper (no `platformdirs` import) for the None-path fallback.
+  - Added `_isolate_health_snapshot` `autouse=True` fixture in `tests/conftest.py`; depends on `_sanitize_voxera_env` for correct ordering.
+  - Updated `tests/test_health_snapshot_isolation.py`: replaced old `test_health_writes_go_to_isolated_path_not_queue_root` with `test_explicit_queue_root_wins_over_voxera_health_path`, asserting that explicit queue_root writes land in `queue_root/health.json` and do not modify the VOXERA_HEALTH_PATH file.
+  - Updated `tests/test_health.py`: uses `read_health_snapshot()` instead of a direct file read.
+  - Updated `docs/ops.md` Testing section with three-level precedence rules.
 - Validation:
   - `ruff format .`
   - `ruff check .`
