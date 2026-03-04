@@ -423,6 +423,8 @@ class TestBackoffSnapshotIntegration:
 
         assert "brain_backoff_wait_s" in snap
         assert snap["brain_backoff_wait_s"] == compute_brain_backoff_s(0)
+        assert "brain_backoff_active" in snap
+        assert snap["brain_backoff_active"] is False
 
     def test_backoff_field_matches_consecutive_failure_count(self, tmp_path: Path):
         queue_root = tmp_path / "queue"
@@ -434,6 +436,7 @@ class TestBackoffSnapshotIntegration:
         snap = read_health_snapshot(queue_root)
         assert snap["consecutive_brain_failures"] == 5
         assert snap["brain_backoff_wait_s"] == compute_brain_backoff_s(5)
+        assert snap["brain_backoff_active"] is True
 
     def test_older_snapshot_missing_backoff_field_normalizes(self, tmp_path: Path):
         queue_root = tmp_path / "queue"
@@ -447,6 +450,27 @@ class TestBackoffSnapshotIntegration:
 
         assert "brain_backoff_wait_s" in snap
         assert snap["brain_backoff_wait_s"] == compute_brain_backoff_s(10)
+        assert "brain_backoff_active" in snap
+        assert snap["brain_backoff_active"] is True
+
+    def test_older_snapshot_missing_backoff_active_normalizes(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+        (queue_root / "health.json").write_text(
+            json.dumps(
+                {
+                    "consecutive_brain_failures": 0,
+                    "daemon_state": "healthy",
+                    "brain_backoff_wait_s": 999,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        snap = read_health_snapshot(queue_root)
+
+        assert snap["brain_backoff_wait_s"] == 0
+        assert snap["brain_backoff_active"] is False
 
 
 class TestBackoffLastAppliedSnapshot:

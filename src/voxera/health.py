@@ -52,6 +52,7 @@ def _normalize_health_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     normalized["brain_backoff_wait_s"] = compute_brain_backoff_s(
         normalized["consecutive_brain_failures"]
     )
+    normalized["brain_backoff_active"] = normalized["brain_backoff_wait_s"] > 0
 
     daemon_state = str(normalized.get("daemon_state") or "healthy").lower()
     if daemon_state not in {"healthy", "degraded"}:

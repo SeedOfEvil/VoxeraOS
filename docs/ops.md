@@ -926,6 +926,7 @@ Additional degradation fields in `health.json`:
 
 Operator interpretation:
 - `brain_backoff_wait_s` (int): computed wait (seconds) from `consecutive_brain_failures` for the next planning attempt.
+- `brain_backoff_active` (bool): `true` when computed backoff is currently in effect (`brain_backoff_wait_s > 0`), otherwise `false`.
 - `brain_backoff_last_applied_s` (int): most recent wait actually applied by daemon sleep before a plan attempt (default `0`).
 - `brain_backoff_last_applied_ts` (float|null): epoch seconds for the most recent applied sleep (default `null`).
 - Policy note: when no sleep is needed (`wait_s=0`), last-applied fields are **kept as last known values** to preserve operator visibility.
@@ -937,7 +938,7 @@ Operator interpretation:
 Inspect quickly with jq:
 
 ```bash
-jq "{daemon_state, consecutive_brain_failures, brain_backoff_wait_s, brain_backoff_last_applied_s, brain_backoff_last_applied_ts}" ~/VoxeraOS/notes/queue/health.json
+jq "{daemon_state, consecutive_brain_failures, brain_backoff_wait_s, brain_backoff_active, brain_backoff_last_applied_s, brain_backoff_last_applied_ts}" ~/VoxeraOS/notes/queue/health.json
 ```
 
 ### Data freshness

@@ -112,6 +112,7 @@ Health degradation (P3.x) is deferred to v0.2.
 - Added deterministic `compute_brain_backoff_s(consecutive_brain_failures)` ladder used for health reporting.
 - Added env knobs `VOXERA_BRAIN_BACKOFF_BASE_S` (default `2`) and `VOXERA_BRAIN_BACKOFF_MAX_S` (default `60`) with safe parsing and non-negative clamping.
 - `health.json` always includes `brain_backoff_wait_s` computed from `consecutive_brain_failures`.
+- `health.json` also includes `brain_backoff_active` (`brain_backoff_wait_s > 0`) so operators can distinguish active backoff from historical last-applied values.
 - Daemon planning now enforces computed wait via a single pre-plan sleep when repeated failures persist.
 - `health.json` adds `brain_backoff_last_applied_s`/`brain_backoff_last_applied_ts` for observability of the latest applied delay.
 

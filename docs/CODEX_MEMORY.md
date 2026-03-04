@@ -702,3 +702,11 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Operator surfaces updated to read from `health.json`: `voxera queue health` (new Last Shutdown block + JSON parity), `voxera doctor --quick` (last shutdown one-line summary), panel home Daemon Health widget (adds shutdown reason/job display).
 - Added/updated tests for normalization defaults, shutdown recording helper behavior, queue health output, quick doctor summary line, and panel rendering of shutdown reason/job.
 - Validation commands: `ruff format .`, `ruff check . --fix`, targeted `pytest` for touched suites, and `make merge-readiness-check`.
+
+## 2026-03-04 — add `brain_backoff_active` for operator clarity
+
+- Added `brain_backoff_active` to health snapshot normalization in `src/voxera/health.py`.
+- Semantics are deterministic: `brain_backoff_active = (brain_backoff_wait_s > 0)`.
+- This clarifies “active now” (`brain_backoff_active`) vs “last applied historically” (`brain_backoff_last_applied_*`), which intentionally persists across healthy/idle periods.
+- Extended backoff snapshot tests in `tests/test_brain_fallback.py` to assert default false, true when computed wait is non-zero, and backward-compatible normalization for older snapshots missing the field.
+- Validation: `ruff format .`, `ruff check . --fix`, `pytest`, `make merge-readiness-check`.
