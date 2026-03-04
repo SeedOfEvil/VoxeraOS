@@ -1,4 +1,20 @@
 
+## 2026-03-04 — PR #N/A — feat(P3.2): apply brain backoff sleep on repeated brain failures
+- Summary:
+  - Applied brain backoff at daemon orchestration layer in `src/voxera/core/queue_daemon.py` immediately before queue-driven `plan_mission(...)` attempts.
+  - Backoff wait uses `compute_brain_backoff_s(consecutive_brain_failures)` from health snapshot and sleeps only when wait > 0.
+  - Added health snapshot fields in `src/voxera/health.py`: `brain_backoff_last_applied_s` (default `0`) and `brain_backoff_last_applied_ts` (default `null`).
+  - Added writer helper `record_brain_backoff_applied(...)`; daemon records these fields only when sleep is applied.
+  - Chosen policy: when no sleep is applied, keep last-applied values unchanged for operator visibility.
+  - Added deterministic tests in `tests/test_queue_daemon.py` (mocked sleep/time, threshold/no-threshold, once-per-attempt) and `tests/test_brain_fallback.py` (defaults + update semantics).
+  - Updated docs (`README.md`, `docs/ops.md`, `docs/ROADMAP.md`, `docs/ROADMAP_0.1.6.md`, `docs/SECURITY.md`) to reflect enforced backoff + observability fields.
+- Validation:
+  - `ruff format .`
+  - `ruff check . --fix`
+  - `pytest`
+  - `make merge-readiness-check`
+
+
 ## 2026-03-04 — PR #N/A — feat(P3.2): compute brain backoff wait from consecutive failures
 - Summary:
   - Added deterministic `compute_brain_backoff_s(consecutive_brain_failures)` in `src/voxera/health.py` with ladder semantics: `<3 => 0`, `>=3 => base`, `>=5 => 4*base`, `>=10 => 15*base`, capped by max.

@@ -18,8 +18,10 @@ from ..config import load_app_config as load_config
 from ..config import load_config as load_runtime_config
 from ..config import write_config_fingerprint, write_config_snapshot
 from ..health import (
+    compute_brain_backoff_s,
     increment_health_counter,
     read_health_snapshot,
+    record_brain_backoff_applied,
     record_health_error,
     record_health_ok,
     record_mission_success,
@@ -1072,6 +1074,19 @@ class MissionQueueDaemon:
             steps=mission_steps,
         )
 
+    def _apply_brain_backoff_before_plan_attempt(self) -> None:
+        """Sleep once before a planning attempt when failure backoff is active."""
+        snapshot = read_health_snapshot(self.queue_root)
+        wait_s = compute_brain_backoff_s(snapshot.get("consecutive_brain_failures", 0))
+        if wait_s <= 0:
+            return
+        time.sleep(wait_s)
+        record_brain_backoff_applied(
+            self.queue_root,
+            wait_s=wait_s,
+            now_ts=time.time(),
+        )
+
     def _build_mission_for_payload(
         self, payload: dict[str, Any], *, job_ref: str
     ) -> MissionTemplate:
@@ -1088,6 +1103,7 @@ class MissionQueueDaemon:
             return mission
         if "goal" in normalized:
             try:
+                self._apply_brain_backoff_before_plan_attempt()
                 mission = asyncio.run(
                     plan_mission(
                         goal=normalized["goal"],

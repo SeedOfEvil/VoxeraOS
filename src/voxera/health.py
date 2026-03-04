@@ -63,6 +63,16 @@ def _normalize_health_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
 
     degraded_reason = normalized.get("degraded_reason")
     normalized["degraded_reason"] = str(degraded_reason) if degraded_reason else None
+
+    backoff_last_applied_s = _safe_int(normalized.get("brain_backoff_last_applied_s", 0) or 0, 0)
+    normalized["brain_backoff_last_applied_s"] = max(backoff_last_applied_s, 0)
+
+    backoff_last_applied_ts = normalized.get("brain_backoff_last_applied_ts")
+    normalized["brain_backoff_last_applied_ts"] = (
+        float(backoff_last_applied_ts)
+        if isinstance(backoff_last_applied_ts, (int, float))
+        else None
+    )
     return normalized
 
 
@@ -164,6 +174,22 @@ def record_mission_success(queue_root: Path) -> dict[str, Any]:
         updated = update_degradation_state(payload, fallback_event=False, mission_success=True)
         updated["updated_at_ms"] = now_ms
         return updated
+
+    return update_health_snapshot(queue_root, _apply)
+
+
+def record_brain_backoff_applied(
+    queue_root: Path,
+    *,
+    wait_s: int,
+    now_ts: float,
+) -> dict[str, Any]:
+    """Persist the last applied planning backoff delay for operators."""
+
+    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
+        payload["brain_backoff_last_applied_s"] = max(_safe_int(wait_s, 0), 0)
+        payload["brain_backoff_last_applied_ts"] = float(now_ts)
+        return payload
 
     return update_health_snapshot(queue_root, _apply)
 

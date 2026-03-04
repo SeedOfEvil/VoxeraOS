@@ -118,7 +118,7 @@ Example `~/.config/voxera/config.json`:
 - Copy `.env.example` to `.env` for local non-secret defaults.
 - Keep secrets out of git; preferred location is `~/.config/voxera/env` (same `KEY=VALUE` format).
 - Runtime settings are loaded by `load_config()` into `VoxeraConfig` and include queue root, panel host/port, operator auth, lock stale window, failed-retention limits, and ops bundle directory.
-- Brain backoff computation knobs (used for health reporting):
+- Brain backoff knobs (used for computed wait and enforced daemon planning delay):
   - `VOXERA_BRAIN_BACKOFF_BASE_S` (default `2`)
   - `VOXERA_BRAIN_BACKOFF_MAX_S` (default `60`)
 - Print a redacted config snapshot for audits with:
@@ -358,7 +358,7 @@ Failed-job sidecar contract and retention:
 - Panel hygiene page (`/hygiene`) shows the latest `voxera queue prune --json` (dry-run by default; panel never passes `--yes`) and `voxera queue reconcile --json` snapshots and provides operator-trigger buttons for both actions with in-page async refresh.
 - Panel recovery inspector (`/recovery`) provides a read-only listing of `notes/queue/recovery/` and `notes/queue/quarantine/` sessions (or loose files) and per-item ZIP downloads for operator triage.
 - Widget fields: lock status (`held`/`stale`/`clear`) with PID/stale age, last brain fallback (tier/reason/timestamp), last startup recovery (job_count/orphan_count/timestamp), last shutdown outcome (outcome/timestamp), daemon state (defaults to `healthy` when absent).
-- Health snapshot ops signals: `daemon_state`, `consecutive_brain_failures`, and `brain_backoff_wait_s` (computed wait in seconds, informational-only in this release).
+- Health snapshot ops signals: `daemon_state`, `consecutive_brain_failures`, `brain_backoff_wait_s` (computed wait in seconds), and last-applied fields `brain_backoff_last_applied_s`/`brain_backoff_last_applied_ts` when sleep is enforced before planning.
 - Health snapshot now also records `last_ok_event` + `last_ok_ts_ms` so operators can confirm recent successful daemon activity; `last_error` remains for failures.
 - Use `voxera queue health` for a quick operator summary (paused flag, intake path, lock status, counters, and last safe error summary).
 - See `docs/ops.md` Incident Runbook for copy/paste recovery steps.
