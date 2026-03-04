@@ -777,15 +777,14 @@ async def plan_mission(
 
             import contextlib
 
-            _qr = queue_root or Path.home() / "VoxeraOS" / "notes" / "queue"
             with contextlib.suppress(OSError):
                 record_fallback_transition(
-                    _qr,
+                    queue_root,
                     from_tier=candidate.name,
                     to_tier=next_tier,
                     reason=fallback_reason,
                 )
-                record_brain_fallback_attempt(_qr)
+                record_brain_fallback_attempt(queue_root)
 
     if payload is None or planner_name is None:
         message = _format_planner_failure_message(attempt_errors)

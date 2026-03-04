@@ -98,6 +98,36 @@ class TestHealthSnapshotIsolation:
             "VOXERA_HEALTH_PATH should not be modified when an explicit queue_root is used"
         )
 
+    def test_record_fallback_with_none_queue_root_does_not_touch_repo_file(self) -> None:
+        """Regression: mission_planner calls record_fallback_transition/record_brain_fallback_attempt
+        with queue_root=None when no explicit queue_root is provided.  Those calls must route to
+        VOXERA_HEALTH_PATH (isolated per-test file), never to the repo operator snapshot.
+        """
+        from voxera.health import record_fallback_transition
+
+        mtime_repo_before = _file_mtime(_REPO_HEALTH_JSON)
+        isolated_path = Path(os.environ["VOXERA_HEALTH_PATH"])
+
+        # Simulate the exact call site in mission_planner.py (queue_root=None).
+        record_fallback_transition(
+            None,
+            from_tier="primary",
+            to_tier="fallback",
+            reason="timeout",
+        )
+        record_brain_fallback_attempt(None)
+
+        # Isolated file must have received the writes.
+        snap = read_health_snapshot(None)
+        assert snap["consecutive_brain_failures"] == 1
+        assert isolated_path.exists()
+
+        # Repo operator snapshot must be completely untouched.
+        assert _file_mtime(_REPO_HEALTH_JSON) == mtime_repo_before, (
+            "repo notes/queue/health.json mtime changed when record_* was called with "
+            "queue_root=None — mission_planner fallback path is leaking to real operator file"
+        )
+
     def test_default_path_flow_uses_voxera_health_path(self, tmp_path: Path) -> None:
         """queue_root=None resolves to VOXERA_HEALTH_PATH; repo operator snapshot not touched."""
         isolated_path = Path(os.environ["VOXERA_HEALTH_PATH"])

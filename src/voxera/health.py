@@ -227,7 +227,7 @@ def update_health_snapshot(
 
 
 def record_brain_fallback_attempt(
-    queue_root: Path,
+    queue_root: Path | None,
     *,
     now_fn: Callable[[], float] = time.time,
 ) -> dict[str, Any]:
@@ -323,7 +323,7 @@ def record_health_error(queue_root: Path, msg: str) -> None:
 
 
 def record_fallback_transition(
-    queue_root: Path,
+    queue_root: Path | None,
     *,
     from_tier: str,
     to_tier: str,
