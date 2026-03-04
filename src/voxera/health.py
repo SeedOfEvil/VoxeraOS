@@ -191,8 +191,8 @@ def health_path(queue_root: Path) -> Path:
     return _health_snapshot_path(queue_root)
 
 
-def read_health_snapshot(queue_root: Path) -> dict[str, Any]:
-    path = health_path(queue_root)
+def read_health_snapshot(queue_root: Path | None = None) -> dict[str, Any]:
+    path = _health_snapshot_path(queue_root)
     if not path.exists():
         return _normalize_health_snapshot({})
     try:
@@ -204,9 +204,8 @@ def read_health_snapshot(queue_root: Path) -> dict[str, Any]:
     return _normalize_health_snapshot(payload)
 
 
-def write_health_snapshot(queue_root: Path, payload: dict[str, Any]) -> None:
-    queue_root.mkdir(parents=True, exist_ok=True)
-    path = health_path(queue_root)
+def write_health_snapshot(queue_root: Path | None, payload: dict[str, Any]) -> None:
+    path = _health_snapshot_path(queue_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
@@ -217,7 +216,7 @@ def write_health_snapshot(queue_root: Path, payload: dict[str, Any]) -> None:
 
 
 def update_health_snapshot(
-    queue_root: Path,
+    queue_root: Path | None,
     updater: Callable[[dict[str, Any]], dict[str, Any] | None],
 ) -> dict[str, Any]:
     current = read_health_snapshot(queue_root)

@@ -11,7 +11,12 @@ import hashlib
 import os
 from pathlib import Path
 
-from voxera.health import read_health_snapshot, record_brain_fallback_attempt
+from voxera.health import (
+    _health_snapshot_path,
+    read_health_snapshot,
+    record_brain_fallback_attempt,
+    write_health_snapshot,
+)
 
 # Canonical location of the operator health snapshot inside the repo checkout.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -91,6 +96,26 @@ class TestHealthSnapshotIsolation:
         # VOXERA_HEALTH_PATH (isolated file) was NOT modified by explicit-queue_root calls.
         assert isolated_path.stat().st_mtime == isolated_mtime_before, (
             "VOXERA_HEALTH_PATH should not be modified when an explicit queue_root is used"
+        )
+
+    def test_default_path_flow_uses_voxera_health_path(self, tmp_path: Path) -> None:
+        """queue_root=None resolves to VOXERA_HEALTH_PATH; repo operator snapshot not touched."""
+        isolated_path = Path(os.environ["VOXERA_HEALTH_PATH"])
+        mtime_repo_before = _file_mtime(_REPO_HEALTH_JSON)
+
+        # Resolver with None must return exactly the VOXERA_HEALTH_PATH file.
+        assert _health_snapshot_path(None) == isolated_path, (
+            "_health_snapshot_path(None) should return the VOXERA_HEALTH_PATH file"
+        )
+
+        # Writing through queue_root=None must land in the isolated file, not the repo path.
+        write_health_snapshot(None, {"consecutive_brain_failures": 7})
+        snap = read_health_snapshot(None)
+        assert snap["consecutive_brain_failures"] == 7
+
+        # Repo operator snapshot must remain untouched.
+        assert _file_mtime(_REPO_HEALTH_JSON) == mtime_repo_before, (
+            "repo notes/queue/health.json mtime changed via queue_root=None write"
         )
 
     def test_isolation_is_independent_across_tests(self, tmp_path: Path) -> None:
