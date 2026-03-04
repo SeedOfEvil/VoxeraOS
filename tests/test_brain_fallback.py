@@ -19,6 +19,7 @@ from voxera.brain.fallback import (
     classify_fallback_reason,
 )
 from voxera.health import (
+    compute_brain_backoff_s,
     read_health_snapshot,
     record_brain_fallback_attempt,
     record_fallback_transition,
@@ -366,3 +367,82 @@ class TestHealthSnapshotDefaults:
         assert snap["daemon_state"] == "healthy"
         assert snap["degraded_since_ts"] is None
         assert snap["degraded_reason"] is None
+
+
+class TestBrainBackoffComputation:
+    def test_default_ladder_mapping(self, monkeypatch):
+        monkeypatch.delenv("VOXERA_BRAIN_BACKOFF_BASE_S", raising=False)
+        monkeypatch.delenv("VOXERA_BRAIN_BACKOFF_MAX_S", raising=False)
+
+        assert compute_brain_backoff_s(0) == 0
+        assert compute_brain_backoff_s(1) == 0
+        assert compute_brain_backoff_s(2) == 0
+        assert compute_brain_backoff_s(3) == 2
+        assert compute_brain_backoff_s(4) == 2
+        for failures in range(5, 10):
+            assert compute_brain_backoff_s(failures) == 8
+        assert compute_brain_backoff_s(10) == 30
+        assert compute_brain_backoff_s(99) == 30
+
+    def test_cap_applies_from_env_max(self, monkeypatch):
+        monkeypatch.setenv("VOXERA_BRAIN_BACKOFF_MAX_S", "5")
+        monkeypatch.delenv("VOXERA_BRAIN_BACKOFF_BASE_S", raising=False)
+
+        assert compute_brain_backoff_s(10) == 5
+
+    def test_env_overrides_valid_ints(self, monkeypatch):
+        monkeypatch.setenv("VOXERA_BRAIN_BACKOFF_BASE_S", "3")
+        monkeypatch.setenv("VOXERA_BRAIN_BACKOFF_MAX_S", "100")
+
+        assert compute_brain_backoff_s(3) == 3
+        assert compute_brain_backoff_s(5) == 12
+        assert compute_brain_backoff_s(10) == 45
+
+    def test_invalid_env_values_fallback_to_defaults(self, monkeypatch):
+        monkeypatch.setenv("VOXERA_BRAIN_BACKOFF_BASE_S", "nope")
+        monkeypatch.setenv("VOXERA_BRAIN_BACKOFF_MAX_S", "bad")
+
+        assert compute_brain_backoff_s(3) == 2
+        assert compute_brain_backoff_s(10) == 30
+
+    def test_negative_env_values_clamp_to_zero(self, monkeypatch):
+        monkeypatch.setenv("VOXERA_BRAIN_BACKOFF_BASE_S", "-7")
+        monkeypatch.setenv("VOXERA_BRAIN_BACKOFF_MAX_S", "-2")
+
+        assert compute_brain_backoff_s(3) == 0
+        assert compute_brain_backoff_s(10) == 0
+
+
+class TestBackoffSnapshotIntegration:
+    def test_normalized_snapshot_always_contains_backoff_field(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+
+        snap = read_health_snapshot(queue_root)
+
+        assert "brain_backoff_wait_s" in snap
+        assert snap["brain_backoff_wait_s"] == compute_brain_backoff_s(0)
+
+    def test_backoff_field_matches_consecutive_failure_count(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+
+        for _ in range(5):
+            record_brain_fallback_attempt(queue_root, now_fn=lambda: 10.0)
+
+        snap = read_health_snapshot(queue_root)
+        assert snap["consecutive_brain_failures"] == 5
+        assert snap["brain_backoff_wait_s"] == compute_brain_backoff_s(5)
+
+    def test_older_snapshot_missing_backoff_field_normalizes(self, tmp_path: Path):
+        queue_root = tmp_path / "queue"
+        queue_root.mkdir()
+        (queue_root / "health.json").write_text(
+            json.dumps({"consecutive_brain_failures": 10, "daemon_state": "degraded"}),
+            encoding="utf-8",
+        )
+
+        snap = read_health_snapshot(queue_root)
+
+        assert "brain_backoff_wait_s" in snap
+        assert snap["brain_backoff_wait_s"] == compute_brain_backoff_s(10)

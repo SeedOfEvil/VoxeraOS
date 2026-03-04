@@ -113,11 +113,10 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 - [x] Set `daemon_state = "degraded"` when counter >= 3; reset on successful mission completion (DONE).
 - [x] Snapshot includes `degraded_since_ts` / `degraded_reason` (nullable) for operator context.
 
-**P3.2 — Brain backoff on repeated failures (PLANNED)**
-- [ ] Add configurable delay between brain calls on consecutive fallbacks.
-- [ ] Default schedule: 2s (after 3), 8s (after 5), 30s (after 10), cap at 60s.
-- [ ] Configurable via `VOXERA_BRAIN_BACKOFF_BASE_S` / `VOXERA_BRAIN_BACKOFF_MAX_S`.
-- [ ] Emit `brain_backoff_applied` audit event with `attempt` and `wait_s`.
+**P3.2 — Brain backoff computation in health snapshot (SHIPPED)**
+- [x] Added deterministic `compute_brain_backoff_s(consecutive_brain_failures)` ladder: 0 (<3), 2 (>=3), 8 (>=5), 30 (>=10), capped by max.
+- [x] Added env overrides `VOXERA_BRAIN_BACKOFF_BASE_S` (default `2`) and `VOXERA_BRAIN_BACKOFF_MAX_S` (default `60`) with safe int parsing and clamped non-negative behavior.
+- [x] `health.json` now always includes `brain_backoff_wait_s` derived from `consecutive_brain_failures` (informational-only; no delay behavior added).
 
 **P3.3 — Structured shutdown outcome in `voxera queue health` (PLANNED)**
 - [ ] Surface `last_shutdown_outcome`, `last_shutdown_job`, `last_shutdown_reason`, `last_shutdown_ts`

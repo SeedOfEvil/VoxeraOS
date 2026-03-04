@@ -51,6 +51,8 @@ Key runtime env vars (defaults):
 - `VOXERA_PANEL_OPERATOR_USER` (`admin`)
 - `VOXERA_PANEL_CSRF_ENABLED` (`1`/true by default)
 - `VOXERA_QUEUE_LOCK_STALE_S` (`3600`)
+- `VOXERA_BRAIN_BACKOFF_BASE_S` (`2`, health backoff computation base)
+- `VOXERA_BRAIN_BACKOFF_MAX_S` (`60`, health backoff computation cap)
 - `VOXERA_OPS_BUNDLE_DIR` (unset => timestamped `_archive/` path)
 - When using `voxera ops bundle ... --queue-dir`, default archive output stays under that queue root (`<queue_dir>/_archive/<timestamp>/`); use `--dir` to override explicitly.
 
@@ -921,9 +923,17 @@ Additional degradation fields in `health.json`:
 - `degraded_reason` (str\|null): currently `brain_fallbacks` when degraded from fallback streaks.
 
 Operator interpretation:
+- `brain_backoff_wait_s` (int): computed wait (seconds) from `consecutive_brain_failures`; informational only in this PR (no sleep/delay applied).
+
 - `daemon_state=healthy` + `consecutive_brain_failures=0`: normal/cleared state.
 - non-zero `consecutive_brain_failures` + `healthy`: warning streak below threshold.
 - `daemon_state=degraded`: at least 3 consecutive fallback attempts have occurred; investigate provider health/credentials/network before queue pressure increases.
+
+Inspect quickly with jq:
+
+```bash
+jq "{daemon_state, consecutive_brain_failures, brain_backoff_wait_s}" ~/VoxeraOS/notes/queue/health.json
+```
 
 ### Data freshness
 
