@@ -376,6 +376,19 @@ def _format_age(age_s: int | None) -> str:
     return f"{minutes}m"
 
 
+def _history_value(value: Any) -> str:
+    text = str(value).strip() if value is not None else ""
+    return text or "-"
+
+
+def _history_pair(value: Any, ts_label: str) -> str:
+    val = _history_value(value)
+    ts = ts_label.strip() if ts_label else "-"
+    if val == "-" and ts in {"-", "—"}:
+        return "-"
+    return f"{val} @ {ts}"
+
+
 def _daemon_health_view(health: dict[str, Any]) -> dict[str, Any]:
     lock_raw = health.get("lock_status")
     lock: dict[str, Any] = lock_raw if isinstance(lock_raw, dict) else {}
@@ -476,16 +489,52 @@ def _performance_stats_view(queue: dict[str, Any], health: dict[str, Any]) -> di
             "degraded_reason": str(health.get("degraded_reason") or "") or "—",
         },
         "recent_history": {
-            "last_fallback_reason": str(health.get("last_fallback_reason") or "") or "—",
-            "last_fallback_from": str(health.get("last_fallback_from") or "") or "—",
-            "last_fallback_to": str(health.get("last_fallback_to") or "") or "—",
+            "last_fallback_reason": _history_value(health.get("last_fallback_reason")),
+            "last_fallback_from": _history_value(health.get("last_fallback_from")),
+            "last_fallback_to": _history_value(health.get("last_fallback_to")),
             "last_fallback_ts": _format_ts(_coerce_int(health.get("last_fallback_ts_ms"))),
-            "last_error": str(health.get("last_error") or "") or "—",
+            "last_fallback_line": (
+                "-"
+                if not any(
+                    [
+                        health.get("last_fallback_reason"),
+                        health.get("last_fallback_from"),
+                        health.get("last_fallback_to"),
+                        health.get("last_fallback_ts_ms"),
+                    ]
+                )
+                else (
+                    f"{_history_value(health.get('last_fallback_reason'))} "
+                    f"({_history_value(health.get('last_fallback_from'))} → {_history_value(health.get('last_fallback_to'))}) "
+                    f"@ {_format_ts(_coerce_int(health.get('last_fallback_ts_ms')))}"
+                )
+            ),
+            "last_error": _history_value(health.get("last_error")),
             "last_error_ts": _format_ts(_coerce_int(health.get("last_error_ts_ms"))),
-            "last_shutdown_outcome": str(health.get("last_shutdown_outcome") or "") or "—",
-            "last_shutdown_reason": str(health.get("last_shutdown_reason") or "") or "—",
-            "last_shutdown_job": str(health.get("last_shutdown_job") or "") or "—",
+            "last_error_line": _history_pair(
+                health.get("last_error"), _format_ts(_coerce_int(health.get("last_error_ts_ms")))
+            ),
+            "last_shutdown_outcome": _history_value(health.get("last_shutdown_outcome")),
+            "last_shutdown_reason": _history_value(health.get("last_shutdown_reason")),
+            "last_shutdown_job": _history_value(health.get("last_shutdown_job")),
             "last_shutdown_ts": _format_ts_seconds(shutdown_ts),
+            "last_shutdown_line": (
+                "-"
+                if not any(
+                    [
+                        health.get("last_shutdown_outcome"),
+                        health.get("last_shutdown_reason"),
+                        health.get("last_shutdown_job"),
+                        health.get("last_shutdown_ts"),
+                    ]
+                )
+                else (
+                    f"{_history_value(health.get('last_shutdown_outcome'))} / "
+                    f"{_history_value(health.get('last_shutdown_reason'))} / "
+                    f"{_history_value(health.get('last_shutdown_job'))} @ "
+                    f"{_format_ts_seconds(shutdown_ts)}"
+                )
+            ),
         },
         "auth_counters": {
             "panel_auth_invalid": int(counters.get("panel_auth_invalid", 0) or 0),

@@ -1026,6 +1026,8 @@ Behavior:
 
 `--json` now keeps parity with this view through top-level keys: `current_state`, `recent_history`, and `counters`.
 
+Missing/absent history is rendered consistently as `-` across CLI, doctor quick output, and panel performance history (instead of partial pairs like empty value + `None` timestamp). In JSON, absent history remains explicit (`null`) for authoritative semantics.
+
 `--watch` repeatedly refreshes the same layout (default `--interval 2.0`) for live incident response.
 
 Panel home includes a read-only **Performance Stats** tab that surfaces these same operator signals (queue counts, degradation/backoff, recent fallback/error/shutdown, auth/runtime counters) directly from `health.json`.

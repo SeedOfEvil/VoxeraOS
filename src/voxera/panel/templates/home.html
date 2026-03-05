@@ -91,9 +91,9 @@
             <p class="kpi-label"><b>Daemon paused</b></p>
             <p>{{queue.paused}}</p>
             <p class="kpi-label"><b>Last OK</b></p>
-            <p>{{queue.last_ok_event or ""}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% endif %}</p>
+            <p>{{queue.last_ok_event or "-"}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% elif not queue.last_ok_event %}{% endif %}</p>
             <p class="kpi-label"><b>Last Error</b></p>
-            <p>{{queue.last_error or ""}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% endif %}</p>
+            <p>{{queue.last_error or "-"}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% elif not queue.last_error %}{% endif %}</p>
             <div style="display:flex; gap:6px; margin-top:8px;">
               <form method="post" action="/queue/pause">
             <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Pause</button></form>
@@ -342,9 +342,9 @@
           <h2>Recent History</h2>
           <div class="table-wrap"><table>
             <tbody>
-              <tr><td>last fallback</td><td>{{performance_stats.recent_history.last_fallback_reason}} ({{performance_stats.recent_history.last_fallback_from}} → {{performance_stats.recent_history.last_fallback_to}}) @ {{performance_stats.recent_history.last_fallback_ts}}</td></tr>
-              <tr><td>last error</td><td>{{performance_stats.recent_history.last_error}} @ {{performance_stats.recent_history.last_error_ts}}</td></tr>
-              <tr><td>last shutdown</td><td>{{performance_stats.recent_history.last_shutdown_outcome}} / {{performance_stats.recent_history.last_shutdown_reason}} / {{performance_stats.recent_history.last_shutdown_job}} @ {{performance_stats.recent_history.last_shutdown_ts}}</td></tr>
+              <tr><td>last fallback</td><td>{{performance_stats.recent_history.last_fallback_line}}</td></tr>
+              <tr><td>last error</td><td>{{performance_stats.recent_history.last_error_line}}</td></tr>
+              <tr><td>last shutdown</td><td>{{performance_stats.recent_history.last_shutdown_line}}</td></tr>
             </tbody>
           </table></div>
         </article>

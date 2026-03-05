@@ -871,6 +871,15 @@ def queue_health(
         history = snapshot["recent_history"]
         counters = snapshot["counters"]
 
+        def _history_pair(value: Any, ts: Any) -> str:
+            value_text = str(value).strip() if value is not None else ""
+            if not value_text and not ts:
+                return "-"
+            return f"{value_text or '-'} @ {ts if ts is not None else '-'}"
+
+        def _display(value: Any) -> str:
+            return "-" if value is None or str(value).strip() == "" else str(value)
+
         current_table = Table(title="Current State")
         current_table.add_column("Field")
         current_table.add_column("Value")
@@ -879,20 +888,20 @@ def queue_health(
         current_table.add_row("intake_glob", str(current.get("intake_glob", "")))
         current_table.add_row("paused", str(current.get("paused", False)))
         current_table.add_row("daemon_state", str(current.get("daemon_state", "healthy")))
-        current_table.add_row("daemon_pid", str(current.get("daemon_pid")))
-        current_table.add_row("daemon_started_at_ms", str(current.get("daemon_started_at_ms")))
-        current_table.add_row("snapshot_updated_at_ms", str(current.get("updated_at_ms")))
+        current_table.add_row("daemon_pid", _display(current.get("daemon_pid")))
+        current_table.add_row("daemon_started_at_ms", _display(current.get("daemon_started_at_ms")))
+        current_table.add_row("snapshot_updated_at_ms", _display(current.get("updated_at_ms")))
         lock = current.get("lock", {}) if isinstance(current.get("lock"), dict) else {}
         current_table.add_row(
             "lock",
-            f"state={lock.get('state')} exists={lock.get('exists')} pid={lock.get('pid')} alive={lock.get('alive')}",
+            f"state={_display(lock.get('state'))} exists={lock.get('exists')} pid={_display(lock.get('pid'))} alive={lock.get('alive')}",
         )
         deg = current.get("degradation", {}) if isinstance(current.get("degradation"), dict) else {}
         current_table.add_row(
             "degradation",
             (
                 f"failures={deg.get('consecutive_brain_failures', 0)} "
-                f"reason={deg.get('degraded_reason') or '-'} since={deg.get('degraded_since_ts')}"
+                f"reason={deg.get('degraded_reason') or '-'} since={_display(deg.get('degraded_since_ts'))}"
             ),
         )
         current_table.add_row(
@@ -901,13 +910,13 @@ def queue_health(
                 f"active={deg.get('brain_backoff_active', False)} "
                 f"wait_s={deg.get('brain_backoff_wait_s', 0)} "
                 f"last_applied_s={deg.get('brain_backoff_last_applied_s', 0)} "
-                f"last_applied_ts={deg.get('brain_backoff_last_applied_ts')}"
+                f"last_applied_ts={_display(deg.get('brain_backoff_last_applied_ts'))}"
             ),
         )
         lockouts = current.get("panel_auth_lockouts", {})
         current_table.add_row(
             "panel_auth_lockouts",
-            f"locked_out_ips={lockouts.get('locked_out_ips', 0)} next_expiry_ts_ms={lockouts.get('next_expiry_ts_ms')}",
+            f"locked_out_ips={lockouts.get('locked_out_ips', 0)} next_expiry_ts_ms={_display(lockouts.get('next_expiry_ts_ms'))}",
         )
         console.print(current_table)
 
@@ -915,28 +924,41 @@ def queue_health(
         history_table.add_column("Field")
         history_table.add_column("Value")
         history_table.add_row(
-            "last_ok", f"{history.get('last_ok_event', '')} @ {history.get('last_ok_ts_ms')}"
+            "Last OK",
+            _history_pair(history.get("last_ok_event"), history.get("last_ok_ts_ms")),
         )
         history_table.add_row(
-            "Last Error", f"{history.get('last_error', '')} @ {history.get('last_error_ts_ms')}"
+            "Last Error",
+            _history_pair(history.get("last_error"), history.get("last_error_ts_ms")),
         )
-        history_table.add_row(
-            "Last Fallback",
-            (
-                f"reason={history.get('last_fallback_reason') or '-'} "
-                f"from={history.get('last_fallback_from') or '-'} "
-                f"to={history.get('last_fallback_to') or '-'} "
-                f"ts_ms={history.get('last_fallback_ts_ms')}"
-            ),
-        )
-        history_table.add_row(
-            "Last Shutdown",
-            (
-                f"outcome={history.get('last_shutdown_outcome') or '-'} "
-                f"reason={history.get('last_shutdown_reason') or '-'} "
-                f"job={history.get('last_shutdown_job') or '-'} ts={history.get('last_shutdown_ts')}"
-            ),
-        )
+        fallback_reason = history.get("last_fallback_reason")
+        fallback_from = history.get("last_fallback_from")
+        fallback_to = history.get("last_fallback_to")
+        fallback_ts = history.get("last_fallback_ts_ms")
+        if not any([fallback_reason, fallback_from, fallback_to, fallback_ts]):
+            fallback_text = "-"
+        else:
+            fallback_text = (
+                f"reason={fallback_reason or '-'} "
+                f"from={fallback_from or '-'} "
+                f"to={fallback_to or '-'} "
+                f"ts_ms={fallback_ts if fallback_ts is not None else '-'}"
+            )
+        history_table.add_row("Last Fallback", fallback_text)
+        shutdown_outcome = history.get("last_shutdown_outcome")
+        shutdown_reason = history.get("last_shutdown_reason")
+        shutdown_job = history.get("last_shutdown_job")
+        shutdown_ts = history.get("last_shutdown_ts")
+        if not any([shutdown_outcome, shutdown_reason, shutdown_job, shutdown_ts]):
+            shutdown_text = "-"
+        else:
+            shutdown_text = (
+                f"outcome={shutdown_outcome or '-'} "
+                f"reason={shutdown_reason or '-'} "
+                f"job={shutdown_job or '-'} "
+                f"ts={shutdown_ts if shutdown_ts is not None else '-'}"
+            )
+        history_table.add_row("Last Shutdown", shutdown_text)
         console.print(history_table)
 
         counters_table = Table(title="Counters")

@@ -89,9 +89,9 @@ def test_health_normalization_deterministic_defaults_for_observability_fields():
     assert payload["daemon_started_at_ms"] is None
     assert payload["daemon_pid"] is None
     assert payload["updated_at_ms"] is None
-    assert payload["last_ok_event"] == ""
+    assert payload["last_ok_event"] is None
     assert payload["last_ok_ts_ms"] is None
-    assert payload["last_error"] == ""
+    assert payload["last_error"] is None
     assert payload["last_error_ts_ms"] is None
     assert payload["last_fallback_reason"] is None
     assert payload["last_fallback_from"] is None

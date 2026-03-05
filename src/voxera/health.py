@@ -103,9 +103,12 @@ def _normalize_health_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     lock_state = str(normalized.get("lock_state") or "").strip().lower()
     normalized["lock_state"] = lock_state or None
 
-    normalized["last_error"] = str(normalized.get("last_error") or "").strip()
+    last_error = str(normalized.get("last_error") or "").strip()
+    normalized["last_error"] = last_error or None
     normalized["last_error_ts_ms"] = _safe_int(normalized.get("last_error_ts_ms"), 0) or None
-    normalized["last_ok_event"] = str(normalized.get("last_ok_event") or "").strip()
+
+    last_ok_event = str(normalized.get("last_ok_event") or "").strip()
+    normalized["last_ok_event"] = last_ok_event or None
     normalized["last_ok_ts_ms"] = _safe_int(normalized.get("last_ok_ts_ms"), 0) or None
 
     normalized["last_fallback_reason"] = (

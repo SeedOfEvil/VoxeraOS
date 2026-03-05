@@ -471,6 +471,22 @@ def test_queue_health_renders_observability_sections(tmp_path):
     assert "timeout" in result.output
 
 
+def test_queue_health_missing_history_renders_dash_not_none(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["queue", "health", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "Last OK" in result.output
+    assert "Last Error" in result.output
+    assert "Last Fallback" in result.output
+    assert "Last Shutdown" in result.output
+    assert "@ None" not in result.output
+
+
 def test_queue_health_json_contains_section_parity(tmp_path):
     runner = CliRunner()
     queue_dir = tmp_path / "queue"
