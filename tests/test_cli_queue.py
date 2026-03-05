@@ -692,3 +692,56 @@ def test_queue_health_reset_json_reports_cleared_fallback_fields(tmp_path, monke
     assert "last_fallback_from" in payload["changed_fields"]
     assert "last_fallback_to" in payload["changed_fields"]
     assert "last_fallback_ts_ms" in payload["changed_fields"]
+
+
+def test_queue_health_reset_default_queue_dir_uses_expanded_operator_path(tmp_path, monkeypatch):
+    from voxera.health import read_health_snapshot, write_health_snapshot
+
+    runner = CliRunner()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(cli, "log", lambda _event: None)
+
+    operator_queue = tmp_path / "VoxeraOS" / "notes" / "queue"
+    write_health_snapshot(
+        operator_queue,
+        {
+            "last_fallback_reason": "timeout",
+            "last_fallback_from": "primary",
+            "last_fallback_to": "fallback",
+            "last_fallback_ts_ms": 123,
+        },
+    )
+
+    result = runner.invoke(cli.app, ["queue", "health-reset", "--scope", "current_and_recent"])
+    assert result.exit_code == 0
+
+    payload = read_health_snapshot(operator_queue)
+    assert payload["last_fallback_reason"] is None
+    assert payload["last_fallback_from"] is None
+    assert payload["last_fallback_to"] is None
+    assert payload["last_fallback_ts_ms"] is None
+
+    accidental_tilde_path = Path("~") / "VoxeraOS" / "notes" / "queue" / "health.json"
+    assert not accidental_tilde_path.exists()
+
+
+def test_queue_health_and_reset_share_effective_health_path(tmp_path, monkeypatch):
+    from voxera.health import write_health_snapshot
+
+    runner = CliRunner()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(cli, "log", lambda _event: None)
+    operator_queue = tmp_path / "VoxeraOS" / "notes" / "queue"
+    write_health_snapshot(operator_queue, {"last_fallback_reason": "timeout"})
+
+    reset = runner.invoke(
+        cli.app,
+        ["queue", "health-reset", "--scope", "recent_history", "--json"],
+    )
+    assert reset.exit_code == 0
+
+    health = runner.invoke(cli.app, ["queue", "health", "--json"])
+    assert health.exit_code == 0
+    health_payload = json.loads(health.output)
+    assert health_payload["health_path"] == str((operator_queue / "health.json").resolve())
+    assert health_payload["recent_history"]["last_brain_fallback"]["reason"] is None

@@ -1707,3 +1707,19 @@ def test_panel_hygiene_health_reset_uses_isolated_health_path(tmp_path, monkeypa
     payload = read_health_snapshot(health_root)
     assert payload["last_error"] is None
     assert payload["counters"]["panel_401_count"] == 5
+
+
+def test_hygiene_page_uses_url_for_action_paths(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app, root_path="/panel")
+    res = client.get("/hygiene", headers=_operator_headers())
+
+    assert res.status_code == 200
+    assert "http://testserver/panel/hygiene/prune-dry-run" in res.text
+    assert "http://testserver/panel/hygiene/reconcile" in res.text
+    assert "http://testserver/panel/hygiene/health-reset" in res.text

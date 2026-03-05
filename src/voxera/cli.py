@@ -69,6 +69,10 @@ SNAPSHOT_PATH_OPTION = typer.Option(
 DEMO_QUEUE_DIR_OPTION = typer.Option(None, "--queue-dir", help="Queue directory path.")
 
 
+def _queue_dir_path(queue_dir: str) -> Path:
+    return Path(queue_dir).expanduser().resolve()
+
+
 def _git_sha() -> str | None:
     try:
         out = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
@@ -512,7 +516,7 @@ def queue_approvals_list(
     ),
 ):
     """List pending queue approvals."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     approvals = daemon.approvals_list()
     if not approvals:
         console.print("No pending approvals.")
@@ -628,7 +632,7 @@ def queue_init(
     ),
 ):
     """Create queue directories (safe mkdir -p; does not delete data)."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     daemon.ensure_dirs()
     console.print(f"Initialized queue directories under: {daemon.queue_root}")
     console.print(f"- inbox/: {daemon.inbox}")
@@ -649,7 +653,7 @@ def queue_status(
     ),
 ):
     """Show queue health, pending approvals, and recent failures."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     status = daemon.status_snapshot(approvals_limit=8, failed_limit=8)
 
     counts = status["counts"]
@@ -770,7 +774,7 @@ def queue_lock_status(
     ),
 ):
     """Show queue daemon lock status table."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     status = daemon.status_snapshot(approvals_limit=3, failed_limit=3)
     _render_lock_status(status)
 
@@ -794,7 +798,7 @@ def queue_health(
     """Show queue/daemon health grouped by current state, recent history, and historical counters."""
     import time
 
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
 
     def _snapshot_with_sections() -> dict[str, Any]:
         status = daemon.status_snapshot(approvals_limit=3, failed_limit=3)
@@ -1018,7 +1022,7 @@ def queue_health_reset(
     ),
 ):
     """Safely reset operator health current-state/recent-history fields."""
-    queue_root = Path(queue_dir)
+    queue_root = _queue_dir_path(queue_dir)
     try:
         summary = reset_health_snapshot(
             queue_root,
@@ -1073,7 +1077,7 @@ def queue_cancel(
     ),
 ):
     """Cancel a queue job by id or filename."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     try:
         moved = daemon.cancel_job(ref)
     except FileNotFoundError as exc:
@@ -1092,7 +1096,7 @@ def queue_retry(
     ),
 ):
     """Retry a failed queue job by id or filename."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     try:
         moved = daemon.retry_job(ref)
     except FileNotFoundError as exc:
@@ -1115,7 +1119,7 @@ def queue_unlock(
     ),
 ):
     """Remove stale/dead daemon lock, or force-remove with --force."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     if force:
         if daemon.force_unlock():
             console.print("Force-removed daemon lock.")
@@ -1152,7 +1156,7 @@ def queue_pause(
     ),
 ):
     """Pause queue processing."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     daemon.pause()
     console.print("Queue processing paused.")
 
@@ -1166,7 +1170,7 @@ def queue_resume(
     ),
 ):
     """Resume queue processing."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     daemon.resume()
     console.print("Queue processing resumed.")
 
@@ -1184,7 +1188,7 @@ def queue_approvals_approve(
     ),
 ):
     """Approve a pending queue job by filename or id."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     try:
         ok = daemon.resolve_approval(ref, approve=True, approve_always=always)
     except FileNotFoundError as exc:
@@ -1205,7 +1209,7 @@ def queue_approvals_deny(
     ),
 ):
     """Deny a pending queue job by filename or id."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+    daemon = MissionQueueDaemon(queue_root=_queue_dir_path(queue_dir))
     try:
         daemon.resolve_approval(ref, approve=False)
     except FileNotFoundError as exc:

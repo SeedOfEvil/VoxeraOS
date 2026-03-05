@@ -1732,8 +1732,7 @@ def recovery_download(bucket: str, name: str, request: Request):
 @app.get("/hygiene", response_class=HTMLResponse)
 def hygiene_page(request: Request, flash: str = ""):
     _require_operator_auth_from_request(request)
-    queue_root = _queue_root()
-    health = read_health_snapshot(queue_root)
+    health = read_health_snapshot(_health_queue_root())
     tmpl = templates.get_template("hygiene.html")
     csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
     html = tmpl.render(
@@ -1741,6 +1740,9 @@ def hygiene_page(request: Request, flash: str = ""):
         last_reconcile_result=health.get("last_reconcile_result"),
         csrf_token=csrf_token,
         flash=FLASH_MESSAGES.get(flash, ""),
+        hygiene_prune_url=str(request.url_for("hygiene_prune_dry_run")),
+        hygiene_reconcile_url=str(request.url_for("hygiene_reconcile")),
+        hygiene_health_reset_url=str(request.url_for("hygiene_health_reset")),
     )
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
@@ -1805,8 +1807,10 @@ async def hygiene_reconcile(request: Request):
     return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=200)
 
 
-def _hygiene_redirect(flash: str) -> RedirectResponse:
-    return RedirectResponse(url=f"/hygiene?flash={flash}", status_code=303)
+def _hygiene_redirect(request: Request, flash: str) -> RedirectResponse:
+    url = str(request.url_for("hygiene_page"))
+    sep = "&" if "?" in url else "?"
+    return RedirectResponse(url=f"{url}{sep}flash={flash}", status_code=303)
 
 
 @app.post("/hygiene/health-reset")
@@ -1840,7 +1844,7 @@ async def hygiene_health_reset(request: Request):
         }
     )
     flash = "health_reset_historical_counters" if counter_group else event_name
-    return _hygiene_redirect(flash)
+    return _hygiene_redirect(request, flash)
 
 
 @app.post("/queue/jobs/{ref}/cancel")
