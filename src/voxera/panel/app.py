@@ -56,7 +56,7 @@ ERROR_MESSAGES = {
     "goal_required": "Goal is required when queue type is goal.",
     "mission_id_required": "Mission ID is required.",
     "queue_kind_invalid": "Queue type must be either goal or mission.",
-    "mission_id_invalid": "Mission ID must use lowercase letters, numbers, '_' or '-'.",
+    "mission_id_invalid": "Mission ID must be 2-64 characters and use lowercase letters, numbers, '_' or '-'.",
     "steps_json_invalid": "Steps JSON must be valid JSON.",
     "steps_json_not_list": "Steps JSON must decode to a JSON list.",
     "mission_schema_invalid": "Mission template failed schema validation.",

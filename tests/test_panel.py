@@ -449,6 +449,80 @@ def test_panel_rejects_invalid_mission_id_values(tmp_path, monkeypatch):
         assert res.headers["location"] == "/?error=mission_id_invalid"
 
 
+def test_panel_mission_id_validation_boundaries_and_message(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    valid_steps = '[{"skill_id":"system.status","args":{}}]'
+
+    one_char = _authed_csrf_request(
+        client,
+        "post",
+        "/missions/templates/create",
+        data={"mission_id": "a", "steps_json": valid_steps},
+    )
+    assert one_char.status_code == 303
+    assert one_char.headers["location"] == "/?error=mission_id_invalid"
+
+    two_chars_alnum = _authed_csrf_request(
+        client,
+        "post",
+        "/missions/templates/create",
+        data={"mission_id": "a0", "steps_json": valid_steps},
+    )
+    assert two_chars_alnum.status_code == 303
+    assert two_chars_alnum.headers["location"].startswith("/?mission_created=")
+
+    two_chars_with_underscore = _authed_csrf_request(
+        client,
+        "post",
+        "/missions/templates/create",
+        data={"mission_id": "a_", "steps_json": valid_steps},
+    )
+    assert two_chars_with_underscore.status_code == 303
+    assert two_chars_with_underscore.headers["location"].startswith("/?mission_created=")
+
+    sixty_four_chars = "a" + ("0" * 63)
+    max_len = _authed_csrf_request(
+        client,
+        "post",
+        "/missions/templates/create",
+        data={"mission_id": sixty_four_chars, "steps_json": valid_steps},
+    )
+    assert max_len.status_code == 303
+    assert max_len.headers["location"].startswith("/?mission_created=")
+
+    sixty_five_chars = "a" + ("0" * 64)
+    too_long = _authed_csrf_request(
+        client,
+        "post",
+        "/missions/templates/create",
+        data={"mission_id": sixty_five_chars, "steps_json": valid_steps},
+    )
+    assert too_long.status_code == 303
+    assert too_long.headers["location"] == "/?error=mission_id_invalid"
+
+    for mission_id in ["A0", "a b", "a$"]:
+        invalid = _authed_csrf_request(
+            client,
+            "post",
+            "/missions/templates/create",
+            data={"mission_id": mission_id, "steps_json": valid_steps},
+        )
+        assert invalid.status_code == 303
+        assert invalid.headers["location"] == "/?error=mission_id_invalid"
+
+    home = client.get("/?error=mission_id_invalid", headers=_operator_headers())
+    assert home.status_code == 200
+    assert (
+        panel_module.ERROR_MESSAGES["mission_id_invalid"]
+        == "Mission ID must be 2-64 characters and use lowercase letters, numbers, '_' or '-'."
+    )
+    assert "Mission ID must be 2-64 characters" in home.text
+
+
 def test_panel_app_uses_shared_version_source():
     assert panel_module.app.version == panel_module.get_version()
 
