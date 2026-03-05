@@ -1425,3 +1425,33 @@ def test_download_rejects_path_traversal(tmp_path, monkeypatch):
         "/recovery/download/recovery/session-a/extra", headers=_operator_headers()
     )
     assert res_with_slash.status_code == 404
+
+
+def test_panel_auth_failure_writes_to_isolated_health_path_when_config_uses_real_queue(
+    tmp_path, monkeypatch
+):
+    repo_root = tmp_path / "VoxeraOS"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setattr(panel_module.Path, "home", lambda: tmp_path)
+
+    real_queue_root = repo_root / "notes" / "queue"
+    real_queue_root.mkdir(parents=True, exist_ok=True)
+    real_health = real_queue_root / "health.json"
+    real_health.write_text("{}", encoding="utf-8")
+    real_before = real_health.read_text(encoding="utf-8")
+
+    isolated_health = tmp_path / "isolated" / "health.json"
+    isolated_health.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("VOXERA_HEALTH_PATH", str(isolated_health))
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    unauth = client.post("/queue/create", data={"kind": "goal", "goal": "noop"})
+
+    assert unauth.status_code == 401
+    assert real_health.read_text(encoding="utf-8") == real_before
+
+    isolated_payload = json.loads(isolated_health.read_text(encoding="utf-8"))
+    assert isolated_payload["last_error"] == "missing authorization"
+    assert isolated_payload["counters"]["panel_401_count"] >= 1
