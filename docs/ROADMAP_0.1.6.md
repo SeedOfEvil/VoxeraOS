@@ -240,5 +240,5 @@ Health degradation (P3.x) is deferred to v0.2.
 
 
 ## Observability UX refinements
-- `voxera queue health` now supports `--watch`/`--interval` and presents Current State / Recent History / Counters with JSON parity sections.
+- `voxera queue health` now supports `--watch`/`--interval` and presents Current State / Recent History / Historical Counters with JSON parity sections.
 - Panel home adds a read-only **Performance Stats** tab to surface queue counts, degradation/backoff, fallback/error/shutdown context, and auth/runtime counters from `health.json`.

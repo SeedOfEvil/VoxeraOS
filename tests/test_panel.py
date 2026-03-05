@@ -189,8 +189,8 @@ def test_home_renders_performance_stats_tab(tmp_path, monkeypatch):
     body = res.text
     assert "Performance Stats" in body
     assert "Queue Counts" in body
-    assert "Degradation / Backoff" in body
-    assert "Auth + Runtime Counters" in body
+    assert "Current State" in body
+    assert "Historical Counters" in body
     assert "consecutive failures" in body
     assert "timeout" in body
 

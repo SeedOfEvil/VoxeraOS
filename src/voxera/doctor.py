@@ -20,6 +20,7 @@ from .config import capabilities_report_path
 from .config import load_app_config as load_config
 from .core.queue_daemon import MissionQueueDaemon
 from .health import read_health_snapshot
+from .health_semantics import build_health_semantic_sections
 
 console = Console()
 _STALE_LAST_ERROR_THRESHOLD_MS = 5 * 60 * 1000
@@ -231,10 +232,11 @@ def run_quick_doctor(
     daemon = MissionQueueDaemon(queue_root=root)
     checks: list[dict[str, str]] = []
 
-    lock = daemon.status_snapshot().get("lock_status", {})
+    snap = daemon.status_snapshot()
+    lock = snap.get("lock_status", {}) if isinstance(snap.get("lock_status"), dict) else {}
     checks.append(
         {
-            "check": "lock status",
+            "check": "current state: lock status",
             "status": "ok" if bool(lock.get("exists")) and bool(lock.get("alive")) else "warn",
             "detail": f"exists={bool(lock.get('exists'))} pid={lock.get('pid')} alive={bool(lock.get('alive'))}",
             "hint": "Run `voxera queue unlock` if lock is stale."
@@ -244,26 +246,64 @@ def run_quick_doctor(
     )
 
     health = read_health_snapshot(root)
-    last_ok_event = str(health.get("last_ok_event") or "").strip()
-    last_ok_ts = health.get("last_ok_ts_ms")
+    grouped = build_health_semantic_sections(
+        health,
+        queue_context={
+            "queue_root": str(root),
+            "health_path": str(root / "health.json"),
+            "intake_glob": str(root / "inbox" / "*.json"),
+            "paused": bool(snap.get("paused", False)),
+        },
+        lock_status=lock,
+        daemon_lock_counters=snap.get("daemon_lock_counters")
+        if isinstance(snap.get("daemon_lock_counters"), dict)
+        else {},
+    )
+    current_state = grouped["current_state"]
+    recent_history = grouped["recent_history"]
+    historical_counters = grouped["historical_counters"]
+
+    daemon_state = str(current_state.get("daemon_state", "healthy"))
+    degradation = (
+        current_state.get("degradation", {})
+        if isinstance(current_state.get("degradation"), dict)
+        else {}
+    )
+    degraded_reason = degradation.get("degraded_reason") or "-"
     checks.append(
         {
-            "check": "health last_ok",
+            "check": "current state: runtime health",
+            "status": "warn" if daemon_state == "degraded" else "ok",
+            "detail": (
+                f"daemon_state={daemon_state} failures={degradation.get('consecutive_brain_failures', 0)} "
+                f"backoff_active={degradation.get('brain_backoff_active', False)} reason={degraded_reason}"
+            ),
+            "hint": "Current runtime is degraded; inspect recent history for latest incident context."
+            if daemon_state == "degraded"
+            else "",
+        }
+    )
+
+    last_ok_event = str(recent_history.get("last_ok_event") or "").strip()
+    checks.append(
+        {
+            "check": "recent history: last_ok",
             "status": "ok" if bool(last_ok_event) else "warn",
             "detail": (
-                f"event={last_ok_event or '-'} ts={last_ok_ts if last_ok_ts is not None else '-'}"
+                f"event={last_ok_event or '-'} ts={recent_history.get('last_ok_ts_ms') if recent_history.get('last_ok_ts_ms') is not None else '-'}"
             ),
             "hint": "No recent successful health event recorded."
             if not bool(last_ok_event)
             else "",
         }
     )
-    last_error = str(health.get("last_error") or "").strip()
-    last_error_ts_ms = _as_int(health.get("last_error_ts_ms"))
-    last_ok_ts_ms = _as_int(health.get("last_ok_ts_ms"))
+
+    last_error = str(recent_history.get("last_error") or "").strip()
+    last_error_ts_ms = _as_int(recent_history.get("last_error_ts_ms"))
+    last_ok_ts_ms = _as_int(recent_history.get("last_ok_ts_ms"))
     error_status = "warn" if bool(last_error) else "ok"
     error_hint = "Investigate latest daemon/panel errors if this persists." if last_error else ""
-    error_detail = f"error={last_error or '-'} ts={health.get('last_error_ts_ms') if health.get('last_error_ts_ms') is not None else '-'}"
+    error_detail = f"error={last_error or '-'} ts={recent_history.get('last_error_ts_ms') if recent_history.get('last_error_ts_ms') is not None else '-'}"
 
     if (
         last_error
@@ -281,73 +321,18 @@ def run_quick_doctor(
 
     checks.append(
         {
-            "check": "health last_error",
+            "check": "recent history: last_error",
             "status": error_status,
             "detail": error_detail,
             "hint": error_hint,
         }
     )
 
-    panel_auth_raw = health.get("panel_auth")
-    panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
-    lockouts_raw = panel_auth.get("lockouts_by_ip")
-    lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
-    now_ms = int(time.time() * 1000)
-    active_lockouts = {
-        ip: row
-        for ip, row in lockouts.items()
-        if isinstance(row, dict) and now_ms < int(row.get("until_ts_ms", 0) or 0)
-    }
-    checks.append(
-        {
-            "check": "panel auth",
-            "status": "warn" if active_lockouts else "ok",
-            "detail": f"locked_out_ips={len(active_lockouts)}",
-            "hint": "Investigate repeated failed panel login attempts." if active_lockouts else "",
-        }
-    )
-
-    shutdown_outcome = health.get("last_shutdown_outcome")
-    shutdown_detail = (
-        "none"
-        if not shutdown_outcome
-        else "outcome={outcome} ts={ts} reason={reason} job={job}".format(
-            outcome=shutdown_outcome,
-            ts=health.get("last_shutdown_ts"),
-            reason=health.get("last_shutdown_reason") or "-",
-            job=health.get("last_shutdown_job") or "-",
-        )
-    )
-    checks.append(
-        {
-            "check": "last shutdown",
-            "status": "ok",
-            "detail": shutdown_detail,
-            "hint": "",
-        }
-    )
-
-    snap = daemon.status_snapshot()
-    checks.append(
-        {
-            "check": "queue counts",
-            "status": "ok",
-            "detail": "inbox={inbox} pending={pending} approvals={approvals} done={done} failed={failed}".format(
-                inbox=snap.get("inbox_count", 0),
-                pending=snap.get("pending_count", 0),
-                approvals=snap.get("approvals_count", 0),
-                done=snap.get("done_count", 0),
-                failed=snap.get("failed_count", 0),
-            ),
-            "hint": "",
-        }
-    )
-
-    # --- last fallback transition -------------------------------------------
-    fb_reason = str(health.get("last_fallback_reason") or "")
-    fb_from = str(health.get("last_fallback_from") or "")
-    fb_to = str(health.get("last_fallback_to") or "")
-    fb_ts = health.get("last_fallback_ts_ms", "")
+    fallback = recent_history.get("last_brain_fallback", {})
+    fb_reason = str(fallback.get("reason") or "") if isinstance(fallback, dict) else ""
+    fb_from = str(fallback.get("from") or "") if isinstance(fallback, dict) else ""
+    fb_to = str(fallback.get("to") or "") if isinstance(fallback, dict) else ""
+    fb_ts = fallback.get("ts_ms") if isinstance(fallback, dict) else ""
     if fb_reason:
         fb_detail = (
             f"{fb_from or '-'} -> {fb_to or '-'} reason={fb_reason} ts={fb_ts if fb_ts else '-'}"
@@ -363,10 +348,61 @@ def run_quick_doctor(
         fb_hint = ""
     checks.append(
         {
-            "check": "last fallback",
+            "check": "recent history: last fallback",
             "status": "ok" if not fb_reason else "warn",
             "detail": fb_detail,
             "hint": fb_hint,
+        }
+    )
+
+    shutdown_outcome = recent_history.get("last_shutdown_outcome")
+    shutdown_detail = (
+        "none"
+        if not shutdown_outcome
+        else "outcome={outcome} ts={ts} reason={reason} job={job}".format(
+            outcome=shutdown_outcome,
+            ts=recent_history.get("last_shutdown_ts"),
+            reason=recent_history.get("last_shutdown_reason") or "-",
+            job=recent_history.get("last_shutdown_job") or "-",
+        )
+    )
+    checks.append(
+        {
+            "check": "recent history: last shutdown",
+            "status": "ok",
+            "detail": shutdown_detail,
+            "hint": "",
+        }
+    )
+
+    checks.append(
+        {
+            "check": "historical counters: panel auth",
+            "status": "warn"
+            if int(current_state.get("panel_auth_lockouts", {}).get("locked_out_ips", 0) or 0) > 0
+            else "ok",
+            "detail": (
+                f"locked_out_ips={current_state.get('panel_auth_lockouts', {}).get('locked_out_ips', 0)} "
+                f"401={int(historical_counters.get('panel_401_count', 0) or 0)} "
+                f"403={int(historical_counters.get('panel_403_count', 0) or 0)} "
+                f"429={int(historical_counters.get('panel_429_count', 0) or 0)}"
+            ),
+            "hint": "Counters are cumulative; spikes indicate repeated authentication or lockout issues.",
+        }
+    )
+
+    checks.append(
+        {
+            "check": "queue counts",
+            "status": "ok",
+            "detail": "inbox={inbox} pending={pending} approvals={approvals} done={done} failed={failed}".format(
+                inbox=snap.get("counts", {}).get("inbox", 0),
+                pending=snap.get("counts", {}).get("pending", 0),
+                approvals=snap.get("counts", {}).get("pending_approvals", 0),
+                done=snap.get("counts", {}).get("done", 0),
+                failed=snap.get("counts", {}).get("failed", 0),
+            ),
+            "hint": "",
         }
     )
 

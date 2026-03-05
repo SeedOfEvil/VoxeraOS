@@ -465,7 +465,7 @@ def test_queue_health_renders_observability_sections(tmp_path):
     assert result.exit_code == 0
     assert "Current State" in result.output
     assert "Recent History" in result.output
-    assert "Counters" in result.output
+    assert "Historical Counters" in result.output
     assert "degraded" in result.output
     assert "brain_fallbacks" in result.output
     assert "timeout" in result.output
@@ -482,7 +482,7 @@ def test_queue_health_missing_history_renders_dash_not_none(tmp_path):
     assert result.exit_code == 0
     assert "Last OK" in result.output
     assert "Last Error" in result.output
-    assert "Last Fallback" in result.output
+    assert "Last Brain Fallback" in result.output
     assert "Last Shutdown" in result.output
     assert "@ None" not in result.output
 
@@ -509,9 +509,11 @@ def test_queue_health_json_contains_section_parity(tmp_path):
     assert "current_state" in payload
     assert "recent_history" in payload
     assert "counters" in payload
+    assert "historical_counters" in payload
     assert payload["current_state"]["daemon_state"] == "healthy"
     assert payload["recent_history"]["last_ok_event"] == "tick"
-    assert payload["counters"]["brain_fallback_count"] == 1
+    assert payload["historical_counters"]["brain_fallback_count"] == 1
+    assert payload["recent_history"]["last_brain_fallback"]["reason"] is None
 
 
 def test_queue_health_watch_mode_refreshes_once(tmp_path, monkeypatch):

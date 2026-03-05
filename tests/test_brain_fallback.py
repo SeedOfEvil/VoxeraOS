@@ -226,7 +226,9 @@ class TestDoctorQuickFallback:
 
         checks = run_quick_doctor(queue_root=queue_root)
 
-        fallback_check = next(item for item in checks if item["check"] == "last fallback")
+        fallback_check = next(
+            item for item in checks if item["check"] == "recent history: last fallback"
+        )
         assert fallback_check["status"] == "warn"
         assert "primary -> fast" in fallback_check["detail"]
         assert "reason=RATE_LIMIT" in fallback_check["detail"]
@@ -243,7 +245,9 @@ class TestDoctorQuickFallback:
 
         checks = run_quick_doctor(queue_root=queue_root)
 
-        fallback_check = next(item for item in checks if item["check"] == "last fallback")
+        fallback_check = next(
+            item for item in checks if item["check"] == "recent history: last fallback"
+        )
         assert fallback_check["status"] == "ok"
         assert fallback_check["detail"] == "-"
 
@@ -267,7 +271,9 @@ class TestDoctorQuickFallback:
 
         checks = run_quick_doctor(queue_root=queue_root)
 
-        fallback_check = next(item for item in checks if item["check"] == "last fallback")
+        fallback_check = next(
+            item for item in checks if item["check"] == "recent history: last fallback"
+        )
         assert "AUTH implies bad key/config" in fallback_check["hint"]
 
 

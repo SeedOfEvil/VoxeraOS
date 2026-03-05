@@ -321,17 +321,17 @@
           </table></div>
         </article>
         <article class="card">
-          <h2>Degradation / Backoff</h2>
+          <h2>Current State</h2>
           <div class="table-wrap"><table>
             <tbody>
-              <tr><td>daemon state</td><td>{{performance_stats.degradation.daemon_state}}</td></tr>
-              <tr><td>consecutive failures</td><td>{{performance_stats.degradation.consecutive_brain_failures}}</td></tr>
-              <tr><td>backoff active</td><td>{{performance_stats.degradation.brain_backoff_active}}</td></tr>
-              <tr><td>current backoff (s)</td><td>{{performance_stats.degradation.brain_backoff_wait_s}}</td></tr>
-              <tr><td>last applied backoff (s)</td><td>{{performance_stats.degradation.brain_backoff_last_applied_s}}</td></tr>
-              <tr><td>last applied backoff ts</td><td>{{performance_stats.degradation.brain_backoff_last_applied_ts}}</td></tr>
-              <tr><td>degraded since</td><td>{{performance_stats.degradation.degraded_since_ts}}</td></tr>
-              <tr><td>degraded reason</td><td>{{performance_stats.degradation.degraded_reason}}</td></tr>
+              <tr><td>daemon state</td><td>{{performance_stats.current_state.daemon_state}}</td></tr>
+              <tr><td>consecutive failures</td><td>{{performance_stats.current_state.degradation.consecutive_brain_failures}}</td></tr>
+              <tr><td>backoff active</td><td>{{performance_stats.current_state.degradation.brain_backoff_active}}</td></tr>
+              <tr><td>current backoff (s)</td><td>{{performance_stats.current_state.degradation.brain_backoff_wait_s}}</td></tr>
+              <tr><td>last applied backoff (s)</td><td>{{performance_stats.current_state.degradation.brain_backoff_last_applied_s}}</td></tr>
+              <tr><td>last applied backoff ts</td><td>{{performance_stats.current_state.degradation.brain_backoff_last_applied_ts}}</td></tr>
+              <tr><td>degraded since</td><td>{{performance_stats.current_state.degradation.degraded_since_ts}}</td></tr>
+              <tr><td>degraded reason</td><td>{{performance_stats.current_state.degradation.degraded_reason}}</td></tr>
             </tbody>
           </table></div>
         </article>
@@ -345,20 +345,22 @@
               <tr><td>last fallback</td><td>{{performance_stats.recent_history.last_fallback_line}}</td></tr>
               <tr><td>last error</td><td>{{performance_stats.recent_history.last_error_line}}</td></tr>
               <tr><td>last shutdown</td><td>{{performance_stats.recent_history.last_shutdown_line}}</td></tr>
+              <tr><td>degraded since</td><td>{{performance_stats.recent_history.degraded_since_ts}}</td></tr>
+              <tr><td>last applied backoff</td><td>{{performance_stats.recent_history.brain_backoff_last_applied_s}} @ {{performance_stats.recent_history.brain_backoff_last_applied_ts}}</td></tr>
             </tbody>
           </table></div>
         </article>
         <article class="card">
-          <h2>Auth + Runtime Counters</h2>
+          <h2>Historical Counters</h2>
           <div class="table-wrap"><table>
             <tbody>
-              <tr><td>auth invalid</td><td>{{performance_stats.auth_counters.panel_auth_invalid}}</td></tr>
-              <tr><td>401 / 403 / 429</td><td>{{performance_stats.auth_counters.panel_401_count}} / {{performance_stats.auth_counters.panel_403_count}} / {{performance_stats.auth_counters.panel_429_count}}</td></tr>
-              <tr><td>csrf missing / invalid</td><td>{{performance_stats.auth_counters.panel_csrf_missing}} / {{performance_stats.auth_counters.panel_csrf_invalid}}</td></tr>
-              <tr><td>mutation allowed</td><td>{{performance_stats.auth_counters.panel_mutation_allowed}}</td></tr>
-              <tr><td>fallback count</td><td>{{performance_stats.runtime_counters.brain_fallback_count}}</td></tr>
-              <tr><td>fallback reason timeout/auth/rate-limit</td><td>{{performance_stats.runtime_counters.brain_fallback_reason_timeout}} / {{performance_stats.runtime_counters.brain_fallback_reason_auth}} / {{performance_stats.runtime_counters.brain_fallback_reason_rate_limit}}</td></tr>
-              <tr><td>fallback reason malformed/network/unknown</td><td>{{performance_stats.runtime_counters.brain_fallback_reason_malformed}} / {{performance_stats.runtime_counters.brain_fallback_reason_network}} / {{performance_stats.runtime_counters.brain_fallback_reason_unknown}}</td></tr>
+              <tr><td>auth invalid</td><td>{{performance_stats.historical_counters.panel_auth_invalid}}</td></tr>
+              <tr><td>401 / 403 / 429</td><td>{{performance_stats.historical_counters.panel_401_count}} / {{performance_stats.historical_counters.panel_403_count}} / {{performance_stats.historical_counters.panel_429_count}}</td></tr>
+              <tr><td>csrf missing / invalid</td><td>{{performance_stats.historical_counters.panel_csrf_missing}} / {{performance_stats.historical_counters.panel_csrf_invalid}}</td></tr>
+              <tr><td>mutation allowed</td><td>{{performance_stats.historical_counters.panel_mutation_allowed}}</td></tr>
+              <tr><td>fallback count</td><td>{{performance_stats.historical_counters.brain_fallback_count}}</td></tr>
+              <tr><td>fallback reason timeout/auth/rate-limit</td><td>{{performance_stats.historical_counters.brain_fallback_reason_timeout}} / {{performance_stats.historical_counters.brain_fallback_reason_auth}} / {{performance_stats.historical_counters.brain_fallback_reason_rate_limit}}</td></tr>
+              <tr><td>fallback reason malformed/network/unknown</td><td>{{performance_stats.historical_counters.brain_fallback_reason_malformed}} / {{performance_stats.historical_counters.brain_fallback_reason_network}} / {{performance_stats.historical_counters.brain_fallback_reason_unknown}}</td></tr>
             </tbody>
           </table></div>
         </article>
