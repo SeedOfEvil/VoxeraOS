@@ -169,7 +169,7 @@ def _prune_panel_auth_maps(store: dict[str, Any], *, now_ms: int) -> None:
 
 
 def _panel_auth_state_update(
-    queue_root: Path,
+    queue_root: Path | None,
     *,
     ip: str,
     now_ms: int,
@@ -222,7 +222,7 @@ def _panel_auth_state_update(
     return update_health_snapshot(queue_root, _apply)
 
 
-def _panel_auth_state_prune(queue_root: Path, *, now_ms: int) -> dict[str, Any]:
+def _panel_auth_state_prune(queue_root: Path | None, *, now_ms: int) -> dict[str, Any]:
     def _apply(payload: dict[str, Any]) -> dict[str, Any]:
         panel_auth_raw = payload.get("panel_auth")
         panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
@@ -234,7 +234,7 @@ def _panel_auth_state_prune(queue_root: Path, *, now_ms: int) -> dict[str, Any]:
     return update_health_snapshot(queue_root, _apply)
 
 
-def _active_lockout_until_ms(*, queue_root: Path, ip: str, now_ms: int) -> int | None:
+def _active_lockout_until_ms(*, queue_root: Path | None, ip: str, now_ms: int) -> int | None:
     payload = _panel_auth_state_prune(queue_root, now_ms=now_ms)
     panel_auth_raw = payload.get("panel_auth")
     panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
@@ -249,6 +249,24 @@ def _active_lockout_until_ms(*, queue_root: Path, ip: str, now_ms: int) -> int |
 
 def _queue_root() -> Path:
     return _settings().queue_root
+
+
+def _health_queue_root() -> Path | None:
+    isolated_health = os.getenv("VOXERA_HEALTH_PATH", "").strip()
+    if not isolated_health:
+        return _queue_root()
+
+    # Keep production/runtime semantics unchanged for explicit queue roots.
+    if os.getenv("VOXERA_QUEUE_ROOT", "").strip():
+        return _queue_root()
+
+    configured_root = _queue_root().expanduser().resolve()
+    repo_operator_root = (Path.cwd() / "notes" / "queue").resolve()
+    # Test-only safety net: when panel would target the repo default queue root,
+    # route health writes through VOXERA_HEALTH_PATH instead.
+    if configured_root == repo_operator_root:
+        return None
+    return _queue_root()
 
 
 def _missions_dir() -> Path:
@@ -289,7 +307,7 @@ def _log_panel_security_event(
 
 
 def _panel_security_counter_incr(key: str, *, last_error: str | None = None) -> None:
-    increment_health_counter(_queue_root(), key, last_error=last_error)
+    increment_health_counter(_health_queue_root(), key, last_error=last_error)
 
 
 def _panel_security_snapshot() -> dict[str, Any]:
@@ -453,7 +471,7 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
     user, password = _operator_credentials(request)
     now_ms = _now_ms()
     ip = _client_ip(request)
-    lockout_until_ms = _active_lockout_until_ms(queue_root=_queue_root(), ip=ip, now_ms=now_ms)
+    lockout_until_ms = _active_lockout_until_ms(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms)
     if lockout_until_ms is not None:
         _panel_security_counter_incr("panel_429_count")
         raise HTTPException(
@@ -463,7 +481,7 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
         )
 
     if not authorization:
-        _panel_auth_state_update(queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
+        _panel_auth_state_update(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
         _panel_security_counter_incr("panel_401_count", last_error="missing authorization")
         _log_panel_security_event(
             "panel_auth_missing", request=request, reason="missing_authorization", status_code=401
@@ -477,7 +495,7 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
 
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "basic" or not token:
-        _panel_auth_state_update(queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
+        _panel_auth_state_update(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
         _panel_security_counter_incr(
             "panel_auth_invalid", last_error="invalid authentication scheme"
         )
@@ -493,7 +511,7 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
     try:
         decoded = base64.b64decode(token).decode("utf-8")
     except Exception as exc:
-        _panel_auth_state_update(queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
+        _panel_auth_state_update(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
         _panel_security_counter_incr(
             "panel_auth_invalid", last_error="invalid authorization header"
         )
@@ -511,7 +529,7 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
         secrets.compare_digest(got_user, user) and secrets.compare_digest(got_password, password)
     ):
         payload = _panel_auth_state_update(
-            queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=False
+            queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False
         )
         panel_auth_raw = payload.get("panel_auth")
         panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
@@ -555,7 +573,7 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    _panel_auth_state_update(queue_root=_queue_root(), ip=ip, now_ms=now_ms, auth_success=True)
+    _panel_auth_state_update(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=True)
 
 
 async def _require_mutation_guard(request: Request) -> None:
