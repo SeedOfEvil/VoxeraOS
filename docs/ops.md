@@ -51,6 +51,7 @@ Tests isolate the operator health snapshot via the `VOXERA_HEALTH_PATH` environm
 Path-precedence rules (applied inside `health.py`):
 - **Explicit `queue_root`**: any call that receives an explicit `queue_root: Path` always uses `queue_root/health.json` and **ignores** `VOXERA_HEALTH_PATH`.  This preserves pre-seeded test fixtures and is the common case for unit and integration tests.
 - **Default-path flows** (no explicit `queue_root`): `VOXERA_HEALTH_PATH` is honoured when set, preventing operator / panel / CLI default-path flows from writing to `notes/queue/health.json` during a test run.
+- **Panel security counters**: panel auth/CSRF counters now resolve reads and writes through the same health-root path, so homepage counters always reflect the exact snapshot file being updated (default queue root or isolated `VOXERA_HEALTH_PATH`).
 - **Production** (unset `VOXERA_HEALTH_PATH`): reads and writes use `notes/queue/health.json` as before; no behavior change.
 
 Key runtime env vars (defaults):
