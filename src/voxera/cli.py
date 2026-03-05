@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .audit import tail
+from .audit import log, tail
 from .config import load_app_config as load_config
 from .config import load_config as load_runtime_config
 from .config import (
@@ -33,6 +33,7 @@ from .core.queue_hygiene import TERMINAL_BUCKETS, prune_queue_buckets
 from .core.queue_reconcile import quarantine_reconcile_fixes, reconcile_queue
 from .demo import run_demo
 from .doctor import doctor_sync
+from .health_reset import EVENT_BY_SCOPE, HealthResetError, reset_health_snapshot
 from .health_semantics import build_health_semantic_sections
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from .ops_bundle import build_job_bundle as build_ops_job_bundle
@@ -992,6 +993,74 @@ def queue_health(
             time.sleep(interval_s)
     except KeyboardInterrupt:
         console.print("Stopped watch mode.")
+
+
+@queue_app.command("health-reset")
+def queue_health_reset(
+    scope: str = typer.Option(
+        "current_and_recent",
+        "--scope",
+        help="Reset scope: current_state, recent_history, or current_and_recent.",
+    ),
+    counter_group: str | None = typer.Option(
+        None,
+        "--counter-group",
+        help=(
+            "Optional historical counter reset group: panel_auth_counters, "
+            "brain_fallback_counters, or all_historical_counters."
+        ),
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+):
+    """Safely reset operator health current-state/recent-history fields."""
+    queue_root = Path(queue_dir)
+    try:
+        summary = reset_health_snapshot(
+            queue_root,
+            scope=scope,
+            counter_group=counter_group,
+            actor_surface="cli",
+        )
+    except HealthResetError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    event_name = (
+        "health_reset_historical_counters"
+        if counter_group
+        else EVENT_BY_SCOPE.get(scope, "health_reset")
+    )
+    log(
+        {
+            "event": event_name,
+            "scope": scope,
+            "counter_group": counter_group,
+            "actor_surface": "cli",
+            "fields_changed": summary["changed_fields"],
+            "timestamp_ms": summary["timestamp_ms"],
+        }
+    )
+
+    if json_output:
+        typer.echo(json.dumps(summary, sort_keys=True))
+        return
+
+    console.print(f"Health reset scope applied: {scope}")
+    if counter_group:
+        console.print(f"Historical counter reset group: {counter_group}")
+    else:
+        console.print("Historical counters preserved by default.")
+    if summary["changed_fields"]:
+        console.print("Changed fields:")
+        for field in summary["changed_fields"]:
+            console.print(f"- {field}")
+    else:
+        console.print("No field values changed (already reset).")
 
 
 @queue_app.command("cancel")

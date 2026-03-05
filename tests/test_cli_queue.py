@@ -591,3 +591,68 @@ def test_queue_health_json_includes_last_shutdown_fields(tmp_path):
     assert payload["last_shutdown_reason"] == "RuntimeError: boom"
     assert payload["last_shutdown_job"] == "job-b.json"
     assert payload["last_shutdown_ts"] == 1700000200.0
+
+
+def test_queue_health_reset_current_and_recent_logs_audit(tmp_path, monkeypatch):
+    from voxera.health import read_health_snapshot, write_health_snapshot
+
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(cli, "log", lambda event: events.append(event))
+    write_health_snapshot(
+        queue_dir,
+        {
+            "daemon_state": "degraded",
+            "consecutive_brain_failures": 3,
+            "last_error": "oops",
+            "last_error_ts_ms": 10,
+            "counters": {"panel_401_count": 4},
+        },
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["queue", "health-reset", "--scope", "current_and_recent", "--queue-dir", str(queue_dir)],
+    )
+    assert result.exit_code == 0
+    assert "Historical counters preserved by default" in result.output
+    payload = read_health_snapshot(queue_dir)
+    assert payload["consecutive_brain_failures"] == 0
+    assert payload["last_error"] is None
+    assert payload["counters"]["panel_401_count"] == 4
+    assert events and events[0]["event"] == "health_reset_current_and_recent"
+
+
+def test_queue_health_reset_counter_group_json(tmp_path, monkeypatch):
+    from voxera.health import write_health_snapshot
+
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    monkeypatch.setattr(cli, "log", lambda _event: None)
+    write_health_snapshot(
+        queue_dir,
+        {
+            "counters": {"panel_401_count": 2, "brain_fallback_count": 6},
+            "last_error": "x",
+        },
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "health-reset",
+            "--scope",
+            "recent_history",
+            "--counter-group",
+            "panel_auth_counters",
+            "--json",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["counter_group"] == "panel_auth_counters"
+    assert "counters.panel_401_count" in payload["changed_fields"]

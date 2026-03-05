@@ -86,6 +86,9 @@ voxera queue unlock --force   # override live lock (dangerous)
 voxera queue health           # operator health snapshot (Current State / Recent History / Historical Counters)
 voxera queue health --watch   # live refresh view for incident response
 voxera queue lock status      # lock table alias from queue health
+voxera queue health-reset --scope current_and_recent   # safe baseline reset (preserves historical counters)
+voxera queue health-reset --scope current_state          # reset live degradation/backoff state only
+voxera queue health-reset --scope recent_history         # reset recent error/fallback/shutdown context only
 ```
 
 
@@ -361,6 +364,7 @@ Failed-job sidecar contract and retention:
 - Panel home (`/`) includes a collapsible **Daemon Health** widget sourced strictly from `notes/queue/health.json` at request time (no daemon RPC calls), so it remains available in panel-only deployments.
 - Panel home also includes a read-only **Performance Stats** tab for queue counts, degradation/backoff state, recent fallback/error/shutdown context, and auth/runtime counters from the same health snapshot.
 - Panel hygiene page (`/hygiene`) shows the latest `voxera queue prune --json` (dry-run by default; panel never passes `--yes`) and `voxera queue reconcile --json` snapshots and provides operator-trigger buttons for both actions with in-page async refresh.
+- Panel hygiene page (`/hygiene`) is admin-protected and includes a dedicated **Health Reset** tab with explicit reset scopes (current state, recent history, current+recent) plus clearly separated advanced historical-counter resets.
 - Panel recovery inspector (`/recovery`) provides a read-only listing of `notes/queue/recovery/` and `notes/queue/quarantine/` sessions (or loose files) and per-item ZIP downloads for operator triage.
 - Widget fields: lock status (`held`/`stale`/`clear`) with PID/stale age, last brain fallback (tier/reason/timestamp), last startup recovery (job_count/orphan_count/timestamp), last shutdown outcome (outcome/timestamp/reason/job), daemon state (defaults to `healthy` when absent).
 - Health snapshot ops signals: `daemon_state`, `consecutive_brain_failures`, `brain_backoff_wait_s` (computed current wait in seconds), `brain_backoff_active` (true when computed wait is > 0), and last-applied fields `brain_backoff_last_applied_s`/`brain_backoff_last_applied_ts` when sleep is enforced before planning.

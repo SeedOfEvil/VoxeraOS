@@ -180,10 +180,16 @@ voxera queue unlock --force   # override live lock (dangerous)
 voxera queue health           # summary from notes/queue/health.json (Current State / Recent History / Historical Counters)
 voxera queue health --watch   # refresh every 2s (override with --interval)
 voxera queue health --json    # same snapshot with section parity fields
+voxera queue health-reset --scope current_and_recent   # reset current state + recent history (default safe reset)
+voxera queue health-reset --scope current_state          # reset current daemon/degradation state only
+voxera queue health-reset --scope recent_history         # reset last error/fallback/shutdown context only
 voxera queue lock status      # lock table alias (same lock fields as queue health)
 ```
 
 Panel home (`/`) now includes a collapsible **Daemon Health** widget sourced only from `notes/queue/health.json` (no daemon RPC calls), so it is safe/usable even when running panel-only deployments. See [Panel Daemon Health widget](#panel-daemon-health-widget) for field reference.
+Reset semantics: default resets clear only **Current State** and/or **Recent History** fields, while **Historical Counters** are preserved unless an explicit counter-group reset is requested. Use resets to clear operator noise after remediation; use investigation + audit trails for active incidents.
+
+The panel `/hygiene` page is admin-protected and now contains a dedicated **Health Reset** tab for these actions, including an advanced section for optional historical counter resets.
 
 Operational effects:
 - `queue cancel` moves matching active jobs (`inbox/`, `pending/`, pending approvals/in-flight best effort) into `canceled/` and cleans pending approval markers.

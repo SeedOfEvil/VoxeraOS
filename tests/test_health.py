@@ -99,3 +99,66 @@ def test_health_normalization_deterministic_defaults_for_observability_fields():
     assert payload["last_fallback_ts_ms"] is None
     assert payload["counters"] == {}
     assert payload["panel_auth"] == {}
+
+
+def test_reset_health_snapshot_scopes_preserve_counters(tmp_path):
+    from voxera.health import write_health_snapshot
+    from voxera.health_reset import reset_health_snapshot
+
+    queue_root = tmp_path / "queue"
+    write_health_snapshot(
+        queue_root,
+        {
+            "daemon_state": "degraded",
+            "consecutive_brain_failures": 4,
+            "degraded_reason": "brain_fallbacks",
+            "last_error": "boom",
+            "last_error_ts_ms": 12,
+            "last_fallback_reason": "timeout",
+            "last_shutdown_outcome": "failed_shutdown",
+            "counters": {"panel_401_count": 9, "brain_fallback_count": 7},
+        },
+    )
+
+    reset_health_snapshot(queue_root, scope="current_state", actor_surface="test")
+    current_only = read_health_snapshot(queue_root)
+    assert current_only["daemon_state"] == "healthy"
+    assert current_only["consecutive_brain_failures"] == 0
+    assert current_only["last_error"] == "boom"
+    assert current_only["counters"]["panel_401_count"] == 9
+
+    reset_health_snapshot(queue_root, scope="recent_history", actor_surface="test")
+    recent_only = read_health_snapshot(queue_root)
+    assert recent_only["last_error"] is None
+    assert recent_only["last_shutdown_outcome"] is None
+    assert recent_only["counters"]["brain_fallback_count"] == 7
+
+
+def test_reset_health_snapshot_counter_group_is_selective(tmp_path):
+    from voxera.health import write_health_snapshot
+    from voxera.health_reset import reset_health_snapshot
+
+    queue_root = tmp_path / "queue"
+    write_health_snapshot(
+        queue_root,
+        {
+            "counters": {
+                "panel_401_count": 2,
+                "panel_403_count": 1,
+                "brain_fallback_count": 5,
+                "other_counter": 3,
+            }
+        },
+    )
+
+    reset_health_snapshot(
+        queue_root,
+        scope="current_and_recent",
+        counter_group="panel_auth_counters",
+        actor_surface="test",
+    )
+    payload = read_health_snapshot(queue_root)
+    assert payload["counters"]["panel_401_count"] == 0
+    assert payload["counters"]["panel_403_count"] == 0
+    assert payload["counters"]["brain_fallback_count"] == 5
+    assert payload["counters"]["other_counter"] == 3

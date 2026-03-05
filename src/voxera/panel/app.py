@@ -35,6 +35,7 @@ from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
 from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import JOB_BUCKETS, list_jobs, lookup_job, queue_snapshot
 from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
+from ..health_reset import EVENT_BY_SCOPE, HealthResetError, reset_health_snapshot
 from ..health_semantics import build_health_semantic_sections
 from ..incident_bundle import BundleError
 from ..ops_bundle import build_job_bundle, build_system_bundle
@@ -75,6 +76,10 @@ FLASH_MESSAGES = {
     "cannot_cancel_terminal": "Cannot cancel terminal jobs. Use retry/delete for failed/canceled/done.",
     "approval_not_found": "Approval/job reference was not found.",
     "approval_invalid": "Approval request was invalid.",
+    "health_reset_current_state": "Health current state reset completed.",
+    "health_reset_recent_history": "Health recent history reset completed.",
+    "health_reset_current_and_recent": "Health current state and recent history reset completed.",
+    "health_reset_historical_counters": "Historical counter reset completed.",
 }
 
 CSRF_COOKIE = "voxera_panel_csrf"
@@ -1725,7 +1730,8 @@ def recovery_download(bucket: str, name: str, request: Request):
 
 
 @app.get("/hygiene", response_class=HTMLResponse)
-def hygiene_page(request: Request):
+def hygiene_page(request: Request, flash: str = ""):
+    _require_operator_auth_from_request(request)
     queue_root = _queue_root()
     health = read_health_snapshot(queue_root)
     tmpl = templates.get_template("hygiene.html")
@@ -1734,6 +1740,7 @@ def hygiene_page(request: Request):
         last_prune_result=health.get("last_prune_result"),
         last_reconcile_result=health.get("last_reconcile_result"),
         csrf_token=csrf_token,
+        flash=FLASH_MESSAGES.get(flash, ""),
     )
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
@@ -1796,6 +1803,44 @@ async def hygiene_reconcile(request: Request):
         result["error"] = run["error"]
     _write_hygiene_result(queue_root, "last_reconcile_result", result)
     return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=200)
+
+
+def _hygiene_redirect(flash: str) -> RedirectResponse:
+    return RedirectResponse(url=f"/hygiene?flash={flash}", status_code=303)
+
+
+@app.post("/hygiene/health-reset")
+async def hygiene_health_reset(request: Request):
+    await _require_mutation_guard(request)
+    scope = (await _request_value(request, "scope", "current_and_recent")).strip()
+    counter_group_raw = (await _request_value(request, "counter_group", "")).strip()
+    counter_group = counter_group_raw or None
+    try:
+        summary = reset_health_snapshot(
+            _health_queue_root(),
+            scope=scope,
+            counter_group=counter_group,
+            actor_surface="panel",
+        )
+    except HealthResetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    event_name = (
+        "health_reset_historical_counters"
+        if counter_group
+        else EVENT_BY_SCOPE.get(scope, "health_reset")
+    )
+    log(
+        {
+            "event": event_name,
+            "scope": scope,
+            "counter_group": counter_group,
+            "actor_surface": "panel",
+            "fields_changed": summary["changed_fields"],
+            "timestamp_ms": summary["timestamp_ms"],
+        }
+    )
+    flash = "health_reset_historical_counters" if counter_group else event_name
+    return _hygiene_redirect(flash)
 
 
 @app.post("/queue/jobs/{ref}/cancel")

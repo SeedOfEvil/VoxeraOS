@@ -10,31 +10,112 @@
   <div class="container">
     <header class="page-header">
       <div>
-        <h1 class="title">Queue Hygiene</h1>
-        <p class="subtitle">Run safe queue diagnostics and preview prune impact without daemon RPCs.</p>
+        <h1 class="title">Admin Hygiene & Health Reset</h1>
+        <p class="subtitle">Admin-protected operator maintenance actions. Reset actions are explicit and audited.</p>
       </div>
       <a class="btn" href="/">Back to Home</a>
     </header>
 
+    {% if flash %}
+      <div class="alert alert-success">{{flash}}</div>
+    {% endif %}
     <div id="hygiene-error" class="alert alert-danger" style="display:none;"></div>
 
-    <section class="grid grid-2">
-      <article class="card">
-        <h2>Queue prune (dry-run)</h2>
-        <p class="muted" id="prune-summary">{% if last_prune_result %}{{last_prune_result}}{% else %}No runs yet.{% endif %}</p>
-        <button id="prune-btn" class="btn btn-primary" type="button">Run prune (dry-run)</button>
-      </article>
+    <nav class="tabs" aria-label="Hygiene views">
+      <button class="tab-btn is-active" type="button" data-tab-btn="queue">Queue Hygiene</button>
+      <button class="tab-btn" type="button" data-tab-btn="resets">Health Reset</button>
+    </nav>
 
-      <article class="card">
-        <h2>Queue reconcile</h2>
-        <p class="muted" id="reconcile-summary">{% if last_reconcile_result %}{{last_reconcile_result}}{% else %}No runs yet.{% endif %}</p>
-        <button id="reconcile-btn" class="btn btn-primary" type="button">Run reconcile</button>
-      </article>
+    <section class="tab-panel" data-tab-panel="queue">
+      <section class="grid grid-2">
+        <article class="card">
+          <h2>Queue prune (dry-run)</h2>
+          <p class="muted" id="prune-summary">{% if last_prune_result %}{{last_prune_result}}{% else %}No runs yet.{% endif %}</p>
+          <button id="prune-btn" class="btn btn-primary" type="button">Run prune (dry-run)</button>
+        </article>
+
+        <article class="card">
+          <h2>Queue reconcile</h2>
+          <p class="muted" id="reconcile-summary">{% if last_reconcile_result %}{{last_reconcile_result}}{% else %}No runs yet.{% endif %}</p>
+          <button id="reconcile-btn" class="btn btn-primary" type="button">Run reconcile</button>
+        </article>
+      </section>
+    </section>
+
+    <section class="tab-panel is-hidden" data-tab-panel="resets">
+      <section class="card" style="margin-bottom:16px;">
+        <h2>Health Model</h2>
+        <p class="muted">Current State = live daemon/backoff/degradation status. Recent History = last error/fallback/shutdown context. Historical Counters = cumulative evidence and preserved by default.</p>
+      </section>
+
+      <section class="grid grid-3" style="margin-bottom:16px;">
+        <article class="card">
+          <h2>Reset current state</h2>
+          <p class="muted">Clears current degradation/backoff state only.</p>
+          <form method="post" action="/hygiene/health-reset">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            <input type="hidden" name="scope" value="current_state" />
+            <button class="btn" type="submit">Reset current state</button>
+          </form>
+        </article>
+        <article class="card">
+          <h2>Reset recent history</h2>
+          <p class="muted">Clears last error/fallback/shutdown fields only.</p>
+          <form method="post" action="/hygiene/health-reset">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            <input type="hidden" name="scope" value="recent_history" />
+            <button class="btn" type="submit">Reset recent history</button>
+          </form>
+        </article>
+        <article class="card">
+          <h2>Reset current + recent</h2>
+          <p class="muted">Recommended baseline reset. Historical counters remain untouched.</p>
+          <form method="post" action="/hygiene/health-reset">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            <input type="hidden" name="scope" value="current_and_recent" />
+            <button class="btn btn-primary" type="submit">Reset current + recent</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>Advanced: historical counter resets</h2>
+        <p class="muted">Use only when you intentionally want to clear cumulative evidence. This is more destructive and still audited.</p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <form method="post" action="/hygiene/health-reset">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            <input type="hidden" name="scope" value="current_and_recent" />
+            <input type="hidden" name="counter_group" value="panel_auth_counters" />
+            <button class="btn" type="submit">Reset panel auth counters</button>
+          </form>
+          <form method="post" action="/hygiene/health-reset">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            <input type="hidden" name="scope" value="current_and_recent" />
+            <input type="hidden" name="counter_group" value="brain_fallback_counters" />
+            <button class="btn" type="submit">Reset brain fallback counters</button>
+          </form>
+          <form method="post" action="/hygiene/health-reset">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            <input type="hidden" name="scope" value="current_and_recent" />
+            <input type="hidden" name="counter_group" value="all_historical_counters" />
+            <button class="btn btn-deny" type="submit">Reset ALL historical counters</button>
+          </form>
+        </div>
+      </section>
     </section>
   </div>
 
   <script>
     const csrfToken = "{{csrf_token}}";
+
+    const tabButtons = document.querySelectorAll('[data-tab-btn]');
+    const tabPanels = document.querySelectorAll('[data-tab-panel]');
+    tabButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        tabButtons.forEach((x) => x.classList.toggle('is-active', x === button));
+        tabPanels.forEach((panel) => panel.classList.toggle('is-hidden', panel.dataset.tabPanel !== button.dataset.tabBtn));
+      });
+    });
 
     function fmtTs(ms) {
       if (!ms) return 'n/a';
@@ -62,10 +143,7 @@
       try {
         const res = await fetch(url, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-CSRF-Token': csrfToken,
-          },
+          headers: {'Content-Type': 'application/x-www-form-urlencoded','X-CSRF-Token': csrfToken},
           body: new URLSearchParams({csrf_token: csrfToken}),
         });
         const data = await res.json();
@@ -86,15 +164,13 @@
 
     document.getElementById('prune-btn').addEventListener('click', () => {
       runAction('prune-btn', '/hygiene/prune-dry-run', (r) => {
-        const msg = `ok=${r.ok} mode=${r.mode} would_remove_jobs=${r.would_remove_jobs || 0} reclaimed_bytes=${r.reclaimed_bytes ?? 'n/a'} at=${fmtTs(r.ts_ms)}`;
-        document.getElementById('prune-summary').textContent = msg;
+        document.getElementById('prune-summary').textContent = `ok=${r.ok} mode=${r.mode} would_remove_jobs=${r.would_remove_jobs || 0} reclaimed_bytes=${r.reclaimed_bytes ?? 'n/a'} at=${fmtTs(r.ts_ms)}`;
       });
     });
 
     document.getElementById('reconcile-btn').addEventListener('click', () => {
       runAction('reconcile-btn', '/hygiene/reconcile', (r) => {
-        const msg = `ok=${r.ok} issue_counts=${JSON.stringify(r.issue_counts || {})} at=${fmtTs(r.ts_ms)}`;
-        document.getElementById('reconcile-summary').textContent = msg;
+        document.getElementById('reconcile-summary').textContent = `ok=${r.ok} issue_counts=${JSON.stringify(r.issue_counts || {})} at=${fmtTs(r.ts_ms)}`;
       });
     });
   </script>
