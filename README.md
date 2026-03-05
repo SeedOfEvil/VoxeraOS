@@ -83,7 +83,7 @@ voxera queue pause
 voxera queue resume
 voxera queue unlock           # safe: stale/dead locks only
 voxera queue unlock --force   # override live lock (dangerous)
-voxera queue health           # operator health snapshot (Current State / Recent History / Counters)
+voxera queue health           # operator health snapshot (Current State / Recent History / Historical Counters)
 voxera queue health --watch   # live refresh view for incident response
 voxera queue lock status      # lock table alias from queue health
 ```
@@ -363,7 +363,7 @@ Failed-job sidecar contract and retention:
 - Health snapshot ops signals: `daemon_state`, `consecutive_brain_failures`, `brain_backoff_wait_s` (computed current wait in seconds), `brain_backoff_active` (true when computed wait is > 0), and last-applied fields `brain_backoff_last_applied_s`/`brain_backoff_last_applied_ts` when sleep is enforced before planning.
 - Health snapshot now also records `last_ok_event` + `last_ok_ts_ms` so operators can confirm recent successful daemon activity; `last_error` remains for failures.
 - Health snapshot shutdown keys are always present with deterministic defaults (`null`): `last_shutdown_outcome`, `last_shutdown_ts`, `last_shutdown_reason`, `last_shutdown_job`. Outcome allowlist: `clean`, `failed_shutdown`, `startup_recovered`.
-- Use `voxera queue health` for an operator-first snapshot with deterministic fields and sectioned rendering: Current State (runtime + lock + degradation), Recent History (ok/error/fallback/shutdown), and Counters. `--json` returns parity sections (`current_state`, `recent_history`, `counters`) and `--watch` provides periodic refresh.
+- Use `voxera queue health` for an operator-first snapshot with deterministic fields and sectioned rendering: Current State (runtime + lock + degradation), Recent History (ok/error/fallback/shutdown), and Historical Counters. `--json` keeps `counters` for compatibility and adds `historical_counters` with the same cumulative values alongside `current_state` and `recent_history` and `--watch` provides periodic refresh.
 - See `docs/ops.md` Incident Runbook for copy/paste recovery steps.
 - Operator response when invalid rises: inspect `failed/*.error.json`, correlate with `queue_failed_sidecar_invalid` audit events, and quarantine/fix malformed sidecars before retrying jobs.
 - Schema evolution policy: writer is pinned to version `1`, reader uses an explicit supported-version allowlist (currently `[1]`), and unknown future versions are rejected deterministically.

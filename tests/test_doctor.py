@@ -363,7 +363,7 @@ def test_doctor_quick_marks_last_error_stale_when_last_ok_is_newer(tmp_path):
 
     checks = run_quick_doctor(queue_root=queue_root)
 
-    last_error = next(item for item in checks if item["check"] == "health last_error")
+    last_error = next(item for item in checks if item["check"] == "recent history: last_error")
     assert last_error["status"] == "ok"
     assert "stale; ok newer by" in last_error["detail"]
 
@@ -387,7 +387,7 @@ def test_doctor_quick_keeps_warning_when_last_error_is_newer(tmp_path):
 
     checks = run_quick_doctor(queue_root=queue_root)
 
-    last_error = next(item for item in checks if item["check"] == "health last_error")
+    last_error = next(item for item in checks if item["check"] == "recent history: last_error")
     assert last_error["status"] == "warn"
     assert "stale; ok newer by" not in last_error["detail"]
 
@@ -404,7 +404,7 @@ def test_doctor_quick_keeps_warning_when_last_ok_missing(tmp_path):
 
     checks = run_quick_doctor(queue_root=queue_root)
 
-    last_error = next(item for item in checks if item["check"] == "health last_error")
+    last_error = next(item for item in checks if item["check"] == "recent history: last_error")
     assert last_error["status"] == "warn"
 
 
@@ -420,7 +420,7 @@ def test_doctor_quick_handles_missing_last_error(tmp_path):
 
     checks = run_quick_doctor(queue_root=queue_root)
 
-    last_error = next(item for item in checks if item["check"] == "health last_error")
+    last_error = next(item for item in checks if item["check"] == "recent history: last_error")
     assert last_error["status"] == "ok"
 
 
@@ -445,7 +445,9 @@ def test_doctor_quick_includes_last_shutdown_summary(tmp_path):
 
     checks = run_quick_doctor(queue_root=queue_root)
 
-    last_shutdown = next(item for item in checks if item["check"] == "last shutdown")
+    last_shutdown = next(
+        item for item in checks if item["check"] == "recent history: last shutdown"
+    )
     assert last_shutdown["status"] == "ok"
     assert "outcome=clean" in last_shutdown["detail"]
     assert "reason=SIGTERM" in last_shutdown["detail"]
@@ -461,9 +463,9 @@ def test_doctor_quick_missing_history_uses_dash_placeholders(tmp_path):
 
     checks = run_quick_doctor(queue_root=queue_root)
 
-    last_ok = next(item for item in checks if item["check"] == "health last_ok")
-    last_error = next(item for item in checks if item["check"] == "health last_error")
-    last_fb = next(item for item in checks if item["check"] == "last fallback")
+    last_ok = next(item for item in checks if item["check"] == "recent history: last_ok")
+    last_error = next(item for item in checks if item["check"] == "recent history: last_error")
+    last_fb = next(item for item in checks if item["check"] == "recent history: last fallback")
     assert "event=-" in last_ok["detail"]
     assert "error=-" in last_error["detail"]
     assert last_fb["detail"] == "-"

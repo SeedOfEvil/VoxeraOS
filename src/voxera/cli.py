@@ -33,6 +33,7 @@ from .core.queue_hygiene import TERMINAL_BUCKETS, prune_queue_buckets
 from .core.queue_reconcile import quarantine_reconcile_fixes, reconcile_queue
 from .demo import run_demo
 from .doctor import doctor_sync
+from .health_semantics import build_health_semantic_sections
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from .ops_bundle import build_job_bundle as build_ops_job_bundle
 from .ops_bundle import build_system_bundle as build_ops_system_bundle
@@ -789,60 +790,26 @@ def queue_health(
         help="Refresh interval in seconds used with --watch.",
     ),
 ):
-    """Show queue/daemon health with current-state, history, and counters."""
+    """Show queue/daemon health grouped by current state, recent history, and historical counters."""
     import time
 
     daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
 
     def _snapshot_with_sections() -> dict[str, Any]:
         status = daemon.status_snapshot(approvals_limit=3, failed_limit=3)
-
-        panel_auth_raw = status.get("panel_auth")
-        panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
-        lockouts_raw = panel_auth.get("lockouts_by_ip")
-        lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
-        now_ms = _now_ms()
-        active_lockouts = {
-            ip: row
-            for ip, row in lockouts.items()
-            if isinstance(row, dict) and now_ms < int(row.get("until_ts_ms", 0) or 0)
-        }
-        next_lockout_expiry_ts_ms = min(
-            (int(row.get("until_ts_ms", 0) or 0) for row in active_lockouts.values()), default=None
-        )
-
-        lock_status_raw = status.get("lock_status")
-        lock_status: dict[str, Any] = lock_status_raw if isinstance(lock_status_raw, dict) else {}
-        current_state = {
-            "queue_root": status.get("queue_root"),
-            "health_path": status.get("health_path"),
-            "intake_glob": status.get("intake_glob"),
-            "paused": bool(status.get("paused", False)),
+        health_like = {
             "daemon_state": status.get("daemon_state", "healthy"),
             "daemon_pid": status.get("daemon_pid"),
             "daemon_started_at_ms": status.get("daemon_started_at_ms"),
             "updated_at_ms": status.get("updated_at_ms"),
-            "lock": {
-                "state": status.get("lock_state"),
-                "exists": bool(lock_status.get("exists", False)),
-                "pid": lock_status.get("pid"),
-                "alive": bool(lock_status.get("alive", False)),
-            },
-            "degradation": {
-                "consecutive_brain_failures": status.get("consecutive_brain_failures", 0),
-                "degraded_since_ts": status.get("degraded_since_ts"),
-                "degraded_reason": status.get("degraded_reason"),
-                "brain_backoff_wait_s": status.get("brain_backoff_wait_s", 0),
-                "brain_backoff_active": bool(status.get("brain_backoff_active", False)),
-                "brain_backoff_last_applied_s": status.get("brain_backoff_last_applied_s", 0),
-                "brain_backoff_last_applied_ts": status.get("brain_backoff_last_applied_ts"),
-            },
-            "panel_auth_lockouts": {
-                "locked_out_ips": len(active_lockouts),
-                "next_expiry_ts_ms": next_lockout_expiry_ts_ms,
-            },
-        }
-        recent_history = {
+            "lock_state": status.get("lock_state"),
+            "consecutive_brain_failures": status.get("consecutive_brain_failures", 0),
+            "degraded_since_ts": status.get("degraded_since_ts"),
+            "degraded_reason": status.get("degraded_reason"),
+            "brain_backoff_wait_s": status.get("brain_backoff_wait_s", 0),
+            "brain_backoff_active": bool(status.get("brain_backoff_active", False)),
+            "brain_backoff_last_applied_s": status.get("brain_backoff_last_applied_s", 0),
+            "brain_backoff_last_applied_ts": status.get("brain_backoff_last_applied_ts"),
             "last_ok_event": status.get("last_ok_event", ""),
             "last_ok_ts_ms": status.get("last_ok_ts_ms"),
             "last_error": status.get("last_error", ""),
@@ -855,21 +822,40 @@ def queue_health(
             "last_shutdown_ts": status.get("last_shutdown_ts"),
             "last_shutdown_reason": status.get("last_shutdown_reason"),
             "last_shutdown_job": status.get("last_shutdown_job"),
+            "panel_auth": status.get("panel_auth")
+            if isinstance(status.get("panel_auth"), dict)
+            else {},
+            "counters": status.get("health_counters")
+            if isinstance(status.get("health_counters"), dict)
+            else {},
         }
-
-        counters = dict(status.get("daemon_lock_counters") or {})
-        counters.update(status.get("health_counters") or {})
-
-        status["panel_auth_lockouts"] = current_state["panel_auth_lockouts"]
-        status["current_state"] = current_state
-        status["recent_history"] = recent_history
-        status["counters"] = counters
+        grouped = build_health_semantic_sections(
+            health_like,
+            queue_context={
+                "queue_root": status.get("queue_root"),
+                "health_path": status.get("health_path"),
+                "intake_glob": status.get("intake_glob"),
+                "paused": bool(status.get("paused", False)),
+            },
+            lock_status=status.get("lock_status")
+            if isinstance(status.get("lock_status"), dict)
+            else {},
+            daemon_lock_counters=status.get("daemon_lock_counters")
+            if isinstance(status.get("daemon_lock_counters"), dict)
+            else {},
+            now_ms=_now_ms(),
+        )
+        status["panel_auth_lockouts"] = grouped["current_state"].get("panel_auth_lockouts", {})
+        status["current_state"] = grouped["current_state"]
+        status["recent_history"] = grouped["recent_history"]
+        status["historical_counters"] = grouped["historical_counters"]
+        status["counters"] = grouped["historical_counters"]
         return status
 
     def _render(snapshot: dict[str, Any]) -> None:
         current = snapshot["current_state"]
         history = snapshot["recent_history"]
-        counters = snapshot["counters"]
+        counters = snapshot["historical_counters"]
 
         def _history_pair(value: Any, ts: Any) -> str:
             value_text = str(value).strip() if value is not None else ""
@@ -880,6 +866,22 @@ def queue_health(
         def _display(value: Any) -> str:
             return "-" if value is None or str(value).strip() == "" else str(value)
 
+        daemon_state = str(current.get("daemon_state", "healthy"))
+        degradation = (
+            current.get("degradation", {}) if isinstance(current.get("degradation"), dict) else {}
+        )
+        if daemon_state == "healthy":
+            console.print("Current state is HEALTHY")
+        else:
+            console.print(
+                "Current state is DEGRADED "
+                f"(reason={degradation.get('degraded_reason') or '-'}, "
+                f"failures={degradation.get('consecutive_brain_failures', 0)})"
+            )
+        console.print(
+            "Recent history and historical counters are context and can include past incidents."
+        )
+
         current_table = Table(title="Current State")
         current_table.add_column("Field")
         current_table.add_column("Value")
@@ -887,7 +889,7 @@ def queue_health(
         current_table.add_row("health_path", str(current.get("health_path", "")))
         current_table.add_row("intake_glob", str(current.get("intake_glob", "")))
         current_table.add_row("paused", str(current.get("paused", False)))
-        current_table.add_row("daemon_state", str(current.get("daemon_state", "healthy")))
+        current_table.add_row("daemon_state", daemon_state)
         current_table.add_row("daemon_pid", _display(current.get("daemon_pid")))
         current_table.add_row("daemon_started_at_ms", _display(current.get("daemon_started_at_ms")))
         current_table.add_row("snapshot_updated_at_ms", _display(current.get("updated_at_ms")))
@@ -896,21 +898,20 @@ def queue_health(
             "lock",
             f"state={_display(lock.get('state'))} exists={lock.get('exists')} pid={_display(lock.get('pid'))} alive={lock.get('alive')}",
         )
-        deg = current.get("degradation", {}) if isinstance(current.get("degradation"), dict) else {}
         current_table.add_row(
             "degradation",
             (
-                f"failures={deg.get('consecutive_brain_failures', 0)} "
-                f"reason={deg.get('degraded_reason') or '-'} since={_display(deg.get('degraded_since_ts'))}"
+                f"failures={degradation.get('consecutive_brain_failures', 0)} "
+                f"reason={degradation.get('degraded_reason') or '-'} since={_display(degradation.get('degraded_since_ts'))}"
             ),
         )
         current_table.add_row(
             "brain_backoff",
             (
-                f"active={deg.get('brain_backoff_active', False)} "
-                f"wait_s={deg.get('brain_backoff_wait_s', 0)} "
-                f"last_applied_s={deg.get('brain_backoff_last_applied_s', 0)} "
-                f"last_applied_ts={_display(deg.get('brain_backoff_last_applied_ts'))}"
+                f"active={degradation.get('brain_backoff_active', False)} "
+                f"wait_s={degradation.get('brain_backoff_wait_s', 0)} "
+                f"last_applied_s={degradation.get('brain_backoff_last_applied_s', 0)} "
+                f"last_applied_ts={_display(degradation.get('brain_backoff_last_applied_ts'))}"
             ),
         )
         lockouts = current.get("panel_auth_lockouts", {})
@@ -924,17 +925,16 @@ def queue_health(
         history_table.add_column("Field")
         history_table.add_column("Value")
         history_table.add_row(
-            "Last OK",
-            _history_pair(history.get("last_ok_event"), history.get("last_ok_ts_ms")),
+            "Last OK", _history_pair(history.get("last_ok_event"), history.get("last_ok_ts_ms"))
         )
         history_table.add_row(
-            "Last Error",
-            _history_pair(history.get("last_error"), history.get("last_error_ts_ms")),
+            "Last Error", _history_pair(history.get("last_error"), history.get("last_error_ts_ms"))
         )
-        fallback_reason = history.get("last_fallback_reason")
-        fallback_from = history.get("last_fallback_from")
-        fallback_to = history.get("last_fallback_to")
-        fallback_ts = history.get("last_fallback_ts_ms")
+        fallback = history.get("last_brain_fallback", {})
+        fallback_reason = fallback.get("reason") if isinstance(fallback, dict) else None
+        fallback_from = fallback.get("from") if isinstance(fallback, dict) else None
+        fallback_to = fallback.get("to") if isinstance(fallback, dict) else None
+        fallback_ts = fallback.get("ts_ms") if isinstance(fallback, dict) else None
         if not any([fallback_reason, fallback_from, fallback_to, fallback_ts]):
             fallback_text = "-"
         else:
@@ -944,7 +944,15 @@ def queue_health(
                 f"to={fallback_to or '-'} "
                 f"ts_ms={fallback_ts if fallback_ts is not None else '-'}"
             )
-        history_table.add_row("Last Fallback", fallback_text)
+        history_table.add_row("Last Brain Fallback", fallback_text)
+        history_table.add_row(
+            "Degraded Since",
+            _display(history.get("degraded_since_ts")),
+        )
+        history_table.add_row(
+            "Backoff Last Applied",
+            f"wait_s={history.get('brain_backoff_last_applied_s', 0)} ts={_display(history.get('brain_backoff_last_applied_ts'))}",
+        )
         shutdown_outcome = history.get("last_shutdown_outcome")
         shutdown_reason = history.get("last_shutdown_reason")
         shutdown_job = history.get("last_shutdown_job")
@@ -961,7 +969,7 @@ def queue_health(
         history_table.add_row("Last Shutdown", shutdown_text)
         console.print(history_table)
 
-        counters_table = Table(title="Counters")
+        counters_table = Table(title="Historical Counters")
         counters_table.add_column("Counter")
         counters_table.add_column("Value", justify="right")
         for key in sorted(counters.keys()):

@@ -35,6 +35,7 @@ from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
 from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import JOB_BUCKETS, list_jobs, lookup_job, queue_snapshot
 from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
+from ..health_semantics import build_health_semantic_sections
 from ..incident_bundle import BundleError
 from ..ops_bundle import build_job_bundle, build_system_bundle
 from ..version import get_version
@@ -464,10 +465,25 @@ def _daemon_health_view(health: dict[str, Any]) -> dict[str, Any]:
 def _performance_stats_view(queue: dict[str, Any], health: dict[str, Any]) -> dict[str, Any]:
     counts_raw = queue.get("counts")
     counts = counts_raw if isinstance(counts_raw, dict) else {}
-    counters_raw = health.get("counters")
-    counters = counters_raw if isinstance(counters_raw, dict) else {}
-    shutdown_ts_raw = health.get("last_shutdown_ts")
+    grouped = build_health_semantic_sections(
+        health,
+        queue_context={
+            "queue_root": queue.get("queue_root"),
+            "health_path": queue.get("health_path"),
+            "intake_glob": queue.get("intake_glob"),
+            "paused": bool(queue.get("paused", False)),
+        },
+        lock_status=queue.get("lock_status") if isinstance(queue.get("lock_status"), dict) else {},
+        daemon_lock_counters=queue.get("daemon_lock_counters")
+        if isinstance(queue.get("daemon_lock_counters"), dict)
+        else {},
+    )
+    current_state = grouped["current_state"]
+    recent_history = grouped["recent_history"]
+    historical_counters = grouped["historical_counters"]
+    shutdown_ts_raw = recent_history.get("last_shutdown_ts")
     shutdown_ts = float(shutdown_ts_raw) if isinstance(shutdown_ts_raw, (int, float)) else None
+    fallback = recent_history.get("last_brain_fallback", {})
 
     return {
         "queue_counts": {
@@ -478,90 +494,82 @@ def _performance_stats_view(queue: dict[str, Any], health: dict[str, Any]) -> di
             "failed": int(counts.get("failed", 0) or 0),
             "canceled": int(counts.get("canceled", 0) or 0),
         },
-        "degradation": {
-            "daemon_state": str(health.get("daemon_state") or "healthy"),
-            "consecutive_brain_failures": int(health.get("consecutive_brain_failures", 0) or 0),
-            "brain_backoff_active": bool(health.get("brain_backoff_active", False)),
-            "brain_backoff_wait_s": int(health.get("brain_backoff_wait_s", 0) or 0),
-            "brain_backoff_last_applied_s": int(health.get("brain_backoff_last_applied_s", 0) or 0),
-            "brain_backoff_last_applied_ts": health.get("brain_backoff_last_applied_ts"),
-            "degraded_since_ts": health.get("degraded_since_ts"),
-            "degraded_reason": str(health.get("degraded_reason") or "") or "—",
-        },
+        "current_state": current_state,
         "recent_history": {
-            "last_fallback_reason": _history_value(health.get("last_fallback_reason")),
-            "last_fallback_from": _history_value(health.get("last_fallback_from")),
-            "last_fallback_to": _history_value(health.get("last_fallback_to")),
-            "last_fallback_ts": _format_ts(_coerce_int(health.get("last_fallback_ts_ms"))),
             "last_fallback_line": (
                 "-"
-                if not any(
+                if not isinstance(fallback, dict)
+                or not any(
                     [
-                        health.get("last_fallback_reason"),
-                        health.get("last_fallback_from"),
-                        health.get("last_fallback_to"),
-                        health.get("last_fallback_ts_ms"),
+                        fallback.get("reason"),
+                        fallback.get("from"),
+                        fallback.get("to"),
+                        fallback.get("ts_ms"),
                     ]
                 )
                 else (
-                    f"{_history_value(health.get('last_fallback_reason'))} "
-                    f"({_history_value(health.get('last_fallback_from'))} → {_history_value(health.get('last_fallback_to'))}) "
-                    f"@ {_format_ts(_coerce_int(health.get('last_fallback_ts_ms')))}"
+                    f"{_history_value(fallback.get('reason'))} "
+                    f"({_history_value(fallback.get('from'))} → {_history_value(fallback.get('to'))}) "
+                    f"@ {_format_ts(_coerce_int(fallback.get('ts_ms')))}"
                 )
             ),
-            "last_error": _history_value(health.get("last_error")),
-            "last_error_ts": _format_ts(_coerce_int(health.get("last_error_ts_ms"))),
             "last_error_line": _history_pair(
-                health.get("last_error"), _format_ts(_coerce_int(health.get("last_error_ts_ms")))
+                recent_history.get("last_error"),
+                _format_ts(_coerce_int(recent_history.get("last_error_ts_ms"))),
             ),
-            "last_shutdown_outcome": _history_value(health.get("last_shutdown_outcome")),
-            "last_shutdown_reason": _history_value(health.get("last_shutdown_reason")),
-            "last_shutdown_job": _history_value(health.get("last_shutdown_job")),
-            "last_shutdown_ts": _format_ts_seconds(shutdown_ts),
             "last_shutdown_line": (
                 "-"
                 if not any(
                     [
-                        health.get("last_shutdown_outcome"),
-                        health.get("last_shutdown_reason"),
-                        health.get("last_shutdown_job"),
-                        health.get("last_shutdown_ts"),
+                        recent_history.get("last_shutdown_outcome"),
+                        recent_history.get("last_shutdown_reason"),
+                        recent_history.get("last_shutdown_job"),
+                        recent_history.get("last_shutdown_ts"),
                     ]
                 )
                 else (
-                    f"{_history_value(health.get('last_shutdown_outcome'))} / "
-                    f"{_history_value(health.get('last_shutdown_reason'))} / "
-                    f"{_history_value(health.get('last_shutdown_job'))} @ "
+                    f"{_history_value(recent_history.get('last_shutdown_outcome'))} / "
+                    f"{_history_value(recent_history.get('last_shutdown_reason'))} / "
+                    f"{_history_value(recent_history.get('last_shutdown_job'))} @ "
                     f"{_format_ts_seconds(shutdown_ts)}"
                 )
             ),
-        },
-        "auth_counters": {
-            "panel_auth_invalid": int(counters.get("panel_auth_invalid", 0) or 0),
-            "panel_401_count": int(counters.get("panel_401_count", 0) or 0),
-            "panel_403_count": int(counters.get("panel_403_count", 0) or 0),
-            "panel_429_count": int(counters.get("panel_429_count", 0) or 0),
-            "panel_csrf_missing": int(counters.get("panel_csrf_missing", 0) or 0),
-            "panel_csrf_invalid": int(counters.get("panel_csrf_invalid", 0) or 0),
-            "panel_mutation_allowed": int(counters.get("panel_mutation_allowed", 0) or 0),
-        },
-        "runtime_counters": {
-            "brain_fallback_count": int(counters.get("brain_fallback_count", 0) or 0),
-            "brain_fallback_reason_timeout": int(
-                counters.get("brain_fallback_reason_timeout", 0) or 0
+            "degraded_since_ts": _history_value(recent_history.get("degraded_since_ts")),
+            "brain_backoff_last_applied_s": int(
+                recent_history.get("brain_backoff_last_applied_s", 0) or 0
             ),
-            "brain_fallback_reason_auth": int(counters.get("brain_fallback_reason_auth", 0) or 0),
+            "brain_backoff_last_applied_ts": _history_value(
+                recent_history.get("brain_backoff_last_applied_ts")
+            ),
+        },
+        "historical_counters": {
+            "panel_auth_invalid": int(historical_counters.get("panel_auth_invalid", 0) or 0),
+            "panel_401_count": int(historical_counters.get("panel_401_count", 0) or 0),
+            "panel_403_count": int(historical_counters.get("panel_403_count", 0) or 0),
+            "panel_429_count": int(historical_counters.get("panel_429_count", 0) or 0),
+            "panel_csrf_missing": int(historical_counters.get("panel_csrf_missing", 0) or 0),
+            "panel_csrf_invalid": int(historical_counters.get("panel_csrf_invalid", 0) or 0),
+            "panel_mutation_allowed": int(
+                historical_counters.get("panel_mutation_allowed", 0) or 0
+            ),
+            "brain_fallback_count": int(historical_counters.get("brain_fallback_count", 0) or 0),
+            "brain_fallback_reason_timeout": int(
+                historical_counters.get("brain_fallback_reason_timeout", 0) or 0
+            ),
+            "brain_fallback_reason_auth": int(
+                historical_counters.get("brain_fallback_reason_auth", 0) or 0
+            ),
             "brain_fallback_reason_rate_limit": int(
-                counters.get("brain_fallback_reason_rate_limit", 0) or 0
+                historical_counters.get("brain_fallback_reason_rate_limit", 0) or 0
             ),
             "brain_fallback_reason_malformed": int(
-                counters.get("brain_fallback_reason_malformed", 0) or 0
+                historical_counters.get("brain_fallback_reason_malformed", 0) or 0
             ),
             "brain_fallback_reason_network": int(
-                counters.get("brain_fallback_reason_network", 0) or 0
+                historical_counters.get("brain_fallback_reason_network", 0) or 0
             ),
             "brain_fallback_reason_unknown": int(
-                counters.get("brain_fallback_reason_unknown", 0) or 0
+                historical_counters.get("brain_fallback_reason_unknown", 0) or 0
             ),
         },
     }

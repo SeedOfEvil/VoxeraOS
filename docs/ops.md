@@ -174,7 +174,7 @@ voxera queue pause
 voxera queue resume
 voxera queue unlock           # safe: stale/orphaned (dead pid) locks only
 voxera queue unlock --force   # override live lock (dangerous)
-voxera queue health           # summary from notes/queue/health.json (Current State / Recent History / Counters)
+voxera queue health           # summary from notes/queue/health.json (Current State / Recent History / Historical Counters)
 voxera queue health --watch   # refresh every 2s (override with --interval)
 voxera queue health --json    # same snapshot with section parity fields
 voxera queue lock status      # lock table alias (same lock fields as queue health)
@@ -1022,9 +1022,9 @@ Behavior:
 `voxera queue health` is structured for operations triage:
 - **Current State**: queue root/intake, daemon state + pid, lock state, degradation/backoff, panel auth lockouts.
 - **Recent History**: last OK event, last error, last fallback transition, last shutdown context.
-- **Counters**: merged lock/runtime/auth counters from `health.json` for quick trend reads.
+- **Historical Counters**: merged lock/runtime/auth cumulative counters from `health.json` for trend context (not current runtime state).
 
-`--json` now keeps parity with this view through top-level keys: `current_state`, `recent_history`, and `counters`.
+`--json` keeps compatibility with `counters` and also provides `historical_counters`; both represent cumulative history alongside `current_state` and `recent_history`.
 
 Missing/absent history is rendered consistently as `-` across CLI, doctor quick output, and panel performance history (instead of partial pairs like empty value + `None` timestamp). In JSON, absent history remains explicit (`null`) for authoritative semantics.
 
