@@ -725,3 +725,11 @@ This file is the single, persistent project memory for Codex-assisted work.
 - This clarifies “active now” (`brain_backoff_active`) vs “last applied historically” (`brain_backoff_last_applied_*`), which intentionally persists across healthy/idle periods.
 - Extended backoff snapshot tests in `tests/test_brain_fallback.py` to assert default false, true when computed wait is non-zero, and backward-compatible normalization for older snapshots missing the field.
 - Validation: `ruff format .`, `ruff check . --fix`, `pytest`, `make merge-readiness-check`.
+
+
+## 2026-03-05 — observability(operator-health): queue health sectioning/watch + panel performance tab
+- Tightened health snapshot normalization defaults for operator-facing observability fields (`daemon_*`, `updated_at_ms`, fallback fields, counters/auth maps, OK/error timestamps) for deterministic JSON semantics.
+- `voxera queue health` now renders sectioned output (**Current State**, **Recent History**, **Counters**) and adds `--watch` + `--interval`; `--json` includes parity objects (`current_state`, `recent_history`, `counters`).
+- Panel home adds a read-only **Performance Stats** tab with queue counts, degradation/backoff, fallback/error/shutdown context, and auth/runtime counters sourced from `health.json`.
+- Added regression tests for normalization defaults, CLI section/parity/watch behavior, and panel performance tab rendering.
+

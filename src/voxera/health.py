@@ -93,6 +93,35 @@ def _normalize_health_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
 
     shutdown_job = normalized.get("last_shutdown_job")
     normalized["last_shutdown_job"] = str(shutdown_job) if shutdown_job else None
+
+    normalized["daemon_started_at_ms"] = (
+        _safe_int(normalized.get("daemon_started_at_ms"), 0) or None
+    )
+    normalized["daemon_pid"] = _safe_int(normalized.get("daemon_pid"), 0) or None
+    normalized["updated_at_ms"] = _safe_int(normalized.get("updated_at_ms"), 0) or None
+
+    lock_state = str(normalized.get("lock_state") or "").strip().lower()
+    normalized["lock_state"] = lock_state or None
+
+    normalized["last_error"] = str(normalized.get("last_error") or "").strip()
+    normalized["last_error_ts_ms"] = _safe_int(normalized.get("last_error_ts_ms"), 0) or None
+    normalized["last_ok_event"] = str(normalized.get("last_ok_event") or "").strip()
+    normalized["last_ok_ts_ms"] = _safe_int(normalized.get("last_ok_ts_ms"), 0) or None
+
+    normalized["last_fallback_reason"] = (
+        str(normalized.get("last_fallback_reason") or "").strip() or None
+    )
+    normalized["last_fallback_from"] = (
+        str(normalized.get("last_fallback_from") or "").strip() or None
+    )
+    normalized["last_fallback_to"] = str(normalized.get("last_fallback_to") or "").strip() or None
+    normalized["last_fallback_ts_ms"] = _safe_int(normalized.get("last_fallback_ts_ms"), 0) or None
+
+    counters = normalized.get("counters")
+    normalized["counters"] = counters if isinstance(counters, dict) else {}
+
+    panel_auth = normalized.get("panel_auth")
+    normalized["panel_auth"] = panel_auth if isinstance(panel_auth, dict) else {}
     return normalized
 
 

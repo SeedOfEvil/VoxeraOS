@@ -448,6 +448,76 @@ def _daemon_health_view(health: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _performance_stats_view(queue: dict[str, Any], health: dict[str, Any]) -> dict[str, Any]:
+    counts_raw = queue.get("counts")
+    counts = counts_raw if isinstance(counts_raw, dict) else {}
+    counters_raw = health.get("counters")
+    counters = counters_raw if isinstance(counters_raw, dict) else {}
+    shutdown_ts_raw = health.get("last_shutdown_ts")
+    shutdown_ts = float(shutdown_ts_raw) if isinstance(shutdown_ts_raw, (int, float)) else None
+
+    return {
+        "queue_counts": {
+            "inbox": int(counts.get("inbox", 0) or 0),
+            "pending": int(counts.get("pending", 0) or 0),
+            "pending_approvals": int(counts.get("pending_approvals", 0) or 0),
+            "done": int(counts.get("done", 0) or 0),
+            "failed": int(counts.get("failed", 0) or 0),
+            "canceled": int(counts.get("canceled", 0) or 0),
+        },
+        "degradation": {
+            "daemon_state": str(health.get("daemon_state") or "healthy"),
+            "consecutive_brain_failures": int(health.get("consecutive_brain_failures", 0) or 0),
+            "brain_backoff_active": bool(health.get("brain_backoff_active", False)),
+            "brain_backoff_wait_s": int(health.get("brain_backoff_wait_s", 0) or 0),
+            "brain_backoff_last_applied_s": int(health.get("brain_backoff_last_applied_s", 0) or 0),
+            "brain_backoff_last_applied_ts": health.get("brain_backoff_last_applied_ts"),
+            "degraded_since_ts": health.get("degraded_since_ts"),
+            "degraded_reason": str(health.get("degraded_reason") or "") or "—",
+        },
+        "recent_history": {
+            "last_fallback_reason": str(health.get("last_fallback_reason") or "") or "—",
+            "last_fallback_from": str(health.get("last_fallback_from") or "") or "—",
+            "last_fallback_to": str(health.get("last_fallback_to") or "") or "—",
+            "last_fallback_ts": _format_ts(_coerce_int(health.get("last_fallback_ts_ms"))),
+            "last_error": str(health.get("last_error") or "") or "—",
+            "last_error_ts": _format_ts(_coerce_int(health.get("last_error_ts_ms"))),
+            "last_shutdown_outcome": str(health.get("last_shutdown_outcome") or "") or "—",
+            "last_shutdown_reason": str(health.get("last_shutdown_reason") or "") or "—",
+            "last_shutdown_job": str(health.get("last_shutdown_job") or "") or "—",
+            "last_shutdown_ts": _format_ts_seconds(shutdown_ts),
+        },
+        "auth_counters": {
+            "panel_auth_invalid": int(counters.get("panel_auth_invalid", 0) or 0),
+            "panel_401_count": int(counters.get("panel_401_count", 0) or 0),
+            "panel_403_count": int(counters.get("panel_403_count", 0) or 0),
+            "panel_429_count": int(counters.get("panel_429_count", 0) or 0),
+            "panel_csrf_missing": int(counters.get("panel_csrf_missing", 0) or 0),
+            "panel_csrf_invalid": int(counters.get("panel_csrf_invalid", 0) or 0),
+            "panel_mutation_allowed": int(counters.get("panel_mutation_allowed", 0) or 0),
+        },
+        "runtime_counters": {
+            "brain_fallback_count": int(counters.get("brain_fallback_count", 0) or 0),
+            "brain_fallback_reason_timeout": int(
+                counters.get("brain_fallback_reason_timeout", 0) or 0
+            ),
+            "brain_fallback_reason_auth": int(counters.get("brain_fallback_reason_auth", 0) or 0),
+            "brain_fallback_reason_rate_limit": int(
+                counters.get("brain_fallback_reason_rate_limit", 0) or 0
+            ),
+            "brain_fallback_reason_malformed": int(
+                counters.get("brain_fallback_reason_malformed", 0) or 0
+            ),
+            "brain_fallback_reason_network": int(
+                counters.get("brain_fallback_reason_network", 0) or 0
+            ),
+            "brain_fallback_reason_unknown": int(
+                counters.get("brain_fallback_reason_unknown", 0) or 0
+            ),
+        },
+    }
+
+
 def _operator_credentials(request: _PanelSecurityRequestLike) -> tuple[str, str]:
     settings = _settings()
     user = settings.panel_operator_user
@@ -1214,7 +1284,9 @@ def home(request: Request, created: str = "", error: str = "", mission_created: 
     active_jobs, recent_activity = _build_activity(audit_events)
 
     missions = list_missions()
-    daemon_health = _daemon_health_view(read_health_snapshot(queue_root))
+    health_snapshot = read_health_snapshot(queue_root)
+    daemon_health = _daemon_health_view(health_snapshot)
+    performance_stats = _performance_stats_view(queue, health_snapshot)
     tmpl = templates.get_template("home.html")
     csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
     html = tmpl.render(
@@ -1236,6 +1308,7 @@ def home(request: Request, created: str = "", error: str = "", mission_created: 
         panel_security_counters=_panel_security_snapshot(),
         auth_setup_banner=_auth_setup_banner(),
         daemon_health=daemon_health,
+        performance_stats=performance_stats,
     )
     response = HTMLResponse(content=html)
     response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")

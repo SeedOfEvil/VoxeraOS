@@ -1606,9 +1606,18 @@ class MissionQueueDaemon:
                 "pid": lock_pid,
                 "alive": lock_alive,
             },
+            "daemon_state": health.get("daemon_state", "healthy"),
             "daemon_started_at_ms": health.get("daemon_started_at_ms"),
             "daemon_pid": health.get("daemon_pid"),
+            "updated_at_ms": health.get("updated_at_ms"),
             "lock_state": health.get("lock_state"),
+            "consecutive_brain_failures": health.get("consecutive_brain_failures", 0),
+            "brain_backoff_wait_s": health.get("brain_backoff_wait_s", 0),
+            "brain_backoff_active": bool(health.get("brain_backoff_active", False)),
+            "brain_backoff_last_applied_s": health.get("brain_backoff_last_applied_s", 0),
+            "brain_backoff_last_applied_ts": health.get("brain_backoff_last_applied_ts"),
+            "degraded_since_ts": health.get("degraded_since_ts"),
+            "degraded_reason": health.get("degraded_reason"),
             "last_shutdown_ts": health.get("last_shutdown_ts"),
             "last_shutdown_reason": health.get("last_shutdown_reason"),
             "last_shutdown_job": health.get("last_shutdown_job"),
@@ -1617,6 +1626,13 @@ class MissionQueueDaemon:
             "last_error_ts_ms": health.get("last_error_ts_ms"),
             "last_ok_event": health.get("last_ok_event", ""),
             "last_ok_ts_ms": health.get("last_ok_ts_ms"),
+            "last_fallback_reason": health.get("last_fallback_reason"),
+            "last_fallback_from": health.get("last_fallback_from"),
+            "last_fallback_to": health.get("last_fallback_to"),
+            "last_fallback_ts_ms": health.get("last_fallback_ts_ms"),
+            "health_counters": health.get("counters")
+            if isinstance(health.get("counters"), dict)
+            else {},
             "panel_auth": health.get("panel_auth")
             if isinstance(health.get("panel_auth"), dict)
             else {},

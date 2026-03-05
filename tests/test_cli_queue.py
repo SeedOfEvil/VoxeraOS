@@ -434,6 +434,96 @@ def test_queue_help_lists_lock_status_command():
     assert "status" in result.output
 
 
+def test_queue_health_renders_observability_sections(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps(
+            {
+                "daemon_state": "degraded",
+                "consecutive_brain_failures": 4,
+                "degraded_reason": "brain_fallbacks",
+                "brain_backoff_last_applied_s": 2,
+                "brain_backoff_last_applied_ts": 1700000200.0,
+                "last_error": "timeout",
+                "last_error_ts_ms": 1700000000555,
+                "last_ok_event": "mission_complete",
+                "last_ok_ts_ms": 1700000000444,
+                "last_fallback_reason": "timeout",
+                "last_fallback_from": "primary",
+                "last_fallback_to": "fallback",
+                "last_fallback_ts_ms": 1700000000333,
+                "counters": {"brain_fallback_count": 3},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "health", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "Current State" in result.output
+    assert "Recent History" in result.output
+    assert "Counters" in result.output
+    assert "degraded" in result.output
+    assert "brain_fallbacks" in result.output
+    assert "timeout" in result.output
+
+
+def test_queue_health_json_contains_section_parity(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps(
+            {
+                "daemon_state": "healthy",
+                "last_ok_event": "tick",
+                "counters": {"brain_fallback_count": 1, "panel_auth_invalid": 2},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "health", "--json", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert "current_state" in payload
+    assert "recent_history" in payload
+    assert "counters" in payload
+    assert payload["current_state"]["daemon_state"] == "healthy"
+    assert payload["recent_history"]["last_ok_event"] == "tick"
+    assert payload["counters"]["brain_fallback_count"] == 1
+
+
+def test_queue_health_watch_mode_refreshes_once(tmp_path, monkeypatch):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(cli.console, "clear", lambda: None)
+
+    calls = {"n": 0}
+
+    def _sleep(_seconds: float) -> None:
+        calls["n"] += 1
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", _sleep)
+
+    result = runner.invoke(
+        cli.app,
+        ["queue", "health", "--watch", "--interval", "0.2", "--queue-dir", str(queue_dir)],
+    )
+
+    assert result.exit_code == 0
+    assert calls["n"] == 1
+    assert "Refreshing every 0.2s" in result.output
+    assert "Stopped watch mode." in result.output
+
+
 def test_queue_health_prints_last_shutdown_block(tmp_path):
     runner = CliRunner()
     queue_dir = tmp_path / "queue"

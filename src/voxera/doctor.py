@@ -340,9 +340,9 @@ def run_quick_doctor(
     )
 
     # --- last fallback transition -------------------------------------------
-    fb_reason = str(health.get("last_fallback_reason", ""))
-    fb_from = str(health.get("last_fallback_from", ""))
-    fb_to = str(health.get("last_fallback_to", ""))
+    fb_reason = str(health.get("last_fallback_reason") or "")
+    fb_from = str(health.get("last_fallback_from") or "")
+    fb_to = str(health.get("last_fallback_to") or "")
     fb_ts = health.get("last_fallback_ts_ms", "")
     if fb_reason:
         fb_detail = f"{fb_from} -> {fb_to} reason={fb_reason} ts={fb_ts}"

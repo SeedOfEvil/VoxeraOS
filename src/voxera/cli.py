@@ -781,90 +781,187 @@ def queue_health(
         help="Queue directory containing JSON mission jobs.",
     ),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    watch: bool = typer.Option(False, "--watch", "-w", help="Refresh output continuously."),
+    interval_s: float = typer.Option(
+        2.0,
+        "--interval",
+        min=0.2,
+        help="Refresh interval in seconds used with --watch.",
+    ),
 ):
-    """Show daemon/panel health counters and lock status."""
-    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
-    status = daemon.status_snapshot(approvals_limit=3, failed_limit=3)
+    """Show queue/daemon health with current-state, history, and counters."""
+    import time
 
-    panel_auth_raw = status.get("panel_auth")
-    panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
-    lockouts_raw = panel_auth.get("lockouts_by_ip")
-    lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
-    now_ms = int(__import__("time").time() * 1000)
-    active_lockouts = {
-        ip: row
-        for ip, row in lockouts.items()
-        if isinstance(row, dict) and now_ms < int(row.get("until_ts_ms", 0) or 0)
-    }
-    next_lockout_expiry_ts_ms = min(
-        (int(row.get("until_ts_ms", 0) or 0) for row in active_lockouts.values()), default=None
-    )
+    daemon = MissionQueueDaemon(queue_root=Path(queue_dir))
+
+    def _snapshot_with_sections() -> dict[str, Any]:
+        status = daemon.status_snapshot(approvals_limit=3, failed_limit=3)
+
+        panel_auth_raw = status.get("panel_auth")
+        panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
+        lockouts_raw = panel_auth.get("lockouts_by_ip")
+        lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
+        now_ms = _now_ms()
+        active_lockouts = {
+            ip: row
+            for ip, row in lockouts.items()
+            if isinstance(row, dict) and now_ms < int(row.get("until_ts_ms", 0) or 0)
+        }
+        next_lockout_expiry_ts_ms = min(
+            (int(row.get("until_ts_ms", 0) or 0) for row in active_lockouts.values()), default=None
+        )
+
+        lock_status_raw = status.get("lock_status")
+        lock_status: dict[str, Any] = lock_status_raw if isinstance(lock_status_raw, dict) else {}
+        current_state = {
+            "queue_root": status.get("queue_root"),
+            "health_path": status.get("health_path"),
+            "intake_glob": status.get("intake_glob"),
+            "paused": bool(status.get("paused", False)),
+            "daemon_state": status.get("daemon_state", "healthy"),
+            "daemon_pid": status.get("daemon_pid"),
+            "daemon_started_at_ms": status.get("daemon_started_at_ms"),
+            "updated_at_ms": status.get("updated_at_ms"),
+            "lock": {
+                "state": status.get("lock_state"),
+                "exists": bool(lock_status.get("exists", False)),
+                "pid": lock_status.get("pid"),
+                "alive": bool(lock_status.get("alive", False)),
+            },
+            "degradation": {
+                "consecutive_brain_failures": status.get("consecutive_brain_failures", 0),
+                "degraded_since_ts": status.get("degraded_since_ts"),
+                "degraded_reason": status.get("degraded_reason"),
+                "brain_backoff_wait_s": status.get("brain_backoff_wait_s", 0),
+                "brain_backoff_active": bool(status.get("brain_backoff_active", False)),
+                "brain_backoff_last_applied_s": status.get("brain_backoff_last_applied_s", 0),
+                "brain_backoff_last_applied_ts": status.get("brain_backoff_last_applied_ts"),
+            },
+            "panel_auth_lockouts": {
+                "locked_out_ips": len(active_lockouts),
+                "next_expiry_ts_ms": next_lockout_expiry_ts_ms,
+            },
+        }
+        recent_history = {
+            "last_ok_event": status.get("last_ok_event", ""),
+            "last_ok_ts_ms": status.get("last_ok_ts_ms"),
+            "last_error": status.get("last_error", ""),
+            "last_error_ts_ms": status.get("last_error_ts_ms"),
+            "last_fallback_reason": status.get("last_fallback_reason"),
+            "last_fallback_from": status.get("last_fallback_from"),
+            "last_fallback_to": status.get("last_fallback_to"),
+            "last_fallback_ts_ms": status.get("last_fallback_ts_ms"),
+            "last_shutdown_outcome": status.get("last_shutdown_outcome"),
+            "last_shutdown_ts": status.get("last_shutdown_ts"),
+            "last_shutdown_reason": status.get("last_shutdown_reason"),
+            "last_shutdown_job": status.get("last_shutdown_job"),
+        }
+
+        counters = dict(status.get("daemon_lock_counters") or {})
+        counters.update(status.get("health_counters") or {})
+
+        status["panel_auth_lockouts"] = current_state["panel_auth_lockouts"]
+        status["current_state"] = current_state
+        status["recent_history"] = recent_history
+        status["counters"] = counters
+        return status
+
+    def _render(snapshot: dict[str, Any]) -> None:
+        current = snapshot["current_state"]
+        history = snapshot["recent_history"]
+        counters = snapshot["counters"]
+
+        current_table = Table(title="Current State")
+        current_table.add_column("Field")
+        current_table.add_column("Value")
+        current_table.add_row("queue_root", str(current.get("queue_root", "")))
+        current_table.add_row("health_path", str(current.get("health_path", "")))
+        current_table.add_row("intake_glob", str(current.get("intake_glob", "")))
+        current_table.add_row("paused", str(current.get("paused", False)))
+        current_table.add_row("daemon_state", str(current.get("daemon_state", "healthy")))
+        current_table.add_row("daemon_pid", str(current.get("daemon_pid")))
+        current_table.add_row("daemon_started_at_ms", str(current.get("daemon_started_at_ms")))
+        current_table.add_row("snapshot_updated_at_ms", str(current.get("updated_at_ms")))
+        lock = current.get("lock", {}) if isinstance(current.get("lock"), dict) else {}
+        current_table.add_row(
+            "lock",
+            f"state={lock.get('state')} exists={lock.get('exists')} pid={lock.get('pid')} alive={lock.get('alive')}",
+        )
+        deg = current.get("degradation", {}) if isinstance(current.get("degradation"), dict) else {}
+        current_table.add_row(
+            "degradation",
+            (
+                f"failures={deg.get('consecutive_brain_failures', 0)} "
+                f"reason={deg.get('degraded_reason') or '-'} since={deg.get('degraded_since_ts')}"
+            ),
+        )
+        current_table.add_row(
+            "brain_backoff",
+            (
+                f"active={deg.get('brain_backoff_active', False)} "
+                f"wait_s={deg.get('brain_backoff_wait_s', 0)} "
+                f"last_applied_s={deg.get('brain_backoff_last_applied_s', 0)} "
+                f"last_applied_ts={deg.get('brain_backoff_last_applied_ts')}"
+            ),
+        )
+        lockouts = current.get("panel_auth_lockouts", {})
+        current_table.add_row(
+            "panel_auth_lockouts",
+            f"locked_out_ips={lockouts.get('locked_out_ips', 0)} next_expiry_ts_ms={lockouts.get('next_expiry_ts_ms')}",
+        )
+        console.print(current_table)
+
+        history_table = Table(title="Recent History")
+        history_table.add_column("Field")
+        history_table.add_column("Value")
+        history_table.add_row(
+            "last_ok", f"{history.get('last_ok_event', '')} @ {history.get('last_ok_ts_ms')}"
+        )
+        history_table.add_row(
+            "Last Error", f"{history.get('last_error', '')} @ {history.get('last_error_ts_ms')}"
+        )
+        history_table.add_row(
+            "Last Fallback",
+            (
+                f"reason={history.get('last_fallback_reason') or '-'} "
+                f"from={history.get('last_fallback_from') or '-'} "
+                f"to={history.get('last_fallback_to') or '-'} "
+                f"ts_ms={history.get('last_fallback_ts_ms')}"
+            ),
+        )
+        history_table.add_row(
+            "Last Shutdown",
+            (
+                f"outcome={history.get('last_shutdown_outcome') or '-'} "
+                f"reason={history.get('last_shutdown_reason') or '-'} "
+                f"job={history.get('last_shutdown_job') or '-'} ts={history.get('last_shutdown_ts')}"
+            ),
+        )
+        console.print(history_table)
+
+        counters_table = Table(title="Counters")
+        counters_table.add_column("Counter")
+        counters_table.add_column("Value", justify="right")
+        for key in sorted(counters.keys()):
+            counters_table.add_row(key, str(counters.get(key, 0)))
+        console.print(counters_table)
 
     if json_output:
-        out = dict(status)
-        out["panel_auth_lockouts"] = {
-            "locked_out_ips": len(active_lockouts),
-            "next_expiry_ts_ms": next_lockout_expiry_ts_ms,
-        }
-        typer.echo(json.dumps(out, sort_keys=True))
+        typer.echo(json.dumps(_snapshot_with_sections(), sort_keys=True))
         return
 
-    console.print(f"Health snapshot: {status.get('health_path', '')}")
-    console.print(f"Queue intake: {status.get('intake_glob', '')}")
-    console.print(f"Daemon paused: {status.get('paused', False)}")
-    console.print(f"Daemon started at ms: {status.get('daemon_started_at_ms')}")
-    console.print(f"Daemon pid: {status.get('daemon_pid')}")
-    console.print(f"Last ok event: {status.get('last_ok_event', '')}")
-    console.print(f"Last ok ts ms: {status.get('last_ok_ts_ms')}")
-    console.print(f"Last error: {status.get('last_error', '')}")
-    console.print(f"Last error ts ms: {status.get('last_error_ts_ms')}")
-    console.print(f"Panel auth locked_out_ips: {len(active_lockouts)}")
-    console.print(f"Panel auth next_lockout_expiry_ts_ms: {next_lockout_expiry_ts_ms}")
+    if not watch:
+        _render(_snapshot_with_sections())
+        return
 
-    shutdown_table = Table(title="Last Shutdown")
-    shutdown_table.add_column("Field")
-    shutdown_table.add_column("Value")
-    shutdown_table.add_row("outcome", str(status.get("last_shutdown_outcome") or "(none)"))
-    shutdown_table.add_row("ts", str(status.get("last_shutdown_ts")))
-    shutdown_table.add_row("reason", str(status.get("last_shutdown_reason") or "(none)"))
-    shutdown_table.add_row("job", str(status.get("last_shutdown_job") or "(none)"))
-    console.print(shutdown_table)
-
-    _render_lock_status(status)
-
-    counters = (
-        status.get("daemon_lock_counters", {})
-        if isinstance(status.get("daemon_lock_counters"), dict)
-        else {}
-    )
-    health_table = Table(title="Health Counters")
-    health_table.add_column("Counter")
-    health_table.add_column("Value", justify="right")
-    for key in [
-        "lock_acquire_ok",
-        "lock_acquire_fail",
-        "lock_reclaimed",
-        "lock_released",
-        "unlock_refused",
-        "unlock_ok",
-        "force_unlock_count",
-        "panel_mutation_allowed",
-        "panel_401_count",
-        "panel_403_count",
-        "panel_csrf_missing",
-        "panel_csrf_invalid",
-        "panel_auth_invalid",
-        "panel_429_count",
-        "brain_fallback_count",
-        "brain_fallback_reason_timeout",
-        "brain_fallback_reason_auth",
-        "brain_fallback_reason_rate_limit",
-        "brain_fallback_reason_malformed",
-        "brain_fallback_reason_network",
-        "brain_fallback_reason_unknown",
-    ]:
-        health_table.add_row(key, str(counters.get(key, 0)))
-    console.print(health_table)
+    try:
+        while True:
+            console.clear()
+            _render(_snapshot_with_sections())
+            console.print(f"Refreshing every {interval_s:.1f}s (Ctrl+C to exit)")
+            time.sleep(interval_s)
+    except KeyboardInterrupt:
+        console.print("Stopped watch mode.")
 
 
 @queue_app.command("cancel")

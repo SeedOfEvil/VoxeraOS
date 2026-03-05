@@ -182,7 +182,7 @@ Previously tracked items now resolved:
 ## For operators
 
 - Run `voxera doctor` before starting the daemon to verify endpoint health and auth.
-- Use `voxera queue health` for a quick lock/auth/counter/fallback snapshot during incidents.
+- Use `voxera queue health` for a sectioned incident snapshot: Current State, Recent History, and Counters; use `--watch` for live refresh and `--json` for parity keys (`current_state`, `recent_history`, `counters`).
 - Panel mutations require `VOXERA_PANEL_OPERATOR_PASSWORD` — if not set, the panel shows a setup-required banner with no secrets displayed.
 - Audit JSONL logs are at `~/.voxera/data/audit/`. Never delete these during incident triage.
 - For incident response, use `voxera ops bundle system` and `voxera ops bundle job <job>` to capture a point-in-time snapshot.
