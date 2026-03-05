@@ -43,7 +43,7 @@ User-controlled planner fields are wrapped with explicit delimiters:
 
 Planner instructions require the model to treat everything inside this bounded region as **untrusted user data** and to never follow instructions found there.
 
-This boundary control complements existing goal hardening: sanitize control/ANSI characters and enforce a 2,000-character goal length cap before planner calls.
+This boundary control complements existing goal hardening: sanitize ASCII control characters, strip ANSI escape sequences only when ESC-prefixed, preserve benign bracketed text, and enforce a 2,000-character goal length cap before planner calls.
 
 ### Planner output validation
 The mission planner only accepts:

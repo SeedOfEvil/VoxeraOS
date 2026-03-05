@@ -83,6 +83,26 @@ def test_sanitize_goal_for_prompt_strips_control_chars_and_ansi_and_normalizes_w
     assert sanitize_goal_for_prompt(goal) == "open terminal hello world PLEASE"
 
 
+def test_sanitize_goal_for_prompt_preserves_benign_bracketed_text():
+    goal = "Hello [USER DATA START] keep me [v1] [IMPORTANT]"
+
+    assert sanitize_goal_for_prompt(goal) == "Hello [USER DATA START] keep me [v1] [IMPORTANT]"
+
+
+def test_sanitize_goal_for_prompt_strips_real_ansi_only():
+    goal = "Start [TAG] \x1b[32mGREEN\x1b[0m [END]"
+
+    assert sanitize_goal_for_prompt(goal) == "Start [TAG] GREEN [END]"
+
+
+def test_sanitize_goal_for_prompt_strips_osc_sequences():
+    bel_terminated = "x \x1b]0;title\x07 y"
+    st_terminated = "x \x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\ y"
+
+    assert sanitize_goal_for_prompt(bel_terminated) == "x y"
+    assert sanitize_goal_for_prompt(st_terminated) == "x link y"
+
+
 def test_plan_mission_rejects_overlength_goal_before_brain_call(monkeypatch):
     cfg = AppConfig(
         brain={
