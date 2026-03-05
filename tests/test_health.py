@@ -162,3 +162,69 @@ def test_reset_health_snapshot_counter_group_is_selective(tmp_path):
     assert payload["counters"]["panel_403_count"] == 0
     assert payload["counters"]["brain_fallback_count"] == 5
     assert payload["counters"]["other_counter"] == 3
+
+
+def test_reset_current_and_recent_clears_all_fallback_history_fields(tmp_path):
+    from voxera.health import write_health_snapshot
+    from voxera.health_reset import reset_health_snapshot
+
+    queue_root = tmp_path / "queue"
+    write_health_snapshot(
+        queue_root,
+        {
+            "last_fallback_from": "primary",
+            "last_fallback_reason": "timeout",
+            "last_fallback_to": "fallback",
+            "last_fallback_ts_ms": 123,
+            "last_ok_event": "tick",
+            "last_ok_ts_ms": 456,
+            "degraded_since_ts": 1000.0,
+            "brain_backoff_last_applied_s": 3,
+            "brain_backoff_last_applied_ts": 1001.0,
+        },
+    )
+
+    summary = reset_health_snapshot(queue_root, scope="current_and_recent", actor_surface="test")
+    payload = read_health_snapshot(queue_root)
+
+    assert payload["last_fallback_from"] is None
+    assert payload["last_fallback_reason"] is None
+    assert payload["last_fallback_to"] is None
+    assert payload["last_fallback_ts_ms"] is None
+    assert payload["last_ok_event"] is None
+    assert payload["last_ok_ts_ms"] is None
+    assert payload["degraded_since_ts"] is None
+    assert payload["brain_backoff_last_applied_s"] == 0
+    assert payload["brain_backoff_last_applied_ts"] is None
+    assert "last_fallback_from" in summary["changed_fields"]
+    assert "last_fallback_reason" in summary["changed_fields"]
+    assert "last_fallback_to" in summary["changed_fields"]
+    assert "last_fallback_ts_ms" in summary["changed_fields"]
+
+
+def test_reset_recent_history_clears_all_fallback_history_fields(tmp_path):
+    from voxera.health import write_health_snapshot
+    from voxera.health_reset import reset_health_snapshot
+
+    queue_root = tmp_path / "queue"
+    write_health_snapshot(
+        queue_root,
+        {
+            "last_fallback_from": "primary",
+            "last_fallback_reason": "rate_limit",
+            "last_fallback_to": "fallback",
+            "last_fallback_ts_ms": 777,
+        },
+    )
+
+    summary = reset_health_snapshot(queue_root, scope="recent_history", actor_surface="test")
+    payload = read_health_snapshot(queue_root)
+
+    assert payload["last_fallback_from"] is None
+    assert payload["last_fallback_reason"] is None
+    assert payload["last_fallback_to"] is None
+    assert payload["last_fallback_ts_ms"] is None
+    assert "last_fallback_from" in summary["changed_fields"]
+    assert "last_fallback_reason" in summary["changed_fields"]
+    assert "last_fallback_to" in summary["changed_fields"]
+    assert "last_fallback_ts_ms" in summary["changed_fields"]

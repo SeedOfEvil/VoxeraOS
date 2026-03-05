@@ -20,6 +20,8 @@ CURRENT_STATE_FIELDS: tuple[str, ...] = (
 RECENT_HISTORY_FIELDS: tuple[str, ...] = (
     "last_error",
     "last_error_ts_ms",
+    "last_ok_event",
+    "last_ok_ts_ms",
     "last_fallback_reason",
     "last_fallback_from",
     "last_fallback_to",
@@ -28,6 +30,9 @@ RECENT_HISTORY_FIELDS: tuple[str, ...] = (
     "last_shutdown_ts",
     "last_shutdown_reason",
     "last_shutdown_job",
+    "degraded_since_ts",
+    "brain_backoff_last_applied_s",
+    "brain_backoff_last_applied_ts",
 )
 
 COUNTER_GROUPS: dict[str, tuple[str, ...] | None] = {

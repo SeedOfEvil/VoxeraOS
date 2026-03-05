@@ -656,3 +656,39 @@ def test_queue_health_reset_counter_group_json(tmp_path, monkeypatch):
     payload = json.loads(result.output)
     assert payload["counter_group"] == "panel_auth_counters"
     assert "counters.panel_401_count" in payload["changed_fields"]
+
+
+def test_queue_health_reset_json_reports_cleared_fallback_fields(tmp_path, monkeypatch):
+    from voxera.health import write_health_snapshot
+
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    monkeypatch.setattr(cli, "log", lambda _event: None)
+    write_health_snapshot(
+        queue_dir,
+        {
+            "last_fallback_reason": "timeout",
+            "last_fallback_from": "primary",
+            "last_fallback_to": "fallback",
+            "last_fallback_ts_ms": 1700000000333,
+        },
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "health-reset",
+            "--scope",
+            "current_and_recent",
+            "--json",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert "last_fallback_reason" in payload["changed_fields"]
+    assert "last_fallback_from" in payload["changed_fields"]
+    assert "last_fallback_to" in payload["changed_fields"]
+    assert "last_fallback_ts_ms" in payload["changed_fields"]
