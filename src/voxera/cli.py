@@ -496,7 +496,9 @@ def daemon(
 ):
     """Run mission queue daemon watching for JSON jobs."""
     daemon = MissionQueueDaemon(
-        queue_root=Path(queue_dir), poll_interval=poll_interval, auto_approve_ask=auto_approve_ask
+        queue_root=_queue_dir_path(queue_dir),
+        poll_interval=poll_interval,
+        auto_approve_ask=auto_approve_ask,
     )
     try:
         daemon.run(once=once)
@@ -559,7 +561,7 @@ def queue_bundle(
     ),
 ):
     """Export a deterministic incident bundle for a job or the whole system."""
-    root = Path(queue_dir)
+    root = _queue_dir_path(queue_dir)
     if system:
         data = build_system_bundle(root)
     else:
@@ -593,7 +595,7 @@ def ops_bundle_system(
     archive_dir: Path | None = OPS_BUNDLE_ARCHIVE_DIR_OPTION,
 ):
     """Export a system ops bundle."""
-    queue_root = Path(queue_dir).expanduser().resolve()
+    queue_root = _queue_dir_path(queue_dir)
     out = build_ops_system_bundle(
         queue_root,
         archive_dir=archive_dir,
@@ -613,7 +615,7 @@ def ops_bundle_job(
     archive_dir: Path | None = OPS_BUNDLE_ARCHIVE_DIR_OPTION,
 ):
     """Export a per-job ops bundle."""
-    queue_root = Path(queue_dir).expanduser().resolve()
+    queue_root = _queue_dir_path(queue_dir)
     out = build_ops_job_bundle(
         queue_root,
         job_ref,
@@ -1232,7 +1234,7 @@ def inbox_add(
 ):
     """Create an inbox queue job from plain goal text."""
     try:
-        created = add_inbox_job(Path(queue_dir), goal, job_id=id)
+        created = add_inbox_job(_queue_dir_path(queue_dir), goal, job_id=id)
     except (ValueError, FileExistsError) as exc:
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -1253,7 +1255,7 @@ def inbox_list(
     ),
 ):
     """List inbox-created jobs across queue states."""
-    jobs, missing_dirs = list_inbox_jobs(Path(queue_dir), limit=n)
+    jobs, missing_dirs = list_inbox_jobs(_queue_dir_path(queue_dir), limit=n)
 
     table = Table(title="Inbox Jobs")
     table.add_column("State")
@@ -1318,7 +1320,7 @@ def artifacts_prune(
     effective_age_days = max_age_days if max_age_days is not None else cfg.artifacts_retention_days
     effective_max_count = max_count if max_count is not None else cfg.artifacts_retention_max_count
 
-    artifacts_root = Path(queue_dir).expanduser().resolve() / "artifacts"
+    artifacts_root = _queue_dir_path(queue_dir) / "artifacts"
     max_age_s = float(effective_age_days) * 86400.0 if effective_age_days is not None else None
 
     result = prune_artifacts(
@@ -1421,7 +1423,7 @@ def queue_prune(
     effective_age_days = max_age_days if max_age_days is not None else cfg.queue_prune_max_age_days
     effective_max_count = max_count if max_count is not None else cfg.queue_prune_max_count
 
-    queue_root_path = Path(queue_dir).expanduser().resolve()
+    queue_root_path = _queue_dir_path(queue_dir)
 
     result = prune_queue_buckets(
         queue_root_path,
@@ -1550,7 +1552,7 @@ def queue_reconcile(
     """
     from .core.queue_reconcile import _default_quarantine_dir
 
-    queue_root_path = Path(queue_dir).expanduser().resolve()
+    queue_root_path = _queue_dir_path(queue_dir)
     report = reconcile_queue(queue_root_path)
 
     # Resolve quarantine directory.
