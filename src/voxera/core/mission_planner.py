@@ -37,12 +37,24 @@ GOAL_MAX_LEN = 2000
 USER_DATA_START = "[USER DATA START]"
 USER_DATA_END = "[USER DATA END]"
 
+_ASCII_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_ANSI_OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)", flags=re.DOTALL)
+_ANSI_SINGLE_CHAR_RE = re.compile(r"\x1b[@-Z\\-_]")
+
+
+def _strip_ansi_escape_sequences(text: str) -> str:
+    """Remove ANSI escapes that are explicitly ESC-prefixed (CSI/OSC/single-char)."""
+    without_osc = _ANSI_OSC_RE.sub("", text)
+    without_csi = _ANSI_CSI_RE.sub("", without_osc)
+    return _ANSI_SINGLE_CHAR_RE.sub("", without_csi)
+
 
 def sanitize_goal_for_prompt(goal: str) -> str:
-    """Security: remove ASCII control chars / ANSI escapes and normalize whitespace."""
-    without_controls = re.sub(r"[\x00-\x1f\x7f]", "", goal)
-    without_ansi_sequences = re.sub(r"\[[0-?]*[ -/]*[@-~]", "", without_controls)
-    return " ".join(without_ansi_sequences.split())
+    """Remove control chars + ESC-prefixed ANSI escapes while preserving benign bracketed text."""
+    without_ansi_sequences = _strip_ansi_escape_sequences(goal)
+    without_controls = _ASCII_CONTROL_RE.sub("", without_ansi_sequences)
+    return " ".join(without_controls.split())
 
 
 @dataclass(frozen=True)
