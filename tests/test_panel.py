@@ -157,6 +157,61 @@ def test_home_renders_daemon_health_widget_with_fields(tmp_path, monkeypatch):
     assert "degraded" in body
 
 
+def test_home_renders_performance_stats_tab(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps(
+            {
+                "daemon_state": "degraded",
+                "consecutive_brain_failures": 5,
+                "brain_backoff_active": True,
+                "brain_backoff_wait_s": 8,
+                "last_fallback_reason": "timeout",
+                "last_fallback_from": "primary",
+                "last_fallback_to": "fallback",
+                "last_error": "boom",
+                "counters": {
+                    "panel_auth_invalid": 3,
+                    "brain_fallback_count": 4,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/")
+
+    assert res.status_code == 200
+    body = res.text
+    assert "Performance Stats" in body
+    assert "Queue Counts" in body
+    assert "Degradation / Backoff" in body
+    assert "Auth + Runtime Counters" in body
+    assert "consecutive failures" in body
+    assert "timeout" in body
+
+
+def test_home_performance_history_missing_shows_dash(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/")
+
+    assert res.status_code == 200
+    body = res.text
+    assert "<td>last error</td><td>-</td>" in body
+    assert "<td>last fallback</td><td>-</td>" in body
+    assert "<td>last shutdown</td><td>-</td>" in body
+
+
 def test_panel_can_click_approve_pending_queue_job(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

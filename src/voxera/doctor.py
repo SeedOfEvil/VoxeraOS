@@ -244,22 +244,26 @@ def run_quick_doctor(
     )
 
     health = read_health_snapshot(root)
+    last_ok_event = str(health.get("last_ok_event") or "").strip()
+    last_ok_ts = health.get("last_ok_ts_ms")
     checks.append(
         {
             "check": "health last_ok",
-            "status": "ok" if bool(health.get("last_ok_event")) else "warn",
-            "detail": f"event={health.get('last_ok_event', '')} ts={health.get('last_ok_ts_ms', '')}",
+            "status": "ok" if bool(last_ok_event) else "warn",
+            "detail": (
+                f"event={last_ok_event or '-'} ts={last_ok_ts if last_ok_ts is not None else '-'}"
+            ),
             "hint": "No recent successful health event recorded."
-            if not bool(health.get("last_ok_event"))
+            if not bool(last_ok_event)
             else "",
         }
     )
-    last_error = str(health.get("last_error", ""))
+    last_error = str(health.get("last_error") or "").strip()
     last_error_ts_ms = _as_int(health.get("last_error_ts_ms"))
     last_ok_ts_ms = _as_int(health.get("last_ok_ts_ms"))
     error_status = "warn" if bool(last_error) else "ok"
     error_hint = "Investigate latest daemon/panel errors if this persists." if last_error else ""
-    error_detail = f"error={last_error} ts={health.get('last_error_ts_ms', '')}"
+    error_detail = f"error={last_error or '-'} ts={health.get('last_error_ts_ms') if health.get('last_error_ts_ms') is not None else '-'}"
 
     if (
         last_error
@@ -340,12 +344,14 @@ def run_quick_doctor(
     )
 
     # --- last fallback transition -------------------------------------------
-    fb_reason = str(health.get("last_fallback_reason", ""))
-    fb_from = str(health.get("last_fallback_from", ""))
-    fb_to = str(health.get("last_fallback_to", ""))
+    fb_reason = str(health.get("last_fallback_reason") or "")
+    fb_from = str(health.get("last_fallback_from") or "")
+    fb_to = str(health.get("last_fallback_to") or "")
     fb_ts = health.get("last_fallback_ts_ms", "")
     if fb_reason:
-        fb_detail = f"{fb_from} -> {fb_to} reason={fb_reason} ts={fb_ts}"
+        fb_detail = (
+            f"{fb_from or '-'} -> {fb_to or '-'} reason={fb_reason} ts={fb_ts if fb_ts else '-'}"
+        )
         fb_hint = (
             "RATE_LIMIT implies API throttling; AUTH implies bad key/config; "
             "TIMEOUT implies network/provider slowness."
@@ -353,7 +359,7 @@ def run_quick_doctor(
             else ""
         )
     else:
-        fb_detail = "none"
+        fb_detail = "-"
         fb_hint = ""
     checks.append(
         {

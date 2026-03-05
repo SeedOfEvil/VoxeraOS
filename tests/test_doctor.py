@@ -450,3 +450,20 @@ def test_doctor_quick_includes_last_shutdown_summary(tmp_path):
     assert "outcome=clean" in last_shutdown["detail"]
     assert "reason=SIGTERM" in last_shutdown["detail"]
     assert "job=job-1.json" in last_shutdown["detail"]
+
+
+def test_doctor_quick_missing_history_uses_dash_placeholders(tmp_path):
+    from voxera.doctor import run_quick_doctor
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_root / "health.json").write_text("{}", encoding="utf-8")
+
+    checks = run_quick_doctor(queue_root=queue_root)
+
+    last_ok = next(item for item in checks if item["check"] == "health last_ok")
+    last_error = next(item for item in checks if item["check"] == "health last_error")
+    last_fb = next(item for item in checks if item["check"] == "last fallback")
+    assert "event=-" in last_ok["detail"]
+    assert "error=-" in last_error["detail"]
+    assert last_fb["detail"] == "-"

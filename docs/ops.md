@@ -174,7 +174,9 @@ voxera queue pause
 voxera queue resume
 voxera queue unlock           # safe: stale/orphaned (dead pid) locks only
 voxera queue unlock --force   # override live lock (dangerous)
-voxera queue health           # summary from notes/queue/health.json
+voxera queue health           # summary from notes/queue/health.json (Current State / Recent History / Counters)
+voxera queue health --watch   # refresh every 2s (override with --interval)
+voxera queue health --json    # same snapshot with section parity fields
 voxera queue lock status      # lock table alias (same lock fields as queue health)
 ```
 
@@ -1013,3 +1015,19 @@ Behavior:
   - resolved path remains inside the allowed bucket root
 - ZIP generation skips symlinks and enforces archive safety limits (file count + total bytes).
 - Panel flow is read-only: no delete, move, or reconcile operations are performed by this page.
+
+
+## Queue health observability rendering
+
+`voxera queue health` is structured for operations triage:
+- **Current State**: queue root/intake, daemon state + pid, lock state, degradation/backoff, panel auth lockouts.
+- **Recent History**: last OK event, last error, last fallback transition, last shutdown context.
+- **Counters**: merged lock/runtime/auth counters from `health.json` for quick trend reads.
+
+`--json` now keeps parity with this view through top-level keys: `current_state`, `recent_history`, and `counters`.
+
+Missing/absent history is rendered consistently as `-` across CLI, doctor quick output, and panel performance history (instead of partial pairs like empty value + `None` timestamp). In JSON, absent history remains explicit (`null`) for authoritative semantics.
+
+`--watch` repeatedly refreshes the same layout (default `--interval 2.0`) for live incident response.
+
+Panel home includes a read-only **Performance Stats** tab that surfaces these same operator signals (queue counts, degradation/backoff, recent fallback/error/shutdown, auth/runtime counters) directly from `health.json`.

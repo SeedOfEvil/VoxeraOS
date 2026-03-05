@@ -83,7 +83,8 @@ voxera queue pause
 voxera queue resume
 voxera queue unlock           # safe: stale/dead locks only
 voxera queue unlock --force   # override live lock (dangerous)
-voxera queue health           # operator health snapshot (lock/auth/csrf counters)
+voxera queue health           # operator health snapshot (Current State / Recent History / Counters)
+voxera queue health --watch   # live refresh view for incident response
 voxera queue lock status      # lock table alias from queue health
 ```
 
@@ -355,13 +356,14 @@ Failed-job sidecar contract and retention:
 - `voxera queue status` now also shows active failed-retention policy (`failed retention max age (s)`, `failed retention max count`) and the latest prune-event summary (`removed jobs/sidecars`).
 - Lock/auth observability counters are persisted in `notes/queue/health.json` (shared by daemon + panel).
 - Panel home (`/`) includes a collapsible **Daemon Health** widget sourced strictly from `notes/queue/health.json` at request time (no daemon RPC calls), so it remains available in panel-only deployments.
+- Panel home also includes a read-only **Performance Stats** tab for queue counts, degradation/backoff state, recent fallback/error/shutdown context, and auth/runtime counters from the same health snapshot.
 - Panel hygiene page (`/hygiene`) shows the latest `voxera queue prune --json` (dry-run by default; panel never passes `--yes`) and `voxera queue reconcile --json` snapshots and provides operator-trigger buttons for both actions with in-page async refresh.
 - Panel recovery inspector (`/recovery`) provides a read-only listing of `notes/queue/recovery/` and `notes/queue/quarantine/` sessions (or loose files) and per-item ZIP downloads for operator triage.
 - Widget fields: lock status (`held`/`stale`/`clear`) with PID/stale age, last brain fallback (tier/reason/timestamp), last startup recovery (job_count/orphan_count/timestamp), last shutdown outcome (outcome/timestamp/reason/job), daemon state (defaults to `healthy` when absent).
 - Health snapshot ops signals: `daemon_state`, `consecutive_brain_failures`, `brain_backoff_wait_s` (computed current wait in seconds), `brain_backoff_active` (true when computed wait is > 0), and last-applied fields `brain_backoff_last_applied_s`/`brain_backoff_last_applied_ts` when sleep is enforced before planning.
 - Health snapshot now also records `last_ok_event` + `last_ok_ts_ms` so operators can confirm recent successful daemon activity; `last_error` remains for failures.
 - Health snapshot shutdown keys are always present with deterministic defaults (`null`): `last_shutdown_outcome`, `last_shutdown_ts`, `last_shutdown_reason`, `last_shutdown_job`. Outcome allowlist: `clean`, `failed_shutdown`, `startup_recovered`.
-- Use `voxera queue health` for a quick operator summary (paused flag, intake path, lock status, counters, and last safe error summary).
+- Use `voxera queue health` for an operator-first snapshot with deterministic fields and sectioned rendering: Current State (runtime + lock + degradation), Recent History (ok/error/fallback/shutdown), and Counters. `--json` returns parity sections (`current_state`, `recent_history`, `counters`) and `--watch` provides periodic refresh.
 - See `docs/ops.md` Incident Runbook for copy/paste recovery steps.
 - Operator response when invalid rises: inspect `failed/*.error.json`, correlate with `queue_failed_sidecar_invalid` audit events, and quarantine/fix malformed sidecars before retrying jobs.
 - Schema evolution policy: writer is pinned to version `1`, reader uses an explicit supported-version allowlist (currently `[1]`), and unknown future versions are rejected deterministically.

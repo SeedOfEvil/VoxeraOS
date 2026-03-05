@@ -281,3 +281,8 @@ Audio stack is currently a placeholder in `src/voxera/audio/`.
 - Config path standardization: all CLI and docs consistently reference `config.json` for ops config.
 - `voxera demo` guided checklist: offline (default) and online modes, safe repeatable demo jobs.
 - Modernized setup wizard: non-destructive credential choices (keep current / skip / enter new).
+
+
+## Observability UX refinements
+- `voxera queue health` now supports `--watch`/`--interval` and presents Current State / Recent History / Counters with JSON parity sections.
+- Panel home adds a read-only **Performance Stats** tab to surface queue counts, degradation/backoff, fallback/error/shutdown context, and auth/runtime counters from `health.json`.

@@ -47,6 +47,7 @@
     <nav class="tabs" aria-label="Control panel views">
       <button class="tab-btn is-active" type="button" data-tab-btn="control">Control</button>
       <button class="tab-btn" type="button" data-tab-btn="logging">Logging</button>
+      <button class="tab-btn" type="button" data-tab-btn="performance">Performance Stats</button>
     </nav>
 
     <section class="tab-panel" data-tab-panel="control">
@@ -90,9 +91,9 @@
             <p class="kpi-label"><b>Daemon paused</b></p>
             <p>{{queue.paused}}</p>
             <p class="kpi-label"><b>Last OK</b></p>
-            <p>{{queue.last_ok_event or ""}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% endif %}</p>
+            <p>{{queue.last_ok_event or "-"}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% elif not queue.last_ok_event %}{% endif %}</p>
             <p class="kpi-label"><b>Last Error</b></p>
-            <p>{{queue.last_error or ""}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% endif %}</p>
+            <p>{{queue.last_error or "-"}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% elif not queue.last_error %}{% endif %}</p>
             <div style="display:flex; gap:6px; margin-top:8px;">
               <form method="post" action="/queue/pause">
             <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Pause</button></form>
@@ -299,6 +300,68 @@
           {% endfor %}
           </tbody>
         </table></div>
+      </section>
+    </section>
+
+
+
+    <section class="tab-panel is-hidden" data-tab-panel="performance">
+      <section class="grid grid-2" style="margin-bottom:16px;">
+        <article class="card">
+          <h2>Queue Counts</h2>
+          <div class="table-wrap"><table>
+            <tbody>
+              <tr><td>inbox</td><td>{{performance_stats.queue_counts.inbox}}</td></tr>
+              <tr><td>pending</td><td>{{performance_stats.queue_counts.pending}}</td></tr>
+              <tr><td>pending approvals</td><td>{{performance_stats.queue_counts.pending_approvals}}</td></tr>
+              <tr><td>done</td><td>{{performance_stats.queue_counts.done}}</td></tr>
+              <tr><td>failed</td><td>{{performance_stats.queue_counts.failed}}</td></tr>
+              <tr><td>canceled</td><td>{{performance_stats.queue_counts.canceled}}</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+        <article class="card">
+          <h2>Degradation / Backoff</h2>
+          <div class="table-wrap"><table>
+            <tbody>
+              <tr><td>daemon state</td><td>{{performance_stats.degradation.daemon_state}}</td></tr>
+              <tr><td>consecutive failures</td><td>{{performance_stats.degradation.consecutive_brain_failures}}</td></tr>
+              <tr><td>backoff active</td><td>{{performance_stats.degradation.brain_backoff_active}}</td></tr>
+              <tr><td>current backoff (s)</td><td>{{performance_stats.degradation.brain_backoff_wait_s}}</td></tr>
+              <tr><td>last applied backoff (s)</td><td>{{performance_stats.degradation.brain_backoff_last_applied_s}}</td></tr>
+              <tr><td>last applied backoff ts</td><td>{{performance_stats.degradation.brain_backoff_last_applied_ts}}</td></tr>
+              <tr><td>degraded since</td><td>{{performance_stats.degradation.degraded_since_ts}}</td></tr>
+              <tr><td>degraded reason</td><td>{{performance_stats.degradation.degraded_reason}}</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+      </section>
+
+      <section class="grid grid-2" style="margin-bottom:16px;">
+        <article class="card">
+          <h2>Recent History</h2>
+          <div class="table-wrap"><table>
+            <tbody>
+              <tr><td>last fallback</td><td>{{performance_stats.recent_history.last_fallback_line}}</td></tr>
+              <tr><td>last error</td><td>{{performance_stats.recent_history.last_error_line}}</td></tr>
+              <tr><td>last shutdown</td><td>{{performance_stats.recent_history.last_shutdown_line}}</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+        <article class="card">
+          <h2>Auth + Runtime Counters</h2>
+          <div class="table-wrap"><table>
+            <tbody>
+              <tr><td>auth invalid</td><td>{{performance_stats.auth_counters.panel_auth_invalid}}</td></tr>
+              <tr><td>401 / 403 / 429</td><td>{{performance_stats.auth_counters.panel_401_count}} / {{performance_stats.auth_counters.panel_403_count}} / {{performance_stats.auth_counters.panel_429_count}}</td></tr>
+              <tr><td>csrf missing / invalid</td><td>{{performance_stats.auth_counters.panel_csrf_missing}} / {{performance_stats.auth_counters.panel_csrf_invalid}}</td></tr>
+              <tr><td>mutation allowed</td><td>{{performance_stats.auth_counters.panel_mutation_allowed}}</td></tr>
+              <tr><td>fallback count</td><td>{{performance_stats.runtime_counters.brain_fallback_count}}</td></tr>
+              <tr><td>fallback reason timeout/auth/rate-limit</td><td>{{performance_stats.runtime_counters.brain_fallback_reason_timeout}} / {{performance_stats.runtime_counters.brain_fallback_reason_auth}} / {{performance_stats.runtime_counters.brain_fallback_reason_rate_limit}}</td></tr>
+              <tr><td>fallback reason malformed/network/unknown</td><td>{{performance_stats.runtime_counters.brain_fallback_reason_malformed}} / {{performance_stats.runtime_counters.brain_fallback_reason_network}} / {{performance_stats.runtime_counters.brain_fallback_reason_unknown}}</td></tr>
+            </tbody>
+          </table></div>
+        </article>
       </section>
     </section>
 

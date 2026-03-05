@@ -78,3 +78,24 @@ def test_record_last_shutdown_invalid_outcome_falls_back_to_failed(tmp_path):
         now_fn=lambda: 9.0,
     )
     assert payload["last_shutdown_outcome"] == "failed_shutdown"
+
+
+def test_health_normalization_deterministic_defaults_for_observability_fields():
+    payload = _normalize_health_snapshot({"counters": "bad", "panel_auth": []})
+    assert payload["daemon_state"] == "healthy"
+    assert payload["consecutive_brain_failures"] == 0
+    assert payload["brain_backoff_wait_s"] == 0
+    assert payload["brain_backoff_active"] is False
+    assert payload["daemon_started_at_ms"] is None
+    assert payload["daemon_pid"] is None
+    assert payload["updated_at_ms"] is None
+    assert payload["last_ok_event"] is None
+    assert payload["last_ok_ts_ms"] is None
+    assert payload["last_error"] is None
+    assert payload["last_error_ts_ms"] is None
+    assert payload["last_fallback_reason"] is None
+    assert payload["last_fallback_from"] is None
+    assert payload["last_fallback_to"] is None
+    assert payload["last_fallback_ts_ms"] is None
+    assert payload["counters"] == {}
+    assert payload["panel_auth"] == {}

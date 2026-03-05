@@ -235,6 +235,10 @@ Health degradation (P3.x) is deferred to v0.2.
 
 - Artifact cleanup tied to failed-job pruner (auto-remove artifact dir when job is pruned).
 - Mission audit replay (re-run any completed mission from audit log).
-- Queue health `--watch` mode (live refresh terminal UI).
 - Full-duplex voice interaction loops (v0.3).
 - Signed skills + skill marketplace (v0.4).
+
+
+## Observability UX refinements
+- `voxera queue health` now supports `--watch`/`--interval` and presents Current State / Recent History / Counters with JSON parity sections.
+- Panel home adds a read-only **Performance Stats** tab to surface queue counts, degradation/backoff, fallback/error/shutdown context, and auth/runtime counters from `health.json`.

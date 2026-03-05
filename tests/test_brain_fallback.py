@@ -245,7 +245,7 @@ class TestDoctorQuickFallback:
 
         fallback_check = next(item for item in checks if item["check"] == "last fallback")
         assert fallback_check["status"] == "ok"
-        assert fallback_check["detail"] == "none"
+        assert fallback_check["detail"] == "-"
 
     def test_doctor_quick_shows_hint_for_known_reasons(self, tmp_path: Path):
         from voxera.doctor import run_quick_doctor
