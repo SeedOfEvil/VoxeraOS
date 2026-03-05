@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BrainConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["gemini", "openai_compat"]
     model: str
     base_url: str | None = None  # for openai_compat
@@ -16,6 +18,8 @@ class BrainConfig(BaseModel):
 
 
 class PolicyApprovals(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     network_changes: Literal["allow", "ask", "deny"] = "ask"
     installs: Literal["allow", "ask", "deny"] = "ask"
     file_delete: Literal["allow", "ask", "deny"] = "ask"
@@ -24,11 +28,15 @@ class PolicyApprovals(BaseModel):
 
 
 class PrivacyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     cloud_allowed: bool = True
     redact_logs: bool = True
 
 
 class AppConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     mode: Literal["voice", "gui", "cli", "mixed"] = "mixed"
     brain: dict[str, BrainConfig] = Field(default_factory=dict)  # primary/fallback
     policy: PolicyApprovals = Field(default_factory=PolicyApprovals)

@@ -1,3 +1,15 @@
+## 2026-03-05 — PR TBD — Fail fast on unknown keys for operator-facing configuration models
+- Summary
+  - Hardened operator-facing app config contracts by forbidding unknown fields on `AppConfig`, `BrainConfig`, `PolicyApprovals`, and `PrivacyConfig`.
+  - Added explicit tests for valid config loading and unknown-key rejection at top-level and nested config levels.
+  - Improved `load_app_config` error surfacing with an operator-focused hint for unknown keys/typos in `config.yml`.
+  - Kept volatile/internal payload models (for example planner/runtime payload models like `PlanStep`) permissive for staged rollout compatibility.
+- Validation
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+
 
 ## 2026-03-04 — PR #N/A — test: isolate health snapshot writes during pytest (surgical fix)
 - Summary:

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 
 from .models import AppConfig
 from .paths import config_dir, data_dir, ensure_dirs
@@ -359,7 +360,14 @@ def load_app_config(path=None) -> AppConfig:
     if not path.exists():
         return AppConfig()
     obj = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return AppConfig.model_validate(obj)
+    try:
+        return AppConfig.model_validate(obj)
+    except ValidationError as exc:
+        raise ValueError(
+            f"Invalid app config at {path}: Unknown config key or invalid value. "
+            "Check for typos in config.yml fields.\n"
+            f"{exc}"
+        ) from exc
 
 
 def save_config(cfg: AppConfig, path=None) -> None:

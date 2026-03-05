@@ -104,6 +104,8 @@ Note: systemd user services do not inherit ad-hoc shell exports by default; conf
 
 Use `voxera setup` for first-run app config (`~/.config/voxera/config.yml`) while keeping runtime ops configuration in `~/.config/voxera/config.json` (optional/operator-managed).
 
+Operator-facing app config validation is strict by contract: unknown keys in `config.yml` fail fast (including nested `brain`, `policy`, and `privacy` entries) to catch typos before runtime. Internal/volatile payload models are intentionally not tightened repo-wide in this phase.
+
 Provider auth choices are intentionally non-destructive:
 - Keep current (default when already configured)
 - Skip for now (continue with offline demo flows)
