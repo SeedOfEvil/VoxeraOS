@@ -274,7 +274,7 @@ def record_brain_backoff_applied(
 
 
 def increment_health_counter(
-    queue_root: Path,
+    queue_root: Path | None,
     key: str,
     *,
     amount: int = 1,

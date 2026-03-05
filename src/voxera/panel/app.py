@@ -471,7 +471,9 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
     user, password = _operator_credentials(request)
     now_ms = _now_ms()
     ip = _client_ip(request)
-    lockout_until_ms = _active_lockout_until_ms(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms)
+    lockout_until_ms = _active_lockout_until_ms(
+        queue_root=_health_queue_root(), ip=ip, now_ms=now_ms
+    )
     if lockout_until_ms is not None:
         _panel_security_counter_incr("panel_429_count")
         raise HTTPException(
@@ -481,7 +483,9 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
         )
 
     if not authorization:
-        _panel_auth_state_update(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
+        _panel_auth_state_update(
+            queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False
+        )
         _panel_security_counter_incr("panel_401_count", last_error="missing authorization")
         _log_panel_security_event(
             "panel_auth_missing", request=request, reason="missing_authorization", status_code=401
@@ -495,7 +499,9 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
 
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "basic" or not token:
-        _panel_auth_state_update(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
+        _panel_auth_state_update(
+            queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False
+        )
         _panel_security_counter_incr(
             "panel_auth_invalid", last_error="invalid authentication scheme"
         )
@@ -511,7 +517,9 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
     try:
         decoded = base64.b64decode(token).decode("utf-8")
     except Exception as exc:
-        _panel_auth_state_update(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False)
+        _panel_auth_state_update(
+            queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=False
+        )
         _panel_security_counter_incr(
             "panel_auth_invalid", last_error="invalid authorization header"
         )
@@ -573,7 +581,9 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    _panel_auth_state_update(queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=True)
+    _panel_auth_state_update(
+        queue_root=_health_queue_root(), ip=ip, now_ms=now_ms, auth_success=True
+    )
 
 
 async def _require_mutation_guard(request: Request) -> None:
