@@ -312,7 +312,7 @@ def _panel_security_counter_incr(key: str, *, last_error: str | None = None) -> 
 
 
 def _panel_security_snapshot() -> dict[str, Any]:
-    payload = read_health_snapshot(_queue_root())
+    payload = read_health_snapshot(_health_queue_root())
     counters = payload.get("counters")
     return counters if isinstance(counters, dict) else {}
 

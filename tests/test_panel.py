@@ -1482,6 +1482,48 @@ def test_download_rejects_path_traversal(tmp_path, monkeypatch):
     assert res_with_slash.status_code == 404
 
 
+def test_panel_security_snapshot_reads_same_default_root_as_counter_writes(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    panel_module._panel_security_counter_incr("panel_auth_invalid")
+
+    counters = panel_module._panel_security_snapshot()
+
+    assert counters["panel_auth_invalid"] == 1
+
+
+def test_panel_security_snapshot_reads_same_isolated_root_as_counter_writes(tmp_path, monkeypatch):
+    repo_root = tmp_path / "VoxeraOS"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setattr(panel_module.Path, "home", lambda: tmp_path)
+
+    real_queue_root = repo_root / "notes" / "queue"
+    real_queue_root.mkdir(parents=True, exist_ok=True)
+    (real_queue_root / "health.json").write_text(
+        json.dumps({"counters": {"panel_auth_invalid": 7}}), encoding="utf-8"
+    )
+
+    isolated_health = tmp_path / "isolated" / "health.json"
+    isolated_health.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("VOXERA_HEALTH_PATH", str(isolated_health))
+
+    panel_module._panel_security_counter_incr("panel_auth_invalid")
+
+    counters = panel_module._panel_security_snapshot()
+
+    assert counters["panel_auth_invalid"] == 1
+    assert (
+        json.loads((real_queue_root / "health.json").read_text(encoding="utf-8"))["counters"][
+            "panel_auth_invalid"
+        ]
+        == 7
+    )
+
+
 def test_panel_auth_failure_writes_to_isolated_health_path_when_config_uses_real_queue(
     tmp_path, monkeypatch
 ):
