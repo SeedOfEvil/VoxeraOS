@@ -150,6 +150,9 @@ This writes config to:
 The runtime ops config (`~/.config/voxera/config.json`) is separate and optional — create it to
 override panel/queue defaults. See the **Runtime config** section above and `docs/ops.md`.
 
+> [!NOTE]
+> Operator-facing app config now fails fast on unknown keys for `config.yml` contracts (`AppConfig`, `BrainConfig`, `PolicyApprovals`, `PrivacyConfig`). This is intentional to catch config typos early. Internal/volatile runtime payload models remain selectively permissive in this staged rollout.
+
 
 ### OpenRouter recommended setup
 `voxera setup` now includes an **OpenRouter** cloud option and configures:
