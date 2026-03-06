@@ -8,10 +8,8 @@ import re
 import secrets
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
@@ -21,13 +19,10 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
-    JSONResponse,
     RedirectResponse,
-    StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from starlette.background import BackgroundTask
 
 from ..audit import log, tail
 from ..brain.fallback import AUTH, MALFORMED, NETWORK, RATE_LIMIT, TIMEOUT, classify_fallback_reason
@@ -39,7 +34,6 @@ from ..core.missions import MissionTemplate, _parse_mission_file
 from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import lookup_job, queue_snapshot
 from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
-from ..health_reset import EVENT_BY_SCOPE, HealthResetError, reset_health_snapshot
 from ..health_semantics import build_health_semantic_sections
 from ..incident_bundle import BundleError
 from ..operator_assistant import (
@@ -60,7 +54,9 @@ from .assistant import (
 from .helpers import coerce_int as _coerce_int
 from .helpers import request_value as _request_value
 from .routes_home import register_home_routes
+from .routes_hygiene import register_hygiene_routes
 from .routes_jobs import register_job_routes
+from .routes_recovery import register_recovery_routes
 
 app = FastAPI(title="Voxera Panel", version=get_version())
 
@@ -1042,105 +1038,6 @@ def _enforce_get_mutations_enabled() -> None:
         )
 
 
-def _is_within_path(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
-def _bucket_base_dir(bucket: str) -> Path:
-    queue_root = _queue_root()
-    if bucket == "recovery":
-        return queue_root / "recovery"
-    if bucket == "quarantine":
-        return queue_root / "quarantine"
-    raise HTTPException(status_code=404, detail="Not found")
-
-
-def _dir_metrics(root: Path) -> tuple[int, int]:
-    file_count = 0
-    total_size = 0
-    for current_root, dir_names, file_names in os.walk(root, topdown=True, followlinks=False):
-        current_path = Path(current_root)
-        dir_names[:] = [
-            name for name in sorted(dir_names) if not (current_path / name).is_symlink()
-        ]
-        for file_name in sorted(file_names):
-            file_path = current_path / file_name
-            if file_path.is_symlink() or not file_path.is_file():
-                continue
-            stat = file_path.stat()
-            file_count += 1
-            total_size += int(stat.st_size)
-    return file_count, total_size
-
-
-def _collect_bucket_items(bucket: str) -> list[dict[str, Any]]:
-    base = _bucket_base_dir(bucket)
-    if not base.exists() or not base.is_dir():
-        return []
-
-    items: list[dict[str, Any]] = []
-    for child in sorted(base.iterdir(), key=lambda entry: entry.name):
-        if child.is_symlink():
-            continue
-        stat = child.stat()
-        if child.is_dir():
-            file_count, size_bytes = _dir_metrics(child)
-            kind = "dir"
-        elif child.is_file():
-            file_count, size_bytes = 1, int(stat.st_size)
-            kind = "file"
-        else:
-            continue
-        items.append(
-            {
-                "name": child.name,
-                "kind": kind,
-                "mtime_ts": int(stat.st_mtime),
-                "size_bytes": size_bytes,
-                "file_count": file_count,
-            }
-        )
-    return items
-
-
-def _build_recovery_zip(target: Path, zip_path: Path) -> None:
-    files_added = 0
-    total_size = 0
-
-    with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        if target.is_file() and not target.is_symlink():
-            total_size = int(target.stat().st_size)
-            if total_size > _RECOVERY_ZIP_MAX_TOTAL_BYTES:
-                raise HTTPException(status_code=413, detail="Requested archive too large")
-            zf.write(target, arcname=target.name)
-            return
-
-        for current_root, dir_names, file_names in os.walk(target, topdown=True, followlinks=False):
-            current_path = Path(current_root)
-            dir_names[:] = [
-                name for name in sorted(dir_names) if not (current_path / name).is_symlink()
-            ]
-            for file_name in sorted(file_names):
-                file_path = current_path / file_name
-                if file_path.is_symlink() or not file_path.is_file():
-                    continue
-                stat = file_path.stat()
-                files_added += 1
-                total_size += int(stat.st_size)
-                if files_added > _RECOVERY_ZIP_MAX_FILES:
-                    raise HTTPException(
-                        status_code=413, detail="Requested archive has too many files"
-                    )
-                if total_size > _RECOVERY_ZIP_MAX_TOTAL_BYTES:
-                    raise HTTPException(status_code=413, detail="Requested archive too large")
-                arcname = file_path.relative_to(target)
-                zf.write(file_path, arcname=str(arcname))
-
-
 def _write_queue_job(payload: dict[str, Any]) -> str:
     queue_root = _queue_root()
     inbox = queue_root / "inbox"
@@ -1911,176 +1808,6 @@ def system_bundle(request: Request):
     )
 
 
-@app.get("/recovery", response_class=HTMLResponse)
-def recovery_page(request: Request):
-    recovery_sessions = _collect_bucket_items("recovery")
-    quarantine_sessions = _collect_bucket_items("quarantine")
-    tmpl = templates.get_template("recovery.html")
-    html = tmpl.render(
-        recovery_sessions=recovery_sessions,
-        quarantine_sessions=quarantine_sessions,
-    )
-    return HTMLResponse(content=html)
-
-
-@app.get("/recovery/download/{bucket}/{name}")
-def recovery_download(bucket: str, name: str, request: Request):
-    _require_operator_auth_from_request(request)
-    if "/" in name or "\\" in name or not name or Path(name).name != name:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    base = _bucket_base_dir(bucket).resolve()
-    target = (base / name).resolve()
-    if not _is_within_path(target, base) or not target.exists() or target.is_symlink():
-        raise HTTPException(status_code=404, detail="Not found")
-    if not target.is_file() and not target.is_dir():
-        raise HTTPException(status_code=404, detail="Not found")
-
-    fd, temp_name = tempfile.mkstemp(prefix="voxera-recovery-", suffix=".zip")
-    os.close(fd)
-    temp_path = Path(temp_name)
-    try:
-        _build_recovery_zip(target, temp_path)
-    except Exception:
-        temp_path.unlink(missing_ok=True)
-        raise
-
-    def _zip_file_iterator(path: Path):
-        with path.open("rb") as handle:
-            while True:
-                chunk = handle.read(64 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-
-    filename = f"{bucket}-{name}.zip"
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
-    return StreamingResponse(
-        _zip_file_iterator(temp_path),
-        media_type="application/zip",
-        headers=headers,
-        background=BackgroundTask(lambda: temp_path.unlink(missing_ok=True)),
-    )
-
-
-@app.get("/hygiene", response_class=HTMLResponse)
-def hygiene_page(request: Request, flash: str = ""):
-    _require_operator_auth_from_request(request)
-    health = read_health_snapshot(_health_queue_root())
-    tmpl = templates.get_template("hygiene.html")
-    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
-    html = tmpl.render(
-        last_prune_result=health.get("last_prune_result"),
-        last_reconcile_result=health.get("last_reconcile_result"),
-        csrf_token=csrf_token,
-        flash=FLASH_MESSAGES.get(flash, ""),
-        hygiene_prune_url=str(request.url_for("hygiene_prune_dry_run")),
-        hygiene_reconcile_url=str(request.url_for("hygiene_reconcile")),
-        hygiene_health_reset_url=str(request.url_for("hygiene_health_reset")),
-    )
-    response = HTMLResponse(content=html)
-    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
-    return response
-
-
-@app.post("/hygiene/prune-dry-run")
-async def hygiene_prune_dry_run(request: Request):
-    await _require_mutation_guard(request)
-    queue_root = _queue_root()
-    run = _run_queue_hygiene_command(queue_root, ["queue", "prune", "--json"])
-    parsed = run["result"]
-    per_bucket = parsed.get("per_bucket") if isinstance(parsed.get("per_bucket"), dict) else {}
-    removed_jobs = int(
-        sum(int((per_bucket.get(b) or {}).get("pruned", 0) or 0) for b in per_bucket)
-    )
-    result = {
-        "ts_ms": _now_ms(),
-        "mode": "dry-run",
-        "ok": bool(run["ok"]),
-        "removed_jobs": 0,
-        "would_remove_jobs": removed_jobs,
-        "removed_sidecars": 0,
-        "reclaimed_bytes": parsed.get("reclaimed_bytes"),
-        "by_bucket": per_bucket,
-        "exit_code": run.get("exit_code"),
-        "cmd": run.get("cmd"),
-        "cwd": run.get("cwd"),
-        "stdout_tail": run.get("stdout_tail", ""),
-    }
-    if run["stderr_tail"]:
-        result["stderr_tail"] = run["stderr_tail"]
-    if not run["ok"]:
-        result["error"] = run["error"]
-    _write_hygiene_result(queue_root, "last_prune_result", result)
-    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=200)
-
-
-@app.post("/hygiene/reconcile")
-async def hygiene_reconcile(request: Request):
-    await _require_mutation_guard(request)
-    queue_root = _queue_root()
-    run = _run_queue_hygiene_command(queue_root, ["queue", "reconcile", "--json"])
-    parsed = run["result"]
-    issue_counts = (
-        parsed.get("issue_counts") if isinstance(parsed.get("issue_counts"), dict) else {}
-    )
-    result = {
-        "ts_ms": _now_ms(),
-        "ok": bool(run["ok"]),
-        "issue_counts": issue_counts,
-        "exit_code": run.get("exit_code"),
-        "cmd": run.get("cmd"),
-        "cwd": run.get("cwd"),
-        "stdout_tail": run.get("stdout_tail", ""),
-    }
-    if run["stderr_tail"]:
-        result["stderr_tail"] = run["stderr_tail"]
-    if not run["ok"]:
-        result["error"] = run["error"]
-    _write_hygiene_result(queue_root, "last_reconcile_result", result)
-    return JSONResponse({"ok": bool(run["ok"]), "result": result}, status_code=200)
-
-
-def _hygiene_redirect(request: Request, flash: str) -> RedirectResponse:
-    url = str(request.url_for("hygiene_page"))
-    sep = "&" if "?" in url else "?"
-    return RedirectResponse(url=f"{url}{sep}flash={flash}", status_code=303)
-
-
-@app.post("/hygiene/health-reset")
-async def hygiene_health_reset(request: Request):
-    await _require_mutation_guard(request)
-    scope = (await _request_value(request, "scope", "current_and_recent")).strip()
-    counter_group_raw = (await _request_value(request, "counter_group", "")).strip()
-    counter_group = counter_group_raw or None
-    try:
-        summary = reset_health_snapshot(
-            _health_queue_root(),
-            scope=scope,
-            counter_group=counter_group,
-            actor_surface="panel",
-        )
-    except HealthResetError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    event_name = (
-        "health_reset_historical_counters"
-        if counter_group
-        else EVENT_BY_SCOPE.get(scope, "health_reset")
-    )
-    log(
-        {
-            "event": event_name,
-            "scope": scope,
-            "counter_group": counter_group,
-            "actor_surface": "panel",
-            "fields_changed": summary["changed_fields"],
-            "timestamp_ms": summary["timestamp_ms"],
-        }
-    )
-    flash = "health_reset_historical_counters" if counter_group else event_name
-    return _hygiene_redirect(request, flash)
-
-
 def _safe_jobs_n(raw: str) -> int:
     try:
         return max(1, min(int(raw), 200))
@@ -2148,6 +1875,31 @@ register_job_routes(
     last_activity=_last_activity,
     job_detail_payload=_job_detail_payload,
     auth_setup_banner=_auth_setup_banner,
+)
+
+
+register_recovery_routes(
+    app,
+    templates=templates,
+    queue_root=_queue_root,
+    require_operator_auth_from_request=_require_operator_auth_from_request,
+    recovery_zip_max_files=_RECOVERY_ZIP_MAX_FILES,
+    recovery_zip_max_total_bytes=_RECOVERY_ZIP_MAX_TOTAL_BYTES,
+)
+
+register_hygiene_routes(
+    app,
+    templates=templates,
+    csrf_cookie=CSRF_COOKIE,
+    flash_messages=FLASH_MESSAGES,
+    queue_root=_queue_root,
+    health_queue_root=_health_queue_root,
+    require_operator_auth_from_request=_require_operator_auth_from_request,
+    require_mutation_guard=_require_mutation_guard,
+    run_queue_hygiene_command=_run_queue_hygiene_command,
+    write_hygiene_result=_write_hygiene_result,
+    now_ms=_now_ms,
+    audit_log=lambda event: log(event),
 )
 
 
