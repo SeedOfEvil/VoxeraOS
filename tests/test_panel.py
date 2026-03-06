@@ -1920,7 +1920,7 @@ def test_operator_assistant_page_shows_fallback_metadata(tmp_path, monkeypatch):
     assert "Mode:" in res.text
 
 
-def test_operator_assistant_degraded_mode_when_queue_unavailable(tmp_path, monkeypatch):
+def test_operator_assistant_degraded_mode_when_queue_unavailable(tmp_path, monkeypatch, recwarn):
     fake_home = tmp_path / "home"
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
     monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
@@ -1940,6 +1940,7 @@ def test_operator_assistant_degraded_mode_when_queue_unavailable(tmp_path, monke
     assert res.status_code == 200
     assert "degraded_brain_only" in res.text
     assert "queue_unavailable" in res.text
+    assert not any("was never awaited" in str(w.message) for w in recwarn)
 
 
 def test_degraded_assistant_prefers_model_backed_primary(monkeypatch):

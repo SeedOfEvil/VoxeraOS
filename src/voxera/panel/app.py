@@ -214,7 +214,7 @@ def _degraded_mode_disclosure(degraded_reason: str, context: dict[str, Any]) -> 
     )
 
 
-def _generate_degraded_assistant_answer(
+async def _generate_degraded_assistant_answer_async(
     question: str,
     context: dict[str, Any],
     *,
@@ -239,7 +239,7 @@ def _generate_degraded_assistant_answer(
         primary_name, primary_provider = primary_attempt
         try:
             brain = _create_panel_assistant_brain(primary_provider)
-            resp = asyncio.run(brain.generate(messages, tools=[]))
+            resp = await brain.generate(messages, tools=[])
             text = str(resp.text or "").strip()
             if text:
                 return {
@@ -278,7 +278,7 @@ def _generate_degraded_assistant_answer(
         fallback_name, fallback_provider = fallback_attempt
         try:
             brain = _create_panel_assistant_brain(fallback_provider)
-            resp = asyncio.run(brain.generate(messages, tools=[]))
+            resp = await brain.generate(messages, tools=[])
             text = str(resp.text or "").strip()
             if text:
                 return {
@@ -313,6 +313,23 @@ def _generate_degraded_assistant_answer(
         "error_class": final_class,
         "deterministic_used": True,
     }
+
+
+def _generate_degraded_assistant_answer(
+    question: str,
+    context: dict[str, Any],
+    *,
+    thread_turns: list[dict[str, Any]],
+    degraded_reason: str,
+) -> dict[str, Any]:
+    return asyncio.run(
+        _generate_degraded_assistant_answer_async(
+            question,
+            context,
+            thread_turns=thread_turns,
+            degraded_reason=degraded_reason,
+        )
+    )
 
 
 def _persist_degraded_assistant_result(
@@ -1814,7 +1831,7 @@ async def assistant_ask(request: Request):
         queue_root = _queue_root()
         normalized_thread = normalize_thread_id(thread_id) if thread_id else new_thread_id()
         context = build_operator_assistant_context(queue_root)
-        degraded_data = _generate_degraded_assistant_answer(
+        degraded_data = await _generate_degraded_assistant_answer_async(
             question,
             context,
             thread_turns=read_assistant_thread_turns(queue_root, normalized_thread),
