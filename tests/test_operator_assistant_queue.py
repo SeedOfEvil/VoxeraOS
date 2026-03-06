@@ -83,6 +83,95 @@ def test_assistant_result_reader_surfaces_answer(tmp_path):
     assert "queue is clear" in result["answer"]
 
 
+def test_assistant_advisory_primary_success_metadata(tmp_path, monkeypatch):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    job = _write_assistant_job(queue_root)
+
+    monkeypatch.setattr(
+        daemon,
+        "_assistant_answer_via_brain",
+        lambda *args, **kwargs: {
+            "answer": "Primary advisory answer.",
+            "answered_at_ms": 123,
+            "provider": "openai_compat",
+            "model": "primary-model",
+            "fallback_used": False,
+            "fallback_from": None,
+            "fallback_reason": None,
+            "error_class": None,
+            "advisory_mode": "queue",
+            "degraded_reason": None,
+        },
+    )
+
+    assert daemon.process_job_file(job)
+    payload = json.loads(
+        (queue_root / "artifacts" / "job-assistant-test" / "assistant_response.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["provider"] == "openai_compat"
+    assert payload["model"] == "primary-model"
+    assert payload["fallback_used"] is False
+    assert payload["advisory_mode"] == "queue"
+
+
+def test_assistant_advisory_fallback_success_metadata(tmp_path, monkeypatch):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    job = _write_assistant_job(queue_root)
+
+    monkeypatch.setattr(
+        daemon,
+        "_assistant_answer_via_brain",
+        lambda *args, **kwargs: {
+            "answer": "Fallback advisory answer.",
+            "answered_at_ms": 456,
+            "provider": "gemini",
+            "model": "fallback-model",
+            "fallback_used": True,
+            "fallback_from": {"provider": "openai_compat", "model": "primary-model"},
+            "fallback_reason": "timeout",
+            "error_class": "TimeoutException",
+            "advisory_mode": "queue",
+            "degraded_reason": None,
+        },
+    )
+
+    assert daemon.process_job_file(job)
+    payload = json.loads(
+        (queue_root / "artifacts" / "job-assistant-test" / "assistant_response.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["fallback_used"] is True
+    assert payload["fallback_reason"] == "timeout"
+    assert payload["fallback_from"]["provider"] == "openai_compat"
+
+
+def test_assistant_advisory_total_failure_persists_failure_artifact(tmp_path, monkeypatch):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    job = _write_assistant_job(queue_root)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("assistant advisory failed after fallback")
+
+    monkeypatch.setattr(daemon, "_assistant_answer_via_brain", _boom)
+
+    processed = daemon.process_job_file(job)
+    assert processed is False
+    failed_job = queue_root / "failed" / "job-assistant-test.json"
+    assert failed_job.exists()
+    artifact = queue_root / "artifacts" / "job-assistant-test" / "assistant_response.json"
+    assert artifact.exists()
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    assert payload["advisory_mode"] == "degraded_brain_only"
+    assert payload["degraded_reason"] == "queue_processing_failed"
+    assert "failed after fallback" in payload["error"]
+
+
 def test_fallback_partner_voice_uses_varied_opening():
     from voxera.operator_assistant import fallback_operator_answer
 

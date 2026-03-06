@@ -1895,6 +1895,12 @@ def test_operator_assistant_page_shows_completed_queue_answer(tmp_path, monkeypa
                 "thread_id": "thread-abc",
                 "answer": "Control-plane view: pending=0.",
                 "updated_at_ms": 1,
+                "advisory_mode": "queue",
+                "provider": "openai_compat",
+                "model": "primary-model",
+                "fallback_used": True,
+                "fallback_reason": "timeout",
+                "fallback_from": {"provider": "openai_compat", "model": "primary-old"},
             }
         ),
         encoding="utf-8",
@@ -1912,6 +1918,44 @@ def test_operator_assistant_page_shows_completed_queue_answer(tmp_path, monkeypa
     assert "answered" in res.text
     assert "Control-plane view: pending=0." in res.text
     assert "Thread:" in res.text
+    assert "Mode:" in res.text
+    assert "queue" in res.text
+    assert "Answered by:" in res.text
+    assert "fallback after timeout" in res.text
+
+
+def test_operator_assistant_page_shows_degraded_mode_metadata(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-assistant-2.json").write_text(
+        json.dumps({"thread_id": "thread-abc"}), encoding="utf-8"
+    )
+    (queue_dir / "artifacts" / "job-assistant-2").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "artifacts" / "job-assistant-2" / "assistant_response.json").write_text(
+        json.dumps(
+            {
+                "thread_id": "thread-abc",
+                "error": "queue advisory path unavailable",
+                "advisory_mode": "degraded_brain_only",
+                "degraded_reason": "queue_processing_failed",
+                "updated_at_ms": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-2.json&thread_id=thread-abc&question=What+is+happening+right+now%3F",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "degraded_brain_only" in res.text
+    assert "queue_processing_failed" in res.text
 
 
 def test_operator_assistant_followup_uses_same_thread(tmp_path, monkeypatch):

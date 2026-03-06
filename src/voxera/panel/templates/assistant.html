@@ -72,6 +72,10 @@
       {% if request_result.request_id %}
       <p class="muted text-sm">Request: <span class="mono">{{request_result.request_id}}</span></p>
       <p class="muted text-sm">Status: <b>{{request_result.status}}</b> · Lifecycle: <b>{{request_result.lifecycle_state}}</b></p>
+      <p class="muted text-sm">Mode: <b>{{request_result.advisory_mode or 'queue'}}</b>{% if request_result.degraded_reason %} · Reason: <b>{{request_result.degraded_reason}}</b>{% endif %}</p>
+      {% if request_result.provider %}
+      <p class="muted text-sm">Answered by: <b>{{request_result.provider}}/{{request_result.model}}</b>{% if request_result.fallback_used %} (fallback after {{request_result.fallback_reason or 'provider_error'}}{% if request_result.fallback_from %} from {{request_result.fallback_from.provider}}/{{request_result.fallback_from.model}}{% endif %}){% endif %}</p>
+      {% endif %}
       {% if request_result.answer %}
       <pre class="assistant-response">{{request_result.answer}}</pre>
       {% elif request_result.error %}

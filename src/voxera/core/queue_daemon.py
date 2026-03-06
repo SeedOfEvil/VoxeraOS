@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from ..audit import log, tail
 from ..brain.gemini import GeminiBrain
 from ..brain.openai_compat import OpenAICompatBrain
@@ -64,6 +66,8 @@ _STARTUP_RECOVERY_MESSAGE = (
 )
 _SHUTDOWN_REASON_MAX_LEN = 240
 _JOB_STATE_SCHEMA_VERSION = 1
+_ASSISTANT_ADVISORY_MODE_QUEUE = "queue"
+_ASSISTANT_ADVISORY_MODE_DEGRADED = "degraded_brain_only"
 
 
 class QueueLockError(RuntimeError):
@@ -1947,44 +1951,148 @@ class MissionQueueDaemon:
             return GeminiBrain(model=provider.model, api_key_ref=provider.api_key_ref)
         raise ValueError(f"unsupported assistant provider type: {provider.type}")
 
+    def _assistant_error_class(self, exc: Exception) -> str:
+        return type(exc).__name__
+
+    def _assistant_fallback_reason(self, exc: Exception) -> str:
+        msg = str(exc).lower()
+        if isinstance(exc, (TimeoutError, asyncio.TimeoutError, httpx.TimeoutException)):
+            return "timeout"
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            if status == 429:
+                return "rate_limited"
+            if status in {401, 403}:
+                return "provider_auth"
+            if status >= 500:
+                return "provider_transient"
+            return "provider_http_error"
+        if isinstance(exc, httpx.HTTPError):
+            return "provider_network"
+        if "rate limit" in msg or "429" in msg:
+            return "rate_limited"
+        if "timed out" in msg or "timeout" in msg:
+            return "timeout"
+        if any(tok in msg for tok in {"api key", "unauthorized", "forbidden", "auth"}):
+            return "provider_auth"
+        if any(
+            tok in msg for tok in {"malformed", "non-json", "empty content", "missing candidates"}
+        ):
+            return "malformed_response"
+        if any(
+            tok in msg for tok in {"connection", "network", "temporar", "unavailable", "503", "502"}
+        ):
+            return "provider_transient"
+        return "non_fallback_error"
+
+    def _assistant_should_fallback(self, exc: Exception) -> bool:
+        return self._assistant_fallback_reason(exc) != "non_fallback_error"
+
     def _assistant_answer_via_brain(
         self, question: str, context: dict[str, Any], *, thread_turns: list[dict[str, Any]]
-    ) -> str:
+    ) -> dict[str, Any]:
         if not self.cfg.brain:
-            return fallback_operator_answer(question, context)
+            answer = fallback_operator_answer(question, context)
+            return {
+                "answer": answer,
+                "answered_at_ms": int(time.time() * 1000),
+                "provider": "deterministic_fallback",
+                "model": "local-advisory",
+                "fallback_used": False,
+                "fallback_from": None,
+                "fallback_reason": "brain_unconfigured",
+                "error_class": None,
+                "advisory_mode": _ASSISTANT_ADVISORY_MODE_DEGRADED,
+                "degraded_reason": "advisory_transport_unavailable",
+            }
 
-        preferred_order = ["primary", "fallback"]
-        candidates = [key for key in preferred_order if key in self.cfg.brain]
-        for key in self.cfg.brain:
-            if key not in candidates:
-                candidates.append(key)
-
-        last_error: Exception | None = None
         messages = build_assistant_messages(question, context, thread_turns=thread_turns)
-        for key in candidates:
-            provider = self.cfg.brain.get(key)
-            if provider is None:
-                continue
-            try:
-                brain = self._create_assistant_brain(provider)
-                resp = asyncio.run(brain.generate(messages, tools=[]))
-                text = str(resp.text or "").strip()
-                if text:
-                    return text
-            except Exception as exc:
-                last_error = exc
-                log(
-                    {
-                        "event": "assistant_brain_provider_failed",
-                        "provider": key,
-                        "error": repr(exc),
-                    }
-                )
+        primary = self.cfg.brain.get("primary")
+        if primary is None:
+            raise RuntimeError("assistant advisory primary provider is not configured")
 
-        fallback = fallback_operator_answer(question, context)
-        if last_error is not None:
-            fallback = f"{fallback}\n\nNote: cloud advisory inference failed, so this answer used deterministic fallback."
-        return fallback
+        primary_failure: dict[str, Any] | None = None
+        try:
+            brain = self._create_assistant_brain(primary)
+            resp = asyncio.run(brain.generate(messages, tools=[]))
+            text = str(resp.text or "").strip()
+            if not text:
+                raise RuntimeError("assistant advisory response was empty")
+            return {
+                "answer": text,
+                "answered_at_ms": int(time.time() * 1000),
+                "provider": primary.type,
+                "model": primary.model,
+                "fallback_used": False,
+                "fallback_from": None,
+                "fallback_reason": None,
+                "error_class": None,
+                "advisory_mode": _ASSISTANT_ADVISORY_MODE_QUEUE,
+                "degraded_reason": None,
+            }
+        except Exception as exc:
+            primary_failure = {
+                "provider": primary.type,
+                "model": primary.model,
+                "error_class": self._assistant_error_class(exc),
+                "fallback_reason": self._assistant_fallback_reason(exc),
+                "error": repr(exc),
+            }
+            if not self._assistant_should_fallback(exc):
+                raise RuntimeError(
+                    f"assistant advisory primary failed without fallback ({primary_failure['error_class']}): {exc}"
+                ) from exc
+
+        fallback = self.cfg.brain.get("fallback")
+        if fallback is None:
+            raise RuntimeError(
+                f"assistant advisory fallback provider is not configured after primary failure: {primary_failure}"
+            )
+
+        try:
+            brain = self._create_assistant_brain(fallback)
+            resp = asyncio.run(brain.generate(messages, tools=[]))
+            text = str(resp.text or "").strip()
+            if not text:
+                raise RuntimeError("assistant advisory fallback response was empty")
+            log(
+                {
+                    "event": "assistant_advisory_fallback_used",
+                    "request_id": Path(self.current_job_ref or "").name,
+                    "primary_provider": primary_failure["provider"],
+                    "primary_model": primary_failure["model"],
+                    "fallback_provider": fallback.type,
+                    "fallback_model": fallback.model,
+                    "fallback_reason": primary_failure["fallback_reason"],
+                    "error_class": primary_failure["error_class"],
+                }
+            )
+            return {
+                "answer": text,
+                "answered_at_ms": int(time.time() * 1000),
+                "provider": fallback.type,
+                "model": fallback.model,
+                "fallback_used": True,
+                "fallback_from": {
+                    "provider": primary_failure["provider"],
+                    "model": primary_failure["model"],
+                },
+                "fallback_reason": primary_failure["fallback_reason"],
+                "error_class": primary_failure["error_class"],
+                "advisory_mode": _ASSISTANT_ADVISORY_MODE_QUEUE,
+                "degraded_reason": None,
+            }
+        except Exception as fallback_exc:
+            fallback_failure = {
+                "provider": fallback.type,
+                "model": fallback.model,
+                "error_class": self._assistant_error_class(fallback_exc),
+                "fallback_reason": self._assistant_fallback_reason(fallback_exc),
+                "error": repr(fallback_exc),
+            }
+            raise RuntimeError(
+                f"assistant advisory failed after fallback: primary={primary_failure}; fallback={fallback_failure}"
+            ) from fallback_exc
 
     def _process_assistant_job(self, job_path: Path, payload: dict[str, Any]) -> bool:
         question = str(payload.get("question") or "").strip()
@@ -2007,7 +2115,39 @@ class MissionQueueDaemon:
             if isinstance(turns_raw, list)
             else []
         )
-        answer = self._assistant_answer_via_brain(question, context, thread_turns=thread_turns)
+        try:
+            answer_meta = self._assistant_answer_via_brain(
+                question, context, thread_turns=thread_turns
+            )
+        except Exception as exc:
+            error_text = str(exc)
+            failure_artifact = {
+                "schema_version": 1,
+                "kind": ASSISTANT_JOB_KIND,
+                "thread_id": thread_id,
+                "question": question,
+                "answer": "",
+                "error": error_text,
+                "updated_at_ms": int(time.time() * 1000),
+                "advisory_mode": _ASSISTANT_ADVISORY_MODE_DEGRADED,
+                "degraded_reason": "queue_processing_failed",
+                "fallback_used": False,
+            }
+            self._assistant_response_artifact_path(str(job_path)).write_text(
+                json.dumps(failure_artifact, indent=2), encoding="utf-8"
+            )
+            log(
+                {
+                    "event": "assistant_advisory_failed",
+                    "request_id": job_path.name,
+                    "thread_id": thread_id,
+                    "error": error_text,
+                    "advisory_mode": _ASSISTANT_ADVISORY_MODE_DEGRADED,
+                    "degraded_reason": "queue_processing_failed",
+                }
+            )
+            raise
+        answer = str(answer_meta.get("answer") or "")
 
         append_thread_turn(
             self.queue_root,
@@ -2025,6 +2165,15 @@ class MissionQueueDaemon:
             "question": question,
             "answer": answer,
             "updated_at_ms": int(time.time() * 1000),
+            "answered_at_ms": answer_meta.get("answered_at_ms"),
+            "provider": answer_meta.get("provider"),
+            "model": answer_meta.get("model"),
+            "fallback_used": bool(answer_meta.get("fallback_used")),
+            "fallback_from": answer_meta.get("fallback_from"),
+            "fallback_reason": answer_meta.get("fallback_reason"),
+            "error_class": answer_meta.get("error_class"),
+            "advisory_mode": answer_meta.get("advisory_mode") or _ASSISTANT_ADVISORY_MODE_QUEUE,
+            "degraded_reason": answer_meta.get("degraded_reason"),
             "context": context,
         }
         self._assistant_response_artifact_path(str(job_path)).write_text(
@@ -2043,6 +2192,19 @@ class MissionQueueDaemon:
             terminal_outcome="succeeded",
         )
         self._write_action_event(str(moved), "assistant_job_done", thread_id=thread_id)
+        log(
+            {
+                "event": "assistant_advisory_answered",
+                "request_id": moved.name,
+                "thread_id": thread_id,
+                "provider": artifact_payload.get("provider"),
+                "model": artifact_payload.get("model"),
+                "fallback_used": artifact_payload.get("fallback_used"),
+                "fallback_reason": artifact_payload.get("fallback_reason"),
+                "error_class": artifact_payload.get("error_class"),
+                "advisory_mode": artifact_payload.get("advisory_mode"),
+            }
+        )
         log({"event": "assistant_job_done", "job": str(moved), "thread_id": thread_id})
         return True
 
