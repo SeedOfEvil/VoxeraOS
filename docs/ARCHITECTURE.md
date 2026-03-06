@@ -93,8 +93,10 @@ src/voxera/
 │   │                           daily_checkin, system_check, sandbox_smoke, sandbox_net
 │   ├── mission_planner.py    — LLM-based planning; fallback chains; step validation;
 │   │                           error classification; planner timeouts
-│   ├── queue_daemon.py       — Queue orchestration state machine: lock mgmt, process loop,
-│   │                           lifecycle transitions, retention pruning, health tracking
+│   ├── queue_daemon.py       — Queue composition/orchestration root: lock mgmt, tick loop,
+│   │                           top-level routing, config drift snapshotting, status surfaces
+│   ├── queue_execution.py    — Mission execution/process pipeline: inbox intake, planning,
+│   │                           running/pending/done/failed transitions, action/audit ordering
 │   ├── queue_approvals.py    — Approval workflow mechanics: prompts, pending artifacts,
 │   │                           ref normalization/canonicalization, grants, approve/deny resolution
 │   ├── queue_state.py        — Persisted `*.state.json` sidecar path/read/write/snapshot helpers
@@ -244,7 +246,7 @@ operator can restore manually or prune explicitly
 
 Each job also emits a compact `*.state.json` sidecar (same stem as job file) to capture
 operator truth beyond bucket location. The sidecar tracks:
-State sidecar persistence mechanics live in `src/voxera/core/queue_state.py`; queue bucket move/collision helpers live in `src/voxera/core/queue_paths.py`; approval workflow + pending-approval artifact mechanics live in `src/voxera/core/queue_approvals.py`; assistant/advisory queue-lane mechanics (provider/fallback orchestration, assistant artifacts, advisory lifecycle updates) live in `src/voxera/core/queue_assistant.py`; startup recovery + shutdown/in-flight failure handling live in `src/voxera/core/queue_recovery.py`; high-level lifecycle orchestration and lane routing remain in `queue_daemon.py`.
+State sidecar persistence mechanics live in `src/voxera/core/queue_state.py`; queue bucket move/collision helpers live in `src/voxera/core/queue_paths.py`; approval workflow + pending-approval artifact mechanics live in `src/voxera/core/queue_approvals.py`; assistant/advisory queue-lane mechanics (provider/fallback orchestration, assistant artifacts, advisory lifecycle updates) live in `src/voxera/core/queue_assistant.py`; startup recovery + shutdown/in-flight failure handling live in `src/voxera/core/queue_recovery.py`; mission execution/process lifecycle mechanics now live in `src/voxera/core/queue_execution.py`; high-level orchestration and lane routing remain in `queue_daemon.py`.
 
 
 - `lifecycle_state`: `queued|planning|running|awaiting_approval|resumed|done|step_failed|blocked|canceled`

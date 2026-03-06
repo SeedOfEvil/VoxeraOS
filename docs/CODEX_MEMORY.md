@@ -847,3 +847,23 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest -q`
   - `pytest -q tests/test_queue_daemon.py tests/test_queue_daemon_contract_snapshot.py tests/test_operator_assistant_queue.py tests/test_panel.py -k "assistant"`
   - `bash scripts/e2e_golden4.sh`
+
+
+## 2026-03-06 — PR TBD — refactor(queue): extract mission execution pipeline
+- Summary:
+  - Extracted mission execution/process pipeline mechanics from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_execution.py` via `QueueExecutionMixin`.
+  - Kept `MissionQueueDaemon` as composition/orchestration root with thin delegation preserved for compatibility-sensitive entry points (`process_job_file`, `process_pending_once`, and planner/backoff/parse-hook module symbols used by monkeypatch/contract tests).
+  - Updated queue module ownership docs in README/ARCHITECTURE/ops for the new boundary.
+- Semantics explicitly preserved:
+  - Lifecycle sidecars and transitions (`queued`, `planning`, `awaiting_approval`, `resumed`, `advisory_running`, `running`, `done`, `step_failed`, `blocked`, `canceled`), pending/approval artifacts, failed sidecar schema, bucket moves (including missing-source behavior), action/audit emission order, health/stat counters, approval status + terminal outcome propagation, step-outcome bookkeeping, and assistant lane isolation.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `pytest -q tests/test_queue_daemon.py tests/test_queue_daemon_contract_snapshot.py -vv`
+  - `pytest -q tests/test_queue_daemon.py -k "planning or running or pending or approval or done or failed or canceled or blocked or lifecycle or retry or recovery" -vv`
+  - `pytest -q tests/test_operator_assistant_queue.py -vv`
+  - `pytest --collect-only | grep -Ei "planning|running|pending|approval|done|failed|canceled|blocked|lifecycle|retry|recovery|assistant"`
+  - `voxera doctor --quick`
+  - `voxera queue status`
