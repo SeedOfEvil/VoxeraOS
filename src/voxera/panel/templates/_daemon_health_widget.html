@@ -1,14 +1,18 @@
-<section class="card" style="margin-bottom:16px;">
+<section class="card mb">
   <details class="daemon-health-widget">
     <summary>
-      <h2>Daemon Health</h2>
-      <span class="badge">{{daemon_health.daemon_state}}</span>
+      <h2 style="font-size:1rem; font-weight:600;">Daemon Health</h2>
+      <div style="display:flex; align-items:center; gap:var(--space-2); margin-left:auto;">
+        <span class="badge {% if daemon_health.daemon_state in ('running', 'healthy') %}badge-ok{% elif daemon_health.daemon_state in ('stopped', 'unknown') %}badge-paused{% elif daemon_health.daemon_state == 'degraded' %}badge-fail{% else %}badge-warn{% endif %}">
+          {{daemon_health.daemon_state}}
+        </span>
+        <span class="muted text-xs">from <span class="mono">notes/queue/health.json</span> (no daemon calls)</span>
+      </div>
     </summary>
-    <p class="muted">Snapshot from <span class="mono">notes/queue/health.json</span> (no daemon calls).</p>
 
     <div class="grid grid-2 daemon-health-grid">
       <article>
-        <h3>Lock status</h3>
+        <h3>Lock Status</h3>
         <p class="kpi-label"><b>Status</b></p>
         <p>{{daemon_health.lock_status}}</p>
         <p class="kpi-label"><b>Lock PID</b></p>
@@ -18,7 +22,7 @@
       </article>
 
       <article>
-        <h3>Last brain fallback</h3>
+        <h3>Last Brain Fallback</h3>
         {% if daemon_health.last_brain_fallback.present %}
           <p class="kpi-label"><b>Tier</b></p><p>{{daemon_health.last_brain_fallback.tier}}</p>
           <p class="kpi-label"><b>Reason</b></p><p>{{daemon_health.last_brain_fallback.reason}}</p>
@@ -29,7 +33,7 @@
       </article>
 
       <article>
-        <h3>Last startup recovery</h3>
+        <h3>Last Startup Recovery</h3>
         {% if daemon_health.last_startup_recovery.present %}
           <p class="kpi-label"><b>job_count</b></p><p>{{daemon_health.last_startup_recovery.job_count}}</p>
           <p class="kpi-label"><b>orphan_count</b></p><p>{{daemon_health.last_startup_recovery.orphan_count}}</p>
@@ -40,7 +44,7 @@
       </article>
 
       <article>
-        <h3>Last shutdown outcome</h3>
+        <h3>Last Shutdown Outcome</h3>
         {% if daemon_health.last_shutdown.present %}
           <p class="kpi-label"><b>Outcome</b></p><p>{{daemon_health.last_shutdown.outcome}}</p>
           <p class="kpi-label"><b>Timestamp</b></p><p>{{daemon_health.last_shutdown.ts}}</p>

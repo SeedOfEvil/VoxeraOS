@@ -1,77 +1,175 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Job Detail</title>
+  <title>Voxera Panel · Job {{payload.job_id}}</title>
   <link rel="stylesheet" href="/static/panel.css" />
 </head>
 <body>
 <div class="container">
-  <p><a href="/jobs">← Back to Jobs</a></p>
-  <h1>Job {{payload.job_id}}</h1>
+  <header class="page-header">
+    <div>
+      <h1 class="title mono">{{payload.job_id}}</h1>
+      <p class="subtitle">Job detail — <span class="mono text-sm">{{payload.bucket}}</span></p>
+    </div>
+    <div class="action-group">
+      <span class="badge {% if payload.bucket == 'failed' %}badge-fail{% elif payload.bucket == 'done' %}badge-ok{% elif payload.bucket == 'approvals' %}badge-warn{% else %}badge-running{% endif %}">
+        {{payload.bucket}}
+      </span>
+      {% if payload.paused %}
+        <span class="badge badge-paused">paused</span>
+      {% endif %}
+      <a class="btn" href="/jobs">← All Jobs</a>
+    </div>
+  </header>
 
-  <section class="card">
-    <h2>Metadata</h2>
-    <p><b>Bucket:</b> {{payload.bucket}}</p>
-    <p><b>Paused:</b> {{payload.paused}} | <b>Lock:</b> exists={{payload.lock.exists}}, pid={{payload.lock.pid}}, alive={{payload.lock.alive}}</p>
-    <pre>{{payload.job | tojson(indent=2)}}</pre>
-  </section>
-
+  <!-- Approval actions (highest priority — show first if pending) -->
   {% if payload.has_approval %}
-  <section class="card">
-    <h2>Approval Details</h2>
-    <p><b>Policy reason:</b> {{payload.approval.policy_reason or payload.approval.reason}}</p>
-    <p><b>Target:</b> {{payload.approval.target.type}}: {{payload.approval.target.value}}</p>
-    <p><b>Scope:</b> fs={{payload.approval.scope.fs_scope}}, net={{payload.approval.scope.needs_network}}</p>
-    <div style="display:flex; gap:6px;">
-      <form method="post" action="/queue/approvals/{{payload.job_id}}/approve"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-approve" type="submit">Approve</button></form>
-      <form method="post" action="/queue/approvals/{{payload.job_id}}/approve-always"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Approve Always</button></form>
-      <form method="post" action="/queue/approvals/{{payload.job_id}}/deny"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Deny</button></form>
+  <div class="section-label">Approval Required</div>
+  <section class="card mb" style="border-color:var(--warn); background:var(--warn-soft);">
+    <h2 style="color:var(--warn); margin-bottom:var(--space-3);">Approval Details</h2>
+    <dl class="detail-grid" style="margin-bottom:var(--space-3);">
+      <dt>Policy reason</dt><dd>{{payload.approval.policy_reason or payload.approval.reason}}</dd>
+      <dt>Target</dt><dd>{{payload.approval.target.type}}: {{payload.approval.target.value}}</dd>
+      <dt>Scope</dt><dd>fs={{payload.approval.scope.fs_scope}}, net={{payload.approval.scope.needs_network}}</dd>
+    </dl>
+    <div class="action-group">
+      <form method="post" action="/queue/approvals/{{payload.job_id}}/approve">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <button class="btn btn-approve" type="submit">Approve</button>
+      </form>
+      <form method="post" action="/queue/approvals/{{payload.job_id}}/approve-always">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <button class="btn" type="submit">Approve Always</button>
+      </form>
+      <form method="post" action="/queue/approvals/{{payload.job_id}}/deny">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <button class="btn btn-deny" type="submit">Deny</button>
+      </form>
     </div>
   </section>
   {% endif %}
 
-  <section class="card">
-    <h2>Operator Actions</h2>
-    <p><a href="/jobs/{{payload.job_id}}/bundle">Download incident bundle (.zip)</a></p>
-    <div style="display:flex; gap:6px;">
-      {% if payload.can_cancel %}
-      <form method="post" action="/queue/jobs/{{payload.job_id}}/cancel"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Cancel</button></form>
-      {% endif %}
+  <!-- Operator actions -->
+  <div class="section-label">Actions</div>
+  <section class="card mb">
+    <div class="action-group">
+      <a href="/jobs/{{payload.job_id}}/bundle" class="btn">Download Incident Bundle (.zip)</a>
       {% if payload.can_retry %}
-      <form method="post" action="/queue/jobs/{{payload.job_id}}/retry"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Retry</button></form>
+      <form method="post" action="/queue/jobs/{{payload.job_id}}/retry">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <button class="btn" type="submit">Retry Job</button>
+      </form>
+      {% endif %}
+      {% if payload.can_cancel %}
+      <form method="post" action="/queue/jobs/{{payload.job_id}}/cancel">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <button class="btn btn-deny" type="submit">Cancel Job</button>
+      </form>
       {% endif %}
       {% if payload.can_delete %}
-      <form method="post" action="/queue/jobs/{{payload.job_id}}/delete"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="confirm" value="{{payload.job_id}}" /><button class="btn btn-deny" type="submit">Delete</button></form>
+      <form method="post" action="/queue/jobs/{{payload.job_id}}/delete">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <input type="hidden" name="confirm" value="{{payload.job_id}}" />
+        <button class="btn btn-deny" type="submit">Delete Job</button>
+      </form>
       {% endif %}
     </div>
   </section>
 
-  <section class="card"><h2>Plan</h2><pre>{{payload.plan | tojson(indent=2)}}</pre></section>
-  <section class="card"><h2>Actions Timeline (latest first)</h2><pre>{{payload.actions | tojson(indent=2)}}</pre></section>
-  <section class="card"><h2>Generated Files</h2><pre>{{payload.generated_files | tojson(indent=2)}}</pre></section>
-  <section class="card"><h2>Artifact Files</h2><pre>{{payload.artifact_files | tojson(indent=2)}}</pre></section>
-  <section class="grid grid-2">
-    <article class="card"><h2>stdout (max 64KB)</h2><pre>{{payload.stdout}}</pre></article>
-    <article class="card"><h2>stderr (max 64KB)</h2><pre>{{payload.stderr}}</pre></article>
-  </section>
-
-  <section class="card">
-    <h2>Audit Timeline</h2>
-    {% if payload.audit_timeline|length == 0 %}
-      <p>not available</p>
-    {% else %}
-      <pre>{{payload.audit_timeline | tojson(indent=2)}}</pre>
-    {% endif %}
-  </section>
-
+  <!-- Failed sidecar (if present — high priority diagnostic) -->
   {% if payload.failed_sidecar %}
-  <section class="card">
-    <h2>Failed Sidecar</h2>
+  <div class="section-label">Failure Details</div>
+  <section class="card mb" style="border-color:var(--danger);">
+    <h2 style="color:var(--danger);">Failed Sidecar</h2>
     <pre>{{payload.failed_sidecar | tojson(indent=2)}}</pre>
   </section>
   {% endif %}
+
+  <!-- stdout / stderr (most useful output for debugging) -->
+  <div class="section-label">Output</div>
+  <section class="grid grid-2 mb">
+    <article class="card">
+      <h2>stdout <span class="muted text-xs">(max 64 KB)</span></h2>
+      {% if payload.stdout %}
+        <pre>{{payload.stdout}}</pre>
+      {% else %}
+        <div class="empty-state">No stdout output.</div>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2>stderr <span class="muted text-xs">(max 64 KB)</span></h2>
+      {% if payload.stderr %}
+        <pre style="border-color:var(--danger);">{{payload.stderr}}</pre>
+      {% else %}
+        <div class="empty-state">No stderr output.</div>
+      {% endif %}
+    </article>
+  </section>
+
+  <!-- Plan + Actions timeline -->
+  <div class="section-label">Execution</div>
+  <section class="grid grid-2 mb">
+    <details class="collapsible">
+      <summary>Plan</summary>
+      <div class="collapsible-body">
+        <pre>{{payload.plan | tojson(indent=2)}}</pre>
+      </div>
+    </details>
+    <details class="collapsible">
+      <summary>Actions Timeline <span class="muted text-xs">(latest first)</span></summary>
+      <div class="collapsible-body">
+        <pre>{{payload.actions | tojson(indent=2)}}</pre>
+      </div>
+    </details>
+  </section>
+
+  <!-- Files -->
+  <div class="section-label">Files</div>
+  <section class="grid grid-2 mb">
+    <details class="collapsible">
+      <summary>Generated Files</summary>
+      <div class="collapsible-body">
+        <pre>{{payload.generated_files | tojson(indent=2)}}</pre>
+      </div>
+    </details>
+    <details class="collapsible">
+      <summary>Artifact Files</summary>
+      <div class="collapsible-body">
+        <pre>{{payload.artifact_files | tojson(indent=2)}}</pre>
+      </div>
+    </details>
+  </section>
+
+  <!-- Audit + Metadata (reference / secondary) -->
+  <div class="section-label">Audit &amp; Metadata</div>
+  <section class="grid grid-2 mb">
+    <details class="collapsible">
+      <summary>Audit Timeline</summary>
+      <div class="collapsible-body">
+        {% if payload.audit_timeline|length == 0 %}
+          <p class="muted text-sm">Audit timeline not available.</p>
+        {% else %}
+          <pre>{{payload.audit_timeline | tojson(indent=2)}}</pre>
+        {% endif %}
+      </div>
+    </details>
+    <details class="collapsible">
+      <summary>Job Metadata (raw)</summary>
+      <div class="collapsible-body">
+        <dl class="detail-grid" style="margin-bottom:var(--space-2);">
+          <dt>Bucket</dt><dd>{{payload.bucket}}</dd>
+          <dt>Paused</dt><dd>{{payload.paused}}</dd>
+          <dt>Lock exists</dt><dd>{{payload.lock.exists}}</dd>
+          <dt>Lock PID</dt><dd>{{payload.lock.pid}}</dd>
+          <dt>Lock alive</dt><dd>{{payload.lock.alive}}</dd>
+        </dl>
+        <pre>{{payload.job | tojson(indent=2)}}</pre>
+      </div>
+    </details>
+  </section>
+
 </div>
 </body>
 </html>
