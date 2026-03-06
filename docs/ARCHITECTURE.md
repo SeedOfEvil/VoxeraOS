@@ -93,8 +93,10 @@ src/voxera/
 │   │                           daily_checkin, system_check, sandbox_smoke, sandbox_net
 │   ├── mission_planner.py    — LLM-based planning; fallback chains; step validation;
 │   │                           error classification; planner timeouts
-│   ├── queue_daemon.py       — Queue orchestration state machine: lock mgmt, approval workflow,
+│   ├── queue_daemon.py       — Queue orchestration state machine: lock mgmt, process loop,
 │   │                           lifecycle transitions, retention pruning, health tracking
+│   ├── queue_approvals.py    — Approval workflow mechanics: prompts, pending artifacts,
+│   │                           ref normalization/canonicalization, grants, approve/deny resolution
 │   ├── queue_state.py        — Persisted `*.state.json` sidecar path/read/write/snapshot helpers
 │   ├── queue_paths.py        — Bucket transition helpers (move+sidecar co-move, deterministic targets)
 │   ├── queue_inspect.py      — Queue status snapshots; bucket filtering
@@ -240,7 +242,7 @@ operator can restore manually or prune explicitly
 
 Each job also emits a compact `*.state.json` sidecar (same stem as job file) to capture
 operator truth beyond bucket location. The sidecar tracks:
-State sidecar persistence mechanics live in `src/voxera/core/queue_state.py`; queue bucket move/collision helpers live in `src/voxera/core/queue_paths.py`, while transition orchestration remains in `queue_daemon.py`.
+State sidecar persistence mechanics live in `src/voxera/core/queue_state.py`; queue bucket move/collision helpers live in `src/voxera/core/queue_paths.py`; approval workflow + pending-approval artifact mechanics live in `src/voxera/core/queue_approvals.py`; high-level lifecycle orchestration remains in `queue_daemon.py`.
 
 
 - `lifecycle_state`: `queued|planning|running|awaiting_approval|resumed|done|step_failed|blocked|canceled`
