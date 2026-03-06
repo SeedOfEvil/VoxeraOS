@@ -1282,10 +1282,11 @@ def test_hygiene_page_renders_with_no_results(tmp_path, monkeypatch):
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
     (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
 
     client = TestClient(panel_module.app)
-    res = client.get("/hygiene")
+    res = client.get("/hygiene", headers=_operator_headers())
 
     assert res.status_code == 200
     assert "Queue Hygiene" in res.text
@@ -1626,3 +1627,99 @@ def test_panel_auth_failure_writes_to_isolated_health_path_when_config_uses_real
     isolated_payload = json.loads(isolated_health.read_text(encoding="utf-8"))
     assert isolated_payload["last_error"] == "missing authorization"
     assert isolated_payload["counters"]["panel_401_count"] >= 1
+
+
+def test_hygiene_page_requires_admin_auth(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    assert client.get("/hygiene").status_code == 401
+    authed = client.get("/hygiene", headers=_operator_headers())
+    assert authed.status_code == 200
+    assert "Health Reset" in authed.text
+
+
+def test_panel_hygiene_health_reset_updates_snapshot_and_audits(tmp_path, monkeypatch):
+    from voxera.health import read_health_snapshot, write_health_snapshot
+
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    write_health_snapshot(
+        queue_dir,
+        {
+            "daemon_state": "degraded",
+            "consecutive_brain_failures": 4,
+            "last_error": "boom",
+            "counters": {"panel_401_count": 3},
+        },
+    )
+    events: list[dict[str, object]] = []
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setattr(panel_module, "log", lambda e: events.append(e))
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/hygiene/health-reset",
+        data={"scope": "current_and_recent"},
+    )
+    assert res.status_code == 303
+    assert "flash=health_reset_current_and_recent" in (res.headers.get("location") or "")
+    payload = read_health_snapshot(queue_dir)
+    assert payload["consecutive_brain_failures"] == 0
+    assert payload["last_error"] is None
+    assert payload["counters"]["panel_401_count"] == 3
+    assert any(e.get("event") == "health_reset_current_and_recent" for e in events)
+
+
+def test_panel_hygiene_health_reset_uses_isolated_health_path(tmp_path, monkeypatch):
+    from voxera.health import read_health_snapshot, write_health_snapshot
+
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setenv("VOXERA_HEALTH_PATH", str(tmp_path / "isolated" / "health.json"))
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    health_root = panel_module._health_queue_root()
+    write_health_snapshot(
+        health_root,
+        {"last_error": "isolated err", "counters": {"panel_401_count": 5}},
+    )
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/hygiene/health-reset",
+        data={"scope": "recent_history"},
+    )
+    assert res.status_code == 303
+    payload = read_health_snapshot(health_root)
+    assert payload["last_error"] is None
+    assert payload["counters"]["panel_401_count"] == 5
+
+
+def test_hygiene_page_uses_url_for_action_paths(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app, root_path="/panel")
+    res = client.get("/hygiene", headers=_operator_headers())
+
+    assert res.status_code == 200
+    assert "http://testserver/panel/hygiene/prune-dry-run" in res.text
+    assert "http://testserver/panel/hygiene/reconcile" in res.text
+    assert "http://testserver/panel/hygiene/health-reset" in res.text
