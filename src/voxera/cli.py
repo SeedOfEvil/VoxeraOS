@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 from rich.table import Table
 
-from .audit import log, tail
+from . import audit as _audit
 from .cli_common import (
     DEMO_QUEUE_DIR_OPTION,
     OPS_BUNDLE_ARCHIVE_DIR_OPTION,
@@ -43,6 +43,9 @@ from .setup_wizard import run_setup
 from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
 from .version import get_version
+
+log = _audit.log
+tail = _audit.tail
 
 
 def _git_sha() -> str | None:
