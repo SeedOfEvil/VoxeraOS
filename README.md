@@ -459,9 +459,13 @@ The smoke script checks optional OS tools (`wmctrl`, `xdg-open`, clipboard utili
 and prints install hints when missing.
 
 ### Panel module layout (refactor baseline)
-- `src/voxera/panel/app.py` remains the FastAPI entrypoint/composition layer (app/template/static setup, global security/queue helpers, and route-module registration) while route-domain logic lives in `routes_<domain>.py` modules.
-- `src/voxera/panel/routes_home.py` owns home/dashboard and queue-create route domain wiring.
-- `src/voxera/panel/routes_jobs.py` owns jobs list/detail and approval/job-lifecycle route domain wiring.
+- `src/voxera/panel/app.py` is the FastAPI composition root (app/template/static setup, shared security + queue helpers, and route-module registration).
+- `src/voxera/panel/routes_home.py` owns home/dashboard + queue-create routes.
+- `src/voxera/panel/routes_jobs.py` owns jobs list/detail + approvals/cancel/retry routes.
+- `src/voxera/panel/routes_queue_control.py` owns queue control/deletion routes (`/queue/jobs/{ref}/delete`, `/queue/pause`, `/queue/resume`).
+- `src/voxera/panel/routes_assistant.py` owns assistant advisory routes (`/assistant`, `/assistant/ask`) including degraded queue/brain fallback handling.
+- `src/voxera/panel/routes_missions.py` owns mission and mission-template creation routes (`/missions/create`, `/missions/templates/create`).
+- `src/voxera/panel/routes_bundle.py` owns incident bundle download routes (`/jobs/{job_id}/bundle`, `/bundle/system`).
 - `src/voxera/panel/routes_hygiene.py` owns hygiene/operator-maintenance routes (`/hygiene`, prune/reconcile, health reset).
 - `src/voxera/panel/routes_recovery.py` owns recovery/quarantine inspector routes (`/recovery`, recovery ZIP download).
 - `src/voxera/panel/helpers.py` holds shared request/helper utilities for deterministic reuse.

@@ -1,3 +1,8 @@
+## 2026-03-06 — PR #TBD — refactor(panel): extract remaining route domains from app.py
+- Completed final panel modularization pass: extracted assistant, missions, bundle, and queue-control route domains from `panel/app.py` into `routes_assistant.py`, `routes_missions.py`, `routes_bundle.py`, and `routes_queue_control.py` while preserving route/method/auth/csrf contracts.
+- Kept `panel/app.py` as composition/wiring root (FastAPI setup, shared security + queue helpers, dependency wiring, route registration), reducing domain-heavy inline route logic.
+- Updated README/ops/architecture docs with final panel module layout and guidance to add future panel work in domain modules instead of regrowing `app.py`.
+
 ## 2026-03-06 — PR #TBD — refactor(panel): modularize hygiene + recovery route domains
 - Extracted panel hygiene routes from `panel/app.py` into `panel/routes_hygiene.py` (`/hygiene`, `/hygiene/prune-dry-run`, `/hygiene/reconcile`, `/hygiene/health-reset`) while preserving auth/csrf/flash/reset semantics and response contracts.
 - Extracted panel recovery routes from `panel/app.py` into `panel/routes_recovery.py` (`/recovery`, `/recovery/download/{bucket}/{name}`) while preserving read-only listing, traversal protections, ZIP limits, and download behavior.
