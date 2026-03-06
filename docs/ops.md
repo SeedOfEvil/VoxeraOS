@@ -1047,3 +1047,10 @@ Missing/absent history is rendered consistently as `-` across CLI, doctor quick 
 `--watch` repeatedly refreshes the same layout (default `--interval 2.0`) for live incident response.
 
 Panel home includes a read-only **Performance Stats** tab that surfaces these same operator signals (queue counts, degradation/backoff, recent fallback/error/shutdown, auth/runtime counters) directly from `health.json`.
+
+### Panel code ownership (refactor baseline)
+- `src/voxera/panel/app.py` is the FastAPI composition entrypoint (setup + registration).
+- `src/voxera/panel/routes_home.py` owns home/dashboard and queue-create routes.
+- `src/voxera/panel/routes_jobs.py` owns jobs, approvals, and job lifecycle routes.
+- `src/voxera/panel/helpers.py` contains shared request/value helpers.
+- Future panel changes should prefer extending a domain route module (or adding a new `routes_<domain>.py`) instead of growing `app.py` back into a monolith.

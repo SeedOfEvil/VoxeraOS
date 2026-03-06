@@ -458,6 +458,13 @@ E2E_RUN_LIVE=1 make e2e
 The smoke script checks optional OS tools (`wmctrl`, `xdg-open`, clipboard utilities, `pactl`)
 and prints install hints when missing.
 
+### Panel module layout (refactor baseline)
+- `src/voxera/panel/app.py` remains the FastAPI entrypoint/composition layer (app setup, template/static setup, shared constants/helpers, and route-module registration).
+- `src/voxera/panel/routes_home.py` owns home/dashboard and queue-create route domain wiring.
+- `src/voxera/panel/routes_jobs.py` owns jobs list/detail and approval/job-lifecycle route domain wiring.
+- `src/voxera/panel/helpers.py` holds shared request/helper utilities for deterministic reuse.
+- When adding panel work, prefer extending an existing route-domain module (or adding a new `routes_<domain>.py`) and keep `app.py` focused on composition.
+
 ### 3) Start the panel (optional)
 ```bash
 make panel

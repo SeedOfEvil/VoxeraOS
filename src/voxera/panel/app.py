@@ -15,9 +15,8 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import urlencode
 
-import anyio
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import (
     FileResponse,
@@ -36,9 +35,9 @@ from ..brain.gemini import GeminiBrain
 from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config
 from ..config import load_config as load_runtime_config
-from ..core.missions import MissionTemplate, _parse_mission_file, list_missions
+from ..core.missions import MissionTemplate, _parse_mission_file
 from ..core.queue_daemon import MissionQueueDaemon
-from ..core.queue_inspect import JOB_BUCKETS, list_jobs, lookup_job, queue_snapshot
+from ..core.queue_inspect import lookup_job, queue_snapshot
 from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
 from ..health_reset import EVENT_BY_SCOPE, HealthResetError, reset_health_snapshot
 from ..health_semantics import build_health_semantic_sections
@@ -58,6 +57,10 @@ from .assistant import (
     read_assistant_result,
     read_assistant_thread_turns,
 )
+from .helpers import coerce_int as _coerce_int
+from .helpers import request_value as _request_value
+from .routes_home import register_home_routes
+from .routes_jobs import register_job_routes
 
 app = FastAPI(title="Voxera Panel", version=get_version())
 
@@ -623,21 +626,6 @@ def _auth_setup_banner() -> dict[str, str] | None:
     }
 
 
-def _coerce_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return None
-    return None
-
-
 def _format_ts(ts_ms: int | None) -> str:
     if ts_ms is None or ts_ms <= 0:
         return "—"
@@ -1153,20 +1141,6 @@ def _build_recovery_zip(target: Path, zip_path: Path) -> None:
                 zf.write(file_path, arcname=str(arcname))
 
 
-async def _request_value(request: Request, key: str, default: str = "") -> str:
-    query_value = request.query_params.get(key)
-    if query_value is not None:
-        return query_value
-
-    content_type = request.headers.get("content-type", "")
-    if content_type.startswith("application/x-www-form-urlencoded"):
-        body = (await request.body()).decode("utf-8", errors="ignore")
-        values = parse_qs(body, keep_blank_values=True)
-        if key in values and values[key]:
-            return values[key][0]
-    return default
-
-
 def _write_queue_job(payload: dict[str, Any]) -> str:
     queue_root = _queue_root()
     inbox = queue_root / "inbox"
@@ -1495,18 +1469,6 @@ def _job_ref_bucket(row: dict[str, Any]) -> str:
     return bucket
 
 
-async def _jobs_redirect(request: Request, flash: str) -> RedirectResponse:
-    bucket = (await _request_value(request, "bucket", "all")).strip() or "all"
-    q = (await _request_value(request, "q", "")).strip()
-    n_raw = (await _request_value(request, "n", "80")).strip()
-    try:
-        n = max(1, min(int(n_raw), 200))
-    except ValueError:
-        n = 80
-    query = urlencode({"bucket": bucket, "q": q, "n": n, "flash": flash})
-    return RedirectResponse(url=f"/jobs?{query}", status_code=303)
-
-
 def _job_artifact_payload(queue_root: Path, job_name: str) -> dict[str, Any]:
     stem = Path(job_name).stem
     art = queue_root / "artifacts" / stem
@@ -1653,89 +1615,6 @@ def _render_assistant_page(
     return response
 
 
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request, created: str = "", error: str = "", mission_created: str = ""):
-    queue_root = _queue_root()
-    daemon = MissionQueueDaemon(queue_root=queue_root)
-    queue = queue_snapshot(queue_root)
-    queue["pending_approvals"] = daemon.approvals_list()[:12]
-    queue["done_jobs"] = [
-        p.name
-        for p in sorted(
-            (queue_root / "done").glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True
-        )[:12]
-    ]
-
-    mission_log = Path.home() / "VoxeraOS" / "notes" / "mission-log.md"
-    mission_log_tail = []
-    if mission_log.exists():
-        mission_log_tail = mission_log.read_text(encoding="utf-8").splitlines()[-20:]
-
-    audit_events = tail(120)
-    active_jobs, recent_activity = _build_activity(audit_events)
-
-    missions = list_missions()
-    health_snapshot = read_health_snapshot(queue_root)
-    daemon_health = _daemon_health_view(health_snapshot)
-    performance_stats = _performance_stats_view(queue, health_snapshot)
-    tmpl = templates.get_template("home.html")
-    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
-    html = tmpl.render(
-        approvals=APPROVALS,
-        audit=tail(50),
-        queue=queue,
-        queue_root=str(queue_root),
-        mission_log_path=str(mission_log),
-        mission_log_tail=mission_log_tail,
-        missions=missions,
-        created=created,
-        mission_created=mission_created,
-        error=error,
-        error_message=ERROR_MESSAGES.get(error, "Unexpected panel error." if error else ""),
-        get_mutations_enabled=_allow_get_mutations(),
-        active_jobs=active_jobs,
-        recent_activity=recent_activity,
-        csrf_token=csrf_token,
-        panel_security_counters=_panel_security_snapshot(),
-        auth_setup_banner=_auth_setup_banner(),
-        daemon_health=daemon_health,
-        performance_stats=performance_stats,
-    )
-    response = HTMLResponse(content=html)
-    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
-    return response
-
-
-def _create_queue_job_from_values(kind: str, mission_id: str, goal: str) -> RedirectResponse:
-    normalized_kind = kind.strip().lower()
-    if normalized_kind not in {"goal", "mission"}:
-        return RedirectResponse(url="/?error=queue_kind_invalid", status_code=303)
-
-    payload: dict[str, Any] = {}
-    if normalized_kind == "mission":
-        mission_id = mission_id.strip()
-        if not mission_id:
-            return RedirectResponse(url="/?error=mission_id_required", status_code=303)
-        payload["mission_id"] = mission_id
-    else:
-        goal = goal.strip()
-        if not goal:
-            return RedirectResponse(url="/?error=goal_required", status_code=303)
-        payload["goal"] = goal
-
-    created = _write_queue_job(payload)
-    return RedirectResponse(url=f"/?created={created}", status_code=303)
-
-
-@app.get("/queue/create")
-def create_queue_job_get(
-    request: Request, kind: str = "goal", mission_id: str = "", goal: str = ""
-):
-    _enforce_get_mutations_enabled()
-    _require_operator_auth_from_request(request)
-    return _create_queue_job_from_values(kind, mission_id, goal)
-
-
 @app.get("/assistant", response_class=HTMLResponse)
 def assistant_page(
     request: Request,
@@ -1880,15 +1759,6 @@ async def assistant_ask(request: Request):
     return RedirectResponse(url=f"/assistant?{query}", status_code=303)
 
 
-@app.post("/queue/create")
-async def create_queue_job(request: Request):
-    await _require_mutation_guard(request)
-    kind = await _request_value(request, "kind", "goal")
-    mission_id = await _request_value(request, "mission_id", "")
-    goal = await _request_value(request, "goal", "")
-    return _create_queue_job_from_values(kind, mission_id, goal)
-
-
 def _create_mission_template_from_values(
     mission_id: str, title: str, goal: str, notes: str, steps_json: str
 ) -> RedirectResponse:
@@ -1963,115 +1833,6 @@ async def create_mission(request: Request):
     ).strip()
     approval_raw = await _request_value(request, "approval_required", "1")
     return _create_panel_mission_from_values(prompt, approval_raw not in {"0", "false", "off"})
-
-
-@app.post("/queue/approvals/{ref}/approve")
-async def approve_queue_job(ref: str, request: Request):
-    await _require_mutation_guard(request)
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    try:
-        await anyio.to_thread.run_sync(
-            lambda: daemon.resolve_approval(daemon.canonicalize_approval_ref(ref), approve=True)
-        )
-    except FileNotFoundError:
-        return await _jobs_redirect(request, "approval_not_found")
-    except ValueError:
-        return await _jobs_redirect(request, "approval_invalid")
-    return await _jobs_redirect(request, "approved")
-
-
-@app.post("/queue/approvals/{ref}/approve-always")
-async def approve_always_queue_job(ref: str, request: Request):
-    await _require_mutation_guard(request)
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    try:
-        await anyio.to_thread.run_sync(
-            lambda: daemon.resolve_approval(
-                daemon.canonicalize_approval_ref(ref), approve=True, approve_always=True
-            )
-        )
-    except FileNotFoundError:
-        return await _jobs_redirect(request, "approval_not_found")
-    except ValueError:
-        return await _jobs_redirect(request, "approval_invalid")
-    return await _jobs_redirect(request, "approved_always")
-
-
-@app.post("/queue/approvals/{ref}/deny")
-async def deny_queue_job(ref: str, request: Request):
-    await _require_mutation_guard(request)
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    try:
-        await anyio.to_thread.run_sync(
-            lambda: daemon.resolve_approval(daemon.canonicalize_approval_ref(ref), approve=False)
-        )
-    except FileNotFoundError:
-        return await _jobs_redirect(request, "approval_not_found")
-    except ValueError:
-        return await _jobs_redirect(request, "approval_invalid")
-    return await _jobs_redirect(request, "denied")
-
-
-@app.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request, bucket: str = "all", q: str = "", n: int = 80, flash: str = ""):
-    queue_root = _queue_root()
-    rows = list_jobs(queue_root, bucket=bucket, q=q, limit=n)
-    rows_enriched: list[dict[str, Any]] = []
-    for row in rows:
-        job_id = str(row.get("job_id") or "")
-        artifacts_dir = queue_root / "artifacts" / Path(job_id).stem
-        enriched = dict(row)
-        enriched["bucket_ref"] = _job_ref_bucket(row)
-        enriched["artifacts"] = _job_artifact_flags(queue_root, job_id)
-        enriched["last_activity"] = _last_activity(artifacts_dir)
-        row_bucket = str(row.get("bucket") or "")
-        enriched["can_cancel"] = row_bucket in {"inbox", "pending", "approvals"}
-        enriched["can_retry"] = row_bucket in {"failed", "canceled"}
-        enriched["can_delete"] = row_bucket in {"done", "failed", "canceled"}
-        enriched["can_bundle"] = row_bucket == "done"
-        rows_enriched.append(enriched)
-
-    log(
-        {
-            "event": "panel_jobs_render",
-            "bucket": bucket,
-            "query": q[:120],
-            "limit": max(1, min(n, 200)),
-            "count": len(rows_enriched),
-        }
-    )
-
-    tmpl = templates.get_template("jobs.html")
-    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
-    html = tmpl.render(
-        rows=rows_enriched,
-        bucket=bucket if bucket in {*JOB_BUCKETS, "all"} else "pending",
-        q=q,
-        n=max(1, min(n, 200)),
-        buckets=["all", *JOB_BUCKETS],
-        flash=FLASH_MESSAGES.get(flash, ""),
-        csrf_token=csrf_token,
-        auth_setup_banner=_auth_setup_banner(),
-    )
-    response = HTMLResponse(content=html)
-    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
-    return response
-
-
-@app.get("/jobs/{job_id}", response_class=HTMLResponse)
-def jobs_detail(job_id: str, request: Request):
-    payload = _job_detail_payload(_queue_root(), job_id)
-    tmpl = templates.get_template("job_detail.html")
-    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
-    html = tmpl.render(payload=payload, csrf_token=csrf_token)
-    response = HTMLResponse(content=html)
-    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
-    return response
-
-
-@app.get("/queue/jobs/{job}/detail", response_class=HTMLResponse)
-def queue_job_detail(job: str, request: Request):
-    return jobs_detail(job, request)
 
 
 @app.get("/jobs/{job_id}/bundle")
@@ -2320,30 +2081,20 @@ async def hygiene_health_reset(request: Request):
     return _hygiene_redirect(request, flash)
 
 
-@app.post("/queue/jobs/{ref}/cancel")
-async def cancel_queue_job(ref: str, request: Request):
-    await _require_mutation_guard(request)
-    queue_root = _queue_root()
-    lookup = lookup_job(queue_root, ref)
-    if lookup and lookup.bucket in {"done", "failed", "canceled"}:
-        _panel_security_counter_incr("panel_4xx_count", last_error="cancel_terminal_job_rejected")
-        return await _jobs_redirect(request, "cannot_cancel_terminal")
+async def _jobs_redirect_local(request: Request, flash: str) -> RedirectResponse:
+    params = {"flash": flash}
+    bucket = (await _request_value(request, "bucket", "")).strip()
+    if bucket:
+        params["bucket"] = bucket
+    query = (await _request_value(request, "q", "")).strip()
+    if query:
+        params["q"] = query
+    n_value = (await _request_value(request, "n", "")).strip()
+    if n_value:
+        params["n"] = n_value
 
-    daemon = MissionQueueDaemon(queue_root=queue_root)
-    try:
-        daemon.cancel_job(ref)
-    except FileNotFoundError:
-        _panel_security_counter_incr("panel_4xx_count", last_error="cancel_job_not_found")
-        return await _jobs_redirect(request, "cancel_not_found")
-    return await _jobs_redirect(request, "canceled")
-
-
-@app.post("/queue/jobs/{ref}/retry")
-async def retry_queue_job(ref: str, request: Request):
-    await _require_mutation_guard(request)
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    daemon.retry_job(ref)
-    return await _jobs_redirect(request, "retried")
+    url = str(request.url_for("jobs_page"))
+    return RedirectResponse(url=f"{url}?{urlencode(params)}", status_code=303)
 
 
 @app.post("/queue/jobs/{ref}/delete")
@@ -2357,7 +2108,42 @@ async def delete_queue_job(ref: str, request: Request):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return await _jobs_redirect(request, "deleted")
+    return await _jobs_redirect_local(request, "deleted")
+
+
+register_home_routes(
+    app,
+    templates=templates,
+    csrf_cookie=CSRF_COOKIE,
+    approvals=APPROVALS,
+    error_messages=ERROR_MESSAGES,
+    allow_get_mutations=_allow_get_mutations,
+    queue_root=_queue_root,
+    build_activity=_build_activity,
+    daemon_health_view=_daemon_health_view,
+    performance_stats_view=_performance_stats_view,
+    panel_security_snapshot=_panel_security_snapshot,
+    auth_setup_banner=_auth_setup_banner,
+    enforce_get_mutations_enabled=_enforce_get_mutations_enabled,
+    require_operator_auth_from_request=_require_operator_auth_from_request,
+    require_mutation_guard=_require_mutation_guard,
+    write_queue_job=_write_queue_job,
+)
+
+register_job_routes(
+    app,
+    templates=templates,
+    csrf_cookie=CSRF_COOKIE,
+    flash_messages=FLASH_MESSAGES,
+    queue_root=_queue_root,
+    require_mutation_guard=_require_mutation_guard,
+    panel_security_counter_incr=_panel_security_counter_incr,
+    job_ref_bucket=_job_ref_bucket,
+    job_artifact_flags=_job_artifact_flags,
+    last_activity=_last_activity,
+    job_detail_payload=_job_detail_payload,
+    auth_setup_banner=_auth_setup_banner,
+)
 
 
 @app.post("/queue/pause")

@@ -119,8 +119,11 @@ src/voxera/
 ├── audio/                    — Placeholder; STT/TTS planned for v0.3
 │
 └── panel/
-    ├── app.py                — FastAPI endpoints: queue ops, job lifecycle,
-    │                           mission create, bundles; CSRF + Basic auth
+    ├── app.py                — FastAPI entrypoint + composition (setup, shared
+    │                           security/helpers, route registration)
+    ├── helpers.py            — Shared request/value helpers reused by route modules
+    ├── routes_home.py        — Home/dashboard + queue-create route domain
+    ├── routes_jobs.py        — Jobs/approvals/job-lifecycle route domain
     ├── templates/            — Jinja2 HTML: home.html, jobs.html, job_detail.html
     └── static/panel.css      — Panel stylesheet
 
