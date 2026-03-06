@@ -47,10 +47,9 @@ def register_job_routes(
         n_raw = (await request_value(request, "n", "80")).strip()
         params["n"] = _safe_jobs_n(n_raw)
 
-        url = str(request.url_for("jobs_page"))
         from urllib.parse import urlencode
 
-        return RedirectResponse(url=f"{url}?{urlencode(params)}", status_code=303)
+        return RedirectResponse(url=f"/jobs?{urlencode(params)}", status_code=303)
 
     @app.post("/queue/approvals/{ref}/approve")
     async def approve_queue_job(ref: str, request: Request):

@@ -464,6 +464,7 @@ and prints install hints when missing.
 - `src/voxera/panel/routes_jobs.py` owns jobs list/detail and approval/job-lifecycle route domain wiring.
 - `src/voxera/panel/helpers.py` holds shared request/helper utilities for deterministic reuse.
 - When adding panel work, prefer extending an existing route-domain module (or adding a new `routes_<domain>.py`) and keep `app.py` focused on composition.
+- Jobs mutation redirects intentionally stay relative (`/jobs?...`) so panel flows remain origin-safe behind proxies/front-door deployments.
 
 ### 3) Start the panel (optional)
 ```bash

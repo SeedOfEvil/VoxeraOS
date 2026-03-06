@@ -279,6 +279,8 @@ See also: `docs/BOOTSTRAP.md`, `docs/SECURITY.md`, `docs/ROADMAP.md`, `docs/ops.
   - Help surfaces for key commands (for example `doctor`, `queue status`) are snapshot-tested.
 - **Panel route paths unchanged**
   - FastAPI route surface is snapshot-tested against the public paths used by operators.
+- **Panel jobs mutation redirects are relative by design**
+  - Redirects target `/jobs?...` to remain origin-safe in proxy/front-door/root-path deployments.
 - **Queue artifacts/state transitions unchanged**
   - Daemon startup recovery keeps deterministic failed/quarantine behavior.
   - Approval deny flow keeps the `pending -> failed` transition and failed sidecar schema/fields.

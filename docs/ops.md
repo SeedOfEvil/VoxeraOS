@@ -1054,3 +1054,4 @@ Panel home includes a read-only **Performance Stats** tab that surfaces these sa
 - `src/voxera/panel/routes_jobs.py` owns jobs, approvals, and job lifecycle routes.
 - `src/voxera/panel/helpers.py` contains shared request/value helpers.
 - Future panel changes should prefer extending a domain route module (or adding a new `routes_<domain>.py`) instead of growing `app.py` back into a monolith.
+- Jobs mutation redirects are intentionally emitted as relative `/jobs?...` URLs (not absolute `url_for` URLs) to avoid proxy/front-door host-scheme mismatches.
