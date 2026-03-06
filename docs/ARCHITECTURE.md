@@ -93,8 +93,10 @@ src/voxera/
 │   │                           daily_checkin, system_check, sandbox_smoke, sandbox_net
 │   ├── mission_planner.py    — LLM-based planning; fallback chains; step validation;
 │   │                           error classification; planner timeouts
-│   ├── queue_daemon.py       — Job processor: lock mgmt, approval workflow,
-│   │                           failed-job sidecars, retention pruning, health tracking
+│   ├── queue_daemon.py       — Queue orchestration state machine: lock mgmt, approval workflow,
+│   │                           lifecycle transitions, retention pruning, health tracking
+│   ├── queue_state.py        — Persisted `*.state.json` sidecar path/read/write/snapshot helpers
+│   ├── queue_paths.py        — Bucket transition helpers (move+sidecar co-move, deterministic targets)
 │   ├── queue_inspect.py      — Queue status snapshots; bucket filtering
 │   │                           (inbox / pending / done / failed / canceled)
 │   ├── queue_hygiene.py      — `voxera queue prune`: removes stale job files from terminal
@@ -238,6 +240,8 @@ operator can restore manually or prune explicitly
 
 Each job also emits a compact `*.state.json` sidecar (same stem as job file) to capture
 operator truth beyond bucket location. The sidecar tracks:
+State sidecar persistence mechanics live in `src/voxera/core/queue_state.py`; queue bucket move/collision helpers live in `src/voxera/core/queue_paths.py`, while transition orchestration remains in `queue_daemon.py`.
+
 
 - `lifecycle_state`: `queued|planning|running|awaiting_approval|resumed|done|step_failed|blocked|canceled`
 - step progress: `current_step_index`, `total_steps`, `last_completed_step`, `last_attempted_step`

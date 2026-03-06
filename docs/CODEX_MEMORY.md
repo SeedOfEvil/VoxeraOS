@@ -790,3 +790,11 @@ This file is the single, persistent project memory for Codex-assisted work.
 
 - Operator assistant now traverses Voxera Queue via dedicated `assistant_question` advisory jobs; panel submit enqueues, daemon answers through deterministic dual-brain primary→fallback advisory attempts (fallback only for explicit retryable classes), and panel polls status/results from queue/artifacts with compact metadata (`provider`/`model`, fallback usage/reason, advisory mode/degraded reason).
 - Assistant threads now persist compact multi-turn history (`artifacts/assistant_threads/<thread>.json`) so follow-up questions retain continuity while refreshing live runtime context.
+
+## 2026-03-06 — PR #TBD — extract queue daemon state persistence + transition helpers
+- Structural extraction only (no daemon semantic changes):
+  - Added `src/voxera/core/queue_state.py` for persisted job-state sidecar path/read/write logic and snapshot normalization/update helper.
+  - Added `src/voxera/core/queue_paths.py` for deterministic job move/bucket-transition helpers, including sidecar co-move and collision-safe destination naming.
+  - Kept orchestration in `src/voxera/core/queue_daemon.py`; it now delegates persisted-state and transition mechanics to focused helpers.
+- Semantics explicitly preserved during extraction: sidecar co-location with active bucket, `.state.json` naming, collision rename behavior, lifecycle transition timestamps, schema version, approval/deny/cancel/retry/recovery paths, and health/audit continuity.
+
