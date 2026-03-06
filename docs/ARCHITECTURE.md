@@ -266,3 +266,18 @@ Secrets: keyring preferred; fallback to `~/.config/voxera/env` (mode 0600).
 ---
 
 See also: `docs/BOOTSTRAP.md`, `docs/SECURITY.md`, `docs/ROADMAP.md`, `docs/ops.md`.
+
+---
+
+## Public Contract Checklist (Regression Guard)
+
+- **CLI command names/options unchanged**
+  - Root commands and nested groups (`config`, `queue`, `ops`) are snapshot-tested.
+  - Help surfaces for key commands (for example `doctor`, `queue status`) are snapshot-tested.
+- **Panel route paths unchanged**
+  - FastAPI route surface is snapshot-tested against the public paths used by operators.
+- **Queue artifacts/state transitions unchanged**
+  - Daemon startup recovery keeps deterministic failed/quarantine behavior.
+  - Approval deny flow keeps the `pending -> failed` transition and failed sidecar schema/fields.
+
+When evolving CLI/panel/daemon behavior, update tests and this checklist intentionally in the same change.
