@@ -103,6 +103,108 @@ _PANEL_AUTH_PRUNE_TTL_MS = 10 * 60 * 1000
 _PANEL_AUTH_MAX_TRACKED_IPS = 200
 _RECOVERY_ZIP_MAX_FILES = 5000
 _RECOVERY_ZIP_MAX_TOTAL_BYTES = 250 * 1024 * 1024
+_ASSISTANT_STALL_TIMEOUT_MS = 120_000
+_ASSISTANT_UNAVAILABLE_STATES = frozenset(
+    {
+        "unknown",
+        "stopped",
+        "unavailable",
+        "offline",
+        "error",
+        "failed",
+        "unhealthy",
+    }
+)
+
+
+def _assistant_request_ts_ms(request_id: str) -> int | None:
+    name = Path(request_id).name
+    match = re.match(r"^job-assistant-(\d+)\.json$", name)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _assistant_stalled_degraded_reason(
+    context: dict[str, Any], request_result: dict[str, Any], *, now_ms: int
+) -> str | None:
+    if not request_result:
+        return None
+    if str(request_result.get("advisory_mode") or "") == "degraded_brain_only":
+        return None
+    if str(request_result.get("answer") or "").strip():
+        return None
+
+    status = str(request_result.get("status") or "")
+    if status not in {"queued", "thinking", "thinking through Voxera"}:
+        return None
+
+    if bool(context.get("queue_paused")):
+        return "daemon_paused"
+
+    current_state = context.get("health_current_state")
+    daemon_state = ""
+    if isinstance(current_state, dict):
+        daemon_state = str(current_state.get("daemon_state") or "").strip().lower()
+    if daemon_state in _ASSISTANT_UNAVAILABLE_STATES:
+        return "daemon_unavailable"
+
+    updated_at_ms = _coerce_int(request_result.get("updated_at_ms"))
+    if (
+        updated_at_ms is not None
+        and updated_at_ms > 0
+        and now_ms - updated_at_ms >= _ASSISTANT_STALL_TIMEOUT_MS
+    ):
+        return "queue_processing_timeout"
+
+    request_id = str(request_result.get("request_id") or "")
+    request_ts = _assistant_request_ts_ms(request_id)
+    if request_ts is not None and now_ms - request_ts >= _ASSISTANT_STALL_TIMEOUT_MS:
+        return "advisory_transport_stalled"
+
+    return None
+
+
+def _persist_degraded_assistant_result(
+    queue_root: Path,
+    *,
+    request_id: str,
+    thread_id: str,
+    question: str,
+    answer: str,
+    degraded_reason: str,
+    context: dict[str, Any],
+    ts_ms: int,
+) -> dict[str, Any]:
+    normalized = f"{Path(request_id).stem}.json"
+    artifact_dir = queue_root / "artifacts" / Path(normalized).stem
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 2,
+        "kind": "assistant_question",
+        "thread_id": thread_id,
+        "question": question,
+        "answer": answer,
+        "updated_at_ms": ts_ms,
+        "answered_at_ms": ts_ms,
+        "provider": "deterministic_fallback",
+        "model": "fallback_operator_answer",
+        "fallback_used": False,
+        "fallback_from": None,
+        "fallback_reason": None,
+        "error_class": None,
+        "advisory_mode": "degraded_brain_only",
+        "degraded_reason": degraded_reason,
+        "degraded_at_ms": ts_ms,
+        "context": context,
+    }
+    (artifact_dir / "assistant_response.json").write_text(
+        json.dumps(payload, indent=2), encoding="utf-8"
+    )
+    return payload
 
 
 class _RequestUrlLike(Protocol):
@@ -1477,12 +1579,52 @@ def assistant_page(
     thread_id: str = "",
 ):
     _require_operator_auth_from_request(request)
-    context = build_operator_assistant_context(_queue_root())
-    request_result = read_assistant_result(_queue_root(), request_id) if request_id else {}
+    queue_root = _queue_root()
+    context = build_operator_assistant_context(queue_root)
+    request_result = read_assistant_result(queue_root, request_id) if request_id else {}
     active_thread_id = thread_id or str(request_result.get("thread_id") or "")
     thread_turns = (
-        read_assistant_thread_turns(_queue_root(), active_thread_id) if active_thread_id else []
+        read_assistant_thread_turns(queue_root, active_thread_id) if active_thread_id else []
     )
+
+    degraded_reason = _assistant_stalled_degraded_reason(
+        context,
+        request_result,
+        now_ms=int(time.time() * 1000),
+    )
+    if degraded_reason and request_id:
+        resolved_question = question.strip() or "What is happening right now?"
+        degraded_answer = fallback_operator_answer(resolved_question, context)
+        now_ms = int(time.time() * 1000)
+        if active_thread_id and not any(
+            str(turn.get("request_id") or "") == request_id
+            and str(turn.get("role") or "").lower() == "assistant"
+            for turn in thread_turns
+            if isinstance(turn, dict)
+        ):
+            append_thread_turn(
+                queue_root,
+                thread_id=active_thread_id,
+                role="assistant",
+                text=degraded_answer,
+                request_id=request_id,
+                ts_ms=now_ms,
+            )
+            thread_turns = read_assistant_thread_turns(queue_root, active_thread_id)
+
+        _persist_degraded_assistant_result(
+            queue_root,
+            request_id=request_id,
+            thread_id=active_thread_id,
+            question=resolved_question,
+            answer=degraded_answer,
+            degraded_reason=degraded_reason,
+            context=context,
+            ts_ms=now_ms,
+        )
+        request_result = read_assistant_result(queue_root, request_id)
+        request_result["status"] = "answered"
+
     return _render_assistant_page(
         request,
         question=question,

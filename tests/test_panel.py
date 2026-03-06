@@ -1941,6 +1941,91 @@ def test_operator_assistant_degraded_mode_when_queue_unavailable(tmp_path, monke
     assert "queue_unavailable" in res.text
 
 
+def test_operator_assistant_page_degrades_when_daemon_paused(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    (queue_dir / ".paused").write_text("1", encoding="utf-8")
+    (queue_dir / "pending" / "job-assistant-paused.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-paused"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-paused.state.json").write_text(
+        json.dumps({"lifecycle_state": "queued", "updated_at_ms": 1}), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-paused.json&thread_id=thread-paused&question=What+is+happening+right+now%3F",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "degraded_brain_only" in res.text
+    assert "daemon_paused" in res.text
+
+
+def test_operator_assistant_page_degrades_when_transport_stalled(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps({"daemon_state": "healthy"}), encoding="utf-8"
+    )
+    old_ts = 1
+    (queue_dir / "pending" / "job-assistant-stale.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-stale"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-stale.state.json").write_text(
+        json.dumps({"lifecycle_state": "advisory_running", "updated_at_ms": old_ts}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-stale.json&thread_id=thread-stale&question=What+is+happening+right+now%3F",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "degraded_brain_only" in res.text
+    assert "queue_processing_timeout" in res.text
+
+
+def test_operator_assistant_page_does_not_degrade_when_request_is_progressing(
+    tmp_path, monkeypatch
+):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    now_ms = int(__import__("time").time() * 1000)
+    (queue_dir / "health.json").write_text(
+        json.dumps({"daemon_state": "healthy"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-active.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-active"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-active.state.json").write_text(
+        json.dumps({"lifecycle_state": "advisory_running", "updated_at_ms": now_ms}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-active.json&thread_id=thread-active&question=What+is+happening+right+now%3F",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "thinking through Voxera" in res.text
+    assert "degraded_brain_only" not in res.text
+
+
 def test_operator_assistant_page_shows_completed_queue_answer(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

@@ -100,6 +100,10 @@ def read_assistant_result(queue_root: Path, request_id: str) -> dict[str, Any]:
     if bucket == "failed":
         status = "failed"
 
+    response_mode = str(response_data.get("advisory_mode") or "")
+    if response_mode == "degraded_brain_only" and str(response_data.get("answer") or "").strip():
+        status = "answered"
+
     return {
         "request_id": found.job_id,
         "thread_id": str(
