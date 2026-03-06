@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fcntl
 import json
 import os
@@ -733,10 +734,8 @@ class MissionQueueDaemon:
         state_src = src.with_name(f"{src.stem}.state.json")
         state_dst = target.with_name(f"{target.stem}.state.json")
         if state_src.exists():
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 state_src.replace(state_dst)
-            except FileNotFoundError:
-                pass
         return target
 
     def _archive_sidecar(self, sidecar: Path, *, reason: str) -> None:
