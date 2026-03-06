@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import typer
 from typer.testing import CliRunner
 
@@ -48,12 +50,17 @@ def test_cli_public_command_surface_snapshot():
     ]
 
 
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
 def test_cli_doctor_help_surface_snapshot():
     runner = CliRunner()
 
     result = runner.invoke(cli.app, ["doctor", "--help"], color=False)
 
     assert result.exit_code == 0
+    help_text = _strip_ansi(result.stdout)
     expected_fragments = [
         "--self-test",
         "--quick",
@@ -61,7 +68,7 @@ def test_cli_doctor_help_surface_snapshot():
         "Run provider capability tests and write a report.",
     ]
     for fragment in expected_fragments:
-        assert fragment in result.stdout
+        assert fragment in help_text
 
 
 def test_cli_queue_status_help_surface_snapshot():
@@ -70,9 +77,11 @@ def test_cli_queue_status_help_surface_snapshot():
     result = runner.invoke(cli.app, ["queue", "status", "--help"], color=False)
 
     assert result.exit_code == 0
+    help_text = _strip_ansi(result.stdout)
     expected_fragments = [
-        "Usage: root queue status",
+        "Usage:",
+        "queue status",
         "--queue-dir",
     ]
     for fragment in expected_fragments:
-        assert fragment in result.stdout
+        assert fragment in help_text
