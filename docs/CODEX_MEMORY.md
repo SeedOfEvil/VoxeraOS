@@ -816,3 +816,19 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Follow-ups:
   - Continue daemon slimming with similarly mechanical extractions while preserving state-machine semantics exactly.
 
+
+
+## 2026-03-06 — PR TBD — refactor(queue): extract assistant advisory lane
+- Summary:
+  - Extracted queue-backed assistant/advisory lane mechanics from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_assistant.py`.
+  - Moved assistant provider construction/candidate ordering, deterministic primary→fallback advisory answering, assistant response artifact persistence, assistant failure artifact path, and assistant lifecycle/action-event updates.
+  - Kept `queue_daemon.py` focused on main orchestration loop, lock/recovery/lifecycle control, and lane routing (`assistant_question` jobs vs mission jobs).
+- Semantics explicitly preserved:
+  - Assistant job detection (`kind=assistant_question`), advisory read-only contract, queue-backed transport states, fallback/degraded metadata fields, artifact naming/location (`artifacts/<job_stem>/assistant_response.json`), thread continuity persistence, and failed-bucket handling with sidecar/lifecycle consistency.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `pytest -q tests/test_queue_daemon.py tests/test_queue_daemon_contract_snapshot.py tests/test_operator_assistant_queue.py tests/test_panel.py -k "assistant"`
+  - `bash scripts/e2e_golden4.sh`

@@ -19,7 +19,7 @@ See `docs/ROADMAP_0.1.6.md` for the full shipped scope.
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
 - ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
-  - Daemon orchestration remains in `src/voxera/core/queue_daemon.py`; approval workflow/artifact helpers are in `src/voxera/core/queue_approvals.py`; persisted job-state sidecar helpers are in `src/voxera/core/queue_state.py`; bucket-transition helpers are in `src/voxera/core/queue_paths.py`.
+  - Daemon orchestration remains in `src/voxera/core/queue_daemon.py`; assistant/advisory queue-lane mechanics are in `src/voxera/core/queue_assistant.py`; approval workflow/artifact helpers are in `src/voxera/core/queue_approvals.py`; persisted job-state sidecar helpers are in `src/voxera/core/queue_state.py`; bucket-transition helpers are in `src/voxera/core/queue_paths.py`.
 - ✅ Queue status UX (`voxera queue status`) and panel insights for pending approvals/audit
 - ✅ Panel home Daemon Health widget (collapsible) from `notes/queue/health.json` only: lock status/PID/stale age, last brain fallback, startup recovery summary, shutdown outcome, daemon state
 - ✅ DEV-only auto-approve gating for `system.settings` only (`VOXERA_DEV_MODE=1` + `--auto-approve-ask`)
