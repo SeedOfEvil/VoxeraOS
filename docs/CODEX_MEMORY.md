@@ -1,3 +1,18 @@
+## 2026-03-06 — PR #TBD — refactor(core): extract queue startup recovery + shutdown handling
+- Summary:
+  - Extracted startup recovery and shutdown/in-flight deterministic failure handling from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_recovery.py` as `QueueRecoveryMixin`.
+  - Moved recovery scanning/quarantine/report assembly helpers (`recover_on_startup`, orphan approval/state collection, in-flight pending detection, queue-root-safe quarantine path handling).
+  - Moved shutdown helpers (`request_shutdown`, clean/failed shutdown record helpers, in-flight shutdown failure finalization) while preserving health/audit/failed-sidecar semantics.
+  - Kept `queue_daemon.py` as orchestration root (lock handling, process loop, planning/routing, lifecycle transitions).
+  - Updated docs (`README.md`, `docs/ops.md`, `docs/ARCHITECTURE.md`) to reflect the new boundary and future refactor guidance.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `pytest -q tests/test_queue_daemon.py tests/test_queue_daemon_contract_snapshot.py`
+  - `bash scripts/e2e_golden4.sh`
+
 ## 2026-03-06 — PR #TBD — refactor(panel): extract remaining route domains from app.py
 - Completed final panel modularization pass: extracted assistant, missions, bundle, and queue-control route domains from `panel/app.py` into `routes_assistant.py`, `routes_missions.py`, `routes_bundle.py`, and `routes_queue_control.py` while preserving route/method/auth/csrf contracts.
 - Kept `panel/app.py` as composition/wiring root (FastAPI setup, shared security + queue helpers, dependency wiring, route registration), reducing domain-heavy inline route logic.

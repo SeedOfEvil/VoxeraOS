@@ -1069,4 +1069,5 @@ Panel home includes a read-only **Performance Stats** tab that surfaces these sa
 - Keep assistant/advisory queue-lane mechanics (assistant provider/fallback attempts, response artifact persistence, advisory lifecycle/action events, assistant failure artifact handling) in `src/voxera/core/queue_assistant.py`.
 - Keep persisted `*.state.json` sidecar path/read/write/snapshot helpers in `src/voxera/core/queue_state.py`.
 - Keep deterministic bucket-transition mechanics (job move + sidecar co-move + collision-safe target selection) in `src/voxera/core/queue_paths.py`.
+- Keep startup recovery mechanics (in-flight pending restart recovery, orphan quarantine, recovery report assembly) and shutdown/in-flight fail-on-shutdown helpers in `src/voxera/core/queue_recovery.py`.
 - Preserve sidecar naming/location, schema versions, and bucket transition semantics exactly when refactoring.
