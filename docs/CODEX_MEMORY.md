@@ -1,3 +1,13 @@
+## 2026-03-06 — PR #116 follow-up — fix(panel): keep jobs mutation redirects relative for proxy safety
+- Fixed regression in `routes_jobs._jobs_redirect`: switched redirect target from absolute `request.url_for("jobs_page")` URL back to relative `/jobs?...`.
+- Preserved existing query semantics (`flash`, `bucket`, `q`, sanitized/clamped `n`).
+- Added panel regression test asserting mutation redirect `Location` is relative (origin-safe for proxied/front-door deployments).
+
+## 2026-03-06 — PR #TBD — refactor(panel): modularize app.py by route domain + shared helpers
+- Split panel structure into route-domain modules while preserving public contract: extracted `routes_home.py` (home + queue create) and `routes_jobs.py` (jobs list/detail + approvals + cancel/retry), with shared request/int parsing helpers in `helpers.py`.
+- Kept `panel/app.py` as the unchanged public FastAPI entrypoint and composition/wiring layer; route paths/methods/auth guards remain contract-equivalent.
+- Updated README/ops/architecture docs with the new panel ownership boundaries and extension guidance.
+
 ## 2026-03-05 — PR TBD — Fail fast on unknown keys for operator-facing configuration models
 - Summary
   - Hardened operator-facing app config contracts by forbidding unknown fields on `AppConfig`, `BrainConfig`, `PolicyApprovals`, and `PrivacyConfig`.
