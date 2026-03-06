@@ -1064,8 +1064,9 @@ Panel home includes a read-only **Performance Stats** tab that surfaces these sa
 
 ## Queue daemon refactor boundaries
 
-- Keep control-plane orchestration and lifecycle decisioning in `src/voxera/core/queue_daemon.py`.
+- Keep control-plane orchestration and lifecycle decisioning in `src/voxera/core/queue_daemon.py` (including job routing between mission vs assistant lanes).
 - Keep approval workflow mechanics (approval prompts, pending artifacts, approval ref normalization/canonicalization, grants, approve/deny resolution) in `src/voxera/core/queue_approvals.py`.
+- Keep assistant/advisory queue-lane mechanics (assistant provider/fallback attempts, response artifact persistence, advisory lifecycle/action events, assistant failure artifact handling) in `src/voxera/core/queue_assistant.py`.
 - Keep persisted `*.state.json` sidecar path/read/write/snapshot helpers in `src/voxera/core/queue_state.py`.
 - Keep deterministic bucket-transition mechanics (job move + sidecar co-move + collision-safe target selection) in `src/voxera/core/queue_paths.py`.
 - Preserve sidecar naming/location, schema versions, and bucket transition semantics exactly when refactoring.

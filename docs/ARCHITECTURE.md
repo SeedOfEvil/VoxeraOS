@@ -99,6 +99,7 @@ src/voxera/
 │   │                           ref normalization/canonicalization, grants, approve/deny resolution
 │   ├── queue_state.py        — Persisted `*.state.json` sidecar path/read/write/snapshot helpers
 │   ├── queue_paths.py        — Bucket transition helpers (move+sidecar co-move, deterministic targets)
+│   ├── queue_assistant.py    — Assistant/advisory queue lane: provider fallback, response artifacts, lifecycle/audit events
 │   ├── queue_inspect.py      — Queue status snapshots; bucket filtering
 │   │                           (inbox / pending / done / failed / canceled)
 │   ├── queue_hygiene.py      — `voxera queue prune`: removes stale job files from terminal
@@ -242,7 +243,7 @@ operator can restore manually or prune explicitly
 
 Each job also emits a compact `*.state.json` sidecar (same stem as job file) to capture
 operator truth beyond bucket location. The sidecar tracks:
-State sidecar persistence mechanics live in `src/voxera/core/queue_state.py`; queue bucket move/collision helpers live in `src/voxera/core/queue_paths.py`; approval workflow + pending-approval artifact mechanics live in `src/voxera/core/queue_approvals.py`; high-level lifecycle orchestration remains in `queue_daemon.py`.
+State sidecar persistence mechanics live in `src/voxera/core/queue_state.py`; queue bucket move/collision helpers live in `src/voxera/core/queue_paths.py`; approval workflow + pending-approval artifact mechanics live in `src/voxera/core/queue_approvals.py`; assistant/advisory queue-lane mechanics (provider/fallback orchestration, assistant artifacts, advisory lifecycle updates) live in `src/voxera/core/queue_assistant.py`; high-level lifecycle orchestration and lane routing remain in `queue_daemon.py`.
 
 
 - `lifecycle_state`: `queued|planning|running|awaiting_approval|resumed|done|step_failed|blocked|canceled`
