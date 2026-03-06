@@ -635,6 +635,30 @@ mode it always ends with: **"Report-only; no changes made."**  In fix-applied
 mode it ends with: **"No deletions performed; quarantined files can be restored
 manually."**
 
+## Contributor guidance: where code belongs
+
+The codebase follows a **thin composition root + focused domain modules** pattern across all three main subsystems. When adding new code:
+
+**Queue subsystem** (`src/voxera/core/`):
+- New mission execution or inbox-processing logic → `queue_execution.py` (owns `QueueExecutionMixin`)
+- New approval workflow logic → `queue_approvals.py` (owns `QueueApprovalMixin`)
+- New startup recovery or shutdown handling → `queue_recovery.py` (owns `QueueRecoveryMixin`)
+- New assistant/advisory lane logic → `queue_assistant.py` (module-level functions)
+- New state sidecar fields/helpers → `queue_state.py`
+- New bucket move or path helpers → `queue_paths.py`
+- `queue_daemon.py` owns: lock/watch/tick orchestration, high-level lane routing, and composition of the mixins above. Do not re-grow it with domain logic.
+
+**Panel** (`src/voxera/panel/`):
+- New route domains should live in a focused `routes_<domain>.py` module
+- Register the new module in `panel/app.py` via `register_<domain>_routes(app, ...)` — keep `app.py` as the composition root
+- Shared request/value parsing helpers go in `helpers.py`
+
+**CLI** (`src/voxera/`):
+- New queue/operator command families → `cli_queue.py`
+- New diagnostic command logic → `cli_doctor.py` (expose via `register(app)`)
+- Shared option definitions and parsing helpers → `cli_common.py`
+- `cli.py` owns Typer app creation and sub-app registration — keep it as the composition root
+
 ## Information sources (keep in sync)
 
 For current project state and handoff context, keep these files aligned whenever queue/planner behavior changes:

@@ -60,7 +60,30 @@ Queue (done / failed / canceled)
 
 ```
 src/voxera/
-├── cli.py                    — Typer CLI router; all user-facing commands
+│
+│   ── CLI (thin composition root + focused command families) ──
+│
+├── cli.py                    — Typer composition/registration root. Adds sub-apps from
+│                               cli_queue.py (queue_app, inbox_app, artifacts_app),
+│                               registers doctor via cli_doctor.register(app),
+│                               and implements top-level commands (run, missions, ops,
+│                               config, status, audit, panel, daemon, setup, demo, version).
+│                               New CLI command families should be registered here but
+│                               implemented in their own focused module.
+├── cli_common.py             — Shared CLI helpers/primitives/options/constants:
+│                               console, RUN_ARG_OPTION, OUT_PATH_OPTION,
+│                               OPS_BUNDLE_ARCHIVE_DIR_OPTION, SNAPSHOT_PATH_OPTION,
+│                               DEMO_QUEUE_DIR_OPTION, now_ms(), queue_dir_path().
+├── cli_queue.py              — Queue/operator-facing command implementation + registration.
+│                               Owns: queue_app, queue_approvals_app, queue_lock_app,
+│                               inbox_app, artifacts_app Typer sub-apps and all their
+│                               command implementations (status, prune, reconcile,
+│                               approvals list/approve/deny, cancel, retry, delete, health,
+│                               health-reset, lock status/unlock, inbox add/list, etc.).
+├── cli_doctor.py             — Doctor command wiring/implementation boundary.
+│                               Exposes register(app) to attach the doctor command to the
+│                               root Typer app from cli.py.
+│
 ├── config.py                 — Runtime config loader
 │                               precedence: CLI flags > VOXERA_* env > config file > defaults
 ├── models.py                 — Pydantic data models: BrainConfig, AppConfig,
@@ -88,21 +111,74 @@ src/voxera/
 │   └── json_recovery.py      — Malformed JSON rescue from LLM planner output
 │
 ├── core/
+│   │
+│   │   ── Queue subsystem (thin composition root + focused domain modules) ──
+│   │
+│   ├── queue_daemon.py       — Composition/orchestration root for the queue subsystem.
+│   │                           Inherits QueueExecutionMixin, QueueApprovalMixin,
+│   │                           QueueRecoveryMixin. Owns: lock acquisition/release,
+│   │                           watch/tick/poll orchestration, high-level job routing
+│   │                           (mission vs assistant lane), config drift snapshotting,
+│   │                           top-level daemon run loop, operator-facing status entrypoints,
+│   │                           and re-exports `plan_mission` for monkeypatch compatibility.
+│   │                           New queue lifecycle/process logic should go in the domain
+│   │                           modules below, not back into this file.
+│   │
+│   ├── queue_execution.py    — QueueExecutionMixin. Owns: mission execution/process pipeline,
+│   │                           inbox filtering (`_is_ready_job_file`), payload normalization
+│   │                           (`_normalize_payload`), parse-retry behavior
+│   │                           (`_load_job_payload_with_retry`), mission building/planning
+│   │                           integration (`_build_mission_for_payload`),
+│   │                           `process_job_file(...)` (full queued→planning→running→
+│   │                           pending/done/failed flow), `process_pending_once(...)`.
+│   │
+│   ├── queue_recovery.py     — QueueRecoveryMixin. Owns: startup recovery
+│   │                           (`recover_on_startup`), orphan approval/state detection
+│   │                           (`_collect_orphan_approval_files`,
+│   │                           `_collect_orphan_state_files`), quarantine path handling
+│   │                           (`_quarantine_startup_recovery_path`), shutdown request
+│   │                           handling (`request_shutdown`), in-flight fail-on-shutdown
+│   │                           finalization (`_finalize_job_shutdown_failure`),
+│   │                           clean/failed shutdown record helpers.
+│   │
+│   ├── queue_approvals.py    — QueueApprovalMixin. Owns: approval prompt/grant logic
+│   │                           (`_queue_approval_prompt`), approval artifact path/read/write
+│   │                           helpers (`_read_approval_artifact`, `_write_pending_artifacts`),
+│   │                           pending approval payload building, normalization/canonicalization
+│   │                           of approval refs (`canonicalize_approval_ref`,
+│   │                           `_resolve_pending_approval_paths`), approval grants /
+│   │                           approve-always behavior (`grant_approval_scope`,
+│   │                           `_has_approval_grant`), approval resolution behavior
+│   │                           (`resolve_approval`), pending approval notifications
+│   │                           (`_notify_pending_approval`).
+│   │
+│   ├── queue_assistant.py    — Module-level functions (not a mixin). Owns: assistant advisory
+│   │                           queue lane (`process_assistant_job`), provider construction
+│   │                           (`create_assistant_brain`), ordered primary/fallback candidate
+│   │                           logic (`assistant_brain_candidates`), advisory answer path
+│   │                           (`assistant_answer_via_brain`), assistant response artifact
+│   │                           path/handling (`assistant_response_artifact_path`), advisory
+│   │                           failure handling, thread persistence/continuity
+│   │                           (via `operator_assistant` helpers).
+│   │
+│   ├── queue_state.py        — `*.state.json` sidecar path/read/write/update helpers.
+│   │                           Owns: `job_state_sidecar_path()`, `read_job_state()`,
+│   │                           `write_job_state()`, `update_job_state_snapshot()`.
+│   │                           Schema version: `JOB_STATE_SCHEMA_VERSION = 1`.
+│   │
+│   ├── queue_paths.py        — Deterministic bucket-transition helpers.
+│   │                           Owns: `move_job_with_sidecar()` (atomic rename + co-move
+│   │                           of `*.state.json` sidecar), `deterministic_target_path()`
+│   │                           (collision-safe target naming with suffix tags).
+│   │
+│   │   ── Other core modules ──
+│   │
 │   ├── missions.py           — Mission templates + runner; YAML/JSON mission loading
 │   │                           built-in mission IDs: work_mode, focus_mode,
-│   │                           daily_checkin, system_check, sandbox_smoke, sandbox_net
-│   ├── mission_planner.py    — LLM-based planning; fallback chains; step validation;
-│   │                           error classification; planner timeouts
-│   ├── queue_daemon.py       — Queue composition/orchestration root: lock mgmt, tick loop,
-│   │                           top-level routing, config drift snapshotting, status surfaces
-│   ├── queue_execution.py    — Mission execution/process pipeline: inbox intake, planning,
-│   │                           running/pending/done/failed transitions, action/audit ordering
-│   ├── queue_approvals.py    — Approval workflow mechanics: prompts, pending artifacts,
-│   │                           ref normalization/canonicalization, grants, approve/deny resolution
-│   ├── queue_state.py        — Persisted `*.state.json` sidecar path/read/write/snapshot helpers
-│   ├── queue_paths.py        — Bucket transition helpers (move+sidecar co-move, deterministic targets)
-│   ├── queue_assistant.py    — Assistant/advisory queue lane: provider fallback, response artifacts, lifecycle/audit events
-│   ├── queue_recovery.py     — Startup recovery + shutdown/in-flight deterministic failure handling
+│   │                           daily_checkin, incident_mode, wrap_up, system_check
+│   ├── mission_planner.py    — LLM-based planning; fallback chains (primary→fast→fallback);
+│   │                           deterministic write/terminal-demo routes; step normalization
+│   │                           and rewriting; error classification; planner timeouts (25s)
 │   ├── queue_inspect.py      — Queue status snapshots; bucket filtering
 │   │                           (inbox / pending / done / failed / canceled)
 │   ├── queue_hygiene.py      — `voxera queue prune`: removes stale job files from terminal
@@ -112,7 +188,10 @@ src/voxera/
 │   ├── router.py             — Intent routing: CLI / voice / panel inputs
 │   ├── inbox.py              — Atomic job intake; human-friendly entry point
 │   ├── capabilities_snapshot.py — Runtime catalog: missions, skills, allowed_apps;
-│   │                           used by planner as validation guardrail
+│   │                           used by planner as validation guardrail;
+│   │                           `generate_capabilities_snapshot()`,
+│   │                           `validate_mission_id_against_snapshot()`,
+│   │                           `validate_mission_steps_against_snapshot()`
 │   └── planner_context.py    — Preamble assembly for LLM prompt (Vera persona,
 │                               system context, capabilities block)
 │
@@ -127,17 +206,40 @@ src/voxera/
 ├── audio/                    — Placeholder; STT/TTS planned for v0.3
 │
 └── panel/
-    ├── app.py                — FastAPI composition root (setup + shared helpers +
-    │                           route registration wiring)
-    ├── helpers.py            — Shared request/value helpers reused by route modules
+    │
+    │   ── Panel (thin composition root + focused route-domain modules) ──
+    │
+    ├── app.py                — FastAPI composition/wiring root. Creates the FastAPI app,
+    │                           mounts static files, sets up Jinja2 templates, manages CSRF
+    │                           and operator auth, wires shared helpers, and calls
+    │                           register_*_routes() from each domain module. Route paths,
+    │                           HTTP methods, auth guards, and redirect contracts were
+    │                           preserved during the modularization passes (PRs #116–#118).
+    │                           New panel routes should live in focused domain modules;
+    │                           panel/app.py remains the composition root.
+    ├── helpers.py            — Shared request/value parsing helpers reused by route modules:
+    │                           coerce_int(), request_value() (query/form/JSON extraction).
     ├── routes_home.py        — Home/dashboard + queue-create route domain
     ├── routes_jobs.py        — Jobs list/detail + approvals/cancel/retry route domain
-    ├── routes_queue_control.py — Queue delete/pause/resume route domain
-    ├── routes_assistant.py   — Operator assistant route domain + degraded advisory logic
-    ├── routes_missions.py    — Mission + mission-template creation route domain
-    ├── routes_bundle.py      — Job/system incident bundle download route domain
-    ├── routes_hygiene.py     — Hygiene/operator-maintenance route domain
-    ├── routes_recovery.py    — Recovery/quarantine inspector route domain
+    ├── routes_queue_control.py — Queue delete/pause/resume route domain:
+    │                           POST /queue/jobs/{ref}/delete, POST /queue/pause,
+    │                           POST /queue/resume. All guarded by require_mutation_guard.
+    ├── routes_assistant.py   — Operator assistant route domain + degraded advisory logic:
+    │                           GET /assistant, POST /assistant/ask. Implements stall
+    │                           detection, degraded-mode fallback (advisory_mode=
+    │                           degraded_brain_only), and thread persistence.
+    ├── routes_missions.py    — Mission + mission-template creation route domain:
+    │                           GET/POST /missions/templates/create,
+    │                           GET/POST /missions/create.
+    ├── routes_bundle.py      — Job/system incident bundle download route domain:
+    │                           GET /jobs/{job_id}/bundle, GET /bundle/system.
+    │                           Bundles archived under queue_root/_archive/.
+    ├── routes_hygiene.py     — Hygiene/operator-maintenance route domain:
+    │                           GET /hygiene, POST /hygiene/prune-dry-run,
+    │                           POST /hygiene/reconcile, POST /hygiene/health-reset.
+    ├── routes_recovery.py    — Recovery/quarantine inspector route domain:
+    │                           GET /recovery, GET /recovery/download/{bucket}/{name}.
+    │                           Read-only listing + ZIP downloads with traversal protection.
     ├── templates/            — Jinja2 HTML: home.html, jobs.html, job_detail.html
     └── static/panel.css      — Panel stylesheet
 
@@ -197,6 +299,27 @@ Makefile                      — 30+ targets: dev, fmt, lint, type, test, e2e,
 
 ---
 
+## Architectural Pattern: Thin Composition Root + Focused Domain Modules
+
+A recurring structural pattern now present across the three main subsystems:
+
+**Queue daemon** (`src/voxera/core/`)
+- `queue_daemon.py` is the composition root — it inherits from `QueueExecutionMixin`, `QueueApprovalMixin`, `QueueRecoveryMixin` and owns lock/tick/routing only
+- Domain-specific logic lives in the focused modules: `queue_execution.py`, `queue_approvals.py`, `queue_recovery.py`, `queue_assistant.py`, `queue_state.py`, `queue_paths.py`
+- New queue process/lifecycle logic should go in the relevant domain module, not back into `queue_daemon.py`
+
+**Panel** (`src/voxera/panel/`)
+- `panel/app.py` is the composition root — it creates the FastAPI app, wires shared auth/CSRF/queue helpers, and calls `register_*_routes()` from each domain module
+- Each route domain owns a focused set of paths: `routes_assistant.py`, `routes_missions.py`, `routes_bundle.py`, `routes_queue_control.py`, `routes_hygiene.py`, `routes_recovery.py`, `routes_home.py`, `routes_jobs.py`
+- New panel route domains should live in focused route modules; `panel/app.py` remains the composition root
+
+**CLI** (`src/voxera/`)
+- `cli.py` is the composition root — it creates the Typer app, registers sub-apps from `cli_queue.py`, and registers the `doctor` command from `cli_doctor.py`
+- Queue/operator command implementations live in `cli_queue.py`; doctor command wiring lives in `cli_doctor.py`; shared primitives live in `cli_common.py`
+- New CLI command families should follow the same modular registration pattern rather than growing `cli.py`
+
+---
+
 ## Key Principles
 
 - **Capability-based permissions** — every skill declares what it needs (network, install, files, apps, settings); the policy engine decides allow / ask / deny per capability.
@@ -245,11 +368,29 @@ operator can restore manually or prune explicitly
 ```
 
 Each job also emits a compact `*.state.json` sidecar (same stem as job file) to capture
-operator truth beyond bucket location. The sidecar tracks:
-State sidecar persistence mechanics live in `src/voxera/core/queue_state.py`; queue bucket move/collision helpers live in `src/voxera/core/queue_paths.py`; approval workflow + pending-approval artifact mechanics live in `src/voxera/core/queue_approvals.py`; assistant/advisory queue-lane mechanics (provider/fallback orchestration, assistant artifacts, advisory lifecycle updates) live in `src/voxera/core/queue_assistant.py`; startup recovery + shutdown/in-flight failure handling live in `src/voxera/core/queue_recovery.py`; mission execution/process lifecycle mechanics now live in `src/voxera/core/queue_execution.py`; high-level orchestration and lane routing remain in `queue_daemon.py`.
+operator truth beyond bucket location.
 
+**Queue artifact types:**
+- Primary job file: `inbox/<job>.json`, `pending/<job>.json`, `done/<job>.json`, `failed/<job>.json`, `canceled/<job>.json`
+- `<job>.state.json` — lifecycle state sidecar (co-moved with job on bucket transitions)
+- `<job>.pending.json` — awaiting-approval metadata (written to `pending/` when `awaiting_approval`)
+- `<job>.approval.json` — approval prompt artifact (written to `pending/approvals/`)
+- `<job>.error.json` — failed job error sidecar (schema_version=1, required: job/error/timestamp_ms)
+- `artifacts/<job_stem>/assistant_response.json` — assistant advisory lane response artifact
+- `recovery/startup-<ts>/` — orphan approvals/state files quarantined during daemon startup recovery
 
+**Module ownership:**
+- `src/voxera/core/queue_daemon.py` — lock handling, tick loop, high-level routing; orchestrates all other modules
+- `src/voxera/core/queue_execution.py` — `process_job_file()`, `process_pending_once()`, inbox filtering, payload normalization, planning integration
+- `src/voxera/core/queue_recovery.py` — `recover_on_startup()`, orphan detection, quarantine, `request_shutdown()`, shutdown failure finalization
+- `src/voxera/core/queue_approvals.py` — approval prompts, pending artifact write/read, `resolve_approval()`, `grant_approval_scope()`
+- `src/voxera/core/queue_assistant.py` — `process_assistant_job()`, `assistant_answer_via_brain()`, `assistant_response_artifact_path()`
+- `src/voxera/core/queue_state.py` — `job_state_sidecar_path()`, `read_job_state()`, `write_job_state()`, `update_job_state_snapshot()`
+- `src/voxera/core/queue_paths.py` — `move_job_with_sidecar()`, `deterministic_target_path()`
+
+**`*.state.json` sidecar tracks:**
 - `lifecycle_state`: `queued|planning|running|awaiting_approval|resumed|done|step_failed|blocked|canceled`
+- `advisory_running` (assistant advisory lane jobs only)
 - step progress: `current_step_index`, `total_steps`, `last_completed_step`, `last_attempted_step`
 - `terminal_outcome` (terminal only): `succeeded|failed|blocked|denied|canceled`
 - contextual fields when applicable: `failure_summary`, `blocked_reason`, `approval_status`

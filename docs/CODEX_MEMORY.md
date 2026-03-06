@@ -1,8 +1,55 @@
-## 2026-03-06 — PR #TBD — refactor(core): extract queue startup recovery + shutdown handling
+## 2026-03-06 — PR #TBD — docs: sync documentation to current codebase architecture
+- Summary:
+  - Performed documentation reality-sync pass against the codebase after the recent architecture refactor wave (PRs #116–#124).
+  - Updated `docs/ARCHITECTURE.md`: expanded queue module map with per-file ownership descriptions, added CLI module map with `cli.py`/`cli_common.py`/`cli_queue.py`/`cli_doctor.py` boundaries, expanded panel route module map with path/method ownership, added "Architectural Pattern: Thin Composition Root + Focused Domain Modules" section explicitly documenting the pattern used across queue/panel/CLI, updated queue lifecycle section to name artifact types and module owners explicitly.
+  - Updated `README.md`: expanded "What works now" queue section to list all 7 queue submodule files with ownership, added panel and CLI modularization as completed milestone bullets, added operator assistant advisory lane as a completed bullet.
+  - Updated `docs/ops.md`: added "Contributor guidance: where code belongs" section documenting queue/panel/CLI extension points.
+  - Updated `docs/CODEX_MEMORY.md`: backfilled PR numbers and added missing entries for PRs #119–#124 (queue_state, queue_approvals, queue_assistant, queue_execution, queue_recovery, CLI modularization).
+- Validation:
+  - Docs reviewed against live source code for accuracy.
+  - No runtime behavior changed.
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Documentation-only; no code changes in this pass.
+
+## 2026-03-06 — PR #124 — refactor(cli): modularize CLI command registration into focused modules
+- Summary:
+  - Extracted queue/operator command implementations from `src/voxera/cli.py` into `src/voxera/cli_queue.py`, which owns `queue_app`, `queue_approvals_app`, `queue_lock_app`, `inbox_app`, and `artifacts_app` Typer sub-apps and all their command implementations.
+  - Extracted doctor command wiring into `src/voxera/cli_doctor.py` with a `register(app)` function called from the root CLI.
+  - Extracted shared CLI helpers/primitives/options/constants into `src/voxera/cli_common.py` (`console`, `RUN_ARG_OPTION`, `OPS_BUNDLE_ARCHIVE_DIR_OPTION`, `SNAPSHOT_PATH_OPTION`, `DEMO_QUEUE_DIR_OPTION`, `now_ms()`, `queue_dir_path()`).
+  - `src/voxera/cli.py` remains the Typer composition/registration root; imports and registers sub-apps from `cli_queue` and doctor from `cli_doctor`. Preserved all command/group names, help surfaces, defaults, option flags, and operator-facing behavior as stable contracts.
+  - Added lint fix to preserve `log` monkeypatch surface in `cli.py`.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Operator-visible CLI surface (command names, option flags, JSON shapes) remains stable across the refactor. Monkeypatch compatibility surfaces preserved in `cli.py`.
+
+## 2026-03-06 — PR #123 — refactor(queue): extract mission execution pipeline mixin
+- Summary:
+  - Extracted mission execution/process pipeline from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_execution.py` as `QueueExecutionMixin`.
+  - `QueueExecutionMixin` owns: inbox filtering (`_is_ready_job_file`, `_is_primary_job_json`), payload normalization (`_normalize_payload`), parse-retry behavior (`_load_job_payload_with_retry`), mission building/planning integration (`_build_mission_for_payload`, `_build_inline_mission`), `process_job_file(...)` (full queued→planning→running→pending/done/failed flow), `process_pending_once(...)`.
+  - `queue_daemon.py` remains the orchestration root and still owns lock handling, tick loop, and high-level lane routing.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - `_PARSE_RETRY_ATTEMPTS` and `_PARSE_RETRY_BACKOFF_S` constants remain in `queue_daemon.py` and are accessed via `_queue_daemon_module()` from `queue_execution.py` to preserve monkeypatch compatibility.
+
+## 2026-03-06 — PR #122 — refactor(core): extract queue startup recovery + shutdown handling
 - Summary:
   - Extracted startup recovery and shutdown/in-flight deterministic failure handling from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_recovery.py` as `QueueRecoveryMixin`.
-  - Moved recovery scanning/quarantine/report assembly helpers (`recover_on_startup`, orphan approval/state collection, in-flight pending detection, queue-root-safe quarantine path handling).
-  - Moved shutdown helpers (`request_shutdown`, clean/failed shutdown record helpers, in-flight shutdown failure finalization) while preserving health/audit/failed-sidecar semantics.
+  - Moved recovery scanning/quarantine/report assembly helpers (`recover_on_startup`, orphan approval/state collection, `_detected_inflight_pending_jobs`, `_collect_orphan_approval_files`, `_collect_orphan_state_files`, `_quarantine_startup_recovery_path`).
+  - Moved shutdown helpers (`request_shutdown`, `_record_clean_shutdown`, `_record_failed_shutdown`, `_finalize_job_shutdown_failure`) while preserving health/audit/failed-sidecar semantics.
   - Kept `queue_daemon.py` as orchestration root (lock handling, process loop, planning/routing, lifecycle transitions).
   - Updated docs (`README.md`, `docs/ops.md`, `docs/ARCHITECTURE.md`) to reflect the new boundary and future refactor guidance.
 - Validation:
@@ -13,12 +60,64 @@
   - `pytest -q tests/test_queue_daemon.py tests/test_queue_daemon_contract_snapshot.py`
   - `bash scripts/e2e_golden4.sh`
 
-## 2026-03-06 — PR #TBD — refactor(panel): extract remaining route domains from app.py
+## 2026-03-06 — PR #121 — refactor(core): extract assistant advisory queue lane
+- Summary:
+  - Extracted assistant advisory queue lane from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_assistant.py` as module-level functions (not a mixin).
+  - `queue_assistant.py` owns: `process_assistant_job(daemon, job_path, payload)` (main advisory job handler), `create_assistant_brain(provider)` (provider construction), `assistant_brain_candidates(cfg)` (ordered primary/fallback candidate list), `assistant_answer_via_brain(...)` (advisory answer path with primary/fallback sequencing), `assistant_response_artifact_path(daemon, job_ref)` (artifact path helper), advisory failure handling (writes failed artifact + moves to failed/), thread persistence via `operator_assistant` helpers (`append_thread_turn`, `read_assistant_thread`).
+  - Preserved advisory lifecycle states (`advisory_running` → `done`/`step_failed`) and all audit event semantics.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Advisory lane uses module-level functions rather than a mixin because it operates with access to the daemon instance passed explicitly, which suits a function boundary better than class inheritance.
+
+## 2026-03-06 — PR #120 — refactor(core): extract queue approval workflow and artifact handling
+- Summary:
+  - Extracted approval workflow mechanics from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_approvals.py` as `QueueApprovalMixin`.
+  - `QueueApprovalMixin` owns: approval prompt/grant logic (`_queue_approval_prompt`), approval artifact path/read/write helpers (`_read_approval_artifact`, `_write_pending_artifacts`, `_approval_target`), pending approval payload building, normalization/canonicalization of approval refs (`canonicalize_approval_ref`, `_resolve_pending_approval_paths`, `_approval_ref_candidates`, `_approval_ref_variants`), approval grants/approve-always behavior (`grant_approval_scope`, `_has_approval_grant`, `_read_grants`, `_write_grants`), approval resolution behavior (`resolve_approval`), pending approval notifications (`_notify_pending_approval`), hard approval gate (`_ensure_hard_approval_gate`).
+  - Preserved all approval artifact contracts (`*.approval.json`, `*.pending.json`) and `pending_approvals_snapshot()` public surface.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - `_AUTO_APPROVE_ALLOWLIST = {"system.settings"}` and `_APPROVAL_GRANTS_FILE = "grants.json"` are constants internal to `queue_approvals.py`.
+
+## 2026-03-06 — PR #119 — refactor(core): extract queue daemon state persistence and helpers
+- Summary:
+  - Extracted `*.state.json` sidecar path/read/write/update helpers from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_state.py`.
+  - `queue_state.py` owns: `job_state_sidecar_path()`, `read_job_state()`, `write_job_state()`, `update_job_state_snapshot()`. Schema version: `JOB_STATE_SCHEMA_VERSION = 1`.
+  - Also extracted `move_job_with_sidecar()` and `deterministic_target_path()` into `src/voxera/core/queue_paths.py`.
+  - `queue_paths.py` owns: `move_job_with_sidecar()` (atomic rename + co-move of `*.state.json` sidecar with collision-safe naming), `deterministic_target_path()` (suffix-tag-based collision-safe target naming).
+  - `queue_daemon.py` imports and delegates to these helpers; sidecar co-move behavior and state semantics are preserved.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - `read_job_state`, `update_job_state_snapshot`, `write_job_state` are re-exported from `queue_daemon.py` for backward compatibility.
+
+## 2026-03-06 — PR #118 — refactor(panel): extract remaining route domains from app.py
 - Completed final panel modularization pass: extracted assistant, missions, bundle, and queue-control route domains from `panel/app.py` into `routes_assistant.py`, `routes_missions.py`, `routes_bundle.py`, and `routes_queue_control.py` while preserving route/method/auth/csrf contracts.
+- Route ownership:
+  - `routes_assistant.py`: `GET /assistant`, `POST /assistant/ask` (with degraded advisory fallback logic)
+  - `routes_missions.py`: `GET/POST /missions/templates/create`, `GET/POST /missions/create`
+  - `routes_bundle.py`: `GET /jobs/{job_id}/bundle`, `GET /bundle/system`
+  - `routes_queue_control.py`: `POST /queue/jobs/{ref}/delete`, `POST /queue/pause`, `POST /queue/resume`
 - Kept `panel/app.py` as composition/wiring root (FastAPI setup, shared security + queue helpers, dependency wiring, route registration), reducing domain-heavy inline route logic.
 - Updated README/ops/architecture docs with final panel module layout and guidance to add future panel work in domain modules instead of regrowing `app.py`.
 
-## 2026-03-06 — PR #TBD — refactor(panel): modularize hygiene + recovery route domains
+## 2026-03-06 — PR #117 — refactor(panel): modularize hygiene + recovery route domains
 - Extracted panel hygiene routes from `panel/app.py` into `panel/routes_hygiene.py` (`/hygiene`, `/hygiene/prune-dry-run`, `/hygiene/reconcile`, `/hygiene/health-reset`) while preserving auth/csrf/flash/reset semantics and response contracts.
 - Extracted panel recovery routes from `panel/app.py` into `panel/routes_recovery.py` (`/recovery`, `/recovery/download/{bucket}/{name}`) while preserving read-only listing, traversal protections, ZIP limits, and download behavior.
 - Kept `panel/app.py` as FastAPI composition/wiring (setup + shared helpers + route registration), and updated README/ops/architecture docs to reflect ownership boundaries for future panel changes.
@@ -28,7 +127,7 @@
 - Preserved existing query semantics (`flash`, `bucket`, `q`, sanitized/clamped `n`).
 - Added panel regression test asserting mutation redirect `Location` is relative (origin-safe for proxied/front-door deployments).
 
-## 2026-03-06 — PR #TBD — refactor(panel): modularize app.py by route domain + shared helpers
+## 2026-03-06 — PR #116 — refactor(panel): modularize app.py by route domain + shared helpers
 - Split panel structure into route-domain modules while preserving public contract: extracted `routes_home.py` (home + queue create) and `routes_jobs.py` (jobs list/detail + approvals + cancel/retry), with shared request/int parsing helpers in `helpers.py`.
 - Kept `panel/app.py` as the unchanged public FastAPI entrypoint and composition/wiring layer; route paths/methods/auth guards remain contract-equivalent.
 - Updated README/ops/architecture docs with the new panel ownership boundaries and extension guidance.
