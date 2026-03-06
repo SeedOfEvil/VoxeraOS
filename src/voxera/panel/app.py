@@ -38,7 +38,13 @@ from ..health import increment_health_counter, read_health_snapshot, update_heal
 from ..health_reset import EVENT_BY_SCOPE, HealthResetError, reset_health_snapshot
 from ..health_semantics import build_health_semantic_sections
 from ..incident_bundle import BundleError
-from ..operator_assistant import build_operator_assistant_context
+from ..operator_assistant import (
+    append_thread_turn,
+    build_operator_assistant_context,
+    fallback_operator_answer,
+    new_thread_id,
+    normalize_thread_id,
+)
 from ..ops_bundle import build_job_bundle, build_system_bundle
 from ..version import get_version
 from .assistant import (
@@ -1504,7 +1510,50 @@ async def assistant_ask(request: Request):
             thread_turns=read_assistant_thread_turns(_queue_root(), thread_id),
         )
 
-    request_id, thread_id = enqueue_assistant_question(_queue_root(), question, thread_id=thread_id)
+    try:
+        request_id, thread_id = enqueue_assistant_question(
+            _queue_root(), question, thread_id=thread_id
+        )
+    except OSError:
+        queue_root = _queue_root()
+        normalized_thread = normalize_thread_id(thread_id) if thread_id else new_thread_id()
+        context = build_operator_assistant_context(queue_root)
+        degraded_answer = fallback_operator_answer(question, context)
+        ts_ms = int(time.time() * 1000)
+        append_thread_turn(
+            queue_root,
+            thread_id=normalized_thread,
+            role="user",
+            text=question,
+            request_id=f"degraded-{ts_ms}",
+            ts_ms=ts_ms,
+        )
+        append_thread_turn(
+            queue_root,
+            thread_id=normalized_thread,
+            role="assistant",
+            text=degraded_answer,
+            request_id=f"degraded-{ts_ms}",
+            ts_ms=ts_ms,
+        )
+        return _render_assistant_page(
+            request,
+            question=question,
+            context=context,
+            request_result={
+                "request_id": f"degraded-{ts_ms}.json",
+                "status": "answered",
+                "lifecycle_state": "degraded",
+                "answer": degraded_answer,
+                "advisory_mode": "degraded_brain_only",
+                "degraded_reason": "queue_unavailable",
+                "fallback_used": False,
+                "thread_id": normalized_thread,
+            },
+            thread_id=normalized_thread,
+            thread_turns=read_assistant_thread_turns(queue_root, normalized_thread),
+        )
+
     query = urlencode({"request_id": request_id, "thread_id": thread_id, "question": question})
     return RedirectResponse(url=f"/assistant?{query}", status_code=303)
 

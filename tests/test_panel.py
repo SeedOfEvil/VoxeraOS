@@ -1881,6 +1881,66 @@ def test_operator_assistant_is_read_only_no_queue_mutation(tmp_path, monkeypatch
     assert not list((queue_dir / "failed").glob("job-assistant-*.json"))
 
 
+def test_operator_assistant_page_shows_fallback_metadata(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-assistant-2.json").write_text(
+        json.dumps({"thread_id": "thread-fb"}), encoding="utf-8"
+    )
+    (queue_dir / "artifacts" / "job-assistant-2").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "artifacts" / "job-assistant-2" / "assistant_response.json").write_text(
+        json.dumps(
+            {
+                "thread_id": "thread-fb",
+                "answer": "Recovered via fallback model.",
+                "updated_at_ms": 1,
+                "provider": "fallback",
+                "model": "fast-model",
+                "fallback_used": True,
+                "fallback_reason": "TIMEOUT",
+                "advisory_mode": "queue",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-2.json&thread_id=thread-fb",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "Answered by:" in res.text
+    assert "fallback after TIMEOUT" in res.text
+    assert "Mode:" in res.text
+
+
+def test_operator_assistant_degraded_mode_when_queue_unavailable(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setattr(
+        panel_module,
+        "enqueue_assistant_question",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("queue unavailable")),
+    )
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/assistant/ask",
+        data={"question": "What is happening right now?"},
+    )
+    assert res.status_code == 200
+    assert "degraded_brain_only" in res.text
+    assert "queue_unavailable" in res.text
+
+
 def test_operator_assistant_page_shows_completed_queue_answer(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

@@ -65,6 +65,12 @@ def read_assistant_result(queue_root: Path, request_id: str) -> dict[str, Any]:
             "answer": str(response_data.get("answer") or ""),
             "error": str(response_data.get("error") or ""),
             "updated_at_ms": response_data.get("updated_at_ms"),
+            "provider": response_data.get("provider"),
+            "model": response_data.get("model"),
+            "fallback_used": bool(response_data.get("fallback_used")),
+            "fallback_reason": response_data.get("fallback_reason"),
+            "advisory_mode": response_data.get("advisory_mode") or "unknown",
+            "degraded_reason": response_data.get("degraded_reason"),
         }
 
     state_path = found.primary_path.with_name(f"{found.primary_path.stem}.state.json")
@@ -108,6 +114,13 @@ def read_assistant_result(queue_root: Path, request_id: str) -> dict[str, Any]:
         "answer": str(response_data.get("answer") or ""),
         "error": str(response_data.get("error") or state_payload.get("failure_summary") or ""),
         "updated_at_ms": response_data.get("updated_at_ms") or state_payload.get("updated_at_ms"),
+        "provider": response_data.get("provider"),
+        "model": response_data.get("model"),
+        "fallback_used": bool(response_data.get("fallback_used")),
+        "fallback_reason": response_data.get("fallback_reason"),
+        "advisory_mode": response_data.get("advisory_mode")
+        or ("queue" if bucket in {"pending", "done", "failed", "inbox"} else "unknown"),
+        "degraded_reason": response_data.get("degraded_reason"),
     }
 
 
