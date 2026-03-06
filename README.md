@@ -19,15 +19,25 @@ See `docs/ROADMAP_0.1.6.md` for the full shipped scope.
 - ✅ Cloud mission planner (`voxera missions plan "<goal>"`) with policy + approval gating preserved
 - ✅ Deterministic simple-write planning for note/file goals (single `files.write_text` step, no clipboard hops)
 - ✅ Queue daemon for mission/goal JSON jobs plus approval inbox (`pending/approvals/*.approval.json`)
-  - Daemon orchestration remains in `src/voxera/core/queue_daemon.py`; mission execution/process pipeline mechanics now live in `src/voxera/core/queue_execution.py`; assistant/advisory queue-lane mechanics are in `src/voxera/core/queue_assistant.py`; approval workflow/artifact helpers are in `src/voxera/core/queue_approvals.py`; persisted job-state sidecar helpers are in `src/voxera/core/queue_state.py`; bucket-transition helpers are in `src/voxera/core/queue_paths.py`; startup recovery + shutdown/in-flight failure handling are in `src/voxera/core/queue_recovery.py`.
+  - The queue subsystem uses a **thin composition root + focused domain modules** pattern:
+  - `src/voxera/core/queue_daemon.py` — composition/orchestration root; lock management, tick loop, lane routing, health/status surfaces; re-exports `plan_mission` for monkeypatch compatibility
+  - `src/voxera/core/queue_execution.py` — `QueueExecutionMixin`; inbox filtering, payload normalization, parse-retry, mission building/planning integration, `process_job_file()`, `process_pending_once()`, queued→planning→running→pending/done/failed transitions
+  - `src/voxera/core/queue_recovery.py` — `QueueRecoveryMixin`; startup recovery (`recover_on_startup`), orphan approval/state detection, quarantine path handling, shutdown request handling, in-flight fail-on-shutdown finalization
+  - `src/voxera/core/queue_approvals.py` — `QueueApprovalMixin`; approval prompt/grant logic, approval artifact path/read/write helpers, pending approval payload building, approval ref normalization/canonicalization, approve-always behavior, resolution behavior, pending notifications
+  - `src/voxera/core/queue_assistant.py` — assistant advisory queue lane; provider construction, ordered primary/fallback candidate logic, advisory answer path, assistant response artifact handling, advisory failure handling, thread persistence/continuity
+  - `src/voxera/core/queue_state.py` — `*.state.json` sidecar path/read/write/update helpers; schema/version semantics (`JOB_STATE_SCHEMA_VERSION = 1`)
+  - `src/voxera/core/queue_paths.py` — `move_job_with_sidecar()` (deterministic move + co-move sidecar), `deterministic_target_path()` (collision-safe target naming)
 - ✅ Queue status UX (`voxera queue status`) and panel insights for pending approvals/audit
 - ✅ Panel home Daemon Health widget (collapsible) from `notes/queue/health.json` only: lock status/PID/stale age, last brain fallback, startup recovery summary, shutdown outcome, daemon state
+- ✅ Panel modularized into route-domain modules (`routes_assistant.py`, `routes_missions.py`, `routes_bundle.py`, `routes_queue_control.py`, `routes_hygiene.py`, `routes_recovery.py`); `panel/app.py` remains the FastAPI composition/wiring root
+- ✅ CLI modularized into focused command families: `cli.py` is the Typer composition/registration root; `cli_queue.py` owns queue/operator commands; `cli_doctor.py` owns doctor command wiring; `cli_common.py` owns shared CLI helpers/options
 - ✅ DEV-only auto-approve gating for `system.settings` only (`VOXERA_DEV_MODE=1` + `--auto-approve-ask`)
 - ✅ Human-friendly inbox entry point (`voxera inbox add`, `voxera inbox list`) for queueing goals
 - ✅ Update flow (`make update`) and systemd user service lifecycle (`make services-install`, status/restart/stop)
 - ✅ `voxera demo` guided onboarding checklist — offline by default, `--online` for provider checks
 - ✅ `voxera artifacts prune` and `voxera queue prune` for operator hygiene (dry-run by default, `--yes` to execute)
 - ✅ `voxera queue reconcile` for queue diagnostics and quarantine-first orphan fix
+- ✅ Operator assistant (`/assistant`) queue-backed advisory lane with degraded-mode fallback (advisory_mode=degraded_brain_only)
 - ✅ Daemon reliability: single-writer lock with stale detection, graceful SIGTERM shutdown, deterministic startup recovery
 - ✅ Brain fallback reasons classified and surfaced (`TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN`)
 - ✅ Planner prompt hardening: goals over 2,000 chars are rejected preflight; embedded goals are sanitized (ASCII control-char stripping, ESC-prefixed ANSI escape stripping, and whitespace normalization)
