@@ -798,3 +798,21 @@ This file is the single, persistent project memory for Codex-assisted work.
   - Kept orchestration in `src/voxera/core/queue_daemon.py`; it now delegates persisted-state and transition mechanics to focused helpers.
 - Semantics explicitly preserved during extraction: sidecar co-location with active bucket, `.state.json` naming, collision rename behavior, lifecycle transition timestamps, schema version, approval/deny/cancel/retry/recovery paths, and health/audit continuity.
 
+
+
+## 2026-03-06 — PR TBD — refactor(queue): extract approval workflow + pending-approval artifacts
+- Summary:
+  - Extracted queue approval-lane mechanics from `src/voxera/core/queue_daemon.py` into `src/voxera/core/queue_approvals.py`.
+  - Moved approval prompts/grants, pending approval artifact helpers, approval ref normalization + canonicalization, approval artifact parsing/list snapshots, and approve/deny resolution flow into the new module.
+  - Kept `queue_daemon.py` focused on main process-loop orchestration, startup recovery, lifecycle transitions, and invoking extracted approval helpers.
+  - Updated README/ops/architecture docs to reflect the split and future-slice guidance.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `pytest -q tests/test_queue_daemon.py tests/test_queue_daemon_contract_snapshot.py`
+  - `bash scripts/e2e_golden4.sh`
+- Follow-ups:
+  - Continue daemon slimming with similarly mechanical extractions while preserving state-machine semantics exactly.
+
