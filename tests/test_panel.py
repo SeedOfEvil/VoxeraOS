@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import zipfile
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -1939,6 +1940,146 @@ def test_operator_assistant_degraded_mode_when_queue_unavailable(tmp_path, monke
     assert res.status_code == 200
     assert "degraded_brain_only" in res.text
     assert "queue_unavailable" in res.text
+
+
+def test_degraded_assistant_prefers_model_backed_primary(monkeypatch):
+    monkeypatch.setattr(
+        panel_module,
+        "load_app_config",
+        lambda: SimpleNamespace(
+            brain={
+                "primary": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-primary",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+                "fallback": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-fallback",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+            }
+        ),
+    )
+
+    class _PrimaryBrain:
+        async def generate(self, messages, tools=None):
+            return SimpleNamespace(text="I see queue pending is low and approvals are clear.")
+
+    monkeypatch.setattr(
+        panel_module, "_create_panel_assistant_brain", lambda provider: _PrimaryBrain()
+    )
+
+    result = panel_module._generate_degraded_assistant_answer(
+        "What is happening right now?",
+        {"health_current_state": {"daemon_state": "healthy"}, "queue_counts": {"pending": 0}},
+        thread_turns=[],
+        degraded_reason="daemon_paused",
+    )
+
+    assert result["provider"] == "primary"
+    assert result["deterministic_used"] is False
+    assert "model-only recovery mode" in result["answer"]
+    assert "read-only" in result["answer"]
+
+
+def test_degraded_assistant_uses_fallback_model_when_primary_fails(monkeypatch):
+    monkeypatch.setattr(
+        panel_module,
+        "load_app_config",
+        lambda: SimpleNamespace(
+            brain={
+                "primary": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-primary",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+                "fallback": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-fallback",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+            }
+        ),
+    )
+
+    class _PrimaryBrain:
+        async def generate(self, messages, tools=None):
+            raise TimeoutError("timed out")
+
+    class _FallbackBrain:
+        async def generate(self, messages, tools=None):
+            return SimpleNamespace(text="Recovered answer with current runtime context.")
+
+    monkeypatch.setattr(
+        panel_module,
+        "_create_panel_assistant_brain",
+        lambda provider: _PrimaryBrain() if provider.model == "model-primary" else _FallbackBrain(),
+    )
+
+    result = panel_module._generate_degraded_assistant_answer(
+        "What is happening right now?",
+        {"health_current_state": {"daemon_state": "healthy"}, "queue_counts": {"pending": 1}},
+        thread_turns=[],
+        degraded_reason="advisory_transport_stalled",
+    )
+
+    assert result["provider"] == "fallback"
+    assert result["fallback_used"] is True
+    assert result["fallback_reason"] == "TIMEOUT"
+    assert result["deterministic_used"] is False
+
+
+def test_degraded_assistant_uses_deterministic_only_after_model_failures(monkeypatch):
+    monkeypatch.setattr(
+        panel_module,
+        "load_app_config",
+        lambda: SimpleNamespace(
+            brain={
+                "primary": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-primary",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+                "fallback": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-fallback",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+            }
+        ),
+    )
+
+    class _FailBrain:
+        async def generate(self, messages, tools=None):
+            raise TimeoutError("timed out")
+
+    monkeypatch.setattr(
+        panel_module, "_create_panel_assistant_brain", lambda provider: _FailBrain()
+    )
+
+    result = panel_module._generate_degraded_assistant_answer(
+        "What is happening right now?",
+        {"health_current_state": {"daemon_state": "healthy"}, "queue_counts": {"pending": 2}},
+        thread_turns=[],
+        degraded_reason="daemon_unavailable",
+    )
+
+    assert result["provider"] == "deterministic_fallback"
+    assert result["deterministic_used"] is True
+    assert result["fallback_reason"] == "TIMEOUT"
 
 
 def test_operator_assistant_page_degrades_when_daemon_paused(tmp_path, monkeypatch):
