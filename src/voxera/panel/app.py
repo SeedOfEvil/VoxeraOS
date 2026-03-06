@@ -38,8 +38,14 @@ from ..health import increment_health_counter, read_health_snapshot, update_heal
 from ..health_reset import EVENT_BY_SCOPE, HealthResetError, reset_health_snapshot
 from ..health_semantics import build_health_semantic_sections
 from ..incident_bundle import BundleError
+from ..operator_assistant import build_operator_assistant_context
 from ..ops_bundle import build_job_bundle, build_system_bundle
 from ..version import get_version
+from .assistant import (
+    enqueue_assistant_question,
+    read_assistant_result,
+    read_assistant_thread_turns,
+)
 
 app = FastAPI(title="Voxera Panel", version=get_version())
 
@@ -1339,6 +1345,41 @@ def _build_mission_payload(
     return validated
 
 
+def _render_assistant_page(
+    request: Request,
+    *,
+    question: str = "",
+    error: str = "",
+    context: dict[str, Any] | None = None,
+    request_result: dict[str, Any] | None = None,
+    thread_id: str = "",
+    thread_turns: list[dict[str, Any]] | None = None,
+) -> HTMLResponse:
+    tmpl = templates.get_template("assistant.html")
+    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    result = request_result or {}
+    status = str(result.get("status") or "")
+    html = tmpl.render(
+        question=question,
+        error=error,
+        context=context or {},
+        request_result=result,
+        thread_id=thread_id,
+        thread_turns=thread_turns or [],
+        should_poll=status in {"queued", "thinking", "thinking through Voxera"},
+        csrf_token=csrf_token,
+        example_prompts=[
+            "What is happening right now?",
+            "From inside Voxera, how does the system look?",
+            "Why would a job require approval?",
+            "What do you suggest I check next?",
+        ],
+    )
+    response = HTMLResponse(content=html)
+    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, created: str = "", error: str = "", mission_created: str = ""):
     queue_root = _queue_root()
@@ -1420,6 +1461,52 @@ def create_queue_job_get(
     _enforce_get_mutations_enabled()
     _require_operator_auth_from_request(request)
     return _create_queue_job_from_values(kind, mission_id, goal)
+
+
+@app.get("/assistant", response_class=HTMLResponse)
+def assistant_page(
+    request: Request,
+    request_id: str = "",
+    question: str = "",
+    thread_id: str = "",
+):
+    _require_operator_auth_from_request(request)
+    context = build_operator_assistant_context(_queue_root())
+    request_result = read_assistant_result(_queue_root(), request_id) if request_id else {}
+    active_thread_id = thread_id or str(request_result.get("thread_id") or "")
+    thread_turns = (
+        read_assistant_thread_turns(_queue_root(), active_thread_id) if active_thread_id else []
+    )
+    return _render_assistant_page(
+        request,
+        question=question,
+        context=context,
+        request_result=request_result,
+        thread_id=active_thread_id,
+        thread_turns=thread_turns,
+    )
+
+
+@app.post("/assistant/ask", response_class=HTMLResponse)
+async def assistant_ask(request: Request):
+    await _require_mutation_guard(request)
+    question = (await _request_value(request, "question", "")).strip()
+    thread_id = (await _request_value(request, "thread_id", "")).strip()
+    if not question:
+        context = build_operator_assistant_context(_queue_root())
+        return _render_assistant_page(
+            request,
+            question=question,
+            error="Question is required.",
+            context=context,
+            request_result={},
+            thread_id=thread_id,
+            thread_turns=read_assistant_thread_turns(_queue_root(), thread_id),
+        )
+
+    request_id, thread_id = enqueue_assistant_question(_queue_root(), question, thread_id=thread_id)
+    query = urlencode({"request_id": request_id, "thread_id": thread_id, "question": question})
+    return RedirectResponse(url=f"/assistant?{query}", status_code=303)
 
 
 @app.post("/queue/create")

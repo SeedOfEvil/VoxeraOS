@@ -393,3 +393,28 @@ pre {
 .muted { color: var(--muted); }
 .text-sm { font-size: 0.875rem; }
 .text-xs { font-size: 0.775rem; }
+
+/* ─── Operator assistant ───────────────────────────────────────────────────── */
+.assistant-example-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.assistant-response {
+  margin: 0;
+  white-space: pre-wrap;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  font-family: inherit;
+}
+.assistant-conversation {
+  display: grid;
+  gap: var(--space-2);
+}
+.assistant-turn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}

@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from voxera.core.queue_daemon import MissionQueueDaemon
+from voxera.operator_assistant import build_assistant_messages, read_assistant_thread
+from voxera.panel.assistant import enqueue_assistant_question, read_assistant_result
+
+
+def _write_assistant_job(
+    queue_root: Path,
+    *,
+    question: str = "What is happening right now?",
+    thread_id: str = "thread-test",
+) -> Path:
+    inbox = queue_root / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    job = inbox / "job-assistant-test.json"
+    job.write_text(
+        json.dumps(
+            {
+                "kind": "assistant_question",
+                "question": question,
+                "thread_id": thread_id,
+                "advisory": True,
+                "read_only": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return job
+
+
+def test_assistant_job_runs_through_queue_read_only(tmp_path):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError("mission runner should not execute for assistant jobs")
+
+    daemon.mission_runner.run = _fail_if_called  # type: ignore[method-assign]
+    job = _write_assistant_job(queue_root)
+
+    processed = daemon.process_job_file(job)
+    assert processed is True
+
+    done_job = queue_root / "done" / "job-assistant-test.json"
+    assert done_job.exists()
+    response_artifact = queue_root / "artifacts" / "job-assistant-test" / "assistant_response.json"
+    assert response_artifact.exists()
+    payload = json.loads(response_artifact.read_text(encoding="utf-8"))
+    assert payload["kind"] == "assistant_question"
+    assert payload["thread_id"] == "thread-test"
+    assert "answer" in payload
+
+
+def test_assistant_job_failure_persists_failed_state(tmp_path):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    bad_job = _write_assistant_job(queue_root, question="")
+
+    processed = daemon.process_job_file(bad_job)
+    assert processed is False
+    failed_job = queue_root / "failed" / "job-assistant-test.json"
+    assert failed_job.exists()
+
+
+def test_assistant_result_reader_surfaces_answer(tmp_path):
+    queue_root = tmp_path / "queue"
+    (queue_root / "done").mkdir(parents=True, exist_ok=True)
+    (queue_root / "done" / "job-assistant-test.json").write_text(
+        json.dumps({"thread_id": "thread-test"}), encoding="utf-8"
+    )
+    (queue_root / "artifacts" / "job-assistant-test").mkdir(parents=True, exist_ok=True)
+    (queue_root / "artifacts" / "job-assistant-test" / "assistant_response.json").write_text(
+        json.dumps({"answer": "Control-plane view: queue is clear.", "updated_at_ms": 1}),
+        encoding="utf-8",
+    )
+
+    result = read_assistant_result(queue_root, "job-assistant-test.json")
+    assert result["status"] == "answered"
+    assert "queue is clear" in result["answer"]
+
+
+def test_fallback_partner_voice_uses_varied_opening():
+    from voxera.operator_assistant import fallback_operator_answer
+
+    context = {
+        "queue_counts": {"inbox": 0, "pending": 0, "pending_approvals": 0, "failed": 0, "done": 0},
+        "health_current_state": {"daemon_state": "healthy"},
+        "queue_paused": False,
+        "pending_approvals": [],
+        "recent_failed_jobs": [],
+        "recent_events": [],
+    }
+    answer = fallback_operator_answer("What is happening right now?", context)
+    assert not answer.startswith("From inside Voxera")
+    assert "queue counts" in answer
+
+
+def test_assistant_thread_persists_multiturn_history(tmp_path):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    first_job, thread_id = enqueue_assistant_question(queue_root, "What is happening right now?")
+    assert thread_id
+    first_path = queue_root / "inbox" / first_job
+    assert daemon.process_job_file(first_path)
+
+    second_job, same_thread = enqueue_assistant_question(
+        queue_root,
+        "What about approvals?",
+        thread_id=thread_id,
+    )
+    assert same_thread == thread_id
+    second_path = queue_root / "inbox" / second_job
+    assert daemon.process_job_file(second_path)
+
+    thread_payload = read_assistant_thread(queue_root, thread_id)
+    turns = thread_payload["turns"]
+    assert len(turns) >= 4
+    assert turns[-1]["role"] == "assistant"
+    assert any(turn["text"] == "What about approvals?" for turn in turns if turn["role"] == "user")
+
+
+def test_build_assistant_messages_includes_bounded_history():
+    messages = build_assistant_messages(
+        "go on",
+        {"queue_counts": {"pending": 1}},
+        thread_turns=[
+            {"role": "user", "text": "What is happening?"},
+            {"role": "assistant", "text": "I see pending=1."},
+        ],
+    )
+    assert messages[0]["role"] == "system"
+    assert any(msg["content"] == "What is happening?" for msg in messages if msg["role"] == "user")
+    assert "Latest operator question" in messages[-1]["content"]
