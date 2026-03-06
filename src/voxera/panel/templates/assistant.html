@@ -32,6 +32,7 @@
       {% endif %}
       <form class="form-stack" method="post" action="/assistant/ask">
         <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <input type="hidden" name="thread_id" value="{{thread_id}}" />
         <label>Question
           <textarea class="textarea" name="question" rows="3" placeholder="What is happening right now?" required>{{question}}</textarea>
         </label>
@@ -47,6 +48,25 @@
       </div>
     </section>
 
+
+    <section class="card mb">
+      <h2>Conversation</h2>
+      {% if thread_id %}
+      <p class="muted text-sm">Thread: <span class="mono">{{thread_id}}</span></p>
+      {% endif %}
+      {% if thread_turns and thread_turns|length > 0 %}
+        <div class="assistant-conversation">
+          {% for turn in thread_turns %}
+            <article class="assistant-turn">
+              <p class="kpi-label"><b>{{turn.role}}</b>{% if turn.request_id %} · <span class="mono">{{turn.request_id}}</span>{% endif %}</p>
+              <p style="margin:0; white-space:pre-wrap;">{{turn.text}}</p>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+      <div class="empty-state">No prior turns in this thread yet.</div>
+      {% endif %}
+    </section>
     <section class="card mb">
       <h2>Advisory Request</h2>
       {% if request_result.request_id %}

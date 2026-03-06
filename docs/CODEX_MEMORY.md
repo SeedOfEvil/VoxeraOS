@@ -769,3 +769,4 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Scope is intentionally narrow: explain state and likely next steps only; no direct execution or approval actions from chat.
 
 - Operator assistant now traverses Voxera Queue via dedicated `assistant_question` advisory jobs; panel submit enqueues, daemon answers (brain/provider + deterministic fallback), panel polls status/results from queue/artifacts.
+- Assistant threads now persist compact multi-turn history (`artifacts/assistant_threads/<thread>.json`) so follow-up questions retain continuity while refreshing live runtime context.

@@ -41,7 +41,11 @@ from ..incident_bundle import BundleError
 from ..operator_assistant import build_operator_assistant_context
 from ..ops_bundle import build_job_bundle, build_system_bundle
 from ..version import get_version
-from .assistant import enqueue_assistant_question, read_assistant_result
+from .assistant import (
+    enqueue_assistant_question,
+    read_assistant_result,
+    read_assistant_thread_turns,
+)
 
 app = FastAPI(title="Voxera Panel", version=get_version())
 
@@ -1348,6 +1352,8 @@ def _render_assistant_page(
     error: str = "",
     context: dict[str, Any] | None = None,
     request_result: dict[str, Any] | None = None,
+    thread_id: str = "",
+    thread_turns: list[dict[str, Any]] | None = None,
 ) -> HTMLResponse:
     tmpl = templates.get_template("assistant.html")
     csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
@@ -1358,6 +1364,8 @@ def _render_assistant_page(
         error=error,
         context=context or {},
         request_result=result,
+        thread_id=thread_id,
+        thread_turns=thread_turns or [],
         should_poll=status in {"queued", "thinking", "thinking through Voxera"},
         csrf_token=csrf_token,
         example_prompts=[
@@ -1456,15 +1464,26 @@ def create_queue_job_get(
 
 
 @app.get("/assistant", response_class=HTMLResponse)
-def assistant_page(request: Request, request_id: str = "", question: str = ""):
+def assistant_page(
+    request: Request,
+    request_id: str = "",
+    question: str = "",
+    thread_id: str = "",
+):
     _require_operator_auth_from_request(request)
     context = build_operator_assistant_context(_queue_root())
     request_result = read_assistant_result(_queue_root(), request_id) if request_id else {}
+    active_thread_id = thread_id or str(request_result.get("thread_id") or "")
+    thread_turns = (
+        read_assistant_thread_turns(_queue_root(), active_thread_id) if active_thread_id else []
+    )
     return _render_assistant_page(
         request,
         question=question,
         context=context,
         request_result=request_result,
+        thread_id=active_thread_id,
+        thread_turns=thread_turns,
     )
 
 
@@ -1472,6 +1491,7 @@ def assistant_page(request: Request, request_id: str = "", question: str = ""):
 async def assistant_ask(request: Request):
     await _require_mutation_guard(request)
     question = (await _request_value(request, "question", "")).strip()
+    thread_id = (await _request_value(request, "thread_id", "")).strip()
     if not question:
         context = build_operator_assistant_context(_queue_root())
         return _render_assistant_page(
@@ -1480,10 +1500,12 @@ async def assistant_ask(request: Request):
             error="Question is required.",
             context=context,
             request_result={},
+            thread_id=thread_id,
+            thread_turns=read_assistant_thread_turns(_queue_root(), thread_id),
         )
 
-    request_id = enqueue_assistant_question(_queue_root(), question)
-    query = urlencode({"request_id": request_id, "question": question})
+    request_id, thread_id = enqueue_assistant_question(_queue_root(), question, thread_id=thread_id)
+    query = urlencode({"request_id": request_id, "thread_id": thread_id, "question": question})
     return RedirectResponse(url=f"/assistant?{query}", status_code=303)
 
 

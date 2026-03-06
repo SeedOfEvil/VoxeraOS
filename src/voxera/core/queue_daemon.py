@@ -33,9 +33,12 @@ from ..health import (
 )
 from ..operator_assistant import (
     ASSISTANT_JOB_KIND,
+    append_thread_turn,
     build_assistant_messages,
     build_operator_assistant_context,
     fallback_operator_answer,
+    normalize_thread_id,
+    read_assistant_thread,
 )
 from ..paths import queue_root as default_queue_root
 from ..skills.registry import SkillRegistry
@@ -1944,7 +1947,9 @@ class MissionQueueDaemon:
             return GeminiBrain(model=provider.model, api_key_ref=provider.api_key_ref)
         raise ValueError(f"unsupported assistant provider type: {provider.type}")
 
-    def _assistant_answer_via_brain(self, question: str, context: dict[str, Any]) -> str:
+    def _assistant_answer_via_brain(
+        self, question: str, context: dict[str, Any], *, thread_turns: list[dict[str, Any]]
+    ) -> str:
         if not self.cfg.brain:
             return fallback_operator_answer(question, context)
 
@@ -1955,7 +1960,7 @@ class MissionQueueDaemon:
                 candidates.append(key)
 
         last_error: Exception | None = None
-        messages = build_assistant_messages(question, context)
+        messages = build_assistant_messages(question, context, thread_turns=thread_turns)
         for key in candidates:
             provider = self.cfg.brain.get(key)
             if provider is None:
@@ -1985,16 +1990,38 @@ class MissionQueueDaemon:
         question = str(payload.get("question") or "").strip()
         if not question:
             raise ValueError("assistant question is required")
+        thread_id = normalize_thread_id(str(payload.get("thread_id") or ""))
 
-        self._update_job_state(str(job_path), lifecycle_state="advisory_running", payload=payload)
-        self._write_action_event(str(job_path), "assistant_job_started")
+        self._update_job_state(
+            str(job_path),
+            lifecycle_state="advisory_running",
+            payload={**payload, "thread_id": thread_id},
+        )
+        self._write_action_event(str(job_path), "assistant_job_started", thread_id=thread_id)
 
         context = build_operator_assistant_context(self.queue_root)
-        answer = self._assistant_answer_via_brain(question, context)
+        thread_payload = read_assistant_thread(self.queue_root, thread_id)
+        turns_raw = thread_payload.get("turns")
+        thread_turns = (
+            [item for item in turns_raw if isinstance(item, dict)]
+            if isinstance(turns_raw, list)
+            else []
+        )
+        answer = self._assistant_answer_via_brain(question, context, thread_turns=thread_turns)
+
+        append_thread_turn(
+            self.queue_root,
+            thread_id=thread_id,
+            role="assistant",
+            text=answer,
+            request_id=job_path.name,
+            ts_ms=int(time.time() * 1000),
+        )
 
         artifact_payload = {
             "schema_version": 1,
             "kind": ASSISTANT_JOB_KIND,
+            "thread_id": thread_id,
             "question": question,
             "answer": answer,
             "updated_at_ms": int(time.time() * 1000),
@@ -2012,11 +2039,11 @@ class MissionQueueDaemon:
         self._update_job_state(
             str(moved),
             lifecycle_state="done",
-            payload=payload,
+            payload={**payload, "thread_id": thread_id},
             terminal_outcome="succeeded",
         )
-        self._write_action_event(str(moved), "assistant_job_done")
-        log({"event": "assistant_job_done", "job": str(moved)})
+        self._write_action_event(str(moved), "assistant_job_done", thread_id=thread_id)
+        log({"event": "assistant_job_done", "job": str(moved), "thread_id": thread_id})
         return True
 
     def process_job_file(self, job_path: Path) -> bool:
