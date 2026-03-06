@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import fcntl
 import json
 import os
@@ -50,6 +49,12 @@ from .capabilities_snapshot import (
 )
 from .mission_planner import MissionPlannerError, plan_mission
 from .missions import MissionRunner, MissionStep, MissionTemplate, get_mission
+from .queue_paths import deterministic_target_path, move_job_with_sidecar
+from .queue_state import (
+    read_job_state,
+    update_job_state_snapshot,
+    write_job_state,
+)
 
 _AUTO_APPROVE_ALLOWLIST = {"system.settings"}
 _PARSE_RETRY_ATTEMPTS = 4
@@ -63,7 +68,6 @@ _STARTUP_RECOVERY_MESSAGE = (
     "daemon recovered from unclean shutdown; job marked failed deterministically"
 )
 _SHUTDOWN_REASON_MAX_LEN = 240
-_JOB_STATE_SCHEMA_VERSION = 1
 _ASSISTANT_FALLBACK_REASONS = frozenset({TIMEOUT, AUTH, RATE_LIMIT, MALFORMED, NETWORK})
 
 
@@ -566,30 +570,27 @@ class MissionQueueDaemon:
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
 
-    def _job_state_sidecar_path(self, job_ref: str) -> Path:
-        stem = Path(job_ref).stem
-        for bucket in (self.inbox, self.pending, self.done, self.failed, self.canceled):
-            candidate = bucket / f"{stem}.state.json"
-            if candidate.exists():
-                return candidate
-        job_path = Path(job_ref)
-        if job_path.parent in {self.inbox, self.pending, self.done, self.failed, self.canceled}:
-            return job_path.with_name(f"{stem}.state.json")
-        return self.pending / f"{stem}.state.json"
-
     def _read_job_state(self, job_ref: str) -> dict[str, Any]:
-        path = self._job_state_sidecar_path(job_ref)
-        if not path.exists():
-            return {}
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-            return loaded if isinstance(loaded, dict) else {}
-        except Exception:
-            return {}
+        return read_job_state(
+            job_ref,
+            inbox=self.inbox,
+            pending=self.pending,
+            done=self.done,
+            failed=self.failed,
+            canceled=self.canceled,
+        )
 
     def _write_job_state(self, job_ref: str, payload: dict[str, Any]) -> None:
-        path = self._job_state_sidecar_path(job_ref)
-        self._write_text_atomic(path, json.dumps(payload, indent=2))
+        write_job_state(
+            job_ref,
+            payload,
+            inbox=self.inbox,
+            pending=self.pending,
+            done=self.done,
+            failed=self.failed,
+            canceled=self.canceled,
+            write_text_atomic=self._write_text_atomic,
+        )
 
     def _update_job_state(
         self,
@@ -606,81 +607,19 @@ class MissionQueueDaemon:
     ) -> None:
         now_ms = int(time.time() * 1000)
         current = self._read_job_state(job_ref)
-        started_at_ms = int(current.get("started_at_ms") or now_ms)
-        raw_transitions = current.get("transitions")
-        transitions: dict[str, Any] = (
-            dict(raw_transitions) if isinstance(raw_transitions, dict) else {}
+        snapshot = update_job_state_snapshot(
+            job_ref,
+            lifecycle_state=lifecycle_state,
+            current=current,
+            now_ms=now_ms,
+            payload=payload,
+            mission=mission,
+            rr_data=rr_data,
+            terminal_outcome=terminal_outcome,
+            failure_summary=failure_summary,
+            blocked_reason=blocked_reason,
+            approval_status=approval_status,
         )
-        transitions[lifecycle_state] = now_ms
-
-        mission_payload = (
-            {
-                "mission_id": mission.id,
-                "title": mission.title,
-                "goal": mission.goal,
-            }
-            if mission is not None
-            else current.get("mission")
-            if isinstance(current.get("mission"), dict)
-            else {}
-        )
-        total_steps = (
-            len(mission.steps) if mission is not None else int(current.get("total_steps") or 0)
-        )
-        rr = rr_data if isinstance(rr_data, dict) else {}
-        current_step = int(rr.get("current_step_index") or current.get("current_step_index") or 0)
-        last_completed = int(
-            rr.get("last_completed_step") or current.get("last_completed_step") or 0
-        )
-        last_attempted = int(
-            rr.get("last_attempted_step") or current.get("last_attempted_step") or 0
-        )
-        step_outcomes = (
-            rr.get("step_outcomes")
-            if isinstance(rr.get("step_outcomes"), list)
-            else current.get("step_outcomes")
-            if isinstance(current.get("step_outcomes"), list)
-            else []
-        )
-        resolved_terminal = (
-            terminal_outcome
-            if terminal_outcome is not None
-            else rr.get("terminal_outcome") or current.get("terminal_outcome")
-        )
-        if lifecycle_state == "done" and not resolved_terminal:
-            resolved_terminal = "succeeded"
-
-        snapshot = {
-            "schema_version": _JOB_STATE_SCHEMA_VERSION,
-            "job_id": f"{Path(job_ref).stem}.json",
-            "lifecycle_state": lifecycle_state,
-            "current_step_index": current_step,
-            "total_steps": total_steps,
-            "last_completed_step": last_completed,
-            "last_attempted_step": last_attempted,
-            "terminal_outcome": resolved_terminal,
-            "failure_summary": failure_summary
-            if failure_summary is not None
-            else current.get("failure_summary"),
-            "blocked_reason": blocked_reason
-            if blocked_reason is not None
-            else current.get("blocked_reason"),
-            "approval_status": approval_status
-            if approval_status is not None
-            else current.get("approval_status"),
-            "mission": mission_payload,
-            "step_outcomes": step_outcomes,
-            "started_at_ms": started_at_ms,
-            "updated_at_ms": now_ms,
-            "completed_at_ms": now_ms
-            if lifecycle_state in {"done", "step_failed", "blocked", "canceled"}
-            else None,
-            "transitions": transitions,
-        }
-        if payload is not None:
-            snapshot["payload"] = payload
-        elif isinstance(current.get("payload"), dict):
-            snapshot["payload"] = current["payload"]
         self._write_job_state(job_ref, snapshot)
 
     def _write_plan_artifact(
@@ -731,27 +670,16 @@ class MissionQueueDaemon:
             )
 
     def _move_job(self, src: Path, target_dir: Path) -> Path | None:
-        target = target_dir / src.name
-        if target.exists():
-            ts = int(time.time() * 1000)
-            target = target_dir / f"{src.stem}-{ts}{src.suffix}"
-        try:
-            src.replace(target)
-        except FileNotFoundError:
+        def _on_already_moved(missing_src: Path, move_target_dir: Path) -> None:
             log(
                 {
                     "event": "queue_job_already_moved",
-                    "job": str(src),
-                    "target_dir": str(target_dir),
+                    "job": str(missing_src),
+                    "target_dir": str(move_target_dir),
                 }
             )
-            return None
-        state_src = src.with_name(f"{src.stem}.state.json")
-        state_dst = target.with_name(f"{target.stem}.state.json")
-        if state_src.exists():
-            with contextlib.suppress(FileNotFoundError):
-                state_src.replace(state_dst)
-        return target
+
+        return move_job_with_sidecar(src, target_dir, on_already_moved=_on_already_moved)
 
     def _archive_sidecar(self, sidecar: Path, *, reason: str) -> None:
         if not sidecar.exists():
@@ -780,17 +708,7 @@ class MissionQueueDaemon:
         *,
         suffix_tag: str,
     ) -> Path:
-        base = Path(file_name)
-        candidate = target_dir / base.name
-        if not candidate.exists():
-            return candidate
-
-        index = 1
-        while True:
-            indexed = target_dir / f"{base.stem}-{suffix_tag}-{index}{base.suffix}"
-            if not indexed.exists():
-                return indexed
-            index += 1
+        return deterministic_target_path(target_dir, file_name, suffix_tag=suffix_tag)
 
     def _safe_relative_to_queue(self, entry: Path) -> Path:
         queue_resolved = self.queue_root.resolve()
