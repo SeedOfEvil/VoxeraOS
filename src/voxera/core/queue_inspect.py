@@ -25,6 +25,19 @@ def _normalize_job_id(job_id: str) -> str:
     return base if base.endswith(".json") else f"{Path(base).stem}.json"
 
 
+def _is_metadata_sidecar_name(name: str) -> bool:
+    return name.endswith(
+        (
+            ".pending.json",
+            ".approval.json",
+            ".error.json",
+            ".state.json",
+            ".tmp.json",
+            ".partial.json",
+        )
+    )
+
+
 def lookup_job(queue_root: Path, job_id: str) -> JobLookup | None:
     normalized = _normalize_job_id(job_id)
     stem = Path(normalized).stem
@@ -40,7 +53,7 @@ def lookup_job(queue_root: Path, job_id: str) -> JobLookup | None:
     order = ["inbox", "pending", "done", "failed", "canceled"]
     for bucket in order:
         primary = bucket_dirs[bucket] / normalized
-        if not primary.exists():
+        if not primary.exists() or _is_metadata_sidecar_name(primary.name):
             continue
         approval = queue_root / "pending" / "approvals" / f"{stem}.approval.json"
         sidecar = queue_root / "failed" / f"{stem}.error.json"
@@ -100,6 +113,8 @@ def list_jobs(
             dir_for_bucket.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
         ):
             name = path.name
+            if _is_metadata_sidecar_name(name):
+                continue
             if active_bucket == "pending" and (
                 name.endswith(".pending.json") or name.endswith(".approval.json")
             ):
@@ -111,9 +126,6 @@ def list_jobs(
                 ).exists()
             ):
                 continue
-            if active_bucket == "failed" and name.endswith(".error.json"):
-                continue
-
             title = ""
             goal = ""
             try:
@@ -129,6 +141,21 @@ def list_jobs(
                 if isinstance(approvals_by_job.get(name), dict)
                 else {}
             )
+            state_payload: dict[str, Any] = {}
+            state_path = dir_for_bucket / f"{path.stem}.state.json"
+            if not state_path.exists():
+                for alt in (queue_root / "pending", queue_root / "inbox"):
+                    candidate = alt / f"{path.stem}.state.json"
+                    if candidate.exists():
+                        state_path = candidate
+                        break
+            if state_path.exists():
+                try:
+                    loaded_state = json.loads(state_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded_state, dict):
+                        state_payload = loaded_state
+                except Exception:
+                    state_payload = {}
             failed_sidecar = queue_root / "failed" / f"{path.stem}.error.json"
             status = []
             if approval:
@@ -150,6 +177,10 @@ def list_jobs(
                     "updated_ts": int(path.stat().st_mtime),
                     "updated_iso": path.stat().st_mtime,
                     "status_summary": ", ".join(status),
+                    "lifecycle_state": str(state_payload.get("lifecycle_state") or ""),
+                    "terminal_outcome": str(state_payload.get("terminal_outcome") or ""),
+                    "current_step_index": int(state_payload.get("current_step_index") or 0),
+                    "total_steps": int(state_payload.get("total_steps") or 0),
                 }
             )
             if len(rows) >= capped:

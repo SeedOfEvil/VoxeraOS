@@ -60,6 +60,7 @@
           <tr>
             <th>Job Ref</th>
             <th>Bucket</th>
+            <th>Lifecycle</th>
             <th>Artifacts</th>
             <th>Last Activity</th>
             <th>Updated</th>
@@ -68,12 +69,13 @@
         </thead>
         <tbody>
           {% if rows|length == 0 %}
-            <tr><td colspan="6"><div class="empty-state">No jobs found for this filter.</div></td></tr>
+            <tr><td colspan="7"><div class="empty-state">No jobs found for this filter.</div></td></tr>
           {% else %}
             {% for row in rows %}
               <tr>
                 <td><a href="/jobs/{{row.job_id}}" class="mono text-sm">{{row.job_id}}</a></td>
                 <td><span class="badge">{{row.bucket_ref}}</span></td>
+                <td class="mono text-xs">{{row.lifecycle_state or "-"}}{% if row.total_steps %} ({{row.current_step_index}}/{{row.total_steps}}){% endif %}{% if row.terminal_outcome %} · {{row.terminal_outcome}}{% endif %}</td>
                 <td>
                   plan={{ 'Y' if row.artifacts.plan else 'N' }} |
                   actions={{ 'Y' if row.artifacts.actions else 'N' }} |

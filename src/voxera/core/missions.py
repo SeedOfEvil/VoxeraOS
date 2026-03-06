@@ -378,6 +378,8 @@ class MissionRunner:
             }
         )
         outputs: list[dict[str, Any]] = []
+        step_outcomes: list[dict[str, Any]] = []
+        total_steps = len(mission.steps)
 
         for idx, ms in enumerate(mission.steps, start=1):
             if idx < start_step:
@@ -402,6 +404,38 @@ class MissionRunner:
                 }
             )
             if rr.data.get("status") == "pending_approval":
+                step_outcomes.append(
+                    {
+                        "step": idx,
+                        "skill": ms.skill_id,
+                        "outcome": "awaiting_approval",
+                        "approval_status": "pending",
+                    }
+                )
+            elif not rr.ok:
+                outcome = "blocked" if "Denied by policy" in str(rr.error or "") else "failed"
+                step_outcomes.append(
+                    {
+                        "step": idx,
+                        "skill": ms.skill_id,
+                        "outcome": outcome,
+                        "approval_status": (
+                            "denied" if "User rejected approval" in str(rr.error or "") else None
+                        ),
+                    }
+                )
+            else:
+                step_outcomes.append(
+                    {
+                        "step": idx,
+                        "skill": ms.skill_id,
+                        "outcome": "succeeded",
+                        "approval_status": "approved"
+                        if context.get("approval_resumed") and idx == start_step
+                        else None,
+                    }
+                )
+            if rr.data.get("status") == "pending_approval":
                 log(
                     {
                         "event": "mission_pending_approval",
@@ -417,6 +451,13 @@ class MissionRunner:
                 data.setdefault("results", outputs)
                 data.setdefault("step", idx)
                 data.setdefault("skill", ms.skill_id)
+                data.setdefault("step_outcomes", step_outcomes)
+                data.setdefault("lifecycle_state", "awaiting_approval")
+                data.setdefault("terminal_outcome", None)
+                data.setdefault("current_step_index", idx)
+                data.setdefault("last_completed_step", max(idx - 1, 0))
+                data.setdefault("last_attempted_step", idx)
+                data.setdefault("total_steps", total_steps)
                 return RunResult(ok=False, error="Mission paused for approval.", data=data)
             if not rr.ok:
                 log(
@@ -431,11 +472,35 @@ class MissionRunner:
                 return RunResult(
                     ok=False,
                     error=f"Mission failed at step {idx} ({ms.skill_id}): {rr.error}",
-                    data={"results": outputs},
+                    data={
+                        "results": outputs,
+                        "step_outcomes": step_outcomes,
+                        "lifecycle_state": "blocked"
+                        if "Denied by policy" in str(rr.error or "")
+                        else "step_failed",
+                        "terminal_outcome": "blocked"
+                        if "Denied by policy" in str(rr.error or "")
+                        else "failed",
+                        "current_step_index": idx,
+                        "last_completed_step": max(idx - 1, 0),
+                        "last_attempted_step": idx,
+                        "total_steps": total_steps,
+                    },
                 )
 
         log({"event": "mission_done", "mission": mission.id, "steps": len(mission.steps)})
         self._append_mission_log(mission, outputs, status="ok")
         return RunResult(
-            ok=True, output=f"Mission completed: {mission.title}", data={"results": outputs}
+            ok=True,
+            output=f"Mission completed: {mission.title}",
+            data={
+                "results": outputs,
+                "step_outcomes": step_outcomes,
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "current_step_index": total_steps,
+                "last_completed_step": total_steps,
+                "last_attempted_step": total_steps,
+                "total_steps": total_steps,
+            },
         )

@@ -741,6 +741,59 @@ def queue_status(
         approvals_table.add_row("-", "-", "-", "No pending approvals", "-", "-")
     console.print(approvals_table)
 
+    lifecycle_rows: list[tuple[str, str]] = []
+    for bucket_name, bucket_dir in (
+        ("inbox", daemon.inbox),
+        ("pending", daemon.pending),
+        ("done", daemon.done),
+        ("failed", daemon.failed),
+        ("canceled", daemon.canceled),
+    ):
+        for job in sorted(bucket_dir.glob("*.json")):
+            if job.name.endswith(
+                (
+                    ".pending.json",
+                    ".approval.json",
+                    ".error.json",
+                    ".tmp.json",
+                    ".partial.json",
+                    ".state.json",
+                )
+            ):
+                continue
+            state_path = bucket_dir / f"{job.stem}.state.json"
+            if not state_path.exists():
+                state_path = daemon.pending / f"{job.stem}.state.json"
+            if not state_path.exists():
+                lifecycle_rows.append((job.name, f"{bucket_name}: -"))
+                continue
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+            except Exception:
+                lifecycle_rows.append((job.name, f"{bucket_name}: invalid-state"))
+                continue
+            lifecycle = str(state.get("lifecycle_state") or "-")
+            outcome = str(state.get("terminal_outcome") or "")
+            current_step = int(state.get("current_step_index") or 0)
+            total_steps = int(state.get("total_steps") or 0)
+            progress = f" {current_step}/{total_steps}" if total_steps else ""
+            suffix = f" · {outcome}" if outcome else ""
+            lifecycle_rows.append((job.name, f"{bucket_name}: {lifecycle}{progress}{suffix}"))
+            if len(lifecycle_rows) >= 8:
+                break
+        if len(lifecycle_rows) >= 8:
+            break
+
+    lifecycle_table = Table(title="Job Lifecycle Snapshot")
+    lifecycle_table.add_column("Job")
+    lifecycle_table.add_column("State")
+    if lifecycle_rows:
+        for job_name, state_label in lifecycle_rows:
+            lifecycle_table.add_row(job_name, state_label)
+    else:
+        lifecycle_table.add_row("-", "No jobs")
+    console.print(lifecycle_table)
+
     failed = status["recent_failed"]
     failed_table = Table(title="Recent Failed Jobs")
     failed_table.add_column("Job")

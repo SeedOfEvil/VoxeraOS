@@ -434,9 +434,16 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
     assert any(e["event"] == "queue_job_started" for e in events)
     assert any(e["event"] == "queue_job_pending_approval" for e in events)
     assert "status=pending_approval" in log_path.read_text(encoding="utf-8")
+    approval_state = json.loads((queue_dir / "pending" / "approval.state.json").read_text())
+    assert approval_state["lifecycle_state"] == "awaiting_approval"
+    assert approval_state["approval_status"] == "pending"
+    assert approval_state["current_step_index"] == 1
 
     daemon.resolve_approval("approval", approve=True)
     _assert_job_moved(queue_dir / "done", "approval.json")
+    done_state = json.loads((queue_dir / "done" / "approval.state.json").read_text())
+    assert done_state["lifecycle_state"] == "done"
+    assert done_state["terminal_outcome"] == "succeeded"
 
     daemon.process_job_file(deny_job)
     deny_artifact = queue_dir / "pending" / "approvals" / "deny.approval.json"
@@ -449,6 +456,10 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
         e["event"] == "queue_job_failed" and "Denied in approval inbox" in e.get("error", "")
         for e in events
     )
+    deny_state = json.loads((queue_dir / "failed" / "deny.state.json").read_text())
+    assert deny_state["lifecycle_state"] == "blocked"
+    assert deny_state["terminal_outcome"] == "denied"
+    assert deny_state["approval_status"] == "denied"
     assert any(e["event"] == "mission_denied" for e in events)
     assert "status=denied" in log_path.read_text(encoding="utf-8")
 
@@ -888,6 +899,74 @@ def test_status_snapshot_fresh_install_without_queue_dirs(tmp_path, monkeypatch)
     }
     assert status["pending_approvals"] == []
     assert status["recent_failed"] == []
+
+
+def test_status_snapshot_excludes_state_sidecars_from_counts(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "canceled").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+
+    (queue_dir / "inbox" / "job-inbox.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "inbox" / "job-inbox.state.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "done" / "job-done.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "done" / "job-done.state.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "job-failed.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "failed" / "job-failed.state.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "canceled" / "job-canceled.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "canceled" / "job-canceled.state.json").write_text("{}", encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    status = daemon.status_snapshot()
+
+    assert status["counts"]["inbox"] == 1
+    assert status["counts"]["done"] == 1
+    assert status["counts"]["failed"] == 1
+    assert status["counts"]["canceled"] == 1
+
+
+def test_process_pending_once_ignores_stray_state_sidecar(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    stray = queue_dir / "inbox" / "job-stray.state.json"
+    stray.write_text('{"lifecycle_state":"running"}', encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    processed = daemon.process_pending_once()
+
+    assert processed == 0
+    assert stray.exists()
+    assert not (queue_dir / "failed" / "job-stray.state.json").exists()
+
+
+def test_processing_job_creates_single_state_sidecar_without_recursive_growth(
+    tmp_path, monkeypatch
+):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job = queue_dir / "job-lifecycle-step-only.json"
+    job.write_text(
+        json.dumps({"steps": [{"skill_id": "system.status", "args": {}}]}),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner.skill_runner.registry,
+        "load_entrypoint",
+        lambda _mf: lambda **_kwargs: "ok",
+    )
+
+    daemon.process_pending_once()
+
+    sidecars = sorted((queue_dir / "done").glob("job-lifecycle-step-only*.state.json"))
+    assert [p.name for p in sidecars] == ["job-lifecycle-step-only.state.json"]
+    assert not list((queue_dir / "done").glob("*.state.state.json"))
 
 
 def test_pending_approval_notification_success_and_failure_events(tmp_path, monkeypatch):
@@ -1474,7 +1553,9 @@ def test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_nam
     src.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
     daemon.process_job_file(src)
 
-    moved_matches = sorted((queue_dir / "failed").glob("dup-*.json"))
+    moved_matches = sorted(
+        p for p in (queue_dir / "failed").glob("dup-*.json") if not p.name.endswith(".state.json")
+    )
     assert moved_matches
     moved = moved_matches[-1]
     sidecar = json.loads(moved.with_name(f"{moved.stem}.error.json").read_text(encoding="utf-8"))

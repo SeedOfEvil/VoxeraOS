@@ -739,6 +739,22 @@ def test_jobs_page_shows_bucket_artifacts_and_actions(tmp_path, monkeypatch):
     assert "Bundle" in res.text
 
 
+def test_jobs_page_excludes_state_sidecars_from_rows(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-real.json").write_text('{"goal":"ok"}', encoding="utf-8")
+    (queue_dir / "done" / "job-real.state.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs", params={"bucket": "all", "n": 20})
+    assert res.status_code == 200
+    assert "job-real.json" in res.text
+    assert "job-real.state.json" not in res.text
+
+
 def test_job_detail_renders_pending_done_and_failed_cases(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
@@ -793,6 +809,33 @@ def test_job_detail_renders_pending_done_and_failed_cases(tmp_path, monkeypatch)
     failed = client.get("/jobs/job-failed.json")
     assert failed.status_code == 200
     assert "Failed Sidecar" in failed.text
+
+
+def test_job_detail_renders_execution_state_fields(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-state.json").write_text('{"goal":"state"}', encoding="utf-8")
+    (queue_dir / "done" / "job-state.state.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "current_step_index": 2,
+                "total_steps": 2,
+                "approval_status": "approved",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    response = client.get("/jobs/job-state.json")
+    assert response.status_code == 200
+    assert "Execution State" in response.text
+    assert "succeeded" in response.text
 
 
 def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch):

@@ -205,8 +205,8 @@ inbox/*.json
     │  daemon tick (every 1s)
     ▼
 policy gate
-    ├── allow → execute → done/
-    ├── ask   → write approval artifact → pending/approvals/
+    ├── allow → execute (persist step outcomes/state) → done/
+    ├── ask   → write approval artifact + state sidecar update → pending/approvals/
     │           (resume on approve, move to failed/ on deny)
     └── deny  → failed/ + error sidecar (schema v1)
 
@@ -226,6 +226,15 @@ notes/queue/quarantine/  (voxera queue reconcile --fix --yes)
     ▼
 operator can restore manually or prune explicitly
 ```
+
+Each job also emits a compact `*.state.json` sidecar (same stem as job file) to capture
+operator truth beyond bucket location. The sidecar tracks:
+
+- `lifecycle_state`: `queued|planning|running|awaiting_approval|resumed|done|step_failed|blocked|canceled`
+- step progress: `current_step_index`, `total_steps`, `last_completed_step`, `last_attempted_step`
+- `terminal_outcome` (terminal only): `succeeded|failed|blocked|denied|canceled`
+- contextual fields when applicable: `failure_summary`, `blocked_reason`, `approval_status`
+- transition timestamps under `transitions`
 
 ---
 

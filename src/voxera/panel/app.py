@@ -1126,6 +1126,20 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         bucket = lookup.bucket
         job_name = lookup.job_id
 
+    state_sidecar: dict[str, Any] = {}
+    stem = Path(job_name).stem
+    state_candidates = [
+        queue_root / bucket / f"{stem}.state.json"
+        for bucket in ("pending", "inbox", "done", "failed", "canceled")
+    ]
+    for state_path in state_candidates:
+        if not state_path.exists():
+            continue
+        loaded = _safe_json(state_path)
+        if loaded:
+            state_sidecar = loaded
+            break
+
     artifact_files = (
         [
             child.relative_to(artifacts_dir).as_posix()
@@ -1148,6 +1162,7 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "bucket": bucket,
         "job": primary,
         "approval": approval,
+        "state": state_sidecar,
         "failed_sidecar": failed_sidecar,
         "lock": snapshot.get("lock_status", {}),
         "paused": snapshot.get("paused", False),
