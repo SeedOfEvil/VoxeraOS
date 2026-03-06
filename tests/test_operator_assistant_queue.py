@@ -153,8 +153,8 @@ def test_assistant_advisory_primary_fail_fallback_success(tmp_path):
         async def generate(self, messages, tools=None):
             return SimpleNamespace(text="fallback answered")
 
-    daemon._create_assistant_brain = (
-        lambda provider: _PrimaryBrain() if provider.model == "m-primary" else _FallbackBrain()
+    daemon._create_assistant_brain = lambda provider: (
+        _PrimaryBrain() if provider.model == "m-primary" else _FallbackBrain()
     )  # type: ignore[method-assign]
     result = daemon._assistant_answer_via_brain("q", {"queue_counts": {}}, thread_turns=[])
     assert result["answer"] == "fallback answered"
