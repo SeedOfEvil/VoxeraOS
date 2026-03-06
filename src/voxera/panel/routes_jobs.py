@@ -28,19 +28,24 @@ def register_job_routes(
     job_detail_payload: Callable[[Path, str], dict[str, Any]],
     auth_setup_banner: Callable[[], dict[str, str] | None],
 ) -> None:
+    def _safe_jobs_n(raw: str) -> int:
+        try:
+            return max(1, min(int(raw), 200))
+        except ValueError:
+            return 80
+
     async def _jobs_redirect(request: Request, flash: str) -> RedirectResponse:
         from .helpers import request_value
 
-        params = {"flash": flash}
+        params: dict[str, str | int] = {"flash": flash}
         bucket = (await request_value(request, "bucket", "")).strip()
         if bucket:
             params["bucket"] = bucket
         query = (await request_value(request, "q", "")).strip()
         if query:
             params["q"] = query
-        n_value = (await request_value(request, "n", "")).strip()
-        if n_value:
-            params["n"] = n_value
+        n_raw = (await request_value(request, "n", "80")).strip()
+        params["n"] = _safe_jobs_n(n_raw)
 
         url = str(request.url_for("jobs_page"))
         from urllib.parse import urlencode

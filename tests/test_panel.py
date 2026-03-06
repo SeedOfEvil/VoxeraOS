@@ -953,6 +953,32 @@ def test_panel_hides_setup_required_banner_when_operator_password_set(tmp_path, 
     assert "Setup required: panel operator password is not configured." not in jobs_res.text
 
 
+def test_cancel_redirect_sanitizes_invalid_n_and_jobs_page_renders(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "inbox" / "job-n-invalid.json").write_text('{"goal":"x"}', encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/queue/jobs/job-n-invalid.json/cancel",
+        data={"bucket": "pending", "q": "job", "n": "not-an-int"},
+    )
+
+    assert res.status_code == 303
+    assert "flash=canceled" in res.headers["location"]
+    assert "n=80" in res.headers["location"]
+
+    redirected = client.get(res.headers["location"])
+    assert redirected.status_code == 200
+    assert "Job moved to canceled/." in redirected.text
+
+
 def test_cancel_moves_to_canceled_and_hidden_from_active_buckets(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
