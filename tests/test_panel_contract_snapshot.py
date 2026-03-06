@@ -4,44 +4,51 @@ from voxera.panel import app as panel_module
 
 
 def test_panel_public_route_surface_snapshot():
-    paths = sorted(route.path for route in panel_module.app.routes if getattr(route, "path", None))
+    route_contract = sorted(
+        (
+            route.path,
+            tuple(sorted(route.methods)) if getattr(route, "methods", None) is not None else None,
+        )
+        for route in panel_module.app.routes
+        if getattr(route, "path", None)
+    )
 
     expected = sorted(
         [
-            "/",
-            "/assistant",
-            "/assistant/ask",
-            "/bundle/system",
-            "/docs",
-            "/docs/oauth2-redirect",
-            "/hygiene",
-            "/hygiene/health-reset",
-            "/hygiene/prune-dry-run",
-            "/hygiene/reconcile",
-            "/jobs",
-            "/jobs/{job_id}",
-            "/jobs/{job_id}/bundle",
-            "/missions/create",
-            "/missions/create",
-            "/missions/templates/create",
-            "/missions/templates/create",
-            "/openapi.json",
-            "/queue/approvals/{ref}/approve",
-            "/queue/approvals/{ref}/approve-always",
-            "/queue/approvals/{ref}/deny",
-            "/queue/create",
-            "/queue/create",
-            "/queue/jobs/{job}/detail",
-            "/queue/jobs/{ref}/cancel",
-            "/queue/jobs/{ref}/delete",
-            "/queue/jobs/{ref}/retry",
-            "/queue/pause",
-            "/queue/resume",
-            "/recovery",
-            "/recovery/download/{bucket}/{name}",
-            "/redoc",
-            "/static",
+            ("/", ("GET",)),
+            ("/assistant", ("GET",)),
+            ("/assistant/ask", ("POST",)),
+            ("/bundle/system", ("GET",)),
+            ("/docs", ("GET", "HEAD")),
+            ("/docs/oauth2-redirect", ("GET", "HEAD")),
+            ("/hygiene", ("GET",)),
+            ("/hygiene/health-reset", ("POST",)),
+            ("/hygiene/prune-dry-run", ("POST",)),
+            ("/hygiene/reconcile", ("POST",)),
+            ("/jobs", ("GET",)),
+            ("/jobs/{job_id}", ("GET",)),
+            ("/jobs/{job_id}/bundle", ("GET",)),
+            ("/missions/create", ("GET",)),
+            ("/missions/create", ("POST",)),
+            ("/missions/templates/create", ("GET",)),
+            ("/missions/templates/create", ("POST",)),
+            ("/openapi.json", ("GET", "HEAD")),
+            ("/queue/approvals/{ref}/approve", ("POST",)),
+            ("/queue/approvals/{ref}/approve-always", ("POST",)),
+            ("/queue/approvals/{ref}/deny", ("POST",)),
+            ("/queue/create", ("GET",)),
+            ("/queue/create", ("POST",)),
+            ("/queue/jobs/{job}/detail", ("GET",)),
+            ("/queue/jobs/{ref}/cancel", ("POST",)),
+            ("/queue/jobs/{ref}/delete", ("POST",)),
+            ("/queue/jobs/{ref}/retry", ("POST",)),
+            ("/queue/pause", ("POST",)),
+            ("/queue/resume", ("POST",)),
+            ("/recovery", ("GET",)),
+            ("/recovery/download/{bucket}/{name}", ("GET",)),
+            ("/redoc", ("GET", "HEAD")),
+            ("/static", None),
         ]
     )
 
-    assert paths == expected
+    assert route_contract == expected
