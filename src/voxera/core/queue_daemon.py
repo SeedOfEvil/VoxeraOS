@@ -560,6 +560,9 @@ class MissionQueueDaemon:
             candidate = bucket / f"{stem}.state.json"
             if candidate.exists():
                 return candidate
+        job_path = Path(job_ref)
+        if job_path.parent in {self.inbox, self.pending, self.done, self.failed, self.canceled}:
+            return job_path.with_name(f"{stem}.state.json")
         return self.pending / f"{stem}.state.json"
 
     def _read_job_state(self, job_ref: str) -> dict[str, Any]:
@@ -852,8 +855,7 @@ class MissionQueueDaemon:
         existing_jobs = {
             p.name
             for bucket in (self.inbox, self.pending, self.done, self.failed, self.canceled)
-            for p in bucket.glob("*.json")
-            if p.is_file() and self._is_primary_job_json(p)
+            for p in self._primary_jobs_in_bucket(bucket)
         }
         orphans: list[Path] = []
         for directory in search_dirs:
@@ -1466,7 +1468,13 @@ class MissionQueueDaemon:
             return False
         if name.startswith("."):
             return False
-        blocked_suffixes = (".pending.json", ".approval.json", ".tmp.json", ".partial.json")
+        blocked_suffixes = (
+            ".pending.json",
+            ".approval.json",
+            ".state.json",
+            ".tmp.json",
+            ".partial.json",
+        )
         return not name.endswith(blocked_suffixes)
 
     def _load_job_payload_with_retry(self, job_path: Path) -> dict[str, Any]:
@@ -1496,6 +1504,21 @@ class MissionQueueDaemon:
             raise last_error
         raise ValueError("job payload must be a JSON object")
 
+    def _is_job_state_sidecar(self, path: Path) -> bool:
+        return path.name.endswith(".state.json")
+
+    def _is_metadata_sidecar(self, path: Path) -> bool:
+        return path.name.endswith(
+            (
+                ".pending.json",
+                ".approval.json",
+                ".error.json",
+                ".state.json",
+                ".tmp.json",
+                ".partial.json",
+            )
+        )
+
     def _count_files(self, directory: Path, pattern: str) -> int:
         if not directory.exists():
             return 0
@@ -1506,19 +1529,18 @@ class MissionQueueDaemon:
             path.name.endswith(".json")
             and path.name != "health.json"
             and not self._is_snapshot_artifact(path)
-            and not path.name.endswith(
-                (".pending.json", ".approval.json", ".error.json", ".tmp.json", ".partial.json")
-            )
+            and not self._is_metadata_sidecar(path)
+        )
+
+    def _primary_jobs_in_bucket(self, directory: Path) -> list[Path]:
+        if not directory.exists():
+            return []
+        return sorted(
+            p for p in directory.glob("*.json") if p.is_file() and self._is_primary_job_json(p)
         )
 
     def _pending_primary_jobs(self) -> list[Path]:
-        if not self.pending.exists():
-            return []
-        return sorted(
-            p
-            for p in self.pending.glob("*.json")
-            if p.is_file() and not p.name.endswith(".pending.json")
-        )
+        return self._primary_jobs_in_bucket(self.pending)
 
     def _approval_ref_variants(self, path: Path) -> set[str]:
         stem = path.stem
@@ -1715,12 +1737,12 @@ class MissionQueueDaemon:
             "queue_root": str(self.queue_root),
             "exists": self.queue_root.exists(),
             "counts": {
-                "inbox": self._count_files(self.inbox, "*.json"),
+                "inbox": len(self._primary_jobs_in_bucket(self.inbox)),
                 "pending": len(self._pending_primary_jobs()),
                 "pending_approvals": self._count_files(self.approvals, "*.approval.json"),
-                "done": self._count_files(self.done, "*.json"),
+                "done": len(self._primary_jobs_in_bucket(self.done)),
                 "failed": len(failed_files),
-                "canceled": self._count_files(self.canceled, "*.json"),
+                "canceled": len(self._primary_jobs_in_bucket(self.canceled)),
             },
             **sidecar_health,
             "failed_retention": retention,
@@ -1777,7 +1799,7 @@ class MissionQueueDaemon:
         if not raw:
             return None
         direct = Path(raw).expanduser()
-        if direct.exists() and direct.is_file():
+        if direct.exists() and direct.is_file() and self._is_primary_job_json(direct):
             return direct
         base = Path(raw).name
         stem = Path(base).stem
@@ -1785,7 +1807,7 @@ class MissionQueueDaemon:
         for directory in directories:
             for cand in candidates:
                 path = directory / cand
-                if path.exists() and path.is_file():
+                if path.exists() and path.is_file() and self._is_primary_job_json(path):
                     return path
         return None
 
@@ -1902,6 +1924,15 @@ class MissionQueueDaemon:
     def process_job_file(self, job_path: Path) -> bool:
         self.ensure_dirs()
         if not job_path.exists():
+            return False
+        if not self._is_primary_job_json(job_path):
+            log(
+                {
+                    "event": "queue_metadata_ignored",
+                    "path": str(job_path),
+                    "reason": "not_primary_job_json",
+                }
+            )
             return False
 
         self.current_job_ref = str(job_path)

@@ -739,6 +739,22 @@ def test_jobs_page_shows_bucket_artifacts_and_actions(tmp_path, monkeypatch):
     assert "Bundle" in res.text
 
 
+def test_jobs_page_excludes_state_sidecars_from_rows(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-real.json").write_text('{"goal":"ok"}', encoding="utf-8")
+    (queue_dir / "done" / "job-real.state.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs", params={"bucket": "all", "n": 20})
+    assert res.status_code == 200
+    assert "job-real.json" in res.text
+    assert "job-real.state.json" not in res.text
+
+
 def test_job_detail_renders_pending_done_and_failed_cases(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
