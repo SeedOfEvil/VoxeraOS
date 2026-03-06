@@ -79,6 +79,21 @@
   </section>
 
   <!-- Failed sidecar (if present — high priority diagnostic) -->
+  {% if payload.state %}
+  <div class="section-label">Execution State</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:var(--space-2);">
+      <dt>Lifecycle state</dt><dd>{{payload.state.lifecycle_state}}</dd>
+      <dt>Terminal outcome</dt><dd>{{payload.state.terminal_outcome or "-"}}</dd>
+      <dt>Step progress</dt><dd>{{payload.state.current_step_index}} / {{payload.state.total_steps}}</dd>
+      <dt>Approval</dt><dd>{{payload.state.approval_status or "-"}}</dd>
+      <dt>Failure summary</dt><dd>{{payload.state.failure_summary or "-"}}</dd>
+      <dt>Blocked reason</dt><dd>{{payload.state.blocked_reason or "-"}}</dd>
+    </dl>
+  </section>
+  {% endif %}
+
+  <!-- Failed sidecar (if present — high priority diagnostic) -->
   {% if payload.failed_sidecar %}
   <div class="section-label">Failure Details</div>
   <section class="card mb" style="border-color:var(--danger);">

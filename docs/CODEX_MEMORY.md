@@ -745,3 +745,20 @@ This file is the single, persistent project memory for Codex-assisted work.
 - Panel home adds a read-only **Performance Stats** tab with queue counts, degradation/backoff, fallback/error/shutdown context, and auth/runtime counters sourced from `health.json`.
 - Added regression tests for normalization defaults, CLI section/parity/watch behavior, and panel performance tab rendering.
 
+
+
+## 2026-03-06 — PR #TBD — strengthen mission execution semantics and persisted job state
+- Summary:
+  - Added explicit mission/queue lifecycle semantics with persisted per-job `*.state.json` sidecars that track `lifecycle_state`, step progress, transition timestamps, approval status, and terminal outcomes.
+  - Expanded mission runner result metadata to persist reusable step outcomes (`succeeded`, `awaiting_approval`, `failed`, `blocked`) and terminal outcome primitives for downstream queue logic.
+  - Updated queue daemon lifecycle handling to persist state transitions across planning, running, approval pause/resume, failure, deny/blocked, cancel, and done paths.
+  - Surfaced lifecycle truth in operator views: `voxera queue status` now prints a Job Lifecycle Snapshot table, panel jobs list includes lifecycle/progress/outcome, and job detail exposes Execution State fields.
+  - Added/updated tests for lifecycle sidecar persistence and CLI/panel rendering.
+- Validation:
+  - `source .venv/bin/activate`
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+- Follow-ups:
+  - None.

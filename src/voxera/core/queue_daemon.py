@@ -51,6 +51,7 @@ _STARTUP_RECOVERY_MESSAGE = (
     "daemon recovered from unclean shutdown; job marked failed deterministically"
 )
 _SHUTDOWN_REASON_MAX_LEN = 240
+_JOB_STATE_SCHEMA_VERSION = 1
 
 
 class QueueLockError(RuntimeError):
@@ -552,6 +553,120 @@ class MissionQueueDaemon:
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
 
+    def _job_state_sidecar_path(self, job_ref: str) -> Path:
+        stem = Path(job_ref).stem
+        for bucket in (self.inbox, self.pending, self.done, self.failed, self.canceled):
+            candidate = bucket / f"{stem}.state.json"
+            if candidate.exists():
+                return candidate
+        return self.pending / f"{stem}.state.json"
+
+    def _read_job_state(self, job_ref: str) -> dict[str, Any]:
+        path = self._job_state_sidecar_path(job_ref)
+        if not path.exists():
+            return {}
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            return loaded if isinstance(loaded, dict) else {}
+        except Exception:
+            return {}
+
+    def _write_job_state(self, job_ref: str, payload: dict[str, Any]) -> None:
+        path = self._job_state_sidecar_path(job_ref)
+        self._write_text_atomic(path, json.dumps(payload, indent=2))
+
+    def _update_job_state(
+        self,
+        job_ref: str,
+        *,
+        lifecycle_state: str,
+        payload: dict[str, Any] | None = None,
+        mission: MissionTemplate | None = None,
+        rr_data: dict[str, Any] | None = None,
+        terminal_outcome: str | None = None,
+        failure_summary: str | None = None,
+        blocked_reason: str | None = None,
+        approval_status: str | None = None,
+    ) -> None:
+        now_ms = int(time.time() * 1000)
+        current = self._read_job_state(job_ref)
+        started_at_ms = int(current.get("started_at_ms") or now_ms)
+        raw_transitions = current.get("transitions")
+        transitions: dict[str, Any] = (
+            dict(raw_transitions) if isinstance(raw_transitions, dict) else {}
+        )
+        transitions[lifecycle_state] = now_ms
+
+        mission_payload = (
+            {
+                "mission_id": mission.id,
+                "title": mission.title,
+                "goal": mission.goal,
+            }
+            if mission is not None
+            else current.get("mission")
+            if isinstance(current.get("mission"), dict)
+            else {}
+        )
+        total_steps = (
+            len(mission.steps) if mission is not None else int(current.get("total_steps") or 0)
+        )
+        rr = rr_data if isinstance(rr_data, dict) else {}
+        current_step = int(rr.get("current_step_index") or current.get("current_step_index") or 0)
+        last_completed = int(
+            rr.get("last_completed_step") or current.get("last_completed_step") or 0
+        )
+        last_attempted = int(
+            rr.get("last_attempted_step") or current.get("last_attempted_step") or 0
+        )
+        step_outcomes = (
+            rr.get("step_outcomes")
+            if isinstance(rr.get("step_outcomes"), list)
+            else current.get("step_outcomes")
+            if isinstance(current.get("step_outcomes"), list)
+            else []
+        )
+        resolved_terminal = (
+            terminal_outcome
+            if terminal_outcome is not None
+            else rr.get("terminal_outcome") or current.get("terminal_outcome")
+        )
+        if lifecycle_state == "done" and not resolved_terminal:
+            resolved_terminal = "succeeded"
+
+        snapshot = {
+            "schema_version": _JOB_STATE_SCHEMA_VERSION,
+            "job_id": f"{Path(job_ref).stem}.json",
+            "lifecycle_state": lifecycle_state,
+            "current_step_index": current_step,
+            "total_steps": total_steps,
+            "last_completed_step": last_completed,
+            "last_attempted_step": last_attempted,
+            "terminal_outcome": resolved_terminal,
+            "failure_summary": failure_summary
+            if failure_summary is not None
+            else current.get("failure_summary"),
+            "blocked_reason": blocked_reason
+            if blocked_reason is not None
+            else current.get("blocked_reason"),
+            "approval_status": approval_status
+            if approval_status is not None
+            else current.get("approval_status"),
+            "mission": mission_payload,
+            "step_outcomes": step_outcomes,
+            "started_at_ms": started_at_ms,
+            "updated_at_ms": now_ms,
+            "completed_at_ms": now_ms
+            if lifecycle_state in {"done", "step_failed", "blocked", "canceled"}
+            else None,
+            "transitions": transitions,
+        }
+        if payload is not None:
+            snapshot["payload"] = payload
+        elif isinstance(current.get("payload"), dict):
+            snapshot["payload"] = current["payload"]
+        self._write_job_state(job_ref, snapshot)
+
     def _write_plan_artifact(
         self, job_ref: str, *, payload: dict[str, Any], mission: MissionTemplate
     ) -> None:
@@ -615,6 +730,13 @@ class MissionQueueDaemon:
                 }
             )
             return None
+        state_src = src.with_name(f"{src.stem}.state.json")
+        state_dst = target.with_name(f"{target.stem}.state.json")
+        if state_src.exists():
+            try:
+                state_src.replace(state_dst)
+            except FileNotFoundError:
+                pass
         return target
 
     def _archive_sidecar(self, sidecar: Path, *, reason: str) -> None:
@@ -1176,9 +1298,15 @@ class MissionQueueDaemon:
 
         meta = {
             "status": "pending_approval",
+            "lifecycle_state": "awaiting_approval",
             "job": job_in_pending.name,
             "payload": payload,
             "resume_step": step,
+            "current_step_index": step,
+            "last_completed_step": max(step - 1, 0),
+            "last_attempted_step": step,
+            "total_steps": len(mission.steps),
+            "approval_status": "pending",
             "mission": {
                 "id": mission.id,
                 "title": mission.title,
@@ -1244,6 +1372,13 @@ class MissionQueueDaemon:
         }
         self._write_text_atomic(artifact_path, json.dumps(approval, indent=2))
         meta_path.unlink(missing_ok=True)
+        self._update_job_state(
+            str(job_in_pending),
+            lifecycle_state="awaiting_approval",
+            payload=payload,
+            rr_data={"current_step_index": 0, "last_completed_step": 0, "last_attempted_step": 0},
+            approval_status="pending",
+        )
         self._notify_pending_approval(approval)
         self._increment_health_counter("approval_gate_created")
         self._write_action_event(str(job_in_pending), "queue_job_pending_approval", step=0)
@@ -1667,6 +1802,11 @@ class MissionQueueDaemon:
         (self.pending / f"{moved.stem}.pending.json").unlink(missing_ok=True)
         (self.approvals / f"{moved.stem}.approval.json").unlink(missing_ok=True)
         self._archive_sidecar(self._failed_error_sidecar(self.failed / moved.name), reason="cancel")
+        self._update_job_state(
+            str(moved),
+            lifecycle_state="canceled",
+            terminal_outcome="canceled",
+        )
         log({"event": "queue_job_cancel", "ref": ref, "job": str(moved)})
         return moved
 
@@ -1732,6 +1872,13 @@ class MissionQueueDaemon:
             error=f"{reason}: {message}",
             payload={**(payload or {}), "shutdown": shutdown_payload},
         )
+        self._update_job_state(
+            str(moved),
+            lifecycle_state="step_failed",
+            payload=payload if isinstance(payload, dict) else None,
+            terminal_outcome="failed",
+            failure_summary=f"{reason}: {message}",
+        )
         self.stats.failed += 1
         self._write_action_event(str(moved), "queue_job_failed", error=f"{reason}: {message}")
         self._update_daemon_health_state(shutdown_requested=True)
@@ -1761,6 +1908,8 @@ class MissionQueueDaemon:
         self.current_job_ref = str(job_path)
         try:
             log({"event": "queue_job_received", "job": str(job_path)})
+            self._update_job_state(str(job_path), lifecycle_state="queued")
+            self._update_job_state(str(job_path), lifecycle_state="planning")
             if self._shutdown_requested:
                 log({"event": "queue_job_skipped_shutdown", "job": str(job_path)})
                 return False
@@ -1772,6 +1921,13 @@ class MissionQueueDaemon:
                     return False
                 mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
                 self._write_plan_artifact(str(job_path), payload=payload, mission=mission)
+                self._update_job_state(
+                    str(job_path),
+                    lifecycle_state="running",
+                    payload=payload,
+                    mission=mission,
+                    rr_data={"total_steps": len(mission.steps)},
+                )
             except Exception as exc:
                 log(
                     {
@@ -1788,6 +1944,13 @@ class MissionQueueDaemon:
                     payload if "payload" in locals() and isinstance(payload, dict) else None
                 )
                 self._write_failed_error_sidecar(moved, error=repr(exc), payload=sidecar_payload)
+                self._update_job_state(
+                    str(moved),
+                    lifecycle_state="step_failed",
+                    payload=sidecar_payload if isinstance(sidecar_payload, dict) else None,
+                    terminal_outcome="failed",
+                    failure_summary=repr(exc),
+                )
                 self.stats.failed += 1
                 log({"event": "queue_job_failed", "job": str(moved), "error": repr(exc)})
                 self.prune_failed_artifacts()
@@ -1815,6 +1978,14 @@ class MissionQueueDaemon:
                 self._write_pending_artifacts(
                     moved, payload=payload, mission=mission, run_data=rr.data
                 )
+                self._update_job_state(
+                    str(moved),
+                    lifecycle_state="awaiting_approval",
+                    payload=payload,
+                    mission=mission,
+                    rr_data=rr.data,
+                    approval_status="pending",
+                )
                 self._write_action_event(
                     str(moved), "queue_job_pending_approval", step=rr.data.get("step")
                 )
@@ -1834,6 +2005,18 @@ class MissionQueueDaemon:
                     return False
                 error_text = rr.error or "mission failed"
                 self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
+                self._update_job_state(
+                    str(moved),
+                    lifecycle_state=str(rr.data.get("lifecycle_state") or "step_failed"),
+                    payload=payload,
+                    mission=mission,
+                    rr_data=rr.data,
+                    terminal_outcome=str(rr.data.get("terminal_outcome") or "failed"),
+                    failure_summary=error_text,
+                    blocked_reason=error_text
+                    if str(rr.data.get("terminal_outcome") or "") == "blocked"
+                    else None,
+                )
                 self.stats.failed += 1
                 log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
                 self._write_action_event(str(moved), "queue_job_failed", error=error_text)
@@ -1845,6 +2028,15 @@ class MissionQueueDaemon:
                 return False
             self.stats.processed += 1
             self._write_run_streams(str(moved), rr.data)
+            self._update_job_state(
+                str(moved),
+                lifecycle_state="done",
+                payload=payload,
+                mission=mission,
+                rr_data=rr.data,
+                terminal_outcome=str(rr.data.get("terminal_outcome") or "succeeded"),
+                approval_status="approved" if rr.data.get("step_outcomes") else None,
+            )
             self._write_action_event(str(moved), "queue_job_done")
             log({"event": "queue_job_done", "job": str(moved)})
             record_mission_success(self.queue_root)
@@ -1962,6 +2154,20 @@ class MissionQueueDaemon:
                 notes=mission_data.get("notes"),
                 steps=[],
             )
+            self._update_job_state(
+                str(moved),
+                lifecycle_state="blocked",
+                payload=meta.get("payload") if isinstance(meta, dict) else None,
+                mission=denied_mission,
+                rr_data={
+                    "current_step_index": int(meta.get("resume_step", 1) or 1),
+                    "last_attempted_step": int(meta.get("resume_step", 1) or 1),
+                },
+                terminal_outcome="denied",
+                failure_summary="Denied in approval inbox",
+                blocked_reason="approval denied by operator",
+                approval_status="denied",
+            )
             self.mission_runner._append_mission_log(denied_mission, [], status="denied")
             log(
                 {
@@ -2022,6 +2228,27 @@ class MissionQueueDaemon:
                 else ""
             )
             self._approved_steps.add((str(job), resume_step, resume_skill))
+            self._update_job_state(
+                str(job),
+                lifecycle_state="resumed",
+                payload=payload if isinstance(payload, dict) else None,
+                mission=mission,
+                rr_data={
+                    "current_step_index": max(resume_step - 1, 0),
+                    "last_completed_step": max(resume_step - 1, 0),
+                    "last_attempted_step": resume_step,
+                    "total_steps": len(mission.steps),
+                },
+                approval_status="approved",
+            )
+            self._update_job_state(
+                str(job),
+                lifecycle_state="running",
+                payload=payload if isinstance(payload, dict) else None,
+                mission=mission,
+                rr_data={"total_steps": len(mission.steps)},
+                approval_status="approved",
+            )
             rr = self.mission_runner.run(
                 mission,
                 start_step=resume_step,
@@ -2030,6 +2257,15 @@ class MissionQueueDaemon:
             if rr.data.get("status") == "pending_approval":
                 self._write_pending_artifacts(
                     job, payload=payload, mission=mission, run_data=rr.data
+                )
+                self._update_job_state(
+                    str(job),
+                    lifecycle_state="awaiting_approval",
+                    payload=payload if isinstance(payload, dict) else None,
+                    mission=mission,
+                    rr_data=rr.data,
+                    terminal_outcome=None,
+                    approval_status="pending",
                 )
                 log(
                     {
@@ -2053,6 +2289,19 @@ class MissionQueueDaemon:
                 self._write_failed_error_sidecar(
                     moved, error=error_text, payload=payload if isinstance(payload, dict) else None
                 )
+                self._update_job_state(
+                    str(moved),
+                    lifecycle_state=str(rr.data.get("lifecycle_state") or "step_failed"),
+                    payload=payload if isinstance(payload, dict) else None,
+                    mission=mission,
+                    rr_data=rr.data,
+                    terminal_outcome=str(rr.data.get("terminal_outcome") or "failed"),
+                    failure_summary=error_text,
+                    blocked_reason=error_text
+                    if str(rr.data.get("terminal_outcome") or "") == "blocked"
+                    else None,
+                    approval_status="approved",
+                )
                 self.stats.failed += 1
                 log({"event": "queue_job_failed", "job": str(moved), "error": error_text})
                 self._write_run_streams(str(moved), rr.data)
@@ -2069,6 +2318,15 @@ class MissionQueueDaemon:
                 return False
             self.stats.processed += 1
             self._write_run_streams(str(moved), rr.data)
+            self._update_job_state(
+                str(moved),
+                lifecycle_state="done",
+                payload=payload if isinstance(payload, dict) else None,
+                mission=mission,
+                rr_data=rr.data,
+                terminal_outcome=str(rr.data.get("terminal_outcome") or "succeeded"),
+                approval_status="approved",
+            )
             self._write_action_event(str(moved), "queue_job_done", via="approval_inbox")
             log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
             record_mission_success(self.queue_root)

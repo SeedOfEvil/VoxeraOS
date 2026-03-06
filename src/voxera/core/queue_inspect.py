@@ -129,6 +129,21 @@ def list_jobs(
                 if isinstance(approvals_by_job.get(name), dict)
                 else {}
             )
+            state_payload: dict[str, Any] = {}
+            state_path = dir_for_bucket / f"{path.stem}.state.json"
+            if not state_path.exists():
+                for alt in (queue_root / "pending", queue_root / "inbox"):
+                    candidate = alt / f"{path.stem}.state.json"
+                    if candidate.exists():
+                        state_path = candidate
+                        break
+            if state_path.exists():
+                try:
+                    loaded_state = json.loads(state_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded_state, dict):
+                        state_payload = loaded_state
+                except Exception:
+                    state_payload = {}
             failed_sidecar = queue_root / "failed" / f"{path.stem}.error.json"
             status = []
             if approval:
@@ -150,6 +165,10 @@ def list_jobs(
                     "updated_ts": int(path.stat().st_mtime),
                     "updated_iso": path.stat().st_mtime,
                     "status_summary": ", ".join(status),
+                    "lifecycle_state": str(state_payload.get("lifecycle_state") or ""),
+                    "terminal_outcome": str(state_payload.get("terminal_outcome") or ""),
+                    "current_step_index": int(state_payload.get("current_step_index") or 0),
+                    "total_steps": int(state_payload.get("total_steps") or 0),
                 }
             )
             if len(rows) >= capped:

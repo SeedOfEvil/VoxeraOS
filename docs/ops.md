@@ -220,7 +220,13 @@ Panel operator notes:
 - Fill **Prompt / Goal** (required), keep **Approval required** toggle on by default, then submit.
 - Successful submit redirects to `/` with a success banner containing the created filename / mission id.
 - Validation failure (empty prompt) redirects to `/` with a clear error banner.
-- Queue flow remains standard: `inbox/` → `pending/approvals/` (when policy requires) → `done/`.
+- Queue flow remains standard: `inbox/` → `pending/approvals/` (when policy requires) → terminal bucket.
+- Each job now maintains a deterministic `*.state.json` sidecar (same stem as job file) with explicit lifecycle and step-progress truth:
+  - `lifecycle_state`: `queued`, `planning`, `running`, `awaiting_approval`, `resumed`, `done`, `step_failed`, `blocked`, `canceled`
+  - `current_step_index`, `total_steps`, `last_completed_step`, `last_attempted_step`
+  - `terminal_outcome` (`succeeded|failed|blocked|denied|canceled`) when terminal
+  - `failure_summary`, `blocked_reason`, `approval_status` when applicable
+  - transition timestamps under `transitions`
 - `approval_required=true` is a **hard gate**: daemon always blocks in `pending/approvals/` before any planning or execution, even for safe/no-op missions.
 - Panel approval/deny actions resolve queue approvals in a worker thread to avoid event-loop conflicts (`asyncio.run()` cannot execute inside the active FastAPI loop).
 - Artifacts and bundles are available from the Jobs console (`/jobs`, `/jobs/<job>.json`, `/jobs/<job>.json/bundle`).

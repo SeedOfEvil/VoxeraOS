@@ -478,7 +478,16 @@ VOXERA_PANEL_ENABLE_GET_MUTATIONS=1 voxera panel
 The panel writes a deterministic inbox job at:
 `~/VoxeraOS/notes/queue/inbox/job-panel-mission-<slug>-<ts>.json`
 
-Lifecycle stays the same: `inbox/` → `pending/approvals/` (if policy asks) → `done/`.
+Lifecycle remains queue-first (`inbox/` → `pending/approvals/` when policy asks → terminal bucket),
+and now each job also writes a compact `*.state.json` sidecar with explicit execution semantics:
+
+- `lifecycle_state`: `queued`, `planning`, `running`, `awaiting_approval`, `resumed`, `done`, `step_failed`, `blocked`, `canceled`
+- `current_step_index`, `total_steps`, `last_completed_step`, `last_attempted_step`
+- `terminal_outcome`: `succeeded`, `failed`, `blocked`, `denied`, `canceled` (when terminal)
+- `approval_status`: `pending`, `approved`, `denied` (when applicable)
+- transition timestamps and compact step outcomes
+
+This state sidecar is operator-readable and powers clearer CLI/panel introspection without relying on raw logs.
 Use `/jobs/<job>.json` for per-job artifacts and `/jobs/<job>.json/bundle` for handoff bundles.
 
 ## Updating VoxeraOS (Alpha)
