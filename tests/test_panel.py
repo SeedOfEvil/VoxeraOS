@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import zipfile
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -1879,6 +1880,292 @@ def test_operator_assistant_is_read_only_no_queue_mutation(tmp_path, monkeypatch
     assert len(queued) == 1
     assert not list((queue_dir / "done").glob("job-assistant-*.json"))
     assert not list((queue_dir / "failed").glob("job-assistant-*.json"))
+
+
+def test_operator_assistant_page_shows_fallback_metadata(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-assistant-2.json").write_text(
+        json.dumps({"thread_id": "thread-fb"}), encoding="utf-8"
+    )
+    (queue_dir / "artifacts" / "job-assistant-2").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "artifacts" / "job-assistant-2" / "assistant_response.json").write_text(
+        json.dumps(
+            {
+                "thread_id": "thread-fb",
+                "answer": "Recovered via fallback model.",
+                "updated_at_ms": 1,
+                "provider": "fallback",
+                "model": "fast-model",
+                "fallback_used": True,
+                "fallback_reason": "TIMEOUT",
+                "advisory_mode": "queue",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-2.json&thread_id=thread-fb",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "Answered by:" in res.text
+    assert "fallback after TIMEOUT" in res.text
+    assert "Mode:" in res.text
+
+
+def test_operator_assistant_degraded_mode_when_queue_unavailable(tmp_path, monkeypatch, recwarn):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setattr(
+        panel_module,
+        "enqueue_assistant_question",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("queue unavailable")),
+    )
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/assistant/ask",
+        data={"question": "What is happening right now?"},
+    )
+    assert res.status_code == 200
+    assert "degraded_brain_only" in res.text
+    assert "queue_unavailable" in res.text
+    assert not any("was never awaited" in str(w.message) for w in recwarn)
+
+
+def test_degraded_assistant_prefers_model_backed_primary(monkeypatch):
+    monkeypatch.setattr(
+        panel_module,
+        "load_app_config",
+        lambda: SimpleNamespace(
+            brain={
+                "primary": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-primary",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+                "fallback": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-fallback",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+            }
+        ),
+    )
+
+    class _PrimaryBrain:
+        async def generate(self, messages, tools=None):
+            return SimpleNamespace(text="I see queue pending is low and approvals are clear.")
+
+    monkeypatch.setattr(
+        panel_module, "_create_panel_assistant_brain", lambda provider: _PrimaryBrain()
+    )
+
+    result = panel_module._generate_degraded_assistant_answer(
+        "What is happening right now?",
+        {"health_current_state": {"daemon_state": "healthy"}, "queue_counts": {"pending": 0}},
+        thread_turns=[],
+        degraded_reason="daemon_paused",
+    )
+
+    assert result["provider"] == "primary"
+    assert result["deterministic_used"] is False
+    assert "model-only recovery mode" in result["answer"]
+    assert "read-only" in result["answer"]
+
+
+def test_degraded_assistant_uses_fallback_model_when_primary_fails(monkeypatch):
+    monkeypatch.setattr(
+        panel_module,
+        "load_app_config",
+        lambda: SimpleNamespace(
+            brain={
+                "primary": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-primary",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+                "fallback": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-fallback",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+            }
+        ),
+    )
+
+    class _PrimaryBrain:
+        async def generate(self, messages, tools=None):
+            raise TimeoutError("timed out")
+
+    class _FallbackBrain:
+        async def generate(self, messages, tools=None):
+            return SimpleNamespace(text="Recovered answer with current runtime context.")
+
+    monkeypatch.setattr(
+        panel_module,
+        "_create_panel_assistant_brain",
+        lambda provider: _PrimaryBrain() if provider.model == "model-primary" else _FallbackBrain(),
+    )
+
+    result = panel_module._generate_degraded_assistant_answer(
+        "What is happening right now?",
+        {"health_current_state": {"daemon_state": "healthy"}, "queue_counts": {"pending": 1}},
+        thread_turns=[],
+        degraded_reason="advisory_transport_stalled",
+    )
+
+    assert result["provider"] == "fallback"
+    assert result["fallback_used"] is True
+    assert result["fallback_reason"] == "TIMEOUT"
+    assert result["deterministic_used"] is False
+
+
+def test_degraded_assistant_uses_deterministic_only_after_model_failures(monkeypatch):
+    monkeypatch.setattr(
+        panel_module,
+        "load_app_config",
+        lambda: SimpleNamespace(
+            brain={
+                "primary": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-primary",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+                "fallback": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-fallback",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+            }
+        ),
+    )
+
+    class _FailBrain:
+        async def generate(self, messages, tools=None):
+            raise TimeoutError("timed out")
+
+    monkeypatch.setattr(
+        panel_module, "_create_panel_assistant_brain", lambda provider: _FailBrain()
+    )
+
+    result = panel_module._generate_degraded_assistant_answer(
+        "What is happening right now?",
+        {"health_current_state": {"daemon_state": "healthy"}, "queue_counts": {"pending": 2}},
+        thread_turns=[],
+        degraded_reason="daemon_unavailable",
+    )
+
+    assert result["provider"] == "deterministic_fallback"
+    assert result["deterministic_used"] is True
+    assert result["fallback_reason"] == "TIMEOUT"
+
+
+def test_operator_assistant_page_degrades_when_daemon_paused(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    (queue_dir / ".paused").write_text("1", encoding="utf-8")
+    (queue_dir / "pending" / "job-assistant-paused.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-paused"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-paused.state.json").write_text(
+        json.dumps({"lifecycle_state": "queued", "updated_at_ms": 1}), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-paused.json&thread_id=thread-paused&question=What+is+happening+right+now%3F",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "degraded_brain_only" in res.text
+    assert "daemon_paused" in res.text
+
+
+def test_operator_assistant_page_degrades_when_transport_stalled(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps({"daemon_state": "healthy"}), encoding="utf-8"
+    )
+    old_ts = 1
+    (queue_dir / "pending" / "job-assistant-stale.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-stale"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-stale.state.json").write_text(
+        json.dumps({"lifecycle_state": "advisory_running", "updated_at_ms": old_ts}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-stale.json&thread_id=thread-stale&question=What+is+happening+right+now%3F",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "degraded_brain_only" in res.text
+    assert "queue_processing_timeout" in res.text
+
+
+def test_operator_assistant_page_does_not_degrade_when_request_is_progressing(
+    tmp_path, monkeypatch
+):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    now_ms = int(__import__("time").time() * 1000)
+    (queue_dir / "health.json").write_text(
+        json.dumps({"daemon_state": "healthy"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-active.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-active"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-active.state.json").write_text(
+        json.dumps({"lifecycle_state": "advisory_running", "updated_at_ms": now_ms}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-active.json&thread_id=thread-active&question=What+is+happening+right+now%3F",
+        headers=_operator_headers(),
+    )
+    assert res.status_code == 200
+    assert "thinking through Voxera" in res.text
+    assert "degraded_brain_only" not in res.text
 
 
 def test_operator_assistant_page_shows_completed_queue_answer(tmp_path, monkeypatch):
