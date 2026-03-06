@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from ..audit import log, tail
+from ..brain.gemini import GeminiBrain
+from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config as load_config
 from ..config import load_config as load_runtime_config
 from ..config import write_config_fingerprint, write_config_snapshot
@@ -28,6 +30,12 @@ from ..health import (
     record_last_shutdown,
     record_mission_success,
     update_health_snapshot,
+)
+from ..operator_assistant import (
+    ASSISTANT_JOB_KIND,
+    build_assistant_messages,
+    build_operator_assistant_context,
+    fallback_operator_answer,
 )
 from ..paths import queue_root as default_queue_root
 from ..skills.registry import SkillRegistry
@@ -1921,6 +1929,96 @@ class MissionQueueDaemon:
         self.prune_failed_artifacts()
         return moved
 
+    def _assistant_response_artifact_path(self, job_ref: str) -> Path:
+        return self._job_artifacts_dir(job_ref) / "assistant_response.json"
+
+    def _create_assistant_brain(self, provider) -> OpenAICompatBrain | GeminiBrain:
+        if provider.type == "openai_compat":
+            return OpenAICompatBrain(
+                model=provider.model,
+                base_url=provider.base_url or "https://openrouter.ai/api/v1",
+                api_key_ref=provider.api_key_ref,
+                extra_headers=provider.extra_headers,
+            )
+        if provider.type == "gemini":
+            return GeminiBrain(model=provider.model, api_key_ref=provider.api_key_ref)
+        raise ValueError(f"unsupported assistant provider type: {provider.type}")
+
+    def _assistant_answer_via_brain(self, question: str, context: dict[str, Any]) -> str:
+        if not self.cfg.brain:
+            return fallback_operator_answer(question, context)
+
+        preferred_order = ["primary", "fallback"]
+        candidates = [key for key in preferred_order if key in self.cfg.brain]
+        for key in self.cfg.brain:
+            if key not in candidates:
+                candidates.append(key)
+
+        last_error: Exception | None = None
+        messages = build_assistant_messages(question, context)
+        for key in candidates:
+            provider = self.cfg.brain.get(key)
+            if provider is None:
+                continue
+            try:
+                brain = self._create_assistant_brain(provider)
+                resp = asyncio.run(brain.generate(messages, tools=[]))
+                text = str(resp.text or "").strip()
+                if text:
+                    return text
+            except Exception as exc:
+                last_error = exc
+                log(
+                    {
+                        "event": "assistant_brain_provider_failed",
+                        "provider": key,
+                        "error": repr(exc),
+                    }
+                )
+
+        fallback = fallback_operator_answer(question, context)
+        if last_error is not None:
+            fallback = f"{fallback}\n\nNote: cloud advisory inference failed, so this answer used deterministic fallback."
+        return fallback
+
+    def _process_assistant_job(self, job_path: Path, payload: dict[str, Any]) -> bool:
+        question = str(payload.get("question") or "").strip()
+        if not question:
+            raise ValueError("assistant question is required")
+
+        self._update_job_state(str(job_path), lifecycle_state="advisory_running", payload=payload)
+        self._write_action_event(str(job_path), "assistant_job_started")
+
+        context = build_operator_assistant_context(self.queue_root)
+        answer = self._assistant_answer_via_brain(question, context)
+
+        artifact_payload = {
+            "schema_version": 1,
+            "kind": ASSISTANT_JOB_KIND,
+            "question": question,
+            "answer": answer,
+            "updated_at_ms": int(time.time() * 1000),
+            "context": context,
+        }
+        self._assistant_response_artifact_path(str(job_path)).write_text(
+            json.dumps(artifact_payload, indent=2), encoding="utf-8"
+        )
+
+        moved = self._move_job(job_path, self.done)
+        if moved is None:
+            return False
+
+        self.stats.processed += 1
+        self._update_job_state(
+            str(moved),
+            lifecycle_state="done",
+            payload=payload,
+            terminal_outcome="succeeded",
+        )
+        self._write_action_event(str(moved), "assistant_job_done")
+        log({"event": "assistant_job_done", "job": str(moved)})
+        return True
+
     def process_job_file(self, job_path: Path) -> bool:
         self.ensure_dirs()
         if not job_path.exists():
@@ -1946,6 +2044,8 @@ class MissionQueueDaemon:
 
             try:
                 payload = self._load_job_payload_with_retry(job_path)
+                if str(payload.get("kind") or "").strip() == ASSISTANT_JOB_KIND:
+                    return self._process_assistant_job(job_path, payload)
                 payload = self._normalize_payload(payload)
                 if self._ensure_hard_approval_gate(job_path, payload=payload):
                     return False

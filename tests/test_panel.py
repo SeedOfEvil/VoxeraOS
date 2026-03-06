@@ -1816,21 +1816,14 @@ def test_operator_assistant_submit_renders_grounded_response(tmp_path, monkeypat
         "/assistant/ask",
         data={"question": "Why is this job waiting?"},
     )
-    assert res.status_code == 200
-    body = res.text
-    assert "From inside Voxera" in body
-    assert "approvals=1" in body
-    assert "Right now I am waiting at policy approval gates" in body
-    assert "I did not execute jobs or mutate queue state while answering." in body
+    assert res.status_code == 303
+    assert "request_id=" in (res.headers.get("location") or "")
 
 
-def test_operator_assistant_inside_voice_for_perspective_question(tmp_path, monkeypatch):
+def test_operator_assistant_submit_creates_queue_job(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
-    (queue_dir / "health.json").write_text(
-        json.dumps({"daemon_state": "healthy"}), encoding="utf-8"
-    )
 
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
     monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
@@ -1840,12 +1833,14 @@ def test_operator_assistant_inside_voice_for_perspective_question(tmp_path, monk
         client,
         "post",
         "/assistant/ask",
-        data={"question": "What does it feel like for you to handle work through Voxera?"},
+        data={"question": "From inside Voxera, how does the system look?"},
     )
-    assert res.status_code == 200
-    body = res.text
-    assert "From inside Voxera" in body
-    assert "control-plane perspective" in body
+    assert res.status_code == 303
+    queued = list((queue_dir / "inbox").glob("job-assistant-*.json"))
+    assert len(queued) == 1
+    payload = json.loads(queued[0].read_text(encoding="utf-8"))
+    assert payload["kind"] == "assistant_question"
+    assert payload["read_only"] is True
 
 
 def test_operator_assistant_question_required(tmp_path, monkeypatch):
@@ -1877,12 +1872,33 @@ def test_operator_assistant_is_read_only_no_queue_mutation(tmp_path, monkeypatch
         "/assistant/ask",
         data={"question": "What is happening right now?"},
     )
-    assert res.status_code == 200
+    assert res.status_code == 303
     assert sentinel.exists()
-    assert (
-        not list((queue_dir / "inbox").glob("*.json")) if (queue_dir / "inbox").exists() else True
+    queued = list((queue_dir / "inbox").glob("job-assistant-*.json"))
+    assert len(queued) == 1
+    assert not list((queue_dir / "done").glob("job-assistant-*.json"))
+    assert not list((queue_dir / "failed").glob("job-assistant-*.json"))
+
+
+def test_operator_assistant_page_shows_completed_queue_answer(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-assistant-1.json").write_text("{}", encoding="utf-8")
+    (queue_dir / "artifacts" / "job-assistant-1").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "artifacts" / "job-assistant-1" / "assistant_response.json").write_text(
+        json.dumps({"answer": "From inside Voxera, I see pending=0.", "updated_at_ms": 1}),
+        encoding="utf-8",
     )
-    assert not list((queue_dir / "done").glob("*.json")) if (queue_dir / "done").exists() else True
-    assert (
-        not list((queue_dir / "failed").glob("*.json")) if (queue_dir / "failed").exists() else True
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = client.get(
+        "/assistant?request_id=job-assistant-1.json&question=What+is+happening+right+now%3F",
+        headers=_operator_headers(),
     )
+    assert res.status_code == 200
+    assert "answered" in res.text
+    assert "From inside Voxera, I see pending=0." in res.text

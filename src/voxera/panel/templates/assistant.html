@@ -5,20 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Voxera Operator Assistant</title>
   <link rel="stylesheet" href="/static/panel.css" />
+  {% if should_poll %}
+  <meta http-equiv="refresh" content="2" />
+  {% endif %}
 </head>
 <body>
   <div class="container">
     <header class="page-header">
       <div>
         <h1 class="title">Operator Assistant</h1>
-        <p class="subtitle">Ask Voxera about queue state, health semantics, approvals, and recent behavior.</p>
+        <p class="subtitle">Ask Voxera through its queue-backed advisory lane (read-only, grounded, operator-safe).</p>
       </div>
       <a class="btn" href="/">Back to Control Panel</a>
     </header>
 
     <div class="alert alert-info">
       <div>
-        Advisory-only surface. Responses are grounded in current panel/runtime context and do not execute jobs, mutate queue state, or bypass approvals.
+        Responses are generated through Voxera Queue in advisory mode. This lane is read-only: no tool execution, no approvals, no state mutation.
       </div>
     </div>
 
@@ -32,7 +35,7 @@
         <label>Question
           <textarea class="textarea" name="question" rows="3" placeholder="What is happening right now?" required>{{question}}</textarea>
         </label>
-        <button class="btn btn-primary" type="submit">Ask</button>
+        <button class="btn btn-primary" type="submit">Ask via Voxera Queue</button>
       </form>
       <div class="mt">
         <p class="kpi-label"><b>Example prompts</b></p>
@@ -45,11 +48,19 @@
     </section>
 
     <section class="card mb">
-      <h2>Response</h2>
-      {% if response_text %}
-      <pre class="assistant-response">{{response_text}}</pre>
+      <h2>Advisory Request</h2>
+      {% if request_result.request_id %}
+      <p class="muted text-sm">Request: <span class="mono">{{request_result.request_id}}</span></p>
+      <p class="muted text-sm">Status: <b>{{request_result.status}}</b> · Lifecycle: <b>{{request_result.lifecycle_state}}</b></p>
+      {% if request_result.answer %}
+      <pre class="assistant-response">{{request_result.answer}}</pre>
+      {% elif request_result.error %}
+      <div class="alert alert-danger">{{request_result.error}}</div>
       {% else %}
-      <div class="empty-state">Ask a question to get a grounded explanation of current system behavior.</div>
+      <div class="empty-state">Queued and waiting for Voxera advisory processing...</div>
+      {% endif %}
+      {% else %}
+      <div class="empty-state">Submit a question to enqueue an advisory request.</div>
       {% endif %}
     </section>
 
