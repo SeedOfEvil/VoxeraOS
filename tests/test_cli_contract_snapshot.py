@@ -51,7 +51,7 @@ def test_cli_public_command_surface_snapshot():
 def test_cli_doctor_help_surface_snapshot():
     runner = CliRunner()
 
-    result = runner.invoke(cli.app, ["doctor", "--help"])
+    result = runner.invoke(cli.app, ["doctor", "--help"], color=False)
 
     assert result.exit_code == 0
     expected_fragments = [
@@ -67,7 +67,7 @@ def test_cli_doctor_help_surface_snapshot():
 def test_cli_queue_status_help_surface_snapshot():
     runner = CliRunner()
 
-    result = runner.invoke(cli.app, ["queue", "status", "--help"])
+    result = runner.invoke(cli.app, ["queue", "status", "--help"], color=False)
 
     assert result.exit_code == 0
     expected_fragments = [

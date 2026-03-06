@@ -4,9 +4,7 @@ from voxera.panel import app as panel_module
 
 
 def test_panel_public_route_surface_snapshot():
-    paths = sorted(
-        route.path for route in panel_module.app.routes if getattr(route, "path", None)
-    )
+    paths = sorted(route.path for route in panel_module.app.routes if getattr(route, "path", None))
 
     expected = sorted(
         [
