@@ -1,20 +1,45 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Voxera Control Pane</title>
+  <title>Voxera Control Panel</title>
   <link rel="stylesheet" href="/static/panel.css" />
 </head>
 <body>
   <div class="container">
     <header class="page-header">
       <div>
-        <h1 class="title">Voxera Control Pane</h1>
+        <h1 class="title">Voxera Control Panel</h1>
         <p class="subtitle">Mission operations center — queue orchestration, approvals, and live activity.</p>
       </div>
-      <span class="badge">Classical Modern UI</span>
+      {% if queue.paused %}
+        <span class="badge badge-paused">Queue Paused</span>
+      {% else %}
+        <span class="badge badge-ok">Queue Active</span>
+      {% endif %}
     </header>
+
+    <nav class="page-nav">
+      <a href="/jobs">Browse Jobs</a>
+      <span class="sep">·</span>
+      <a href="/hygiene">Queue Hygiene</a>
+      <span class="sep">·</span>
+      <a href="/recovery">Recovery Inspector</a>
+      <span class="sep">·</span>
+      <a href="/bundle/system">Download System Bundle</a>
+    </nav>
+
+    {% if auth_setup_banner %}
+      <div class="alert alert-info">
+        <div>
+          <b>{{auth_setup_banner.title}}</b><br/>
+          {{auth_setup_banner.detail}}<br/>
+          <span class="mono">{{auth_setup_banner.path_hint}}</span>
+          <pre style="margin-top:6px;">{{auth_setup_banner.commands}}</pre>
+        </div>
+      </div>
+    {% endif %}
 
     {% if created %}
       <div class="alert alert-success">Queued new job: <b>{{created}}</b>.</div>
@@ -25,42 +50,200 @@
     {% if error %}
       <div class="alert alert-danger">Action failed: {{error_message or error}}</div>
     {% endif %}
-
-
-
-    {% if auth_setup_banner %}
-      <div class="alert alert-info">
-        <b>{{auth_setup_banner.title}}</b><br/>
-        {{auth_setup_banner.detail}}<br/>
-        <span class="mono">{{auth_setup_banner.path_hint}}</span>
-        <pre>{{auth_setup_banner.commands}}</pre>
-      </div>
-    {% endif %}
-
     {% if get_mutations_enabled %}
-      <div class="alert">Compatibility mode: GET mutation endpoints are enabled for tests/dev only.</div>
+      <div class="alert alert-warn">Compatibility mode: GET mutation endpoints are enabled for tests/dev only.</div>
     {% endif %}
-    <div class="card" style="margin-bottom:16px;">
-      <b>Operator Console:</b> <a href="/jobs">Browse Jobs</a> · <a href="/hygiene">Queue Hygiene</a> · <a href="/recovery">Recovery Inspector</a> · <a href="/bundle/system">Download system incident bundle</a>
-    </div>
 
-    <nav class="tabs" aria-label="Control panel views">
+    <nav class="tabs" aria-label="Panel views">
       <button class="tab-btn is-active" type="button" data-tab-btn="control">Control</button>
       <button class="tab-btn" type="button" data-tab-btn="logging">Logging</button>
       <button class="tab-btn" type="button" data-tab-btn="performance">Performance Stats</button>
-      <button class="tab-btn" type="button" data-tab-btn="admin">Admin Hygiene</button>
     </nav>
 
+    <!-- ═══════════════════════ CONTROL TAB ═══════════════════════ -->
     <section class="tab-panel" data-tab-panel="control">
+
+      <!-- Daemon health -->
       {% include "_daemon_health_widget.html" %}
 
-      <section class="grid grid-3" style="margin-bottom:16px;">
-        <article class="card"><p class="kpi">{{queue.counts.pending}}</p><p class="kpi-label">Pending Jobs</p></article>
-        <article class="card"><p class="kpi">{{queue.counts.pending_approvals}}</p><p class="kpi-label">Approval Inbox</p></article>
-        <article class="card"><p class="kpi">{{queue.counts.done}}</p><p class="kpi-label">Completed Jobs</p></article>
+      <!-- KPI summary row -->
+      <div class="section-label">Queue Summary</div>
+      <section class="grid grid-4 mb">
+        <article class="card">
+          <p class="kpi">{{queue.counts.pending}}</p>
+          <p class="kpi-label">Pending</p>
+        </article>
+        <article class="card">
+          <p class="kpi{% if queue.counts.pending_approvals > 0 %}" style="color:var(--warn){% endif %}">{{queue.counts.pending_approvals}}</p>
+          <p class="kpi-label">Awaiting Approval</p>
+        </article>
+        <article class="card">
+          <p class="kpi{% if queue.counts.failed > 0 %}" style="color:var(--danger){% endif %}">{{queue.counts.failed}}</p>
+          <p class="kpi-label">Failed</p>
+        </article>
+        <article class="card">
+          <p class="kpi">{{queue.counts.done}}</p>
+          <p class="kpi-label">Completed</p>
+        </article>
       </section>
 
-      <section class="card" style="margin-bottom:16px;">
+      <!-- Approval Command Center (highest-priority actionable) -->
+      <div class="section-label">Approvals</div>
+      <section class="card mb">
+        <h2>Approval Command Center</h2>
+        <p class="muted text-sm">Approve or deny pending actions directly from the Control panel.</p>
+        {% if queue.pending_approvals|length == 0 %}
+          <div class="empty-state">No pending queue approvals — all clear.</div>
+        {% else %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Step / Skill</th>
+                  <th>Capability</th>
+                  <th>Policy Reason</th>
+                  <th>Target</th>
+                  <th>Scope</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for item in queue.pending_approvals %}
+                <tr>
+                  <td class="mono text-sm">{{item.job}}</td>
+                  <td>{{item.step}}<br/><span class="muted text-xs">{{item.skill}}</span></td>
+                  <td>{{item.capability}}</td>
+                  <td>{{item.policy_reason or item.reason}}</td>
+                  <td class="text-sm">{{item.target.type}}: {{item.target.value}}</td>
+                  <td class="text-xs muted">fs={{item.scope.fs_scope}}<br/>net={{item.scope.needs_network}}</td>
+                  <td>
+                    <div class="action-group">
+                      <form method="post" action="/queue/approvals/{{item.job}}/approve">
+                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                        <button class="btn btn-sm btn-approve" type="submit">Approve</button>
+                      </form>
+                      <form method="post" action="/queue/approvals/{{item.job}}/approve-always">
+                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                        <button class="btn btn-sm" type="submit">Always</button>
+                      </form>
+                      <form method="post" action="/queue/approvals/{{item.job}}/deny">
+                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                        <button class="btn btn-sm btn-deny" type="submit">Deny</button>
+                      </form>
+                      <form method="post" action="/queue/jobs/{{item.job}}/cancel">
+                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                        <button class="btn btn-sm btn-deny" type="submit">Cancel</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </section>
+
+      <!-- Active Work + Failed Jobs -->
+      <div class="section-label">Live Work</div>
+      <section class="grid grid-2 mb">
+        <article class="card">
+          <h2>Active Work</h2>
+          {% if active_jobs|length == 0 %}
+            <div class="empty-state">No active jobs currently.</div>
+          {% else %}
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Job</th><th>Mission</th><th>Goal</th><th>State</th></tr></thead>
+                <tbody>
+                {% for item in active_jobs %}
+                  <tr>
+                    <td class="mono text-sm">{{item.job}}</td>
+                    <td>{{item.mission}}</td>
+                    <td>{{item.goal}}</td>
+                    <td><span class="badge badge-running">{{item.state}}</span></td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
+        </article>
+
+        <article class="card">
+          <h2>Failed Jobs</h2>
+          {% if queue.recent_failed|length == 0 %}
+            <div class="empty-state">No failed jobs.</div>
+          {% else %}
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Job</th><th>Error</th><th>Actions</th></tr></thead>
+                <tbody>
+                {% for item in queue.recent_failed %}
+                  <tr>
+                    <td><a href="/queue/jobs/{{item.job}}/detail" class="mono text-sm">{{item.job}}</a></td>
+                    <td class="text-sm muted">{{item.error}}</td>
+                    <td>
+                      <div class="action-group">
+                        <form method="post" action="/queue/jobs/{{item.job}}/retry">
+                          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                          <button class="btn btn-sm" type="submit">Retry</button>
+                        </form>
+                        <form method="post" action="/queue/jobs/{{item.job}}/cancel">
+                          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                          <button class="btn btn-sm btn-deny" type="submit">Cancel</button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
+        </article>
+      </section>
+
+      <!-- Create mission forms -->
+      <div class="section-label">Dispatch</div>
+      <section class="grid grid-2 mb">
+        <article class="card">
+          <h2>Create Mission</h2>
+          <form class="form-stack" method="post" action="/missions/create">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            <label>Prompt / Goal
+              <textarea class="textarea" name="prompt" rows="4" placeholder="Describe what the mission should do" required></textarea>
+            </label>
+            <label style="display:flex; gap:8px; align-items:center; font-weight:400;">
+              <input type="checkbox" name="approval_required" value="1" checked />
+              Require approval before execution
+            </label>
+            <button class="btn btn-primary" type="submit">Create Mission</button>
+          </form>
+        </article>
+
+        <article class="card">
+          <h2>Create Mission Template</h2>
+          <form class="form-stack" method="post" action="/missions/templates/create">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            <div class="form-row">
+              <label>ID <input class="input" type="text" name="mission_id" placeholder="my_mission" required /></label>
+              <label>Title <input class="input" type="text" name="title" placeholder="My Mission" /></label>
+            </div>
+            <label>Goal <input class="input" type="text" name="goal" placeholder="Outcome this mission should reach" /></label>
+            <label>Notes <input class="input" type="text" name="notes" placeholder="Optional notes" /></label>
+            <label>Steps JSON
+              <textarea class="textarea" name="steps_json" rows="4">[{"skill_id":"system.status","args":{}}]</textarea>
+            </label>
+            <button class="btn" type="submit">Save Template</button>
+          </form>
+        </article>
+      </section>
+
+      <!-- Queue Status + health (secondary details) -->
+      <div class="section-label">Queue Details</div>
+      <section class="card mb">
         <h2>Queue Status + Failed Metadata Health</h2>
         {% if not queue.exists %}
           <p class="muted">Queue root not found: {{queue_root}}</p>
@@ -86,26 +269,31 @@
             <p class="kpi-label"><b>Latest prune removed jobs/sidecars</b></p>
             <p>{{queue.failed_prune_last.removed_jobs}} / {{queue.failed_prune_last.removed_sidecars}}</p>
             <p class="kpi-label"><b>Queue Root</b></p>
-            <p class="muted mono">{{queue_root}}</p>
+            <p class="muted mono text-xs">{{queue_root}}</p>
             <p class="kpi-label"><b>Intake</b></p>
-            <p class="muted mono">{{queue.intake_glob}}</p>
+            <p class="muted mono text-xs">{{queue.intake_glob}}</p>
             <p class="kpi-label"><b>Daemon paused</b></p>
             <p>{{queue.paused}}</p>
             <p class="kpi-label"><b>Last OK</b></p>
             <p>{{queue.last_ok_event or "-"}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% elif not queue.last_ok_event %}{% endif %}</p>
             <p class="kpi-label"><b>Last Error</b></p>
             <p>{{queue.last_error or "-"}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% elif not queue.last_error %}{% endif %}</p>
-            <div style="display:flex; gap:6px; margin-top:8px;">
+            <div class="action-group" style="margin-top:var(--space-2);">
               <form method="post" action="/queue/pause">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Pause</button></form>
+                <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                <button class="btn btn-sm" type="submit">Pause</button>
+              </form>
               <form method="post" action="/queue/resume">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Resume</button></form>
+                <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                <button class="btn btn-sm btn-primary" type="submit">Resume</button>
+              </form>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="grid grid-2" style="margin-bottom:16px;">
+      <!-- Diagnostic counters -->
+      <section class="grid grid-2 mb">
         <article class="card">
           <h2>Daemon Lock Event Counters</h2>
           <div class="table-wrap"><table>
@@ -138,104 +326,57 @@
         </article>
       </section>
 
-      <section class="grid grid-2" style="margin-bottom:16px;">
-        <article class="card">
-          <h2>Create Mission</h2>
-          <form class="form-stack" method="post" action="/missions/create">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <label>Prompt / Goal
-              <textarea class="textarea" name="prompt" rows="4" placeholder="Describe what mission should do" required></textarea>
-            </label>
-            <label style="display:flex; gap:8px; align-items:center;">
-              <input type="checkbox" name="approval_required" value="1" checked />
-              Approval required
-            </label>
-            <button class="btn btn-primary" type="submit">Create Mission</button>
-          </form>
-        </article>
-
-        <article class="card">
-          <h2>Create Mission Template</h2>
-          <form class="form-stack" method="post" action="/missions/templates/create">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <div class="form-row">
-              <label>ID <input class="input" type="text" name="mission_id" placeholder="my_mission" required /></label>
-              <label>Title <input class="input" type="text" name="title" placeholder="My Mission" /></label>
-            </div>
-            <label>Goal <input class="input" type="text" name="goal" placeholder="Outcome this mission should reach" /></label>
-            <label>Notes <input class="input" type="text" name="notes" placeholder="Optional notes" /></label>
-            <label>Steps JSON
-              <textarea class="textarea" name="steps_json" rows="5">[{"skill_id":"system.status","args":{}}]</textarea>
-            </label>
-            <button class="btn" type="submit">Save Mission Template</button>
-          </form>
-        </article>
-      </section>
-
-      <section class="card" style="margin-bottom:16px;">
-        <h2>Approval Command Center</h2>
-        <p class="muted">Approve or deny pending actions directly from the Control pane.</p>
-        {% if queue.pending_approvals|length == 0 %}
-          <p class="muted">No pending queue approvals.</p>
-        {% else %}
-          <div class="table-wrap"><table>
-            <thead>
-              <tr><th>Job</th><th>Approve As</th><th>Step</th><th>Skill</th><th>Capability</th><th>Why (Policy)</th><th>Target</th><th>Scope</th><th>Action</th></tr>
-            </thead>
-            <tbody>
-            {% for item in queue.pending_approvals %}
-              <tr>
-                <td>{{item.job}}</td>
-                <td>{{(item.approve_refs or [])[:2]|join(' | ')}}</td>
-                <td>{{item.step}}</td>
-                <td>{{item.skill}}</td>
-                <td>{{item.capability}}</td>
-                <td>{{item.policy_reason or item.reason}}</td>
-                <td>{{item.target.type}}: {{item.target.value}}</td>
-                <td>fs={{item.scope.fs_scope}}, net={{item.scope.needs_network}}</td>
-                <td>
-                  <div style="display:flex; gap:6px;">
-                    <form method="post" action="/queue/approvals/{{item.job}}/approve">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-approve" type="submit">Approve</button></form>
-                    <form method="post" action="/queue/approvals/{{item.job}}/approve-always">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Approve Always</button></form>
-                    <form method="post" action="/queue/approvals/{{item.job}}/deny">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Deny</button></form>
-                    <form method="post" action="/queue/jobs/{{item.job}}/cancel">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Cancel</button></form>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table></div>
-        {% endif %}
-      </section>
-
-      <section class="card" style="margin-bottom:16px;">
+      <!-- Completed jobs -->
+      <div class="section-label">History</div>
+      <section class="card mb">
         <h2>Completed Jobs</h2>
         {% if queue.done_jobs|length == 0 %}<p class="muted">No completed jobs.</p>{% else %}
         <div class="table-wrap"><table><thead><tr><th>Job</th><th>Artifacts</th></tr></thead><tbody>
-        {% for job in queue.done_jobs %}<tr><td>{{job}}</td><td><a href="/queue/jobs/{{job}}/detail">Open detail</a></td></tr>{% endfor %}
+        {% for job in queue.done_jobs %}<tr><td class="mono text-sm">{{job}}</td><td><a href="/queue/jobs/{{job}}/detail">Open detail →</a></td></tr>{% endfor %}
         </tbody></table></div>{% endif %}
       </section>
 
-      <section class="grid grid-2" style="margin-bottom:16px;">
+      <!-- Mission library -->
+      <div class="section-label">Mission Library</div>
+      <section class="card">
+        <h2>Mission Library</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>ID</th><th>Title</th><th>Goal</th><th>Steps</th></tr></thead>
+          <tbody>
+          {% for mission in missions %}
+            <tr>
+              <td class="mono text-sm">{{mission.id}}</td>
+              <td>{{mission.title}}</td>
+              <td>{{mission.goal}}</td>
+              <td>{{mission.steps|length}}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+      </section>
+
+    </section>
+    <!-- end control tab -->
+
+
+    <!-- ═══════════════════════ LOGGING TAB ═══════════════════════ -->
+    <section class="tab-panel is-hidden" data-tab-panel="logging">
+      <section class="grid grid-2 mb">
         <article class="card">
-          <h2>Active Work</h2>
-          {% if active_jobs|length == 0 %}
-            <p class="muted">No active jobs currently.</p>
+          <h2>Recent Activity</h2>
+          {% if recent_activity|length == 0 %}
+            <div class="empty-state">No recent lifecycle events yet.</div>
           {% else %}
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Job</th><th>Mission</th><th>Goal</th><th>Status</th></tr></thead>
+                <thead><tr><th>Event</th><th>Job</th><th>Mission</th><th>Step</th></tr></thead>
                 <tbody>
-                {% for item in active_jobs %}
+                {% for item in recent_activity %}
                   <tr>
-                    <td>{{item.job}}</td>
+                    <td>{{item.event}}</td>
+                    <td class="mono text-xs">{{item.job}}</td>
                     <td>{{item.mission}}</td>
-                    <td>{{item.goal}}</td>
-                    <td><span class="badge badge-running">{{item.state}}</span></td>
+                    <td>{{item.step}}</td>
                   </tr>
                 {% endfor %}
                 </tbody>
@@ -245,69 +386,32 @@
         </article>
 
         <article class="card">
-          <h2>Recent Activity Snapshot</h2>
-          {% if recent_activity|length == 0 %}
-            <p class="muted">No recent lifecycle events yet.</p>
+          <h2>Mission Log (last 20 lines)</h2>
+          {% if mission_log_tail|length == 0 %}
+            <p class="muted">Mission log not found: {{mission_log_path}}</p>
           {% else %}
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Event</th><th>Job</th><th>Mission</th><th>Step</th></tr></thead>
-                <tbody>
-                {% for item in recent_activity[:6] %}
-                  <tr><td>{{item.event}}</td><td>{{item.job}}</td><td>{{item.mission}}</td><td>{{item.step}}</td></tr>
-                {% endfor %}
-                </tbody>
-              </table>
-            </div>
+            <pre>{{ mission_log_tail|join('\n') }}</pre>
           {% endif %}
         </article>
       </section>
 
-
-      <section class="card" style="margin-bottom:16px;">
-        <h2>Failed Jobs</h2>
-        {% if queue.recent_failed|length == 0 %}
-          <p class="muted">No failed jobs.</p>
+      <section class="card" style="margin-top:var(--space-4);">
+        <h2>Audit (latest)</h2>
+        {% if audit|length == 0 %}
+          <p class="muted">No audit events yet.</p>
         {% else %}
-          <div class="table-wrap"><table><thead><tr><th>Job</th><th>Error</th><th>Actions</th></tr></thead><tbody>
-          {% for item in queue.recent_failed %}
-            <tr>
-              <td><a href="/queue/jobs/{{item.job}}/detail">{{item.job}}</a></td>
-              <td>{{item.error}}</td>
-              <td><div style="display:flex; gap:6px;">
-                <form method="post" action="/queue/jobs/{{item.job}}/retry">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Retry</button></form>
-                <form method="post" action="/queue/jobs/{{item.job}}/cancel">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Cancel</button></form>
-              </div></td>
-            </tr>
+          {% for e in audit %}
+            <pre style="margin-bottom:4px;">{{ e }}</pre>
           {% endfor %}
-          </tbody></table></div>
         {% endif %}
       </section>
-
-      <section class="card">
-        <h2>Mission Library</h2>
-        <div class="table-wrap"><table>
-          <thead><tr><th>ID</th><th>Title</th><th>Goal</th><th>Steps</th></tr></thead>
-          <tbody>
-          {% for mission in missions %}
-            <tr>
-              <td>{{mission.id}}</td>
-              <td>{{mission.title}}</td>
-              <td>{{mission.goal}}</td>
-              <td>{{mission.steps|length}}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table></div>
-      </section>
     </section>
+    <!-- end logging tab -->
 
 
-
+    <!-- ═══════════════════════ PERFORMANCE TAB ═══════════════════════ -->
     <section class="tab-panel is-hidden" data-tab-panel="performance">
-      <section class="grid grid-2" style="margin-bottom:16px;">
+      <section class="grid grid-2 mb">
         <article class="card">
           <h2>Queue Counts</h2>
           <div class="table-wrap"><table>
@@ -338,7 +442,7 @@
         </article>
       </section>
 
-      <section class="grid grid-2" style="margin-bottom:16px;">
+      <section class="grid grid-2 mb">
         <article class="card">
           <h2>Recent History</h2>
           <div class="table-wrap"><table>
@@ -366,76 +470,25 @@
           </table></div>
         </article>
       </section>
-    </section>
 
-
-    <section class="tab-panel is-hidden" data-tab-panel="admin">
-      <section class="card" style="margin-bottom:16px;">
-        <h2>Admin Maintenance</h2>
-        <p class="muted">Use admin-protected controls for queue hygiene and safe health resets. These actions are audited.</p>
-        <a class="btn" href="/hygiene">Open Hygiene + Health Reset</a>
+      <section class="card">
+        <p class="muted text-sm">For historical counter resets and queue hygiene, visit the <a href="/hygiene">Hygiene page</a>.</p>
       </section>
     </section>
+    <!-- end performance tab -->
 
-    <section class="tab-panel is-hidden" data-tab-panel="logging">
-      <section class="grid grid-2">
-        <article class="card">
-          <h2>Recent Activity</h2>
-          {% if recent_activity|length == 0 %}
-            <p class="muted">No recent lifecycle events yet.</p>
-          {% else %}
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Event</th><th>Job</th><th>Mission</th><th>Step</th></tr></thead>
-                <tbody>
-                {% for item in recent_activity %}
-                  <tr><td>{{item.event}}</td><td>{{item.job}}</td><td>{{item.mission}}</td><td>{{item.step}}</td></tr>
-                {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% endif %}
-        </article>
-
-        <article class="card">
-          <h2>Mission Log (last 20 lines)</h2>
-          {% if mission_log_tail|length == 0 %}
-            <p class="muted">Mission log not found: {{mission_log_path}}</p>
-          {% else %}
-            <pre>{{ mission_log_tail|join('\n') }}</pre>
-          {% endif %}
-        </article>
-      </section>
-
-      <section class="card" style="margin-top:16px;">
-        <h2>Audit (latest)</h2>
-        {% if audit|length == 0 %}
-          <p class="muted">No audit events yet.</p>
-        {% else %}
-          {% for e in audit %}
-            <pre>{{ e }}</pre>
-          {% endfor %}
-        {% endif %}
-      </section>
-    </section>
   </div>
 
   <script>
     const tabButtons = document.querySelectorAll('[data-tab-btn]');
-    const tabPanels = document.querySelectorAll('[data-tab-panel]');
+    const tabPanels  = document.querySelectorAll('[data-tab-panel]');
 
     function activateTab(name) {
-      tabButtons.forEach((button) => {
-        button.classList.toggle('is-active', button.dataset.tabBtn === name);
-      });
-      tabPanels.forEach((panel) => {
-        panel.classList.toggle('is-hidden', panel.dataset.tabPanel !== name);
-      });
+      tabButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.tabBtn === name));
+      tabPanels.forEach((p)  => p.classList.toggle('is-hidden', p.dataset.tabPanel !== name));
     }
 
-    tabButtons.forEach((button) => {
-      button.addEventListener('click', () => activateTab(button.dataset.tabBtn));
-    });
+    tabButtons.forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tabBtn)));
   </script>
 </body>
 </html>
