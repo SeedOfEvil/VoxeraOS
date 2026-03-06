@@ -212,6 +212,7 @@ Panel operator notes:
 - Panel mutation routes (`/queue/create`, `/missions/create`, `/missions/templates/create`) accept `POST` by default.
 - `/missions/create` is the operator Create Mission intake (Easy mode: prompt-only) and writes deterministic jobs to `notes/queue/inbox/job-panel-mission-<slug>-<ts>.json`.
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
+- Panel `/assistant` (Operator Assistant / “Ask Voxera”) is a read-only advisory surface: it assembles current queue counts, health semantic sections, pending approvals, recent failed jobs, and recent queue/mission/panel audit events to answer operator questions about system interpretation. Responses intentionally use a grounded first-person control-plane voice (for example, “From inside Voxera, I see…”) while staying strictly tied to current runtime context. It does **not** mutate queue state, approve actions, or execute jobs.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume + lifecycle actions (approve/deny, cancel, retry, delete) and links Done/Failed/Canceled jobs to artifact-backed detail pages.
 ### Create Mission (panel) quick runbook

@@ -1766,3 +1766,123 @@ def test_hygiene_page_uses_url_for_action_paths(tmp_path, monkeypatch):
     assert "http://testserver/panel/hygiene/prune-dry-run" in res.text
     assert "http://testserver/panel/hygiene/reconcile" in res.text
     assert "http://testserver/panel/hygiene/health-reset" in res.text
+
+
+def test_operator_assistant_page_requires_auth(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    unauth = client.get("/assistant")
+    assert unauth.status_code == 401
+
+    authed = client.get("/assistant", headers=_operator_headers())
+    assert authed.status_code == 200
+    assert "Operator Assistant" in authed.text
+    assert "Ask Voxera" in authed.text
+    assert "Example prompts" in authed.text
+
+
+def test_operator_assistant_submit_renders_grounded_response(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-1.json").write_text('{"goal":"demo"}', encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "job-1.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-1.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "capability": "apps.open",
+                "reason": "needs approval",
+                "policy_reason": "ask",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "health.json").write_text(
+        json.dumps({"daemon_state": "healthy"}), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/assistant/ask",
+        data={"question": "Why is this job waiting?"},
+    )
+    assert res.status_code == 200
+    body = res.text
+    assert "From inside Voxera" in body
+    assert "approvals=1" in body
+    assert "Right now I am waiting at policy approval gates" in body
+    assert "I did not execute jobs or mutate queue state while answering." in body
+
+
+def test_operator_assistant_inside_voice_for_perspective_question(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps({"daemon_state": "healthy"}), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/assistant/ask",
+        data={"question": "What does it feel like for you to handle work through Voxera?"},
+    )
+    assert res.status_code == 200
+    body = res.text
+    assert "From inside Voxera" in body
+    assert "control-plane perspective" in body
+
+
+def test_operator_assistant_question_required(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/assistant/ask", data={"question": ""})
+    assert res.status_code == 200
+    assert "Question is required." in res.text
+
+
+def test_operator_assistant_is_read_only_no_queue_mutation(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+
+    client = TestClient(panel_module.app)
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    sentinel = queue_dir / "pending" / "job-sentinel.json"
+    sentinel.write_text('{"goal":"sentinel"}', encoding="utf-8")
+
+    res = _authed_csrf_request(
+        client,
+        "post",
+        "/assistant/ask",
+        data={"question": "What is happening right now?"},
+    )
+    assert res.status_code == 200
+    assert sentinel.exists()
+    assert (
+        not list((queue_dir / "inbox").glob("*.json")) if (queue_dir / "inbox").exists() else True
+    )
+    assert not list((queue_dir / "done").glob("*.json")) if (queue_dir / "done").exists() else True
+    assert (
+        not list((queue_dir / "failed").glob("*.json")) if (queue_dir / "failed").exists() else True
+    )

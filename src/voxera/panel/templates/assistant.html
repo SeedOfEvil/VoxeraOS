@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Voxera Operator Assistant</title>
+  <link rel="stylesheet" href="/static/panel.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <div>
+        <h1 class="title">Operator Assistant</h1>
+        <p class="subtitle">Ask Voxera about queue state, health semantics, approvals, and recent behavior.</p>
+      </div>
+      <a class="btn" href="/">Back to Control Panel</a>
+    </header>
+
+    <div class="alert alert-info">
+      <div>
+        Advisory-only surface. Responses are grounded in current panel/runtime context and do not execute jobs, mutate queue state, or bypass approvals.
+      </div>
+    </div>
+
+    <section class="card mb">
+      <h2>Ask Voxera</h2>
+      {% if error %}
+      <div class="alert alert-danger">{{error}}</div>
+      {% endif %}
+      <form class="form-stack" method="post" action="/assistant/ask">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <label>Question
+          <textarea class="textarea" name="question" rows="3" placeholder="What is happening right now?" required>{{question}}</textarea>
+        </label>
+        <button class="btn btn-primary" type="submit">Ask</button>
+      </form>
+      <div class="mt">
+        <p class="kpi-label"><b>Example prompts</b></p>
+        <ul class="assistant-example-list">
+          {% for prompt in example_prompts %}
+          <li><code>{{prompt}}</code></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+
+    <section class="card mb">
+      <h2>Response</h2>
+      {% if response_text %}
+      <pre class="assistant-response">{{response_text}}</pre>
+      {% else %}
+      <div class="empty-state">Ask a question to get a grounded explanation of current system behavior.</div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Current Context Snapshot</h2>
+      <div class="grid grid-4">
+        <div><p class="kpi-sm">{{context.queue_counts.inbox if context.queue_counts else 0}}</p><p class="kpi-label">Inbox</p></div>
+        <div><p class="kpi-sm">{{context.queue_counts.pending if context.queue_counts else 0}}</p><p class="kpi-label">Pending</p></div>
+        <div><p class="kpi-sm">{{context.queue_counts.pending_approvals if context.queue_counts else 0}}</p><p class="kpi-label">Approvals</p></div>
+        <div><p class="kpi-sm">{{context.queue_counts.failed if context.queue_counts else 0}}</p><p class="kpi-label">Failed</p></div>
+      </div>
+      <p class="muted text-sm mt">Daemon state: <b>{{context.health_current_state.daemon_state if context.health_current_state else 'unknown'}}</b> · Queue paused: <b>{{context.queue_paused}}</b></p>
+    </section>
+  </div>
+</body>
+</html>
