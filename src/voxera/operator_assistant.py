@@ -139,7 +139,7 @@ def build_operator_assistant_context(queue_root: Path) -> dict[str, Any]:
 def build_assistant_messages(question: str, context: dict[str, Any]) -> list[dict[str, str]]:
     system = (
         "You are Voxera speaking from inside its queue-driven control plane. "
-        "Use first-person control-plane framing (for example: 'From inside Voxera, I see...'). "
+        "Use first-person control-plane framing with varied natural openings (do not always start with the same phrase). "
         "Ground every claim in the provided runtime context only. "
         "Do not claim actions were taken unless present in context. "
         "You are advisory/read-only: do not suggest that you executed, approved, denied, or mutated state. "
@@ -160,11 +160,22 @@ def build_assistant_messages(question: str, context: dict[str, Any]) -> list[dic
 
 def _approval_reason_summary(approvals: list[dict[str, Any]]) -> str:
     if not approvals:
-        return "From inside Voxera, I do not currently see pending approvals."
+        return "I do not currently see pending approvals in queue state."
     first = approvals[0]
     reason = str(first.get("policy_reason") or first.get("reason") or "policy check").strip()
     capability = str(first.get("capability") or "unknown capability").strip()
-    return f"From inside Voxera, my top pending approval is {capability} with reason '{reason}'."
+    return f"My top pending approval is {capability} with reason '{reason}'."
+
+
+def _partner_opening(question: str) -> str:
+    options = [
+        "Here is what I can see from the queue/control-plane side:",
+        "Looking at my live queue and health surfaces, this is the current picture:",
+        "I can walk this with you from Voxera's runtime perspective:",
+        "From my operator-facing control-plane view, here is what is happening:",
+    ]
+    idx = sum(ord(c) for c in question) % len(options)
+    return options[idx]
 
 
 def fallback_operator_answer(question: str, context: dict[str, Any]) -> str:
@@ -177,7 +188,7 @@ def fallback_operator_answer(question: str, context: dict[str, Any]) -> str:
     recent_events = _dict_list(context.get("recent_events"))
 
     lines = [
-        "From inside Voxera, I can only use current queue/health/job/audit context and operator-visible semantics.",
+        _partner_opening(question_text),
         (
             "Right now I see queue counts: "
             f"inbox={int(counts.get('inbox', 0) or 0)}, "

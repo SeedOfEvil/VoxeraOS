@@ -73,3 +73,19 @@ def test_assistant_result_reader_surfaces_answer(tmp_path):
     result = read_assistant_result(queue_root, "job-assistant-test.json")
     assert result["status"] == "answered"
     assert "From inside Voxera" in result["answer"]
+
+
+def test_fallback_partner_voice_uses_varied_opening():
+    from voxera.operator_assistant import fallback_operator_answer
+
+    context = {
+        "queue_counts": {"inbox": 0, "pending": 0, "pending_approvals": 0, "failed": 0, "done": 0},
+        "health_current_state": {"daemon_state": "healthy"},
+        "queue_paused": False,
+        "pending_approvals": [],
+        "recent_failed_jobs": [],
+        "recent_events": [],
+    }
+    answer = fallback_operator_answer("What is happening right now?", context)
+    assert not answer.startswith("From inside Voxera")
+    assert "queue counts" in answer
