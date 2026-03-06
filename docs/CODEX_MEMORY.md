@@ -1,3 +1,8 @@
+## 2026-03-06 — PR #TBD — refactor(panel): modularize hygiene + recovery route domains
+- Extracted panel hygiene routes from `panel/app.py` into `panel/routes_hygiene.py` (`/hygiene`, `/hygiene/prune-dry-run`, `/hygiene/reconcile`, `/hygiene/health-reset`) while preserving auth/csrf/flash/reset semantics and response contracts.
+- Extracted panel recovery routes from `panel/app.py` into `panel/routes_recovery.py` (`/recovery`, `/recovery/download/{bucket}/{name}`) while preserving read-only listing, traversal protections, ZIP limits, and download behavior.
+- Kept `panel/app.py` as FastAPI composition/wiring (setup + shared helpers + route registration), and updated README/ops/architecture docs to reflect ownership boundaries for future panel changes.
+
 ## 2026-03-06 — PR #116 follow-up — fix(panel): keep jobs mutation redirects relative for proxy safety
 - Fixed regression in `routes_jobs._jobs_redirect`: switched redirect target from absolute `request.url_for("jobs_page")` URL back to relative `/jobs?...`.
 - Preserved existing query semantics (`flash`, `bucket`, `q`, sanitized/clamped `n`).

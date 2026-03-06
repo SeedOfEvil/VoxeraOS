@@ -124,6 +124,8 @@ src/voxera/
     ├── helpers.py            — Shared request/value helpers reused by route modules
     ├── routes_home.py        — Home/dashboard + queue-create route domain
     ├── routes_jobs.py        — Jobs/approvals/job-lifecycle route domain
+    ├── routes_hygiene.py    — Hygiene/operator-maintenance route domain
+    ├── routes_recovery.py   — Recovery/quarantine inspector route domain
     ├── templates/            — Jinja2 HTML: home.html, jobs.html, job_detail.html
     └── static/panel.css      — Panel stylesheet
 
