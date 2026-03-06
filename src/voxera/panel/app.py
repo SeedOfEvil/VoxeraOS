@@ -2099,8 +2099,7 @@ async def _jobs_redirect_local(request: Request, flash: str) -> RedirectResponse
     n_raw = (await _request_value(request, "n", "80")).strip()
     params["n"] = _safe_jobs_n(n_raw)
 
-    url = str(request.url_for("jobs_page"))
-    return RedirectResponse(url=f"{url}?{urlencode(params)}", status_code=303)
+    return RedirectResponse(url=f"/jobs?{urlencode(params)}", status_code=303)
 
 
 @app.post("/queue/jobs/{ref}/delete")

@@ -1120,6 +1120,10 @@ def test_delete_only_terminal_jobs_and_confirm_match(tmp_path, monkeypatch):
         data={"confirm": "job-d.json", "bucket": "done", "q": "", "n": "20"},
     )
     assert ok_done.status_code == 303
+    location = ok_done.headers["location"]
+    assert location.startswith("/jobs?")
+    assert not location.startswith("http://")
+    assert not location.startswith("https://")
     assert not (queue_dir / "done" / "job-d.json").exists()
     assert not art.exists()
 
