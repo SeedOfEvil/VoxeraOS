@@ -13,49 +13,26 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import (
-    FileResponse,
-    HTMLResponse,
-    RedirectResponse,
-)
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..audit import log, tail
-from ..brain.fallback import AUTH, MALFORMED, NETWORK, RATE_LIMIT, TIMEOUT, classify_fallback_reason
-from ..brain.gemini import GeminiBrain
-from ..brain.openai_compat import OpenAICompatBrain
-from ..config import load_app_config
 from ..config import load_config as load_runtime_config
-from ..core.missions import MissionTemplate, _parse_mission_file
-from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import lookup_job, queue_snapshot
 from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
 from ..health_semantics import build_health_semantic_sections
-from ..incident_bundle import BundleError
-from ..operator_assistant import (
-    append_thread_turn,
-    build_assistant_messages,
-    build_operator_assistant_context,
-    fallback_operator_answer,
-    new_thread_id,
-    normalize_thread_id,
-)
-from ..ops_bundle import build_job_bundle, build_system_bundle
 from ..version import get_version
-from .assistant import (
-    enqueue_assistant_question,
-    read_assistant_result,
-    read_assistant_thread_turns,
-)
+from . import routes_assistant as _routes_assistant
 from .helpers import coerce_int as _coerce_int
 from .helpers import request_value as _request_value
+from .routes_bundle import register_bundle_routes
 from .routes_home import register_home_routes
 from .routes_hygiene import register_hygiene_routes
 from .routes_jobs import register_job_routes
+from .routes_missions import register_mission_routes
+from .routes_queue_control import register_queue_control_routes
 from .routes_recovery import register_recovery_routes
 
 app = FastAPI(title="Voxera Panel", version=get_version())
@@ -69,6 +46,50 @@ app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
 APPROVALS: list[dict[str, Any]] = []
 MISSION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+load_app_config = _routes_assistant.load_app_config
+enqueue_assistant_question = _routes_assistant.enqueue_assistant_question
+_assistant_stalled_degraded_reason = _routes_assistant._assistant_stalled_degraded_reason
+_create_panel_assistant_brain = _routes_assistant._create_panel_assistant_brain
+_persist_degraded_assistant_result = _routes_assistant._persist_degraded_assistant_result
+
+
+async def _generate_degraded_assistant_answer_async(
+    question: str,
+    context: dict[str, Any],
+    *,
+    thread_turns: list[dict[str, Any]],
+    degraded_reason: str,
+) -> dict[str, Any]:
+    _routes_assistant.load_app_config = load_app_config
+    _routes_assistant._create_panel_assistant_brain = _create_panel_assistant_brain
+    return await _routes_assistant._generate_degraded_assistant_answer_async(
+        question,
+        context,
+        thread_turns=thread_turns,
+        degraded_reason=degraded_reason,
+    )
+
+
+def _generate_degraded_assistant_answer(
+    question: str,
+    context: dict[str, Any],
+    *,
+    thread_turns: list[dict[str, Any]],
+    degraded_reason: str,
+) -> dict[str, Any]:
+    return asyncio.run(
+        _generate_degraded_assistant_answer_async(
+            question,
+            context,
+            thread_turns=thread_turns,
+            degraded_reason=degraded_reason,
+        )
+    )
+
+
+def _enqueue_assistant_question(*args: Any, **kwargs: Any) -> tuple[str, str]:
+    return enqueue_assistant_question(*args, **kwargs)
+
 
 ERROR_MESSAGES = {
     "goal_required": "Goal is required when queue type is goal.",
@@ -108,267 +129,6 @@ _PANEL_AUTH_PRUNE_TTL_MS = 10 * 60 * 1000
 _PANEL_AUTH_MAX_TRACKED_IPS = 200
 _RECOVERY_ZIP_MAX_FILES = 5000
 _RECOVERY_ZIP_MAX_TOTAL_BYTES = 250 * 1024 * 1024
-_ASSISTANT_STALL_TIMEOUT_MS = 120_000
-_ASSISTANT_FALLBACK_REASONS = frozenset({TIMEOUT, AUTH, RATE_LIMIT, MALFORMED, NETWORK})
-_ASSISTANT_UNAVAILABLE_STATES = frozenset(
-    {
-        "unknown",
-        "stopped",
-        "unavailable",
-        "offline",
-        "error",
-        "failed",
-        "unhealthy",
-    }
-)
-
-
-def _assistant_request_ts_ms(request_id: str) -> int | None:
-    name = Path(request_id).name
-    match = re.match(r"^job-assistant-(\d+)\.json$", name)
-    if not match:
-        return None
-    try:
-        return int(match.group(1))
-    except ValueError:
-        return None
-
-
-def _assistant_stalled_degraded_reason(
-    context: dict[str, Any], request_result: dict[str, Any], *, now_ms: int
-) -> str | None:
-    if not request_result:
-        return None
-    if str(request_result.get("advisory_mode") or "") == "degraded_brain_only":
-        return None
-    if str(request_result.get("answer") or "").strip():
-        return None
-
-    status = str(request_result.get("status") or "")
-    if status not in {"queued", "thinking", "thinking through Voxera"}:
-        return None
-
-    if bool(context.get("queue_paused")):
-        return "daemon_paused"
-
-    current_state = context.get("health_current_state")
-    daemon_state = ""
-    if isinstance(current_state, dict):
-        daemon_state = str(current_state.get("daemon_state") or "").strip().lower()
-    if daemon_state in _ASSISTANT_UNAVAILABLE_STATES:
-        return "daemon_unavailable"
-
-    updated_at_ms = _coerce_int(request_result.get("updated_at_ms"))
-    if (
-        updated_at_ms is not None
-        and updated_at_ms > 0
-        and now_ms - updated_at_ms >= _ASSISTANT_STALL_TIMEOUT_MS
-    ):
-        return "queue_processing_timeout"
-
-    request_id = str(request_result.get("request_id") or "")
-    request_ts = _assistant_request_ts_ms(request_id)
-    if request_ts is not None and now_ms - request_ts >= _ASSISTANT_STALL_TIMEOUT_MS:
-        return "advisory_transport_stalled"
-
-    return None
-
-
-def _create_panel_assistant_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:
-    if provider.type == "openai_compat":
-        return OpenAICompatBrain(
-            model=provider.model,
-            base_url=provider.base_url or "https://openrouter.ai/api/v1",
-            api_key_ref=provider.api_key_ref,
-            extra_headers=provider.extra_headers,
-        )
-    if provider.type == "gemini":
-        return GeminiBrain(model=provider.model, api_key_ref=provider.api_key_ref)
-    raise ValueError(f"unsupported assistant provider type: {provider.type}")
-
-
-def _degraded_mode_disclosure(degraded_reason: str, context: dict[str, Any]) -> str:
-    daemon_state = "unknown"
-    current_state = context.get("health_current_state")
-    if isinstance(current_state, dict):
-        daemon_state = str(current_state.get("daemon_state") or "unknown")
-    if degraded_reason == "daemon_paused":
-        return (
-            "The advisory queue lane is paused right now, so I'm answering in model-only recovery mode. "
-            "This is still read-only and grounded in current runtime context."
-        )
-    if degraded_reason in {"queue_processing_timeout", "advisory_transport_stalled"}:
-        return (
-            "The normal advisory queue transport is stalled, so this answer is coming through degraded "
-            "model-only recovery mode while staying read-only and grounded."
-        )
-    if degraded_reason == "daemon_unavailable":
-        return (
-            f"I can still read the current control-plane picture, but daemon state looks '{daemon_state}', "
-            "so this response is through degraded model-only recovery mode."
-        )
-    return (
-        "Queue-backed advisory transport is unavailable, so I'm responding in degraded model-only recovery "
-        "mode (still read-only and grounded)."
-    )
-
-
-async def _generate_degraded_assistant_answer_async(
-    question: str,
-    context: dict[str, Any],
-    *,
-    thread_turns: list[dict[str, Any]],
-    degraded_reason: str,
-) -> dict[str, Any]:
-    cfg = load_app_config()
-    disclosure = _degraded_mode_disclosure(degraded_reason, context)
-    prompt = f"{question.strip()}\n\nMode context: {disclosure}"
-    messages = build_assistant_messages(prompt, context, thread_turns=thread_turns)
-
-    attempts: list[tuple[str, Any]] = []
-    for key in ("primary", "fallback"):
-        provider = cfg.brain.get(key) if cfg.brain else None
-        if provider is not None:
-            attempts.append((key, provider))
-
-    primary_attempt: tuple[str, Any] | None = attempts[0] if attempts else None
-    fallback_attempt: tuple[str, Any] | None = attempts[1] if len(attempts) > 1 else None
-
-    if primary_attempt is not None:
-        primary_name, primary_provider = primary_attempt
-        try:
-            brain = _create_panel_assistant_brain(primary_provider)
-            resp = await brain.generate(messages, tools=[])
-            text = str(resp.text or "").strip()
-            if text:
-                return {
-                    "answer": f"{disclosure}\n\n{text}",
-                    "provider": primary_name,
-                    "model": str(primary_provider.model),
-                    "fallback_used": False,
-                    "fallback_from": None,
-                    "fallback_reason": None,
-                    "error_class": None,
-                    "deterministic_used": False,
-                }
-            raise ValueError("assistant degraded primary provider returned empty response")
-        except Exception as exc:
-            reason = classify_fallback_reason(exc)
-            if fallback_attempt is None or reason not in _ASSISTANT_FALLBACK_REASONS:
-                fallback_attempt = None
-            else:
-                primary_error = (
-                    reason,
-                    type(exc).__name__,
-                    primary_name,
-                    str(primary_provider.model),
-                )
-            if fallback_attempt is None:
-                primary_error = (
-                    reason,
-                    type(exc).__name__,
-                    primary_name,
-                    str(primary_provider.model),
-                )
-    else:
-        primary_error = ("UNKNOWN", "RuntimeError", "none", "none")
-
-    if fallback_attempt is not None:
-        fallback_name, fallback_provider = fallback_attempt
-        try:
-            brain = _create_panel_assistant_brain(fallback_provider)
-            resp = await brain.generate(messages, tools=[])
-            text = str(resp.text or "").strip()
-            if text:
-                return {
-                    "answer": f"{disclosure}\n\n{text}",
-                    "provider": fallback_name,
-                    "model": str(fallback_provider.model),
-                    "fallback_used": True,
-                    "fallback_from": {
-                        "provider": primary_error[2],
-                        "model": primary_error[3],
-                    },
-                    "fallback_reason": primary_error[0],
-                    "error_class": primary_error[1],
-                    "deterministic_used": False,
-                }
-            raise ValueError("assistant degraded fallback provider returned empty response")
-        except Exception as exc:
-            final_reason = classify_fallback_reason(exc)
-            final_class = type(exc).__name__
-    else:
-        final_reason = primary_error[0]
-        final_class = primary_error[1]
-
-    fallback_text = fallback_operator_answer(question, context)
-    return {
-        "answer": f"{disclosure}\n\n{fallback_text}",
-        "provider": "deterministic_fallback",
-        "model": "fallback_operator_answer",
-        "fallback_used": False,
-        "fallback_from": None,
-        "fallback_reason": final_reason,
-        "error_class": final_class,
-        "deterministic_used": True,
-    }
-
-
-def _generate_degraded_assistant_answer(
-    question: str,
-    context: dict[str, Any],
-    *,
-    thread_turns: list[dict[str, Any]],
-    degraded_reason: str,
-) -> dict[str, Any]:
-    return asyncio.run(
-        _generate_degraded_assistant_answer_async(
-            question,
-            context,
-            thread_turns=thread_turns,
-            degraded_reason=degraded_reason,
-        )
-    )
-
-
-def _persist_degraded_assistant_result(
-    queue_root: Path,
-    *,
-    request_id: str,
-    thread_id: str,
-    question: str,
-    degraded_answer: dict[str, Any],
-    degraded_reason: str,
-    context: dict[str, Any],
-    ts_ms: int,
-) -> dict[str, Any]:
-    normalized = f"{Path(request_id).stem}.json"
-    artifact_dir = queue_root / "artifacts" / Path(normalized).stem
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema_version": 2,
-        "kind": "assistant_question",
-        "thread_id": thread_id,
-        "question": question,
-        "answer": str(degraded_answer.get("answer") or ""),
-        "updated_at_ms": ts_ms,
-        "answered_at_ms": ts_ms,
-        "provider": degraded_answer.get("provider"),
-        "model": degraded_answer.get("model"),
-        "fallback_used": bool(degraded_answer.get("fallback_used")),
-        "fallback_from": degraded_answer.get("fallback_from"),
-        "fallback_reason": degraded_answer.get("fallback_reason"),
-        "error_class": degraded_answer.get("error_class"),
-        "advisory_mode": "degraded_brain_only",
-        "degraded_reason": degraded_reason,
-        "degraded_at_ms": ts_ms,
-        "deterministic_fallback_used": bool(degraded_answer.get("deterministic_used")),
-        "context": context,
-    }
-    (artifact_dir / "assistant_response.json").write_text(
-        json.dumps(payload, indent=2), encoding="utf-8"
-    )
-    return payload
 
 
 class _RequestUrlLike(Protocol):
@@ -1023,13 +783,6 @@ def _require_operator_auth_from_request(request: Request) -> None:
     _require_operator_basic_auth(request, request.headers.get("authorization"))
 
 
-def _validate_mission_id(mission_id: str) -> str:
-    normalized = mission_id.strip()
-    if not MISSION_ID_RE.fullmatch(normalized):
-        raise ValueError("mission_id_invalid")
-    return normalized
-
-
 def _enforce_get_mutations_enabled() -> None:
     if not _allow_get_mutations():
         raise HTTPException(
@@ -1331,13 +1084,6 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     }
 
 
-def _incident_archive_dir(queue_root: Path, suffix: str) -> Path:
-    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
-    out = queue_root / "_archive" / f"incident-{stamp}-{suffix}"
-    out.mkdir(parents=True, exist_ok=True)
-    return out
-
-
 def _job_artifact_flags(queue_root: Path, job_id: str) -> dict[str, bool]:
     artifacts_dir = queue_root / "artifacts" / Path(job_id).stem
     return {
@@ -1364,44 +1110,6 @@ def _job_ref_bucket(row: dict[str, Any]) -> str:
     if bucket == "approvals":
         return "pending/approvals"
     return bucket
-
-
-def _job_artifact_payload(queue_root: Path, job_name: str) -> dict[str, Any]:
-    stem = Path(job_name).stem
-    art = queue_root / "artifacts" / stem
-    plan = {}
-    if (art / "plan.json").exists():
-        with (art / "plan.json").open("r", encoding="utf-8") as f:
-            plan = json.load(f)
-    actions: list[dict[str, Any]] = []
-    actions_path = art / "actions.jsonl"
-    if actions_path.exists():
-        for line in actions_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if not line.strip():
-                continue
-            try:
-                actions.append(json.loads(line))
-            except Exception:
-                continue
-    actions.reverse()
-    generated_files: list[str] = []
-    generated = art / "outputs" / "generated_files.json"
-    if generated.exists():
-        try:
-            parsed = json.loads(generated.read_text(encoding="utf-8"))
-            if isinstance(parsed, list):
-                generated_files = [str(i) for i in parsed]
-        except Exception:
-            generated_files = []
-    return {
-        "job": job_name,
-        "artifacts_dir": str(art),
-        "plan": plan,
-        "actions": actions,
-        "stdout": _artifact_text(art / "stdout.txt"),
-        "stderr": _artifact_text(art / "stderr.txt"),
-        "generated_files": generated_files,
-    }
 
 
 def _build_activity(
@@ -1436,411 +1144,6 @@ def _build_activity(
             )
 
     return list(active.values())[:8], list(reversed(recent[-12:]))
-
-
-def _build_mission_payload(
-    mission_id: str,
-    title: str,
-    goal: str,
-    notes: str,
-    steps_json: str,
-) -> MissionTemplate:
-    validated_mission_id = _validate_mission_id(mission_id)
-    payload: dict[str, Any] = {
-        "id": validated_mission_id,
-        "title": title.strip() or validated_mission_id,
-        "goal": goal.strip() or "User-defined mission",
-    }
-    if notes.strip():
-        payload["notes"] = notes.strip()
-
-    try:
-        steps_raw = json.loads(steps_json)
-    except json.JSONDecodeError as exc:
-        raise ValueError("steps_json_invalid") from exc
-    if not isinstance(steps_raw, list):
-        raise ValueError("steps_json_not_list")
-    payload["steps"] = steps_raw
-
-    missions_dir = _missions_dir()
-    missions_dir.mkdir(parents=True, exist_ok=True)
-    candidate = (missions_dir / f"{payload['id']}.json").resolve()
-    missions_root = missions_dir.resolve()
-    if not str(candidate).startswith(f"{missions_root}{os.sep}"):
-        raise ValueError("mission_id_invalid")
-    candidate.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    try:
-        validated = _parse_mission_file(candidate, payload["id"])
-    except Exception as exc:
-        candidate.unlink(missing_ok=True)
-        raise ValueError("mission_schema_invalid") from exc
-    return validated
-
-
-def _render_assistant_page(
-    request: Request,
-    *,
-    question: str = "",
-    error: str = "",
-    context: dict[str, Any] | None = None,
-    request_result: dict[str, Any] | None = None,
-    thread_id: str = "",
-    thread_turns: list[dict[str, Any]] | None = None,
-) -> HTMLResponse:
-    tmpl = templates.get_template("assistant.html")
-    csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
-    result = request_result or {}
-    status = str(result.get("status") or "")
-    html = tmpl.render(
-        question=question,
-        error=error,
-        context=context or {},
-        request_result=result,
-        thread_id=thread_id,
-        thread_turns=thread_turns or [],
-        should_poll=status in {"queued", "thinking", "thinking through Voxera"},
-        csrf_token=csrf_token,
-        example_prompts=[
-            "What is happening right now?",
-            "From inside Voxera, how does the system look?",
-            "Why would a job require approval?",
-            "What do you suggest I check next?",
-        ],
-    )
-    response = HTMLResponse(content=html)
-    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, samesite="strict")
-    return response
-
-
-@app.get("/assistant", response_class=HTMLResponse)
-def assistant_page(
-    request: Request,
-    request_id: str = "",
-    question: str = "",
-    thread_id: str = "",
-):
-    _require_operator_auth_from_request(request)
-    queue_root = _queue_root()
-    context = build_operator_assistant_context(queue_root)
-    request_result = read_assistant_result(queue_root, request_id) if request_id else {}
-    active_thread_id = thread_id or str(request_result.get("thread_id") or "")
-    thread_turns = (
-        read_assistant_thread_turns(queue_root, active_thread_id) if active_thread_id else []
-    )
-
-    degraded_reason = _assistant_stalled_degraded_reason(
-        context,
-        request_result,
-        now_ms=int(time.time() * 1000),
-    )
-    if degraded_reason and request_id:
-        resolved_question = question.strip() or "What is happening right now?"
-        degraded_data = _generate_degraded_assistant_answer(
-            resolved_question,
-            context,
-            thread_turns=thread_turns,
-            degraded_reason=degraded_reason,
-        )
-        degraded_answer = str(degraded_data.get("answer") or "")
-        now_ms = int(time.time() * 1000)
-        if active_thread_id and not any(
-            str(turn.get("request_id") or "") == request_id
-            and str(turn.get("role") or "").lower() == "assistant"
-            for turn in thread_turns
-            if isinstance(turn, dict)
-        ):
-            append_thread_turn(
-                queue_root,
-                thread_id=active_thread_id,
-                role="assistant",
-                text=degraded_answer,
-                request_id=request_id,
-                ts_ms=now_ms,
-            )
-            thread_turns = read_assistant_thread_turns(queue_root, active_thread_id)
-
-        _persist_degraded_assistant_result(
-            queue_root,
-            request_id=request_id,
-            thread_id=active_thread_id,
-            question=resolved_question,
-            degraded_answer=degraded_data,
-            degraded_reason=degraded_reason,
-            context=context,
-            ts_ms=now_ms,
-        )
-        request_result = read_assistant_result(queue_root, request_id)
-        request_result["status"] = "answered"
-
-    return _render_assistant_page(
-        request,
-        question=question,
-        context=context,
-        request_result=request_result,
-        thread_id=active_thread_id,
-        thread_turns=thread_turns,
-    )
-
-
-@app.post("/assistant/ask", response_class=HTMLResponse)
-async def assistant_ask(request: Request):
-    await _require_mutation_guard(request)
-    question = (await _request_value(request, "question", "")).strip()
-    thread_id = (await _request_value(request, "thread_id", "")).strip()
-    if not question:
-        context = build_operator_assistant_context(_queue_root())
-        return _render_assistant_page(
-            request,
-            question=question,
-            error="Question is required.",
-            context=context,
-            request_result={},
-            thread_id=thread_id,
-            thread_turns=read_assistant_thread_turns(_queue_root(), thread_id),
-        )
-
-    try:
-        request_id, thread_id = enqueue_assistant_question(
-            _queue_root(), question, thread_id=thread_id
-        )
-    except OSError:
-        queue_root = _queue_root()
-        normalized_thread = normalize_thread_id(thread_id) if thread_id else new_thread_id()
-        context = build_operator_assistant_context(queue_root)
-        degraded_data = await _generate_degraded_assistant_answer_async(
-            question,
-            context,
-            thread_turns=read_assistant_thread_turns(queue_root, normalized_thread),
-            degraded_reason="queue_unavailable",
-        )
-        degraded_answer = str(degraded_data.get("answer") or "")
-        ts_ms = int(time.time() * 1000)
-        append_thread_turn(
-            queue_root,
-            thread_id=normalized_thread,
-            role="user",
-            text=question,
-            request_id=f"degraded-{ts_ms}",
-            ts_ms=ts_ms,
-        )
-        append_thread_turn(
-            queue_root,
-            thread_id=normalized_thread,
-            role="assistant",
-            text=degraded_answer,
-            request_id=f"degraded-{ts_ms}",
-            ts_ms=ts_ms,
-        )
-        return _render_assistant_page(
-            request,
-            question=question,
-            context=context,
-            request_result={
-                "request_id": f"degraded-{ts_ms}.json",
-                "status": "answered",
-                "lifecycle_state": "degraded",
-                "answer": degraded_answer,
-                "advisory_mode": "degraded_brain_only",
-                "degraded_reason": "queue_unavailable",
-                "fallback_used": bool(degraded_data.get("fallback_used")),
-                "fallback_reason": degraded_data.get("fallback_reason"),
-                "provider": degraded_data.get("provider"),
-                "model": degraded_data.get("model"),
-                "thread_id": normalized_thread,
-            },
-            thread_id=normalized_thread,
-            thread_turns=read_assistant_thread_turns(queue_root, normalized_thread),
-        )
-
-    query = urlencode({"request_id": request_id, "thread_id": thread_id, "question": question})
-    return RedirectResponse(url=f"/assistant?{query}", status_code=303)
-
-
-def _create_mission_template_from_values(
-    mission_id: str, title: str, goal: str, notes: str, steps_json: str
-) -> RedirectResponse:
-    normalized_id = mission_id.strip()
-    if not normalized_id:
-        return RedirectResponse(url="/?error=mission_id_required", status_code=303)
-
-    try:
-        _build_mission_payload(normalized_id, title, goal, notes, steps_json)
-    except ValueError as exc:
-        code = str(exc)
-        return RedirectResponse(url=f"/?error={code}", status_code=303)
-
-    return RedirectResponse(url=f"/?mission_created={normalized_id}", status_code=303)
-
-
-@app.get("/missions/templates/create")
-def create_mission_template_get(
-    request: Request,
-    mission_id: str = "",
-    title: str = "",
-    goal: str = "",
-    notes: str = "",
-    steps_json: str = "[]",
-):
-    _enforce_get_mutations_enabled()
-    _require_operator_auth_from_request(request)
-    return _create_mission_template_from_values(mission_id, title, goal, notes, steps_json)
-
-
-@app.post("/missions/templates/create")
-async def create_mission_template(request: Request):
-    await _require_mutation_guard(request)
-    mission_id = await _request_value(request, "mission_id", "")
-    title = await _request_value(request, "title", "")
-    goal = await _request_value(request, "goal", "")
-    notes = await _request_value(request, "notes", "")
-    steps_json = await _request_value(request, "steps_json", "[]")
-    return _create_mission_template_from_values(mission_id, title, goal, notes, steps_json)
-
-
-def _create_panel_mission_from_values(prompt: str, approval_required: bool) -> RedirectResponse:
-    normalized_prompt = prompt.strip()
-    if not normalized_prompt:
-        return RedirectResponse(url="/?error=panel_prompt_required", status_code=303)
-    created, mission_id = _write_panel_mission_job(
-        prompt=normalized_prompt,
-        approval_required=approval_required,
-    )
-    return RedirectResponse(
-        url=f"/?created={created}&mission_created={mission_id}",
-        status_code=303,
-    )
-
-
-@app.get("/missions/create")
-def create_mission_get(
-    request: Request,
-    prompt: str = "",
-    approval_required: str = "1",
-):
-    _enforce_get_mutations_enabled()
-    _require_operator_auth_from_request(request)
-    return _create_panel_mission_from_values(prompt, approval_required != "0")
-
-
-@app.post("/missions/create")
-async def create_mission(request: Request):
-    await _require_mutation_guard(request)
-    prompt = (await _request_value(request, "prompt", "")).strip() or (
-        await _request_value(request, "goal", "")
-    ).strip()
-    approval_raw = await _request_value(request, "approval_required", "1")
-    return _create_panel_mission_from_values(prompt, approval_raw not in {"0", "false", "off"})
-
-
-@app.get("/jobs/{job_id}/bundle")
-def job_bundle(job_id: str, request: Request):
-    _require_operator_auth_from_request(request)
-    queue_root = _queue_root()
-    stem = Path(job_id).stem
-    archive_dir = _incident_archive_dir(queue_root, stem or "job")
-    started = time.perf_counter()
-    log(
-        {
-            "event": "bundle_build_started",
-            "bundle": "job",
-            "job_ref": job_id,
-            "archive_dir": str(archive_dir),
-        }
-    )
-    try:
-        out = build_job_bundle(queue_root, job_id, archive_dir=archive_dir)
-    except Exception as exc:
-        duration_ms = int((time.perf_counter() - started) * 1000)
-        log(
-            {
-                "event": "bundle_build_failed",
-                "bundle": "job",
-                "job_ref": job_id,
-                "duration_ms": duration_ms,
-                "error": type(exc).__name__,
-            }
-        )
-        if isinstance(exc, BundleError):
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        raise
-    duration_ms = int((time.perf_counter() - started) * 1000)
-    size_bytes = out.stat().st_size
-    log(
-        {
-            "event": "bundle_build_ok",
-            "bundle": "job",
-            "job_ref": job_id,
-            "duration_ms": duration_ms,
-            "bytes": size_bytes,
-            "path": str(out),
-        }
-    )
-    return FileResponse(
-        path=out,
-        media_type="application/zip",
-        filename=out.name,
-    )
-
-
-@app.get("/bundle/system")
-def system_bundle(request: Request):
-    _require_operator_auth_from_request(request)
-    queue_root = _queue_root()
-    archive_dir = _incident_archive_dir(queue_root, "system")
-    started = time.perf_counter()
-    log({"event": "bundle_build_started", "bundle": "system", "archive_dir": str(archive_dir)})
-    out = build_system_bundle(queue_root, archive_dir=archive_dir)
-    duration_ms = int((time.perf_counter() - started) * 1000)
-    size_bytes = out.stat().st_size
-    log(
-        {
-            "event": "bundle_build_ok",
-            "bundle": "system",
-            "duration_ms": duration_ms,
-            "bytes": size_bytes,
-            "path": str(out),
-        }
-    )
-    return FileResponse(
-        path=out,
-        media_type="application/zip",
-        filename=out.name,
-    )
-
-
-def _safe_jobs_n(raw: str) -> int:
-    try:
-        return max(1, min(int(raw), 200))
-    except ValueError:
-        return 80
-
-
-async def _jobs_redirect_local(request: Request, flash: str) -> RedirectResponse:
-    params: dict[str, str | int] = {"flash": flash}
-    bucket = (await _request_value(request, "bucket", "")).strip()
-    if bucket:
-        params["bucket"] = bucket
-    query = (await _request_value(request, "q", "")).strip()
-    if query:
-        params["q"] = query
-    n_raw = (await _request_value(request, "n", "80")).strip()
-    params["n"] = _safe_jobs_n(n_raw)
-
-    return RedirectResponse(url=f"/jobs?{urlencode(params)}", status_code=303)
-
-
-@app.post("/queue/jobs/{ref}/delete")
-async def delete_queue_job(ref: str, request: Request):
-    await _require_mutation_guard(request)
-    confirm = await _request_value(request, "confirm", "")
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    try:
-        daemon.delete_terminal_job(ref, confirm=confirm)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return await _jobs_redirect_local(request, "deleted")
 
 
 register_home_routes(
@@ -1903,17 +1206,38 @@ register_hygiene_routes(
 )
 
 
-@app.post("/queue/pause")
-async def pause_queue(request: Request):
-    await _require_mutation_guard(request)
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    daemon.pause()
-    return RedirectResponse(url="/", status_code=303)
+_routes_assistant.register_assistant_routes(
+    app,
+    templates=templates,
+    csrf_cookie=CSRF_COOKIE,
+    queue_root=_queue_root,
+    require_operator_auth_from_request=_require_operator_auth_from_request,
+    require_mutation_guard=_require_mutation_guard,
+    request_value=_request_value,
+    enqueue_assistant_question_fn=_enqueue_assistant_question,
+    assistant_stalled_degraded_reason_fn=_assistant_stalled_degraded_reason,
+    generate_degraded_assistant_answer_fn=_generate_degraded_assistant_answer,
+    generate_degraded_assistant_answer_async_fn=_generate_degraded_assistant_answer_async,
+    persist_degraded_assistant_result_fn=_persist_degraded_assistant_result,
+)
 
+register_mission_routes(
+    app,
+    enforce_get_mutations_enabled=_enforce_get_mutations_enabled,
+    require_operator_auth_from_request=_require_operator_auth_from_request,
+    require_mutation_guard=_require_mutation_guard,
+    request_value=_request_value,
+    write_panel_mission_job=_write_panel_mission_job,
+)
 
-@app.post("/queue/resume")
-async def resume_queue(request: Request):
-    await _require_mutation_guard(request)
-    daemon = MissionQueueDaemon(queue_root=_queue_root())
-    daemon.resume()
-    return RedirectResponse(url="/", status_code=303)
+register_bundle_routes(
+    app,
+    queue_root=_queue_root,
+    require_operator_auth_from_request=_require_operator_auth_from_request,
+)
+
+register_queue_control_routes(
+    app,
+    queue_root=_queue_root,
+    require_mutation_guard=_require_mutation_guard,
+)

@@ -1049,9 +1049,13 @@ Missing/absent history is rendered consistently as `-` across CLI, doctor quick 
 Panel home includes a read-only **Performance Stats** tab that surfaces these same operator signals (queue counts, degradation/backoff, recent fallback/error/shutdown, auth/runtime counters) directly from `health.json`.
 
 ### Panel code ownership (refactor baseline)
-- `src/voxera/panel/app.py` is the FastAPI composition entrypoint (setup + registration).
+- `src/voxera/panel/app.py` is the FastAPI composition root (setup, shared security/queue helpers, and route registration).
 - `src/voxera/panel/routes_home.py` owns home/dashboard and queue-create routes.
-- `src/voxera/panel/routes_jobs.py` owns jobs, approvals, and job lifecycle routes.
+- `src/voxera/panel/routes_jobs.py` owns jobs, approvals, cancel, and retry routes.
+- `src/voxera/panel/routes_queue_control.py` owns queue delete/pause/resume routes.
+- `src/voxera/panel/routes_assistant.py` owns assistant advisory routes and degraded queue/brain fallback behavior.
+- `src/voxera/panel/routes_missions.py` owns mission + mission-template creation routes.
+- `src/voxera/panel/routes_bundle.py` owns job/system bundle download routes.
 - `src/voxera/panel/routes_hygiene.py` owns hygiene/operator-maintenance routes.
 - `src/voxera/panel/routes_recovery.py` owns recovery/quarantine inspector routes.
 - `src/voxera/panel/helpers.py` contains shared request/value helpers.

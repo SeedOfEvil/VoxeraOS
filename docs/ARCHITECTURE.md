@@ -119,13 +119,17 @@ src/voxera/
 ├── audio/                    — Placeholder; STT/TTS planned for v0.3
 │
 └── panel/
-    ├── app.py                — FastAPI entrypoint + composition (setup, shared
-    │                           security/helpers, route registration)
+    ├── app.py                — FastAPI composition root (setup + shared helpers +
+    │                           route registration wiring)
     ├── helpers.py            — Shared request/value helpers reused by route modules
     ├── routes_home.py        — Home/dashboard + queue-create route domain
-    ├── routes_jobs.py        — Jobs/approvals/job-lifecycle route domain
-    ├── routes_hygiene.py    — Hygiene/operator-maintenance route domain
-    ├── routes_recovery.py   — Recovery/quarantine inspector route domain
+    ├── routes_jobs.py        — Jobs list/detail + approvals/cancel/retry route domain
+    ├── routes_queue_control.py — Queue delete/pause/resume route domain
+    ├── routes_assistant.py   — Operator assistant route domain + degraded advisory logic
+    ├── routes_missions.py    — Mission + mission-template creation route domain
+    ├── routes_bundle.py      — Job/system incident bundle download route domain
+    ├── routes_hygiene.py     — Hygiene/operator-maintenance route domain
+    ├── routes_recovery.py    — Recovery/quarantine inspector route domain
     ├── templates/            — Jinja2 HTML: home.html, jobs.html, job_detail.html
     └── static/panel.css      — Panel stylesheet
 
