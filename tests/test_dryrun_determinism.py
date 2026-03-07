@@ -95,8 +95,8 @@ def test_deterministic_no_capability_skill():
     snapshot = generate_capabilities_snapshot(reg)
     out = mission_runner.simulate(mission, snapshot=snapshot).model_dump()
     _make_dryrun_deterministic(out)
-    assert out["capabilities_used"] == []
-    assert out["steps"][0]["capability"] is None
+    assert out["capabilities_used"] == ["state.read"]
+    assert out["steps"][0]["capability"] == "state.read"
 
 
 def test_deterministic_without_dry_run_rejected():

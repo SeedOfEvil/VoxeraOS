@@ -13,6 +13,25 @@ CAP_TO_POLICY_FIELD = {
     "system.settings": "system_settings",
 }
 
+# Canonical capability catalog used by runtime enforcement.
+#
+# effect_class is intentionally coarse (read | write | execute) so operator surfaces can
+# explain impact succinctly while still routing concrete capabilities through policy fields.
+CAPABILITY_EFFECT_CLASS = {
+    "apps.open": "execute",
+    "network.change": "write",
+    "install.packages": "write",
+    "file.delete": "write",
+    "system.settings": "write",
+    "state.read": "read",
+    "files.read": "read",
+    "files.write": "write",
+    "clipboard.read": "read",
+    "clipboard.write": "write",
+    "window.read": "read",
+    "sandbox.exec": "execute",
+}
+
 
 @dataclass
 class PolicyDecision:
@@ -27,7 +46,10 @@ def decide(
     reasons = []
     for cap in skill.capabilities:
         field = CAP_TO_POLICY_FIELD.get(cap)
-        cap_decision = "ask" if not field else getattr(policy, field)
+        if field:
+            cap_decision = getattr(policy, field)
+        else:
+            cap_decision = "allow" if cap in CAPABILITY_EFFECT_CLASS else "ask"
         reasons.append(f"{cap} -> {cap_decision}")
         if cap_decision == "deny":
             decision = "deny"

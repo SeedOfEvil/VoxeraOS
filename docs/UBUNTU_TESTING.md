@@ -83,6 +83,7 @@ voxera run system.open_app --arg name=firefox --dry-run
 Expected dry-run output is JSON with:
 - `steps[]` including `policy_decision`, `requires_approval`, and `risk`
 - `approvals_required`
+- Runtime dispatch is fail-closed: missing/malformed/unknown capability metadata blocks step execution before invocation and should appear as `blocked` in artifacts.
 - `blocked`
 - `summary`
 

@@ -454,7 +454,10 @@ class MissionRunner:
                     }
                 )
             elif not rr.ok:
-                outcome = "blocked" if "Denied by policy" in str(rr.error or "") else "failed"
+                blocked_now = str(
+                    rr.data.get("status") or ""
+                ) == "blocked" or "Denied by policy" in str(rr.error or "")
+                outcome = "blocked" if blocked_now else "failed"
                 step_outcomes.append(
                     {
                         "step": idx,
@@ -462,6 +465,12 @@ class MissionRunner:
                         "outcome": outcome,
                         "approval_status": (
                             "denied" if "User rejected approval" in str(rr.error or "") else None
+                        ),
+                        "reason": rr.data.get("reason") if isinstance(rr.data, dict) else None,
+                        "blocked_reason_class": (
+                            rr.data.get("blocked_reason_class")
+                            if isinstance(rr.data, dict)
+                            else None
                         ),
                     }
                 )
@@ -510,18 +519,17 @@ class MissionRunner:
                     }
                 )
                 self._append_mission_log(mission, outputs, status="failed")
+                blocked_terminal = str(
+                    rr.data.get("status") or ""
+                ) == "blocked" or "Denied by policy" in str(rr.error or "")
                 return RunResult(
                     ok=False,
                     error=f"Mission failed at step {idx} ({ms.skill_id}): {rr.error}",
                     data={
                         "results": outputs,
                         "step_outcomes": step_outcomes,
-                        "lifecycle_state": "blocked"
-                        if "Denied by policy" in str(rr.error or "")
-                        else "step_failed",
-                        "terminal_outcome": "blocked"
-                        if "Denied by policy" in str(rr.error or "")
-                        else "failed",
+                        "lifecycle_state": "blocked" if blocked_terminal else "step_failed",
+                        "terminal_outcome": "blocked" if blocked_terminal else "failed",
                         "current_step_index": idx,
                         "last_completed_step": max(idx - 1, 0),
                         "last_attempted_step": idx,

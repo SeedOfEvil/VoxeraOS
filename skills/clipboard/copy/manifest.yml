@@ -2,5 +2,5 @@ id: clipboard.copy
 name: Clipboard Copy
 description: Copy provided text into the OS clipboard.
 entrypoint: voxera_builtin_skills.clipboard_copy:run
-capabilities: []
+capabilities: ["clipboard.write"]
 risk: low

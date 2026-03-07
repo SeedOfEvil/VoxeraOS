@@ -426,7 +426,7 @@ src/voxera/
 │
 ├── skills/
 │   ├── registry.py           — manifest.yml discovery + entrypoint loading
-│   ├── runner.py             — Policy-gated execution + approval callbacks
+│   ├── runner.py             — Runtime capability enforcement (fail-closed) + policy/approval execution gate
 │   ├── execution.py          — Job ID generation, sandbox runner selection,
 │   │                           audit value sanitization
 │   └── arg_normalizer.py     — Argument canonicalization; alias mapping
@@ -786,7 +786,7 @@ A recurring structural pattern now present across the three main subsystems:
 
 ## Key Principles
 
-- **Capability-based permissions** — every skill declares what it needs (network, install, files, apps, settings); the policy engine decides allow / ask / deny per capability.
+- **Capability-based permissions** — every skill declares what it needs (capabilities + effect class). Runtime enforces metadata validity and policy allow/ask/deny **before invocation**; uncertainty fails closed.
 - **No silent risky actions** — high-risk steps pause the job and write an approval artifact; nothing executes without an explicit decision.
 - **Audit and replay** — every action is logged to JSONL with what ran, why, and how to undo. Artifacts (`plan.json`, `actions.jsonl`, `stdout.txt`, `stderr.txt`) persist for each job.
 - **Rollback-first** — config and operational changes favor reversible paths; failed jobs emit sidecars with structured error context.
@@ -808,11 +808,11 @@ Daemon startup
 inbox/*.json
     │  daemon tick (every 1s)
     ▼
-policy gate
-    ├── allow → execute (persist step outcomes/state) → done/
-    ├── ask   → write approval artifact + state sidecar update → pending/approvals/
+policy + runtime capability gate
+    ├── allow (valid metadata + policy allow) → execute (persist step outcomes/state) → done/
+    ├── ask   (valid metadata + policy ask) → write approval artifact + state sidecar update → pending/approvals/
     │           (resume on approve, move to failed/ on deny)
-    └── deny  → failed/ + error sidecar (schema v1)
+    └── deny / metadata invalid|missing|ambiguous|unknown → fail-closed block → failed/ + error sidecar + structured step/execution artifacts
 
 SIGTERM / SIGINT
     │  stop intake; mark in-flight job failed/ + sidecar (reason=shutdown)
