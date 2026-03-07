@@ -1,0 +1,13 @@
+ Usage: voxera queue health [OPTIONS]
+
+ Show queue/daemon health grouped by current state, recent history, and historical counters.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --queue-dir          TEXT                  Queue directory containing JSON mission jobs.         │
+│                                            [default: ~/VoxeraOS/notes/queue]                     │
+│ --json                                     Emit machine-readable JSON output.                    │
+│ --watch      -w                            Refresh output continuously.                          │
+│ --interval           FLOAT RANGE [x>=0.2]  Refresh interval in seconds used with --watch.        │
+│                                            [default: 2.0]                                        │
+│ --help                                     Show this message and exit.                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

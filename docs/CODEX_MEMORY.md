@@ -1,3 +1,28 @@
+## 2026-03-07 — PR #TBD — hardening(ci): add golden operator surface checks and contract validation workflow
+- Summary:
+  - Added deterministic golden operator-surface tooling in `tools/golden_surfaces.py` and committed baselines under `tests/golden/` for high-value CLI surfaces: root help, queue help subcommands (`status`, `approvals`, `reconcile`, `prune`, `health`), doctor help, and normalized empty `queue health --json` output.
+  - Added targeted golden framework tests in `tests/test_golden_surfaces.py` for help normalization, JSON deterministic normalization (timestamps + path placeholders), and drift failure behavior.
+  - Added explicit Make targets `make golden-update` and `make golden-check`, and wired `golden-check` into `make validation-check` as the canonical merge-confidence flow.
+  - Synced README/architecture/ops/roadmap docs to distinguish goldens vs snapshot/contract tests and document contributor usage expectations for update/check workflows.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q tests/test_golden_surfaces.py -vv`
+  - `pytest -q tests/test_cli_contract_snapshot.py -vv`
+  - `pytest -q tests/test_operator_contract_guardrails.py -vv`
+  - `pytest -q tests/test_queue_daemon_contract_snapshot.py -vv`
+  - `pytest -q tests/test_cli_queue.py -vv`
+  - `pytest -q tests/test_doctor.py -vv`
+  - `pytest -q`
+  - `make golden-check`
+  - `make validation-check`
+  - `make full-validation-check`
+- Follow-ups:
+  - Consider adding a dedicated CI job step that runs `make golden-check` independently for faster drift diagnostics, while retaining `validation-check` composition.
+- Risks/notes:
+  - Hardening-only pass: runtime behavior and operator contracts remain unchanged; determinism is handled in test tooling normalization.
+
 ## 2026-03-07 — PR #TBD — refactor(cli): finish thin composition root split for voxera.cli
 
 ## 2026-03-07 — PR #130 — harden(validation): canonical validation pipeline + operator contract guardrails

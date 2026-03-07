@@ -125,11 +125,11 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 
 ### CI hardening & release packaging
 
-**P4.1 — Golden file validation CI (PLANNED)**
-- [ ] Add `tests/golden/` with committed dry-run output files.
-- [ ] Add `make golden-update` (explicit regeneration) and `make golden-check` (CI gate).
-- [ ] Wire `make golden-check` into the merge-readiness CI workflow.
-- [ ] Use `--deterministic` flag for timestamp-independent golden outputs.
+**P4.1 — Golden operator-surface validation (SHIPPED)**
+- [x] Added `tests/golden/` committed fixtures for high-value operator-visible CLI surfaces (`voxera --help`, key `queue` help commands, normalized `queue health --json`).
+- [x] Added `make golden-update` (explicit regeneration) and `make golden-check` (drift gate).
+- [x] Wired `make golden-check` into canonical `make validation-check` so local/CI merge-confidence flows run deterministic golden contract validation.
+- [x] Added deterministic normalization in test tooling for unstable fields (timestamps + environment-dependent paths) without runtime behavior changes.
 
 **P4.2 — Release packaging polish (PLANNED)**
 - [ ] Add `scripts/release_notes.py` — generates release notes from `CODEX_MEMORY.md`.
@@ -207,7 +207,6 @@ Delivered:
 
 Not in v0.1.6 scope (carried to v0.2):
 - 3+ consecutive brain failures triggering degraded state (P3.x).
-- `make golden-check` CI gate (P4.x).
 - `voxera skills validate` command (P6.x).
 
 ---

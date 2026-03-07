@@ -1,0 +1,9 @@
+ Usage: voxera queue status [OPTIONS]
+
+ Show queue health, pending approvals, and recent failures.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --queue-dir        TEXT  Queue directory containing JSON mission jobs.                           │
+│                          [default: ~/VoxeraOS/notes/queue]                                       │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

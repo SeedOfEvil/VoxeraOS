@@ -400,9 +400,11 @@ make merge-readiness-check
 This combines fast quality checks (format/lint/type) and release consistency checks (version/doc/runtime alignment) under one workflow status check: `merge-readiness / merge-readiness`.
 
 Validation tiers (post-refactor hardening pass):
-- Canonical merge-confidence gate: `make validation-check` (format/lint/type + critical queue/CLI/doctor contract suites).
+- Golden operator-surface gate: `make golden-check` (committed `tests/golden/` help/JSON baselines).
+- Canonical merge-confidence gate: `make validation-check` (format/lint/type + `make golden-check` + critical queue/CLI/doctor contract suites).
 - Required CI merge gate remains: `make merge-readiness-check`.
 - Broader local/release validation: `make full-validation-check` (`make premerge` alias), which includes `validation-check`, merge-readiness, failed-sidecar guardrails, full pytest, and Golden4 E2E.
+- Golden baseline refresh target: `make golden-update` (use only for intentional reviewed contract changes).
 
 Typing policy:
 - `make type-check` uses a mypy ratchet against `tools/mypy-baseline.txt` and blocks new type errors.
@@ -424,10 +426,11 @@ CI diagnostics:
 - Download artifacts from the failed workflow run for quick triage without rerunning locally.
 
 
-Operator-facing contracts explicitly guarded by tests/snapshots include:
+Operator-facing contracts explicitly guarded by tests/snapshots/goldens include:
 - queue health JSON + reset semantics (`queue health --json`, `queue health-reset --json`),
 - queue daemon recovery/approval transition snapshots,
 - CLI command/help surface snapshots (including compatibility exports from `voxera.cli`),
+- deterministic golden fixtures for high-value CLI help surfaces and normalized queue health JSON (`tests/golden/`, enforced by `make golden-check`),
 - assistant advisory artifact schema (`assistant_response.json`),
 - ops bundle manifest + config snapshot schema contracts.
 

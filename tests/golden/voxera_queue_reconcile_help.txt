@@ -1,0 +1,17 @@
+ Usage: voxera queue reconcile [OPTIONS]
+
+ Scan queue directory and report hygiene issues. Report-only by default; no changes made.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --json                        Emit machine-readable JSON report.                                 │
+│ --queue-dir             TEXT  Queue voxera directory to scan for hygiene issues.                   │
+│                               [default: ~/VoxeraOS/notes/queue]                                  │
+│ --fix                         Enable fix mode: quarantine safe orphan files. Without --yes, runs │
+│                               as a dry-run preview.                                              │
+│ --yes                         Actually perform quarantine moves. Required with --fix to apply    │
+│                               changes.                                                           │
+│ --quarantine-dir        TEXT  Directory to quarantine orphan files into. Must be within          │
+│                               --queue-dir. Default:                                              │
+│                               <queue-dir>/quarantine/reconcile-YYYYMMDD-HHMMSS/                  │
+│ --help                        Show this message and exit.                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
