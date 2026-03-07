@@ -7,3 +7,9 @@ risk: medium
 exec_mode: sandbox
 needs_network: false
 fs_scope: workspace_only
+output_schema: skill_result.v1
+output_artifacts:
+  - stdout.txt
+  - stderr.txt
+  - runner.json
+  - command.txt

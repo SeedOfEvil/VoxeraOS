@@ -15,6 +15,7 @@ from typing import Any
 
 from ..models import AppConfig, RunResult, SkillManifest
 from .arg_normalizer import canonicalize_argv
+from .result_contract import SKILL_RESULT_KEY, build_skill_result
 
 DEFAULT_ENV_ALLOWLIST = {
     "LANG",
@@ -289,16 +290,26 @@ class PodmanSandboxRunner(SandboxRunner):
         }
         runner_path.write_text(json.dumps(runner_metadata, indent=2), encoding="utf-8")
 
-        return RunResult(
-            ok=(exit_code == 0 and not timed_out),
-            output=stdout.strip(),
-            error=None
-            if exit_code == 0 and not timed_out
+        ok = exit_code == 0 and not timed_out
+        error_text = (
+            None
+            if ok
             else (
                 "Sandbox command timed out"
                 if timed_out
                 else stderr.strip() or f"Sandbox command failed with exit code {exit_code}"
-            ),
+            )
+        )
+        output_artifacts = [
+            str(stdout_path),
+            str(stderr_path),
+            str(runner_path),
+            str(command_path),
+        ]
+        return RunResult(
+            ok=ok,
+            output=stdout.strip(),
+            error=error_text,
             data={
                 "runner": self.runner_name,
                 "job_id": job_id,
@@ -310,6 +321,30 @@ class PodmanSandboxRunner(SandboxRunner):
                 "runner_path": str(runner_path),
                 "command_path": str(command_path),
                 "network": requested_network,
+                "artifacts": output_artifacts,
+                SKILL_RESULT_KEY: build_skill_result(
+                    summary=(
+                        "Sandbox command completed successfully"
+                        if ok
+                        else "Sandbox command execution failed"
+                    ),
+                    machine_payload={
+                        "exit_code": exit_code,
+                        "timed_out": timed_out,
+                        "network": requested_network,
+                        "runner": self.runner_name,
+                        "command": command,
+                    },
+                    output_artifacts=output_artifacts,
+                    operator_note=(
+                        "Sandbox run finished with exit code 0."
+                        if ok
+                        else "Review stderr artifact for sandbox failure details."
+                    ),
+                    next_action_hint="continue" if ok else "inspect_stderr_artifact",
+                    retryable=not ok,
+                    error_class=None if ok else ("timeout" if timed_out else "nonzero_exit"),
+                ),
             },
         )
 

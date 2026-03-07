@@ -12,6 +12,7 @@ import yaml
 from ..audit import log
 from ..models import PlanSimulation, PlanStep, RunResult
 from ..skills.registry import SkillRegistry
+from ..skills.result_contract import extract_skill_result
 
 
 @dataclass(frozen=True)
@@ -395,6 +396,12 @@ class MissionRunner:
                 audit_context=audit_context,
             )
             step_finished_at_ms = int(time.time() * 1000)
+            canonical = extract_skill_result(rr.data if isinstance(rr.data, dict) else {})
+            machine_payload = (
+                canonical.get("machine_payload")
+                if isinstance(canonical.get("machine_payload"), dict)
+                else (rr.data if isinstance(rr.data, dict) else {})
+            )
             outputs.append(
                 {
                     "step": idx,
@@ -403,23 +410,37 @@ class MissionRunner:
                     "ok": rr.ok,
                     "output": rr.output,
                     "error": rr.error,
-                    "machine_payload": rr.data if isinstance(rr.data, dict) else {},
+                    "machine_payload": machine_payload,
                     "started_at_ms": step_started_at_ms,
                     "finished_at_ms": step_finished_at_ms,
                     "duration_ms": max(0, step_finished_at_ms - step_started_at_ms),
-                    "summary": str(rr.output or rr.error or "").strip(),
+                    "summary": str(canonical.get("summary") or rr.output or rr.error or "").strip(),
                     "output_artifacts": (
-                        rr.data.get("artifacts")
-                        if isinstance(rr.data, dict) and isinstance(rr.data.get("artifacts"), list)
-                        else []
+                        canonical.get("output_artifacts")
+                        if isinstance(canonical.get("output_artifacts"), list)
+                        else (
+                            rr.data.get("artifacts")
+                            if isinstance(rr.data, dict)
+                            and isinstance(rr.data.get("artifacts"), list)
+                            else []
+                        )
                     ),
+                    "operator_note": canonical.get("operator_note"),
+                    "next_action_hint": canonical.get("next_action_hint"),
                     "retryable": (
-                        rr.data.get("retryable")
-                        if isinstance(rr.data, dict) and isinstance(rr.data.get("retryable"), bool)
-                        else None
+                        canonical.get("retryable")
+                        if isinstance(canonical.get("retryable"), bool)
+                        else (
+                            rr.data.get("retryable")
+                            if isinstance(rr.data, dict)
+                            and isinstance(rr.data.get("retryable"), bool)
+                            else None
+                        )
                     ),
                     "error_class": (
-                        rr.data.get("error_class") if isinstance(rr.data, dict) else None
+                        canonical.get("error_class")
+                        if canonical.get("error_class") is not None
+                        else (rr.data.get("error_class") if isinstance(rr.data, dict) else None)
                     ),
                 }
             )

@@ -5,6 +5,8 @@ entrypoint: voxera_builtin_skills.terminal_run_once:run
 capabilities: ["apps.open"]
 risk: medium
 exec_mode: local
+output_schema: skill_result.v1
+output_artifacts: []
 args:
   keep_open:
     type: boolean

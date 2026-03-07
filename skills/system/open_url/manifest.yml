@@ -7,3 +7,5 @@ risk: medium
 exec_mode: local
 needs_network: true
 fs_scope: broader
+output_schema: skill_result.v1
+output_artifacts: []
