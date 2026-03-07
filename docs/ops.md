@@ -197,6 +197,7 @@ Operational effects:
 - `queue pause` creates `.paused`; daemon still reports status but skips processing new jobs until `queue resume` removes marker.
 - Daemon run loop acquires `notes/queue/.daemon.lock` with an OS-level exclusive file lock (`flock`) to enforce single-writer processing. If another live daemon holds the lock, startup records `lock_state=locked_by_other`, logs contention, and exits non-zero.
 - On `SIGTERM`/`SIGINT`, daemon sets shutdown state immediately, stops intake of new inbox jobs, and handles any in-flight job deterministically as `failed/` with error reason `shutdown: daemon shutdown requested` (plus error sidecar payload). Health snapshot records `last_shutdown_outcome`, `last_shutdown_ts` (epoch seconds), `last_shutdown_reason`, and `last_shutdown_job` (always-present keys with null defaults).
+- Checked-in systemd daemon unit templates set `TimeoutStopSec=10` to match the daemon stop-path contract (prompt shutdown intent, deterministic in-flight failure handling, and clean idle exit). Validate a rendered runtime unit with `systemctl --user show voxera-daemon.service -p TimeoutStopUSec`.
 - On startup, daemon runs deterministic recovery before intake:
   - **Policy: fail-fast**. Any pending job with in-flight markers (`pending/<job>.pending.json` or `pending/<job>.state.json`) is moved to `failed/` with a structured sidecar payload:
     - `reason="recovered_after_restart"`
