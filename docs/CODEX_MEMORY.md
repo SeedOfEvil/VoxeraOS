@@ -1076,3 +1076,14 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest -q`
   - `make golden-check`
   - `make validation-check`
+
+
+## 2026-03-07 — PR TBD — skill manifest strictness + doctor skill-health visibility
+- **Manifest contract hardening:** `SkillManifest` now forbids unknown fields and validates non-empty core identifiers (`id`, `name`, `description`, `entrypoint`), entrypoint shape (`module:function`), normalized unique string-lists (`capabilities`, `output_artifacts`), and optional `output_schema` non-empty semantics.
+- **Discovery/reporting model:** `SkillRegistry` now centralizes strict classification through `discover_with_report()` with deterministic status buckets (`valid`, `invalid`, `incomplete`, `warning`) and reason codes/hints.
+  - `invalid`: malformed schema or unknown capability metadata.
+  - `incomplete`: missing required governance metadata (`capabilities`).
+  - `warning`: recommended metadata missing (`output_schema`).
+  - `discover()` remains fail-closed on invalid manifests while incomplete manifests remain visible in report surfaces and excluded from runtime set.
+- **Doctor operator surface:** `voxera doctor` now includes `skills.registry` with stable counts (`valid/invalid/incomplete/warning/total`), partial-load signal, and top failing reason codes for rapid remediation.
+- **Tests:** Added focused registry classification tests (malformed capabilities, missing capability metadata, mixed valid+invalid stability) and doctor summary tests for skill registry visibility.

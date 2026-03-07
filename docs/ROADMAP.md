@@ -165,7 +165,7 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 **P6.1 — `voxera skills validate` (PLANNED)**
 - [ ] New CLI command: validate all skill manifests eagerly without launching daemon.
 - [ ] Checks: required fields, entrypoint importable, capability declarations valid.
-- [ ] Integrate into `voxera doctor` output ("Skills: N valid, M invalid").
+- [x] Integrate into `voxera doctor` output with stable `skills.registry` skill-health summary (valid/invalid/incomplete/warning + top reason codes).
 - [ ] Emit `skill_manifest_invalid` audit events for each broken manifest.
 
 **P6.2 — LLM rate limiter (PLANNED)**

@@ -21,6 +21,7 @@ from .config import load_app_config as load_config
 from .core.queue_daemon import MissionQueueDaemon
 from .health import read_health_snapshot
 from .health_semantics import build_health_semantic_sections
+from .skills.registry import SkillRegistry
 
 console = Console()
 _STALE_LAST_ERROR_THRESHOLD_MS = 5 * 60 * 1000
@@ -136,6 +137,16 @@ def _normalize_brain_result(
     return normalized
 
 
+def _skill_health_summary() -> dict[str, Any]:
+    reg = SkillRegistry()
+    report = reg.discover_with_report()
+    counts = report.counts
+    issues = [
+        issue.as_dict() for issue in report.issues if issue.status in {"invalid", "incomplete"}
+    ]
+    return {"counts": counts, "issues": issues, "partial": report.blocks_runtime}
+
+
 async def run_doctor() -> dict:
     cfg = load_config()
     results = {}
@@ -172,6 +183,7 @@ async def run_doctor() -> dict:
         if shutil.which("podman")
         else "podman missing: install rootless podman for sandbox skills",
     }
+    results["skills.registry"] = _skill_health_summary()
     capabilities_report_path().write_text(json.dumps(results, indent=2), encoding="utf-8")
     return results
 
@@ -189,6 +201,30 @@ def print_report(results: dict) -> None:
     t.add_column("Latency (s)")
     t.add_column("Note/Error")
     for name, r in results.items():
+        if name == "skills.registry":
+            counts = r.get("counts", {}) if isinstance(r, dict) else {}
+            issues = r.get("issues", []) if isinstance(r, dict) else []
+            top_reasons = []
+            for issue in issues[:3]:
+                if isinstance(issue, dict):
+                    top_reasons.append(
+                        f"{issue.get('skill_id', '-')}: {issue.get('reason_code', '-')}"
+                    )
+            note = (
+                f"valid={counts.get('valid', 0)} invalid={counts.get('invalid', 0)} "
+                f"incomplete={counts.get('incomplete', 0)} warnings={counts.get('warning', 0)}"
+            )
+            if top_reasons:
+                note = note + " | " + "; ".join(top_reasons)
+            t.add_row(
+                name,
+                "registry",
+                str(counts.get("total", 0)),
+                "False" if r.get("partial") else "True",
+                "",
+                note,
+            )
+            continue
         t.add_row(
             name,
             str(r.get("provider", "")),

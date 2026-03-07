@@ -177,7 +177,7 @@ Health degradation (P3.x) is deferred to v0.2.
 #### P6.1 — `voxera skills validate` command (PLANNED)
 - New command that eagerly validates all skill manifests (without launching the daemon).
 - Checks: required fields present, entrypoint importable, capability declarations valid.
-- Surface validation results in `voxera doctor` output ("Skills: N valid, M invalid").
+- ✅ Surface validation results in `voxera doctor` output via `skills.registry` summary (valid/invalid/incomplete/warning + top reason codes).
 - Emit audit event `skill_manifest_invalid` for each broken manifest.
 - Acceptance: intentionally broken manifest shows in `voxera skills validate` output.
 
