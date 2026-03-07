@@ -148,3 +148,65 @@ def test_assistant_queue_writes_structured_execution_artifacts(tmp_path):
     )
     assert execution_result["ok"] is True
     assert execution_result["step_results"][0]["skill_id"] == "assistant.advisory"
+
+
+def test_step_results_include_structured_skill_result_fields(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-structured.json").write_text(json.dumps({"goal": "structured"}))
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _fail_run(*args, **kwargs):
+        return RunResult(
+            ok=False,
+            error="planned failure",
+            data={
+                "results": [
+                    {
+                        "step": 1,
+                        "skill": "system.status",
+                        "args": {},
+                        "ok": False,
+                        "output": "",
+                        "error": "planned failure",
+                        "started_at_ms": 1,
+                        "finished_at_ms": 2,
+                        "duration_ms": 1,
+                        "summary": "deterministic summary",
+                        "machine_payload": {"stable": True},
+                        "output_artifacts": ["artifact.txt"],
+                        "operator_note": "operator message",
+                        "next_action_hint": "retry_after_fix",
+                        "retryable": True,
+                        "error_class": "runner_error",
+                    }
+                ],
+                "step_outcomes": [{"step": 1, "skill": "system.status", "outcome": "failed"}],
+                "lifecycle_state": "step_failed",
+                "terminal_outcome": "failed",
+                "current_step_index": 1,
+                "last_completed_step": 0,
+                "last_attempted_step": 1,
+                "total_steps": 1,
+            },
+        )
+
+    daemon.mission_runner.run = _fail_run  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    step_results = json.loads(
+        (queue_root / "artifacts" / "job-structured" / "step_results.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    step = step_results[0]
+    assert step["summary"] == "deterministic summary"
+    assert step["machine_payload"] == {"stable": True}
+    assert step["output_artifacts"] == ["artifact.txt"]
+    assert step["operator_note"] == "operator message"
+    assert step["next_action_hint"] == "retry_after_fix"
+    assert step["retryable"] is True
+    assert step["error_class"] == "runner_error"

@@ -171,3 +171,26 @@ def test_get_mission_rejects_invalid_file_with_path(tmp_path, monkeypatch):
         ValueError, match=r"Invalid mission file .*bad\.json: step 1 missing non-empty skill_id"
     ):
         get_mission("bad")
+
+
+def test_mission_runner_propagates_structured_skill_result_fields():
+    reg = SkillRegistry()
+    reg.discover()
+    runner = SkillRunner(reg)
+    mission_runner = MissionRunner(runner, policy=PolicyApprovals(network_changes="allow"))
+
+    mission = missions_module.MissionTemplate(
+        id="structured_open_url",
+        title="Structured Open URL",
+        goal="Exercise structured skill result propagation",
+        steps=[missions_module.MissionStep(skill_id="system.open_url", args={"url": "ftp://bad"})],
+    )
+
+    rr = mission_runner.run(mission)
+    assert rr.ok is False
+    step = rr.data["results"][0]
+    assert step["summary"] == "Rejected non-http(s) URL"
+    assert step["next_action_hint"] == "provide_supported_url"
+    assert step["operator_note"] == "Use an http:// or https:// URL."
+    assert step["retryable"] is False
+    assert step["error_class"] == "invalid_input"

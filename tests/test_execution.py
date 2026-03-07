@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from voxera.models import AppConfig, SkillManifest
 from voxera.skills import execution as execution_module
 from voxera.skills.execution import PodmanSandboxRunner
+from voxera.skills.result_contract import SKILL_RESULT_KEY
 
 
 def test_parse_network_setting_accepts_bool_and_string_values():
@@ -249,3 +250,23 @@ def test_sandbox_exec_cmd_alias_end_to_end(monkeypatch, tmp_path: Path):
 
     assert result.ok is True
     assert captured["cmd"][-2:] == ["ip", "a"]
+
+
+def test_sandbox_exec_success_emits_canonical_skill_result(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    _patch_successful_run(monkeypatch)
+
+    runner = PodmanSandboxRunner()
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"command": ["echo", "hello"]},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-structured",
+    )
+
+    assert result.ok is True
+    payload = result.data[SKILL_RESULT_KEY]
+    assert payload["summary"] == "Sandbox command completed successfully"
+    assert isinstance(payload["output_artifacts"], list)
+    assert payload["next_action_hint"] == "continue"
