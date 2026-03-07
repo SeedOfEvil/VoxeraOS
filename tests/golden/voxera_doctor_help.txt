@@ -1,0 +1,10 @@
+ Usage: voxera doctor [OPTIONS]
+
+ Run provider capability tests and write a report.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --self-test                              Run queue/audit/artifact golden-path self-test.         │
+│ --quick                                  Run fast offline checks only.                           │
+│ --timeout-s        FLOAT RANGE [x>=1.0]  Timeout for --self-test. [default: 8.0]                 │
+│ --help                                   Show this message and exit.                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

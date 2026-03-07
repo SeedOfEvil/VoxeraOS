@@ -189,6 +189,20 @@ Before opening a PR, run the canonical hardening validation target:
 make validation-check
 ```
 
+Golden contract workflow for operator-visible CLI surfaces:
+
+```bash
+make golden-check
+```
+
+- `make golden-check` validates committed baselines in `tests/golden/` for high-value
+  operator surfaces (`voxera --help`, key `voxera queue ... --help` commands, and a
+  normalized empty `voxera queue health --json` payload).
+- `make golden-update` intentionally regenerates those baselines when a reviewed CLI
+  contract change is expected.
+- Golden files are distinct from behavioral snapshot/contract tests: they optimize
+  human-readable diff review for operator-facing text/JSON surfaces.
+
 For release-grade confidence, run:
 
 ```bash

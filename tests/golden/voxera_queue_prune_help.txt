@@ -1,0 +1,16 @@
+ Usage: voxera queue prune [OPTIONS]
+
+ Prune terminal queue buckets. Dry-run by default; use --yes to delete.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --max-age-days        INTEGER RANGE [x>=1]  Prune jobs older than this many days (terminal       │
+│                                             buckets only).                                       │
+│ --max-count           INTEGER RANGE [x>=1]  Keep newest N jobs per bucket; prune the rest.       │
+│ --yes                                       Perform deletion. Without this flag, only a dry-run  │
+│                                             preview is shown.                                    │
+│ --json                                      Emit machine-readable JSON summary.                  │
+│ --queue-dir           TEXT                  Queue voxera directory containing done/, failed/,      │
+│                                             canceled/ subdirectories.                            │
+│                                             [default: ~/VoxeraOS/notes/queue]                    │
+│ --help                                      Show this message and exit.                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

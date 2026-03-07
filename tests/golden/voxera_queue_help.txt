@@ -1,0 +1,25 @@
+ Usage: voxera queue [OPTIONS] COMMAND [ARGS]...
+
+ Queue job utilities
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ bundle        Export a deterministic incident bundle for a job or the whole system.              │
+│ init          Create queue directories (safe mkdir -p; does not delete data).                    │
+│ status        Show queue health, pending approvals, and recent failures.                         │
+│ health        Show queue/daemon health grouped by current state, recent history, and historical  │
+│               counters.                                                                          │
+│ health-reset  Safely reset operator health current-state/recent-history fields.                  │
+│ cancel        Cancel a queue job by id or filename.                                              │
+│ retry         Retry a failed queue job by id or filename.                                        │
+│ unlock        Remove stale/dead daemon lock, or force-remove with --force.                       │
+│ pause         Pause queue processing.                                                            │
+│ resume        Resume queue processing.                                                           │
+│ prune         Prune terminal queue buckets. Dry-run by default; use --yes to delete.             │
+│ reconcile     Scan queue directory and report hygiene issues. Report-only by default; no changes │
+│               made.                                                                              │
+│ approvals     Resolve pending queue approvals                                                    │
+│ lock          Queue daemon lock utilities                                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

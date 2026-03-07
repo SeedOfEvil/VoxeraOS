@@ -1,0 +1,12 @@
+ Usage: voxera queue approvals [OPTIONS] COMMAND [ARGS]...
+
+ Resolve pending queue approvals
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list     List pending queue approvals.                                                           │
+│ approve  Approve a pending queue job by filename or id.                                          │
+│ deny     Deny a pending queue job by filename or id.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

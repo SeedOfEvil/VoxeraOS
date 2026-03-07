@@ -1,0 +1,30 @@
+ Usage: voxera [OPTIONS] COMMAND [ARGS]...
+
+ Voxera OS — Vera's control plane CLI
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --version                     Show Voxera version and exit.                                      │
+│ --install-completion          Install completion for the current shell.                          │
+│ --show-completion             Show completion for the current shell, to copy it or customize the │
+│                               installation.                                                      │
+│ --help                        Show this message and exit.                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ version      Show Voxera version.                                                                │
+│ config-show  Backward-compatible alias for `voxera config show`.                                 │
+│ doctor       Run provider capability tests and write a report.                                   │
+│ setup        Run first-run typed setup wizard.                                                   │
+│ demo         Run a safe 5-minute guided demo checklist.                                          │
+│ status       Show current configuration summary.                                                 │
+│ run          Run a skill by ID (MVP).                                                            │
+│ audit        Show last N audit events.                                                           │
+│ panel        Run the minimal approvals/audit panel.                                              │
+│ daemon       Run mission queue daemon watching for JSON jobs.                                    │
+│ config       Runtime configuration utilities                                                     │
+│ artifacts    Artifact management utilities                                                       │
+│ skills       Manage skills                                                                       │
+│ missions     Run multi-step built-in missions                                                    │
+│ queue        Queue job utilities                                                                 │
+│ ops          Operational incident bundle utilities                                               │
+│ inbox        Human-friendly queue inbox                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

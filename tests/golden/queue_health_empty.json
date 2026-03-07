@@ -1,0 +1,118 @@
+{
+  "artifacts_root": "<TMP>/queue/artifacts",
+  "brain_backoff_active": false,
+  "brain_backoff_last_applied_s": 0,
+  "brain_backoff_last_applied_ts": null,
+  "brain_backoff_wait_s": 0,
+  "consecutive_brain_failures": 0,
+  "counters": {},
+  "counts": {
+    "canceled": 0,
+    "done": 0,
+    "failed": 0,
+    "inbox": 0,
+    "pending": 0,
+    "pending_approvals": 0
+  },
+  "current_state": {
+    "daemon_pid": null,
+    "daemon_started_at_ms": null,
+    "daemon_state": "healthy",
+    "degradation": {
+      "brain_backoff_active": false,
+      "brain_backoff_last_applied_s": 0,
+      "brain_backoff_last_applied_ts": null,
+      "brain_backoff_wait_s": 0,
+      "consecutive_brain_failures": 0,
+      "degraded_reason": null,
+      "degraded_since_ts": null
+    },
+    "health_path": "<TMP>/queue/health.json",
+    "intake_glob": "<TMP>/queue/inbox/*.json",
+    "lock": {
+      "alive": false,
+      "exists": false,
+      "pid": 0,
+      "state": null
+    },
+    "panel_auth_lockouts": {
+      "locked_out_ips": 0,
+      "next_expiry_ts_ms": null
+    },
+    "paused": false,
+    "queue_root": "<TMP>/queue",
+    "updated_at_ms": null
+  },
+  "daemon_lock_counters": {},
+  "daemon_pid": null,
+  "daemon_started_at_ms": null,
+  "daemon_state": "healthy",
+  "degraded_reason": null,
+  "degraded_since_ts": null,
+  "exists": true,
+  "failed_prune_last": {
+    "max_age_s": "<CONFIG_OR_RUNTIME_VALUE>",
+    "max_count": "<CONFIG_OR_RUNTIME_VALUE>",
+    "removed_jobs": "<CONFIG_OR_RUNTIME_VALUE>",
+    "removed_sidecars": "<CONFIG_OR_RUNTIME_VALUE>"
+  },
+  "failed_retention": {
+    "max_age_s": "<CONFIG_OR_RUNTIME_VALUE>",
+    "max_count": "<CONFIG_OR_RUNTIME_VALUE>"
+  },
+  "failed_sidecars_invalid": 0,
+  "failed_sidecars_missing": 0,
+  "failed_sidecars_valid": 0,
+  "health_counters": {},
+  "health_path": "<TMP>/queue/health.json",
+  "historical_counters": {},
+  "intake_glob": "<TMP>/queue/inbox/*.json",
+  "last_error": null,
+  "last_error_ts_ms": null,
+  "last_fallback_from": null,
+  "last_fallback_reason": null,
+  "last_fallback_to": null,
+  "last_fallback_ts_ms": null,
+  "last_ok_event": null,
+  "last_ok_ts_ms": null,
+  "last_shutdown_job": null,
+  "last_shutdown_outcome": null,
+  "last_shutdown_reason": null,
+  "last_shutdown_ts": null,
+  "lock_state": null,
+  "lock_status": {
+    "alive": false,
+    "exists": false,
+    "lock_path": "<TMP>/queue/.daemon.lock",
+    "pid": 0
+  },
+  "panel_auth": {},
+  "panel_auth_lockouts": {
+    "locked_out_ips": 0,
+    "next_expiry_ts_ms": null
+  },
+  "paused": false,
+  "pending_approvals": [],
+  "queue_root": "<TMP>/queue",
+  "recent_failed": [],
+  "recent_history": {
+    "brain_backoff_last_applied_s": 0,
+    "brain_backoff_last_applied_ts": null,
+    "degraded_since_ts": null,
+    "last_brain_fallback": {
+      "from": null,
+      "reason": null,
+      "to": null,
+      "ts_ms": null
+    },
+    "last_error": null,
+    "last_error_ts_ms": null,
+    "last_ok_event": null,
+    "last_ok_ts_ms": null,
+    "last_shutdown_job": null,
+    "last_shutdown_outcome": null,
+    "last_shutdown_reason": null,
+    "last_shutdown_ts": null
+  },
+  "updated_at_ms": null
+}
