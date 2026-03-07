@@ -35,17 +35,17 @@ That architecture matters because it keeps behavior observable and recoverable e
 - **Modular CLI + panel + queue internals**
   - Composition roots are thin and domain logic lives in focused modules.
 
-## Architecture at a glance
+## Current architecture / module ownership
 
 VoxeraOS currently follows a **thin composition root + focused domain modules** pattern:
 
 - **Queue daemon root**: `src/voxera/core/queue_daemon.py`
-  - Composes queue runtime, lock lifecycle, health/status surfaces, and routing.
+  - Composition/orchestration root for lock lifecycle, startup/shutdown wiring, status surfaces, and queue tick routing.
 - **Queue domain modules**:
-  - `queue_execution.py`: payload normalization, mission building/planning, lifecycle processing.
-  - `queue_approvals.py`: approval artifacts, grants, resolution flows.
-  - `queue_recovery.py`: startup recovery + shutdown handling.
-  - `queue_assistant.py`: advisory queue lane and provider fallback sequencing.
+  - `queue_execution.py`: mission execution/process pipeline (intake filtering, payload normalization, planning, run/result finalization).
+  - `queue_approvals.py`: approval workflow/artifacts/grants/resolve flows.
+  - `queue_assistant.py`: assistant/advisory queue lane and provider fallback sequencing.
+  - `queue_recovery.py`: startup recovery + shutdown/in-flight deterministic failure handling.
   - `queue_state.py`: `*.state.json` sidecar schema/write helpers.
   - `queue_paths.py`: deterministic move/collision path helpers.
 - **Panel root**: `src/voxera/panel/app.py`
@@ -53,9 +53,20 @@ VoxeraOS currently follows a **thin composition root + focused domain modules** 
 - **Panel route domains**:
   - `routes_assistant.py`, `routes_missions.py`, `routes_bundle.py`, `routes_queue_control.py`, `routes_hygiene.py`, `routes_recovery.py` (plus home/jobs route modules).
 - **CLI root**: `src/voxera/cli.py`
-  - Typer composition + command registration.
+  - Typer composition/registration root.
 - **CLI domain modules**:
-  - `cli_queue.py` (queue/inbox/artifacts/operator flows), `cli_doctor.py` (doctor wiring), `cli_common.py` (shared options/helpers).
+  - `cli_queue.py` (queue/inbox/artifacts/operator command registration), `cli_doctor.py` (doctor command registration), `cli_common.py` (shared options/helpers).
+
+## Operator-visible queue contracts (current)
+
+- **Primary payloads**: `<queue_root>/{inbox|pending|done|failed|canceled}/<job>.json`.
+- **Approval artifacts**: `pending/approvals/<job>.approval.json`; resume metadata in `pending/<job>.pending.json`; optional approval grants in `pending/approvals/grants.json`.
+- **State sidecars**: `<bucket>/<job>.state.json` across active + terminal buckets, updated on lifecycle transitions.
+- **Failed sidecars**: `failed/<job>.error.json` (schema v1 payload with deterministic failure reason metadata).
+- **Assistant artifacts**: `artifacts/<job_stem>/assistant_response.json` for advisory lane responses/failures.
+- **Recovery/quarantine outputs**:
+  - startup recovery quarantine under `recovery/startup-<ts>/...`.
+  - reconcile quarantine under `quarantine/<timestamp>/...` when `voxera queue reconcile --fix --yes` is used.
 
 ## Repository structure (high signal)
 

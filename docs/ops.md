@@ -222,12 +222,12 @@ Panel operator notes:
 - Successful submit redirects to `/` with a success banner containing the created filename / mission id.
 - Validation failure (empty prompt) redirects to `/` with a clear error banner.
 - Queue flow remains standard: `inbox/` → `pending/approvals/` (when policy requires) → terminal bucket.
-- Each job now maintains a deterministic `*.state.json` sidecar (same stem as job file) with explicit lifecycle and step-progress truth:
-  - `lifecycle_state`: `queued`, `planning`, `running`, `awaiting_approval`, `resumed`, `done`, `step_failed`, `blocked`, `canceled`
-  - `current_step_index`, `total_steps`, `last_completed_step`, `last_attempted_step`
-  - `terminal_outcome` (`succeeded|failed|blocked|denied|canceled`) when terminal
-  - `failure_summary`, `blocked_reason`, `approval_status` when applicable
-  - transition timestamps under `transitions`
+- Each job maintains a deterministic `*.state.json` sidecar (same stem as job file) with explicit lifecycle + step-progress truth.
+  - Canonical `lifecycle_state` values: `queued`, `planning`, `running`, `awaiting_approval`, `resumed`, `advisory_running`, `done`, `step_failed`, `blocked`, `canceled`.
+  - `advisory_running` is used by assistant-question jobs while the advisory lane is actively processing.
+  - Step progress: `current_step_index`, `total_steps`, `last_completed_step`, `last_attempted_step`.
+  - Terminal fields: `terminal_outcome` (`succeeded|failed|blocked|denied|canceled`), `failure_summary`, `blocked_reason`, `approval_status` when applicable.
+  - Transition timestamps are tracked under `transitions`.
 - `approval_required=true` is a **hard gate**: daemon always blocks in `pending/approvals/` before any planning or execution, even for safe/no-op missions.
 - Panel approval/deny actions resolve queue approvals in a worker thread to avoid event-loop conflicts (`asyncio.run()` cannot execute inside the active FastAPI loop).
 - Artifacts and bundles are available from the Jobs console (`/jobs`, `/jobs/<job>.json`, `/jobs/<job>.json/bundle`).
@@ -634,6 +634,21 @@ Human output includes up to 10 example paths per issue type.  In report-only
 mode it always ends with: **"Report-only; no changes made."**  In fix-applied
 mode it ends with: **"No deletions performed; quarantined files can be restored
 manually."**
+
+
+### Queue ownership (post-refactor quick map)
+
+Use this map when deciding where behavior changes belong:
+
+- `src/voxera/core/queue_daemon.py`: composition root (daemon lifecycle orchestration, lock coordination, startup/shutdown entrypoints, status surface wiring).
+- `src/voxera/core/queue_execution.py`: queue mission execution pipeline (intake filtering, payload normalization, planning, run finalization into done/failed/pending).
+- `src/voxera/core/queue_approvals.py`: approval workflow and artifacts (`*.approval.json`, `*.pending.json`, grants, approve/deny resolution).
+- `src/voxera/core/queue_assistant.py`: advisory assistant lane (`assistant_question` processing, provider fallback sequencing, assistant response artifact writes).
+- `src/voxera/core/queue_recovery.py`: startup recovery (fail-fast for in-flight pending jobs) + shutdown deterministic failure handling.
+- `src/voxera/core/queue_state.py`: state sidecar path/read/write/update helpers for `*.state.json`.
+- `src/voxera/core/queue_paths.py`: deterministic transition paths + sidecar co-move helpers.
+
+Safety defaults remain unchanged: `queue reconcile` is report-first; quarantine mutations only occur with explicit `--fix --yes`.
 
 ## Contributor guidance: where code belongs
 

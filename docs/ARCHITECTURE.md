@@ -836,25 +836,42 @@ operator truth beyond bucket location.
 - `recovery/startup-<ts>/` — orphan approvals/state files quarantined during daemon startup recovery
 
 **Module ownership:**
-- `src/voxera/core/queue_daemon.py` — lock handling, tick loop, high-level routing; orchestrates all other modules
-- `src/voxera/core/queue_execution.py` — `process_job_file()`, `process_pending_once()`, inbox filtering, payload normalization, planning integration
-- `src/voxera/core/queue_recovery.py` — `recover_on_startup()`, orphan detection, quarantine, `request_shutdown()`, shutdown failure finalization
-- `src/voxera/core/queue_approvals.py` — approval prompts, pending artifact write/read, `resolve_approval()`, `grant_approval_scope()`
-- `src/voxera/core/queue_assistant.py` — `process_assistant_job()`, `assistant_answer_via_brain()`, `assistant_response_artifact_path()`
-- `src/voxera/core/queue_state.py` — `job_state_sidecar_path()`, `read_job_state()`, `write_job_state()`, `update_job_state_snapshot()`
-- `src/voxera/core/queue_paths.py` — `move_job_with_sidecar()`, `deterministic_target_path()`
+- `src/voxera/core/queue_daemon.py` — composition/orchestration root (lock lifecycle, daemon tick/run loop, startup/shutdown entrypoints, queue lane routing, operator status surfaces).
+- `src/voxera/core/queue_execution.py` — mission execution/process pipeline (`process_job_file()`, `process_pending_once()`, inbox filtering, payload normalization, mission planning integration, run finalization).
+- `src/voxera/core/queue_approvals.py` — approval workflow domain (approval prompts, pending artifact/meta writes, ref normalization, `resolve_approval()`, `grant_approval_scope()`).
+- `src/voxera/core/queue_assistant.py` — assistant/advisory queue lane (`process_assistant_job()`, provider/fallback answer sequencing, assistant response artifact persistence).
+- `src/voxera/core/queue_recovery.py` — startup recovery + shutdown deterministic failure handling (`recover_on_startup()`, orphan quarantine, `request_shutdown()`, in-flight shutdown finalization).
+- `src/voxera/core/queue_state.py` — persisted `.state.json` sidecar read/write/update helpers (`job_state_sidecar_path()`, `read_job_state()`, `write_job_state()`, `update_job_state_snapshot()`).
+- `src/voxera/core/queue_paths.py` — deterministic transition path + sidecar co-move helpers (`move_job_with_sidecar()`, `deterministic_target_path()`).
 
 See [Queue Job State Machine](#queue-job-state-machine) and [Queue Subsystem Composition](#queue-subsystem-composition) in the Subsystem Maps section above for visual diagrams.
 
 **`*.state.json` sidecar tracks:**
-- `lifecycle_state`: `queued|planning|running|awaiting_approval|resumed|done|step_failed|blocked|canceled`
-- `advisory_running` (assistant advisory lane jobs only)
+- `lifecycle_state`: `queued|planning|running|awaiting_approval|resumed|advisory_running|done|step_failed|blocked|canceled`
 - step progress: `current_step_index`, `total_steps`, `last_completed_step`, `last_attempted_step`
 - `terminal_outcome` (terminal only): `succeeded|failed|blocked|denied|canceled`
 - contextual fields when applicable: `failure_summary`, `blocked_reason`, `approval_status`
 - transition timestamps under `transitions`
 
 ---
+
+
+### Canonical lifecycle state semantics
+
+Queue + panel + CLI should treat these lifecycle states as the shared operator contract:
+
+- `queued`: primary payload accepted by daemon intake.
+- `planning`: payload normalized and mission/planning build in progress.
+- `running`: mission execution currently active.
+- `awaiting_approval`: blocked on operator decision with approval artifacts present.
+- `resumed`: approval granted; mission resumed from gated step.
+- `advisory_running`: assistant/advisory lane processing in progress.
+- `done`: terminal success.
+- `step_failed`: terminal execution/planning/shutdown failure.
+- `blocked`: terminal policy/approval block (including explicit deny path).
+- `canceled`: operator-canceled terminal outcome.
+
+`terminal_outcome` remains the terminal semantic field (`succeeded|failed|blocked|denied|canceled`) and is intentionally separate from `lifecycle_state`.
 
 ## Config Precedence
 
