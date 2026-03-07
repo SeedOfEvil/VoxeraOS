@@ -58,6 +58,8 @@ class SkillManifest(BaseModel):
     exec_mode: Literal["local", "sandbox"] = "local"
     needs_network: bool = False
     fs_scope: Literal["workspace_only", "read_only", "broader"] = "workspace_only"
+    output_artifacts: list[str] = Field(default_factory=list)
+    output_schema: str | None = None
 
 
 class PlanStep(BaseModel):

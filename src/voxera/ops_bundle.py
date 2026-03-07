@@ -302,12 +302,23 @@ def build_job_bundle(
             )
 
         art_dir = queue_root / "artifacts" / job_stem
-        names = ["plan.json", "actions.jsonl", "stdout.txt", "stderr.txt", "generated_files.json"]
+        required_names = ["plan.json", "actions.jsonl", "stdout.txt", "stderr.txt"]
+        optional_names = [
+            "generated_files.json",
+            "execution_envelope.json",
+            "step_results.json",
+            "execution_result.json",
+        ]
         if art_dir.exists():
-            for name in names:
+            for name in required_names + optional_names:
                 p = art_dir / name
                 if not p.exists():
-                    _zip_write_text(zf, f"notes/missing-{name}.txt", f"missing artifact: {name}\n")
+                    if name in required_names:
+                        _zip_write_text(
+                            zf,
+                            f"notes/missing-{name}.txt",
+                            f"missing artifact: {name}\n",
+                        )
                     continue
                 if name in {"stdout.txt", "stderr.txt"}:
                     data, truncated, original = _read_truncated(p)

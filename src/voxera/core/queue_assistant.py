@@ -192,6 +192,39 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
         daemon._write_failed_error_sidecar(
             moved, error=failure_text, payload={**payload, "thread_id": thread_id}
         )
+        daemon._write_execution_result_artifacts(
+            str(moved),
+            rr_data={
+                "results": [
+                    {
+                        "step": 1,
+                        "skill": "assistant.advisory",
+                        "args": {"question": question, "thread_id": thread_id},
+                        "ok": False,
+                        "output": "",
+                        "error": failure_text,
+                        "summary": failure_text,
+                        "machine_payload": artifact_payload,
+                        "started_at_ms": now_ms,
+                        "finished_at_ms": now_ms,
+                        "duration_ms": 0,
+                    }
+                ],
+                "step_outcomes": [
+                    {
+                        "step": 1,
+                        "skill": "assistant.advisory",
+                        "outcome": "failed",
+                    }
+                ],
+                "total_steps": 1,
+                "lifecycle_state": "step_failed",
+                "terminal_outcome": "failed",
+            },
+            ok=False,
+            terminal_outcome="failed",
+            error=failure_text,
+        )
         daemon._update_job_state(
             str(moved),
             lifecycle_state="step_failed",
@@ -256,6 +289,42 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
         return False
 
     daemon.stats.processed += 1
+    daemon._write_execution_result_artifacts(
+        str(moved),
+        rr_data={
+            "results": [
+                {
+                    "step": 1,
+                    "skill": "assistant.advisory",
+                    "args": {"question": question, "thread_id": thread_id},
+                    "ok": True,
+                    "output": answer,
+                    "error": "",
+                    "summary": answer,
+                    "machine_payload": artifact_payload,
+                    "started_at_ms": answered_ms,
+                    "finished_at_ms": answered_ms,
+                    "duration_ms": 0,
+                }
+            ],
+            "step_outcomes": [
+                {
+                    "step": 1,
+                    "skill": "assistant.advisory",
+                    "outcome": "succeeded",
+                }
+            ],
+            "total_steps": 1,
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "current_step_index": 1,
+            "last_completed_step": 1,
+            "last_attempted_step": 1,
+        },
+        ok=True,
+        terminal_outcome="succeeded",
+        error=None,
+    )
     daemon._update_job_state(
         str(moved),
         lifecycle_state="done",
