@@ -656,8 +656,10 @@ The codebase follows a **thin composition root + focused domain modules** patter
 **CLI** (`src/voxera/`):
 - New queue/operator command families → `cli_queue.py`
 - New diagnostic command logic → `cli_doctor.py` (expose via `register(app)`)
+- Runtime config command logic → `cli_config.py`; skills/missions/run → `cli_skills_missions.py`
+- Ops command logic → `cli_ops.py`; setup/demo/status/audit/panel/daemon → `cli_runtime.py`
 - Shared option definitions and parsing helpers → `cli_common.py`
-- `cli.py` owns Typer app creation and sub-app registration — keep it as the composition root
+- `cli.py` owns Typer app creation, sub-app registration, and compatibility surfaces — keep it as the composition root
 
 ## Information sources (keep in sync)
 

@@ -1,3 +1,19 @@
+## 2026-03-07 — PR #TBD — refactor(cli): finish thin composition root split for voxera.cli
+- Summary:
+  - Completed the final CLI cleanup pass by extracting remaining feature-heavy command logic from `src/voxera/cli.py` into focused modules: `cli_config.py`, `cli_skills_missions.py`, `cli_ops.py`, and `cli_runtime.py`.
+  - Kept `src/voxera/cli.py` as the thin public composition/registration root that owns the Typer app, root callback/version handling, command/group registration order, and compatibility surfaces required by tests/monkeypatching.
+  - Preserved command/group names, help text, options, defaults, JSON output shapes, and runtime behavior.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - Focused CLI suites (`test_cli_queue.py`, `test_doctor.py`, `test_cli_queue_reconcile.py`, `test_cli_queue_prune.py`, `test_cli_contract_snapshot.py`, `test_cli_version.py`).
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Compatibility symbols intentionally remain reachable from `voxera.cli` (including `log`, `console`, `get_version`, `_git_sha`, `load_runtime_config`, `MissionQueueDaemon`).
+
 ## 2026-03-06 — PR #TBD — docs: sync documentation to current codebase architecture
 - Summary:
   - Performed documentation reality-sync pass against the codebase after the recent architecture refactor wave (PRs #116–#124).

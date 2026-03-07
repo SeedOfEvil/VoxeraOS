@@ -55,13 +55,13 @@ VoxeraOS currently follows a **thin composition root + focused domain modules** 
 - **CLI root**: `src/voxera/cli.py`
   - Typer composition + command registration.
 - **CLI domain modules**:
-  - `cli_queue.py` (queue/inbox/artifacts/operator flows), `cli_doctor.py` (doctor wiring), `cli_common.py` (shared options/helpers).
+  - `cli_queue.py` (queue/inbox/artifacts/operator flows), `cli_doctor.py` (doctor wiring), `cli_config.py` (runtime config commands), `cli_skills_missions.py` (skills/missions/run command logic), `cli_ops.py` (ops capability/bundle commands), `cli_runtime.py` (setup/demo/status/audit/panel/daemon command logic), `cli_common.py` (shared options/helpers).
 
 ## Repository structure (high signal)
 
 - `src/voxera/core/` — queue daemon + mission/planner/control-plane internals.
 - `src/voxera/panel/` — FastAPI operator panel and route-domain modules.
-- `src/voxera/cli.py`, `src/voxera/cli_queue.py`, `src/voxera/cli_doctor.py` — CLI entrypoints.
+- `src/voxera/cli.py` plus `src/voxera/cli_*.py` modules — CLI entrypoints and focused command implementations.
 - `docs/ARCHITECTURE.md` — architecture map and module boundaries.
 - `docs/ops.md` — day-2 operations and incident workflows.
 - `docs/CODEX_MEMORY.md` — implementation history log across major PR milestones.
