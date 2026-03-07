@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import subprocess
 from pathlib import Path
 
 import typer
-from rich.table import Table
 
 from . import audit as _audit
 from .cli_common import (
@@ -15,10 +12,20 @@ from .cli_common import (
     RUN_ARG_OPTION,
     SNAPSHOT_PATH_OPTION,
     console,
-    queue_dir_path,
 )
+from .cli_config import config_show_impl, config_snapshot_impl, config_validate_impl
 from .cli_doctor import register as register_doctor
+from .cli_ops import ops_bundle_job_impl, ops_bundle_system_impl, ops_capabilities_impl
 from .cli_queue import artifacts_app, inbox_app, queue_app
+from .cli_runtime import audit_impl, daemon_impl, demo_cmd_impl, panel_impl, setup_impl, status_impl
+from .cli_skills_missions import (
+    approval_prompt_impl,
+    missions_list_impl,
+    missions_plan_impl,
+    missions_run_impl,
+    run_impl,
+    skills_list_impl,
+)
 from .config import load_app_config as load_config
 from .config import load_config as load_runtime_config
 from .config import (
@@ -27,17 +34,9 @@ from .config import (
     write_config_fingerprint,
     write_config_snapshot,
 )
-from .core.capabilities_snapshot import (
-    generate_capabilities_snapshot,
-    validate_mission_id_against_snapshot,
-    validate_mission_steps_against_snapshot,
-)
-from .core.mission_planner import MissionPlannerError, plan_mission
-from .core.missions import MissionRunner, _make_dryrun_deterministic, get_mission, list_missions
+from .core.capabilities_snapshot import generate_capabilities_snapshot
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .demo import run_demo
-from .ops_bundle import build_job_bundle as build_ops_job_bundle
-from .ops_bundle import build_system_bundle as build_ops_system_bundle
 from .paths import queue_root_display
 from .setup_wizard import run_setup
 from .skills.registry import SkillRegistry
@@ -95,53 +94,12 @@ def version_cmd():
 
 
 config_app = typer.Typer(help="Runtime configuration utilities")
-app.add_typer(config_app, name="config")
-
-
-@config_app.command("show")
-def config_show():
-    """Show resolved runtime config (redacted)."""
-    cfg = load_runtime_config()
-    typer.echo(json.dumps(cfg.to_safe_dict(), sort_keys=True))
-
-
-@app.command("config-show")
-def config_show_legacy():
-    """Backward-compatible alias for `voxera config show`."""
-    cfg = load_runtime_config()
-    typer.echo(json.dumps(cfg.to_safe_dict(), sort_keys=True))
-
-
-@config_app.command("snapshot")
-def config_snapshot(path: Path | None = SNAPSHOT_PATH_OPTION) -> None:
-    """Write a redacted runtime config snapshot and print its absolute path."""
-    cfg = load_runtime_config()
-    target = (
-        path.expanduser().resolve()
-        if path is not None
-        else cfg.queue_root / "_ops" / "config_snapshot.json"
-    )
-    written = write_config_snapshot(target.parent, cfg, filename=target.name)
-    write_config_fingerprint(cfg.queue_root, cfg)
-    typer.echo(str(written.resolve()))
-
-
-@config_app.command("validate")
-def config_validate():
-    """Validate runtime config and exit non-zero on errors."""
-    try:
-        cfg = load_runtime_config()
-    except ValueError as exc:
-        typer.echo(f"ERROR: {exc}")
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps({"status": "ok", "config_path": str(cfg.config_path)}, sort_keys=True))
-
-
 skills_app = typer.Typer(help="Manage skills")
 missions_app = typer.Typer(help="Run multi-step built-in missions")
 ops_app = typer.Typer(help="Operational incident bundle utilities")
 ops_bundle_app = typer.Typer(help="Export operator bundles")
 
+app.add_typer(config_app, name="config")
 app.add_typer(artifacts_app, name="artifacts")
 app.add_typer(skills_app, name="skills")
 app.add_typer(missions_app, name="missions")
@@ -149,13 +107,44 @@ app.add_typer(queue_app, name="queue")
 app.add_typer(ops_app, name="ops")
 app.add_typer(inbox_app, name="inbox")
 ops_app.add_typer(ops_bundle_app, name="bundle")
+
+
+@config_app.command("show")
+def config_show():
+    """Show resolved runtime config (redacted)."""
+    config_show_impl(load_runtime_config=load_runtime_config)
+
+
+@app.command("config-show")
+def config_show_legacy():
+    """Backward-compatible alias for `voxera config show`."""
+    config_show_impl(load_runtime_config=load_runtime_config)
+
+
+@config_app.command("snapshot")
+def config_snapshot(path: Path | None = SNAPSHOT_PATH_OPTION) -> None:
+    """Write a redacted runtime config snapshot and print its absolute path."""
+    config_snapshot_impl(
+        load_runtime_config=load_runtime_config,
+        write_config_snapshot=write_config_snapshot,
+        write_config_fingerprint=write_config_fingerprint,
+        path=path,
+    )
+
+
+@config_app.command("validate")
+def config_validate():
+    """Validate runtime config and exit non-zero on errors."""
+    config_validate_impl(load_runtime_config=load_runtime_config)
+
+
 register_doctor(app)
 
 
 @app.command()
 def setup():
     """Run first-run typed setup wizard."""
-    asyncio.run(run_setup())
+    setup_impl(run_setup=run_setup)
 
 
 @app.command("demo")
@@ -172,90 +161,24 @@ def demo_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit stable JSON output."),
 ):
     """Run a safe 5-minute guided demo checklist."""
-    result = run_demo(queue_dir=queue_dir, online=online, yes=yes)
-    if json_output:
-        typer.echo(json.dumps(result, sort_keys=True))
-        return
-
-    table = Table(title="Voxera Demo Checklist")
-    table.add_column("Check")
-    table.add_column("Status")
-    table.add_column("Detail")
-    for check in result["checks"]:
-        table.add_row(str(check["name"]), str(check["status"]), str(check["detail"]))
-    console.print(table)
-
-    if result["created_jobs"]:
-        console.print("Created demo jobs:")
-        for job_name in result["created_jobs"]:
-            console.print(f"- {job_name}")
-
-    cleanup = result["cleanup"]
-    if cleanup["performed"]:
-        console.print(f"Optional cleanup removed {cleanup['removed']} demo-scoped item(s).")
-    else:
-        console.print(
-            "Optional cleanup skipped (run with --yes to remove demo-* items created for demos)."
-        )
-
-    console.print(f"Overall demo status: {result['status']}")
+    demo_cmd_impl(
+        run_demo=run_demo, queue_dir=queue_dir, online=online, yes=yes, json_output=json_output
+    )
 
 
 @app.command()
 def status():
     """Show current configuration summary."""
-    cfg = load_config()
-    table = Table(title="Voxera Status")
-    table.add_column("Key")
-    table.add_column("Value")
-    table.add_row("mode", cfg.mode)
-    table.add_row("cloud_allowed", str(cfg.privacy.cloud_allowed))
-    table.add_row("redact_logs", str(cfg.privacy.redact_logs))
-    table.add_row("brains", ", ".join(cfg.brain.keys()) if cfg.brain else "(not configured)")
-    console.print(table)
+    status_impl(load_config=load_config)
 
 
 @skills_app.command("list")
 def skills_list():
-    reg = SkillRegistry()
-    m = reg.discover()
-    table = Table(title="Skills")
-    table.add_column("ID")
-    table.add_column("Name")
-    table.add_column("Risk")
-    table.add_column("Exec")
-    table.add_column("Net")
-    table.add_column("FS")
-    table.add_column("Capabilities")
-    for _, mf in sorted(m.items()):
-        table.add_row(
-            mf.id,
-            mf.name,
-            mf.risk,
-            mf.exec_mode,
-            str(mf.needs_network),
-            mf.fs_scope,
-            ", ".join(mf.capabilities),
-        )
-    console.print(table)
-
-
-@missions_app.command("list")
-def missions_list():
-    table = Table(title="Missions")
-    table.add_column("ID")
-    table.add_column("Title")
-    table.add_column("Steps")
-    table.add_column("Notes")
-    for mission in sorted(list_missions(), key=lambda m: m.id):
-        table.add_row(mission.id, mission.title, str(len(mission.steps)), mission.notes or "")
-    console.print(table)
+    skills_list_impl(skill_registry_cls=SkillRegistry)
 
 
 def _approval_prompt(manifest, decision):
-    console.print(f"\n⚠️  Approval required for: [bold]{manifest.id}[/bold]")
-    console.print(f"Reason: {decision.reason}")
-    return typer.confirm("Approve?", default=False)
+    return approval_prompt_impl(manifest, decision)
 
 
 @app.command()
@@ -267,31 +190,20 @@ def run(
     ),
 ):
     """Run a skill by ID (MVP)."""
-    cfg = load_config()
-    reg = SkillRegistry()
-    reg.discover()
-    mf = reg.get(skill_id)
-    runner = SkillRunner(reg)
-    runner.config = cfg
+    run_impl(
+        load_config=load_config,
+        skill_registry_cls=SkillRegistry,
+        skill_runner_cls=SkillRunner,
+        approval_prompt=_approval_prompt,
+        skill_id=skill_id,
+        arg=arg,
+        dry_run=dry_run,
+    )
 
-    args = {}
-    for item in arg or []:
-        if "=" not in item:
-            raise typer.BadParameter("--arg must be key=value")
-        k, v = item.split("=", 1)
-        args[k] = v
 
-    if dry_run:
-        sim = runner.simulate(mf, args=args, policy=cfg.policy)
-        console.print(json.dumps(sim.model_dump(), indent=2))
-        return
-
-    rr = runner.run(mf, args=args, policy=cfg.policy, require_approval_cb=_approval_prompt)
-    if rr.ok:
-        console.print(rr.output or "OK")
-    else:
-        console.print(f"[red]ERROR:[/red] {rr.error}")
-        raise typer.Exit(code=1)
+@missions_app.command("list")
+def missions_list():
+    missions_list_impl()
 
 
 @missions_app.command("plan")
@@ -318,53 +230,16 @@ def missions_plan(
     ),
 ):
     """Use the configured cloud brain to create and run a mission plan."""
-    if (deterministic or freeze_capabilities_snapshot) and not dry_run:
-        console.print(
-            "[red]ERROR:[/red] --deterministic and --freeze-capabilities-snapshot require --dry-run."
-        )
-        raise typer.Exit(code=1)
-
-    cfg = load_config()
-    reg = SkillRegistry()
-    reg.discover()
-    runner = SkillRunner(reg)
-    runner.config = cfg
-    mission_runner = MissionRunner(
-        runner,
-        policy=cfg.policy,
-        require_approval_cb=_approval_prompt,
-        redact_logs=cfg.privacy.redact_logs,
+    missions_plan_impl(
+        load_config=load_config,
+        skill_registry_cls=SkillRegistry,
+        skill_runner_cls=SkillRunner,
+        approval_prompt=_approval_prompt,
+        goal=goal,
+        dry_run=dry_run,
+        freeze_capabilities_snapshot=freeze_capabilities_snapshot,
+        deterministic=deterministic,
     )
-
-    snapshot = generate_capabilities_snapshot(reg) if freeze_capabilities_snapshot else None
-
-    try:
-        mission = asyncio.run(plan_mission(goal=goal, cfg=cfg, registry=reg, source="cli"))
-        if snapshot is None:
-            snapshot = generate_capabilities_snapshot(reg)
-        validate_mission_steps_against_snapshot(mission, snapshot)
-    except (MissionPlannerError, ValueError) as e:
-        console.print(f"[red]ERROR:[/red] {e}")
-        raise typer.Exit(code=1) from e
-
-    console.print(f"[bold]Planned mission:[/bold] {mission.title}")
-    console.print(f"Goal: {mission.goal}")
-    console.print(f"Steps: {len(mission.steps)}")
-
-    if dry_run:
-        sim = mission_runner.simulate(mission, snapshot=snapshot)
-        out = sim.model_dump()
-        if deterministic:
-            _make_dryrun_deterministic(out)
-        console.print(json.dumps(out, indent=2, sort_keys=True))
-        return
-
-    rr = mission_runner.run(mission)
-    if rr.ok:
-        console.print(rr.output)
-    else:
-        console.print(f"[red]ERROR:[/red] {rr.error}")
-        raise typer.Exit(code=1)
 
 
 @missions_app.command("run")
@@ -375,46 +250,20 @@ def missions_run(
     ),
 ):
     """Run a built-in multi-step mission by ID."""
-    cfg = load_config()
-    reg = SkillRegistry()
-    reg.discover()
-    runner = SkillRunner(reg)
-    runner.config = cfg
-    mission_runner = MissionRunner(
-        runner,
-        policy=cfg.policy,
-        require_approval_cb=_approval_prompt,
-        redact_logs=cfg.privacy.redact_logs,
+    missions_run_impl(
+        load_config=load_config,
+        skill_registry_cls=SkillRegistry,
+        skill_runner_cls=SkillRunner,
+        approval_prompt=_approval_prompt,
+        mission_id=mission_id,
+        dry_run=dry_run,
     )
-
-    try:
-        snapshot = generate_capabilities_snapshot(reg)
-        validate_mission_id_against_snapshot(mission_id, snapshot)
-        mission = get_mission(mission_id)
-        validate_mission_steps_against_snapshot(mission, snapshot)
-    except (KeyError, ValueError) as e:
-        console.print(f"[red]ERROR:[/red] {e}")
-        raise typer.Exit(code=1) from e
-
-    if dry_run:
-        sim = mission_runner.simulate(mission, snapshot=snapshot)
-        console.print(json.dumps(sim.model_dump(), indent=2, sort_keys=True))
-        return
-
-    rr = mission_runner.run(mission)
-    if rr.ok:
-        console.print(rr.output)
-    else:
-        console.print(f"[red]ERROR:[/red] {rr.error}")
-        raise typer.Exit(code=1)
 
 
 @app.command()
 def audit(n: int = 30):
     """Show last N audit events."""
-    events = tail(n)
-    for e in events:
-        console.print(e)
+    audit_impl(tail=tail, n=n)
 
 
 @app.command()
@@ -423,15 +272,7 @@ def panel(
     port: int | None = typer.Option(None, "--port", help="Panel port override."),
 ):
     """Run the minimal approvals/audit panel."""
-    import uvicorn
-
-    runtime_cfg = load_runtime_config(overrides={"panel_host": host, "panel_port": port})
-    uvicorn.run(
-        "voxera.panel.app:app",
-        host=runtime_cfg.panel_host,
-        port=runtime_cfg.panel_port,
-        reload=False,
-    )
+    panel_impl(load_runtime_config=load_runtime_config, host=host, port=port)
 
 
 @app.command()
@@ -453,26 +294,23 @@ def daemon(
     ),
 ):
     """Run mission queue daemon watching for JSON jobs."""
-    daemon = MissionQueueDaemon(
-        queue_root=queue_dir_path(queue_dir),
+    daemon_impl(
+        MissionQueueDaemon_cls=MissionQueueDaemon,
+        queue_lock_error_cls=QueueLockError,
+        once=once,
+        queue_dir=queue_dir,
         poll_interval=poll_interval,
         auto_approve_ask=auto_approve_ask,
     )
-    try:
-        daemon.run(once=once)
-    except QueueLockError as exc:
-        console.print(f"[red]ERROR:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
-    except KeyboardInterrupt:
-        console.print("Queue daemon stopped.")
 
 
 @ops_app.command("capabilities")
 def ops_capabilities():
     """Print runtime capabilities snapshot JSON."""
-    reg = SkillRegistry()
-    snapshot = generate_capabilities_snapshot(reg)
-    typer.echo(json.dumps(snapshot, sort_keys=True))
+    ops_capabilities_impl(
+        skill_registry_cls=SkillRegistry,
+        generate_capabilities_snapshot=generate_capabilities_snapshot,
+    )
 
 
 @ops_bundle_app.command("system")
@@ -485,13 +323,7 @@ def ops_bundle_system(
     archive_dir: Path | None = OPS_BUNDLE_ARCHIVE_DIR_OPTION,
 ):
     """Export a system ops bundle."""
-    queue_root = queue_dir_path(queue_dir)
-    out = build_ops_system_bundle(
-        queue_root,
-        archive_dir=archive_dir,
-        prefer_queue_root_archive=True,
-    )
-    typer.echo(str(out.resolve()))
+    ops_bundle_system_impl(queue_dir=queue_dir, archive_dir=archive_dir)
 
 
 @ops_bundle_app.command("job")
@@ -505,14 +337,7 @@ def ops_bundle_job(
     archive_dir: Path | None = OPS_BUNDLE_ARCHIVE_DIR_OPTION,
 ):
     """Export a per-job ops bundle."""
-    queue_root = queue_dir_path(queue_dir)
-    out = build_ops_job_bundle(
-        queue_root,
-        job_ref,
-        archive_dir=archive_dir,
-        prefer_queue_root_archive=True,
-    )
-    typer.echo(str(out.resolve()))
+    ops_bundle_job_impl(job_ref=job_ref, queue_dir=queue_dir, archive_dir=archive_dir)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,10 @@ VoxeraOS/
 │   │   ├── cli.py                   — Typer composition root
 │   │   ├── cli_common.py            — shared CLI primitives/options/constants
 │   │   ├── cli_queue.py             — queue/operator command family
+│   │   ├── cli_config.py            — runtime config command implementations
+│   │   ├── cli_skills_missions.py   — skills/missions/run command implementations
+│   │   ├── cli_ops.py               — ops capability/bundle command implementations
+│   │   ├── cli_runtime.py           — setup/demo/status/audit/panel/daemon implementations
 │   │   ├── cli_doctor.py            — doctor command wiring
 │   │   ├── config.py                — runtime config loader + fingerprinting
 │   │   ├── models.py                — Pydantic models (BrainConfig, AppConfig, …)
@@ -285,13 +289,15 @@ src/voxera/
 │
 │   ── CLI (thin composition root + focused command families) ──
 │
-├── cli.py                    — Typer composition/registration root. Adds sub-apps from
-│                               cli_queue.py (queue_app, inbox_app, artifacts_app),
-│                               registers doctor via cli_doctor.register(app),
-│                               and implements top-level commands (run, missions, ops,
-│                               config, status, audit, panel, daemon, setup, demo, version).
-│                               New CLI command families should be registered here but
-│                               implemented in their own focused module.
+├── cli.py                    — Typer composition/registration root. Owns public app,
+│                               command/group registration, root callback/version wiring,
+│                               and compatibility re-export surfaces used by tests/monkeypatches.
+├── cli_config.py             — Runtime config command implementations (show/snapshot/validate).
+├── cli_skills_missions.py    — skills list + run + missions list/plan/run implementations.
+├── cli_ops.py                — ops capabilities + ops bundle command implementations.
+├── cli_runtime.py            — setup/demo/status/audit/panel/daemon implementations.
+│                               New CLI command families should be registered in cli.py but
+│                               implemented in a focused cli_<domain>.py module.
 ├── cli_common.py             — Shared CLI helpers/primitives/options/constants:
 │                               console, RUN_ARG_OPTION, OUT_PATH_OPTION,
 │                               OPS_BUNDLE_ARCHIVE_DIR_OPTION, SNAPSHOT_PATH_OPTION,
