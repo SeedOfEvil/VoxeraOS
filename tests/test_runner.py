@@ -79,7 +79,7 @@ def test_simulate_canonicalizes_write_text_aliases():
 
 def test_run_redacts_sensitive_args_in_audit_log(monkeypatch):
     reg = SkillRegistry()
-    manifest = _manifest(capabilities=[])
+    manifest = _manifest(capabilities=["state.read"])
     reg.load_entrypoint = lambda _mf: lambda **_kwargs: "ok"
     runner = SkillRunner(reg)
 
@@ -101,3 +101,64 @@ def test_run_redacts_sensitive_args_in_audit_log(monkeypatch):
     assert start_event["args"]["env"]["API_KEY"] == "REDACTED"
     assert start_event["args"]["command"][2] == "REDACTED"
     assert start_event["args"]["note"] == "safe"
+
+
+def test_run_fail_closed_when_capability_metadata_missing(monkeypatch):
+    reg = SkillRegistry()
+    manifest = _manifest(capabilities=[])
+    reg.load_entrypoint = lambda _mf: lambda **_kwargs: "should-not-run"
+    runner = SkillRunner(reg)
+
+    rr = runner.run(manifest, args={}, policy=PolicyApprovals())
+
+    assert rr.ok is False
+    assert rr.data["status"] == "blocked"
+    assert rr.data["blocked_reason_class"] == "missing_capability_metadata"
+
+
+def test_run_fail_closed_when_capability_metadata_malformed(monkeypatch):
+    reg = SkillRegistry()
+    manifest = _manifest(capabilities=["apps.open", "apps.open"])
+    reg.load_entrypoint = lambda _mf: lambda **_kwargs: "should-not-run"
+    runner = SkillRunner(reg)
+
+    rr = runner.run(manifest, args={}, policy=PolicyApprovals())
+
+    assert rr.ok is False
+    assert rr.data["status"] == "blocked"
+    assert rr.data["blocked_reason_class"] == "ambiguous_capability_metadata"
+
+
+def test_run_fail_closed_when_capability_metadata_unknown(monkeypatch):
+    reg = SkillRegistry()
+    manifest = _manifest(capabilities=["unknown.capability"])
+    reg.load_entrypoint = lambda _mf: lambda **_kwargs: "should-not-run"
+    runner = SkillRunner(reg)
+
+    rr = runner.run(manifest, args={}, policy=PolicyApprovals())
+
+    assert rr.ok is False
+    assert rr.data["status"] == "blocked"
+    assert rr.data["blocked_reason_class"] == "unknown_capability_metadata"
+
+
+def test_run_returns_pending_approval_with_capability_evidence(monkeypatch):
+    reg = SkillRegistry()
+    manifest = _manifest(capabilities=["system.settings"], risk="medium")
+    reg.load_entrypoint = lambda _mf: lambda **_kwargs: "should-not-run"
+    runner = SkillRunner(reg)
+
+    def _pending(*_args, **_kwargs):
+        return {"status": "pending"}
+
+    rr = runner.run(
+        manifest,
+        args={},
+        policy=PolicyApprovals(system_settings="ask"),
+        require_approval_cb=_pending,
+    )
+
+    assert rr.ok is False
+    assert rr.data["status"] == "pending_approval"
+    assert rr.data["capabilities"] == ["system.settings"]
+    assert rr.data["effect_classes"] == ["write"]

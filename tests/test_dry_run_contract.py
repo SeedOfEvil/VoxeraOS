@@ -79,8 +79,8 @@ def test_dry_run_no_capability_skill_capability_is_null():
     )
     sim = mission_runner.simulate(mission)
 
-    assert sim.steps[0].capability is None
-    assert sim.capabilities_used == []
+    assert sim.steps[0].capability == "state.read"
+    assert sim.capabilities_used == ["state.read"]
 
 
 def test_dry_run_json_output_is_deterministic(monkeypatch):

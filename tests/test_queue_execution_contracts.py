@@ -215,3 +215,59 @@ def test_step_results_include_structured_skill_result_fields(tmp_path, monkeypat
     assert step["next_action_hint"] == "retry_after_fix"
     assert step["retryable"] is True
     assert step["error_class"] == "runner_error"
+
+
+def test_runtime_capability_block_halts_subsequent_steps_and_writes_artifacts(
+    tmp_path, monkeypatch
+):
+    _force_policy_ask(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-cap-block.json").write_text(
+        json.dumps(
+            {
+                "title": "capability gate",
+                "steps": [
+                    {"skill_id": "system.status", "args": {}},
+                    {"skill_id": "system.open_app", "args": {"name": "terminal"}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    status_manifest = daemon.mission_runner.skill_runner.registry.get("system.status")
+
+    original_get = daemon.mission_runner.skill_runner.registry.get
+
+    def _patched_get(skill_id: str):
+        if skill_id == "system.status":
+            return status_manifest.model_copy(update={"capabilities": []})
+        return original_get(skill_id)
+
+    daemon.mission_runner.skill_runner.registry.get = _patched_get  # type: ignore[method-assign]
+
+    daemon.process_pending_once()
+
+    assert (queue_root / "failed" / "job-cap-block.json").exists()
+
+    step_results = json.loads(
+        (queue_root / "artifacts" / "job-cap-block" / "step_results.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(step_results) == 1
+    assert step_results[0]["skill_id"] == "system.status"
+    assert step_results[0]["status"] == "blocked"
+    assert step_results[0]["error_class"] == "missing_capability_metadata"
+    assert step_results[0]["machine_payload"]["required_capabilities"] == []
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-cap-block" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["terminal_outcome"] == "blocked"
+    assert execution_result["last_attempted_step"] == 1
+    assert execution_result["step_results"][0]["next_action_hint"] == "fix_skill_manifest"

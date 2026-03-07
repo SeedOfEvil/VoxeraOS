@@ -2,5 +2,5 @@ id: clipboard.paste
 name: Clipboard Paste
 description: Read text currently stored in the OS clipboard.
 entrypoint: voxera_builtin_skills.clipboard_paste:run
-capabilities: []
+capabilities: ["clipboard.read"]
 risk: low

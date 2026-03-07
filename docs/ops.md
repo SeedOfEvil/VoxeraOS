@@ -230,6 +230,14 @@ Panel operator notes:
   - `failure_summary`, `blocked_reason`, `approval_status` when applicable
   - transition timestamps under `transitions`
 - `approval_required=true` is a **hard gate**: daemon always blocks in `pending/approvals/` before any planning or execution, even for safe/no-op missions.
+- Runtime capability enforcement is a second **hard gate** at step dispatch (`SkillRunner.run`) before any skill entrypoint invocation:
+  - `allow`: step executes.
+  - `ask`: step writes canonical pending approval artifacts and does **not** execute.
+  - `deny`: step is blocked and job fails with `terminal_outcome=blocked`.
+  - missing/malformed/ambiguous/unknown capability metadata: fail-closed block before execution (treated as blocked, never best-effort).
+- Blocked and approval-required outcomes are surfaced through canonical artifacts, not side channels:
+  - `artifacts/<job>/step_results.json` includes `status`, `machine_payload.required_capabilities`, `machine_payload.required_effect_classes`, and structured `error_class`.
+  - `artifacts/<job>/execution_result.json` reflects terminal outcome (`blocked` or `awaiting_approval`) with step-level context.
 - Panel approval/deny actions resolve queue approvals in a worker thread to avoid event-loop conflicts (`asyncio.run()` cannot execute inside the active FastAPI loop).
 - Artifacts and bundles are available from the Jobs console (`/jobs`, `/jobs/<job>.json`, `/jobs/<job>.json/bundle`).
 

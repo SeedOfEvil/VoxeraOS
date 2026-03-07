@@ -1062,3 +1062,17 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `pytest --collect-only | grep -Ei "planning|running|pending|approval|done|failed|canceled|blocked|lifecycle|retry|recovery|assistant"`
   - `voxera doctor --quick`
   - `voxera queue status`
+
+## 2026-03-07 — PR TBD — runtime capability enforcement (fail-closed) before step invocation
+- Summary:
+  - Added fail-closed runtime capability enforcement at the skill dispatch boundary (`src/voxera/skills/runner.py`) so no step can execute unless capability metadata is valid and policy outcome permits execution.
+  - Enforcement now blocks execution when capability metadata is missing, malformed, ambiguous (duplicate declarations), or unknown to the canonical capability/effect catalog.
+  - Policy `ask` stays in approval path (pending artifact + no side effects), `deny` is blocked, and all blocked/pending outcomes emit structured canonical skill-result payload fields that flow into `step_results.json` and `execution_result.json`.
+  - Updated built-in skill manifests to declare explicit capabilities for previously undeclared skills so safe/read paths continue to run under strict enforcement.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make golden-check`
+  - `make validation-check`

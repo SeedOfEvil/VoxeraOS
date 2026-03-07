@@ -22,6 +22,8 @@ That architecture matters because it keeps behavior observable and recoverable e
   - Daemon reads `notes/queue/inbox/*.json`, enforces queue contracts, and drives deterministic lifecycle transitions.
 - **Approval workflow (HITL gates)**
   - Policy ASK decisions produce approval artifacts in `pending/approvals/*.approval.json`, with CLI + panel approval/deny flows and optional approval grants.
+- **Runtime capability enforcement (fail-closed)**
+  - Before any skill invocation, runtime validates manifest capability metadata and effect classification. Missing/malformed/unknown/ambiguous metadata is blocked, policy `deny` is blocked, and policy `ask` enters approval flow; blocked reasons are written into canonical `step_results.json` and `execution_result.json` artifacts.
 - **Operator panel**
   - Home/jobs dashboards, queue controls, mission creation, approvals, retries/cancel/delete, hygiene operations, recovery inspector, and bundle downloads.
 - **Assistant advisory lane**
