@@ -13,6 +13,7 @@ from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .core.queue_hygiene import TERMINAL_BUCKETS, prune_queue_buckets
 from .core.queue_reconcile import quarantine_reconcile_fixes, reconcile_queue
+from .core.queue_result_consumers import resolve_structured_execution
 from .health_reset import EVENT_BY_SCOPE, HealthResetError, reset_health_snapshot
 from .health_semantics import build_health_semantic_sections
 from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
@@ -241,18 +242,29 @@ def queue_status(
             state_path = bucket_dir / f"{job.stem}.state.json"
             if not state_path.exists():
                 state_path = daemon.pending / f"{job.stem}.state.json"
-            if not state_path.exists():
-                lifecycle_rows.append((job.name, f"{bucket_name}: -"))
-                continue
-            try:
-                state = json.loads(state_path.read_text(encoding="utf-8"))
-            except Exception:
-                lifecycle_rows.append((job.name, f"{bucket_name}: invalid-state"))
-                continue
-            lifecycle = str(state.get("lifecycle_state") or "-")
-            outcome = str(state.get("terminal_outcome") or "")
-            current_step = int(state.get("current_step_index") or 0)
-            total_steps = int(state.get("total_steps") or 0)
+            state: dict[str, Any] = {}
+            if state_path.exists():
+                try:
+                    loaded_state = json.loads(state_path.read_text(encoding="utf-8"))
+                    state = loaded_state if isinstance(loaded_state, dict) else {}
+                except Exception:
+                    lifecycle_rows.append((job.name, f"{bucket_name}: invalid-state"))
+                    continue
+            structured = resolve_structured_execution(
+                artifacts_dir=daemon.artifacts / job.stem,
+                state_sidecar=state,
+                failed_sidecar=daemon._read_failed_error_sidecar(job)
+                if bucket_name == "failed"
+                else {},
+            )
+            lifecycle = str(
+                structured.get("lifecycle_state") or state.get("lifecycle_state") or "-"
+            )
+            outcome = str(structured.get("terminal_outcome") or state.get("terminal_outcome") or "")
+            current_step = int(
+                structured.get("current_step_index") or state.get("current_step_index") or 0
+            )
+            total_steps = int(structured.get("total_steps") or state.get("total_steps") or 0)
             progress = f" {current_step}/{total_steps}" if total_steps else ""
             suffix = f" · {outcome}" if outcome else ""
             lifecycle_rows.append((job.name, f"{bucket_name}: {lifecycle}{progress}{suffix}"))

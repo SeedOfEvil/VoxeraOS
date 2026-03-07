@@ -77,6 +77,31 @@ def test_queue_status_shows_lifecycle_snapshot_from_state_sidecar(tmp_path):
     assert "done: done 2/2 · succeeded" in result.output
 
 
+def test_queue_status_lifecycle_prefers_structured_execution_result(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-structured.json").write_text("{}", encoding="utf-8")
+    art = queue_dir / "artifacts" / "job-structured"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "current_step_index": 3,
+                "total_steps": 3,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli.app, ["queue", "status", "--queue-dir", str(queue_dir)])
+
+    assert result.exit_code == 0
+    assert "done: done 3/3 · succeeded" in result.output
+
+
 def test_queue_approval_list_job_value_can_be_used_with_approve(tmp_path):
     runner = CliRunner()
     queue_dir = tmp_path / "queue"

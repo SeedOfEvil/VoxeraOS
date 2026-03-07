@@ -894,6 +894,53 @@ def test_job_detail_renders_assistant_job_context(tmp_path, monkeypatch):
     assert "assistant_response.json" in res.text
 
 
+def test_job_detail_prefers_structured_execution_artifacts(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-structured.json").write_text('{"goal":"ok"}', encoding="utf-8")
+    art = queue_dir / "artifacts" / "job-structured"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "terminal_outcome": "succeeded",
+                "lifecycle_state": "done",
+                "approval_status": "approved",
+                "current_step_index": 2,
+                "last_attempted_step": 2,
+                "last_completed_step": 2,
+                "total_steps": 2,
+                "step_results": [
+                    {
+                        "step_index": 2,
+                        "skill_id": "assistant.advisory",
+                        "status": "succeeded",
+                        "summary": "Summarized queue health",
+                        "operator_note": "All clear",
+                        "next_action_hint": "none",
+                        "output_artifacts": ["outputs/summary.md"],
+                        "machine_payload": {"risk": "low"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs/job-structured.json")
+    assert res.status_code == 200
+    assert "Canonical Step Summaries" in res.text
+    assert "Structured Execution Hints" in res.text
+    assert "Summarized queue health" in res.text
+    assert "All clear" in res.text
+    assert "outputs/summary.md" in res.text
+    assert "Machine payload" in res.text
+
+
 def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

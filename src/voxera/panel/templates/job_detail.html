@@ -26,19 +26,69 @@
   <div class="section-label">Lifecycle & Context</div>
   <section class="card mb">
     <dl class="detail-grid" style="margin-bottom:var(--space-2);">
-      <dt>Lifecycle state</dt><dd>{{payload.state.lifecycle_state or payload.bucket}}</dd>
-      <dt>Terminal outcome</dt><dd>{{payload.state.terminal_outcome or '-'}}</dd>
+      <dt>Lifecycle state</dt><dd>{{payload.execution.lifecycle_state or payload.state.lifecycle_state or payload.bucket}}</dd>
+      <dt>Terminal outcome</dt><dd>{{payload.execution.terminal_outcome or payload.state.terminal_outcome or '-'}}</dd>
       <dt>Mission</dt><dd>{{payload.job_context.mission_id or '-'}}</dd>
       <dt>Mission title</dt><dd>{{payload.job_context.mission_title or '-'}}</dd>
       <dt>Goal</dt><dd>{{payload.job_context.goal or '-'}}</dd>
       <dt>Payload shape</dt><dd>{{payload.job_context.payload_shape}}</dd>
-      <dt>Approval status</dt><dd>{{payload.job_context.approval_status}}</dd>
+      <dt>Approval status</dt><dd>{{payload.execution.approval_status or payload.job_context.approval_status}}</dd>
       <dt>Failure summary</dt><dd>{{payload.job_context.failure_summary or '-'}}</dd>
       <dt>Blocked reason</dt><dd>{{payload.job_context.blocked_reason or '-'}}</dd>
       <dt>Recovery reason</dt><dd>{{payload.job_context.recovery_reason or '-'}}</dd>
-      <dt>Step progress</dt><dd>{{payload.state.current_step_index}} / {{payload.state.total_steps}}</dd>
+      <dt>Step progress</dt><dd>{{payload.execution.current_step_index or payload.state.current_step_index}} / {{payload.execution.total_steps or payload.state.total_steps}}</dd>
     </dl>
   </section>
+
+  {% if payload.execution.step_summaries %}
+  <div class="section-label">Canonical Step Summaries</div>
+  <section class="card mb">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Step</th><th>Skill</th><th>Status</th><th>Summary</th></tr></thead>
+        <tbody>
+          {% for step in payload.execution.step_summaries %}
+          <tr>
+            <td>{{step.step_index}}</td>
+            <td class="mono text-sm">{{step.skill_id or '-'}}</td>
+            <td>{{step.status or '-'}}</td>
+            <td class="muted text-sm">{{step.summary or step.operator_note or '-'}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if payload.execution.operator_note or payload.execution.next_action_hint or payload.execution.output_artifacts or payload.execution.machine_payload %}
+  <div class="section-label">Structured Execution Hints</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:var(--space-2);">
+      <dt>Latest summary</dt><dd>{{payload.execution.latest_summary or '-'}}</dd>
+      <dt>Operator note</dt><dd>{{payload.execution.operator_note or '-'}}</dd>
+      <dt>Next action hint</dt><dd>{{payload.execution.next_action_hint or '-'}}</dd>
+      <dt>Approval status</dt><dd>{{payload.execution.approval_status or '-'}}</dd>
+      <dt>Blocked</dt><dd>{{payload.execution.blocked}}</dd>
+      <dt>Retryable</dt><dd>{{payload.execution.retryable if payload.execution.retryable is not none else '-'}}</dd>
+      <dt>Last attempted / completed step</dt><dd>{{payload.execution.last_attempted_step}} / {{payload.execution.last_completed_step}}</dd>
+    </dl>
+    {% if payload.execution.output_artifacts %}
+      <h3 class="text-sm" style="margin-bottom:var(--space-2);">Declared output artifacts</h3>
+      <ul>
+      {% for artifact in payload.execution.output_artifacts %}
+        <li class="mono text-sm">{{artifact}}</li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+    {% if payload.execution.machine_payload %}
+      <details class="collapsible" style="margin-top:var(--space-3);">
+        <summary>Machine payload</summary>
+        <div class="collapsible-body"><pre>{{payload.execution.machine_payload | tojson(indent=2)}}</pre></div>
+      </details>
+    {% endif %}
+  </section>
+  {% endif %}
 
   {% if payload.has_approval %}
   <div class="section-label">Approval Required</div>

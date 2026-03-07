@@ -51,6 +51,46 @@ def test_ops_bundle_job_includes_artifacts_and_truncates_large_streams(tmp_path)
         assert "notes/stderr.txt.truncated.txt" in names
 
 
+def test_ops_bundle_job_writes_structured_execution_summary_note(tmp_path):
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "done").mkdir(parents=True)
+    (queue_dir / "done" / "job-a.json").write_text('{"goal":"x"}', encoding="utf-8")
+    art = queue_dir / "artifacts" / "job-a"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "terminal_outcome": "succeeded",
+                "lifecycle_state": "done",
+                "last_attempted_step": 1,
+                "last_completed_step": 1,
+                "approval_status": "approved",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "status": "succeeded",
+                        "summary": "done summary",
+                        "operator_note": "note",
+                        "next_action_hint": "none",
+                        "output_artifacts": ["outputs/a.txt"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    out = build_job_bundle(queue_dir, "job-a.json")
+
+    with zipfile.ZipFile(out) as zf:
+        payload = json.loads(zf.read("notes/structured_execution_summary.json").decode("utf-8"))
+        assert payload["terminal_outcome"] == "succeeded"
+        assert payload["lifecycle_state"] == "done"
+        assert payload["latest_summary"] == "done summary"
+        assert payload["operator_note"] == "note"
+        assert payload["output_artifacts"] == ["outputs/a.txt"]
+
+
 def test_ops_bundle_job_missing_primary_has_note(tmp_path):
     queue_dir = tmp_path / "queue"
     out = build_job_bundle(queue_dir, "job-missing.json")
