@@ -44,7 +44,12 @@ def test_execution_envelope_normalizes_goal_job(tmp_path, monkeypatch):
         )
     )
     assert envelope["job"]["request_kind"] == "goal"
+    assert envelope["request"]["job_intent"]["source_lane"] == "queue_daemon"
     assert envelope["execution"]["steps"][0]["skill_id"] == "system.status"
+    job_intent_artifact = json.loads(
+        (queue_root / "artifacts" / "job-goal" / "job_intent.json").read_text(encoding="utf-8")
+    )
+    assert job_intent_artifact["request_kind"] == "goal"
 
 
 def test_execution_envelope_normalizes_inline_steps_job(tmp_path, monkeypatch):

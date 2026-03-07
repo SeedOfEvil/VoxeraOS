@@ -220,3 +220,9 @@ CI-required merge gate remains `make merge-readiness-check` (`merge-readiness / 
 ## Structured execution artifact consumption (current behavior)
 
 Operator-facing queue consumers now prefer canonical structured artifacts when present (`execution_result.json`, then `step_results.json`) and fall back to legacy state/error/approval sidecars when absent. This keeps old jobs readable while making panel/CLI/ops bundle summaries more deterministic for new jobs.
+
+## Structured producer intent (queue producer/planner lane)
+
+Queue producers now attach additive canonical `job_intent` metadata to queued jobs (for example panel mission prompts, inbox CLI jobs, and assistant advisory jobs). This internal shape captures request kind/source lane, normalized title/goal/notes, optional step summaries, candidate skills/action hints, approval/artifact hints, operator rationale/summary, and optional machine planning payload.
+
+During daemon normalization, Voxera also derives `job_intent` for legacy jobs that do not provide it, preserving backward compatibility while giving downstream consumers a deterministic intent contract. When available, daemon artifacts include `artifacts/<job>/job_intent.json`, and `execution_envelope.json` now carries `request.job_intent` for end-to-end planning→execution→operator traceability.

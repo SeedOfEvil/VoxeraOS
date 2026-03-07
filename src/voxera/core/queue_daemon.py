@@ -439,9 +439,13 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
                 "steps": [{"skill_id": s.skill_id, "args": s.args} for s in mission.steps],
             },
         }
-        (self._job_artifacts_dir(job_ref) / "plan.json").write_text(
-            json.dumps(plan, indent=2), encoding="utf-8"
-        )
+        artifact_dir = self._job_artifacts_dir(job_ref)
+        (artifact_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+        intent = payload.get("job_intent")
+        if isinstance(intent, dict):
+            (artifact_dir / "job_intent.json").write_text(
+                json.dumps(intent, indent=2), encoding="utf-8"
+            )
 
     def _write_execution_result_artifacts(
         self,

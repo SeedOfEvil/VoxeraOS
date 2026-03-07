@@ -37,7 +37,10 @@ def test_inbox_add_writes_goal_and_id(tmp_path):
 
     payload = json.loads(created.read_text(encoding="utf-8"))
     assert created.name == "inbox-alpha-1.json"
-    assert payload == {"id": "alpha-1", "goal": "Write daily check-in"}
+    assert payload["id"] == "alpha-1"
+    assert payload["goal"] == "Write daily check-in"
+    assert payload["job_intent"]["request_kind"] == "goal"
+    assert payload["job_intent"]["source_lane"] == "inbox_cli"
 
 
 def test_inbox_add_rejects_duplicate_id_without_overwriting(tmp_path):
@@ -48,7 +51,9 @@ def test_inbox_add_rejects_duplicate_id_without_overwriting(tmp_path):
         add_inbox_job(queue_dir, "second goal", job_id="dup-1")
 
     payload = json.loads(created.read_text(encoding="utf-8"))
-    assert payload == {"id": "dup-1", "goal": "first goal"}
+    assert payload["id"] == "dup-1"
+    assert payload["goal"] == "first goal"
+    assert payload["job_intent"]["goal"] == "first goal"
 
 
 def test_inbox_add_cli_reports_duplicate_id_error(tmp_path):

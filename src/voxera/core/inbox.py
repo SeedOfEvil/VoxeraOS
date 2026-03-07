@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .queue_job_intent import enrich_queue_job_payload
+
 
 @dataclass(frozen=True)
 class InboxJob:
@@ -32,7 +34,10 @@ def add_inbox_job(queue_root: Path, goal: str, *, job_id: str | None = None) -> 
     if not resolved_id:
         raise ValueError("job id cannot be empty")
 
-    payload = {"id": resolved_id, "goal": goal}
+    payload = enrich_queue_job_payload(
+        {"id": resolved_id, "goal": goal},
+        source_lane="inbox_cli",
+    )
     target = inbox_dir / f"inbox-{resolved_id}.json"
     if target.exists():
         raise FileExistsError(f"inbox job already exists: {target}")
