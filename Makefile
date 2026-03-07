@@ -1,6 +1,6 @@
 .PHONY: venv install dev fmt fmt-check lint type test e2e check panel daemon-restart \
 	 type-check type-check-strict update-mypy-baseline quality-check release-check merge-readiness-check \
-	 full-validation-check test-failed-sidecar update update-fast services-install services-restart services-status services-stop services-disable premerge
+	 validation-check full-validation-check test-failed-sidecar update update-fast services-install services-restart services-status services-stop services-disable premerge
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
 SYSTEMD_SRC_DIR := deploy/systemd/user
@@ -88,9 +88,20 @@ release-check: $(DEV_MARKER)
 
 merge-readiness-check: quality-check release-check
 
-full-validation-check: merge-readiness-check test-failed-sidecar
+validation-check: $(DEV_MARKER)
+	$(RUFF) format --check .
+	$(RUFF) check .
+	$(MYPY) src/voxera
+	$(TEST_ENV_PREFIX) $(PYTEST) -q \
+		tests/test_queue_daemon.py \
+		tests/test_queue_daemon_contract_snapshot.py \
+		tests/test_cli_contract_snapshot.py \
+		tests/test_cli_queue.py \
+		tests/test_doctor.py
+
+full-validation-check: validation-check merge-readiness-check test-failed-sidecar
 	$(TEST_ENV_PREFIX) $(PYTEST) -q
-	bash scripts/e2e_smoke.sh
+	bash scripts/e2e_golden4.sh
 
 update: venv
 	bash scripts/update.sh --smoke

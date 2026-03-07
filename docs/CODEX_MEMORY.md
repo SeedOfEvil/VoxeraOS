@@ -1,4 +1,25 @@
 ## 2026-03-07 — PR #TBD — refactor(cli): finish thin composition root split for voxera.cli
+
+## 2026-03-07 — PR #130 — harden(validation): canonical validation pipeline + operator contract guardrails
+- Summary:
+  - Added canonical validation targets in `Makefile`: `make validation-check` (standard) and updated `make full-validation-check` (release-grade) to compose standard validation, merge-readiness/release checks, failed-sidecar guardrail tests, full pytest, and `scripts/e2e_golden4.sh`.
+  - Added focused operator-facing contract guardrail tests for queue health JSON required fields, assistant response artifact schema keys/version, ops bundle system manifest fields, and config snapshot payload shape; also added CLI compatibility export continuity assertions for monkeypatch surfaces (`log`, `tail`, `console`, `get_version`, `_git_sha`, `load_runtime_config`, `MissionQueueDaemon`).
+  - Updated README/architecture/ops docs to document the hardening validation ritual and the specific operator-visible contracts now protected by tests/snapshots.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q tests/test_queue_daemon.py tests/test_queue_daemon_contract_snapshot.py -vv`
+  - `pytest -q tests/test_cli_queue.py tests/test_doctor.py tests/test_cli_contract_snapshot.py -vv`
+  - `pytest -q tests/test_operator_contract_guardrails.py -vv`
+  - `make validation-check`
+  - `make full-validation-check`
+  - `bash scripts/e2e_golden4.sh`
+- Follow-ups:
+  - None.
+- Risks/notes:
+  - Hardening-only pass: no intended operator-visible behavior changes.
+
 - Summary:
   - Completed the final CLI cleanup pass by extracting remaining feature-heavy command logic from `src/voxera/cli.py` into focused modules: `cli_config.py`, `cli_skills_missions.py`, `cli_ops.py`, and `cli_runtime.py`.
   - Kept `src/voxera/cli.py` as the thin public composition/registration root that owns the Typer app, root callback/version handling, command/group registration order, and compatibility surfaces required by tests/monkeypatching.

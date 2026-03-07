@@ -85,3 +85,13 @@ def test_cli_queue_status_help_surface_snapshot():
     ]
     for fragment in expected_fragments:
         assert fragment in help_text
+
+
+def test_cli_compatibility_exports_remain_reachable():
+    assert callable(cli.log)
+    assert callable(cli.tail)
+    assert cli.console is not None
+    assert callable(cli.get_version)
+    assert callable(cli._git_sha)
+    assert callable(cli.load_runtime_config)
+    assert cli.MissionQueueDaemon is not None

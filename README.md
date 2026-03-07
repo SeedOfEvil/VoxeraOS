@@ -183,13 +183,22 @@ When extending VoxeraOS:
 - Preserve operator-visible contracts (queue paths, CLI flags, panel route behavior) unless intentionally versioned/changed.
 - Prefer additive, auditable workflows over implicit behavior.
 
-Before opening a PR, run:
+Before opening a PR, run the canonical hardening validation target:
 
 ```bash
-make check
+make validation-check
 ```
 
-For release/merge parity checks, see `make merge-readiness-check`, `make release-check`, and `make full-validation-check`.
+For release-grade confidence, run:
+
+```bash
+make full-validation-check
+```
+
+`validation-check` is the standard quick gate (format/lint/type + critical queue/CLI/doctor contract suites). `full-validation-check` extends that with full pytest, release/failed-sidecar guardrails, and the Golden4 E2E script.
 For typing-ratchet baseline maintenance workflows, use `make update-mypy-baseline` intentionally (not as a routine shortcut).
 
 Note: preserve the existing merge gate semantics documented as `merge-readiness / merge-readiness` when touching release process docs.
+
+
+CI-required merge gate remains `make merge-readiness-check` (`merge-readiness / merge-readiness`).
