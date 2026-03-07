@@ -30,6 +30,7 @@ from . import queue_assistant
 from .mission_planner import plan_mission as plan_mission  # re-export for monkeypatch compatibility
 from .missions import MissionRunner, MissionTemplate
 from .queue_approvals import QueueApprovalMixin
+from .queue_contracts import build_execution_result, build_structured_step_results
 from .queue_execution import QueueExecutionMixin
 from .queue_paths import move_job_with_sidecar
 from .queue_recovery import QueueRecoveryMixin
@@ -441,6 +442,35 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             json.dumps(plan, indent=2), encoding="utf-8"
         )
 
+    def _write_execution_result_artifacts(
+        self,
+        job_ref: str,
+        *,
+        rr_data: dict[str, Any],
+        ok: bool,
+        terminal_outcome: str,
+        error: str | None = None,
+    ) -> None:
+        artifact_dir = self._job_artifacts_dir(job_ref)
+        step_results = build_structured_step_results(
+            rr_data,
+            total_steps=int(rr_data.get("total_steps") or 0),
+        )
+        (artifact_dir / "step_results.json").write_text(
+            json.dumps(step_results, indent=2), encoding="utf-8"
+        )
+        execution_result = build_execution_result(
+            job_ref=job_ref,
+            rr_data=rr_data,
+            step_results=step_results,
+            terminal_outcome=terminal_outcome,
+            ok=ok,
+            error=error,
+        )
+        (artifact_dir / "execution_result.json").write_text(
+            json.dumps(execution_result, indent=2), encoding="utf-8"
+        )
+
     def _write_run_streams(self, job_ref: str, rr_data: dict[str, Any]) -> None:
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
@@ -469,6 +499,13 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             (outputs_dir / "generated_files.json").write_text(
                 json.dumps(generated_files, indent=2), encoding="utf-8"
             )
+        self._write_execution_result_artifacts(
+            job_ref,
+            rr_data=rr_data,
+            ok=str(rr_data.get("terminal_outcome") or "") == "succeeded",
+            terminal_outcome=str(rr_data.get("terminal_outcome") or "unknown"),
+            error=None,
+        )
 
     def _move_job(self, src: Path, target_dir: Path) -> Path | None:
         def _on_already_moved(missing_src: Path, move_target_dir: Path) -> None:

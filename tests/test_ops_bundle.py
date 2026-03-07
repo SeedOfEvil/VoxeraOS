@@ -35,6 +35,7 @@ def test_ops_bundle_job_includes_artifacts_and_truncates_large_streams(tmp_path)
     (art / "actions.jsonl").write_text("{}\n", encoding="utf-8")
     (art / "stdout.txt").write_text("x" * (300 * 1024), encoding="utf-8")
     (art / "stderr.txt").write_text("y" * (300 * 1024), encoding="utf-8")
+    (art / "execution_result.json").write_text("{}", encoding="utf-8")
 
     out = build_job_bundle(queue_dir, "job-a.json")
     assert out.exists()
@@ -45,6 +46,7 @@ def test_ops_bundle_job_includes_artifacts_and_truncates_large_streams(tmp_path)
         assert "artifacts/plan.json" in names
         assert len(zf.read("artifacts/stdout.txt")) == 256 * 1024
         assert len(zf.read("artifacts/stderr.txt")) == 256 * 1024
+        assert "artifacts/execution_result.json" in names
         assert "notes/stdout.txt.truncated.txt" in names
         assert "notes/stderr.txt.truncated.txt" in names
 

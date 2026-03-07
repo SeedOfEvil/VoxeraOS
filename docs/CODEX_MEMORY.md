@@ -1,3 +1,15 @@
+## 2026-03-07 — PR TBD — feat(core): canonical queue execution envelope + structured step results
+- Added `src/voxera/core/queue_contracts.py` to centralize queue execution contract shaping:
+  - canonical `execution_envelope.json` builder for normalized queue jobs.
+  - structured per-step result shaping for success/failure/approval/assistant paths.
+  - `execution_result.json` builder for deterministic machine-readable terminal summaries.
+- Updated queue execution + assistant lanes to persist additive artifacts under `artifacts/<job_stem>/`:
+  - `execution_envelope.json`
+  - `step_results.json`
+  - `execution_result.json`
+- Expanded mission step runtime output in `missions.py` to include per-step timestamps/duration and machine payload passthrough used by structured step results.
+- Added focused contract tests in `tests/test_queue_execution_contracts.py` and updated ops bundle coverage to include new result artifact inclusion.
+
 ## 2026-03-07 — PR #TBD — hardening(ci): add golden operator surface checks and contract validation workflow
 - Summary:
   - Added deterministic golden operator-surface tooling in `tools/golden_surfaces.py` and committed baselines under `tests/golden/` for high-value CLI surfaces: root help, queue help subcommands (`status`, `approvals`, `reconcile`, `prune`, `health`), doctor help, and normalized empty `queue health --json` output.

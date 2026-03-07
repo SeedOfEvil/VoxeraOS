@@ -386,6 +386,7 @@ class MissionRunner:
                 continue
 
             audit_context = {"mission": mission.id, "step": idx, **context}
+            step_started_at_ms = int(time.time() * 1000)
             rr = self.skill_runner.run(
                 self.skill_runner.registry.get(ms.skill_id),
                 args=ms.args,
@@ -393,6 +394,7 @@ class MissionRunner:
                 require_approval_cb=self.require_approval_cb,
                 audit_context=audit_context,
             )
+            step_finished_at_ms = int(time.time() * 1000)
             outputs.append(
                 {
                     "step": idx,
@@ -401,6 +403,24 @@ class MissionRunner:
                     "ok": rr.ok,
                     "output": rr.output,
                     "error": rr.error,
+                    "machine_payload": rr.data if isinstance(rr.data, dict) else {},
+                    "started_at_ms": step_started_at_ms,
+                    "finished_at_ms": step_finished_at_ms,
+                    "duration_ms": max(0, step_finished_at_ms - step_started_at_ms),
+                    "summary": str(rr.output or rr.error or "").strip(),
+                    "output_artifacts": (
+                        rr.data.get("artifacts")
+                        if isinstance(rr.data, dict) and isinstance(rr.data.get("artifacts"), list)
+                        else []
+                    ),
+                    "retryable": (
+                        rr.data.get("retryable")
+                        if isinstance(rr.data, dict) and isinstance(rr.data.get("retryable"), bool)
+                        else None
+                    ),
+                    "error_class": (
+                        rr.data.get("error_class") if isinstance(rr.data, dict) else None
+                    ),
                 }
             )
             if rr.data.get("status") == "pending_approval":

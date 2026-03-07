@@ -64,6 +64,7 @@ VoxeraOS/
 │   │   ├── core/
 │   │   │   ├── queue_daemon.py      — MissionQueueDaemon (composition root)
 │   │   │   ├── queue_execution.py   — QueueExecutionMixin
+│   │   │   ├── queue_contracts.py   — canonical envelope + step/execution result shaping
 │   │   │   ├── queue_recovery.py    — QueueRecoveryMixin
 │   │   │   ├── queue_approvals.py   — QueueApprovalMixin
 │   │   │   ├── queue_assistant.py   — assistant advisory lane (module-level fns)

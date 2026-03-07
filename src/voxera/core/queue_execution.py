@@ -22,6 +22,7 @@ from .capabilities_snapshot import (
 )
 from .mission_planner import MissionPlannerError
 from .missions import MissionStep, MissionTemplate, get_mission
+from .queue_contracts import build_execution_envelope
 
 
 def _queue_daemon_module() -> Any:
@@ -254,6 +255,17 @@ class QueueExecutionMixin:
                     return False
                 mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
                 self._write_plan_artifact(str(job_path), payload=payload, mission=mission)
+                envelope = build_execution_envelope(
+                    job_ref=str(job_path),
+                    payload=payload,
+                    mission=mission,
+                    queue_root=self.queue_root,
+                    artifact_root=self.artifacts,
+                    normalized_mode="mission",
+                )
+                (self._job_artifacts_dir(str(job_path)) / "execution_envelope.json").write_text(
+                    json.dumps(envelope, indent=2), encoding="utf-8"
+                )
                 self._update_job_state(
                     str(job_path),
                     lifecycle_state="running",
@@ -277,6 +289,18 @@ class QueueExecutionMixin:
                     payload if "payload" in locals() and isinstance(payload, dict) else None
                 )
                 self._write_failed_error_sidecar(moved, error=repr(exc), payload=sidecar_payload)
+                self._write_execution_result_artifacts(
+                    str(moved),
+                    rr_data={
+                        "results": [],
+                        "step_outcomes": [],
+                        "total_steps": 0,
+                        "lifecycle_state": "step_failed",
+                    },
+                    ok=False,
+                    terminal_outcome="failed",
+                    error=repr(exc),
+                )
                 self._update_job_state(
                     str(moved),
                     lifecycle_state="step_failed",
@@ -313,6 +337,13 @@ class QueueExecutionMixin:
                 self._write_pending_artifacts(
                     moved, payload=payload, mission=mission, run_data=rr.data
                 )
+                self._write_execution_result_artifacts(
+                    str(moved),
+                    rr_data=rr.data,
+                    ok=False,
+                    terminal_outcome="awaiting_approval",
+                    error=rr.error,
+                )
                 self._update_job_state(
                     str(moved),
                     lifecycle_state="awaiting_approval",
@@ -340,6 +371,13 @@ class QueueExecutionMixin:
                     return False
                 error_text = rr.error or "mission failed"
                 self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
+                self._write_execution_result_artifacts(
+                    str(moved),
+                    rr_data=rr.data,
+                    ok=False,
+                    terminal_outcome=str(rr.data.get("terminal_outcome") or "failed"),
+                    error=error_text,
+                )
                 self._update_job_state(
                     str(moved),
                     lifecycle_state=str(rr.data.get("lifecycle_state") or "step_failed"),
