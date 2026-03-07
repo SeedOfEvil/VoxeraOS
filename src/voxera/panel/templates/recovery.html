@@ -13,33 +13,31 @@
         <h1 class="title">Recovery Inspector</h1>
         <p class="subtitle">Read-only view of recovery and quarantine sessions, with per-session ZIP download.</p>
       </div>
-      <div class="action-group">
-        <span class="badge">Read-only</span>
-        <a class="btn" href="/">← Back to Panel</a>
-      </div>
+      <div class="action-group"><span class="badge">Read-only</span><a class="btn" href="/">← Back to Panel</a></div>
     </header>
 
-    <!-- Recovery sessions -->
+    <div class="section-label">Recovery / Shutdown Context</div>
+    <section class="card mb">
+      <dl class="detail-grid" style="margin-bottom:var(--space-2);">
+        <dt>Last shutdown outcome</dt><dd>{{recovery_context.last_shutdown_outcome or '-'}}</dd>
+        <dt>Last shutdown reason</dt><dd>{{recovery_context.last_shutdown_reason or '-'}}</dd>
+        <dt>Last shutdown job</dt><dd>{{recovery_context.last_shutdown_job or '-'}}</dd>
+        <dt>Startup recovery counts</dt><dd class="mono text-sm">{{recovery_context.last_startup_recovery_counts | tojson}}</dd>
+      </dl>
+    </section>
+
     <div class="section-label">Recovery Sessions</div>
     <section class="card mb">
       {% if recovery_sessions|length == 0 %}
-        <div class="empty-state">No recovery sessions found.</div>
+        <div class="empty-state">No recovery sessions found. State: empty/good.</div>
       {% else %}
+        <div class="alert alert-info">State: {{'good' if recovery_sessions|length > 0 else 'empty'}}</div>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr><th>Name</th><th>Kind</th><th>Modified</th><th>Size</th><th>Files</th><th>Download</th></tr>
-            </thead>
+            <thead><tr><th>Name</th><th>Kind</th><th>Modified</th><th>Size</th><th>Files</th><th>Download</th></tr></thead>
             <tbody>
             {% for item in recovery_sessions %}
-              <tr>
-                <td class="mono text-sm">{{item.name}}</td>
-                <td>{{item.kind}}</td>
-                <td class="text-sm muted">{{item.mtime_ts}}</td>
-                <td class="text-sm muted">{{item.size_bytes}} B</td>
-                <td class="text-sm muted">{{item.file_count}}</td>
-                <td><a class="btn btn-sm" href="/recovery/download/recovery/{{item.name}}">Download ZIP</a></td>
-              </tr>
+              <tr><td class="mono text-sm">{{item.name}}</td><td>{{item.kind}}</td><td class="text-sm muted">{{item.mtime_ts}}</td><td class="text-sm muted">{{item.size_bytes}} B</td><td class="text-sm muted">{{item.file_count}}</td><td><a class="btn btn-sm" href="/recovery/download/recovery/{{item.name}}">Download ZIP</a></td></tr>
             {% endfor %}
             </tbody>
           </table>
@@ -47,27 +45,18 @@
       {% endif %}
     </section>
 
-    <!-- Quarantine sessions -->
     <div class="section-label">Quarantine Sessions</div>
     <section class="card">
       {% if quarantine_sessions|length == 0 %}
-        <div class="empty-state">No quarantine sessions found.</div>
+        <div class="empty-state">No quarantine sessions found. State: empty/good.</div>
       {% else %}
+        <div class="alert alert-info">State: {{'needs review' if quarantine_sessions|length > 0 else 'empty'}}</div>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr><th>Name</th><th>Kind</th><th>Modified</th><th>Size</th><th>Files</th><th>Download</th></tr>
-            </thead>
+            <thead><tr><th>Name</th><th>Kind</th><th>Modified</th><th>Size</th><th>Files</th><th>Download</th></tr></thead>
             <tbody>
             {% for item in quarantine_sessions %}
-              <tr>
-                <td class="mono text-sm">{{item.name}}</td>
-                <td>{{item.kind}}</td>
-                <td class="text-sm muted">{{item.mtime_ts}}</td>
-                <td class="text-sm muted">{{item.size_bytes}} B</td>
-                <td class="text-sm muted">{{item.file_count}}</td>
-                <td><a class="btn btn-sm" href="/recovery/download/quarantine/{{item.name}}">Download ZIP</a></td>
-              </tr>
+              <tr><td class="mono text-sm">{{item.name}}</td><td>{{item.kind}}</td><td class="text-sm muted">{{item.mtime_ts}}</td><td class="text-sm muted">{{item.size_bytes}} B</td><td class="text-sm muted">{{item.file_count}}</td><td><a class="btn btn-sm" href="/recovery/download/quarantine/{{item.name}}">Download ZIP</a></td></tr>
             {% endfor %}
             </tbody>
           </table>
