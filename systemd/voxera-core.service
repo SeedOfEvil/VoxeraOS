@@ -8,6 +8,7 @@ WorkingDirectory=%h/VoxeraOS
 ExecStart=%h/VoxeraOS/.venv/bin/voxera daemon
 Restart=on-failure
 RestartSec=2
+TimeoutStopSec=10
 
 [Install]
 WantedBy=default.target

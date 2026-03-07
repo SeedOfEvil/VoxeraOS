@@ -41,6 +41,7 @@ from .queue_state import (
 
 _PARSE_RETRY_ATTEMPTS = 4
 _PARSE_RETRY_BACKOFF_S = 0.1
+_SHUTDOWN_POLL_SLICE_S = 0.1
 
 _FAILED_SIDECAR_SCHEMA_WRITE_VERSION = 1
 _FAILED_SIDECAR_SCHEMA_READ_VERSIONS = {_FAILED_SIDECAR_SCHEMA_WRITE_VERSION}
@@ -958,6 +959,18 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
         finally:
             tmp.unlink(missing_ok=True)
 
+    def _wait_for_poll_interval(self) -> None:
+        """Sleep for up to poll_interval while remaining promptly interruptible."""
+        interval_s = max(0.0, float(self.poll_interval))
+        if interval_s == 0:
+            return
+        deadline = time.monotonic() + interval_s
+        while not self._shutdown_requested:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(remaining, _SHUTDOWN_POLL_SLICE_S))
+
     def _snapshot_and_check_config_drift(self) -> None:
         snapshot_path = write_config_snapshot(
             self.queue_root, self.settings, filename="_ops/config_snapshot.json"
@@ -1092,7 +1105,7 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
                 self.process_pending_once()
                 try:
                     while not self._shutdown_requested:
-                        time.sleep(self.poll_interval)
+                        self._wait_for_poll_interval()
                 finally:
                     observer.stop()
                     observer.join()
@@ -1102,7 +1115,7 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
                     self.process_pending_once()
                     if self._shutdown_requested:
                         break
-                    time.sleep(self.poll_interval)
+                    self._wait_for_poll_interval()
         except Exception as exc:
             self._record_failed_shutdown(exc)
             record_health_error(self.queue_root, f"daemon run error: {exc}")

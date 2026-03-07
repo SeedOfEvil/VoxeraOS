@@ -2021,6 +2021,129 @@ def test_run_refuses_when_os_lock_is_held_by_other_process(tmp_path, monkeypatch
     assert not (queue_dir / "done" / "job1.json").exists()
 
 
+def test_shutdown_during_poll_does_not_wait_full_interval(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=10.0, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon._shutdown_requested = False
+
+    sleep_calls: list[float] = []
+
+    def _fake_sleep(seconds: float):
+        sleep_calls.append(seconds)
+        daemon.request_shutdown("SIGTERM")
+
+    monotonic_values = iter([0.0, 0.0, 0.05])
+    monkeypatch.setattr("voxera.core.queue_daemon.time.sleep", _fake_sleep)
+    monkeypatch.setattr("voxera.core.queue_daemon.time.monotonic", lambda: next(monotonic_values))
+
+    daemon._wait_for_poll_interval()
+
+    assert sleep_calls == [0.1]
+
+
+def test_run_watch_mode_exits_promptly_after_shutdown_request(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=30.0, mission_log_path=tmp_path / "mission-log.md"
+    )
+
+    monkeypatch.setattr(daemon, "process_pending_once", lambda: 0)
+
+    class _EventHandler:
+        pass
+
+    class _Observer:
+        def schedule(self, *_args, **_kwargs):
+            return None
+
+        def start(self):
+            return None
+
+        def stop(self):
+            return None
+
+        def join(self):
+            return None
+
+    monkeypatch.setitem(sys.modules, "watchdog", types.ModuleType("watchdog"))
+    monkeypatch.setitem(
+        sys.modules, "watchdog.events", types.SimpleNamespace(FileSystemEventHandler=_EventHandler)
+    )
+    monkeypatch.setitem(
+        sys.modules, "watchdog.observers", types.SimpleNamespace(Observer=_Observer)
+    )
+
+    sleep_calls: list[float] = []
+
+    def _fake_sleep(seconds: float):
+        sleep_calls.append(seconds)
+        daemon.request_shutdown("SIGTERM")
+
+    monotonic_values = iter([0.0, 0.0, 0.05])
+    monkeypatch.setattr("voxera.core.queue_daemon.time.sleep", _fake_sleep)
+    monkeypatch.setattr("voxera.core.queue_daemon.time.monotonic", lambda: next(monotonic_values))
+
+    daemon.run(once=False)
+
+    assert sleep_calls == [0.1]
+
+
+def test_idle_shutdown_records_clean_and_releases_lock(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=20.0, mission_log_path=tmp_path / "mission-log.md"
+    )
+    monkeypatch.setattr(daemon, "process_pending_once", lambda: 0)
+
+    class _EventHandler:
+        pass
+
+    class _Observer:
+        def schedule(self, *_args, **_kwargs):
+            return None
+
+        def start(self):
+            return None
+
+        def stop(self):
+            return None
+
+        def join(self):
+            return None
+
+    monkeypatch.setitem(sys.modules, "watchdog", types.ModuleType("watchdog"))
+    monkeypatch.setitem(
+        sys.modules, "watchdog.events", types.SimpleNamespace(FileSystemEventHandler=_EventHandler)
+    )
+    monkeypatch.setitem(
+        sys.modules, "watchdog.observers", types.SimpleNamespace(Observer=_Observer)
+    )
+
+    def _fake_sleep(_seconds: float):
+        daemon.request_shutdown("SIGTERM")
+
+    monotonic_values = iter([0.0, 0.0, 0.01])
+    monkeypatch.setattr("voxera.core.queue_daemon.time.sleep", _fake_sleep)
+    monkeypatch.setattr("voxera.core.queue_daemon.time.monotonic", lambda: next(monotonic_values))
+
+    daemon.run(once=False)
+
+    counters = daemon.lock_counters_snapshot()
+    assert counters.get("lock_released", 0) >= 1
+    health = json.loads((queue_dir / "health.json").read_text(encoding="utf-8"))
+    assert health.get("last_shutdown_outcome") == "clean"
+    assert health.get("last_shutdown_reason") == "SIGTERM"
+    assert health.get("last_shutdown_job") is None
+
+
 def test_shutdown_request_stops_intake(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     _stub_planner(monkeypatch)
