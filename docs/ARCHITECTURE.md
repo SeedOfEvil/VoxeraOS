@@ -884,7 +884,8 @@ Secrets: keyring preferred; fallback to `~/.config/voxera/env` (mode 0600).
 | Target | When to run | What it covers |
 |---|---|---|
 | `make merge-readiness-check` | Before every PR merge | fmt + lint + mypy ratchet + release consistency |
-| `make full-validation-check` | Before releases or risky changes | merge-readiness + failed-sidecar guardrails + full pytest + E2E smoke |
+| `make validation-check` | Before every PR / local merge confidence | ruff format/check + mypy + critical queue/CLI/doctor contract suites |
+| `make full-validation-check` | Before releases or risky changes | validation-check + merge-readiness + failed-sidecar guardrails + full pytest + Golden4 E2E |
 | `make test-failed-sidecar` | Queue daemon changes | Sidecar schema policy + lifecycle smoke tests |
 
 ---

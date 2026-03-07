@@ -398,9 +398,10 @@ make merge-readiness-check
 
 This combines fast quality checks (format/lint/type) and release consistency checks (version/doc/runtime alignment) under one workflow status check: `merge-readiness / merge-readiness`.
 
-Validation tiers:
-- Required for pull request merge: `make merge-readiness-check`.
-- Broader local validation before releases/high-risk refactors: `make full-validation-check` (`make premerge` alias).
+Validation tiers (post-refactor hardening pass):
+- Canonical merge-confidence gate: `make validation-check` (format/lint/type + critical queue/CLI/doctor contract suites).
+- Required CI merge gate remains: `make merge-readiness-check`.
+- Broader local/release validation: `make full-validation-check` (`make premerge` alias), which includes `validation-check`, merge-readiness, failed-sidecar guardrails, full pytest, and Golden4 E2E.
 
 Typing policy:
 - `make type-check` uses a mypy ratchet against `tools/mypy-baseline.txt` and blocks new type errors.
@@ -420,6 +421,14 @@ CI diagnostics:
 - On merge-readiness failures, GitHub Actions uploads `merge-readiness-logs` artifacts (quality/release logs).
 - Workflow step summary will call out whether quality or release phase failed and where to find the logs.
 - Download artifacts from the failed workflow run for quick triage without rerunning locally.
+
+
+Operator-facing contracts explicitly guarded by tests/snapshots include:
+- queue health JSON + reset semantics (`queue health --json`, `queue health-reset --json`),
+- queue daemon recovery/approval transition snapshots,
+- CLI command/help surface snapshots (including compatibility exports from `voxera.cli`),
+- assistant advisory artifact schema (`assistant_response.json`),
+- ops bundle manifest + config snapshot schema contracts.
 
 Troubleshooting:
 - If `ruff` fails, run `make fmt` then rerun `make merge-readiness-check`.
