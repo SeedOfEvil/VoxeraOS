@@ -274,7 +274,9 @@ def test_panel_queue_create_goal_and_mission(tmp_path, monkeypatch):
     queued = list((fake_home / "VoxeraOS" / "notes" / "queue" / "inbox").glob("*.json"))
     assert len(queued) == 1
     payload = json.loads(queued[0].read_text(encoding="utf-8"))
-    assert payload == {"goal": "run system check"}
+    assert payload["goal"] == "run system check"
+    assert payload["job_intent"]["request_kind"] == "goal"
+    assert payload["job_intent"]["source_lane"] == "panel_queue_create"
 
     mission_res = _authed_csrf_request(
         client, "post", "/queue/create", data={"kind": "mission", "mission_id": "system_check"}

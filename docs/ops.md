@@ -1116,3 +1116,8 @@ Panel home includes a read-only **Performance Stats** tab that surfaces these sa
 ## Structured-first operator surfaces
 
 For job detail/status/bundle flows, Voxera now prefers canonical structured execution artifacts (`execution_result.json`, `step_results.json`) to derive terminal outcome, lifecycle state, step summaries, approval/blocked/retryable hints, and declared output artifacts. If these files are missing or partial, operators still get legacy sidecar and audit-based summaries.
+
+
+### Producer intent artifacts and compatibility
+
+Queue jobs may include additive `job_intent` metadata produced by panel/inbox/assistant lanes or derived by daemon normalization. Operators may also see `artifacts/<job>/job_intent.json` for newer jobs. If absent, workflows continue using existing payload/state semantics; absence is expected for legacy jobs.

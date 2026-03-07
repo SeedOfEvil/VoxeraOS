@@ -1263,7 +1263,8 @@ def test_failed_sidecar_schema_for_runtime_failure_with_payload(tmp_path, monkey
     assert sidecar["schema_version"] == 1
     assert sidecar["job"] == failed_job.name
     assert sidecar["error"] == "runtime exploded"
-    assert sidecar["payload"] == {"goal": "check machine"}
+    assert sidecar["payload"]["goal"] == "check machine"
+    assert sidecar["payload"]["job_intent"]["request_kind"] == "goal"
 
 
 def test_failed_sidecar_schema_for_approval_denied(tmp_path, monkeypatch):

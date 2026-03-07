@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.queue_inspect import lookup_job
+from ..core.queue_job_intent import enrich_queue_job_payload
 from ..operator_assistant import (
     ASSISTANT_JOB_KIND,
     append_thread_turn,
@@ -23,14 +24,20 @@ def enqueue_assistant_question(
     ts_ms = int(time.time() * 1000)
     job_id = f"job-assistant-{ts_ms}.json"
     normalized_thread = normalize_thread_id(thread_id) if thread_id else new_thread_id()
-    payload = {
-        "kind": ASSISTANT_JOB_KIND,
-        "question": question.strip(),
-        "thread_id": normalized_thread,
-        "created_at_ms": ts_ms,
-        "advisory": True,
-        "read_only": True,
-    }
+    payload = enrich_queue_job_payload(
+        {
+            "kind": ASSISTANT_JOB_KIND,
+            "question": question.strip(),
+            "thread_id": normalized_thread,
+            "created_at_ms": ts_ms,
+            "advisory": True,
+            "read_only": True,
+            "summary": "Queue advisory answer requested by operator",
+            "action_hints": ["assistant.advisory"],
+            "expected_artifacts": ["assistant_response.json"],
+        },
+        source_lane="assistant_advisory",
+    )
     (inbox / job_id).write_text(json.dumps(payload, indent=2), encoding="utf-8")
     append_thread_turn(
         queue_root,

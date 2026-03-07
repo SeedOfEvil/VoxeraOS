@@ -923,3 +923,9 @@ Queue consumers resolve execution context using this preference order:
 4. existing derived/audit fallbacks
 
 This is intentionally additive and backward-compatible: canonical structured fields are preferred, while legacy jobs remain fully supported.
+
+## Producer-side queue intent contract (additive)
+
+In addition to execution-time artifacts, queue producer lanes now emit/normalize additive `job_intent` metadata for queued work. This is centralized in `src/voxera/core/queue_job_intent.py` and is intentionally tolerant of partial inputs. The daemon persists `artifacts/<job>/job_intent.json` when present and includes the same object under `execution_envelope.json -> request.job_intent`.
+
+This keeps legacy queue payloads valid while giving newer jobs a deterministic planning-intent surface for panel detail views, ops bundles, and future retry/recovery logic.

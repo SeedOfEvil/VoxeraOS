@@ -23,6 +23,7 @@ from .capabilities_snapshot import (
 from .mission_planner import MissionPlannerError
 from .missions import MissionStep, MissionTemplate, get_mission
 from .queue_contracts import build_execution_envelope
+from .queue_job_intent import build_queue_job_intent
 
 
 def _queue_daemon_module() -> Any:
@@ -52,6 +53,7 @@ class QueueExecutionMixin:
         if "approval_required" in payload:
             normalized["approval_required"] = payload.get("approval_required") is True
 
+        normalized["job_intent"] = build_queue_job_intent(payload, source_lane="queue_daemon")
         return normalized
 
     def _build_inline_mission(

@@ -21,6 +21,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..audit import log, tail
 from ..config import load_config as load_runtime_config
 from ..core.queue_inspect import lookup_job, queue_snapshot
+from ..core.queue_job_intent import enrich_queue_job_payload
 from ..core.queue_result_consumers import resolve_structured_execution
 from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
 from ..health_semantics import build_health_semantic_sections
@@ -799,7 +800,8 @@ def _write_queue_job(payload: dict[str, Any]) -> str:
     job_id = f"job-{int(time.time())}-{uuid.uuid4().hex[:8]}"
     tmp_path = inbox / f".{job_id}.tmp.json"
     final_path = inbox / f"{job_id}.json"
-    tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    enriched = enrich_queue_job_payload(payload, source_lane="panel_queue_create")
+    tmp_path.write_text(json.dumps(enriched, indent=2), encoding="utf-8")
     tmp_path.replace(final_path)
     return final_path.name
 
@@ -816,11 +818,17 @@ def _write_panel_mission_job(*, prompt: str, approval_required: bool) -> tuple[s
     suffix = hashlib.sha1(normalized_prompt.encode("utf-8")).hexdigest()[:6]
     mission_id = re.sub(r"[^a-z0-9_-]+", "-", f"{slug}-{suffix}-{ts}").strip("-")
 
-    payload = {
-        "id": mission_id,
-        "goal": normalized_prompt,
-        "approval_required": approval_required,
-    }
+    payload = enrich_queue_job_payload(
+        {
+            "id": mission_id,
+            "goal": normalized_prompt,
+            "approval_required": approval_required,
+            "summary": "Panel mission prompt queued for planner",
+            "approval_hints": ["manual" if approval_required else "none"],
+            "expected_artifacts": ["plan.json", "execution_envelope.json", "execution_result.json"],
+        },
+        source_lane="panel_mission_prompt",
+    )
 
     base_name = f"job-panel-mission-{slug}-{ts}"
     final_path = inbox / f"{base_name}.json"

@@ -3,6 +3,7 @@
 ## Current baseline — post Alpha v0.1.6 (active development)
 
 **Released in v0.1.6:**
+- Queue contract completion (current lane): producer-side structured intent (`job_intent`) now spans queue entrypoints and flows into execution envelope/artifacts for clearer planning→execution contracts without breaking legacy payloads.
 - Security hardening: goal sanitization + 2,000-char cap, `[USER DATA START]`/`[USER DATA END]` prompt boundaries, panel auth lockout (10 attempts/60s window → HTTP 429 + `Retry-After: 60`).
 - Ops visibility: panel Daemon Health widget (health.json-sourced, no daemon calls), panel `/hygiene` page (prune dry-run + reconcile trigger, results in health.json).
 - `sandbox.exec` argv canonicalization (`canonicalize_argv`): `command`/`argv`/`cmd` aliases, shlex.split strings, strip empty tokens, fail-fast on empty argv.

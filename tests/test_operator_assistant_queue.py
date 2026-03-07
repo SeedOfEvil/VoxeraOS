@@ -217,6 +217,9 @@ def test_assistant_thread_persists_multiturn_history(tmp_path):
     first_job, thread_id = enqueue_assistant_question(queue_root, "What is happening right now?")
     assert thread_id
     first_path = queue_root / "inbox" / first_job
+    payload = json.loads(first_path.read_text(encoding="utf-8"))
+    assert payload["job_intent"]["source_lane"] == "assistant_advisory"
+    assert payload["job_intent"]["request_kind"] == "assistant_question"
     assert daemon.process_job_file(first_path)
 
     second_job, same_thread = enqueue_assistant_question(

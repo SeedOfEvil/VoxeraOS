@@ -1,3 +1,18 @@
+## 2026-03-07 — PR #TBD — feat(queue): enrich planner-produced jobs with canonical structured intent
+- Summary:
+  - Added `src/voxera/core/queue_job_intent.py` to centralize additive producer-side queue intent shaping (`job_intent`) from mission/goal/assistant payloads with deterministic normalization and legacy-tolerant defaults.
+  - Updated producer entrypoints (`core/inbox.py`, `panel/app.py`, `panel/assistant.py`) to attach structured `job_intent` hints when enqueuing work.
+  - Updated daemon normalization/envelope flow to derive `job_intent` for legacy jobs, include intent in `execution_envelope.json`, and persist additive `artifacts/<job>/job_intent.json`.
+  - Added focused tests for canonical intent shaping, producer emission paths, and backward-compatible execution contract propagation.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make golden-check`
+  - `make validation-check`
+  - `make full-validation-check`
+
 ## 2026-03-07 — PR #TBD — feat(queue): consume canonical structured step results in operator surfaces and recovery flows
 - Added `src/voxera/core/queue_result_consumers.py` with thin composable structured-first resolution helpers used by queue consumers.
 - Updated panel job detail payload/template to prefer canonical structured execution fields (step summaries, operator note, next action hint, machine payload, retryable/blocked/approval hints, output artifacts) while preserving legacy fallback behavior.

@@ -12,6 +12,11 @@ EXECUTION_RESULT_SCHEMA_VERSION = 1
 
 
 def detect_request_kind(payload: dict[str, Any]) -> str:
+    intent = payload.get("job_intent")
+    if isinstance(intent, dict):
+        intent_kind = str(intent.get("request_kind") or "").strip()
+        if intent_kind:
+            return intent_kind
     kind = str(payload.get("kind") or "").strip()
     if kind:
         return kind
@@ -60,6 +65,9 @@ def build_execution_envelope(
             "goal": payload.get("goal"),
             "title": payload.get("title"),
             "approval_required": payload.get("approval_required") is True,
+            "job_intent": payload.get("job_intent")
+            if isinstance(payload.get("job_intent"), dict)
+            else None,
         },
         "mission": {
             "id": mission.id,
