@@ -878,6 +878,150 @@ def _read_generated_files(artifacts_dir: Path) -> list[str]:
     return [str(item) for item in payload] if isinstance(payload, list) else []
 
 
+def _job_context_summary(
+    primary: dict[str, Any],
+    *,
+    state_sidecar: dict[str, Any],
+    approval: dict[str, Any],
+    failed_sidecar: dict[str, Any],
+) -> dict[str, str]:
+    mission_id = str(primary.get("mission_id") or "")
+    mission_title = str(primary.get("title") or "")
+    goal = str(primary.get("goal") or primary.get("plan_goal") or "")
+    payload_shape = "goal"
+    if mission_id:
+        payload_shape = "mission"
+    elif primary:
+        payload_shape = "custom"
+
+    approval_status = str(
+        state_sidecar.get("approval_status") or ("pending" if approval else "none") or "none"
+    )
+    blocked_reason = str(
+        state_sidecar.get("blocked_reason")
+        or failed_sidecar.get("error")
+        or failed_sidecar.get("reason")
+        or ""
+    )
+    failure_summary = str(
+        state_sidecar.get("failure_summary")
+        or failed_sidecar.get("error")
+        or failed_sidecar.get("message")
+        or ""
+    )
+    recovery_reason = str(
+        state_sidecar.get("recovery_reason")
+        or state_sidecar.get("resume_reason")
+        or failed_sidecar.get("recovery_reason")
+        or ""
+    )
+    return {
+        "mission_id": mission_id,
+        "mission_title": mission_title,
+        "goal": goal,
+        "payload_shape": payload_shape,
+        "approval_status": approval_status,
+        "blocked_reason": blocked_reason,
+        "failure_summary": failure_summary,
+        "recovery_reason": recovery_reason,
+    }
+
+
+def _job_artifact_inventory(
+    *,
+    artifacts_dir: Path,
+    approval_path: Path | None,
+    failed_sidecar_path: Path | None,
+    state_sidecar_paths: list[Path],
+    bucket: str,
+) -> tuple[list[dict[str, str | bool]], list[str]]:
+    rows: list[dict[str, str | bool]] = []
+
+    def _add(
+        key: str,
+        label: str,
+        path: Path,
+        *,
+        expected: bool,
+        notes: str = "",
+    ) -> None:
+        rows.append(
+            {
+                "key": key,
+                "label": label,
+                "relative_path": path.name if path.parent == artifacts_dir else str(path),
+                "present": path.exists(),
+                "expected": expected,
+                "notes": notes,
+            }
+        )
+
+    _add("plan", "plan.json", artifacts_dir / "plan.json", expected=False)
+    _add(
+        "assistant_response",
+        "assistant_response.json",
+        artifacts_dir / "assistant_response.json",
+        expected=False,
+        notes="present for assistant jobs",
+    )
+    _add("stdout", "stdout.txt", artifacts_dir / "stdout.txt", expected=False)
+    _add("stderr", "stderr.txt", artifacts_dir / "stderr.txt", expected=False)
+    _add("actions", "actions.jsonl", artifacts_dir / "actions.jsonl", expected=False)
+    _add(
+        "approval_sidecar",
+        "approval artifact",
+        approval_path or Path("pending/approvals/(missing).approval.json"),
+        expected=bucket == "approvals" or approval_path is not None,
+        notes="stored in pending/approvals/",
+    )
+    _add(
+        "failed_sidecar",
+        "failed sidecar",
+        failed_sidecar_path or Path("failed/(missing).error.json"),
+        expected=bucket == "failed" or failed_sidecar_path is not None,
+        notes="stored in failed/",
+    )
+
+    state_match = next((item for item in state_sidecar_paths if item.exists()), None)
+    _add(
+        "state_sidecar",
+        "state sidecar",
+        state_match or state_sidecar_paths[0],
+        expected=bucket in {"pending", "approvals", "done", "failed", "canceled"},
+        notes="stored next to job file",
+    )
+
+    anomalies = [
+        f"Expected artifact missing: {str(row['label'])}"
+        for row in rows
+        if bool(row["expected"]) and not bool(row["present"])
+    ]
+    return rows, anomalies
+
+
+def _job_recent_timeline(
+    actions: list[dict[str, Any]], audit_timeline: list[dict[str, Any]]
+) -> list[dict[str, str]]:
+    timeline: list[dict[str, str]] = []
+    for item in actions[:12]:
+        timeline.append(
+            {
+                "source": "action",
+                "event": str(item.get("event") or item.get("action") or "unknown"),
+                "detail": str(item.get("status") or item.get("result") or ""),
+            }
+        )
+    for item in audit_timeline[:12]:
+        timeline.append(
+            {
+                "source": "audit",
+                "event": str(item.get("event") or ""),
+                "detail": str(item.get("step") or item.get("goal") or ""),
+            }
+        )
+    return timeline[:20]
+
+
 def _trim_tail(value: str, *, max_chars: int = 2000) -> str:
     text = value.strip()
     if len(text) <= max_chars:
@@ -1028,6 +1172,14 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         artifacts_dir = lookup.artifacts_dir
         bucket = lookup.bucket
         job_name = lookup.job_id
+        approval_path = lookup.approval_path
+        failed_sidecar_path = lookup.failed_sidecar_path
+
+    if lookup is None:
+        approval_path = (
+            queue_root / "pending" / "approvals" / f"{Path(job_name).stem}.approval.json"
+        )
+        failed_sidecar_path = queue_root / "failed" / f"{Path(job_name).stem}.error.json"
 
     state_sidecar: dict[str, Any] = {}
     stem = Path(job_name).stem
@@ -1060,6 +1212,23 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         if job_name in str(item.get("job", ""))
         or item.get("event") in {"queue_job_failed", "queue_job_done"}
     ]
+    actions = _load_actions(artifacts_dir / "actions.jsonl")
+    artifact_inventory, artifact_anomalies = _job_artifact_inventory(
+        artifacts_dir=artifacts_dir,
+        approval_path=approval_path if approval_path and approval_path.exists() else None,
+        failed_sidecar_path=failed_sidecar_path
+        if failed_sidecar_path and failed_sidecar_path.exists()
+        else None,
+        state_sidecar_paths=state_candidates,
+        bucket=bucket,
+    )
+    context_summary = _job_context_summary(
+        primary,
+        state_sidecar=state_sidecar,
+        approval=approval,
+        failed_sidecar=failed_sidecar,
+    )
+    audit_timeline = relevant_events[:40]
     return {
         "job_id": job_name,
         "bucket": bucket,
@@ -1070,13 +1239,17 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "lock": snapshot.get("lock_status", {}),
         "paused": snapshot.get("paused", False),
         "plan": _safe_json(artifacts_dir / "plan.json"),
-        "actions": _load_actions(artifacts_dir / "actions.jsonl"),
+        "actions": actions,
         "stdout": _artifact_text(artifacts_dir / "stdout.txt", max_chars=64 * 1024),
         "stderr": _artifact_text(artifacts_dir / "stderr.txt", max_chars=64 * 1024),
         "generated_files": _read_generated_files(artifacts_dir),
         "artifact_files": artifact_files,
+        "artifact_inventory": artifact_inventory,
+        "artifact_anomalies": artifact_anomalies,
+        "job_context": context_summary,
+        "recent_timeline": _job_recent_timeline(actions, audit_timeline),
         "artifacts_dir": str(artifacts_dir),
-        "audit_timeline": relevant_events[:40],
+        "audit_timeline": audit_timeline,
         "has_approval": bool(approval),
         "can_cancel": bucket in {"inbox", "pending", "approvals"},
         "can_retry": bucket in {"failed", "canceled"},
@@ -1186,6 +1359,7 @@ register_recovery_routes(
     templates=templates,
     queue_root=_queue_root,
     require_operator_auth_from_request=_require_operator_auth_from_request,
+    health_queue_root=_health_queue_root,
     recovery_zip_max_files=_RECOVERY_ZIP_MAX_FILES,
     recovery_zip_max_total_bytes=_RECOVERY_ZIP_MAX_TOTAL_BYTES,
 )

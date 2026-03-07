@@ -839,6 +839,61 @@ def test_job_detail_renders_execution_state_fields(tmp_path, monkeypatch):
     assert "succeeded" in response.text
 
 
+def test_job_detail_artifact_inventory_missing_expected_is_soft_anomaly(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-failed-anomaly.json").write_text(
+        '{"goal":"failed"}', encoding="utf-8"
+    )
+    # Expected failed sidecar intentionally missing
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs/job-failed-anomaly.json")
+    assert res.status_code == 200
+    assert "Artifact Inventory" in res.text
+    assert "Soft anomaly: Expected artifact missing: failed sidecar" in res.text
+
+
+def test_job_detail_artifact_inventory_optional_missing_does_not_error(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-done-optional.json").write_text('{"goal":"ok"}', encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs/job-done-optional.json")
+    assert res.status_code == 200
+    assert "Artifact Inventory" in res.text
+    assert "assistant_response.json" in res.text
+    assert "missing" in res.text
+
+
+def test_job_detail_renders_assistant_job_context(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-assistant.json").write_text(
+        json.dumps({"goal": "Summarize queue", "title": "Panel assistant"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-assistant"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "assistant_response.json").write_text(json.dumps({"answer": "ok"}), encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs/job-assistant.json")
+    assert res.status_code == 200
+    assert "Lifecycle & Context" in res.text
+    assert "Recent Action Timeline" in res.text
+    assert "assistant_response.json" in res.text
+
+
 def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
@@ -1389,6 +1444,8 @@ def test_hygiene_page_renders_with_no_results(tmp_path, monkeypatch):
     assert res.status_code == 200
     assert "Queue Hygiene" in res.text
     assert "No runs yet." in res.text
+    assert "Prune state" in res.text
+    assert "Reconcile state" in res.text
 
 
 def test_hygiene_prune_dry_run_endpoint_writes_health(tmp_path, monkeypatch):
@@ -1593,6 +1650,7 @@ def test_recovery_page_renders_empty_state(tmp_path, monkeypatch):
     assert res.status_code == 200
     assert "No recovery sessions found." in res.text
     assert "No quarantine sessions found." in res.text
+    assert "Recovery / Shutdown Context" in res.text
 
 
 def test_recovery_page_lists_sessions_and_sizes(tmp_path, monkeypatch):

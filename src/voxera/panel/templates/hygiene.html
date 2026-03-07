@@ -16,182 +16,79 @@
       <a class="btn" href="/">← Back to Panel</a>
     </header>
 
-    {% if flash %}
-      <div class="alert alert-success">{{flash}}</div>
-    {% endif %}
+    {% if flash %}<div class="alert alert-success">{{flash}}</div>{% endif %}
     <div id="hygiene-error" class="alert alert-danger" style="display:none;"></div>
 
-    <!-- ─── Routine hygiene ────────────────────────────────────────── -->
     <div class="section-label">Routine Hygiene</div>
     <section class="grid grid-2 mb">
       <article class="card">
         <h2>Queue Prune <span class="badge" style="margin-left:6px;">dry-run</span></h2>
-        <p class="muted text-sm">Identifies failed jobs eligible for removal based on retention policy. Does not delete anything — inspect the result first.</p>
-        <div id="prune-result" class="alert alert-info" style="display:{% if last_prune_result %}block{% else %}none{% endif %};">
-          <span id="prune-summary">{% if last_prune_result %}{{last_prune_result}}{% else %}No runs yet.{% endif %}</span>
-        </div>
+        <p class="muted text-sm">Preview only. Shows candidate removals without changing queue state.</p>
+        <div class="alert alert-info">Prune state: <b>{{prune_view.state}}</b></div>
+        <div id="prune-result" class="alert alert-info" style="display:block;"><span id="prune-summary">{{prune_view.summary}}</span></div>
+        <details class="collapsible" style="margin-top:var(--space-2);"><summary>Prune preview details</summary><div class="collapsible-body"><pre>{{prune_view.details | tojson(indent=2)}}</pre></div></details>
         <button id="prune-btn" class="btn btn-primary" type="button">Run Prune (dry-run)</button>
       </article>
 
       <article class="card">
         <h2>Queue Reconcile</h2>
-        <p class="muted text-sm">Scans the queue for consistency issues — stale locks, orphaned files, misplaced jobs. Reports a summary of any issues found.</p>
-        <div id="reconcile-result" class="alert alert-info" style="display:{% if last_reconcile_result %}block{% else %}none{% endif %};">
-          <span id="reconcile-summary">{% if last_reconcile_result %}{{last_reconcile_result}}{% endif %}</span>
-        </div>
+        <p class="muted text-sm">Scans queue consistency and reports empty/good/problem state clearly.</p>
+        <div class="alert alert-info">Reconcile state: <b>{{reconcile_view.state}}</b></div>
+        <div id="reconcile-result" class="alert alert-info" style="display:block;"><span id="reconcile-summary">{{reconcile_view.summary}}</span></div>
+        <details class="collapsible" style="margin-top:var(--space-2);"><summary>Reconcile report details</summary><div class="collapsible-body"><pre>{{reconcile_view.details | tojson(indent=2)}}</pre></div></details>
         <button id="reconcile-btn" class="btn btn-primary" type="button">Run Reconcile</button>
       </article>
     </section>
 
-    <!-- ─── Health resets ──────────────────────────────────────────── -->
     <div class="section-label">Health Reset</div>
     <section class="card mb">
-      <p class="muted text-sm" style="margin-top:0;">
-        <b>Current State</b> — live daemon backoff/degradation status. &nbsp;
-        <b>Recent History</b> — last error, fallback, and shutdown context. &nbsp;
-        <b>Historical Counters</b> — cumulative evidence, preserved by default.
-      </p>
+      <p class="muted text-sm" style="margin-top:0;"><b>Current State</b> — live daemon backoff/degradation status. &nbsp;<b>Recent History</b> — last error, fallback, and shutdown context. &nbsp;<b>Historical Counters</b> — cumulative evidence, preserved by default.</p>
       <div class="grid grid-3">
-        <article style="border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:var(--space-3);">
-          <h3>Current State</h3>
-          <p class="muted text-sm">Clears active degradation and backoff state. Use after resolving a transient brain issue.</p>
-          <form method="post" action="{{hygiene_health_reset_url}}">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <input type="hidden" name="scope" value="current_state" />
-            <button class="btn" type="submit">Reset Current State</button>
-          </form>
-        </article>
-        <article style="border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:var(--space-3);">
-          <h3>Recent History</h3>
-          <p class="muted text-sm">Clears last error, fallback, and shutdown fields. Historical counters remain.</p>
-          <form method="post" action="{{hygiene_health_reset_url}}">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <input type="hidden" name="scope" value="recent_history" />
-            <button class="btn" type="submit">Reset Recent History</button>
-          </form>
-        </article>
-        <article style="border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:var(--space-3);">
-          <h3>Current + Recent <span class="badge badge-ok" style="margin-left:4px;">recommended</span></h3>
-          <p class="muted text-sm">Standard baseline reset. Historical counters remain untouched — safe for routine use.</p>
-          <form method="post" action="{{hygiene_health_reset_url}}">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <input type="hidden" name="scope" value="current_and_recent" />
-            <button class="btn btn-primary" type="submit">Reset Current + Recent</button>
-          </form>
-        </article>
+        <article style="border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:var(--space-3);"><h3>Current State</h3><p class="muted text-sm">Clears active degradation and backoff state.</p><form method="post" action="{{hygiene_health_reset_url}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="scope" value="current_state" /><button class="btn" type="submit">Reset Current State</button></form></article>
+        <article style="border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:var(--space-3);"><h3>Recent History</h3><p class="muted text-sm">Clears last error, fallback, and shutdown fields.</p><form method="post" action="{{hygiene_health_reset_url}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="scope" value="recent_history" /><button class="btn" type="submit">Reset Recent History</button></form></article>
+        <article style="border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:var(--space-3);"><h3>Current + Recent <span class="badge badge-ok" style="margin-left:4px;">recommended</span></h3><p class="muted text-sm">Standard baseline reset.</p><form method="post" action="{{hygiene_health_reset_url}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="scope" value="current_and_recent" /><button class="btn btn-primary" type="submit">Reset Current + Recent</button></form></article>
       </div>
     </section>
 
-    <!-- ─── Advanced / destructive ────────────────────────────────── -->
     <div class="section-label">Advanced</div>
     <section class="danger-zone mb">
       <h2>Historical Counter Resets</h2>
-      <p class="text-sm" style="margin-top:0;">
-        Use only when intentionally clearing cumulative evidence. These actions are more destructive and still fully audited.
-        Historical counters represent long-term evidence of auth failures, brain fallbacks, and other health signals — clear with care.
-      </p>
+      <p class="text-sm" style="margin-top:0;">Use only when intentionally clearing cumulative evidence.</p>
       <div class="action-group">
-        <form method="post" action="{{hygiene_health_reset_url}}">
-          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-          <input type="hidden" name="scope" value="current_and_recent" />
-          <input type="hidden" name="counter_group" value="panel_auth_counters" />
-          <button class="btn btn-warn" type="submit">Reset Panel Auth Counters</button>
-        </form>
-        <form method="post" action="{{hygiene_health_reset_url}}">
-          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-          <input type="hidden" name="scope" value="current_and_recent" />
-          <input type="hidden" name="counter_group" value="brain_fallback_counters" />
-          <button class="btn btn-warn" type="submit">Reset Brain Fallback Counters</button>
-        </form>
-        <form method="post" action="{{hygiene_health_reset_url}}">
-          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-          <input type="hidden" name="scope" value="current_and_recent" />
-          <input type="hidden" name="counter_group" value="all_historical_counters" />
-          <button class="btn btn-deny" type="submit">Reset ALL Historical Counters</button>
-        </form>
+        <form method="post" action="{{hygiene_health_reset_url}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="scope" value="current_and_recent" /><input type="hidden" name="counter_group" value="panel_auth_counters" /><button class="btn btn-warn" type="submit">Reset Panel Auth Counters</button></form>
+        <form method="post" action="{{hygiene_health_reset_url}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="scope" value="current_and_recent" /><input type="hidden" name="counter_group" value="brain_fallback_counters" /><button class="btn btn-warn" type="submit">Reset Brain Fallback Counters</button></form>
+        <form method="post" action="{{hygiene_health_reset_url}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="scope" value="current_and_recent" /><input type="hidden" name="counter_group" value="all_historical_counters" /><button class="btn btn-deny" type="submit">Reset ALL Historical Counters</button></form>
       </div>
     </section>
   </div>
 
   <script>
     const csrfToken = "{{csrf_token}}";
-
-    function showResult(resultEl, summaryEl, text) {
-      summaryEl.textContent = text;
-      resultEl.style.display = 'block';
-    }
-
-    function showError(msg) {
-      const box = document.getElementById('hygiene-error');
-      box.style.display = 'block';
-      box.textContent = 'Action failed: ' + msg;
-    }
-
-    function clearError() {
-      const box = document.getElementById('hygiene-error');
-      box.style.display = 'none';
-      box.textContent = '';
-    }
-
-    function fmtTs(ms) {
-      if (!ms) return 'n/a';
-      try { return new Date(ms).toISOString(); } catch { return String(ms); }
-    }
-
+    function showResult(resultEl, summaryEl, text) { summaryEl.textContent = text; resultEl.style.display = 'block'; }
+    function showError(msg) { const box = document.getElementById('hygiene-error'); box.style.display = 'block'; box.textContent = 'Action failed: ' + msg; }
+    function clearError() { const box = document.getElementById('hygiene-error'); box.style.display = 'none'; box.textContent = ''; }
+    function fmtTs(ms) { if (!ms) return 'n/a'; try { return new Date(ms).toISOString(); } catch { return String(ms); } }
     async function runAction(btnId, url, render) {
-      clearError();
-      const btn = document.getElementById(btnId);
-      const prev = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = 'Running…';
+      clearError(); const btn = document.getElementById(btnId); const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Running…';
       try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
-          body: new URLSearchParams({ csrf_token: csrfToken }),
-        });
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken }, body: new URLSearchParams({ csrf_token: csrfToken }) });
         const data = await res.json();
-        if (!res.ok || !data.ok) {
-          const result = data.result || {};
-          const rc = result.exit_code ?? 'n/a';
-          const firstLine = String(result.error || result.stderr_tail || 'request failed').split('\n')[0];
-          throw new Error(`rc=${rc} ${firstLine}`.trim());
-        }
+        if (!res.ok || !data.ok) { const result = data.result || {}; const rc = result.exit_code ?? 'n/a'; const firstLine = String(result.error || result.stderr_tail || 'request failed').split('\n')[0]; throw new Error(`rc=${rc} ${firstLine}`.trim()); }
         render(data.result);
-      } catch (err) {
-        showError(err && err.message ? err.message : 'unknown error');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = prev;
-      }
+      } catch (err) { showError(err && err.message ? err.message : 'unknown error'); }
+      finally { btn.disabled = false; btn.textContent = prev; }
     }
-
     document.getElementById('prune-btn').addEventListener('click', () => {
       runAction('prune-btn', '{{hygiene_prune_url}}', (r) => {
-        const text = [
-          `ok=${r.ok}`,
-          `mode=${r.mode}`,
-          `would_remove_jobs=${r.would_remove_jobs || 0}`,
-          r.reclaimed_bytes != null ? `reclaimed_bytes=${r.reclaimed_bytes}` : null,
-          `at=${fmtTs(r.ts_ms)}`,
-        ].filter(Boolean).join('  ·  ');
-        showResult(
-          document.getElementById('prune-result'),
-          document.getElementById('prune-summary'),
-          text
-        );
+        const text = [`ok=${r.ok}`, `mode=${r.mode}`, `would_remove_jobs=${r.would_remove_jobs || 0}`, r.reclaimed_bytes != null ? `reclaimed_bytes=${r.reclaimed_bytes}` : null, `at=${fmtTs(r.ts_ms)}`].filter(Boolean).join('  ·  ');
+        showResult(document.getElementById('prune-result'), document.getElementById('prune-summary'), text);
       });
     });
-
     document.getElementById('reconcile-btn').addEventListener('click', () => {
       runAction('reconcile-btn', '{{hygiene_reconcile_url}}', (r) => {
         const issues = JSON.stringify(r.issue_counts || {});
         const text = `ok=${r.ok}  ·  issue_counts=${issues}  ·  at=${fmtTs(r.ts_ms)}`;
-        showResult(
-          document.getElementById('reconcile-result'),
-          document.getElementById('reconcile-summary'),
-          text
-        );
+        showResult(document.getElementById('reconcile-result'), document.getElementById('reconcile-summary'), text);
       });
     });
   </script>

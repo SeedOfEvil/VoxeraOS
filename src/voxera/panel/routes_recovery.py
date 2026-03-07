@@ -11,6 +11,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
+from ..health import read_health_snapshot
+
 
 def register_recovery_routes(
     app: FastAPI,
@@ -18,6 +20,7 @@ def register_recovery_routes(
     templates: Any,
     queue_root: Callable[[], Path],
     require_operator_auth_from_request: Callable[[Request], None],
+    health_queue_root: Callable[[], Path | None],
     recovery_zip_max_files: int,
     recovery_zip_max_total_bytes: int,
 ) -> None:
@@ -121,10 +124,23 @@ def register_recovery_routes(
     def recovery_page(request: Request):
         recovery_sessions = _collect_bucket_items("recovery")
         quarantine_sessions = _collect_bucket_items("quarantine")
+        health = read_health_snapshot(health_queue_root())
+        startup_counts = (
+            health.get("last_startup_recovery_counts")
+            if isinstance(health.get("last_startup_recovery_counts"), dict)
+            else {}
+        )
+        recovery_context = {
+            "last_shutdown_outcome": health.get("last_shutdown_outcome"),
+            "last_shutdown_reason": health.get("last_shutdown_reason"),
+            "last_shutdown_job": health.get("last_shutdown_job"),
+            "last_startup_recovery_counts": startup_counts,
+        }
         tmpl = templates.get_template("recovery.html")
         html = tmpl.render(
             recovery_sessions=recovery_sessions,
             quarantine_sessions=quarantine_sessions,
+            recovery_context=recovery_context,
         )
         return HTMLResponse(content=html)
 

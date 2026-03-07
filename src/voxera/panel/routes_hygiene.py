@@ -13,6 +13,36 @@ from ..health_reset import EVENT_BY_SCOPE, HealthResetError, reset_health_snapsh
 from .helpers import request_value
 
 
+def _hygiene_result_view(result: Any, *, kind: str) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {"state": "empty", "summary": "No runs yet.", "details": {}}
+
+    ok = bool(result.get("ok"))
+    if kind == "prune":
+        would_remove = int(result.get("would_remove_jobs") or 0)
+        state = "good" if ok and would_remove == 0 else ("problem" if not ok else "warn")
+        summary = f"ok={ok} · would_remove_jobs={would_remove} · at={int(result.get('ts_ms') or 0)}"
+    else:
+        issue_counts_raw = result.get("issue_counts")
+        issue_counts: dict[str, Any] = (
+            issue_counts_raw if isinstance(issue_counts_raw, dict) else {}
+        )
+        total_issues = 0
+        for value in issue_counts.values():
+            try:
+                total_issues += int(value or 0)
+            except (TypeError, ValueError):
+                continue
+        state = "good" if ok and total_issues == 0 else ("problem" if not ok else "warn")
+        summary = f"ok={ok} · total_issues={total_issues} · at={int(result.get('ts_ms') or 0)}"
+
+    return {
+        "state": state,
+        "summary": summary,
+        "details": result,
+    }
+
+
 def register_hygiene_routes(
     app: FastAPI,
     *,
@@ -42,6 +72,10 @@ def register_hygiene_routes(
         html = tmpl.render(
             last_prune_result=health.get("last_prune_result"),
             last_reconcile_result=health.get("last_reconcile_result"),
+            prune_view=_hygiene_result_view(health.get("last_prune_result"), kind="prune"),
+            reconcile_view=_hygiene_result_view(
+                health.get("last_reconcile_result"), kind="reconcile"
+            ),
             csrf_token=csrf_token,
             flash=flash_messages.get(flash, ""),
             hygiene_prune_url=str(request.url_for("hygiene_prune_dry_run")),
