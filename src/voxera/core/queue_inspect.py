@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .queue_daemon import MissionQueueDaemon
+from .queue_result_consumers import resolve_structured_execution
 
 JOB_BUCKETS = ("inbox", "pending", "approvals", "done", "failed", "canceled")
 
@@ -36,6 +37,16 @@ def _is_metadata_sidecar_name(name: str) -> bool:
             ".partial.json",
         )
     )
+
+
+def _safe_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def lookup_job(queue_root: Path, job_id: str) -> JobLookup | None:
@@ -168,6 +179,12 @@ def list_jobs(
             if needle and needle not in f"{name} {title} {goal}".lower():
                 continue
 
+            structured = resolve_structured_execution(
+                artifacts_dir=queue_root / "artifacts" / path.stem,
+                state_sidecar=state_payload,
+                approval=approval,
+                failed_sidecar=_safe_json(failed_sidecar) if failed_sidecar.exists() else {},
+            )
             rows.append(
                 {
                     "job_id": name,
@@ -177,10 +194,26 @@ def list_jobs(
                     "updated_ts": int(path.stat().st_mtime),
                     "updated_iso": path.stat().st_mtime,
                     "status_summary": ", ".join(status),
-                    "lifecycle_state": str(state_payload.get("lifecycle_state") or ""),
-                    "terminal_outcome": str(state_payload.get("terminal_outcome") or ""),
-                    "current_step_index": int(state_payload.get("current_step_index") or 0),
-                    "total_steps": int(state_payload.get("total_steps") or 0),
+                    "lifecycle_state": str(
+                        structured.get("lifecycle_state")
+                        or state_payload.get("lifecycle_state")
+                        or ""
+                    ),
+                    "terminal_outcome": str(
+                        structured.get("terminal_outcome")
+                        or state_payload.get("terminal_outcome")
+                        or ""
+                    ),
+                    "current_step_index": int(
+                        structured.get("current_step_index")
+                        or state_payload.get("current_step_index")
+                        or 0
+                    ),
+                    "total_steps": int(
+                        structured.get("total_steps") or state_payload.get("total_steps") or 0
+                    ),
+                    "approval_status": str(structured.get("approval_status") or ""),
+                    "latest_summary": str(structured.get("latest_summary") or ""),
                 }
             )
             if len(rows) >= capped:

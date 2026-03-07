@@ -913,3 +913,13 @@ See also: `docs/BOOTSTRAP.md`, `docs/SECURITY.md`, `docs/ROADMAP.md`, `docs/ops.
   - Approval deny flow keeps the `pending -> failed` transition and failed sidecar schema/fields.
 
 When evolving CLI/panel/daemon behavior, update tests and this checklist intentionally in the same change.
+
+## Structured result consumption order (additive)
+
+Queue consumers resolve execution context using this preference order:
+1. `artifacts/<job>/execution_result.json`
+2. `artifacts/<job>/step_results.json`
+3. legacy `*.state.json`, `*.error.json`, `*.approval.json`
+4. existing derived/audit fallbacks
+
+This is intentionally additive and backward-compatible: canonical structured fields are preferred, while legacy jobs remain fully supported.

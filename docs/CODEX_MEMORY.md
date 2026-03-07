@@ -1,3 +1,10 @@
+## 2026-03-07 — PR #TBD — feat(queue): consume canonical structured step results in operator surfaces and recovery flows
+- Added `src/voxera/core/queue_result_consumers.py` with thin composable structured-first resolution helpers used by queue consumers.
+- Updated panel job detail payload/template to prefer canonical structured execution fields (step summaries, operator note, next action hint, machine payload, retryable/blocked/approval hints, output artifacts) while preserving legacy fallback behavior.
+- Updated queue CLI/daemon status surfaces to prefer structured lifecycle and failure summaries when available.
+- Updated ops bundle job export to include a structured execution summary note derived from canonical artifacts with safe fallback.
+- Added focused tests for structured-first + legacy fallback behavior across helper, panel, CLI queue status, daemon failed snapshot, and ops bundle surfaces.
+
 ## 2026-03-07 — PR TBD — feat(core): canonical queue execution envelope + structured step results
 - Added `src/voxera/core/queue_contracts.py` to centralize queue execution contract shaping:
   - canonical `execution_envelope.json` builder for normalized queue jobs.

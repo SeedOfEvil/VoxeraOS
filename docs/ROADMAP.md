@@ -285,3 +285,7 @@ Audio stack is currently a placeholder in `src/voxera/audio/`.
 ## Observability UX refinements
 - `voxera queue health` now supports `--watch`/`--interval` and presents Current State / Recent History / Historical Counters with JSON parity sections.
 - Panel home adds a read-only **Performance Stats** tab to surface queue counts, degradation/backoff, fallback/error/shutdown context, and auth/runtime counters from `health.json`.
+
+## Recently delivered
+
+- Queue/panel/CLI/ops surfaces now consume canonical structured execution artifacts first (with legacy fallback) so operator and diagnostic views are more deterministic without breaking older jobs.

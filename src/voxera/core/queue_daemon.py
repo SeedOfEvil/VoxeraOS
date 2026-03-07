@@ -34,6 +34,7 @@ from .queue_contracts import build_execution_result, build_structured_step_resul
 from .queue_execution import QueueExecutionMixin
 from .queue_paths import move_job_with_sidecar
 from .queue_recovery import QueueRecoveryMixin
+from .queue_result_consumers import resolve_structured_execution
 from .queue_state import (
     read_job_state,
     update_job_state_snapshot,
@@ -782,8 +783,19 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             if sidecar_payload is None and item.name not in resolved_sidecars:
                 sidecar_payload = self._read_failed_error_sidecar(item)
             sidecar_error = str(sidecar_payload.get("error") or "") if sidecar_payload else ""
+            artifacts_dir = self.artifacts / item.stem
+            structured = resolve_structured_execution(
+                artifacts_dir=artifacts_dir,
+                failed_sidecar=sidecar_payload,
+            )
+            structured_error = str(
+                structured.get("error") or structured.get("latest_summary") or ""
+            )
             rows.append(
-                {"job": item.name, "error": sidecar_error or error_by_job.get(item.name, "")}
+                {
+                    "job": item.name,
+                    "error": structured_error or sidecar_error or error_by_job.get(item.name, ""),
+                }
             )
         return rows
 

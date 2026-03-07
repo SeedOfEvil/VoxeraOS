@@ -13,6 +13,7 @@ from .config import load_config as load_runtime_config
 from .config import write_config_fingerprint, write_config_snapshot
 from .core.queue_daemon import MissionQueueDaemon
 from .core.queue_inspect import lookup_job
+from .core.queue_result_consumers import resolve_structured_execution
 from .version import get_version
 
 _TEXT_TRUNCATE_BYTES = 256 * 1024
@@ -79,6 +80,16 @@ def _read_truncated(path: Path, *, cap: int = _TEXT_TRUNCATE_BYTES) -> tuple[byt
     if size <= cap:
         return raw, False, size
     return raw[:cap], True, size
+
+
+def _safe_json_dict(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _manifest(queue_root: Path) -> dict[str, Any]:
@@ -309,6 +320,35 @@ def build_job_bundle(
             "step_results.json",
             "execution_result.json",
         ]
+        structured_summary = resolve_structured_execution(
+            artifacts_dir=art_dir,
+            state_sidecar=_safe_json_dict(queue_root / "pending" / f"{job_stem}.state.json"),
+            approval=_safe_json_dict(approval) if has_approval else {},
+            failed_sidecar=_safe_json_dict(sidecar) if has_sidecar else {},
+        )
+        _zip_write_text(
+            zf,
+            "notes/structured_execution_summary.json",
+            json.dumps(
+                {
+                    "terminal_outcome": structured_summary.get("terminal_outcome"),
+                    "lifecycle_state": structured_summary.get("lifecycle_state"),
+                    "last_attempted_step": structured_summary.get("last_attempted_step"),
+                    "last_completed_step": structured_summary.get("last_completed_step"),
+                    "latest_summary": structured_summary.get("latest_summary"),
+                    "operator_note": structured_summary.get("operator_note"),
+                    "next_action_hint": structured_summary.get("next_action_hint"),
+                    "approval_status": structured_summary.get("approval_status"),
+                    "blocked": structured_summary.get("blocked"),
+                    "retryable": structured_summary.get("retryable"),
+                    "output_artifacts": structured_summary.get("output_artifacts"),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+        )
+
         if art_dir.exists():
             for name in required_names + optional_names:
                 p = art_dir / name

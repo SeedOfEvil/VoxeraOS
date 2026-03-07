@@ -1112,3 +1112,7 @@ Panel home includes a read-only **Performance Stats** tab that surfaces these sa
 - Keep startup recovery mechanics (in-flight pending restart recovery, orphan quarantine, recovery report assembly) and shutdown/in-flight fail-on-shutdown helpers in `src/voxera/core/queue_recovery.py`.
 - Preserve sidecar naming/location, schema versions, and bucket transition semantics exactly when refactoring.
 - Execution/lifecycle semantics are intentionally preserved exactly across this boundary (including intermediate states/timestamps and artifact-write ordering).
+
+## Structured-first operator surfaces
+
+For job detail/status/bundle flows, Voxera now prefers canonical structured execution artifacts (`execution_result.json`, `step_results.json`) to derive terminal outcome, lifecycle state, step summaries, approval/blocked/retryable hints, and declared output artifacts. If these files are missing or partial, operators still get legacy sidecar and audit-based summaries.

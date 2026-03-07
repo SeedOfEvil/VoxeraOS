@@ -21,6 +21,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..audit import log, tail
 from ..config import load_config as load_runtime_config
 from ..core.queue_inspect import lookup_job, queue_snapshot
+from ..core.queue_result_consumers import resolve_structured_execution
 from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
 from ..health_semantics import build_health_semantic_sections
 from ..version import get_version
@@ -884,6 +885,7 @@ def _job_context_summary(
     state_sidecar: dict[str, Any],
     approval: dict[str, Any],
     failed_sidecar: dict[str, Any],
+    structured_execution: dict[str, Any],
 ) -> dict[str, str]:
     mission_id = str(primary.get("mission_id") or "")
     mission_title = str(primary.get("title") or "")
@@ -895,7 +897,10 @@ def _job_context_summary(
         payload_shape = "custom"
 
     approval_status = str(
-        state_sidecar.get("approval_status") or ("pending" if approval else "none") or "none"
+        structured_execution.get("approval_status")
+        or state_sidecar.get("approval_status")
+        or ("pending" if approval else "none")
+        or "none"
     )
     blocked_reason = str(
         state_sidecar.get("blocked_reason")
@@ -904,7 +909,8 @@ def _job_context_summary(
         or ""
     )
     failure_summary = str(
-        state_sidecar.get("failure_summary")
+        structured_execution.get("latest_summary")
+        or state_sidecar.get("failure_summary")
         or failed_sidecar.get("error")
         or failed_sidecar.get("message")
         or ""
@@ -1222,11 +1228,18 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         state_sidecar_paths=state_candidates,
         bucket=bucket,
     )
+    structured_execution = resolve_structured_execution(
+        artifacts_dir=artifacts_dir,
+        state_sidecar=state_sidecar,
+        approval=approval,
+        failed_sidecar=failed_sidecar,
+    )
     context_summary = _job_context_summary(
         primary,
         state_sidecar=state_sidecar,
         approval=approval,
         failed_sidecar=failed_sidecar,
+        structured_execution=structured_execution,
     )
     audit_timeline = relevant_events[:40]
     return {
@@ -1247,6 +1260,7 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "artifact_inventory": artifact_inventory,
         "artifact_anomalies": artifact_anomalies,
         "job_context": context_summary,
+        "execution": structured_execution,
         "recent_timeline": _job_recent_timeline(actions, audit_timeline),
         "artifacts_dir": str(artifacts_dir),
         "audit_timeline": audit_timeline,

@@ -738,6 +738,35 @@ def test_status_snapshot_prefers_valid_failed_sidecar_and_excludes_sidecar_from_
     assert status["recent_failed"][0] == {"job": "bad1.json", "error": "from-sidecar"}
 
 
+def test_status_snapshot_recent_failed_prefers_structured_execution_error(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "failed").mkdir(parents=True)
+    (queue_dir / "artifacts" / "bad1").mkdir(parents=True)
+
+    failed_job = queue_dir / "failed" / "bad1.json"
+    failed_job.write_text("{}", encoding="utf-8")
+    (queue_dir / "artifacts" / "bad1" / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "terminal_outcome": "failed",
+                "error": "from-structured",
+                "step_results": [{"step_index": 1, "status": "failed", "summary": "boom"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "voxera.core.queue_daemon.tail",
+        lambda _n: [{"event": "queue_job_failed", "job": str(failed_job), "error": "from-audit"}],
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    status = daemon.status_snapshot()
+    assert status["recent_failed"][0] == {"job": "bad1.json", "error": "from-structured"}
+
+
 def test_status_snapshot_failed_sidecar_health_counters(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "queue"

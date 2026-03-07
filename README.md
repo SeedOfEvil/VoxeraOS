@@ -216,3 +216,7 @@ Note: preserve the existing merge gate semantics documented as `merge-readiness 
 
 
 CI-required merge gate remains `make merge-readiness-check` (`merge-readiness / merge-readiness`).
+
+## Structured execution artifact consumption (current behavior)
+
+Operator-facing queue consumers now prefer canonical structured artifacts when present (`execution_result.json`, then `step_results.json`) and fall back to legacy state/error/approval sidecars when absent. This keeps old jobs readable while making panel/CLI/ops bundle summaries more deterministic for new jobs.
