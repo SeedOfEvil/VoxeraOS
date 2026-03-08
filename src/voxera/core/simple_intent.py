@@ -72,9 +72,53 @@ _RE_WRITE_VERB = re.compile(
     re.IGNORECASE,
 )
 
-# read_file: starts with read/cat/display/show-contents + a path
+# read_file: starts with an explicit read verb + a path.
+# Matches the following forms (path must start with ~ or /):
+#   "read ~/path"                     — bare read + path
+#   "read the ~/path"                 — read + article + path
+#   "read the file ~/path"            — read + article + "file" + path
+#   "open and read ~/path"            — compound verb + path
+#   "open and read the file ~/path"   — compound verb + article + "file" + path
+#   "cat ~/path"                      — shell shorthand
+#   "display ~/path"                  — display verb
+#   "view ~/path"                     — view verb
+#   "show contents of ~/path"         — show-contents form
+#
+# Deliberately does NOT match:
+#   "read this and copy it"    — no path prefix
+#   "read the situation"       — no path prefix
+#   "open ~/notes/foo.txt"     — path-like open falls through to unknown (open_resource
+#                                 already excludes path-like targets via _RE_PATH_LIKE)
 _RE_READ_VERB = re.compile(
-    r"^\s*(?:read|cat|display|view|show\s+contents?\s+of)\s+[~/]",
+    r"^\s*(?:"
+    r"(?:open\s+and\s+)?read(?:\s+the)?\s+(?:file\s+)?"
+    r"|cat\s+"
+    r"|display\s+"
+    r"|view\s+"
+    r"|show\s+contents?\s+of\s+"
+    r")[~/]",
+    re.IGNORECASE,
+)
+
+# Companion extractor: same prefix pattern but captures the path itself.
+# Used to populate SimpleIntentResult.extracted_target and to power the
+# deterministic read route in mission_planner.
+_RE_READ_PATH = re.compile(
+    r"^\s*(?:"
+    r"(?:open\s+and\s+)?read(?:\s+the)?\s+(?:file\s+)?"
+    r"|cat\s+"
+    r"|display\s+"
+    r"|view\s+"
+    r"|show\s+contents?\s+of\s+"
+    r")(?P<path>[~/]\S+)",
+    re.IGNORECASE,
+)
+
+# write_file target extraction: matches "called <filename>" at end of goal.
+# Used to populate SimpleIntentResult.extracted_target for write goals like
+# "write a file called whatupboy.txt" → extracted_target = "~/VoxeraOS/notes/whatupboy.txt".
+_RE_WRITE_CALLED = re.compile(
+    r"\bcalled?\s+(?P<name>\S+)\s*$",
     re.IGNORECASE,
 )
 
@@ -135,6 +179,11 @@ class SimpleIntentResult:
         fail_closed:          Whether a mismatch with allowed_skill_ids should
                               produce a hard failure (True) or a warning only (False).
                               Always False for unknown_or_ambiguous.
+        extracted_target:     For read_file / write_file intents, the deterministically
+                              extracted file path (or candidate path for write).
+                              None for all other intents or when extraction fails.
+                              Used by the mission planner to construct a governed
+                              first-step plan without calling the cloud brain.
     """
 
     intent_kind: SimpleIntentKind
@@ -142,15 +191,19 @@ class SimpleIntentResult:
     allowed_skill_ids: frozenset[str]
     routing_reason: str
     fail_closed: bool
+    extracted_target: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "intent_kind": self.intent_kind,
             "deterministic": self.deterministic,
             "allowed_skill_ids": sorted(self.allowed_skill_ids),
             "routing_reason": self.routing_reason,
             "fail_closed": self.fail_closed,
         }
+        if self.extracted_target is not None:
+            d["extracted_target"] = self.extracted_target
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -211,22 +264,39 @@ def classify_simple_operator_intent(
 
     # --- read_file -------------------------------------------------------
     if _RE_READ_VERB.match(text):
+        # Extract the file path for direct routing by the mission planner.
+        path_match = _RE_READ_PATH.match(text)
+        extracted_path: str | None = None
+        if path_match:
+            raw_path = path_match.group("path").rstrip(".,;:!?\"'").strip()
+            if raw_path:
+                extracted_path = raw_path
         return SimpleIntentResult(
             intent_kind="read_file",
             deterministic=True,
             allowed_skill_ids=_READ_SKILLS,
             routing_reason="goal_starts_with_read_verb_and_path",
             fail_closed=True,
+            extracted_target=extracted_path,
         )
 
     # --- write_file ------------------------------------------------------
     if _RE_WRITE_VERB.match(text):
+        # Try to extract a candidate filename from "called <name>" suffix.
+        extracted_write: str | None = None
+        name_match = _RE_WRITE_CALLED.search(text)
+        if name_match:
+            raw_name = name_match.group("name").strip(".,;:!?\"'")
+            # Accept simple filenames only — no path separators.
+            if raw_name and "/" not in raw_name and "\\" not in raw_name:
+                extracted_write = f"~/VoxeraOS/notes/{raw_name}"
         return SimpleIntentResult(
             intent_kind="write_file",
             deterministic=True,
             allowed_skill_ids=_WRITE_SKILLS,
             routing_reason="goal_starts_with_write_verb",
             fail_closed=True,
+            extracted_target=extracted_write,
         )
 
     # --- run_command -----------------------------------------------------

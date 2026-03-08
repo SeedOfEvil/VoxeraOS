@@ -55,7 +55,7 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 - ✅ OpenRouter automatic app attribution headers — PR #86
 - ✅ e2e_golden4 approval hang fix (filesystem-based detection, phase timeouts, diagnostics) — PR #90
 
-### Simple-intent routing and fail-closed mismatch detection (SHIPPED)
+### Simple-intent routing and fail-closed mismatch detection (SHIPPED — v1.3)
 
 - ✅ Deterministic simple-intent classifier (`src/voxera/core/simple_intent.py`) — intent set v1:
   `assistant_question`, `open_resource`, `write_file`, `read_file`, `run_command`, `unknown_or_ambiguous`.
@@ -65,7 +65,17 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
   `evaluation_reason=simple_intent_skill_family_mismatch`, `stop_reason=planner_intent_route_rejected`,
   and full `intent_route` evidence.
 - ✅ Additive artifact extensions: `execution_envelope.json.request.simple_intent`, `plan.json.intent_route`.
-- ✅ 62 focused tests in `tests/test_simple_intent.py` (unit + integration + regression).
+- ✅ STV follow-up: "open terminal" accepts `system.terminal_run_once` as valid first step;
+  `clipboard.copy` explicitly rejected for all deterministic read/write intents.
+- ✅ STV follow-up 2: `write_file` classifier accepts "create a/an/new/empty file" articles.
+- ✅ STV follow-up 3 (v1.3):
+  - `read_file` classifier expanded to accept "read the file ~/path", "open and read ~/path", etc.
+  - `SimpleIntentResult.extracted_target`: path extracted from goal for direct routing.
+  - Deterministic read routing in planner (`_extract_simple_read_args` → `files.read_text`).
+  - Deterministic named-file create routing (`_extract_named_file_write_args` → `files.write_text`).
+  - `execution_result.json → intent_route` now present for **all** goal-kind jobs (not just mismatches),
+    consistent with `execution_envelope.json → request.simple_intent`.
+- ✅ 86 focused tests in `tests/test_simple_intent.py` (unit + integration + regression).
 
 ### Support/Infra shipped (reliability work)
 

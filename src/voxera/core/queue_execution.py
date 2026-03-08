@@ -769,6 +769,11 @@ class QueueExecutionMixin:
                 rr.data.setdefault("max_replans", max_replans)
                 rr.data.setdefault("evaluation_class", evaluation.evaluation_class)
                 rr.data.setdefault("evaluation_reason", evaluation.reason)
+                # Propagate simple_intent into intent_route so execution_result.json
+                # carries the same metadata as execution_envelope.json and plan.json
+                # for ALL goal-kind jobs, not just mismatch failures.
+                if simple_intent is not None:
+                    rr.data.setdefault("intent_route", simple_intent.to_dict())
 
                 should_replan = (
                     evaluation.replan_allowed

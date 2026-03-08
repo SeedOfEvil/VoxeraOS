@@ -341,6 +341,75 @@ def _rewrite_non_explicit_file_reads(goal: str, steps: list[MissionStep]) -> lis
     return rewritten
 
 
+# ---------------------------------------------------------------------------
+# Deterministic read routing (mirrors simple_intent._RE_READ_PATH)
+# Kept in this module to avoid cross-module imports between planner and classifier.
+# ---------------------------------------------------------------------------
+
+_RE_PLANNER_READ_PATH = re.compile(
+    r"^\s*(?:"
+    r"(?:open\s+and\s+)?read(?:\s+the)?\s+(?:file\s+)?"
+    r"|cat\s+"
+    r"|display\s+"
+    r"|view\s+"
+    r"|show\s+contents?\s+of\s+"
+    r")(?P<path>[~/]\S+)",
+    re.IGNORECASE,
+)
+
+# Matches "write/create a file called <name>" (no content spec) for direct routing.
+_RE_PLANNER_WRITE_CALLED = re.compile(
+    r"^\s*(?:write|create)\s+(?:a\s+|an\s+)?(?:new\s+|empty\s+)?file\s+called?\s+"
+    r"(?P<name>[a-zA-Z0-9][a-zA-Z0-9_\-.]{0,63})\s*$",
+    re.IGNORECASE,
+)
+
+
+def _extract_simple_read_args(goal: str) -> dict[str, str] | None:
+    """Deterministic routing for explicit file-read goals within the allowed notes root.
+
+    Matches goals like:
+        "read the file ~/VoxeraOS/notes/foo.txt"
+        "read ~/VoxeraOS/notes/foo.txt"
+        "open and read ~/VoxeraOS/notes/foo.txt"
+        "show contents of ~/VoxeraOS/notes/foo.txt"
+
+    Returns {'path': <path>} when the path resolves inside ~/VoxeraOS/notes/.
+    Returns None otherwise — caller falls through to the cloud planner.
+    """
+    m = _RE_PLANNER_READ_PATH.match(goal.strip())
+    if not m:
+        return None
+    path = m.group("path").rstrip(".,;:!?\"'").strip()
+    if not path:
+        return None
+    if not _is_safe_notes_path(path):
+        return None
+    return {"path": path}
+
+
+def _extract_named_file_write_args(goal: str) -> dict[str, str] | None:
+    """Deterministic routing for 'write/create a file called <name>' goals.
+
+    Only matches goals with no content specification (e.g. "write a file called foo.txt"
+    but NOT "write a file called foo.txt saying hello").  The file is created with empty
+    content under the allowed notes root.
+
+    Returns {'path': '~/VoxeraOS/notes/<name>', 'text': '', 'mode': 'overwrite'}.
+    Returns None if the pattern doesn't match or the candidate path is unsafe.
+    """
+    m = _RE_PLANNER_WRITE_CALLED.match(goal.strip())
+    if not m:
+        return None
+    name = m.group("name").strip()
+    if not name:
+        return None
+    candidate_path = f"~/VoxeraOS/notes/{name}"
+    if not _is_safe_notes_path(candidate_path):
+        return None
+    return {"path": candidate_path, "text": "", "mode": "overwrite"}
+
+
 def _match_terminal_hello_world(goal: str) -> bool:
     lower = goal.lower()
     if "terminal" not in lower:
@@ -654,6 +723,8 @@ async def plan_mission(
         simple_write_args = _extract_allowed_notes_write_args(goal)
     if simple_write_args is None:
         simple_write_args = _extract_checkin_note_write_args(goal)
+    if simple_write_args is None:
+        simple_write_args = _extract_named_file_write_args(goal)
 
     if simple_write_args is not None:
         log(
@@ -723,6 +794,42 @@ async def plan_mission(
             goal=goal,
             steps=steps,
             notes="Deterministic terminal hello-world demo path.",
+        )
+
+    simple_read_args = _extract_simple_read_args(goal)
+    if simple_read_args is not None:
+        log(
+            {
+                "event": "planner_selected",
+                "plan_id": plan_id,
+                "provider": "deterministic_simple_read",
+                "model": "deterministic",
+                "attempt": 1,
+                "error_class": "none",
+                "latency_ms": 0,
+                "fallback_used": False,
+            }
+        )
+        steps = [MissionStep(skill_id="files.read_text", args=simple_read_args)]
+        log(
+            {
+                "event": "plan_built",
+                "plan_id": plan_id,
+                "provider": "deterministic_simple_read",
+                "model": "deterministic",
+                "attempt": 1,
+                "error_class": "none",
+                "latency_ms": 0,
+                "fallback_used": False,
+                "steps": len(steps),
+            }
+        )
+        return MissionTemplate(
+            id="cloud_planned",
+            title="Deterministic File Read",
+            goal=goal,
+            steps=steps,
+            notes="Deterministic simple-read planning path.",
         )
 
     candidates = _build_brain_candidates(cfg)

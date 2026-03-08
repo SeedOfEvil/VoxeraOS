@@ -1,4 +1,59 @@
 
+## 2026-03-08 — PR #144 STV follow-up 3 — feat(intent): deterministic read routing + extracted_target + artifact consistency
+
+**Root issues fixed (STV findings, three distinct problems):**
+
+### A. `read_file` classifier gap ("read the file ~/path" → unknown_or_ambiguous)
+- **Failure observed**: goal `"read the file ~/VoxeraOS/notes/pr144-read-target.txt"` was
+  classified as `unknown_or_ambiguous` → `fail_closed=False` → planner produced `clipboard.copy`
+  as first step → job succeeded with a synthetic fallback string (semantically wrong).
+- **Root cause**: `_RE_READ_VERB` pattern `read\s+[~/]` required the path immediately after the
+  verb — articles "the file" between verb and path broke the match.
+- **Fix**: expanded `_RE_READ_VERB` to match all forms:
+  `read [the] [file] ~/path`, `open and read ~/path`, `cat ~/path`, `display ~/path`, `view ~/path`,
+  `show contents of ~/path`.  Goals without a `~/` or `/` path (e.g. "read this and copy it",
+  "read the document") still fall through to `unknown_or_ambiguous`.
+
+### B. Deterministic target extraction + direct routing
+- **New field**: `SimpleIntentResult.extracted_target: str | None` — set for `read_file` (the
+  exact path from goal) and `write_file` with "called `<name>`" suffix (candidate notes-root path).
+- **Direct routing in `mission_planner`**: for `read_file` and named `write_file` goals with a
+  safe notes-root path, `plan_mission()` now skips the cloud brain entirely and returns a
+  single-step deterministic plan:
+  - `_extract_simple_read_args()` → `files.read_text` step
+  - `_extract_named_file_write_args()` → `files.write_text` step (empty text, creates the file)
+- **Fail-closed fallback**: if extraction fails or the path is outside the notes root, falls
+  through to cloud brain; the mismatch check acts as the safety net.
+
+### C. Artifact consistency — `intent_route` now in `execution_result.json` for ALL goal-kind jobs
+- **Previous bug**: `execution_result.json → intent_route` was only populated on mismatch;
+  for successful goal-kind jobs it was `null`, inconsistent with `execution_envelope.json →
+  request.simple_intent`.
+- **Fix**: `queue_execution.py` now calls `rr.data.setdefault("intent_route", simple_intent.to_dict())`
+  after evaluation, propagating the classification to `execution_result.json` for all outcomes
+  (success, terminal failure, pending approval).
+
+**Files changed:**
+- `src/voxera/core/simple_intent.py`: expanded `_RE_READ_VERB`, new `_RE_READ_PATH`,
+  `_RE_WRITE_CALLED`; `extracted_target` field on `SimpleIntentResult`; updated `to_dict()`
+- `src/voxera/core/mission_planner.py`: `_RE_PLANNER_READ_PATH`, `_extract_simple_read_args()`,
+  `_RE_PLANNER_WRITE_CALLED`, `_extract_named_file_write_args()`; deterministic read + named-write
+  routes in `plan_mission()` before cloud brain candidates
+- `src/voxera/core/queue_execution.py`: `rr.data.setdefault("intent_route", ...)` propagation
+
+**Regression tests added** (13 new, total 694 passed):
+- Classifier unit: `test_read_the_file_path`, `test_read_the_file_extracted_target`,
+  `test_read_path_bare_extracted_target`, `test_open_and_read_path`, `test_read_file_path`,
+  `test_write_file_called_extracted_target`, `test_create_file_called_extracted_target`,
+  `test_write_without_called_has_no_extracted_target`, `test_read_this_and_copy_it_is_unknown`,
+  `test_read_without_leading_path_is_unknown`
+- Integration: `test_read_the_file_path_succeeds`, `test_read_the_file_path_clipboard_fails_closed`,
+  `test_intent_route_present_in_execution_result_on_success`
+- Updated: `test_open_terminal_routes_to_terminal_run_once_succeeds` (now asserts `intent_route`
+  in `execution_result.json`), `test_ambiguous_request_not_forced_into_wrong_route` (same)
+
+**Validation**: ruff ✓, mypy ✓, pytest 694 passed, 2 skipped ✓.
+
 ## 2026-03-08 — PR #144 follow-up 2 — fix(intent): close write_file classifier gap for "create a file called X" goals
 
 - **Production failure reproduced**: goal "create a file called whatupboy.txt" (or any goal

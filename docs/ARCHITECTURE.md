@@ -976,20 +976,20 @@ The queue execution lane now uses an explicit evaluate-and-replan loop:
 Built-in skills now emit a consistent canonical `skill_result` payload (`summary`, `machine_payload`, `output_artifacts`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`). Queue artifact shaping (`step_results.json`, `execution_result.json`) consumes these fields as structured-first inputs, with legacy sidecar fallback retained for backward compatibility.
 
 
-## Simple-intent routing (v1)
+## Simple-intent routing (v1.3)
 
 `src/voxera/core/simple_intent.py` adds a small deterministic layer between a natural-language
 goal string and the planner.  It classifies obvious operator asks into one of:
 
-| Intent kind                    | Trigger pattern                        | Allowed first-step skills                              |
-|--------------------------------|----------------------------------------|--------------------------------------------------------|
-| `assistant_question`           | question verb / status phrase          | `assistant.advisory`, `system.status`                  |
-| `open_resource` (terminal)     | exactly `"open terminal"`              | `system.open_app`, `system.terminal_run_once`          |
-| `open_resource` (app/url)      | `open/launch/start <word>` or URL      | `system.open_app`, `system.open_url`                   |
-| `write_file`                   | write/append/create-file verb          | `files.write_text`                                     |
-| `read_file`                    | read/cat/display/view verb + path      | `files.read_text`                                      |
-| `run_command`                  | run command / execute / exec verb      | `sandbox.exec`, `system.terminal_run_once`             |
-| `unknown_or_ambiguous`         | everything else                        | (no constraint — normal planning applies)              |
+| Intent kind                    | Trigger pattern                                                    | Allowed first-step skills                              |
+|--------------------------------|--------------------------------------------------------------------|--------------------------------------------------------|
+| `assistant_question`           | question verb / status phrase                                      | `assistant.advisory`, `system.status`                  |
+| `open_resource` (terminal)     | exactly `"open terminal"`                                          | `system.open_app`, `system.terminal_run_once`          |
+| `open_resource` (app/url)      | `open/launch/start <word>` or URL                                  | `system.open_app`, `system.open_url`                   |
+| `write_file`                   | write/append/create-file verb (articles accepted)                  | `files.write_text`                                     |
+| `read_file`                    | read/cat/display/view + `~/` or `/` path (articles accepted)       | `files.read_text`                                      |
+| `run_command`                  | run command / execute / exec verb                                  | `sandbox.exec`, `system.terminal_run_once`             |
+| `unknown_or_ambiguous`         | everything else                                                    | (no constraint — normal planning applies)              |
 
 > **Note on `open_resource` sub-routes**: the classifier returns a refined `allowed_skill_ids`
 > per goal.  For "open terminal" specifically it allows `system.terminal_run_once` (the
@@ -998,22 +998,59 @@ goal string and the planner.  It classifies obvious operator asks into one of:
 > in particular it is not allowed for `read_file` goals even when the planner safety rewrite
 > converts a step to it.
 
+**`read_file` accepted trigger patterns** (all require a `~/` or `/` path):
+
+| Form                                    | Example                                          |
+|-----------------------------------------|--------------------------------------------------|
+| `read <path>`                           | `read ~/VoxeraOS/notes/foo.txt`                  |
+| `read the <path>`                       | `read the ~/VoxeraOS/notes/foo.txt`              |
+| `read the file <path>`                  | `read the file ~/VoxeraOS/notes/pr144.txt`       |
+| `read file <path>`                      | `read file ~/VoxeraOS/notes/foo.txt`             |
+| `open and read <path>`                  | `open and read ~/VoxeraOS/notes/foo.txt`         |
+| `cat <path>` / `display <path>`         | `cat ~/VoxeraOS/notes/foo.txt`                   |
+| `view <path>` / `show contents of <path>` | `show contents of ~/VoxeraOS/notes/foo.txt`    |
+
+Goals without an explicit `~/` or `/` path (e.g. `"read this and copy it"`,
+`"read the document"`) fall through to `unknown_or_ambiguous` with no constraint.
+
+### Target extraction and direct routing
+
+`SimpleIntentResult` carries an optional `extracted_target` field:
+
+- **`read_file`**: the exact path extracted from the goal (e.g. `~/VoxeraOS/notes/pr144.txt`).
+- **`write_file`** with `"called <name>"` suffix: candidate path `~/VoxeraOS/notes/<name>`.
+- All other intents: `None`.
+
+When `extracted_target` is present and the path is within the allowed notes root
+(`~/VoxeraOS/notes/`), `mission_planner.plan_mission()` **skips the cloud brain** and returns
+a deterministic single-step plan:
+
+| Intent     | Deterministic planner route         | Skill              |
+|------------|-------------------------------------|--------------------|
+| `read_file`| `_extract_simple_read_args()`       | `files.read_text`  |
+| `write_file` (named)| `_extract_named_file_write_args()` | `files.write_text` |
+
+If extraction fails or the path is outside the allowed root, the planner falls through to the
+cloud brain normally; the mismatch check then acts as the safety net.
+
 ### How it works
 
 1. For goal-kind queue jobs, `classify_simple_operator_intent(goal=...)` runs before planning.
 2. The result (`SimpleIntentResult`) carries `intent_kind`, `deterministic`, `allowed_skill_ids`,
-   `routing_reason`, and `fail_closed`.
+   `routing_reason`, `fail_closed`, and optionally `extracted_target`.
 3. A `queue_simple_intent_routed` action event is emitted immediately.
-4. After the planner returns a mission, the first step's `skill_id` is checked against
+4. The planner attempts deterministic direct routing for high-confidence intents with extracted
+   targets (read_file, named write_file).  Other goals go to the cloud brain.
+5. After the planner returns a mission, the first step's `skill_id` is checked against
    `allowed_skill_ids` via `check_skill_family_mismatch(...)`.
-5. If a mismatch is detected:
+6. If a mismatch is detected:
    - Execution is **stopped before any skill runs** (fail closed).
    - A `queue_simple_intent_mismatch` action event is emitted.
    - `plan.json` / `plan.attempt-<n>.json` record the mismatch evidence.
    - `execution_result.json` reflects `evaluation_reason=simple_intent_skill_family_mismatch`,
      `stop_reason=planner_intent_route_rejected`, and an `intent_route` dict.
    - The job moves to `failed/` immediately.
-6. `unknown_or_ambiguous` goals have `fail_closed=False` — they are never constrained.
+7. `unknown_or_ambiguous` goals have `fail_closed=False` — they are never constrained.
 
 ### Design principles
 
@@ -1024,13 +1061,16 @@ goal string and the planner.  It classifies obvious operator asks into one of:
 - **Additive artifacts only**: existing contract schemas are extended, not replaced.
 - **Does not broaden autonomy**: no approvals bypassed, no capabilities widened.  The check only
   constrains which skill family may appear as the first step.
+- **Panel and CLI parity**: both surfaces enqueue goal-kind jobs through the same
+  `_normalize_payload` → `_classify_goal_intent` path; no surface-specific carve-outs.
 
 ### Artifact additions (additive)
 
 - `execution_envelope.json → request.simple_intent`:
-  `{intent_kind, deterministic, allowed_skill_ids, routing_reason, fail_closed}`
+  `{intent_kind, deterministic, allowed_skill_ids, routing_reason, fail_closed[, extracted_target]}`
 - `execution_result.json → intent_route`:
-  same shape; present when mismatch occurs
+  **same shape as `simple_intent`; present for ALL goal-kind jobs** (not just mismatches).
+  On mismatch the field also contains evidence of what the planner produced.
 - `plan.json` / `plan.attempt-<n>.json → intent_route`:
   populated for goal-kind jobs when intent was classified
 - `actions.jsonl`: `queue_simple_intent_routed` (always for goal-kind) and

@@ -155,6 +155,24 @@ class TestClassifyWriteFile:
         assert "system.open_url" not in result.allowed_skill_ids
         assert "sandbox.exec" not in result.allowed_skill_ids
 
+    def test_write_file_called_extracted_target(self):
+        """'write a file called X' must populate extracted_target with notes-root path."""
+        result = classify_simple_operator_intent(goal="write a file called whatupboy.txt")
+        assert result.intent_kind == "write_file"
+        assert result.extracted_target == "~/VoxeraOS/notes/whatupboy.txt"
+
+    def test_create_file_called_extracted_target(self):
+        """'create a file called X' must also populate extracted_target."""
+        result = classify_simple_operator_intent(goal="create a file called notes.md")
+        assert result.intent_kind == "write_file"
+        assert result.extracted_target == "~/VoxeraOS/notes/notes.md"
+
+    def test_write_without_called_has_no_extracted_target(self):
+        """'write text.txt with content' has no 'called' suffix — no extracted_target."""
+        result = classify_simple_operator_intent(goal="write text.txt with hello world")
+        assert result.intent_kind == "write_file"
+        assert result.extracted_target is None
+
 
 class TestClassifyReadFile:
     def test_read_path(self):
@@ -188,6 +206,40 @@ class TestClassifyReadFile:
         result = classify_simple_operator_intent(goal="read ~/VoxeraOS/notes/foo.txt")
         assert "files.write_text" not in result.allowed_skill_ids
         assert "system.open_app" not in result.allowed_skill_ids
+
+    def test_read_the_file_path(self):
+        """Regression (STV pr144-read): 'read the file ~/path' was unknown_or_ambiguous."""
+        result = classify_simple_operator_intent(
+            goal="read the file ~/VoxeraOS/notes/pr144-read-target.txt"
+        )
+        assert result.intent_kind == "read_file"
+        assert result.deterministic is True
+        assert result.fail_closed is True
+        assert "files.read_text" in result.allowed_skill_ids
+
+    def test_read_the_file_extracted_target(self):
+        """extracted_target must carry the exact path from 'read the file ~/path'."""
+        result = classify_simple_operator_intent(
+            goal="read the file ~/VoxeraOS/notes/pr144-read-target.txt"
+        )
+        assert result.extracted_target == "~/VoxeraOS/notes/pr144-read-target.txt"
+
+    def test_read_path_bare_extracted_target(self):
+        result = classify_simple_operator_intent(goal="read ~/VoxeraOS/notes/foo.txt")
+        assert result.extracted_target == "~/VoxeraOS/notes/foo.txt"
+
+    def test_open_and_read_path(self):
+        """'open and read ~/path' must classify as read_file."""
+        result = classify_simple_operator_intent(goal="open and read ~/VoxeraOS/notes/notes.txt")
+        assert result.intent_kind == "read_file"
+        assert result.deterministic is True
+        assert result.extracted_target == "~/VoxeraOS/notes/notes.txt"
+
+    def test_read_file_path(self):
+        """'read file ~/path' (no article) must classify as read_file."""
+        result = classify_simple_operator_intent(goal="read file ~/VoxeraOS/notes/foo.txt")
+        assert result.intent_kind == "read_file"
+        assert result.extracted_target == "~/VoxeraOS/notes/foo.txt"
 
 
 class TestClassifyRunCommand:
@@ -260,6 +312,24 @@ class TestClassifyUnknown:
     def test_open_with_path_like_is_unknown(self):
         # "open ~/notes/foo.txt" has a path-like char – should NOT be open_resource
         result = classify_simple_operator_intent(goal="open ~/notes/foo.txt")
+        assert result.intent_kind == "unknown_or_ambiguous"
+
+    def test_read_this_and_copy_it_is_unknown(self):
+        """'read this and copy it' is ambiguous — no path prefix, so not read_file.
+
+        Conservative behavior: falls through to unknown_or_ambiguous with no constraint.
+        If the planner produces clipboard.copy for this goal it will NOT be blocked,
+        since fail_closed=False for unknown goals.  Operators wanting a file read
+        must specify an explicit path (e.g. 'read ~/path/to/file').
+        """
+        result = classify_simple_operator_intent(goal="read this and copy it")
+        assert result.intent_kind == "unknown_or_ambiguous"
+        assert result.deterministic is False
+        assert result.fail_closed is False
+
+    def test_read_without_leading_path_is_unknown(self):
+        """'read the document' (no ~/  or / prefix) must stay unknown."""
+        result = classify_simple_operator_intent(goal="read the document")
         assert result.intent_kind == "unknown_or_ambiguous"
 
 
@@ -639,11 +709,12 @@ def test_ambiguous_request_not_forced_into_wrong_route(tmp_path: Path, monkeypat
     assert (queue_root / "done" / "job-ambig.json").exists()
     result = _read_artifact(queue_root, "job-ambig", "execution_result.json")
     assert result["ok"] is True
-    # intent_route in execution_result should reflect unknown_or_ambiguous (no constraint)
+    # intent_route is now always present in execution_result for goal-kind jobs.
+    # For unknown_or_ambiguous it carries the classification with fail_closed=False.
     ir = result.get("intent_route")
-    if ir is not None:
-        assert ir.get("intent_kind") == "unknown_or_ambiguous"
-        assert ir.get("fail_closed") is False
+    assert ir is not None
+    assert ir.get("intent_kind") == "unknown_or_ambiguous"
+    assert ir.get("fail_closed") is False
 
 
 # --- Test 6: Planner mismatch yields deterministic canonical failure artifact ---
@@ -921,7 +992,12 @@ def test_open_terminal_routes_to_terminal_run_once_succeeds(tmp_path: Path, monk
     assert not (queue_root / "failed" / "job-open-terminal-tro.json").exists()
     result = _read_artifact(queue_root, "job-open-terminal-tro", "execution_result.json")
     assert result["ok"] is True
-    # intent_route in execution_result is only written on mismatch; check envelope instead.
+    # intent_route is now propagated to execution_result.json for ALL goal-kind jobs.
+    ir = result.get("intent_route")
+    assert ir is not None, "intent_route must be present in execution_result for goal-kind jobs"
+    assert ir["intent_kind"] == "open_resource"
+    assert "system.terminal_run_once" in ir["allowed_skill_ids"]
+    # Also verify envelope carries the same metadata.
     envelope = _read_artifact(queue_root, "job-open-terminal-tro", "execution_envelope.json")
     si = envelope["request"].get("simple_intent")
     assert si is not None
@@ -976,6 +1052,176 @@ def test_read_file_clipboard_copy_fails_closed_regression(tmp_path: Path, monkey
     assert ir["intent_kind"] == "read_file"
     assert "clipboard.copy" not in ir["allowed_skill_ids"]
     assert "files.read_text" in ir["allowed_skill_ids"]
+
+
+def test_read_the_file_path_succeeds(tmp_path: Path, monkeypatch: Any):
+    """Regression (STV pr144-read): 'read the file ~/path' + files.read_text must succeed.
+
+    Previously, 'read the file ~/...' was classified as unknown_or_ambiguous because
+    _RE_READ_VERB required the path immediately after the verb (no 'the file' article).
+    The fix: _RE_READ_VERB now matches 'read(?:\\s+the)?\\s+(?:file\\s+)?[~/]'.
+    """
+    _force_policy_ask(monkeypatch)
+    _stub_plan_with_skill(
+        monkeypatch,
+        skill_id="files.read_text",
+        args={"path": "~/VoxeraOS/notes/pr144-read-target.txt"},
+    )
+
+    from voxera.core.queue_daemon import MissionQueueDaemon
+    from voxera.models import RunResult
+
+    queue_root = tmp_path / "queue"
+    _make_inbox_job(
+        queue_root,
+        "job-read-the-file",
+        {"goal": "read the file ~/VoxeraOS/notes/pr144-read-target.txt"},
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.mission_runner.run = lambda *a, **kw: RunResult(  # type: ignore[method-assign]
+        ok=True,
+        output="file contents",
+        data={
+            "results": [
+                {
+                    "step": 1,
+                    "skill": "files.read_text",
+                    "args": {"path": "~/VoxeraOS/notes/pr144-read-target.txt"},
+                    "ok": True,
+                }
+            ],
+            "step_outcomes": [{"step": 1, "skill": "files.read_text", "outcome": "succeeded"}],
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "total_steps": 1,
+        },
+    )
+    daemon.process_pending_once()
+
+    assert (queue_root / "done" / "job-read-the-file.json").exists(), (
+        "'read the file ~/path' with files.read_text must succeed, not be rejected"
+    )
+    assert not (queue_root / "failed" / "job-read-the-file.json").exists()
+    result = _read_artifact(queue_root, "job-read-the-file", "execution_result.json")
+    assert result["ok"] is True
+    assert result["terminal_outcome"] == "succeeded"
+    # intent_route must be present and consistent with envelope
+    ir = result.get("intent_route")
+    assert ir is not None
+    assert ir["intent_kind"] == "read_file"
+    assert ir["deterministic"] is True
+    assert "files.read_text" in ir["allowed_skill_ids"]
+
+
+def test_read_the_file_path_clipboard_fails_closed(tmp_path: Path, monkeypatch: Any):
+    """Regression (STV pr144-read v2): 'read the file ~/path' + clipboard.copy must fail closed.
+
+    This is the exact production failure: the goal was classified as unknown_or_ambiguous
+    (no fail_closed constraint), so clipboard.copy was accepted as the first step and
+    the job succeeded with a synthetic fallback string.
+    """
+    _force_policy_ask(monkeypatch)
+    _stub_plan_with_skill(
+        monkeypatch,
+        skill_id="clipboard.copy",
+        args={"text": "Please manually confirm the file contents."},
+    )
+
+    from voxera.core.queue_daemon import MissionQueueDaemon
+
+    side_effect_called = {"n": 0}
+    queue_root = tmp_path / "queue"
+    _make_inbox_job(
+        queue_root,
+        "job-read-the-file-cb-fail",
+        {"goal": "read the file ~/VoxeraOS/notes/pr144-read-target.txt"},
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _should_not_run(*a, **kw):
+        side_effect_called["n"] += 1
+        from voxera.models import RunResult
+
+        return RunResult(ok=True, output="", data={})
+
+    daemon.mission_runner.run = _should_not_run  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    assert (queue_root / "failed" / "job-read-the-file-cb-fail.json").exists(), (
+        "'read the file ~/path' with clipboard.copy must be rejected fail-closed"
+    )
+    assert not (queue_root / "done" / "job-read-the-file-cb-fail.json").exists()
+    assert side_effect_called["n"] == 0, "mission.run must not be called on mismatch"
+
+    result = _read_artifact(queue_root, "job-read-the-file-cb-fail", "execution_result.json")
+    assert result["ok"] is False
+    assert result["evaluation_reason"] == "simple_intent_skill_family_mismatch"
+    assert result["stop_reason"] == "planner_intent_route_rejected"
+    ir = result.get("intent_route")
+    assert ir is not None
+    assert ir["intent_kind"] == "read_file"
+    assert "clipboard.copy" not in ir["allowed_skill_ids"]
+    assert "files.read_text" in ir["allowed_skill_ids"]
+
+
+def test_intent_route_present_in_execution_result_on_success(tmp_path: Path, monkeypatch: Any):
+    """execution_result.json must carry intent_route for ALL successful goal-kind jobs.
+
+    Previously, intent_route was only written to execution_result.json on mismatch;
+    for successful jobs it was null.  The fix propagates simple_intent.to_dict() as
+    intent_route for all goal-kind runs regardless of outcome.
+    """
+    _force_policy_ask(monkeypatch)
+    _stub_plan_with_skill(
+        monkeypatch,
+        skill_id="files.read_text",
+        args={"path": "~/VoxeraOS/notes/foo.txt"},
+    )
+
+    from voxera.core.queue_daemon import MissionQueueDaemon
+    from voxera.models import RunResult
+
+    queue_root = tmp_path / "queue"
+    _make_inbox_job(
+        queue_root,
+        "job-ir-consistency",
+        {"goal": "read ~/VoxeraOS/notes/foo.txt"},
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.mission_runner.run = lambda *a, **kw: RunResult(  # type: ignore[method-assign]
+        ok=True,
+        output="ok",
+        data={
+            "results": [{"step": 1, "skill": "files.read_text", "args": {}, "ok": True}],
+            "step_outcomes": [{"step": 1, "skill": "files.read_text", "outcome": "succeeded"}],
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "total_steps": 1,
+        },
+    )
+    daemon.process_pending_once()
+
+    assert (queue_root / "done" / "job-ir-consistency.json").exists()
+    result = _read_artifact(queue_root, "job-ir-consistency", "execution_result.json")
+    assert result["ok"] is True
+
+    # execution_result.json must have intent_route matching envelope.request.simple_intent.
+    ir = result.get("intent_route")
+    assert ir is not None, "intent_route must be present in execution_result for goal-kind jobs"
+    assert ir["intent_kind"] == "read_file"
+    assert ir["deterministic"] is True
+    assert ir["fail_closed"] is True
+    assert "files.read_text" in ir["allowed_skill_ids"]
+
+    envelope = _read_artifact(queue_root, "job-ir-consistency", "execution_envelope.json")
+    si = envelope["request"].get("simple_intent")
+    assert si is not None
+    # Both artifacts must agree on intent_kind and allowed_skill_ids.
+    assert si["intent_kind"] == ir["intent_kind"]
+    assert si["allowed_skill_ids"] == ir["allowed_skill_ids"]
 
 
 def test_mismatch_blocked_before_side_effects(tmp_path: Path, monkeypatch: Any):
