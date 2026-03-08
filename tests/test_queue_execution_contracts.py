@@ -73,6 +73,74 @@ def test_execution_envelope_normalizes_inline_steps_job(tmp_path, monkeypatch):
     assert envelope["request"]["title"] == "Inline"
 
 
+def test_lineage_metadata_carried_into_execution_artifacts(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-lineage.json").write_text(
+        json.dumps(
+            {
+                "goal": "health",
+                "parent_job_id": "parent-demo.json",
+                "root_job_id": "root-demo.json",
+                "orchestration_depth": 1,
+                "sequence_index": 2,
+                "lineage_role": "child",
+            }
+        )
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    art = queue_root / "artifacts" / "job-lineage"
+    envelope = json.loads((art / "execution_envelope.json").read_text(encoding="utf-8"))
+    result = json.loads((art / "execution_result.json").read_text(encoding="utf-8"))
+    plan = json.loads((art / "plan.json").read_text(encoding="utf-8"))
+
+    assert envelope["job"]["lineage"]["parent_job_id"] == "parent-demo.json"
+    assert envelope["job"]["lineage"]["orchestration_depth"] == 1
+    assert result["lineage"]["root_job_id"] == "root-demo.json"
+    assert result["lineage"]["sequence_index"] == 2
+    assert plan["lineage"]["lineage_role"] == "child"
+
+
+def test_malformed_lineage_metadata_is_safely_sanitized(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-lineage-bad.json").write_text(
+        json.dumps(
+            {
+                "goal": "health",
+                "parent_job_id": "  ",
+                "root_job_id": 7,
+                "orchestration_depth": "bad",
+                "sequence_index": -4,
+                "lineage_role": "invalid",
+            }
+        )
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    result = json.loads(
+        (queue_root / "artifacts" / "job-lineage-bad" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert result["lineage"] == {
+        "parent_job_id": None,
+        "root_job_id": None,
+        "orchestration_depth": 0,
+        "sequence_index": None,
+        "lineage_role": None,
+    }
+
+
 def test_step_results_and_execution_result_written_for_failure(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     _stub_plan(monkeypatch)

@@ -1088,3 +1088,8 @@ Truth sources remain unchanged:
 - execution artifacts (`execution_result.json`, `step_results.json`, `execution_envelope.json`, assistant response artifact)
 
 This keeps Voxera OS as the trust layer: UI reflects persisted control-plane evidence rather than inferred progress.
+
+
+### Queue lineage metadata (descriptive only)
+
+The queue contract now carries optional lineage fields for future workflow observability: `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and `lineage_role`. In the current phase these fields are metadata-only; there is no dependency enforcement, child enqueue behavior, traversal, orchestration state machine, or output passing between jobs.

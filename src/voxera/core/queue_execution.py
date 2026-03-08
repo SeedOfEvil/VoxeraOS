@@ -23,7 +23,7 @@ from .capabilities_snapshot import (
 from .execution_evaluator import evaluate_run_result, replan_allowed_for_class
 from .mission_planner import MissionPlannerError
 from .missions import MissionStep, MissionTemplate, get_mission
-from .queue_contracts import build_execution_envelope, detect_request_kind
+from .queue_contracts import build_execution_envelope, detect_request_kind, extract_lineage_metadata
 from .queue_job_intent import build_queue_job_intent
 from .simple_intent import (
     SimpleIntentResult,
@@ -64,6 +64,10 @@ class QueueExecutionMixin:
             normalized["_simple_intent"] = sanitize_serialized_intent_route(
                 payload.get("_simple_intent")
             )
+
+        lineage = extract_lineage_metadata(payload)
+        if lineage is not None:
+            normalized.update(lineage)
 
         normalized["job_intent"] = build_queue_job_intent(payload, source_lane="queue_daemon")
         return normalized
@@ -341,6 +345,7 @@ class QueueExecutionMixin:
         artifact_dir = self._job_artifacts_dir(job_ref)
         plan_payload = {
             "job": Path(job_ref).name,
+            "lineage": extract_lineage_metadata(payload),
             "attempt_index": attempt_index,
             "replan_count": replan_count,
             "max_replans": max_replans,
@@ -467,6 +472,7 @@ class QueueExecutionMixin:
                     ok=False,
                     terminal_outcome="failed",
                     error=repr(exc),
+                    payload=sidecar_payload if isinstance(sidecar_payload, dict) else None,
                 )
                 self._update_job_state(
                     str(moved),
@@ -598,6 +604,7 @@ class QueueExecutionMixin:
                         ok=False,
                         terminal_outcome="failed",
                         error=error_text,
+                        payload=payload,
                     )
                     self._update_job_state(
                         str(moved),
@@ -783,6 +790,9 @@ class QueueExecutionMixin:
                 rr.data.setdefault("max_replans", max_replans)
                 rr.data.setdefault("evaluation_class", evaluation.evaluation_class)
                 rr.data.setdefault("evaluation_reason", evaluation.reason)
+                lineage = extract_lineage_metadata(payload)
+                if lineage is not None:
+                    rr.data.setdefault("lineage", lineage)
                 # Propagate simple_intent into intent_route so execution_result.json
                 # carries the same metadata as execution_envelope.json and plan.json
                 # for ALL goal-kind jobs, not just mismatch failures.
@@ -837,6 +847,7 @@ class QueueExecutionMixin:
                         ok=False,
                         terminal_outcome="awaiting_approval",
                         error=rr.error,
+                        payload=payload,
                     )
                     self._update_job_state(
                         str(moved),
@@ -872,6 +883,7 @@ class QueueExecutionMixin:
                         ok=False,
                         terminal_outcome=str(rr.data.get("terminal_outcome") or "failed"),
                         error=error_text,
+                        payload=payload,
                     )
                     self._update_job_state(
                         str(moved),
@@ -898,7 +910,7 @@ class QueueExecutionMixin:
                 if moved is None:
                     return False
                 self.stats.processed += 1
-                self._write_run_streams(str(moved), rr.data)
+                self._write_run_streams(str(moved), rr.data, payload=payload)
                 self._update_job_state(
                     str(moved),
                     lifecycle_state="done",

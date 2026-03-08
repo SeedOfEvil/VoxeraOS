@@ -10,6 +10,61 @@ from .simple_intent import sanitize_serialized_intent_route
 EXECUTION_ENVELOPE_SCHEMA_VERSION = 1
 STEP_RESULT_SCHEMA_VERSION = 1
 EXECUTION_RESULT_SCHEMA_VERSION = 1
+_LINEAGE_ROLES = frozenset({"root", "child"})
+
+
+def _sanitize_lineage_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _sanitize_lineage_int(value: Any, *, allow_zero: bool = True) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    minimum = 0 if allow_zero else 1
+    return parsed if parsed >= minimum else None
+
+
+def extract_lineage_metadata(payload: dict[str, Any]) -> dict[str, Any] | None:
+    source = payload
+    if isinstance(payload.get("lineage"), dict):
+        source = payload["lineage"]
+
+    parent_job_id = _sanitize_lineage_string(source.get("parent_job_id"))
+    root_job_id = _sanitize_lineage_string(source.get("root_job_id"))
+    orchestration_depth = _sanitize_lineage_int(source.get("orchestration_depth"))
+    sequence_index = _sanitize_lineage_int(source.get("sequence_index"))
+    raw_lineage_role = _sanitize_lineage_string(source.get("lineage_role"))
+    lineage_role = (
+        raw_lineage_role.lower()
+        if raw_lineage_role and raw_lineage_role.lower() in _LINEAGE_ROLES
+        else None
+    )
+
+    has_any_lineage = any(
+        key in source
+        for key in (
+            "parent_job_id",
+            "root_job_id",
+            "orchestration_depth",
+            "sequence_index",
+            "lineage_role",
+        )
+    )
+    if not has_any_lineage:
+        return None
+
+    return {
+        "parent_job_id": parent_job_id,
+        "root_job_id": root_job_id,
+        "orchestration_depth": orchestration_depth if orchestration_depth is not None else 0,
+        "sequence_index": sequence_index,
+        "lineage_role": lineage_role,
+    }
 
 
 def detect_request_kind(payload: dict[str, Any]) -> str:
@@ -45,6 +100,7 @@ def build_execution_envelope(
     execution_lane: str = "queue",
     fast_lane: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    lineage = extract_lineage_metadata(payload)
     return {
         "schema_version": EXECUTION_ENVELOPE_SCHEMA_VERSION,
         "envelope_kind": "queue_execution",
@@ -53,6 +109,7 @@ def build_execution_envelope(
             "filename": Path(job_ref).name,
             "source_ref": job_ref,
             "request_kind": detect_request_kind(payload),
+            "lineage": lineage,
         },
         "execution": {
             "mode": normalized_mode,
@@ -114,6 +171,7 @@ def build_assistant_execution_envelope(
     thread_id = str(payload.get("thread_id") or "")
     question = str(payload.get("question") or "")
     request_kind = detect_request_kind(payload)
+    lineage = extract_lineage_metadata(payload)
     return {
         "schema_version": EXECUTION_ENVELOPE_SCHEMA_VERSION,
         "envelope_kind": "queue_execution",
@@ -122,6 +180,7 @@ def build_assistant_execution_envelope(
             "filename": Path(job_ref).name,
             "source_ref": job_ref,
             "request_kind": request_kind,
+            "lineage": lineage,
         },
         "execution": {
             "mode": "assistant_advisory",
@@ -259,9 +318,11 @@ def build_execution_result(
     ok: bool,
     error: str | None = None,
 ) -> dict[str, Any]:
+    lineage = extract_lineage_metadata(rr_data)
     return {
         "schema_version": EXECUTION_RESULT_SCHEMA_VERSION,
         "job": Path(job_ref).name,
+        "lineage": lineage,
         "ok": ok,
         "terminal_outcome": terminal_outcome,
         "execution_lane": str(rr_data.get("execution_lane") or "queue"),

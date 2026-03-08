@@ -69,3 +69,54 @@ def test_resolve_structured_execution_falls_back_to_legacy_inputs(tmp_path):
     assert payload["total_steps"] == 1
     assert payload["approval_status"] == "approved"
     assert payload["latest_summary"] == "legacy error"
+
+
+def test_resolve_structured_execution_surfaces_lineage_from_execution_result(tmp_path):
+    art = tmp_path / "artifacts" / "job-lineage"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lineage": {
+                    "parent_job_id": "parent-1.json",
+                    "root_job_id": "root-1.json",
+                    "orchestration_depth": 2,
+                    "sequence_index": 5,
+                    "lineage_role": "child",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=art)
+    assert payload["lineage"]["parent_job_id"] == "parent-1.json"
+    assert payload["lineage"]["orchestration_depth"] == 2
+
+
+def test_resolve_structured_execution_sanitizes_malformed_lineage(tmp_path):
+    art = tmp_path / "artifacts" / "job-lineage-bad"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lineage": {
+                    "parent_job_id": " ",
+                    "root_job_id": 100,
+                    "orchestration_depth": "x",
+                    "sequence_index": -1,
+                    "lineage_role": "other",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=art)
+    assert payload["lineage"] == {
+        "parent_job_id": None,
+        "root_job_id": None,
+        "orchestration_depth": 0,
+        "sequence_index": None,
+        "lineage_role": None,
+    }

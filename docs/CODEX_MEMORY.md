@@ -1300,3 +1300,6 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 - Progress payloads are shaped from canonical artifacts/sidecars only; no optimistic synthetic completion values.
 - Surfaced lifecycle + step progress + approval status + lane metadata (`execution_lane`, `fast_lane`, `intent_route`) + terminal stop/failure summaries when available.
 - Added panel tests covering assistant running/done path, mission awaiting approval path, terminal failed path, and endpoint behavior.
+
+
+- Queue lineage metadata is now carried as descriptive-only fields (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, `lineage_role`) through canonical artifacts and panel/progress shaping. No child enqueue/dependency behavior was introduced in this phase.

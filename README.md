@@ -302,3 +302,10 @@ The panel job detail pages now use **progressive enhancement** for live updates:
 - `/assistant` keeps its server-rendered fallback and can poll `/assistant/progress/<request_id>` for advisory lifecycle transitions.
 
 Live fields are sourced from canonical artifacts only (`*.state.json`, `execution_result.json`, `step_results.json`, approval sidecars, failed sidecars, and assistant response artifacts). No speculative percentages or optimistic states are shown.
+
+
+## Queue lineage metadata (PR 9A)
+
+Queue jobs now accept additive, descriptive lineage metadata: `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and optional `lineage_role` (`root`/`child`). This metadata is observational only and does **not** change execution behavior, approvals, fail-closed semantics, scheduling, or context passing.
+
+When present, lineage is surfaced in `plan.json`, `execution_envelope.json`, `execution_result.json`, job progress payloads, and panel job detail views.

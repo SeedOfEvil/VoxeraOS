@@ -332,3 +332,6 @@ Non-goals preserved:
 - no speculative progress percentages
 - no bypass of approvals/policy/fail-closed routing
 - no parallel truth source outside queue artifacts/contracts
+
+
+- [x] PR 9A: added additive queue lineage metadata + evidence visibility (`plan.json`, `execution_envelope.json`, `execution_result.json`, panel/progress), with no orchestration behavior changes.

@@ -887,6 +887,42 @@ def _read_generated_files(artifacts_dir: Path) -> list[str]:
     return [str(item) for item in payload] if isinstance(payload, list) else []
 
 
+def _payload_lineage(payload: dict[str, Any]) -> dict[str, Any] | None:
+    lineage_keys = (
+        "parent_job_id",
+        "root_job_id",
+        "orchestration_depth",
+        "sequence_index",
+        "lineage_role",
+    )
+    if not any(key in payload for key in lineage_keys):
+        return None
+
+    def _clean_str(value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    def _clean_int(value: Any) -> int | None:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
+
+    role_raw = _clean_str(payload.get("lineage_role"))
+    role = role_raw.lower() if role_raw and role_raw.lower() in {"root", "child"} else None
+    depth = _clean_int(payload.get("orchestration_depth"))
+    return {
+        "parent_job_id": _clean_str(payload.get("parent_job_id")),
+        "root_job_id": _clean_str(payload.get("root_job_id")),
+        "orchestration_depth": depth if depth is not None else 0,
+        "sequence_index": _clean_int(payload.get("sequence_index")),
+        "lineage_role": role,
+    }
+
+
 def _job_context_summary(
     primary: dict[str, Any],
     *,
@@ -1250,6 +1286,16 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         structured_execution=structured_execution,
     )
     audit_timeline = relevant_events[:40]
+    lineage = (
+        structured_execution.get("lineage")
+        if isinstance(structured_execution.get("lineage"), dict)
+        else None
+    )
+    if lineage is None:
+        lineage = _payload_lineage(primary)
+    state_job_payload = state_sidecar.get("payload")
+    if lineage is None and isinstance(state_job_payload, dict):
+        lineage = _payload_lineage(state_job_payload)
     return {
         "job_id": job_name,
         "bucket": bucket,
@@ -1268,6 +1314,7 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "artifact_inventory": artifact_inventory,
         "artifact_anomalies": artifact_anomalies,
         "job_context": context_summary,
+        "lineage": lineage,
         "execution": structured_execution,
         "recent_timeline": _job_recent_timeline(actions, audit_timeline),
         "artifacts_dir": str(artifacts_dir),
@@ -1362,6 +1409,27 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "execution_lane": str(execution.get("execution_lane") or ""),
         "fast_lane": fast_lane_raw if isinstance(fast_lane_raw, dict) else None,
         "intent_route": intent_route_raw if isinstance(intent_route_raw, dict) else None,
+        "lineage": payload.get("lineage") if isinstance(payload.get("lineage"), dict) else None,
+        "parent_job_id": (
+            payload.get("lineage", {}).get("parent_job_id")
+            if isinstance(payload.get("lineage"), dict)
+            else None
+        ),
+        "root_job_id": (
+            payload.get("lineage", {}).get("root_job_id")
+            if isinstance(payload.get("lineage"), dict)
+            else None
+        ),
+        "orchestration_depth": (
+            payload.get("lineage", {}).get("orchestration_depth")
+            if isinstance(payload.get("lineage"), dict)
+            else None
+        ),
+        "sequence_index": (
+            payload.get("lineage", {}).get("sequence_index")
+            if isinstance(payload.get("lineage"), dict)
+            else None
+        ),
         "latest_summary": str(execution.get("latest_summary") or ""),
         "operator_note": str(execution.get("operator_note") or ""),
         "failure_summary": failure_summary,
