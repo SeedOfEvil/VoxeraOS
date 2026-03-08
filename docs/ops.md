@@ -931,6 +931,14 @@ Example details lines:
 
 Use full `voxera doctor` when you want provider capability tests; use `--quick` during incidents for immediate local sanity checks.
 
+`voxera doctor` also includes a `skills.registry` diagnostics row. Treat this as the operator contract for skill health:
+- `valid`: usable for governed execution.
+- `invalid`: malformed schema or malformed/unknown capability metadata; not loadable (fail-closed).
+- `incomplete`: loads structurally but missing required runtime governance metadata (for example empty capabilities); excluded from runtime until fixed.
+- `warning`: optional/recommended metadata missing (for example `output_schema`).
+
+When `invalid`/`incomplete` is non-zero, review the reason codes and apply the hinted action (`fix_manifest`, `add_capabilities`) before relying on the skill in production workflows.
+
 ## Brain fallback reason observability
 
 When the planner falls back between brain tiers, each transition is classified into a stable reason enum:

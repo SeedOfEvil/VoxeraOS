@@ -30,6 +30,10 @@ That architecture matters because it keeps behavior observable and recoverable e
   - `/assistant` submits queue-backed advisory jobs (`assistant_question`), with bounded thread continuity and degraded read-only fallback mode when queue transport is unavailable.
 - **Health + doctor + observability**
   - `health.json` snapshots, semantic queue health views, auth lockout counters, fallback metadata, and `voxera doctor` checks.
+  - `voxera doctor` now includes a `skills.registry` row summarizing strict manifest health (`valid` / `invalid` / `incomplete` / `warning`) with top remediation-oriented reason codes.
+- **Strict skill manifest contract**
+  - Discovery validates manifest schema strictly (no extra keys, non-empty IDs/entrypoints, deterministic string-list checks) and classifies skill health as valid/invalid/incomplete/warning.
+  - Invalid manifests remain fail-closed; incomplete manifests are visible to operators and excluded from usable runtime skill set until governance metadata is fixed.
 - **Hygiene and recovery tooling**
   - `voxera queue prune`, `voxera artifacts prune`, `voxera queue reconcile`, startup recovery quarantine, and `/recovery` archive exports.
 - **Incident and ops bundles**

@@ -469,3 +469,57 @@ def test_doctor_quick_missing_history_uses_dash_placeholders(tmp_path):
     assert "event=-" in last_ok["detail"]
     assert "error=-" in last_error["detail"]
     assert last_fb["detail"] == "-"
+
+
+def test_run_doctor_includes_skill_registry_summary(monkeypatch, tmp_path: Path):
+    report_path = tmp_path / "capabilities.json"
+
+    class _Issue:
+        status = "incomplete"
+
+        def as_dict(self):
+            return {
+                "skill_id": "demo.skill",
+                "manifest_path": "skills/demo/manifest.yml",
+                "status": "incomplete",
+                "reason_code": "missing_capability_metadata",
+                "message": "missing capabilities",
+                "hint": "add_capabilities",
+            }
+
+    class _Report:
+        counts = {"valid": 2, "invalid": 0, "incomplete": 1, "warning": 0, "total": 3}
+        issues = [_Issue()]
+        blocks_runtime = True
+
+    class _Registry:
+        def discover_with_report(self):
+            return _Report()
+
+    monkeypatch.setattr("voxera.doctor.load_config", lambda: AppConfig())
+    monkeypatch.setattr("voxera.doctor.capabilities_report_path", lambda: report_path)
+    monkeypatch.setattr("voxera.doctor.SkillRegistry", _Registry)
+
+    results = asyncio.run(run_doctor())
+
+    assert "skills.registry" in results
+    assert results["skills.registry"]["counts"]["incomplete"] == 1
+    assert results["skills.registry"]["partial"] is True
+
+
+def test_print_report_includes_skill_registry_note(capsys):
+    print_report(
+        {
+            "skills.registry": {
+                "counts": {"valid": 1, "invalid": 1, "incomplete": 1, "warning": 0, "total": 3},
+                "issues": [
+                    {"skill_id": "a", "reason_code": "missing_capability_metadata"},
+                    {"skill_id": "b", "reason_code": "malformed_schema"},
+                ],
+                "partial": True,
+            }
+        }
+    )
+    out = capsys.readouterr().out
+    assert "skills.registry" in out
+    assert "registry" in out

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class BrainConfig(BaseModel):
@@ -49,6 +49,8 @@ class AppConfig(BaseModel):
 
 
 class SkillManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     name: str
     description: str
@@ -60,6 +62,53 @@ class SkillManifest(BaseModel):
     fs_scope: Literal["workspace_only", "read_only", "broader"] = "workspace_only"
     output_artifacts: list[str] = Field(default_factory=list)
     output_schema: str | None = None
+    args: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    @field_validator("id", "name", "description", "entrypoint")
+    @classmethod
+    def _non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must be a non-empty string")
+        return text
+
+    @field_validator("entrypoint")
+    @classmethod
+    def _entrypoint_shape(cls, value: str) -> str:
+        if ":" not in value:
+            raise ValueError("must use 'module:function' format")
+        module_name, function_name = value.split(":", 1)
+        if not module_name.strip() or not function_name.strip():
+            raise ValueError("must use 'module:function' format")
+        return value
+
+    @field_validator("capabilities")
+    @classmethod
+    def _capabilities_must_be_non_empty_strings(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("items must be non-empty strings")
+        return normalized
+
+    @field_validator("output_artifacts")
+    @classmethod
+    def _output_artifacts_must_be_unique_non_empty_strings(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("items must be non-empty strings")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("items must be unique")
+        return normalized
+
+    @field_validator("output_schema")
+    @classmethod
+    def _output_schema_non_empty_if_present(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        schema = value.strip()
+        if not schema:
+            raise ValueError("must be a non-empty string when provided")
+        return schema
 
 
 class PlanStep(BaseModel):

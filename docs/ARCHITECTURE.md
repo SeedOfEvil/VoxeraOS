@@ -80,7 +80,7 @@ VoxeraOS/
 │   │   │   ├── capabilities_snapshot.py  — runtime skill/mission catalog + validation
 │   │   │   └── planner_context.py   — LLM prompt preamble assembly
 │   │   ├── skills/
-│   │   │   ├── registry.py          — manifest.yml discovery + entrypoint loading
+│   │   │   ├── registry.py          — manifest.yml discovery + strict health classification (valid/invalid/incomplete/warning) + entrypoint loading
 │   │   │   ├── runner.py            — policy-gated skill execution + approval callbacks
 │   │   │   ├── execution.py         — sandbox selection + audit value sanitization
 │   │   │   └── arg_normalizer.py    — arg canonicalization + alias mapping
@@ -327,6 +327,7 @@ src/voxera/
 ├── secrets.py                — Keyring integration; fallback to 0600 file
 ├── setup_wizard.py           — Interactive TUI first-run setup (voxera setup)
 ├── doctor.py                 — Diagnostic CLI: endpoint health, model test,
+│                               and operator-visible skill registry health summary (`skills.registry`)
 │                               lock/auth checks, quick offline mode
 ├── demo.py                   — Guided onboarding checklist (offline + online modes);
 │                               creates deterministic demo jobs without destructive actions
