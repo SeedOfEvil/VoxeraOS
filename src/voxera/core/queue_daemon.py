@@ -426,10 +426,24 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
         self._write_job_state(job_ref, snapshot)
 
     def _write_plan_artifact(
-        self, job_ref: str, *, payload: dict[str, Any], mission: MissionTemplate
+        self,
+        job_ref: str,
+        *,
+        payload: dict[str, Any],
+        mission: MissionTemplate,
+        attempt_index: int = 1,
+        replan_count: int = 0,
+        max_replans: int = 1,
+        supersedes_attempt: int | None = None,
+        plan_delta: dict[str, Any] | None = None,
     ) -> None:
         plan = {
             "job": Path(job_ref).name,
+            "attempt_index": attempt_index,
+            "replan_count": replan_count,
+            "max_replans": max_replans,
+            "supersedes_attempt": supersedes_attempt,
+            "plan_delta": plan_delta if isinstance(plan_delta, dict) else None,
             "payload": payload,
             "mission": {
                 "id": mission.id,
@@ -441,6 +455,9 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
         }
         artifact_dir = self._job_artifacts_dir(job_ref)
         (artifact_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+        (artifact_dir / f"plan.attempt-{attempt_index}.json").write_text(
+            json.dumps(plan, indent=2), encoding="utf-8"
+        )
         intent = payload.get("job_intent")
         if isinstance(intent, dict):
             (artifact_dir / "job_intent.json").write_text(

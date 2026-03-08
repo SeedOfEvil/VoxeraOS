@@ -1,3 +1,20 @@
+
+## 2026-03-08 — PR 4 — planner-executor-evaluator loop with bounded replan
+
+- Added `src/voxera/core/execution_evaluator.py` for deterministic post-attempt outcome classification.
+- Added bounded evaluate-and-replan loop in `QueueExecutionMixin.process_job_file(...)` with
+  `max_replan_attempts` (default `1`) and explicit `queue_job_replanned` action/log events.
+- Replan eligibility is fail-closed: only retryable/replannable classes and goal-planned jobs;
+  approval pending + policy/capability blocks remain non-replan terminal/pause states.
+- Extended canonical artifacts additively with attempt/evaluation metadata:
+  - `execution_envelope.json`: `attempt_index`, `replan_count`, `max_replans`, `supersedes_attempt`
+  - `plan.json` + `plan.attempt-<n>.json`: attempt lineage + compact `plan_delta`
+  - `execution_result.json`: `attempt_index`, `replan_count`, `max_replans`, `evaluation_class`,
+    `evaluation_reason`, `stop_reason`
+- Added focused tests for evaluator taxonomy, replan-allowed and replan-forbidden outcomes, and
+  max-attempt stop behavior.
+- Follow-up fix: normalized planner unknown-skill failures and runtime missing-skill lookups into structured outcomes so bounded replan is exercisable end-to-end (`plan.attempt-1` planning_error -> bounded attempt 2).
+
 ## 2026-03-08 — PR #TBD — harden(exec): strict argv/path boundaries for execution skills
 - Summary:
   - Hardened sandbox command normalization: reject ambiguous shell-control operators in string commands, reject empty/whitespace argv tokens, and emit canonical structured blocked-input payloads in `PodmanSandboxRunner`.

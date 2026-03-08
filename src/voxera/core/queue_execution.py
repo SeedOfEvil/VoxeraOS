@@ -20,9 +20,10 @@ from .capabilities_snapshot import (
     validate_mission_id_against_snapshot,
     validate_mission_steps_against_snapshot,
 )
+from .execution_evaluator import evaluate_run_result, replan_allowed_for_class
 from .mission_planner import MissionPlannerError
 from .missions import MissionStep, MissionTemplate, get_mission
-from .queue_contracts import build_execution_envelope
+from .queue_contracts import build_execution_envelope, detect_request_kind
 from .queue_job_intent import build_queue_job_intent
 
 
@@ -223,6 +224,73 @@ class QueueExecutionMixin:
     def _pending_primary_jobs(self: Any) -> list[Path]:
         return self._primary_jobs_in_bucket(self.pending)
 
+    def _request_kind(self: Any, payload: dict[str, Any]) -> str:
+        return detect_request_kind(payload)
+
+    def _max_replan_attempts(self: Any) -> int:
+        try:
+            return max(0, int(getattr(self.cfg, "max_replan_attempts", 1)))
+        except Exception:
+            return 1
+
+    def _plan_delta(
+        self: Any, previous: MissionTemplate, current: MissionTemplate
+    ) -> dict[str, Any]:
+        previous_steps = [{"skill_id": s.skill_id, "args": s.args} for s in previous.steps]
+        current_steps = [{"skill_id": s.skill_id, "args": s.args} for s in current.steps]
+        return {
+            "mission_id_changed": previous.id != current.id,
+            "total_steps_before": len(previous.steps),
+            "total_steps_after": len(current.steps),
+            "steps_changed": previous_steps != current_steps,
+        }
+
+    def _planning_error_metadata(self: Any, exc: Exception) -> tuple[str, str, bool]:
+        message = str(exc).strip()
+        lowered = message.lower()
+        if "planner referenced unknown skill" in lowered or "unknown skill" in lowered:
+            return ("replannable_mismatch", "skill_not_found", True)
+        if "without a valid skill_id" in lowered:
+            return ("replannable_mismatch", "planner_skill_mismatch", True)
+        if "args" in lowered and "invalid" in lowered:
+            return ("replannable_mismatch", "arg_shape_mismatch", True)
+        return ("terminal_failure", "planning_failure", False)
+
+    def _write_planning_failure_attempt_artifact(
+        self: Any,
+        *,
+        job_ref: str,
+        payload: dict[str, Any],
+        attempt_index: int,
+        replan_count: int,
+        max_replans: int,
+        evaluation_class: str,
+        evaluation_reason: str,
+        error_text: str,
+    ) -> None:
+        artifact_dir = self._job_artifacts_dir(job_ref)
+        plan_payload = {
+            "job": Path(job_ref).name,
+            "attempt_index": attempt_index,
+            "replan_count": replan_count,
+            "max_replans": max_replans,
+            "supersedes_attempt": attempt_index - 1 if attempt_index > 1 else None,
+            "plan_delta": None,
+            "payload": payload,
+            "mission": None,
+            "planning_error": {
+                "evaluation_class": evaluation_class,
+                "evaluation_reason": evaluation_reason,
+                "error": error_text,
+            },
+        }
+        (artifact_dir / "plan.json").write_text(
+            json.dumps(plan_payload, indent=2), encoding="utf-8"
+        )
+        (artifact_dir / f"plan.attempt-{attempt_index}.json").write_text(
+            json.dumps(plan_payload, indent=2), encoding="utf-8"
+        )
+
     def process_job_file(self: Any, job_path: Path) -> bool:
         self.ensure_dirs()
         if not job_path.exists():
@@ -255,26 +323,6 @@ class QueueExecutionMixin:
                 payload = self._normalize_payload(payload)
                 if self._ensure_hard_approval_gate(job_path, payload=payload):
                     return False
-                mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
-                self._write_plan_artifact(str(job_path), payload=payload, mission=mission)
-                envelope = build_execution_envelope(
-                    job_ref=str(job_path),
-                    payload=payload,
-                    mission=mission,
-                    queue_root=self.queue_root,
-                    artifact_root=self.artifacts,
-                    normalized_mode="mission",
-                )
-                (self._job_artifacts_dir(str(job_path)) / "execution_envelope.json").write_text(
-                    json.dumps(envelope, indent=2), encoding="utf-8"
-                )
-                self._update_job_state(
-                    str(job_path),
-                    lifecycle_state="running",
-                    payload=payload,
-                    mission=mission,
-                    rr_data={"total_steps": len(mission.steps)},
-                )
             except Exception as exc:
                 _queue_daemon_module().log(
                     {
@@ -298,6 +346,12 @@ class QueueExecutionMixin:
                         "step_outcomes": [],
                         "total_steps": 0,
                         "lifecycle_state": "step_failed",
+                        "attempt_index": 1,
+                        "replan_count": 0,
+                        "max_replans": self._max_replan_attempts(),
+                        "evaluation_class": "terminal_failure",
+                        "evaluation_reason": "job_invalid",
+                        "stop_reason": "job_invalid",
                     },
                     ok=False,
                     terminal_outcome="failed",
@@ -317,107 +371,297 @@ class QueueExecutionMixin:
                 self.prune_failed_artifacts()
                 return False
 
-            kind = "mission_id" if payload.get("mission_id") else "goal"
-            _queue_daemon_module().log(
-                {
-                    "event": "queue_job_started",
-                    "kind": kind,
-                    "mission": payload.get("mission_id"),
-                    "goal": payload.get("goal"),
-                }
-            )
-            rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
-            if self._shutdown_requested:
-                self._finalize_job_shutdown_failure(
-                    job_path, signal_reason=self._shutdown_reason, payload=payload
-                )
-                return False
-            if rr.data.get("status") == "pending_approval":
-                moved = self._move_job(job_path, self.pending)
-                if moved is None:
+            kind = self._request_kind(payload)
+            max_replans = self._max_replan_attempts()
+            attempt_index = 0
+            replan_count = 0
+            previous_mission: MissionTemplate | None = None
+
+            while True:
+                attempt_index += 1
+                try:
+                    mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
+                except Exception as exc:
+                    evaluation_class, evaluation_reason, replannable = (
+                        self._planning_error_metadata(exc)
+                    )
+                    error_text = repr(exc)
+                    self._write_planning_failure_attempt_artifact(
+                        job_ref=str(job_path),
+                        payload=payload,
+                        attempt_index=attempt_index,
+                        replan_count=replan_count,
+                        max_replans=max_replans,
+                        evaluation_class=evaluation_class,
+                        evaluation_reason=evaluation_reason,
+                        error_text=error_text,
+                    )
+                    should_replan = (
+                        replannable
+                        and kind == "goal"
+                        and replan_count < max_replans
+                        and evaluation_class in {"retryable_failure", "replannable_mismatch"}
+                    )
+                    if should_replan:
+                        replan_count += 1
+                        self._write_action_event(
+                            str(job_path),
+                            "queue_job_replanned",
+                            attempt_index=attempt_index,
+                            evaluation_class=evaluation_class,
+                            evaluation_reason=evaluation_reason,
+                            replan_count=replan_count,
+                            max_replans=max_replans,
+                        )
+                        _queue_daemon_module().log(
+                            {
+                                "event": "queue_job_replanned",
+                                "job": str(job_path),
+                                "attempt_index": attempt_index,
+                                "evaluation_class": evaluation_class,
+                                "evaluation_reason": evaluation_reason,
+                                "replan_count": replan_count,
+                                "max_replans": max_replans,
+                            }
+                        )
+                        continue
+
+                    _queue_daemon_module().log(
+                        {
+                            "event": "queue_job_invalid",
+                            "job": str(job_path),
+                            "filename": job_path.name,
+                            "reason": error_text,
+                            "attempt_index": attempt_index,
+                        }
+                    )
+                    moved = self._move_job(job_path, self.failed)
+                    if moved is None:
+                        return False
+                    self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
+                    rr_data = {
+                        "results": [],
+                        "step_outcomes": [],
+                        "total_steps": 0,
+                        "lifecycle_state": "step_failed",
+                        "attempt_index": attempt_index,
+                        "replan_count": replan_count,
+                        "max_replans": max_replans,
+                        "evaluation_class": evaluation_class,
+                        "evaluation_reason": evaluation_reason,
+                        "stop_reason": "planning_failure",
+                    }
+                    self._write_execution_result_artifacts(
+                        str(moved),
+                        rr_data=rr_data,
+                        ok=False,
+                        terminal_outcome="failed",
+                        error=error_text,
+                    )
+                    self._update_job_state(
+                        str(moved),
+                        lifecycle_state="step_failed",
+                        payload=payload,
+                        mission=previous_mission,
+                        rr_data=rr_data,
+                        terminal_outcome="failed",
+                        failure_summary=error_text,
+                    )
+                    self.stats.failed += 1
+                    _queue_daemon_module().log(
+                        {"event": "queue_job_failed", "job": str(moved), "error": error_text}
+                    )
+                    self.prune_failed_artifacts()
                     return False
-                self._write_pending_artifacts(
-                    moved, payload=payload, mission=mission, run_data=rr.data
-                )
-                self._write_execution_result_artifacts(
-                    str(moved),
-                    rr_data=rr.data,
-                    ok=False,
-                    terminal_outcome="awaiting_approval",
-                    error=rr.error,
-                )
-                self._update_job_state(
-                    str(moved),
-                    lifecycle_state="awaiting_approval",
-                    payload=payload,
-                    mission=mission,
-                    rr_data=rr.data,
-                    approval_status="pending",
-                )
-                self._write_action_event(
-                    str(moved), "queue_job_pending_approval", step=rr.data.get("step")
-                )
-                _queue_daemon_module().log(
-                    {
-                        "event": "queue_job_pending_approval",
-                        "job": str(moved),
-                        "step": rr.data.get("step"),
-                        "reason": rr.data.get("reason"),
+
+                plan_delta = (
+                    self._plan_delta(previous_mission, mission)
+                    if previous_mission is not None
+                    else {
+                        "mission_id_changed": False,
+                        "total_steps_before": len(mission.steps),
+                        "total_steps_after": len(mission.steps),
+                        "steps_changed": False,
                     }
                 )
-                return False
-
-            if not rr.ok:
-                moved = self._move_job(job_path, self.failed)
-                if moved is None:
-                    return False
-                error_text = rr.error or "mission failed"
-                self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
-                self._write_execution_result_artifacts(
-                    str(moved),
-                    rr_data=rr.data,
-                    ok=False,
-                    terminal_outcome=str(rr.data.get("terminal_outcome") or "failed"),
-                    error=error_text,
+                self._write_plan_artifact(
+                    str(job_path),
+                    payload=payload,
+                    mission=mission,
+                    attempt_index=attempt_index,
+                    replan_count=replan_count,
+                    max_replans=max_replans,
+                    supersedes_attempt=attempt_index - 1 if attempt_index > 1 else None,
+                    plan_delta=plan_delta,
+                )
+                envelope = build_execution_envelope(
+                    job_ref=str(job_path),
+                    payload=payload,
+                    mission=mission,
+                    queue_root=self.queue_root,
+                    artifact_root=self.artifacts,
+                    normalized_mode="mission",
+                    attempt_index=attempt_index,
+                    replan_count=replan_count,
+                    max_replans=max_replans,
+                    supersedes_attempt=attempt_index - 1 if attempt_index > 1 else None,
+                )
+                (self._job_artifacts_dir(str(job_path)) / "execution_envelope.json").write_text(
+                    json.dumps(envelope, indent=2), encoding="utf-8"
                 )
                 self._update_job_state(
+                    str(job_path),
+                    lifecycle_state="running",
+                    payload=payload,
+                    mission=mission,
+                    rr_data={"total_steps": len(mission.steps)},
+                )
+
+                _queue_daemon_module().log(
+                    {
+                        "event": "queue_job_started",
+                        "kind": kind,
+                        "mission": payload.get("mission_id"),
+                        "goal": payload.get("goal"),
+                        "attempt_index": attempt_index,
+                        "replan_count": replan_count,
+                    }
+                )
+                rr = self.mission_runner.run(mission, context={"queue_job": str(job_path)})
+                if self._shutdown_requested:
+                    self._finalize_job_shutdown_failure(
+                        job_path, signal_reason=self._shutdown_reason, payload=payload
+                    )
+                    return False
+
+                evaluation = evaluate_run_result(run_result=rr, request_kind=kind)
+                rr.data.setdefault("attempt_index", attempt_index)
+                rr.data.setdefault("replan_count", replan_count)
+                rr.data.setdefault("max_replans", max_replans)
+                rr.data.setdefault("evaluation_class", evaluation.evaluation_class)
+                rr.data.setdefault("evaluation_reason", evaluation.reason)
+
+                should_replan = (
+                    evaluation.replan_allowed
+                    and replan_allowed_for_class(evaluation.evaluation_class)
+                    and replan_count < max_replans
+                )
+
+                if should_replan:
+                    replan_count += 1
+                    rr.data["stop_reason"] = "replanned"
+                    self._write_action_event(
+                        str(job_path),
+                        "queue_job_replanned",
+                        attempt_index=attempt_index,
+                        evaluation_class=evaluation.evaluation_class,
+                        evaluation_reason=evaluation.reason,
+                        replan_count=replan_count,
+                        max_replans=max_replans,
+                    )
+                    _queue_daemon_module().log(
+                        {
+                            "event": "queue_job_replanned",
+                            "job": str(job_path),
+                            "attempt_index": attempt_index,
+                            "evaluation_class": evaluation.evaluation_class,
+                            "evaluation_reason": evaluation.reason,
+                            "replan_count": replan_count,
+                            "max_replans": max_replans,
+                        }
+                    )
+                    previous_mission = mission
+                    continue
+
+                if rr.data.get("status") == "pending_approval":
+                    rr.data.setdefault("stop_reason", "awaiting_approval")
+                    moved = self._move_job(job_path, self.pending)
+                    if moved is None:
+                        return False
+                    self._write_pending_artifacts(
+                        moved, payload=payload, mission=mission, run_data=rr.data
+                    )
+                    self._write_execution_result_artifacts(
+                        str(moved),
+                        rr_data=rr.data,
+                        ok=False,
+                        terminal_outcome="awaiting_approval",
+                        error=rr.error,
+                    )
+                    self._update_job_state(
+                        str(moved),
+                        lifecycle_state="awaiting_approval",
+                        payload=payload,
+                        mission=mission,
+                        rr_data=rr.data,
+                        approval_status="pending",
+                    )
+                    self._write_action_event(
+                        str(moved), "queue_job_pending_approval", step=rr.data.get("step")
+                    )
+                    _queue_daemon_module().log(
+                        {
+                            "event": "queue_job_pending_approval",
+                            "job": str(moved),
+                            "step": rr.data.get("step"),
+                            "reason": rr.data.get("reason"),
+                        }
+                    )
+                    return False
+
+                if not rr.ok:
+                    rr.data.setdefault("stop_reason", "terminal_failure")
+                    moved = self._move_job(job_path, self.failed)
+                    if moved is None:
+                        return False
+                    error_text = rr.error or "mission failed"
+                    self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
+                    self._write_execution_result_artifacts(
+                        str(moved),
+                        rr_data=rr.data,
+                        ok=False,
+                        terminal_outcome=str(rr.data.get("terminal_outcome") or "failed"),
+                        error=error_text,
+                    )
+                    self._update_job_state(
+                        str(moved),
+                        lifecycle_state=str(rr.data.get("lifecycle_state") or "step_failed"),
+                        payload=payload,
+                        mission=mission,
+                        rr_data=rr.data,
+                        terminal_outcome=str(rr.data.get("terminal_outcome") or "failed"),
+                        failure_summary=error_text,
+                        blocked_reason=error_text
+                        if str(rr.data.get("terminal_outcome") or "") == "blocked"
+                        else None,
+                    )
+                    self.stats.failed += 1
+                    _queue_daemon_module().log(
+                        {"event": "queue_job_failed", "job": str(moved), "error": error_text}
+                    )
+                    self._write_action_event(str(moved), "queue_job_failed", error=error_text)
+                    self.prune_failed_artifacts()
+                    return False
+
+                rr.data.setdefault("stop_reason", "succeeded")
+                moved = self._move_job(job_path, self.done)
+                if moved is None:
+                    return False
+                self.stats.processed += 1
+                self._write_run_streams(str(moved), rr.data)
+                self._update_job_state(
                     str(moved),
-                    lifecycle_state=str(rr.data.get("lifecycle_state") or "step_failed"),
+                    lifecycle_state="done",
                     payload=payload,
                     mission=mission,
                     rr_data=rr.data,
-                    terminal_outcome=str(rr.data.get("terminal_outcome") or "failed"),
-                    failure_summary=error_text,
-                    blocked_reason=error_text
-                    if str(rr.data.get("terminal_outcome") or "") == "blocked"
-                    else None,
+                    terminal_outcome=str(rr.data.get("terminal_outcome") or "succeeded"),
+                    approval_status="approved" if rr.data.get("step_outcomes") else None,
                 )
-                self.stats.failed += 1
-                _queue_daemon_module().log(
-                    {"event": "queue_job_failed", "job": str(moved), "error": error_text}
-                )
-                self._write_action_event(str(moved), "queue_job_failed", error=error_text)
-                self.prune_failed_artifacts()
-                return False
-
-            moved = self._move_job(job_path, self.done)
-            if moved is None:
-                return False
-            self.stats.processed += 1
-            self._write_run_streams(str(moved), rr.data)
-            self._update_job_state(
-                str(moved),
-                lifecycle_state="done",
-                payload=payload,
-                mission=mission,
-                rr_data=rr.data,
-                terminal_outcome=str(rr.data.get("terminal_outcome") or "succeeded"),
-                approval_status="approved" if rr.data.get("step_outcomes") else None,
-            )
-            self._write_action_event(str(moved), "queue_job_done")
-            _queue_daemon_module().log({"event": "queue_job_done", "job": str(moved)})
-            record_mission_success(self.queue_root)
-            return True
+                self._write_action_event(str(moved), "queue_job_done")
+                _queue_daemon_module().log({"event": "queue_job_done", "job": str(moved)})
+                record_mission_success(self.queue_root)
+                return True
         finally:
             self.current_job_ref = None
 

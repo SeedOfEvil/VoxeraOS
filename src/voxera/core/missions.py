@@ -388,13 +388,28 @@ class MissionRunner:
 
             audit_context = {"mission": mission.id, "step": idx, **context}
             step_started_at_ms = int(time.time() * 1000)
-            rr = self.skill_runner.run(
-                self.skill_runner.registry.get(ms.skill_id),
-                args=ms.args,
-                policy=self.policy,
-                require_approval_cb=self.require_approval_cb,
-                audit_context=audit_context,
-            )
+            try:
+                manifest = self.skill_runner.registry.get(ms.skill_id)
+                rr = self.skill_runner.run(
+                    manifest,
+                    args=ms.args,
+                    policy=self.policy,
+                    require_approval_cb=self.require_approval_cb,
+                    audit_context=audit_context,
+                )
+            except KeyError:
+                rr = RunResult(
+                    ok=False,
+                    error=f"Unknown skill: {ms.skill_id}",
+                    data={
+                        "status": "failed",
+                        "error_class": "skill_not_found",
+                        "retryable": False,
+                        "summary": f"Unknown skill: {ms.skill_id}",
+                        "next_action_hint": "replan_with_known_skill",
+                        "machine_payload": {"missing_skill_id": ms.skill_id},
+                    },
+                )
             step_finished_at_ms = int(time.time() * 1000)
             canonical = extract_skill_result(rr.data if isinstance(rr.data, dict) else {})
             machine_payload = (

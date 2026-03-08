@@ -239,3 +239,22 @@ During daemon normalization, Voxera also derives `job_intent` for legacy jobs th
 - List-form argv no longer silently strips empty/whitespace tokens; malformed argv is rejected with canonical `skill_result` payloads (`error_class=invalid_input`).
 - `files.read_text` and `files.write_text` share centralized confined-path normalization with deterministic out-of-bounds/traversal/symlink-escape blocking.
 - `system.open_app` and `system.open_url` enforce stricter normalized inputs and now always emit canonical `skill_result` metadata for allowlist/input failures.
+
+
+### Bounded evaluate-and-replan loop (PR 4)
+
+Queue mission execution now performs an explicit evaluator phase after each attempt and classifies
+outcomes into deterministic classes: `succeeded`, `awaiting_approval`, `blocked_non_retryable`,
+`invalid_input_non_retryable`, `retryable_failure`, `replannable_mismatch`, and `terminal_failure`.
+
+Replanning is bounded (`max_replan_attempts`, default `1`) and only considered for
+`retryable_failure`/`replannable_mismatch` on goal-planned jobs. Approval-required outcomes,
+policy/capability blocks, and hard boundary failures do not replan and remain fail-closed.
+
+Artifacts now include attempt/evaluation fields (`attempt_index`, `replan_count`,
+`evaluation_class`, `evaluation_reason`, `stop_reason`) and per-attempt plan snapshots
+(`plan.attempt-<n>.json`) so operators can inspect adaptation history without log reconstruction.
+
+Planner mismatch failures are also captured as first-class attempt artifacts: if a goal-planning pass
+returns an unknown skill, Voxera records `plan.attempt-1.json` with `planning_error` metadata and can
+bounded-replan once (`max_replan_attempts`) to produce a second governed attempt.

@@ -37,6 +37,10 @@ def build_execution_envelope(
     queue_root: Path,
     artifact_root: Path,
     normalized_mode: str,
+    attempt_index: int = 1,
+    replan_count: int = 0,
+    max_replans: int = 1,
+    supersedes_attempt: int | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": EXECUTION_ENVELOPE_SCHEMA_VERSION,
@@ -49,6 +53,10 @@ def build_execution_envelope(
         },
         "execution": {
             "mode": normalized_mode,
+            "attempt_index": attempt_index,
+            "replan_count": replan_count,
+            "max_replans": max_replans,
+            "supersedes_attempt": supersedes_attempt,
             "total_steps": len(mission.steps),
             "steps": [
                 {
@@ -176,6 +184,12 @@ def build_execution_result(
         "last_completed_step": rr_data.get("last_completed_step"),
         "last_attempted_step": rr_data.get("last_attempted_step"),
         "total_steps": rr_data.get("total_steps"),
+        "attempt_index": rr_data.get("attempt_index"),
+        "replan_count": rr_data.get("replan_count"),
+        "max_replans": rr_data.get("max_replans"),
+        "evaluation_class": rr_data.get("evaluation_class"),
+        "evaluation_reason": rr_data.get("evaluation_reason"),
+        "stop_reason": rr_data.get("stop_reason"),
         "approval_status": (
             "pending"
             if rr_data.get("status") == "pending_approval"
