@@ -80,7 +80,10 @@ class TestClassifyOpenResource:
         assert result.intent_kind == "open_resource"
         assert result.deterministic is True
         assert result.fail_closed is True
+        # Both system.open_app (e.g. gnome-terminal) and system.terminal_run_once
+        # (deterministic demo skill) are valid first steps for "open terminal".
         assert "system.open_app" in result.allowed_skill_ids
+        assert "system.terminal_run_once" in result.allowed_skill_ids
 
     def test_open_firefox(self):
         result = classify_simple_operator_intent(goal="open Firefox")
@@ -263,8 +266,10 @@ class TestCheckSkillFamilyMismatch:
         mismatch, _ = check_skill_family_mismatch(self._open_intent(), "system.open_app")
         assert mismatch is False
 
-    def test_open_intent_system_open_url_no_mismatch(self):
-        mismatch, _ = check_skill_family_mismatch(self._open_intent(), "system.open_url")
+    def test_open_url_intent_system_open_url_no_mismatch(self):
+        # "open terminal" uses _TERMINAL_OPEN_SKILLS (no open_url); use a URL goal instead.
+        url_intent = classify_simple_operator_intent(goal="open https://example.com")
+        mismatch, _ = check_skill_family_mismatch(url_intent, "system.open_url")
         assert mismatch is False
 
     def test_write_intent_files_write_text_no_mismatch(self):
@@ -284,6 +289,22 @@ class TestCheckSkillFamilyMismatch:
         assert mismatch is False
 
     # --- Mismatch detected (wrong routing) ---
+
+    def test_open_terminal_terminal_run_once_no_mismatch(self):
+        """Regression: 'open terminal' must accept system.terminal_run_once as first step."""
+        intent = classify_simple_operator_intent(goal="open terminal")
+        mismatch, _ = check_skill_family_mismatch(intent, "system.terminal_run_once")
+        assert mismatch is False
+
+    def test_read_intent_clipboard_copy_is_mismatch(self):
+        """Regression: 'read file' must not accept clipboard.copy as first step.
+
+        The planner safety rewrite may convert sandbox.exec steps to clipboard.copy
+        for non-explicit goals; this must be rejected fail-closed for read_file routes.
+        """
+        mismatch, reason = check_skill_family_mismatch(self._read_intent(), "clipboard.copy")
+        assert mismatch is True
+        assert reason == "simple_intent_skill_family_mismatch"
 
     def test_open_intent_write_text_is_mismatch(self):
         """Regression: 'open terminal' must not become 'write hello world to a file'."""
@@ -706,6 +727,102 @@ def test_advisory_drifting_to_write_text_fails_closed(tmp_path: Path, monkeypatc
     ir = result.get("intent_route")
     assert ir is not None
     assert ir["intent_kind"] == "assistant_question"
+
+
+def test_open_terminal_routes_to_terminal_run_once_succeeds(tmp_path: Path, monkeypatch: Any):
+    """Regression (STV pr144-open-terminal): 'open terminal' with system.terminal_run_once
+    must succeed — not be rejected as an open_resource mismatch.
+
+    The planner may use system.terminal_run_once (the deterministic terminal demo skill)
+    instead of system.open_app for 'open terminal' goals.  Both are valid.
+    """
+    _force_policy_ask(monkeypatch)
+    _stub_plan_with_skill(monkeypatch, skill_id="system.terminal_run_once")
+
+    from voxera.core.queue_daemon import MissionQueueDaemon
+    from voxera.models import RunResult
+
+    queue_root = tmp_path / "queue"
+    _make_inbox_job(queue_root, "job-open-terminal-tro", {"goal": "open terminal"})
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.mission_runner.run = lambda *a, **kw: RunResult(  # type: ignore[method-assign]
+        ok=True,
+        output="terminal opened",
+        data={
+            "results": [{"step": 1, "skill": "system.terminal_run_once", "args": {}, "ok": True}],
+            "step_outcomes": [
+                {"step": 1, "skill": "system.terminal_run_once", "outcome": "succeeded"}
+            ],
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "total_steps": 1,
+        },
+    )
+    daemon.process_pending_once()
+
+    # Job must succeed — not be rejected with planner_intent_route_rejected
+    assert (queue_root / "done" / "job-open-terminal-tro.json").exists(), (
+        "open terminal with terminal_run_once should not be rejected as mismatch"
+    )
+    assert not (queue_root / "failed" / "job-open-terminal-tro.json").exists()
+    result = _read_artifact(queue_root, "job-open-terminal-tro", "execution_result.json")
+    assert result["ok"] is True
+    # intent_route in execution_result is only written on mismatch; check envelope instead.
+    envelope = _read_artifact(queue_root, "job-open-terminal-tro", "execution_envelope.json")
+    si = envelope["request"].get("simple_intent")
+    assert si is not None
+    assert si["intent_kind"] == "open_resource"
+    assert "system.terminal_run_once" in si["allowed_skill_ids"]
+
+
+def test_read_file_clipboard_copy_fails_closed_regression(tmp_path: Path, monkeypatch: Any):
+    """Regression (STV pr144-read): 'read file' route must reject clipboard.copy as first step.
+
+    The planner safety rewrite converts some sandbox.exec steps to clipboard.copy for
+    non-explicit goals.  When the intent is clearly read_file, clipboard.copy is outside
+    the allowed family and must be blocked fail-closed before any side effects.
+    """
+    _force_policy_ask(monkeypatch)
+    _stub_plan_with_skill(monkeypatch, skill_id="clipboard.copy")
+
+    from voxera.core.queue_daemon import MissionQueueDaemon
+
+    side_effect_called = {"n": 0}
+    queue_root = tmp_path / "queue"
+    _make_inbox_job(
+        queue_root,
+        "job-read-clipboard-mismatch",
+        {"goal": "read ~/VoxeraOS/notes/file.txt"},
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _should_not_run(*a, **kw):
+        side_effect_called["n"] += 1
+        from voxera.models import RunResult
+
+        return RunResult(ok=True, output="", data={})
+
+    daemon.mission_runner.run = _should_not_run  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    assert (queue_root / "failed" / "job-read-clipboard-mismatch.json").exists(), (
+        "clipboard.copy must be rejected as first step for read_file intent"
+    )
+    assert not (queue_root / "done" / "job-read-clipboard-mismatch.json").exists()
+    assert side_effect_called["n"] == 0, "mission.run must not be called on mismatch"
+
+    result = _read_artifact(queue_root, "job-read-clipboard-mismatch", "execution_result.json")
+    assert result["ok"] is False
+    assert result["evaluation_reason"] == "simple_intent_skill_family_mismatch"
+    assert result["stop_reason"] == "planner_intent_route_rejected"
+
+    ir = result.get("intent_route")
+    assert ir is not None
+    assert ir["intent_kind"] == "read_file"
+    assert "clipboard.copy" not in ir["allowed_skill_ids"]
+    assert "files.read_text" in ir["allowed_skill_ids"]
 
 
 def test_mismatch_blocked_before_side_effects(tmp_path: Path, monkeypatch: Any):

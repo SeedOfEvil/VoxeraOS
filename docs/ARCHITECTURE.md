@@ -981,14 +981,22 @@ Built-in skills now emit a consistent canonical `skill_result` payload (`summary
 `src/voxera/core/simple_intent.py` adds a small deterministic layer between a natural-language
 goal string and the planner.  It classifies obvious operator asks into one of:
 
-| Intent kind          | Allowed first-step skills                              |
-|----------------------|--------------------------------------------------------|
-| `assistant_question` | `assistant.advisory`, `system.status`                  |
-| `open_resource`      | `system.open_app`, `system.open_url`                   |
-| `write_file`         | `files.write_text`                                     |
-| `read_file`          | `files.read_text`                                      |
-| `run_command`        | `sandbox.exec`, `system.terminal_run_once`             |
-| `unknown_or_ambiguous` | (no constraint — normal planning applies)            |
+| Intent kind                    | Trigger pattern                        | Allowed first-step skills                              |
+|--------------------------------|----------------------------------------|--------------------------------------------------------|
+| `assistant_question`           | question verb / status phrase          | `assistant.advisory`, `system.status`                  |
+| `open_resource` (terminal)     | exactly `"open terminal"`              | `system.open_app`, `system.terminal_run_once`          |
+| `open_resource` (app/url)      | `open/launch/start <word>` or URL      | `system.open_app`, `system.open_url`                   |
+| `write_file`                   | write/append/create-file verb          | `files.write_text`                                     |
+| `read_file`                    | read/cat/display/view verb + path      | `files.read_text`                                      |
+| `run_command`                  | run command / execute / exec verb      | `sandbox.exec`, `system.terminal_run_once`             |
+| `unknown_or_ambiguous`         | everything else                        | (no constraint — normal planning applies)              |
+
+> **Note on `open_resource` sub-routes**: the classifier returns a refined `allowed_skill_ids`
+> per goal.  For "open terminal" specifically it allows `system.terminal_run_once` (the
+> deterministic terminal demo skill) in addition to `system.open_app`, since both are valid
+> first steps.  `clipboard.copy` is **not** accepted as a first step for any recognised intent;
+> in particular it is not allowed for `read_file` goals even when the planner safety rewrite
+> converts a step to it.
 
 ### How it works
 

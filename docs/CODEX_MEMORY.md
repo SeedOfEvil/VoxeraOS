@@ -1,4 +1,29 @@
 
+## 2026-03-08 — PR #144 follow-up — fix(intent): refine open_resource terminal route and document clipboard.copy rejection
+
+- **STV findings addressed (PR #144)**:
+  - `pr144-open-terminal`: planner produces `system.terminal_run_once` for "open terminal" goals,
+    which was incorrectly rejected because `_OPEN_SKILLS` only included `system.open_app` /
+    `system.open_url`.
+  - `pr144-read`: planner safety rewrite (PR #23) converts non-explicit sandbox.exec steps to
+    `clipboard.copy`; this is correctly rejected by the mismatch guard (fail-closed, expected
+    behavior) — `clipboard.copy` is **not** a valid substitute for `files.read_text`.
+- **Fix**: added `_TERMINAL_OPEN_SKILLS = frozenset({"system.terminal_run_once", "system.open_app"})`.
+  The `"open terminal"` exact-match branch now returns `allowed_skill_ids=_TERMINAL_OPEN_SKILLS`
+  instead of `_OPEN_SKILLS`, accepting both `system.open_app` and `system.terminal_run_once` as
+  valid first steps.  Other `open_resource` goals (single-word app name, URL) still use
+  `_OPEN_SKILLS` only.
+- **`INTENT_ALLOWED_SKILLS["open_resource"]`** updated to the union of both sets for documentation
+  accuracy; the classifier returns refined per-goal subsets.
+- **Regression tests added** (`tests/test_simple_intent.py`):
+  - `test_open_terminal_terminal_run_once_no_mismatch` (unit)
+  - `test_read_intent_clipboard_copy_is_mismatch` (unit)
+  - `test_open_terminal_routes_to_terminal_run_once_succeeds` (integration)
+  - `test_read_file_clipboard_copy_fails_closed_regression` (integration)
+- **Docs updated**: ARCHITECTURE.md intent table now shows the terminal sub-route separately;
+  ops.md documents the refined routing and explicit clipboard.copy rejection.
+- Validation: ruff ✓, mypy ✓, pytest (all tests pass including 4 new regression tests) ✓.
+
 ## 2026-03-08 — PR #TBD — feat(intent): deterministic simple-intent routing and fail-closed planner mismatch detection
 
 - Added `src/voxera/core/simple_intent.py` — a small, deterministic classifier for common

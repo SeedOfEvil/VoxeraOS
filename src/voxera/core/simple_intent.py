@@ -37,15 +37,23 @@ SimpleIntentKind = Literal[
 # ---------------------------------------------------------------------------
 
 _ADVISORY_SKILLS: frozenset[str] = frozenset({"assistant.advisory", "system.status"})
+# General open_resource: GUI app launcher or URL opener.
 _OPEN_SKILLS: frozenset[str] = frozenset({"system.open_app", "system.open_url"})
+# "open terminal" specifically: planner may use either system.open_app (launches
+# gnome-terminal) or system.terminal_run_once (deterministic terminal demo skill).
+_TERMINAL_OPEN_SKILLS: frozenset[str] = frozenset({"system.terminal_run_once", "system.open_app"})
 _WRITE_SKILLS: frozenset[str] = frozenset({"files.write_text"})
 _READ_SKILLS: frozenset[str] = frozenset({"files.read_text"})
 _RUN_SKILLS: frozenset[str] = frozenset({"sandbox.exec", "system.terminal_run_once"})
 _NO_CONSTRAINT: frozenset[str] = frozenset()
 
+# Reference table: canonical allowed-skill sets per intent kind.
+# Note: open_resource entries use the union of all possible first-step skills
+# across the sub-routes (terminal vs. general open); the classifier returns a
+# refined set per goal (e.g. _TERMINAL_OPEN_SKILLS for "open terminal").
 INTENT_ALLOWED_SKILLS: dict[str, frozenset[str]] = {
     "assistant_question": _ADVISORY_SKILLS,
-    "open_resource": _OPEN_SKILLS,
+    "open_resource": _OPEN_SKILLS | _TERMINAL_OPEN_SKILLS,
     "write_file": _WRITE_SKILLS,
     "read_file": _READ_SKILLS,
     "run_command": _RUN_SKILLS,
@@ -240,10 +248,13 @@ def classify_simple_operator_intent(
     # Exclusions: "Open status and report", "open an app and ...", "open the ..."
     # fall through to unknown_or_ambiguous below.
     if _RE_OPEN_TERMINAL.match(text):
+        # "open terminal" specifically: the planner may use system.open_app
+        # (e.g. gnome-terminal) or system.terminal_run_once (deterministic
+        # demo skill).  Both are legitimate first steps for this goal.
         return SimpleIntentResult(
             intent_kind="open_resource",
             deterministic=True,
-            allowed_skill_ids=_OPEN_SKILLS,
+            allowed_skill_ids=_TERMINAL_OPEN_SKILLS,
             routing_reason="goal_is_open_terminal",
             fail_closed=True,
         )
