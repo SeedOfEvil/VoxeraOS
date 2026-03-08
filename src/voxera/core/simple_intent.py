@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
-SimpleIntentKind = Literal[
+SimpleIntentKind: TypeAlias = Literal[
     "assistant_question",
     "open_terminal",
     "open_url",
@@ -24,7 +24,7 @@ _READ_SKILLS: frozenset[str] = frozenset({"files.read_text"})
 _RUN_SKILLS: frozenset[str] = frozenset({"sandbox.exec"})
 _NO_CONSTRAINT: frozenset[str] = frozenset()
 
-INTENT_ALLOWED_SKILLS: dict[str, frozenset[str]] = {
+INTENT_ALLOWED_SKILLS: dict[SimpleIntentKind, frozenset[str]] = {
     "assistant_question": _ADVISORY_SKILLS,
     "open_terminal": _OPEN_TERMINAL_SKILLS,
     "open_url": _OPEN_URL_SKILLS,
@@ -112,7 +112,7 @@ class SimpleIntentResult:
     extracted_target: str | None = None
     compound_action: bool = False
     first_step_only: bool = False
-    first_action_intent_kind: str | None = None
+    first_action_intent_kind: SimpleIntentKind | None = None
     trailing_remainder: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -162,7 +162,9 @@ def _meta_or_explanatory(text: str) -> bool:
     return bool(_RE_QUOTED_ACTION.search(text))
 
 
-def _classify_open_clause(clause: str) -> tuple[str | None, frozenset[str], str, str | None]:
+def _classify_open_clause(
+    clause: str,
+) -> tuple[SimpleIntentKind | None, frozenset[str], str, str | None]:
     if _RE_OPEN_TERMINAL_DIRECT.match(clause):
         return ("open_terminal", _OPEN_TERMINAL_SKILLS, "direct_open_terminal", "terminal")
     url_m = _RE_OPEN_URL_DIRECT.match(clause)
