@@ -62,6 +62,9 @@ class QueueExecutionMixin:
         if steps is not None:
             normalized["steps"] = steps
 
+        if "enqueue_child" in payload:
+            normalized["enqueue_child"] = payload.get("enqueue_child")
+
         if "approval_required" in payload:
             normalized["approval_required"] = payload.get("approval_required") is True
 
