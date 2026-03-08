@@ -15,6 +15,14 @@ def test_open_url_invalid_scheme_returns_canonical_skill_result():
     assert payload["retryable"] is False
 
 
+def test_open_url_rejects_credentialed_url_with_structured_error():
+    rr = open_url.run("https://user:pass@example.com")
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["summary"] == "Rejected unsafe URL form"
+    assert payload["error_class"] == "invalid_input"
+
+
 def test_terminal_run_once_missing_launcher_returns_canonical_skill_result():
     with patch("shutil.which", return_value=None):
         rr = terminal_run_once.run()

@@ -83,6 +83,8 @@ This prints deterministic JSON (`schema_version`, `generated_ts_ms`, `missions`,
 
 Planner prompts include a compact `SYSTEM CONTEXT (Vera)` preamble plus a `CAPABILITIES` block from this snapshot so cloud brains are constrained to runtime-known mission IDs and enum-like arguments. Validation also runs before execution: unknown `mission_id` values and invalid `system.open_app` targets fail fast with closest-match suggestions.
 
+Execution skills now emit canonical blocked-input payloads (not just raw error strings) when command/path/url/app boundaries are violated. Operators should inspect `skill_result.error_class`, `skill_result.summary`, and artifact paths from `execution_result.json` when triaging denied or malformed inputs.
+
 When running `voxera missions plan --dry-run`, the output JSON includes `capabilities_snapshot`
 (schema version + snapshot timestamp) and `capabilities_used` (sorted capability strings used by
 planned steps) to support auditing and operator review of planned step permissions.

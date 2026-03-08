@@ -6,7 +6,7 @@
 - Queue contract completion (current lane): producer-side structured intent (`job_intent`) now spans queue entrypoints and flows into execution envelope/artifacts for clearer planning→execution contracts without breaking legacy payloads.
 - Security hardening: goal sanitization + 2,000-char cap, `[USER DATA START]`/`[USER DATA END]` prompt boundaries, panel auth lockout (10 attempts/60s window → HTTP 429 + `Retry-After: 60`).
 - Ops visibility: panel Daemon Health widget (health.json-sourced, no daemon calls), panel `/hygiene` page (prune dry-run + reconcile trigger, results in health.json).
-- `sandbox.exec` argv canonicalization (`canonicalize_argv`): `command`/`argv`/`cmd` aliases, shlex.split strings, strip empty tokens, fail-fast on empty argv.
+- `sandbox.exec` argv canonicalization (`canonicalize_argv`): `command`/`argv`/`cmd` aliases, shlex.split strings, reject shell-control ambiguity, fail-fast on invalid/empty argv.
 - Deterministic terminal demo skill (`system.terminal_run_once`) + deterministic planner route.
 - OpenRouter invisible attribution headers (`voxeraos.ca` + `VoxeraOS`; invisible defaults; overrides preserved).
 - Reliability: e2e_golden4 approval hang fix (filesystem-based detection, phase timeouts, diagnostics).
@@ -65,7 +65,8 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 **PR #91 — sandbox.exec canonicalize_argv (SHIPPED)**
 - [x] `canonicalize_argv(args)` as single source of truth for sandbox command normalization.
 - [x] Accepts `command`/`argv`/`cmd` priority-order aliases.
-- [x] String values tokenized with `shlex.split`; empty tokens silently stripped.
+- [x] String values tokenized with `shlex.split`; shell-control operators rejected unless explicitly shell-wrapped.
+- [x] Empty/whitespace argv list tokens are rejected (no silent stripping).
 - [x] Fails fast with actionable error on empty/missing/non-string argv.
 - [x] Two-layer defense: `PodmanSandboxRunner.run()` + `canonicalize_args()` pre-flight.
 

@@ -1085,9 +1085,8 @@ def test_plan_mission_rejects_empty_sandbox_exec_string_command(monkeypatch):
         asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
 
 
-def test_plan_mission_strips_whitespace_tokens_from_sandbox_exec_command_list(monkeypatch):
-    """Whitespace-only tokens in a command list are silently stripped by canonicalize_argv;
-    the plan succeeds with the remaining non-empty tokens."""
+def test_plan_mission_rejects_whitespace_tokens_in_sandbox_exec_command_list(monkeypatch):
+    """Whitespace-only argv entries are rejected to avoid ambiguous command normalization."""
     cfg = AppConfig(
         brain={
             "primary": BrainConfig(
@@ -1117,11 +1116,8 @@ def test_plan_mission_strips_whitespace_tokens_from_sandbox_exec_command_list(mo
         ],
     )
 
-    # The whitespace token "  " is stripped by canonicalize_argv; the plan succeeds.
-    mission = asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
-    step = mission.steps[0]
-    assert step.skill_id == "sandbox.exec"
-    assert step.args["command"] == ["bash", "echo HELLO-ARGV"]
+    with pytest.raises(MissionPlannerError, match="non-empty list of strings"):
+        asyncio.run(plan_mission("Run a shell command", cfg=cfg, registry=reg))
 
 
 def test_plan_mission_sandbox_exec_argv_alias_is_accepted(monkeypatch):

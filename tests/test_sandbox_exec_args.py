@@ -167,17 +167,23 @@ def test_canonicalize_argv_none_value_raises():
 
 
 # ---------------------------------------------------------------------------
-# Empty-token stripping (silent normalisation, not an error)
+# Empty-token hardening
 # ---------------------------------------------------------------------------
 
 
-def test_canonicalize_argv_empty_tokens_stripped():
-    """Empty string tokens are silently dropped; remaining tokens are kept."""
-    assert canonicalize_argv({"command": ["", "ip", "", "a", ""]}) == ["ip", "a"]
+def test_canonicalize_argv_empty_tokens_rejected():
+    with pytest.raises(ValueError, match="non-empty list of strings"):
+        canonicalize_argv({"command": ["", "ip", "", "a", ""]})
 
 
-def test_canonicalize_argv_whitespace_tokens_stripped():
-    assert canonicalize_argv({"command": ["  ", "echo", " \t "]}) == ["echo"]
+def test_canonicalize_argv_whitespace_tokens_rejected():
+    with pytest.raises(ValueError, match="non-empty list of strings"):
+        canonicalize_argv({"command": ["  ", "echo", " \t "]})
+
+
+def test_canonicalize_argv_string_shell_control_rejected():
+    with pytest.raises(ValueError, match="shell-control operators"):
+        canonicalize_argv({"command": "echo hi && uname -a"})
 
 
 def test_canonicalize_argv_inner_whitespace_preserved():

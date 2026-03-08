@@ -4,29 +4,52 @@ from pathlib import Path
 from typing import Literal
 
 from voxera.models import RunResult
+from voxera.skills.path_boundaries import PathBoundaryError, normalize_confined_path
+from voxera.skills.result_contract import SKILL_RESULT_KEY, build_skill_result
 
 ALLOWED_ROOT = Path.home() / "VoxeraOS" / "notes"
 
 
 def _resolve_safe_path(path: str) -> Path:
-    allowed = ALLOWED_ROOT.expanduser().resolve(strict=False)
-    requested = Path(path).expanduser()
-    target = requested if requested.is_absolute() else (allowed / requested)
-    target_resolved = target.resolve(strict=False)
-
-    if not target_resolved.is_relative_to(allowed):
-        raise ValueError(f"Path is outside allowlist: {target_resolved}")
-    return target_resolved
+    return normalize_confined_path(path=path, allowed_root=ALLOWED_ROOT, must_exist=False)
 
 
 def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite") -> RunResult:
     try:
         target = _resolve_safe_path(path)
+    except PathBoundaryError as exc:
+        return RunResult(
+            ok=False,
+            error=str(exc),
+            data={
+                SKILL_RESULT_KEY: build_skill_result(
+                    summary="Rejected write outside allowlist",
+                    machine_payload={"path": path, "allowed_root": str(ALLOWED_ROOT)},
+                    operator_note="Write path must stay within allowed notes directory.",
+                    next_action_hint="provide_allowed_path",
+                    retryable=False,
+                    error_class=exc.error_class,
+                )
+            },
+        )
     except Exception as exc:
         return RunResult(ok=False, error=repr(exc))
 
     if mode not in {"append", "overwrite"}:
-        return RunResult(ok=False, error="ValueError('mode must be append or overwrite')")
+        return RunResult(
+            ok=False,
+            error="mode must be append or overwrite",
+            data={
+                SKILL_RESULT_KEY: build_skill_result(
+                    summary="Rejected invalid write mode",
+                    machine_payload={"mode": mode},
+                    operator_note="Supported modes are append or overwrite.",
+                    next_action_hint="provide_supported_mode",
+                    retryable=False,
+                    error_class="invalid_input",
+                )
+            },
+        )
 
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -34,6 +57,30 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
         with target.open(write_mode, encoding="utf-8") as f:
             f.write(text)
         action = "Appended" if mode == "append" else "Wrote"
-        return RunResult(ok=True, output=f"{action} text to {target}")
+        return RunResult(
+            ok=True,
+            output=f"{action} text to {target}",
+            data={
+                SKILL_RESULT_KEY: build_skill_result(
+                    summary=f"{action} text to {target}",
+                    machine_payload={"path": str(target), "mode": mode},
+                    operator_note="Write completed in confined notes scope.",
+                    next_action_hint="continue",
+                )
+            },
+        )
     except Exception as exc:
-        return RunResult(ok=False, error=repr(exc))
+        return RunResult(
+            ok=False,
+            error=repr(exc),
+            data={
+                SKILL_RESULT_KEY: build_skill_result(
+                    summary="Failed to write text file",
+                    machine_payload={"path": str(target), "exception": repr(exc)},
+                    operator_note="Inspect file permissions and available disk space.",
+                    next_action_hint="inspect_file_permissions",
+                    retryable=True,
+                    error_class="io_error",
+                )
+            },
+        )

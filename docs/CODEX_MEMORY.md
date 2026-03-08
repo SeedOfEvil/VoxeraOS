@@ -1,3 +1,10 @@
+## 2026-03-08 — PR #TBD — harden(exec): strict argv/path boundaries for execution skills
+- Summary:
+  - Hardened sandbox command normalization: reject ambiguous shell-control operators in string commands, reject empty/whitespace argv tokens, and emit canonical structured blocked-input payloads in `PodmanSandboxRunner`.
+  - Added centralized `src/voxera/skills/path_boundaries.py` and wired `files.read_text` / `files.write_text` to deterministic confined-path checks (traversal/symlink/out-of-root blocked fail-closed).
+  - Hardened local execution surfaces: `system.open_app` now rejects unsafe identifiers + emits canonical result payloads; `system.open_url` now rejects hostless or credential-embedded URLs.
+  - Expanded tests for accepted/rejected argv and path cases plus structured error payload expectations.
+
 ## 2026-03-07 — PR #TBD — feat(queue): enrich planner-produced jobs with canonical structured intent
 - Summary:
   - Added `src/voxera/core/queue_job_intent.py` to centralize additive producer-side queue intent shaping (`job_intent`) from mission/goal/assistant payloads with deterministic normalization and legacy-tolerant defaults.

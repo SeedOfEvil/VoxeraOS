@@ -1,3 +1,4 @@
+from voxera.skills.result_contract import SKILL_RESULT_KEY
 from voxera_builtin_skills import files_write_text
 
 
@@ -44,5 +45,15 @@ def test_write_text_rejects_outside_allowlist_with_requested_path_in_error(tmp_p
     rr = files_write_text.run(path=str(outside), text="x")
 
     assert rr.ok is False
-    assert "outside allowlist" in (rr.error or "")
-    assert str(outside) in (rr.error or "")
+    assert "allowlist" in (rr.error or "")
+    assert rr.data[SKILL_RESULT_KEY]["error_class"] == "path_out_of_bounds"
+
+
+def test_write_text_rejects_relative_traversal(tmp_path, monkeypatch):
+    allowed_root = tmp_path / "notes"
+    monkeypatch.setattr(files_write_text, "ALLOWED_ROOT", allowed_root)
+
+    rr = files_write_text.run(path="../escape.txt", text="x")
+
+    assert rr.ok is False
+    assert rr.data[SKILL_RESULT_KEY]["error_class"] == "path_out_of_bounds"
