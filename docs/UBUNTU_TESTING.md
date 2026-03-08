@@ -163,3 +163,27 @@ artifact candidates, and duplicate jobs. Should show 0 issues on a clean queue.
   - enqueue an `/assistant` request and confirm `artifacts/<job>/execution_envelope.json` and `execution_result.json` both include lane metadata (`execution.lane`/`execution.fast_lane` and `execution_lane`/`fast_lane`).
   - confirm fast-lane-eligible advisory request shows `execution_lane=fast_read_only`.
   - confirm non-eligible advisory request shape (e.g. extra action hint or approval flag) remains `execution_lane=queue`.
+
+## Manual STV: live progress UX (assistant + queue jobs)
+
+1) Assistant advisory progress
+- Open `/assistant`, submit a question.
+- Observe request status/lifecycle move from queued/planning/advisory-running to done/failed if daemon is active.
+- Verify no mission-step percent claims are shown for assistant jobs unless canonical step fields exist.
+
+2) Normal read-only queue job progress
+- Enqueue a deterministic read-only mission/goal.
+- Open `/jobs/<job_id>` and confirm lifecycle + current/total step fields refresh without full page reload.
+
+3) Approval-gated `open_url` progress
+- Enqueue goal expected to require approval.
+- Confirm live state reaches `awaiting_approval` with approval status `pending` and lane/intent metadata.
+- Approve or deny and verify state transitions to terminal bucket.
+
+4) Failed job progress
+- Trigger a controlled failure case.
+- Confirm `/jobs/<job_id>` shows terminal failed state plus stop reason/failure summary when emitted.
+
+5) Final panel verification
+- Disable JavaScript (or use a text browser) and confirm pages still render static detail correctly.
+- Re-enable JavaScript and confirm live polling enhancement resumes.

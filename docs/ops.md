@@ -1217,3 +1217,25 @@ Queue jobs may include additive `job_intent` metadata produced by panel/inbox/as
 ### PR 5: operator interpretation of normalized skill results
 
 When triaging step failures/blocks, prefer `step_results[].summary`, `operator_note`, `next_action_hint`, `error_class`, `retryable`, `blocked`, and `approval_status`. `machine_payload` is intended for deterministic machine facts; human guidance belongs in `operator_note`.
+
+## Operator live progress expectations
+
+For running jobs, use job detail pages and expect the following live states when present in canonical state:
+
+- `queued`, `planning`, `advisory_running`, `running`, `awaiting_approval`, `done`, `failed`, `canceled`
+
+What updates live:
+
+- lifecycle state and terminal outcome
+- current/total steps, last attempted/completed step
+- approval status
+- execution lane / fast-lane metadata
+- intent-route metadata
+- latest summary/operator note (if emitted)
+- failure summary / stop reason for terminal jobs
+
+Limitations:
+
+- No synthetic percent-complete bars are shown.
+- If artifacts/sidecars do not contain a field, the panel leaves it unknown/empty.
+- Without JavaScript, pages still load and can be manually refreshed.

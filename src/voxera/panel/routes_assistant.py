@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..brain.fallback import AUTH, MALFORMED, NETWORK, RATE_LIMIT, TIMEOUT, classify_fallback_reason
 from ..brain.gemini import GeminiBrain
@@ -427,6 +427,39 @@ def register_assistant_routes(
             request_result=request_result,
             thread_id=active_thread_id,
             thread_turns=thread_turns,
+        )
+
+    @app.get("/assistant/progress/{request_id}", response_class=JSONResponse)
+    def assistant_progress(request: Request, request_id: str):
+        require_operator_auth_from_request(request)
+        current_queue_root = queue_root()
+        result = read_assistant_result(current_queue_root, request_id)
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": result.get("request_id") or f"{Path(request_id).stem}.json",
+                "status": result.get("status") or "unknown",
+                "lifecycle_state": result.get("lifecycle_state") or "unknown",
+                "bucket": result.get("bucket") or "unknown",
+                "execution_lane": result.get("execution_lane") or "",
+                "fast_lane": result.get("fast_lane")
+                if isinstance(result.get("fast_lane"), dict)
+                else None,
+                "intent_route": result.get("intent_route")
+                if isinstance(result.get("intent_route"), dict)
+                else None,
+                "approval_status": result.get("approval_status") or "none",
+                "current_step_index": int(result.get("current_step_index") or 0),
+                "total_steps": int(result.get("total_steps") or 0),
+                "last_attempted_step": int(result.get("last_attempted_step") or 0),
+                "last_completed_step": int(result.get("last_completed_step") or 0),
+                "latest_summary": str(result.get("latest_summary") or ""),
+                "terminal_outcome": str(result.get("terminal_outcome") or ""),
+                "stop_reason": result.get("stop_reason"),
+                "error": str(result.get("error") or ""),
+                "updated_at_ms": result.get("updated_at_ms"),
+                "has_answer": bool(str(result.get("answer") or "").strip()),
+            }
         )
 
     @app.post("/assistant/ask", response_class=HTMLResponse)

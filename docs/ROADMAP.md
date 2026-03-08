@@ -314,3 +314,19 @@ Audio stack is currently a placeholder in `src/voxera/audio/`.
 ## Recently delivered
 
 - Queue/panel/CLI/ops surfaces now consume canonical structured execution artifacts first (with legacy fallback) so operator and diagnostic views are more deterministic without breaking older jobs.
+
+## PR 7 delivered: real-time assistant + queue progress UX
+
+Delivered scope:
+
+- live polling progress endpoints for panel job detail and assistant request detail
+- assistant lifecycle visibility (`queued -> planning -> advisory_running -> done/failed` when emitted)
+- mission/queue lifecycle + step progress + approval wait state + terminal summaries
+- lane metadata visibility (`execution_lane`, `fast_lane`, `intent_route`) in live payloads
+- progressive enhancement fallback (server-rendered pages still functional without JS)
+
+Non-goals preserved:
+
+- no speculative progress percentages
+- no bypass of approvals/policy/fail-closed routing
+- no parallel truth source outside queue artifacts/contracts

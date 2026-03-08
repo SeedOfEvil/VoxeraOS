@@ -26,17 +26,17 @@
   <div class="section-label">Lifecycle & Context</div>
   <section class="card mb">
     <dl class="detail-grid" style="margin-bottom:var(--space-2);">
-      <dt>Lifecycle state</dt><dd>{{payload.execution.lifecycle_state or payload.state.lifecycle_state or payload.bucket}}</dd>
-      <dt>Terminal outcome</dt><dd>{{payload.execution.terminal_outcome or payload.state.terminal_outcome or '-'}}</dd>
+      <dt>Lifecycle state</dt><dd id="live-lifecycle">{{payload.execution.lifecycle_state or payload.state.lifecycle_state or payload.bucket}}</dd>
+      <dt>Terminal outcome</dt><dd id="live-terminal">{{payload.execution.terminal_outcome or payload.state.terminal_outcome or '-'}}</dd>
       <dt>Mission</dt><dd>{{payload.job_context.mission_id or '-'}}</dd>
       <dt>Mission title</dt><dd>{{payload.job_context.mission_title or '-'}}</dd>
       <dt>Goal</dt><dd>{{payload.job_context.goal or '-'}}</dd>
       <dt>Payload shape</dt><dd>{{payload.job_context.payload_shape}}</dd>
-      <dt>Approval status</dt><dd>{{payload.execution.approval_status or payload.job_context.approval_status}}</dd>
-      <dt>Failure summary</dt><dd>{{payload.job_context.failure_summary or '-'}}</dd>
+      <dt>Approval status</dt><dd id="live-approval">{{payload.execution.approval_status or payload.job_context.approval_status}}</dd>
+      <dt>Failure summary</dt><dd id="live-failure">{{payload.job_context.failure_summary or '-'}}</dd>
       <dt>Blocked reason</dt><dd>{{payload.job_context.blocked_reason or '-'}}</dd>
       <dt>Recovery reason</dt><dd>{{payload.job_context.recovery_reason or '-'}}</dd>
-      <dt>Step progress</dt><dd>{{payload.execution.current_step_index or payload.state.current_step_index}} / {{payload.execution.total_steps or payload.state.total_steps}}</dd>
+      <dt>Step progress</dt><dd id="live-progress">{{payload.execution.current_step_index or payload.state.current_step_index}} / {{payload.execution.total_steps or payload.state.total_steps}}</dd>
     </dl>
   </section>
 
@@ -65,13 +65,13 @@
   <div class="section-label">Structured Execution Hints</div>
   <section class="card mb">
     <dl class="detail-grid" style="margin-bottom:var(--space-2);">
-      <dt>Latest summary</dt><dd>{{payload.execution.latest_summary or '-'}}</dd>
-      <dt>Operator note</dt><dd>{{payload.execution.operator_note or '-'}}</dd>
+      <dt>Latest summary</dt><dd id="live-summary">{{payload.execution.latest_summary or '-'}}</dd>
+      <dt>Operator note</dt><dd id="live-note">{{payload.execution.operator_note or '-'}}</dd>
       <dt>Next action hint</dt><dd>{{payload.execution.next_action_hint or '-'}}</dd>
       <dt>Approval status</dt><dd>{{payload.execution.approval_status or '-'}}</dd>
       <dt>Blocked</dt><dd>{{payload.execution.blocked}}</dd>
       <dt>Retryable</dt><dd>{{payload.execution.retryable if payload.execution.retryable is not none else '-'}}</dd>
-      <dt>Last attempted / completed step</dt><dd>{{payload.execution.last_attempted_step}} / {{payload.execution.last_completed_step}}</dd>
+      <dt>Last attempted / completed step</dt><dd id="live-attempted-completed">{{payload.execution.last_attempted_step}} / {{payload.execution.last_completed_step}}</dd>
     </dl>
     {% if payload.execution.output_artifacts %}
       <h3 class="text-sm" style="margin-bottom:var(--space-2);">Declared output artifacts</h3>
@@ -174,9 +174,54 @@
   <div class="section-label">Audit &amp; Metadata</div>
   <section class="grid grid-2 mb">
     <details class="collapsible"><summary>Audit Timeline</summary><div class="collapsible-body">{% if payload.audit_timeline|length == 0 %}<p class="muted text-sm">Audit timeline not available.</p>{% else %}<pre>{{payload.audit_timeline | tojson(indent=2)}}</pre>{% endif %}</div></details>
-    <details class="collapsible"><summary>Job Metadata (raw)</summary><div class="collapsible-body"><dl class="detail-grid" style="margin-bottom:var(--space-2);"><dt>Bucket</dt><dd>{{payload.bucket}}</dd><dt>Paused</dt><dd>{{payload.paused}}</dd><dt>Lock exists</dt><dd>{{payload.lock.exists}}</dd><dt>Lock PID</dt><dd>{{payload.lock.pid}}</dd><dt>Lock alive</dt><dd>{{payload.lock.alive}}</dd></dl><pre>{{payload.job | tojson(indent=2)}}</pre></div></details>
+    <details class="collapsible"><summary>Job Metadata (raw)</summary><div class="collapsible-body"><dl class="detail-grid" style="margin-bottom:var(--space-2);"><dt>Bucket</dt><dd id="live-bucket">{{payload.bucket}}</dd><dt>Paused</dt><dd>{{payload.paused}}</dd><dt>Lock exists</dt><dd>{{payload.lock.exists}}</dd><dt>Lock PID</dt><dd>{{payload.lock.pid}}</dd><dt>Lock alive</dt><dd>{{payload.lock.alive}}</dd></dl><pre>{{payload.job | tojson(indent=2)}}</pre></div></details>
   </section>
 
 </div>
+
+<script>
+(() => {
+  const endpoint = `/jobs/{{payload.job_id}}/progress`;
+  const terminalStates = new Set(["done", "failed", "canceled"]);
+  const setText = (id, value, fallback='-') => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const text = String(value ?? '').trim();
+    el.textContent = text || fallback;
+  };
+  const setProgress = (current, total) => {
+    const el = document.getElementById('live-progress');
+    if (!el) return;
+    const c = Number.isFinite(current) ? current : Number(current || 0);
+    const t = Number.isFinite(total) ? total : Number(total || 0);
+    if (t > 0 || c > 0) {
+      el.textContent = `${c} / ${t}`;
+    }
+  };
+  const tick = async () => {
+    try {
+      const res = await fetch(endpoint, {headers: {"Accept": "application/json"}});
+      if (!res.ok) return;
+      const data = await res.json();
+      setText('live-lifecycle', data.lifecycle_state, 'unknown');
+      setText('live-terminal', data.terminal_outcome, '-');
+      setText('live-bucket', data.bucket, 'unknown');
+      setText('live-approval', data.approval_status, 'none');
+      setText('live-summary', data.latest_summary, '-');
+      setText('live-note', data.operator_note, '-');
+      setText('live-failure', data.failure_summary || data.stop_reason, '-');
+      setProgress(data.current_step_index, data.total_steps);
+      setText('live-attempted-completed', `${Number(data.last_attempted_step || 0)} / ${Number(data.last_completed_step || 0)}`, '-');
+      if (terminalStates.has(String(data.lifecycle_state || '').toLowerCase()) || terminalStates.has(String(data.bucket || '').toLowerCase())) {
+        clearInterval(timer);
+      }
+    } catch (_err) {
+      // Progressive enhancement only; page remains usable without polling.
+    }
+  };
+  const timer = setInterval(tick, 2000);
+  tick();
+})();
+</script>
 </body>
 </html>

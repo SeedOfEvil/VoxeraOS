@@ -7,6 +7,7 @@ from typing import Any
 
 from ..core.queue_inspect import lookup_job
 from ..core.queue_job_intent import enrich_queue_job_payload
+from ..core.queue_result_consumers import resolve_structured_execution
 from ..operator_assistant import (
     ASSISTANT_JOB_KIND,
     append_thread_turn,
@@ -111,6 +112,13 @@ def read_assistant_result(queue_root: Path, request_id: str) -> dict[str, Any]:
     if response_mode == "degraded_brain_only" and str(response_data.get("answer") or "").strip():
         status = "answered"
 
+    structured = resolve_structured_execution(
+        artifacts_dir=queue_root / "artifacts" / Path(normalized_id).stem,
+        state_sidecar=state_payload,
+        approval={},
+        failed_sidecar={},
+    )
+
     return {
         "request_id": found.job_id,
         "thread_id": str(
@@ -121,9 +129,18 @@ def read_assistant_result(queue_root: Path, request_id: str) -> dict[str, Any]:
         ),
         "status": status,
         "bucket": bucket,
-        "lifecycle_state": str(state_payload.get("lifecycle_state") or "queued"),
+        "lifecycle_state": str(
+            structured.get("lifecycle_state")
+            or state_payload.get("lifecycle_state")
+            or ("queued" if bucket == "inbox" else "unknown")
+        ),
         "answer": str(response_data.get("answer") or ""),
-        "error": str(response_data.get("error") or state_payload.get("failure_summary") or ""),
+        "error": str(
+            response_data.get("error")
+            or structured.get("error")
+            or state_payload.get("failure_summary")
+            or ""
+        ),
         "updated_at_ms": response_data.get("updated_at_ms") or state_payload.get("updated_at_ms"),
         "provider": response_data.get("provider"),
         "model": response_data.get("model"),
@@ -132,6 +149,28 @@ def read_assistant_result(queue_root: Path, request_id: str) -> dict[str, Any]:
         "advisory_mode": response_data.get("advisory_mode")
         or ("queue" if bucket in {"pending", "done", "failed", "inbox"} else "unknown"),
         "degraded_reason": response_data.get("degraded_reason"),
+        "execution_lane": structured.get("execution_lane")
+        or response_data.get("execution_lane")
+        or "",
+        "fast_lane": structured.get("fast_lane")
+        if isinstance(structured.get("fast_lane"), dict)
+        else None,
+        "intent_route": structured.get("intent_route")
+        if isinstance(structured.get("intent_route"), dict)
+        else None,
+        "latest_summary": structured.get("latest_summary") or "",
+        "approval_status": structured.get("approval_status") or "none",
+        "current_step_index": int(structured.get("current_step_index") or 0),
+        "total_steps": int(structured.get("total_steps") or 0),
+        "last_attempted_step": int(structured.get("last_attempted_step") or 0),
+        "last_completed_step": int(structured.get("last_completed_step") or 0),
+        "stop_reason": (
+            str(structured.get("stop_reason") or "")
+            if str(structured.get("terminal_outcome") or "") in {"failed", "blocked", "canceled"}
+            or str(bucket) in {"failed", "canceled"}
+            else None
+        ),
+        "terminal_outcome": structured.get("terminal_outcome") or "",
     }
 
 
