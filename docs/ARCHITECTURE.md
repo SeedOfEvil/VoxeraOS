@@ -948,3 +948,8 @@ The queue execution lane now uses an explicit evaluate-and-replan loop:
   not bypass trust gates.
 - Canonical artifacts carry adaptation metadata (`attempt_index`, `replan_count`,
   `evaluation_class`, `evaluation_reason`, `stop_reason`) plus per-attempt `plan.attempt-<n>.json`.
+
+
+## PR 5 update: normalized skill_result contract
+
+Built-in skills now emit a consistent canonical `skill_result` payload (`summary`, `machine_payload`, `output_artifacts`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`). Queue artifact shaping (`step_results.json`, `execution_result.json`) consumes these fields as structured-first inputs, with legacy sidecar fallback retained for backward compatibility.

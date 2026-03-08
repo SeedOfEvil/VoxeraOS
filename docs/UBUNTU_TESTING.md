@@ -156,3 +156,6 @@ counts per bucket. No deletions without `--yes`.
 
 Expected output from `voxera queue reconcile`: issue counts for orphan sidecars, orphan approvals,
 artifact candidates, and duplicate jobs. Should show 0 issues on a clean queue.
+
+
+- Verify representative built-in skills produce canonical `skill_result` keys (`summary`, `machine_payload`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`) under success, invalid-input failure, and dependency-missing paths.

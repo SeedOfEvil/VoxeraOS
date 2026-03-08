@@ -1111,3 +1111,8 @@ This file is the single, persistent project memory for Codex-assisted work.
   - `discover()` remains fail-closed on invalid manifests while incomplete manifests remain visible in report surfaces and excluded from runtime set.
 - **Doctor operator surface:** `voxera doctor` now includes `skills.registry` with stable counts (`valid/invalid/incomplete/warning/total`), partial-load signal, and top failing reason codes for rapid remediation.
 - **Tests:** Added focused registry classification tests (malformed capabilities, missing capability metadata, mixed valid+invalid stability) and doctor summary tests for skill registry visibility.
+
+
+## PR 5 memory note: canonical skill result fields
+
+Contract fields to rely on across built-in skills: `summary`, `machine_payload`, `output_artifacts`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`.

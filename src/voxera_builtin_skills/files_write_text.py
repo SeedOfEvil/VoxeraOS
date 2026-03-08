@@ -28,6 +28,9 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
                     operator_note="Write path must stay within allowed notes directory.",
                     next_action_hint="provide_allowed_path",
                     retryable=False,
+                    blocked=False,
+                    approval_status="none",
+                    error=str(exc),
                     error_class=exc.error_class,
                 )
             },
@@ -46,6 +49,9 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
                     operator_note="Supported modes are append or overwrite.",
                     next_action_hint="provide_supported_mode",
                     retryable=False,
+                    blocked=False,
+                    approval_status="none",
+                    error="mode must be append or overwrite",
                     error_class="invalid_input",
                 )
             },
@@ -66,6 +72,9 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
                     machine_payload={"path": str(target), "mode": mode},
                     operator_note="Write completed in confined notes scope.",
                     next_action_hint="continue",
+                    retryable=False,
+                    blocked=False,
+                    approval_status="none",
                 )
             },
         )
@@ -80,6 +89,9 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
                     operator_note="Inspect file permissions and available disk space.",
                     next_action_hint="inspect_file_permissions",
                     retryable=True,
+                    blocked=False,
+                    approval_status="none",
+                    error=repr(exc),
                     error_class="io_error",
                 )
             },

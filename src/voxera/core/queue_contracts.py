@@ -151,8 +151,12 @@ def build_structured_step_results(
                 "retryable": item.get("retryable")
                 if isinstance(item.get("retryable"), bool)
                 else None,
-                "blocked": status == "blocked",
-                "approval_status": outcome.get("approval_status"),
+                "blocked": (
+                    item.get("blocked")
+                    if isinstance(item.get("blocked"), bool)
+                    else status == "blocked"
+                ),
+                "approval_status": item.get("approval_status") or outcome.get("approval_status"),
                 "error": str(item.get("error") or "") or None,
                 "error_class": item.get("error_class"),
             }

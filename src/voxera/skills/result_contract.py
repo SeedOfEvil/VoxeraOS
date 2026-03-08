@@ -12,6 +12,9 @@ class CanonicalSkillResult(TypedDict, total=False):
     operator_note: str | None
     next_action_hint: str | None
     retryable: bool | None
+    blocked: bool | None
+    approval_status: str | None
+    error: str | None
     error_class: str | None
 
 
@@ -23,6 +26,9 @@ def build_skill_result(
     operator_note: str | None = None,
     next_action_hint: str | None = None,
     retryable: bool | None = None,
+    blocked: bool | None = None,
+    approval_status: str | None = None,
+    error: str | None = None,
     error_class: str | None = None,
 ) -> CanonicalSkillResult:
     return {
@@ -32,6 +38,9 @@ def build_skill_result(
         "operator_note": operator_note,
         "next_action_hint": next_action_hint,
         "retryable": retryable if isinstance(retryable, bool) else None,
+        "blocked": blocked if isinstance(blocked, bool) else None,
+        "approval_status": str(approval_status).strip() if approval_status is not None else None,
+        "error": str(error) if error is not None else None,
         "error_class": error_class,
     }
 
@@ -55,5 +64,10 @@ def extract_skill_result(data: dict[str, Any]) -> CanonicalSkillResult:
             str(raw.get("next_action_hint")) if raw.get("next_action_hint") is not None else None
         ),
         retryable=raw.get("retryable") if isinstance(raw.get("retryable"), bool) else None,
+        blocked=raw.get("blocked") if isinstance(raw.get("blocked"), bool) else None,
+        approval_status=(
+            str(raw.get("approval_status")) if raw.get("approval_status") is not None else None
+        ),
+        error=str(raw.get("error")) if raw.get("error") is not None else None,
         error_class=str(raw.get("error_class")) if raw.get("error_class") is not None else None,
     )

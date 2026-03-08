@@ -19,6 +19,9 @@ def run(keep_open: bool = True) -> RunResult:
                     operator_note="Install gnome-terminal or choose a different terminal skill.",
                     next_action_hint="install_launcher",
                     retryable=False,
+                    blocked=False,
+                    approval_status="none",
+                    error="gnome-terminal not found",
                     error_class="missing_dependency",
                 )
             },
@@ -49,6 +52,9 @@ def run(keep_open: bool = True) -> RunResult:
                 machine_payload={"launcher": "gnome-terminal", "keep_open": keep_open},
                 operator_note="A new terminal window was requested.",
                 next_action_hint="continue",
+                retryable=False,
+                blocked=False,
+                approval_status="none",
             )
         },
     )

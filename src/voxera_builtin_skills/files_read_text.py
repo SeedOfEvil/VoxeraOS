@@ -27,6 +27,9 @@ def run(path: str) -> RunResult:
                     operator_note="The requested file does not exist yet.",
                     next_action_hint="create_file_then_retry",
                     retryable=True,
+                    blocked=False,
+                    approval_status="none",
+                    error=f"File not found: {path}",
                     error_class="not_found",
                 )
             },
@@ -42,6 +45,9 @@ def run(path: str) -> RunResult:
                     operator_note="Read path must stay within allowed notes directory.",
                     next_action_hint="provide_allowed_path",
                     retryable=False,
+                    blocked=False,
+                    approval_status="none",
+                    error=str(exc),
                     error_class=exc.error_class,
                 )
             },
@@ -58,6 +64,9 @@ def run(path: str) -> RunResult:
                     machine_payload={"path": str(target), "bytes": len(text.encode("utf-8"))},
                     operator_note="File content returned in output field.",
                     next_action_hint="continue",
+                    retryable=False,
+                    blocked=False,
+                    approval_status="none",
                 )
             },
         )
@@ -72,6 +81,9 @@ def run(path: str) -> RunResult:
                     operator_note="Inspect file permissions or encoding.",
                     next_action_hint="inspect_file_permissions",
                     retryable=True,
+                    blocked=False,
+                    approval_status="none",
+                    error=repr(exc),
                     error_class="io_error",
                 )
             },
