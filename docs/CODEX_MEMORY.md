@@ -13,6 +13,7 @@
     `evaluation_reason`, `stop_reason`
 - Added focused tests for evaluator taxonomy, replan-allowed and replan-forbidden outcomes, and
   max-attempt stop behavior.
+- Follow-up fix: normalized planner unknown-skill failures and runtime missing-skill lookups into structured outcomes so bounded replan is exercisable end-to-end (`plan.attempt-1` planning_error -> bounded attempt 2).
 
 ## 2026-03-08 — PR #TBD — harden(exec): strict argv/path boundaries for execution skills
 - Summary:

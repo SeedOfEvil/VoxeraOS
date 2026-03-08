@@ -479,3 +479,79 @@ def test_policy_block_records_non_retryable_evaluation(tmp_path, monkeypatch):
     assert execution_result["terminal_outcome"] == "blocked"
     assert execution_result["evaluation_class"] == "blocked_non_retryable"
     assert execution_result["replan_count"] == 0
+
+
+def test_goal_unknown_skill_planning_failure_replans_once_and_keeps_artifacts(
+    tmp_path, monkeypatch
+):
+    from voxera.core.mission_planner import MissionPlannerError
+
+    _force_policy_ask(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-goal-unknown-skill.json").write_text(
+        json.dumps({"goal": "open an app and report status"}), encoding="utf-8"
+    )
+
+    calls = {"n": 0}
+
+    async def _plan_with_first_unknown(goal, cfg, registry, source="queue", job_ref=None, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise MissionPlannerError("Planner referenced unknown skill: system.not_a_real_skill")
+        return MissionTemplate(
+            id="cloud_planned",
+            title="Fallback plan",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.status", args={})],
+            notes="replanned",
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _plan_with_first_unknown)
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.cfg.max_replan_attempts = 1
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-goal-unknown-skill" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["ok"] is True
+    assert execution_result["attempt_index"] == 2
+    assert execution_result["replan_count"] == 1
+    assert execution_result["max_replans"] == 1
+    assert execution_result["stop_reason"] == "succeeded"
+
+    plan_1 = json.loads(
+        (queue_root / "artifacts" / "job-goal-unknown-skill" / "plan.attempt-1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert plan_1["planning_error"]["evaluation_reason"] == "skill_not_found"
+    assert (queue_root / "artifacts" / "job-goal-unknown-skill" / "plan.attempt-2.json").exists()
+
+
+def test_inline_unknown_skill_fails_structured_without_daemon_crash(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-inline-unknown-skill.json").write_text(
+        json.dumps({"steps": [{"skill_id": "system.not_a_real_skill", "args": {}}]}),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-inline-unknown-skill" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["ok"] is False
+    assert execution_result["terminal_outcome"] == "failed"
+    assert execution_result["step_results"][0]["error_class"] == "skill_not_found"
+    assert execution_result["attempt_index"] == 1
+    assert execution_result["replan_count"] == 0

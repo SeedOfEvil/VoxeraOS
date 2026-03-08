@@ -939,6 +939,8 @@ This keeps legacy queue payloads valid while giving newer jobs a deterministic p
 The queue execution lane now uses an explicit evaluate-and-replan loop:
 
 - After each mission attempt, execution is classified into one deterministic evaluator class.
+- Planner-side unknown-skill failures are normalized into structured planning-attempt artifacts (not daemon crashes), enabling one bounded governed replan for goal jobs.
+
 - Replanning is only allowed for bounded classes (`retryable_failure`, `replannable_mismatch`)
   and only within `max_replan_attempts` (default `1`).
 - Approval-pending, policy/capability block, and hard boundary outcomes stop without replan.

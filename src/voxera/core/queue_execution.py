@@ -251,6 +251,52 @@ class QueueExecutionMixin:
             "steps_changed": previous_steps != current_steps,
         }
 
+    def _planning_error_metadata(self: Any, exc: Exception) -> tuple[str, str, bool]:
+        message = str(exc).strip()
+        lowered = message.lower()
+        if "planner referenced unknown skill" in lowered or "unknown skill" in lowered:
+            return ("replannable_mismatch", "skill_not_found", True)
+        if "without a valid skill_id" in lowered:
+            return ("replannable_mismatch", "planner_skill_mismatch", True)
+        if "args" in lowered and "invalid" in lowered:
+            return ("replannable_mismatch", "arg_shape_mismatch", True)
+        return ("terminal_failure", "planning_failure", False)
+
+    def _write_planning_failure_attempt_artifact(
+        self: Any,
+        *,
+        job_ref: str,
+        payload: dict[str, Any],
+        attempt_index: int,
+        replan_count: int,
+        max_replans: int,
+        evaluation_class: str,
+        evaluation_reason: str,
+        error_text: str,
+    ) -> None:
+        artifact_dir = self._job_artifacts_dir(job_ref)
+        plan_payload = {
+            "job": Path(job_ref).name,
+            "attempt_index": attempt_index,
+            "replan_count": replan_count,
+            "max_replans": max_replans,
+            "supersedes_attempt": attempt_index - 1 if attempt_index > 1 else None,
+            "plan_delta": None,
+            "payload": payload,
+            "mission": None,
+            "planning_error": {
+                "evaluation_class": evaluation_class,
+                "evaluation_reason": evaluation_reason,
+                "error": error_text,
+            },
+        }
+        (artifact_dir / "plan.json").write_text(
+            json.dumps(plan_payload, indent=2), encoding="utf-8"
+        )
+        (artifact_dir / f"plan.attempt-{attempt_index}.json").write_text(
+            json.dumps(plan_payload, indent=2), encoding="utf-8"
+        )
+
     def process_job_file(self: Any, job_path: Path) -> bool:
         self.ensure_dirs()
         if not job_path.exists():
@@ -342,19 +388,62 @@ class QueueExecutionMixin:
                 try:
                     mission = self._build_mission_for_payload(payload, job_ref=str(job_path))
                 except Exception as exc:
+                    evaluation_class, evaluation_reason, replannable = (
+                        self._planning_error_metadata(exc)
+                    )
+                    error_text = repr(exc)
+                    self._write_planning_failure_attempt_artifact(
+                        job_ref=str(job_path),
+                        payload=payload,
+                        attempt_index=attempt_index,
+                        replan_count=replan_count,
+                        max_replans=max_replans,
+                        evaluation_class=evaluation_class,
+                        evaluation_reason=evaluation_reason,
+                        error_text=error_text,
+                    )
+                    should_replan = (
+                        replannable
+                        and kind == "goal"
+                        and replan_count < max_replans
+                        and evaluation_class in {"retryable_failure", "replannable_mismatch"}
+                    )
+                    if should_replan:
+                        replan_count += 1
+                        self._write_action_event(
+                            str(job_path),
+                            "queue_job_replanned",
+                            attempt_index=attempt_index,
+                            evaluation_class=evaluation_class,
+                            evaluation_reason=evaluation_reason,
+                            replan_count=replan_count,
+                            max_replans=max_replans,
+                        )
+                        _queue_daemon_module().log(
+                            {
+                                "event": "queue_job_replanned",
+                                "job": str(job_path),
+                                "attempt_index": attempt_index,
+                                "evaluation_class": evaluation_class,
+                                "evaluation_reason": evaluation_reason,
+                                "replan_count": replan_count,
+                                "max_replans": max_replans,
+                            }
+                        )
+                        continue
+
                     _queue_daemon_module().log(
                         {
                             "event": "queue_job_invalid",
                             "job": str(job_path),
                             "filename": job_path.name,
-                            "reason": repr(exc),
+                            "reason": error_text,
                             "attempt_index": attempt_index,
                         }
                     )
                     moved = self._move_job(job_path, self.failed)
                     if moved is None:
                         return False
-                    error_text = repr(exc)
                     self._write_failed_error_sidecar(moved, error=error_text, payload=payload)
                     rr_data = {
                         "results": [],
@@ -364,8 +453,8 @@ class QueueExecutionMixin:
                         "attempt_index": attempt_index,
                         "replan_count": replan_count,
                         "max_replans": max_replans,
-                        "evaluation_class": "terminal_failure",
-                        "evaluation_reason": "planning_failure",
+                        "evaluation_class": evaluation_class,
+                        "evaluation_reason": evaluation_reason,
                         "stop_reason": "planning_failure",
                     }
                     self._write_execution_result_artifacts(

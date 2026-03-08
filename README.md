@@ -254,3 +254,7 @@ policy/capability blocks, and hard boundary failures do not replan and remain fa
 Artifacts now include attempt/evaluation fields (`attempt_index`, `replan_count`,
 `evaluation_class`, `evaluation_reason`, `stop_reason`) and per-attempt plan snapshots
 (`plan.attempt-<n>.json`) so operators can inspect adaptation history without log reconstruction.
+
+Planner mismatch failures are also captured as first-class attempt artifacts: if a goal-planning pass
+returns an unknown skill, Voxera records `plan.attempt-1.json` with `planning_error` metadata and can
+bounded-replan once (`max_replan_attempts`) to produce a second governed attempt.

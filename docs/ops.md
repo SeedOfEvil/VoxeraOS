@@ -1144,6 +1144,8 @@ Queue jobs may include additive `job_intent` metadata produced by panel/inbox/as
 ## Bounded replan operations (PR 4)
 
 - Queue execution evaluates each attempt and records evaluator class/reason in `execution_result.json`.
+- Planner unknown-skill mismatches are persisted in `plan.attempt-<n>.json` under `planning_error` and may trigger exactly one bounded replan for goal jobs.
+
 - Replan is bounded by config `max_replan_attempts` (default `1`) and only for retryable/replannable classes.
 - Approval-pending and policy/capability boundary blocks do not replan; job remains pending/failed deterministically.
 - Inspect adaptation via:
