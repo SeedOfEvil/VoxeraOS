@@ -1,4 +1,35 @@
 
+## 2026-03-08 — PR #TBD — feat(intent): deterministic simple-intent routing and fail-closed planner mismatch detection
+
+- Added `src/voxera/core/simple_intent.py` — a small, deterministic classifier for common
+  operator goal strings.  No NLP, no external dependencies; pure regex + frozenset.
+- Intent set (v1): `assistant_question`, `open_resource`, `write_file`, `read_file`,
+  `run_command`, `unknown_or_ambiguous`.
+- Skill-family allowlists per intent (e.g. `write_file` → only `files.write_text`).
+- `classify_simple_operator_intent(goal=...) → SimpleIntentResult` — returns intent kind,
+  determinism flag, allowed skill IDs, routing reason, and fail_closed flag.
+- `check_skill_family_mismatch(intent, first_step_skill_id) → (bool, reason)` — compares
+  planner's first step against the intent's allowed family.
+- Integrated into `QueueExecutionMixin.process_job_file` for goal-kind requests:
+  1. Classifies intent before the planning loop, stashes on payload as `_simple_intent`.
+  2. Emits `queue_simple_intent_routed` action event.
+  3. After planning, checks first-step skill vs allowed family.
+  4. If mismatch: emits `queue_simple_intent_mismatch`, writes canonical failure artifacts,
+     moves job to failed **before any skill execution** (fail closed).
+- Error codes: `simple_intent_skill_family_mismatch`, `planner_intent_route_rejected`.
+- Additive artifact extensions:
+  - `execution_envelope.json`: `request.simple_intent` (intent kind, determinism, allowed IDs)
+  - `execution_result.json`: `intent_route` dict (full mismatch evidence)
+  - `plan.json` + `plan.attempt-<n>.json`: `intent_route` metadata
+  - `actions.jsonl`: `queue_simple_intent_routed` and `queue_simple_intent_mismatch` events
+- `unknown_or_ambiguous` goals pass through to normal planning with no constraint.
+- Classifier is conservative: only classifies when obviously matching (single-word app names,
+  explicit path prefixes for read, write verb prefix, etc.).
+- Added `tests/test_simple_intent.py` with 62 tests covering classifier, mismatch detection,
+  and integration through the queue daemon (including regression tests for all mismatch patterns).
+- Validation: ruff format ✓, ruff check ✓, mypy ✓, pytest 670 passed ✓, golden-check ✓,
+  validation-check ✓, merge-readiness-check ✓.
+
 ## 2026-03-08 — PR 4 — planner-executor-evaluator loop with bounded replan
 
 - Added `src/voxera/core/execution_evaluator.py` for deterministic post-attempt outcome classification.

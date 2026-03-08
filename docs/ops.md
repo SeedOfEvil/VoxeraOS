@@ -224,6 +224,29 @@ Fast-lane behavior (read-only advisory only):
 - Operator evidence: assistant jobs emit `execution_envelope.json`, `execution_result.json`, and `assistant_response.json` with aligned lane metadata. `execution_result.json` includes `execution_lane` (`fast_read_only` or `queue`) plus `fast_lane` metadata (`used`, `eligible`, `eligibility_reason`, `request_kind`), and envelope lane fields live at `execution.lane` / `execution.fast_lane`.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume + lifecycle actions (approve/deny, cancel, retry, delete) and links Done/Failed/Canceled jobs to artifact-backed detail pages.
+
+### Simple-intent routing (goal-kind jobs)
+
+Goal-kind queue jobs (those with a free-form `goal` string) now pass through a small
+deterministic intent classifier (`src/voxera/core/simple_intent.py`) before planning:
+
+- Obvious operator verbs (`write`, `read ~/...`, `open terminal`, `what is ... status?`, etc.)
+  are classified into one of six intent classes: `assistant_question`, `open_resource`,
+  `write_file`, `read_file`, `run_command`, or `unknown_or_ambiguous`.
+- For recognised deterministic intents the classifier emits the set of allowed first-step skill
+  IDs.  After planning, the planner's first step is checked against this set.
+- **Mismatch = fail closed**: if the planner produces a first step outside the allowed family,
+  the job fails immediately before any skill executes.  The operator sees:
+  - `evaluation_reason: simple_intent_skill_family_mismatch`
+  - `stop_reason: planner_intent_route_rejected`
+  - `intent_route` dict in `execution_result.json` and `plan.json` with the full evidence
+    (intent kind, allowed IDs, planned skill ID, routing reason).
+- `unknown_or_ambiguous` intents have no constraint and fall through to normal planning.
+- The layer is conservative: only classifies when unambiguously matching.  Multi-step or vague
+  goals (e.g. "handle this for me", "open an app and report status") fall through.
+- Action events: `queue_simple_intent_routed` (always, for goal-kind) and
+  `queue_simple_intent_mismatch` (when mismatch detected).
+- Does **not** bypass approvals, capability gates, policy, or any existing trust control.
 ### Create Mission (panel) quick runbook
 
 - Open panel home (`/`) and locate **Create Mission**.

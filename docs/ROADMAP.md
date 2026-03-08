@@ -55,6 +55,18 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 - ✅ OpenRouter automatic app attribution headers — PR #86
 - ✅ e2e_golden4 approval hang fix (filesystem-based detection, phase timeouts, diagnostics) — PR #90
 
+### Simple-intent routing and fail-closed mismatch detection (SHIPPED)
+
+- ✅ Deterministic simple-intent classifier (`src/voxera/core/simple_intent.py`) — intent set v1:
+  `assistant_question`, `open_resource`, `write_file`, `read_file`, `run_command`, `unknown_or_ambiguous`.
+- ✅ Skill-family allowlists per intent; conservative regex-only classifier (no NLP).
+- ✅ `queue_simple_intent_routed` / `queue_simple_intent_mismatch` action events for goal-kind jobs.
+- ✅ Mismatch detection: fail closed before any skill execution; `execution_result.json` carries
+  `evaluation_reason=simple_intent_skill_family_mismatch`, `stop_reason=planner_intent_route_rejected`,
+  and full `intent_route` evidence.
+- ✅ Additive artifact extensions: `execution_envelope.json.request.simple_intent`, `plan.json.intent_route`.
+- ✅ 62 focused tests in `tests/test_simple_intent.py` (unit + integration + regression).
+
 ### Support/Infra shipped (reliability work)
 
 **PR #90 — e2e_golden4 approval hang fix (SHIPPED)**

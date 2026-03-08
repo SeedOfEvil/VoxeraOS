@@ -974,3 +974,56 @@ The queue execution lane now uses an explicit evaluate-and-replan loop:
 ## PR 5 update: normalized skill_result contract
 
 Built-in skills now emit a consistent canonical `skill_result` payload (`summary`, `machine_payload`, `output_artifacts`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`). Queue artifact shaping (`step_results.json`, `execution_result.json`) consumes these fields as structured-first inputs, with legacy sidecar fallback retained for backward compatibility.
+
+
+## Simple-intent routing (v1)
+
+`src/voxera/core/simple_intent.py` adds a small deterministic layer between a natural-language
+goal string and the planner.  It classifies obvious operator asks into one of:
+
+| Intent kind          | Allowed first-step skills                              |
+|----------------------|--------------------------------------------------------|
+| `assistant_question` | `assistant.advisory`, `system.status`                  |
+| `open_resource`      | `system.open_app`, `system.open_url`                   |
+| `write_file`         | `files.write_text`                                     |
+| `read_file`          | `files.read_text`                                      |
+| `run_command`        | `sandbox.exec`, `system.terminal_run_once`             |
+| `unknown_or_ambiguous` | (no constraint — normal planning applies)            |
+
+### How it works
+
+1. For goal-kind queue jobs, `classify_simple_operator_intent(goal=...)` runs before planning.
+2. The result (`SimpleIntentResult`) carries `intent_kind`, `deterministic`, `allowed_skill_ids`,
+   `routing_reason`, and `fail_closed`.
+3. A `queue_simple_intent_routed` action event is emitted immediately.
+4. After the planner returns a mission, the first step's `skill_id` is checked against
+   `allowed_skill_ids` via `check_skill_family_mismatch(...)`.
+5. If a mismatch is detected:
+   - Execution is **stopped before any skill runs** (fail closed).
+   - A `queue_simple_intent_mismatch` action event is emitted.
+   - `plan.json` / `plan.attempt-<n>.json` record the mismatch evidence.
+   - `execution_result.json` reflects `evaluation_reason=simple_intent_skill_family_mismatch`,
+     `stop_reason=planner_intent_route_rejected`, and an `intent_route` dict.
+   - The job moves to `failed/` immediately.
+6. `unknown_or_ambiguous` goals have `fail_closed=False` — they are never constrained.
+
+### Design principles
+
+- **Conservative**: only classifies when the goal is obviously recognisable (explicit verb +
+  path for reads, single-word app target for open, question word for advisory, etc.).  Ambiguous
+  multi-step or vague goals fall through to `unknown_or_ambiguous`.
+- **No NLP**: pure regex pattern matching — no external dependencies, deterministic, inspectable.
+- **Additive artifacts only**: existing contract schemas are extended, not replaced.
+- **Does not broaden autonomy**: no approvals bypassed, no capabilities widened.  The check only
+  constrains which skill family may appear as the first step.
+
+### Artifact additions (additive)
+
+- `execution_envelope.json → request.simple_intent`:
+  `{intent_kind, deterministic, allowed_skill_ids, routing_reason, fail_closed}`
+- `execution_result.json → intent_route`:
+  same shape; present when mismatch occurs
+- `plan.json` / `plan.attempt-<n>.json → intent_route`:
+  populated for goal-kind jobs when intent was classified
+- `actions.jsonl`: `queue_simple_intent_routed` (always for goal-kind) and
+  `queue_simple_intent_mismatch` (on mismatch) events
