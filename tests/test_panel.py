@@ -533,6 +533,17 @@ def test_panel_app_uses_shared_version_source():
 def test_panel_job_detail_smoke(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    for bucket in [
+        "inbox",
+        "pending",
+        "pending/approvals",
+        "done",
+        "failed",
+        "canceled",
+        "artifacts",
+    ]:
+        (queue_dir / bucket).mkdir(parents=True, exist_ok=True)
+
     art = queue_dir / "artifacts" / "job-a"
     art.mkdir(parents=True, exist_ok=True)
     (art / "plan.json").write_text('{"x":1}', encoding="utf-8")
@@ -544,6 +555,22 @@ def test_panel_job_detail_smoke(tmp_path, monkeypatch):
             ]
         )
         + "\n",
+        encoding="utf-8",
+    )
+
+    (queue_dir / "pending" / "job-pending.json").write_text('{"goal":"pending"}', encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "job-pending.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-pending.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "reason": "needs approval",
+                "policy_reason": "ask",
+                "target": {"type": "url", "value": "https://example.com"},
+                "scope": {"fs_scope": "none", "needs_network": True},
+            }
+        ),
         encoding="utf-8",
     )
 
