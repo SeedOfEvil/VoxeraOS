@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias
 
@@ -284,3 +285,24 @@ def check_skill_family_mismatch(
     if first_step_skill_id in intent.allowed_skill_ids:
         return (False, "skill_family_matches")
     return (True, "simple_intent_skill_family_mismatch")
+
+
+def sanitize_serialized_intent_route(route: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return a defensive copy of serialized intent metadata.
+
+    This is a serialization-boundary guard so traversal-like read targets are
+    never emitted through artifacts even if upstream payloads were malformed.
+    """
+    if route is None:
+        return {}
+    cleaned = dict(route)
+    raw_kind = cleaned.get("intent_kind")
+    intent_kind = str(raw_kind).strip() if raw_kind is not None else ""
+    extracted = cleaned.get("extracted_target")
+    if intent_kind == "read_file":
+        extracted_text = str(extracted).strip() if extracted is not None else ""
+        if not extracted_text or not _is_safe_read_extracted_target(extracted_text):
+            cleaned.pop("extracted_target", None)
+        else:
+            cleaned["extracted_target"] = extracted_text
+    return cleaned

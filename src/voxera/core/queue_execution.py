@@ -29,6 +29,7 @@ from .simple_intent import (
     SimpleIntentResult,
     check_skill_family_mismatch,
     classify_simple_operator_intent,
+    sanitize_serialized_intent_route,
 )
 
 
@@ -58,6 +59,11 @@ class QueueExecutionMixin:
 
         if "approval_required" in payload:
             normalized["approval_required"] = payload.get("approval_required") is True
+
+        if isinstance(payload.get("_simple_intent"), dict):
+            normalized["_simple_intent"] = sanitize_serialized_intent_route(
+                payload.get("_simple_intent")
+            )
 
         normalized["job_intent"] = build_queue_job_intent(payload, source_lane="queue_daemon")
         return normalized
@@ -382,6 +388,10 @@ class QueueExecutionMixin:
 
             try:
                 payload = self._load_job_payload_with_retry(job_path)
+                if isinstance(payload.get("_simple_intent"), dict):
+                    payload["_simple_intent"] = sanitize_serialized_intent_route(
+                        payload["_simple_intent"]
+                    )
                 if self._is_assistant_request(payload):
                     request_kind = self._request_kind(payload)
                     fast_lane_eligible, fast_lane_reason = (
@@ -484,7 +494,9 @@ class QueueExecutionMixin:
             if kind == "goal":
                 simple_intent = self._classify_goal_intent(payload)
                 # Stash on payload for envelope/artifact propagation.
-                payload["_simple_intent"] = simple_intent.to_dict()
+                payload["_simple_intent"] = sanitize_serialized_intent_route(
+                    simple_intent.to_dict()
+                )
                 self._write_action_event(
                     str(job_path),
                     "queue_simple_intent_routed",
@@ -624,7 +636,9 @@ class QueueExecutionMixin:
                             f"{sorted(simple_intent.allowed_skill_ids)}) but "
                             f"planner produced first step '{first_skill}'"
                         )
-                        intent_route_dict = simple_intent.to_dict()
+                        intent_route_dict = sanitize_serialized_intent_route(
+                            simple_intent.to_dict()
+                        )
                         self._write_simple_intent_mismatch_artifact(
                             job_ref=str(job_path),
                             payload=payload,
@@ -773,7 +787,9 @@ class QueueExecutionMixin:
                 # carries the same metadata as execution_envelope.json and plan.json
                 # for ALL goal-kind jobs, not just mismatch failures.
                 if simple_intent is not None:
-                    rr.data.setdefault("intent_route", simple_intent.to_dict())
+                    rr.data.setdefault(
+                        "intent_route", sanitize_serialized_intent_route(simple_intent.to_dict())
+                    )
 
                 should_replan = (
                     evaluation.replan_allowed

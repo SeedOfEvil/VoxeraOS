@@ -40,6 +40,7 @@ from .queue_state import (
     update_job_state_snapshot,
     write_job_state,
 )
+from .simple_intent import sanitize_serialized_intent_route
 
 _PARSE_RETRY_ATTEMPTS = 4
 _PARSE_RETRY_BACKOFF_S = 0.1
@@ -438,7 +439,7 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
         plan_delta: dict[str, Any] | None = None,
     ) -> None:
         intent_route = (
-            payload.get("_simple_intent")
+            sanitize_serialized_intent_route(payload.get("_simple_intent"))
             if isinstance(payload.get("_simple_intent"), dict)
             else None
         )
