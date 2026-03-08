@@ -18,6 +18,7 @@ from ..operator_assistant import (
     normalize_thread_id,
     read_assistant_thread,
 )
+from .queue_contracts import build_assistant_execution_envelope
 
 _ASSISTANT_FALLBACK_REASONS = frozenset({TIMEOUT, AUTH, RATE_LIMIT, MALFORMED, NETWORK})
 _FAST_LANE_ALLOWED_REQUEST_KINDS = frozenset({ASSISTANT_JOB_KIND})
@@ -26,6 +27,28 @@ _FAST_LANE_ALLOWED_ACTION_HINTS = frozenset({"assistant.advisory"})
 
 def assistant_response_artifact_path(daemon: Any, job_ref: str) -> Path:
     return daemon._job_artifacts_dir(job_ref) / "assistant_response.json"
+
+
+def _write_assistant_execution_envelope(
+    daemon: Any,
+    *,
+    job_ref: str,
+    payload: dict[str, Any],
+    execution_lane: str,
+    fast_lane: dict[str, Any] | None,
+) -> None:
+    envelope = build_assistant_execution_envelope(
+        job_ref=job_ref,
+        payload=payload,
+        queue_root=daemon.queue_root,
+        artifact_root=daemon.artifacts,
+        execution_lane=execution_lane,
+        fast_lane=fast_lane,
+    )
+    (daemon._job_artifacts_dir(job_ref) / "execution_envelope.json").write_text(
+        json.dumps(envelope, indent=2),
+        encoding="utf-8",
+    )
 
 
 def evaluate_assistant_fast_lane_eligibility(
@@ -175,11 +198,19 @@ def process_assistant_job(
     if not question:
         raise ValueError("assistant question is required")
     thread_id = normalize_thread_id(str(payload.get("thread_id") or ""))
+    assistant_payload = {**payload, "thread_id": thread_id, "question": question}
+    _write_assistant_execution_envelope(
+        daemon,
+        job_ref=str(job_path),
+        payload=assistant_payload,
+        execution_lane=execution_lane,
+        fast_lane=fast_lane,
+    )
 
     daemon._update_job_state(
         str(job_path),
         lifecycle_state="advisory_running",
-        payload={**payload, "thread_id": thread_id},
+        payload=assistant_payload,
     )
     daemon._write_action_event(str(job_path), "assistant_job_started", thread_id=thread_id)
 
@@ -228,9 +259,7 @@ def process_assistant_job(
             return False
         daemon.stats.failed += 1
         failure_text = str(artifact_payload["error"])
-        daemon._write_failed_error_sidecar(
-            moved, error=failure_text, payload={**payload, "thread_id": thread_id}
-        )
+        daemon._write_failed_error_sidecar(moved, error=failure_text, payload=assistant_payload)
         daemon._write_execution_result_artifacts(
             str(moved),
             rr_data={
@@ -269,7 +298,7 @@ def process_assistant_job(
         daemon._update_job_state(
             str(moved),
             lifecycle_state="step_failed",
-            payload={**payload, "thread_id": thread_id},
+            payload=assistant_payload,
             terminal_outcome="failed",
             failure_summary=failure_text,
         )
@@ -373,7 +402,7 @@ def process_assistant_job(
     daemon._update_job_state(
         str(moved),
         lifecycle_state="done",
-        payload={**payload, "thread_id": thread_id},
+        payload=assistant_payload,
         terminal_outcome="succeeded",
     )
     if artifact_payload["fallback_used"]:

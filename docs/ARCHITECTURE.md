@@ -950,6 +950,7 @@ The assistant queue path includes a narrow, fail-closed fast-lane gate for expli
   - `execution_result.json.execution_lane` (`fast_read_only` or `queue`)
   - `execution_result.json.fast_lane` (`used`, `eligible`, `eligibility_reason`, `request_kind`)
   - mirrored lane metadata in `assistant_response.json`
+  - assistant jobs also emit `execution_envelope.json` (`execution.mode=assistant_advisory`, `execution.lane`, `execution.fast_lane`)
 
 This keeps legacy queue payloads valid while giving newer jobs a deterministic planning-intent surface for panel detail views, ops bundles, and future retry/recovery logic.
 

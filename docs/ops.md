@@ -221,7 +221,7 @@ Fast-lane behavior (read-only advisory only):
 - Fast lane is inside the control plane, not a bypass. It still writes canonical artifacts, action events, and audit logs.
 - Eligibility is deterministic and conservative: only `assistant_question` requests (detected from canonical request kind, including `job_intent.request_kind`) with explicit `advisory=true`, `read_only=true`, `action_hints=["assistant.advisory"]`, and without mission/goal/steps/approval-required flags.
 - Any uncertainty or non-eligible shape fails closed to normal queue lane.
-- Operator evidence: `execution_result.json` now includes `execution_lane` (`fast_read_only` or `queue`) plus `fast_lane` metadata (`used`, `eligible`, `eligibility_reason`, `request_kind`). `assistant_response.json` mirrors the same lane metadata.
+- Operator evidence: assistant jobs emit `execution_envelope.json`, `execution_result.json`, and `assistant_response.json` with aligned lane metadata. `execution_result.json` includes `execution_lane` (`fast_read_only` or `queue`) plus `fast_lane` metadata (`used`, `eligible`, `eligibility_reason`, `request_kind`), and envelope lane fields live at `execution.lane` / `execution.fast_lane`.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume + lifecycle actions (approve/deny, cancel, retry, delete) and links Done/Failed/Canceled jobs to artifact-backed detail pages.
 ### Create Mission (panel) quick runbook

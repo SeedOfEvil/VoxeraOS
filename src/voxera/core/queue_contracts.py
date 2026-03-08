@@ -96,6 +96,77 @@ def build_execution_envelope(
     }
 
 
+def build_assistant_execution_envelope(
+    *,
+    job_ref: str,
+    payload: dict[str, Any],
+    queue_root: Path,
+    artifact_root: Path,
+    execution_lane: str,
+    fast_lane: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    thread_id = str(payload.get("thread_id") or "")
+    question = str(payload.get("question") or "")
+    request_kind = detect_request_kind(payload)
+    return {
+        "schema_version": EXECUTION_ENVELOPE_SCHEMA_VERSION,
+        "envelope_kind": "queue_execution",
+        "job": {
+            "id": f"{Path(job_ref).stem}.json",
+            "filename": Path(job_ref).name,
+            "source_ref": job_ref,
+            "request_kind": request_kind,
+        },
+        "execution": {
+            "mode": "assistant_advisory",
+            "lane": execution_lane,
+            "fast_lane": fast_lane if isinstance(fast_lane, dict) else None,
+            "attempt_index": 1,
+            "replan_count": 0,
+            "max_replans": 0,
+            "supersedes_attempt": None,
+            "total_steps": 1,
+            "steps": [
+                {
+                    "step_index": 1,
+                    "total_steps": 1,
+                    "skill_id": "assistant.advisory",
+                    "effective_args": {
+                        "question": question,
+                        "thread_id": thread_id,
+                    },
+                }
+            ],
+        },
+        "request": {
+            "mission_id": None,
+            "goal": None,
+            "title": payload.get("title"),
+            "approval_required": payload.get("approval_required") is True,
+            "job_intent": payload.get("job_intent")
+            if isinstance(payload.get("job_intent"), dict)
+            else None,
+            "assistant": {
+                "kind": str(payload.get("kind") or request_kind),
+                "thread_id": thread_id,
+                "question": question,
+                "advisory": payload.get("advisory") is True,
+                "read_only": payload.get("read_only") is True,
+                "action_hints": payload.get("action_hints")
+                if isinstance(payload.get("action_hints"), list)
+                else [],
+            },
+        },
+        "mission": None,
+        "queue": {
+            "queue_root": str(queue_root),
+            "artifacts_root": str(artifact_root),
+            "job_artifacts": str(artifact_root / Path(job_ref).stem),
+        },
+        "generated_at_ms": int(time.time() * 1000),
+    }
+
+
 def build_structured_step_results(
     rr_data: dict[str, Any],
     *,

@@ -161,6 +161,11 @@ def test_assistant_queue_writes_structured_execution_artifacts(tmp_path):
             encoding="utf-8"
         )
     )
+    execution_envelope = json.loads(
+        (queue_root / "artifacts" / "job-assistant" / "execution_envelope.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert execution_result["ok"] is True
     assert execution_result["execution_lane"] == "fast_read_only"
     assert execution_result["fast_lane"]["used"] is True
@@ -171,10 +176,18 @@ def test_assistant_queue_writes_structured_execution_artifacts(tmp_path):
             encoding="utf-8"
         )
     )
-    assert assistant_artifact["execution_lane"] == "fast_read_only"
+    assert execution_envelope["execution"]["mode"] == "assistant_advisory"
+    assert execution_envelope["execution"]["lane"] == "fast_read_only"
     assert (
-        assistant_artifact["fast_lane"]["eligibility_reason"]
+        execution_envelope["execution"]["fast_lane"]["eligibility_reason"]
         == "eligible_read_only_assistant_advisory"
+    )
+    assert execution_envelope["job"]["request_kind"] == "assistant_question"
+    assert assistant_artifact["execution_lane"] == execution_result["execution_lane"]
+    assert (
+        assistant_artifact["fast_lane"]
+        == execution_result["fast_lane"]
+        == execution_envelope["execution"]["fast_lane"]
     )
 
 
@@ -211,9 +224,27 @@ def test_assistant_non_eligible_payload_falls_back_to_normal_queue_lane(tmp_path
             queue_root / "artifacts" / "job-assistant-non-eligible" / "execution_result.json"
         ).read_text(encoding="utf-8")
     )
+    execution_envelope = json.loads(
+        (
+            queue_root / "artifacts" / "job-assistant-non-eligible" / "execution_envelope.json"
+        ).read_text(encoding="utf-8")
+    )
+    assistant_artifact = json.loads(
+        (
+            queue_root / "artifacts" / "job-assistant-non-eligible" / "assistant_response.json"
+        ).read_text(encoding="utf-8")
+    )
     assert execution_result["execution_lane"] == "queue"
     assert execution_result["fast_lane"]["used"] is False
     assert execution_result["fast_lane"]["eligibility_reason"] == "action_hints_not_eligible"
+    assert execution_envelope["execution"]["lane"] == "queue"
+    assert execution_envelope["execution"]["fast_lane"]["used"] is False
+    assert assistant_artifact["execution_lane"] == execution_result["execution_lane"]
+    assert (
+        assistant_artifact["fast_lane"]
+        == execution_result["fast_lane"]
+        == execution_envelope["execution"]["fast_lane"]
+    )
 
 
 def test_assistant_approval_flag_disables_fast_lane(tmp_path):
