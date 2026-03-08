@@ -1139,3 +1139,15 @@ For job detail/status/bundle flows, Voxera now prefers canonical structured exec
 ### Producer intent artifacts and compatibility
 
 Queue jobs may include additive `job_intent` metadata produced by panel/inbox/assistant lanes or derived by daemon normalization. Operators may also see `artifacts/<job>/job_intent.json` for newer jobs. If absent, workflows continue using existing payload/state semantics; absence is expected for legacy jobs.
+
+
+## Bounded replan operations (PR 4)
+
+- Queue execution evaluates each attempt and records evaluator class/reason in `execution_result.json`.
+- Replan is bounded by config `max_replan_attempts` (default `1`) and only for retryable/replannable classes.
+- Approval-pending and policy/capability boundary blocks do not replan; job remains pending/failed deterministically.
+- Inspect adaptation via:
+  - `artifacts/<job>/plan.attempt-<n>.json`
+  - `artifacts/<job>/execution_envelope.json` (attempt/replan counters)
+  - `artifacts/<job>/execution_result.json` (`attempt_index`, `replan_count`, `evaluation_class`, `stop_reason`)
+- This is controlled adaptation, not blind retry: the loop exits on success, approval pause, non-retryable block, or max-attempt bound.

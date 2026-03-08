@@ -932,3 +932,17 @@ This is intentionally additive and backward-compatible: canonical structured fie
 In addition to execution-time artifacts, queue producer lanes now emit/normalize additive `job_intent` metadata for queued work. This is centralized in `src/voxera/core/queue_job_intent.py` and is intentionally tolerant of partial inputs. The daemon persists `artifacts/<job>/job_intent.json` when present and includes the same object under `execution_envelope.json -> request.job_intent`.
 
 This keeps legacy queue payloads valid while giving newer jobs a deterministic planning-intent surface for panel detail views, ops bundles, and future retry/recovery logic.
+
+
+## PR 4 execution adaptation guardrail
+
+The queue execution lane now uses an explicit evaluate-and-replan loop:
+
+- After each mission attempt, execution is classified into one deterministic evaluator class.
+- Replanning is only allowed for bounded classes (`retryable_failure`, `replannable_mismatch`)
+  and only within `max_replan_attempts` (default `1`).
+- Approval-pending, policy/capability block, and hard boundary outcomes stop without replan.
+- Every attempt still passes through normal policy/approval/path/argv hardening; replanning does
+  not bypass trust gates.
+- Canonical artifacts carry adaptation metadata (`attempt_index`, `replan_count`,
+  `evaluation_class`, `evaluation_reason`, `stop_reason`) plus per-attempt `plan.attempt-<n>.json`.

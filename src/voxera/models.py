@@ -38,6 +38,7 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["voice", "gui", "cli", "mixed"] = "mixed"
+    max_replan_attempts: int = 1
     brain: dict[str, BrainConfig] = Field(default_factory=dict)  # primary/fallback
     policy: PolicyApprovals = Field(default_factory=PolicyApprovals)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)

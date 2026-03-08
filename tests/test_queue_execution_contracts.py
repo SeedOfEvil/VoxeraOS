@@ -271,3 +271,211 @@ def test_runtime_capability_block_halts_subsequent_steps_and_writes_artifacts(
     assert execution_result["terminal_outcome"] == "blocked"
     assert execution_result["last_attempted_step"] == 1
     assert execution_result["step_results"][0]["next_action_hint"] == "fix_skill_manifest"
+
+
+def test_retryable_failure_triggers_single_bounded_replan(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-replan.json").write_text(json.dumps({"goal": "retry once"}))
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.cfg.max_replan_attempts = 1
+
+    run_calls = {"n": 0}
+
+    def _run(*args, **kwargs):
+        run_calls["n"] += 1
+        if run_calls["n"] == 1:
+            return RunResult(
+                ok=False,
+                error="temporary",
+                data={
+                    "results": [
+                        {
+                            "step": 1,
+                            "skill": "system.status",
+                            "args": {},
+                            "ok": False,
+                            "error": "temporary",
+                            "retryable": True,
+                        }
+                    ],
+                    "step_outcomes": [{"step": 1, "skill": "system.status", "outcome": "failed"}],
+                    "lifecycle_state": "step_failed",
+                    "terminal_outcome": "failed",
+                    "current_step_index": 1,
+                    "last_completed_step": 0,
+                    "last_attempted_step": 1,
+                    "total_steps": 1,
+                },
+            )
+        return RunResult(
+            ok=True,
+            output="ok",
+            data={
+                "results": [
+                    {"step": 1, "skill": "system.status", "args": {}, "ok": True, "output": "ok"}
+                ],
+                "step_outcomes": [{"step": 1, "skill": "system.status", "outcome": "succeeded"}],
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "current_step_index": 1,
+                "last_completed_step": 1,
+                "last_attempted_step": 1,
+                "total_steps": 1,
+            },
+        )
+
+    daemon.mission_runner.run = _run  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    assert run_calls["n"] == 2
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-replan" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["ok"] is True
+    assert execution_result["attempt_index"] == 2
+    assert execution_result["replan_count"] == 1
+    assert execution_result["stop_reason"] == "succeeded"
+    assert (queue_root / "artifacts" / "job-replan" / "plan.attempt-1.json").exists()
+    assert (queue_root / "artifacts" / "job-replan" / "plan.attempt-2.json").exists()
+
+
+def test_retryable_failure_stops_when_max_replans_reached(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-max-replan.json").write_text(json.dumps({"goal": "retry stops"}))
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.cfg.max_replan_attempts = 1
+
+    def _always_retryable(*args, **kwargs):
+        return RunResult(
+            ok=False,
+            error="still bad",
+            data={
+                "results": [
+                    {
+                        "step": 1,
+                        "skill": "system.status",
+                        "args": {},
+                        "ok": False,
+                        "error": "still bad",
+                        "retryable": True,
+                    }
+                ],
+                "step_outcomes": [{"step": 1, "skill": "system.status", "outcome": "failed"}],
+                "lifecycle_state": "step_failed",
+                "terminal_outcome": "failed",
+                "current_step_index": 1,
+                "last_completed_step": 0,
+                "last_attempted_step": 1,
+                "total_steps": 1,
+            },
+        )
+
+    daemon.mission_runner.run = _always_retryable  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-max-replan" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["ok"] is False
+    assert execution_result["attempt_index"] == 2
+    assert execution_result["replan_count"] == 1
+    assert execution_result["evaluation_class"] == "retryable_failure"
+    assert execution_result["stop_reason"] == "terminal_failure"
+
+
+def test_approval_outcome_records_attempt_without_replan(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-approval.json").write_text(json.dumps({"goal": "needs approval"}))
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _pending(*args, **kwargs):
+        return RunResult(
+            ok=False,
+            error="Mission paused for approval.",
+            data={
+                "status": "pending_approval",
+                "step": 1,
+                "skill": "system.set_volume",
+                "results": [],
+                "step_outcomes": [],
+                "lifecycle_state": "awaiting_approval",
+                "terminal_outcome": None,
+                "total_steps": 1,
+            },
+        )
+
+    daemon.mission_runner.run = _pending  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-approval" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["terminal_outcome"] == "awaiting_approval"
+    assert execution_result["attempt_index"] == 1
+    assert execution_result["replan_count"] == 0
+    assert execution_result["evaluation_class"] == "awaiting_approval"
+
+
+def test_policy_block_records_non_retryable_evaluation(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-blocked.json").write_text(
+        json.dumps({"steps": [{"skill_id": "system.status", "args": {}}]})
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _blocked(*args, **kwargs):
+        return RunResult(
+            ok=False,
+            error="Denied by policy",
+            data={
+                "results": [
+                    {
+                        "step": 1,
+                        "skill": "system.status",
+                        "args": {},
+                        "ok": False,
+                        "error": "Denied by policy",
+                    }
+                ],
+                "step_outcomes": [{"step": 1, "skill": "system.status", "outcome": "blocked"}],
+                "lifecycle_state": "blocked",
+                "terminal_outcome": "blocked",
+                "current_step_index": 1,
+                "last_completed_step": 0,
+                "last_attempted_step": 1,
+                "total_steps": 1,
+            },
+        )
+
+    daemon.mission_runner.run = _blocked  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-blocked" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["terminal_outcome"] == "blocked"
+    assert execution_result["evaluation_class"] == "blocked_non_retryable"
+    assert execution_result["replan_count"] == 0
