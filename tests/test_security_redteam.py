@@ -356,6 +356,14 @@ def test_redteam_traversal_variants_omit_extracted_target_in_all_artifacts(tmp_p
         assert simple_intent_payload.get("intent_kind") == "read_file"
         assert "extracted_target" not in simple_intent_payload
 
+        failed_state = json.loads(
+            (queue_root / "failed" / "job-traversal.state.json").read_text(encoding="utf-8")
+        )
+        state_simple_intent = failed_state.get("payload", {}).get("_simple_intent")
+        assert isinstance(state_simple_intent, dict)
+        assert state_simple_intent.get("intent_kind") == "read_file"
+        assert "extracted_target" not in state_simple_intent
+
 
 def test_redteam_injected_payload_simple_intent_is_sanitized_in_envelope(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
