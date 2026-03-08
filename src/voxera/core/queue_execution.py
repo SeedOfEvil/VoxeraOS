@@ -25,6 +25,11 @@ from .mission_planner import MissionPlannerError
 from .missions import MissionStep, MissionTemplate, get_mission
 from .queue_contracts import build_execution_envelope, detect_request_kind
 from .queue_job_intent import build_queue_job_intent
+from .simple_intent import (
+    SimpleIntentResult,
+    check_skill_family_mismatch,
+    classify_simple_operator_intent,
+)
 
 
 def _queue_daemon_module() -> Any:
@@ -259,6 +264,62 @@ class QueueExecutionMixin:
             return ("replannable_mismatch", "arg_shape_mismatch", True)
         return ("terminal_failure", "planning_failure", False)
 
+    def _classify_goal_intent(self: Any, payload: dict[str, Any]) -> SimpleIntentResult:
+        """Return the simple intent classification for a goal-kind payload."""
+        goal = payload.get("goal") or payload.get("plan_goal")
+        goal_text = str(goal).strip() if goal else None
+        action_hints_raw = payload.get("action_hints")
+        action_hints = (
+            [str(h) for h in action_hints_raw if str(h).strip()]
+            if isinstance(action_hints_raw, list)
+            else None
+        )
+        return classify_simple_operator_intent(goal=goal_text, action_hints=action_hints)
+
+    def _write_simple_intent_mismatch_artifact(
+        self: Any,
+        *,
+        job_ref: str,
+        payload: dict[str, Any],
+        intent: SimpleIntentResult,
+        first_step_skill_id: str,
+        attempt_index: int,
+        replan_count: int,
+        max_replans: int,
+    ) -> None:
+        artifact_dir = self._job_artifacts_dir(job_ref)
+        intent_route = intent.to_dict()
+        mismatch_plan = {
+            "job": Path(job_ref).name,
+            "attempt_index": attempt_index,
+            "replan_count": replan_count,
+            "max_replans": max_replans,
+            "supersedes_attempt": attempt_index - 1 if attempt_index > 1 else None,
+            "plan_delta": None,
+            "payload": payload,
+            "mission": None,
+            "intent_route": intent_route,
+            "planning_error": {
+                "evaluation_class": "terminal_failure",
+                "evaluation_reason": "simple_intent_skill_family_mismatch",
+                "error": (
+                    f"simple intent '{intent.intent_kind}' allows skills "
+                    f"{sorted(intent.allowed_skill_ids)} but planner produced "
+                    f"first step '{first_step_skill_id}'"
+                ),
+                "intent_kind": intent.intent_kind,
+                "allowed_skill_ids": sorted(intent.allowed_skill_ids),
+                "planned_skill_id": first_step_skill_id,
+                "routing_reason": intent.routing_reason,
+            },
+        }
+        (artifact_dir / "plan.json").write_text(
+            json.dumps(mismatch_plan, indent=2), encoding="utf-8"
+        )
+        (artifact_dir / f"plan.attempt-{attempt_index}.json").write_text(
+            json.dumps(mismatch_plan, indent=2), encoding="utf-8"
+        )
+
     def _write_planning_failure_attempt_artifact(
         self: Any,
         *,
@@ -417,6 +478,34 @@ class QueueExecutionMixin:
             replan_count = 0
             previous_mission: MissionTemplate | None = None
 
+            # Classify simple intent for goal-kind requests so we can constrain
+            # and validate the planner's first-step skill choice.
+            simple_intent: SimpleIntentResult | None = None
+            if kind == "goal":
+                simple_intent = self._classify_goal_intent(payload)
+                # Stash on payload for envelope/artifact propagation.
+                payload["_simple_intent"] = simple_intent.to_dict()
+                self._write_action_event(
+                    str(job_path),
+                    "queue_simple_intent_routed",
+                    intent_kind=simple_intent.intent_kind,
+                    deterministic=simple_intent.deterministic,
+                    routing_reason=simple_intent.routing_reason,
+                    allowed_skill_ids=sorted(simple_intent.allowed_skill_ids),
+                    fail_closed=simple_intent.fail_closed,
+                )
+                _queue_daemon_module().log(
+                    {
+                        "event": "queue_simple_intent_routed",
+                        "job": str(job_path),
+                        "intent_kind": simple_intent.intent_kind,
+                        "deterministic": simple_intent.deterministic,
+                        "routing_reason": simple_intent.routing_reason,
+                        "allowed_skill_ids": sorted(simple_intent.allowed_skill_ids),
+                        "fail_closed": simple_intent.fail_closed,
+                    }
+                )
+
             while True:
                 attempt_index += 1
                 try:
@@ -514,6 +603,104 @@ class QueueExecutionMixin:
                     self.prune_failed_artifacts()
                     return False
 
+                # --- Simple intent mismatch detection --------------------------------
+                # If we recognised a deterministic simple intent, validate that the
+                # plan's first step belongs to the allowed skill family.  If not,
+                # fail closed before any side effects.
+                if (
+                    simple_intent is not None
+                    and simple_intent.deterministic
+                    and simple_intent.fail_closed
+                    and mission.steps
+                ):
+                    first_skill = mission.steps[0].skill_id
+                    mismatch, mismatch_reason = check_skill_family_mismatch(
+                        simple_intent, first_skill
+                    )
+                    if mismatch:
+                        mismatch_error = (
+                            f"planner_intent_route_rejected: simple intent "
+                            f"'{simple_intent.intent_kind}' (allowed: "
+                            f"{sorted(simple_intent.allowed_skill_ids)}) but "
+                            f"planner produced first step '{first_skill}'"
+                        )
+                        intent_route_dict = simple_intent.to_dict()
+                        self._write_simple_intent_mismatch_artifact(
+                            job_ref=str(job_path),
+                            payload=payload,
+                            intent=simple_intent,
+                            first_step_skill_id=first_skill,
+                            attempt_index=attempt_index,
+                            replan_count=replan_count,
+                            max_replans=max_replans,
+                        )
+                        self._write_action_event(
+                            str(job_path),
+                            "queue_simple_intent_mismatch",
+                            intent_kind=simple_intent.intent_kind,
+                            allowed_skill_ids=sorted(simple_intent.allowed_skill_ids),
+                            planned_skill_id=first_skill,
+                            mismatch_reason=mismatch_reason,
+                            routing_reason=simple_intent.routing_reason,
+                        )
+                        _queue_daemon_module().log(
+                            {
+                                "event": "queue_simple_intent_mismatch",
+                                "job": str(job_path),
+                                "intent_kind": simple_intent.intent_kind,
+                                "allowed_skill_ids": sorted(simple_intent.allowed_skill_ids),
+                                "planned_skill_id": first_skill,
+                                "mismatch_reason": mismatch_reason,
+                                "routing_reason": simple_intent.routing_reason,
+                            }
+                        )
+                        moved = self._move_job(job_path, self.failed)
+                        if moved is None:
+                            return False
+                        self._write_failed_error_sidecar(
+                            moved, error=mismatch_error, payload=payload
+                        )
+                        mismatch_rr_data = {
+                            "results": [],
+                            "step_outcomes": [],
+                            "total_steps": len(mission.steps),
+                            "lifecycle_state": "step_failed",
+                            "attempt_index": attempt_index,
+                            "replan_count": replan_count,
+                            "max_replans": max_replans,
+                            "evaluation_class": "terminal_failure",
+                            "evaluation_reason": "simple_intent_skill_family_mismatch",
+                            "stop_reason": "planner_intent_route_rejected",
+                            "intent_route": intent_route_dict,
+                        }
+                        self._write_execution_result_artifacts(
+                            str(moved),
+                            rr_data=mismatch_rr_data,
+                            ok=False,
+                            terminal_outcome="failed",
+                            error=mismatch_error,
+                        )
+                        self._update_job_state(
+                            str(moved),
+                            lifecycle_state="step_failed",
+                            payload=payload,
+                            mission=previous_mission,
+                            rr_data=mismatch_rr_data,
+                            terminal_outcome="failed",
+                            failure_summary=mismatch_error,
+                        )
+                        self.stats.failed += 1
+                        _queue_daemon_module().log(
+                            {
+                                "event": "queue_job_failed",
+                                "job": str(moved),
+                                "error": mismatch_error,
+                            }
+                        )
+                        self.prune_failed_artifacts()
+                        return False
+                # --- End simple intent mismatch detection ----------------------------
+
                 plan_delta = (
                     self._plan_delta(previous_mission, mission)
                     if previous_mission is not None
@@ -582,6 +769,11 @@ class QueueExecutionMixin:
                 rr.data.setdefault("max_replans", max_replans)
                 rr.data.setdefault("evaluation_class", evaluation.evaluation_class)
                 rr.data.setdefault("evaluation_reason", evaluation.reason)
+                # Propagate simple_intent into intent_route so execution_result.json
+                # carries the same metadata as execution_envelope.json and plan.json
+                # for ALL goal-kind jobs, not just mismatch failures.
+                if simple_intent is not None:
+                    rr.data.setdefault("intent_route", simple_intent.to_dict())
 
                 should_replan = (
                     evaluation.replan_allowed

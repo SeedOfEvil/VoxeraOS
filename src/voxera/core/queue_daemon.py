@@ -437,6 +437,11 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
         supersedes_attempt: int | None = None,
         plan_delta: dict[str, Any] | None = None,
     ) -> None:
+        intent_route = (
+            payload.get("_simple_intent")
+            if isinstance(payload.get("_simple_intent"), dict)
+            else None
+        )
         plan = {
             "job": Path(job_ref).name,
             "attempt_index": attempt_index,
@@ -444,6 +449,7 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             "max_replans": max_replans,
             "supersedes_attempt": supersedes_attempt,
             "plan_delta": plan_delta if isinstance(plan_delta, dict) else None,
+            "intent_route": intent_route,
             "payload": payload,
             "mission": {
                 "id": mission.id,

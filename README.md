@@ -29,6 +29,16 @@ That architecture matters because it keeps behavior observable and recoverable e
 - **Assistant advisory lane**
   - `/assistant` submits queue-backed advisory jobs (`assistant_question`), with bounded thread continuity and degraded read-only fallback mode when queue transport is unavailable.
   - Explicitly read-only advisory requests can use an in-control-plane fast lane (`execution_lane=fast_read_only`) when deterministic eligibility checks pass (including canonical request-kind detection via `job_intent.request_kind`); uncertain or non-eligible requests fail closed to normal queue lane (`execution_lane=queue`).
+- **Simple-intent routing (semantic guardrail)**
+  - Goal-kind queue jobs pass through a deterministic classifier before planning: obvious operator
+    asks ("write text.txt with …", "read ~/…", "open terminal", "what is system status?") are
+    classified into a narrow intent family.  If the planner's first step falls outside the allowed
+    skill family the job fails closed before any side effects occur.
+  - Classifier is conservative — ambiguous or multi-step goals fall through to normal planning.
+  - Evidence is visible in `execution_result.json` (`intent_route`, `evaluation_reason`) and
+    `plan.json` (`intent_route`); action events `queue_simple_intent_routed` /
+    `queue_simple_intent_mismatch` are emitted.  No approvals, capabilities, or policy gates are
+    bypassed.
 - **Health + doctor + observability**
   - `health.json` snapshots, semantic queue health views, auth lockout counters, fallback metadata, and `voxera doctor` checks.
   - `voxera doctor` now includes a `skills.registry` row summarizing strict manifest health (`valid` / `invalid` / `incomplete` / `warning`) with top remediation-oriented reason codes.

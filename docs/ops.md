@@ -224,6 +224,57 @@ Fast-lane behavior (read-only advisory only):
 - Operator evidence: assistant jobs emit `execution_envelope.json`, `execution_result.json`, and `assistant_response.json` with aligned lane metadata. `execution_result.json` includes `execution_lane` (`fast_read_only` or `queue`) plus `fast_lane` metadata (`used`, `eligible`, `eligibility_reason`, `request_kind`), and envelope lane fields live at `execution.lane` / `execution.fast_lane`.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume + lifecycle actions (approve/deny, cancel, retry, delete) and links Done/Failed/Canceled jobs to artifact-backed detail pages.
+
+### Simple-intent routing (goal-kind jobs)
+
+Goal-kind queue jobs (those with a free-form `goal` string) pass through a small deterministic
+intent classifier (`src/voxera/core/simple_intent.py`) before planning:
+
+- Obvious operator verbs (`write`, `read the file ~/...`, `open terminal`, `what is ... status?`,
+  etc.) are classified into one of six intent classes: `assistant_question`, `open_resource`,
+  `write_file`, `read_file`, `run_command`, or `unknown_or_ambiguous`.
+- For recognised deterministic intents the classifier emits the set of allowed first-step skill
+  IDs **and** an `extracted_target` when a file path can be parsed directly from the goal.
+- **Direct routing for high-confidence intents**: if `extracted_target` is set and within the
+  allowed notes root, `mission_planner` skips the cloud brain and constructs the governed
+  first-step plan deterministically (`files.read_text` for reads, `files.write_text` for named
+  file creates).  This eliminates a class of cloud-brain drift failures.
+- **Mismatch = fail closed**: if the planner produces a first step outside the allowed family,
+  the job fails immediately before any skill executes.  The operator sees:
+  - `evaluation_reason: simple_intent_skill_family_mismatch`
+  - `stop_reason: planner_intent_route_rejected`
+  - `intent_route` dict in `execution_result.json` and `plan.json` with the full evidence
+    (intent kind, allowed IDs, planned skill ID, routing reason).
+- **Artifact consistency**: `intent_route` is now present in `execution_result.json` for **all**
+  goal-kind jobs (not just mismatches), matching the `simple_intent` field in
+  `execution_envelope.json`.
+- `unknown_or_ambiguous` intents have no constraint and fall through to normal planning.
+- The layer is conservative: only classifies when unambiguously matching.  Multi-step or vague
+  goals (e.g. "handle this for me", "open an app and report status") fall through.
+- Action events: `queue_simple_intent_routed` (always, for goal-kind) and
+  `queue_simple_intent_mismatch` (when mismatch detected).
+- Does **not** bypass approvals, capability gates, policy, or any existing trust control.
+- **Sub-route notes** (v1.3 refinements):
+  - `"open terminal"` (exact phrase): allows **both** `system.open_app` (e.g. gnome-terminal)
+    and `system.terminal_run_once` (deterministic terminal demo skill) as valid first steps.
+    Other `open_resource` goals (app names, URLs) only allow `system.open_app` / `system.open_url`.
+  - `write_file` goals: match `write …`, `create file …`, **and** `create a/an/new/empty file …`
+    (articles and adjectives before "file" are accepted).  All require `files.write_text` as
+    the first step.  `system.terminal_run_once` is **explicitly rejected**.
+    Goals of the form `"write/create a file called <name>"` (no content specified) are routed
+    deterministically to `files.write_text` with empty text under the notes root.
+  - `read_file` goals: accepted with or without article/noun prefixes before the path:
+    `"read ~/path"`, `"read the ~/path"`, `"read the file ~/path"`, `"read file ~/path"`,
+    `"open and read ~/path"`, `"show contents of ~/path"`, `"cat ~/path"`, etc.
+    All require a `~/` or `/` path immediately after the verb; goals without an explicit path
+    (e.g. `"read this and copy it"`) fall through to `unknown_or_ambiguous`.
+    Only `files.read_text` is accepted as the first step.  `clipboard.copy` is **explicitly
+    rejected** even when produced by the planner safety rewrite.
+    When the path is within the allowed notes root, the planner routes deterministically to
+    `files.read_text` without calling the cloud brain.
+  - **Panel and CLI paths are identical**: intent classification runs on the normalized payload
+    for all goal-kind jobs regardless of origin (panel, CLI, or direct inbox write).  There is
+    no bypass for panel-created payloads.
 ### Create Mission (panel) quick runbook
 
 - Open panel home (`/`) and locate **Create Mission**.

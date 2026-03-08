@@ -1,4 +1,140 @@
 
+## 2026-03-08 — PR #144 STV follow-up 3 — feat(intent): deterministic read routing + extracted_target + artifact consistency
+
+**Root issues fixed (STV findings, three distinct problems):**
+
+### A. `read_file` classifier gap ("read the file ~/path" → unknown_or_ambiguous)
+- **Failure observed**: goal `"read the file ~/VoxeraOS/notes/pr144-read-target.txt"` was
+  classified as `unknown_or_ambiguous` → `fail_closed=False` → planner produced `clipboard.copy`
+  as first step → job succeeded with a synthetic fallback string (semantically wrong).
+- **Root cause**: `_RE_READ_VERB` pattern `read\s+[~/]` required the path immediately after the
+  verb — articles "the file" between verb and path broke the match.
+- **Fix**: expanded `_RE_READ_VERB` to match all forms:
+  `read [the] [file] ~/path`, `open and read ~/path`, `cat ~/path`, `display ~/path`, `view ~/path`,
+  `show contents of ~/path`.  Goals without a `~/` or `/` path (e.g. "read this and copy it",
+  "read the document") still fall through to `unknown_or_ambiguous`.
+
+### B. Deterministic target extraction + direct routing
+- **New field**: `SimpleIntentResult.extracted_target: str | None` — set for `read_file` (the
+  exact path from goal) and `write_file` with "called `<name>`" suffix (candidate notes-root path).
+- **Direct routing in `mission_planner`**: for `read_file` and named `write_file` goals with a
+  safe notes-root path, `plan_mission()` now skips the cloud brain entirely and returns a
+  single-step deterministic plan:
+  - `_extract_simple_read_args()` → `files.read_text` step
+  - `_extract_named_file_write_args()` → `files.write_text` step (empty text, creates the file)
+- **Fail-closed fallback**: if extraction fails or the path is outside the notes root, falls
+  through to cloud brain; the mismatch check acts as the safety net.
+
+### C. Artifact consistency — `intent_route` now in `execution_result.json` for ALL goal-kind jobs
+- **Previous bug**: `execution_result.json → intent_route` was only populated on mismatch;
+  for successful goal-kind jobs it was `null`, inconsistent with `execution_envelope.json →
+  request.simple_intent`.
+- **Fix**: `queue_execution.py` now calls `rr.data.setdefault("intent_route", simple_intent.to_dict())`
+  after evaluation, propagating the classification to `execution_result.json` for all outcomes
+  (success, terminal failure, pending approval).
+
+**Files changed:**
+- `src/voxera/core/simple_intent.py`: expanded `_RE_READ_VERB`, new `_RE_READ_PATH`,
+  `_RE_WRITE_CALLED`; `extracted_target` field on `SimpleIntentResult`; updated `to_dict()`
+- `src/voxera/core/mission_planner.py`: `_RE_PLANNER_READ_PATH`, `_extract_simple_read_args()`,
+  `_RE_PLANNER_WRITE_CALLED`, `_extract_named_file_write_args()`; deterministic read + named-write
+  routes in `plan_mission()` before cloud brain candidates
+- `src/voxera/core/queue_execution.py`: `rr.data.setdefault("intent_route", ...)` propagation
+
+**Regression tests added** (13 new, total 694 passed):
+- Classifier unit: `test_read_the_file_path`, `test_read_the_file_extracted_target`,
+  `test_read_path_bare_extracted_target`, `test_open_and_read_path`, `test_read_file_path`,
+  `test_write_file_called_extracted_target`, `test_create_file_called_extracted_target`,
+  `test_write_without_called_has_no_extracted_target`, `test_read_this_and_copy_it_is_unknown`,
+  `test_read_without_leading_path_is_unknown`
+- Integration: `test_read_the_file_path_succeeds`, `test_read_the_file_path_clipboard_fails_closed`,
+  `test_intent_route_present_in_execution_result_on_success`
+- Updated: `test_open_terminal_routes_to_terminal_run_once_succeeds` (now asserts `intent_route`
+  in `execution_result.json`), `test_ambiguous_request_not_forced_into_wrong_route` (same)
+
+**Validation**: ruff ✓, mypy ✓, pytest 694 passed, 2 skipped ✓.
+
+## 2026-03-08 — PR #144 follow-up 2 — fix(intent): close write_file classifier gap for "create a file called X" goals
+
+- **Production failure reproduced**: goal "create a file called whatupboy.txt" (or any goal
+  starting with "create a/an/new/empty file ...") was classified as `unknown_or_ambiguous`
+  because `_RE_WRITE_VERB` matched `create\s+file` (literal "create file") but not
+  "create a file", "create a new file", or "create an empty file".  With no constraint
+  applied, the planner could produce any first step — including `system.terminal_run_once` —
+  and the job would succeed without mismatch detection.
+- **Root cause (verified)**: `re.match(r"^\s*(?:...|create\s+file)\b", "create a file called x")`
+  returns None because the article "a" between "create" and "file" breaks the match.
+- **Fix**: Updated `_RE_WRITE_VERB` in `simple_intent.py` to
+  `create\s+(?:(?:a|an|new|empty)\s+)*file\b`.  Non-file "create" goals ("create an
+  application", "create a task") still fall through to `unknown_or_ambiguous`.
+- **Also confirmed**: "write a file called whatupboy.txt" was always correctly classified as
+  `write_file`; the subtle gap was the "create a file" variant.
+- **Panel and CLI paths behave identically**: the simple_intent classification runs on the
+  normalized payload for ALL goal-kind jobs regardless of origin (panel vs CLI vs direct inbox).
+- **Regression tests added** (7 new, total 681 passed):
+  - `test_create_file_called_name`, `test_create_a_new_file` (classifier unit)
+  - `test_create_application_is_unknown`, `test_create_task_is_unknown` (classifier unit)
+  - `test_write_file_terminal_run_once_is_mismatch` (mismatch unit)
+  - `test_write_file_called_terminal_run_once_fails_closed` (integration, queue goal path)
+  - `test_create_file_called_panel_payload_fails_closed` (integration, panel payload path)
+- Validation: ruff ✓, mypy ✓, pytest 681 passed ✓.
+
+## 2026-03-08 — PR #144 follow-up — fix(intent): refine open_resource terminal route and document clipboard.copy rejection
+
+- **STV findings addressed (PR #144)**:
+  - `pr144-open-terminal`: planner produces `system.terminal_run_once` for "open terminal" goals,
+    which was incorrectly rejected because `_OPEN_SKILLS` only included `system.open_app` /
+    `system.open_url`.
+  - `pr144-read`: planner safety rewrite (PR #23) converts non-explicit sandbox.exec steps to
+    `clipboard.copy`; this is correctly rejected by the mismatch guard (fail-closed, expected
+    behavior) — `clipboard.copy` is **not** a valid substitute for `files.read_text`.
+- **Fix**: added `_TERMINAL_OPEN_SKILLS = frozenset({"system.terminal_run_once", "system.open_app"})`.
+  The `"open terminal"` exact-match branch now returns `allowed_skill_ids=_TERMINAL_OPEN_SKILLS`
+  instead of `_OPEN_SKILLS`, accepting both `system.open_app` and `system.terminal_run_once` as
+  valid first steps.  Other `open_resource` goals (single-word app name, URL) still use
+  `_OPEN_SKILLS` only.
+- **`INTENT_ALLOWED_SKILLS["open_resource"]`** updated to the union of both sets for documentation
+  accuracy; the classifier returns refined per-goal subsets.
+- **Regression tests added** (`tests/test_simple_intent.py`):
+  - `test_open_terminal_terminal_run_once_no_mismatch` (unit)
+  - `test_read_intent_clipboard_copy_is_mismatch` (unit)
+  - `test_open_terminal_routes_to_terminal_run_once_succeeds` (integration)
+  - `test_read_file_clipboard_copy_fails_closed_regression` (integration)
+- **Docs updated**: ARCHITECTURE.md intent table now shows the terminal sub-route separately;
+  ops.md documents the refined routing and explicit clipboard.copy rejection.
+- Validation: ruff ✓, mypy ✓, pytest (all tests pass including 4 new regression tests) ✓.
+
+## 2026-03-08 — PR #TBD — feat(intent): deterministic simple-intent routing and fail-closed planner mismatch detection
+
+- Added `src/voxera/core/simple_intent.py` — a small, deterministic classifier for common
+  operator goal strings.  No NLP, no external dependencies; pure regex + frozenset.
+- Intent set (v1): `assistant_question`, `open_resource`, `write_file`, `read_file`,
+  `run_command`, `unknown_or_ambiguous`.
+- Skill-family allowlists per intent (e.g. `write_file` → only `files.write_text`).
+- `classify_simple_operator_intent(goal=...) → SimpleIntentResult` — returns intent kind,
+  determinism flag, allowed skill IDs, routing reason, and fail_closed flag.
+- `check_skill_family_mismatch(intent, first_step_skill_id) → (bool, reason)` — compares
+  planner's first step against the intent's allowed family.
+- Integrated into `QueueExecutionMixin.process_job_file` for goal-kind requests:
+  1. Classifies intent before the planning loop, stashes on payload as `_simple_intent`.
+  2. Emits `queue_simple_intent_routed` action event.
+  3. After planning, checks first-step skill vs allowed family.
+  4. If mismatch: emits `queue_simple_intent_mismatch`, writes canonical failure artifacts,
+     moves job to failed **before any skill execution** (fail closed).
+- Error codes: `simple_intent_skill_family_mismatch`, `planner_intent_route_rejected`.
+- Additive artifact extensions:
+  - `execution_envelope.json`: `request.simple_intent` (intent kind, determinism, allowed IDs)
+  - `execution_result.json`: `intent_route` dict (full mismatch evidence)
+  - `plan.json` + `plan.attempt-<n>.json`: `intent_route` metadata
+  - `actions.jsonl`: `queue_simple_intent_routed` and `queue_simple_intent_mismatch` events
+- `unknown_or_ambiguous` goals pass through to normal planning with no constraint.
+- Classifier is conservative: only classifies when obviously matching (single-word app names,
+  explicit path prefixes for read, write verb prefix, etc.).
+- Added `tests/test_simple_intent.py` with 62 tests covering classifier, mismatch detection,
+  and integration through the queue daemon (including regression tests for all mismatch patterns).
+- Validation: ruff format ✓, ruff check ✓, mypy ✓, pytest 670 passed ✓, golden-check ✓,
+  validation-check ✓, merge-readiness-check ✓.
+
 ## 2026-03-08 — PR 4 — planner-executor-evaluator loop with bounded replan
 
 - Added `src/voxera/core/execution_evaluator.py` for deterministic post-attempt outcome classification.
