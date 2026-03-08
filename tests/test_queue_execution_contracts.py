@@ -988,7 +988,9 @@ def test_child_job_enters_normal_approval_flow_when_executed(tmp_path, monkeypat
     monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _plan_open_url)
     daemon.process_pending_once()
 
-    pending_children = sorted((queue_root / "pending").glob("child-*.json"))
+    pending_children = sorted(
+        p for p in (queue_root / "pending").glob("child-*.json") if daemon._is_primary_job_json(p)
+    )
     assert len(pending_children) == 1
     approval = queue_root / "pending" / "approvals" / f"{pending_children[0].stem}.approval.json"
     assert approval.exists()
