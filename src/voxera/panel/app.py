@@ -1315,6 +1315,9 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "artifact_anomalies": artifact_anomalies,
         "job_context": context_summary,
         "lineage": lineage,
+        "child_refs": structured_execution.get("child_refs")
+        if isinstance(structured_execution.get("child_refs"), list)
+        else [],
         "execution": structured_execution,
         "recent_timeline": _job_recent_timeline(actions, audit_timeline),
         "artifacts_dir": str(artifacts_dir),
@@ -1410,6 +1413,9 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "fast_lane": fast_lane_raw if isinstance(fast_lane_raw, dict) else None,
         "intent_route": intent_route_raw if isinstance(intent_route_raw, dict) else None,
         "lineage": payload.get("lineage") if isinstance(payload.get("lineage"), dict) else None,
+        "child_refs": payload.get("child_refs")
+        if isinstance(payload.get("child_refs"), list)
+        else [],
         "parent_job_id": (
             payload.get("lineage", {}).get("parent_job_id")
             if isinstance(payload.get("lineage"), dict)

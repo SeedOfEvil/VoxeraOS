@@ -53,6 +53,27 @@
     </dl>
   </section>
   {% endif %}
+
+  {% if payload.child_refs %}
+  <div class="section-label">Child Jobs</div>
+  <section class="card mb">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Child job id</th><th>Root job</th><th>Depth</th><th>Sequence</th></tr></thead>
+        <tbody>
+          {% for child in payload.child_refs %}
+          <tr>
+            <td class="mono text-sm">{{child.child_job_id or '-'}}</td>
+            <td class="mono text-sm">{{child.root_job_id or '-'}}</td>
+            <td>{{child.orchestration_depth if child.orchestration_depth is not none else '-'}}</td>
+            <td>{{child.sequence_index if child.sequence_index is not none else '-'}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
   {% if payload.execution.step_summaries %}
   <div class="section-label">Canonical Step Summaries</div>
   <section class="card mb">

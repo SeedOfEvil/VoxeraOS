@@ -33,6 +33,7 @@ from .queue_approvals import QueueApprovalMixin
 from .queue_contracts import (
     build_execution_result,
     build_structured_step_results,
+    compute_child_lineage,
     extract_lineage_metadata,
 )
 from .queue_execution import QueueExecutionMixin
@@ -566,6 +567,94 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             error=None,
             payload=payload,
         )
+
+    def _next_child_sequence_index(self, parent_job_ref: str) -> int:
+        artifact_dir = self._job_artifacts_dir(parent_job_ref)
+        path = artifact_dir / "child_job_refs.json"
+        if not path.exists():
+            return 1
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return 1
+        refs = payload.get("child_refs") if isinstance(payload, dict) else None
+        if not isinstance(refs, list):
+            return 1
+        return len([item for item in refs if isinstance(item, dict)]) + 1
+
+    def _enqueue_child_job_from_parent(
+        self,
+        *,
+        parent_job_ref: str,
+        parent_payload: dict[str, Any],
+        enqueue_request: dict[str, str | None],
+    ) -> dict[str, Any]:
+        child_goal = str(enqueue_request.get("goal") or "").strip()
+        if not child_goal:
+            raise ValueError("enqueue_child.goal must be a non-empty string")
+
+        sequence_index = self._next_child_sequence_index(parent_job_ref)
+        parent_job_id = f"{Path(parent_job_ref).stem}.json"
+        lineage = compute_child_lineage(parent_job_id=parent_job_id, parent_payload=parent_payload)
+        lineage["sequence_index"] = sequence_index
+
+        child_id = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+        child_filename = f"child-{child_id}.json"
+        child_payload: dict[str, Any] = {
+            "goal": child_goal,
+            "title": str(enqueue_request.get("title") or f"Child of {parent_job_id}"),
+            **lineage,
+        }
+        child_path = self.inbox / child_filename
+        self._write_text_atomic(child_path, json.dumps(child_payload, indent=2))
+
+        parent_artifacts = self._job_artifacts_dir(parent_job_ref)
+        refs_path = parent_artifacts / "child_job_refs.json"
+        refs_payload: dict[str, Any]
+        if refs_path.exists():
+            try:
+                loaded = json.loads(refs_path.read_text(encoding="utf-8"))
+            except Exception:
+                loaded = {}
+            refs_payload = loaded if isinstance(loaded, dict) else {}
+        else:
+            refs_payload = {}
+
+        refs = refs_payload.get("child_refs")
+        if not isinstance(refs, list):
+            refs = []
+        child_ref = {
+            "child_job_id": child_filename,
+            "parent_job_id": parent_job_id,
+            "root_job_id": lineage.get("root_job_id"),
+            "orchestration_depth": lineage.get("orchestration_depth"),
+            "sequence_index": sequence_index,
+        }
+        refs.append(child_ref)
+        refs_payload["child_refs"] = refs
+        self._write_text_atomic(refs_path, json.dumps(refs_payload, indent=2))
+
+        self._write_action_event(
+            parent_job_ref,
+            "queue_child_enqueued",
+            child_job_id=child_filename,
+            parent_job_id=parent_job_id,
+            root_job_id=lineage.get("root_job_id"),
+            orchestration_depth=lineage.get("orchestration_depth"),
+            sequence_index=sequence_index,
+        )
+        log(
+            {
+                "event": "queue_child_enqueued",
+                "parent_job": str(parent_job_ref),
+                "child_job": str(child_path),
+                "parent_job_id": parent_job_id,
+                "root_job_id": lineage.get("root_job_id"),
+                "orchestration_depth": lineage.get("orchestration_depth"),
+                "sequence_index": sequence_index,
+            }
+        )
+        return child_ref
 
     def _move_job(self, src: Path, target_dir: Path) -> Path | None:
         def _on_already_moved(missing_src: Path, move_target_dir: Path) -> None:

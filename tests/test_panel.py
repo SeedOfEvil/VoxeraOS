@@ -1158,6 +1158,46 @@ def test_job_progress_endpoint_includes_lineage_metadata(tmp_path, monkeypatch):
     assert payload["sequence_index"] == 7
 
 
+def test_job_detail_and_progress_include_child_refs(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-parent-child-refs.json").write_text(
+        json.dumps({"goal": "ok"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-parent-child-refs"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "child_refs": [
+                    {
+                        "child_job_id": "child-123.json",
+                        "root_job_id": "job-parent-child-refs.json",
+                        "orchestration_depth": 1,
+                        "sequence_index": 1,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    detail = client.get("/jobs/job-parent-child-refs.json")
+    assert detail.status_code == 200
+    assert "Child Jobs" in detail.text
+    assert "child-123.json" in detail.text
+
+    progress = client.get("/jobs/job-parent-child-refs.json/progress")
+    assert progress.status_code == 200
+    assert progress.json()["child_refs"][0]["child_job_id"] == "child-123.json"
+
+
 def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

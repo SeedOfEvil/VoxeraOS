@@ -1093,3 +1093,15 @@ This keeps Voxera OS as the trust layer: UI reflects persisted control-plane evi
 ### Queue lineage metadata (descriptive only)
 
 The queue contract now carries optional lineage fields for future workflow observability: `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and `lineage_role`. In the current phase these fields are metadata-only; there is no dependency enforcement, child enqueue behavior, traversal, orchestration state machine, or output passing between jobs.
+
+
+### Controlled child enqueue primitive (PR 9B-lite)
+
+Queue payloads may include a narrow `enqueue_child` object (`goal`, optional `title`). During parent execution success, Voxera may enqueue one normal child inbox job and emits audit evidence.
+
+Safety semantics:
+- fail-closed validation (`enqueue_child` must be an object, only allowed keys, non-empty `goal`)
+- no recursion or nested enqueue support
+- no parent waiting, dependency resolution, or output passing
+- child lineage is computed server-side from sanitized parent lineage and cannot be user-overridden through child payload metadata
+- approval behavior is unchanged: child jobs enter normal approval flow when they execute

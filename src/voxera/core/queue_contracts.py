@@ -67,6 +67,53 @@ def extract_lineage_metadata(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def extract_enqueue_child_request(payload: dict[str, Any]) -> dict[str, str | None] | None:
+    if "enqueue_child" not in payload:
+        return None
+    raw = payload.get("enqueue_child")
+    if not isinstance(raw, dict):
+        raise ValueError("enqueue_child must be an object")
+
+    allowed_keys = {"goal", "title"}
+    unknown_keys = sorted(set(raw.keys()) - allowed_keys)
+    if unknown_keys:
+        joined = ", ".join(unknown_keys)
+        raise ValueError(f"enqueue_child contains unsupported keys: {joined}")
+
+    child_goal = _sanitize_lineage_string(raw.get("goal"))
+    if child_goal is None:
+        raise ValueError("enqueue_child.goal must be a non-empty string")
+
+    child_title = _sanitize_lineage_string(raw.get("title"))
+    return {"goal": child_goal, "title": child_title}
+
+
+def compute_child_lineage(
+    *,
+    parent_job_id: str,
+    parent_payload: dict[str, Any],
+) -> dict[str, Any]:
+    parent_lineage = extract_lineage_metadata(parent_payload) or {
+        "parent_job_id": None,
+        "root_job_id": None,
+        "orchestration_depth": 0,
+        "sequence_index": None,
+        "lineage_role": None,
+    }
+
+    parent_root_job_id = _sanitize_lineage_string(parent_lineage.get("root_job_id"))
+    parent_depth = _sanitize_lineage_int(parent_lineage.get("orchestration_depth")) or 0
+    parent_sequence = _sanitize_lineage_int(parent_lineage.get("sequence_index"))
+
+    return {
+        "parent_job_id": parent_job_id,
+        "root_job_id": parent_root_job_id or parent_job_id,
+        "orchestration_depth": parent_depth + 1,
+        "sequence_index": (parent_sequence + 1) if parent_sequence is not None else 1,
+        "lineage_role": "child",
+    }
+
+
 def detect_request_kind(payload: dict[str, Any]) -> str:
     intent = payload.get("job_intent")
     if isinstance(intent, dict):
@@ -345,6 +392,9 @@ def build_execution_result(
             if isinstance(rr_data.get("intent_route"), dict)
             else None
         ),
+        "child_refs": [item for item in rr_data.get("child_refs", []) if isinstance(item, dict)]
+        if isinstance(rr_data.get("child_refs"), list)
+        else [],
         "approval_status": (
             "pending"
             if rr_data.get("status") == "pending_approval"

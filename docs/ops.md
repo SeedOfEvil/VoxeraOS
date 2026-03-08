@@ -1245,3 +1245,15 @@ Limitations:
 ## Operator visibility: lineage metadata
 
 Operators can inspect optional lineage metadata on job detail and progress surfaces. If a job was submitted with lineage fields, the panel shows a small Lineage block and progress JSON includes lineage keys (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`). Missing or malformed values are sanitized/omitted without affecting execution.
+
+
+## Operator visibility: child enqueue relationships
+
+For parent jobs that enqueue a child, operators can inspect:
+- `artifacts/<parent>/child_job_refs.json`
+- `artifacts/<parent>/actions.jsonl` event `queue_child_enqueued`
+- `artifacts/<parent>/execution_result.json` field `child_refs`
+- panel job detail `Child Jobs` block
+- `/jobs/<id>/progress` `child_refs`
+
+Child jobs remain normal queue jobs and expose lineage through existing envelope/result/progress surfaces.

@@ -852,3 +852,145 @@ def test_goal_plus_inline_unknown_skill_triggers_one_bounded_replan(tmp_path, mo
     assert execution_result["stop_reason"] == "terminal_failure"
     assert (artifacts / "plan.attempt-1.json").exists()
     assert (artifacts / "plan.attempt-2.json").exists()
+
+
+def test_enqueue_child_creates_single_child_with_lineage_and_evidence(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-parent.json").write_text(
+        json.dumps(
+            {
+                "goal": "health",
+                "enqueue_child": {"goal": "open diagnostics", "title": "Child diagnostics"},
+            }
+        )
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    done_parent = queue_root / "done" / "job-parent.json"
+    assert done_parent.exists()
+
+    children = sorted((queue_root / "inbox").glob("child-*.json"))
+    assert len(children) == 1
+    child_payload = json.loads(children[0].read_text(encoding="utf-8"))
+    assert child_payload["goal"] == "open diagnostics"
+    assert child_payload["parent_job_id"] == "job-parent.json"
+    assert child_payload["root_job_id"] == "job-parent.json"
+    assert child_payload["orchestration_depth"] == 1
+    assert child_payload["sequence_index"] == 1
+    assert child_payload["lineage_role"] == "child"
+
+    parent_art = queue_root / "artifacts" / "job-parent"
+    child_refs = json.loads((parent_art / "child_job_refs.json").read_text(encoding="utf-8"))
+    assert child_refs["child_refs"][0]["child_job_id"] == children[0].name
+
+    actions = (parent_art / "actions.jsonl").read_text(encoding="utf-8")
+    assert "queue_child_enqueued" in actions
+
+    result = json.loads((parent_art / "execution_result.json").read_text(encoding="utf-8"))
+    assert result["child_refs"][0]["child_job_id"] == children[0].name
+
+
+def test_enqueue_child_inherits_parent_root_and_depth(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-parent-rooted.json").write_text(
+        json.dumps(
+            {
+                "goal": "health",
+                "root_job_id": "root-x.json",
+                "orchestration_depth": 4,
+                "sequence_index": 9,
+                "lineage_role": "root",
+                "enqueue_child": {"goal": "child work"},
+            }
+        )
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    child = sorted((queue_root / "inbox").glob("child-*.json"))[0]
+    payload = json.loads(child.read_text(encoding="utf-8"))
+    assert payload["root_job_id"] == "root-x.json"
+    assert payload["orchestration_depth"] == 5
+    assert payload["sequence_index"] == 1
+    assert payload["lineage_role"] == "child"
+
+
+def test_malformed_enqueue_child_fails_closed_without_child_job(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-bad-child.json").write_text(
+        json.dumps({"goal": "health", "enqueue_child": {"goal": "  ", "lineage_role": "root"}})
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    assert (queue_root / "failed" / "job-bad-child.json").exists()
+    assert sorted((queue_root / "inbox").glob("child-*.json")) == []
+
+
+def test_enqueue_child_does_not_auto_execute_or_spawn_grandchildren(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-parent-nested.json").write_text(
+        json.dumps(
+            {
+                "goal": "health",
+                "enqueue_child": {"goal": "child", "title": "child"},
+            }
+        )
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    children = sorted((queue_root / "inbox").glob("child-*.json"))
+    assert len(children) == 1
+    child_payload = json.loads(children[0].read_text(encoding="utf-8"))
+    assert "enqueue_child" not in child_payload
+
+
+def test_child_job_enters_normal_approval_flow_when_executed(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+
+    async def _plan_open_url(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
+        return MissionTemplate(
+            id="plan_open_url",
+            title="Open URL",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.open_url", args={"url": "https://example.com"})],
+            notes="stub",
+        )
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-parent-approval.json").write_text(
+        json.dumps({"goal": "health", "enqueue_child": {"goal": "open https://example.com"}})
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _plan_open_url)
+    daemon.process_pending_once()
+
+    pending_children = sorted(
+        p for p in (queue_root / "pending").glob("child-*.json") if daemon._is_primary_job_json(p)
+    )
+    assert len(pending_children) == 1
+    approval = queue_root / "pending" / "approvals" / f"{pending_children[0].stem}.approval.json"
+    assert approval.exists()

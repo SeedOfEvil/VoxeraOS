@@ -255,6 +255,12 @@ def resolve_structured_execution(
         execution_result=execution_result,
         state_payload=state_payload,
     )
+    raw_child_refs = execution_result.get("child_refs")
+    child_refs = (
+        [item for item in raw_child_refs if isinstance(item, dict)]
+        if isinstance(raw_child_refs, list)
+        else []
+    )
 
     return {
         "terminal_outcome": terminal_outcome,
@@ -265,6 +271,7 @@ def resolve_structured_execution(
         else None,
         "intent_route": intent_route,
         "lineage": lineage,
+        "child_refs": child_refs,
         "stop_reason": str(execution_result.get("stop_reason") or ""),
         "latest_summary": latest_summary,
         "last_attempted_step": int(last_attempted),

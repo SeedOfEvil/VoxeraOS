@@ -1303,3 +1303,6 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 
 
 - Queue lineage metadata is now carried as descriptive-only fields (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, `lineage_role`) through canonical artifacts and panel/progress shaping. No child enqueue/dependency behavior was introduced in this phase.
+
+
+- PR 9B-lite introduced a constrained `enqueue_child` queue payload primitive: one explicit child enqueue per parent execution, deterministic/sanitized lineage propagation, and auditable evidence (`child_job_refs.json`, `queue_child_enqueued` action event, `child_refs` in result/progress/panel). No DAG/dependency/wait/result-passing behavior was added.
