@@ -1088,6 +1088,76 @@ def test_assistant_progress_endpoint_surfaces_running_and_done(tmp_path, monkeyp
     assert done_payload["has_answer"] is True
 
 
+def test_job_detail_renders_lineage_block_when_present(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-lineage.json").write_text(
+        json.dumps({"goal": "ok"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-lineage"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "lineage": {
+                    "parent_job_id": "parent-demo.json",
+                    "root_job_id": "root-demo.json",
+                    "orchestration_depth": 1,
+                    "sequence_index": 2,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    res = client.get("/jobs/job-lineage.json")
+    assert res.status_code == 200
+    assert "Lineage" in res.text
+    assert "parent-demo.json" in res.text
+    assert "root-demo.json" in res.text
+
+
+def test_job_progress_endpoint_includes_lineage_metadata(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-lineage-progress.json").write_text(
+        json.dumps({"goal": "ok"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-lineage-progress"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "lineage": {
+                    "parent_job_id": "parent-progress.json",
+                    "root_job_id": "root-progress.json",
+                    "orchestration_depth": 3,
+                    "sequence_index": 7,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    res = client.get("/jobs/job-lineage-progress.json/progress")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["parent_job_id"] == "parent-progress.json"
+    assert payload["root_job_id"] == "root-progress.json"
+    assert payload["orchestration_depth"] == 3
+    assert payload["sequence_index"] == 7
+
+
 def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

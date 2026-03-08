@@ -294,6 +294,7 @@ def process_assistant_job(
             ok=False,
             terminal_outcome="failed",
             error=failure_text,
+            payload=assistant_payload,
         )
         daemon._update_job_state(
             str(moved),
@@ -398,6 +399,7 @@ def process_assistant_job(
         ok=True,
         terminal_outcome="succeeded",
         error=None,
+        payload=assistant_payload,
     )
     daemon._update_job_state(
         str(moved),

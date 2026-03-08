@@ -40,6 +40,19 @@
     </dl>
   </section>
 
+
+  {% if payload.lineage %}
+  <div class="section-label">Lineage</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:var(--space-2);">
+      <dt>Parent job</dt><dd>{{payload.lineage.parent_job_id or '-'}}</dd>
+      <dt>Root job</dt><dd>{{payload.lineage.root_job_id or '-'}}</dd>
+      <dt>Orchestration depth</dt><dd>{{payload.lineage.orchestration_depth if payload.lineage.orchestration_depth is not none else '-'}}</dd>
+      <dt>Sequence index</dt><dd>{{payload.lineage.sequence_index if payload.lineage.sequence_index is not none else '-'}}</dd>
+      <dt>Lineage role</dt><dd>{{payload.lineage.lineage_role or '-'}}</dd>
+    </dl>
+  </section>
+  {% endif %}
   {% if payload.execution.step_summaries %}
   <div class="section-label">Canonical Step Summaries</div>
   <section class="card mb">

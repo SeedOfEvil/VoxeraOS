@@ -67,6 +67,72 @@ def _safe_int(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def _sanitize_lineage_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _sanitize_lineage_int(value: Any, *, allow_zero: bool = True) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    minimum = 0 if allow_zero else 1
+    return parsed if parsed >= minimum else None
+
+
+def _normalize_lineage(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    parent_job_id = _sanitize_lineage_string(value.get("parent_job_id"))
+    root_job_id = _sanitize_lineage_string(value.get("root_job_id"))
+    orchestration_depth = _sanitize_lineage_int(value.get("orchestration_depth"))
+    sequence_index = _sanitize_lineage_int(value.get("sequence_index"))
+    lineage_role_raw = _sanitize_lineage_string(value.get("lineage_role"))
+    lineage_role = (
+        lineage_role_raw.lower()
+        if lineage_role_raw and lineage_role_raw.lower() in {"root", "child"}
+        else None
+    )
+    return {
+        "parent_job_id": parent_job_id,
+        "root_job_id": root_job_id,
+        "orchestration_depth": orchestration_depth if orchestration_depth is not None else 0,
+        "sequence_index": sequence_index,
+        "lineage_role": lineage_role,
+    }
+
+
+def _resolve_lineage(
+    *, artifacts_dir: Path, execution_result: dict[str, Any], state_payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    direct = _normalize_lineage(execution_result.get("lineage"))
+    if direct is not None:
+        return direct
+
+    envelope = _read_json_dict(artifacts_dir / "execution_envelope.json")
+    envelope_job = envelope.get("job")
+    if isinstance(envelope_job, dict):
+        from_envelope = _normalize_lineage(envelope_job.get("lineage"))
+        if from_envelope is not None:
+            return from_envelope
+
+    plan_payload = _read_json_dict(artifacts_dir / "plan.json")
+    plan_lineage = _normalize_lineage(plan_payload.get("lineage"))
+    if plan_lineage is not None:
+        return plan_lineage
+
+    state_job_payload = state_payload.get("payload")
+    if isinstance(state_job_payload, dict):
+        from_state_payload = _normalize_lineage(state_job_payload)
+        if from_state_payload is not None:
+            return from_state_payload
+
+    return None
+
+
 def _terminal_outcome_from_step_status(step_status: str) -> str:
     normalized = step_status.strip().lower()
     if normalized in {"succeeded", "failed", "blocked", "canceled"}:
@@ -184,6 +250,11 @@ def resolve_structured_execution(
         execution_result=execution_result,
         state_payload=state_payload,
     )
+    lineage = _resolve_lineage(
+        artifacts_dir=artifacts_dir,
+        execution_result=execution_result,
+        state_payload=state_payload,
+    )
 
     return {
         "terminal_outcome": terminal_outcome,
@@ -193,6 +264,7 @@ def resolve_structured_execution(
         if isinstance(execution_result.get("fast_lane"), dict)
         else None,
         "intent_route": intent_route,
+        "lineage": lineage,
         "stop_reason": str(execution_result.get("stop_reason") or ""),
         "latest_summary": latest_summary,
         "last_attempted_step": int(last_attempted),

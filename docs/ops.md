@@ -1240,3 +1240,8 @@ Limitations:
 - No synthetic percent-complete bars are shown.
 - If artifacts/sidecars do not contain a field, the panel leaves it unknown/empty.
 - Without JavaScript, pages still load and can be manually refreshed.
+
+
+## Operator visibility: lineage metadata
+
+Operators can inspect optional lineage metadata on job detail and progress surfaces. If a job was submitted with lineage fields, the panel shows a small Lineage block and progress JSON includes lineage keys (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`). Missing or malformed values are sanitized/omitted without affecting execution.

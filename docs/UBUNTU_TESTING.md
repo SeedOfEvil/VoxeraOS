@@ -206,3 +206,11 @@ What it validates (fast, deterministic):
 Interpretation:
 - Any `security-check` failure is a trust-regression signal and should block merge until fixed or intentionally re-baselined with explicit review.
 - This gate is hardening-only and should not be treated as product feature expansion.
+
+
+### Manual STV for lineage metadata
+
+1. Submit a normal queue job with no lineage metadata; verify behavior is unchanged and no lineage section is shown.
+2. Submit a job with lineage keys (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`).
+3. Verify successful execution and lineage visibility in `artifacts/<job>/execution_envelope.json`, `execution_result.json`, `plan.json`, `/jobs/<job>/progress`, and the panel job detail page.
+4. Confirm no automatic child scheduling or dependency behavior occurs.
