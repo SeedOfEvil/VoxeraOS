@@ -28,6 +28,7 @@ That architecture matters because it keeps behavior observable and recoverable e
   - Home/jobs dashboards, queue controls, mission creation, approvals, retries/cancel/delete, hygiene operations, recovery inspector, and bundle downloads.
 - **Assistant advisory lane**
   - `/assistant` submits queue-backed advisory jobs (`assistant_question`), with bounded thread continuity and degraded read-only fallback mode when queue transport is unavailable.
+  - Explicitly read-only advisory requests can use an in-control-plane fast lane (`execution_lane=fast_read_only`) when deterministic eligibility checks pass (including canonical request-kind detection via `job_intent.request_kind`); uncertain or non-eligible requests fail closed to normal queue lane (`execution_lane=queue`).
 - **Health + doctor + observability**
   - `health.json` snapshots, semantic queue health views, auth lockout counters, fallback metadata, and `voxera doctor` checks.
   - `voxera doctor` now includes a `skills.registry` row summarizing strict manifest health (`valid` / `invalid` / `incomplete` / `warning`) with top remediation-oriented reason codes.
@@ -226,6 +227,8 @@ CI-required merge gate remains `make merge-readiness-check` (`merge-readiness / 
 ## Structured execution artifact consumption (current behavior)
 
 Operator-facing queue consumers now prefer canonical structured artifacts when present (`execution_result.json`, then `step_results.json`) and fall back to legacy state/error/approval sidecars when absent. This keeps old jobs readable while making panel/CLI/ops bundle summaries more deterministic for new jobs.
+
+Assistant queue artifacts now also include additive lane metadata (`execution_envelope.execution.lane`/`execution_envelope.execution.fast_lane`, `execution_result.execution_lane`/`execution_result.fast_lane`, mirrored in `assistant_response.json`) so operators can see whether the request used `fast_read_only` or standard queue routing and why.
 
 ## Structured producer intent (queue producer/planner lane)
 

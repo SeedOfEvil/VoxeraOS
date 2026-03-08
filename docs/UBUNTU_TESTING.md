@@ -159,3 +159,7 @@ artifact candidates, and duplicate jobs. Should show 0 issues on a clean queue.
 
 
 - Verify representative built-in skills produce canonical `skill_result` keys (`summary`, `machine_payload`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`) under success, invalid-input failure, and dependency-missing paths.
+- Validate assistant read-only fast lane evidence:
+  - enqueue an `/assistant` request and confirm `artifacts/<job>/execution_envelope.json` and `execution_result.json` both include lane metadata (`execution.lane`/`execution.fast_lane` and `execution_lane`/`fast_lane`).
+  - confirm fast-lane-eligible advisory request shows `execution_lane=fast_read_only`.
+  - confirm non-eligible advisory request shape (e.g. extra action hint or approval flag) remains `execution_lane=queue`.

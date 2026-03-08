@@ -227,6 +227,9 @@ class QueueExecutionMixin:
     def _request_kind(self: Any, payload: dict[str, Any]) -> str:
         return detect_request_kind(payload)
 
+    def _is_assistant_request(self: Any, payload: dict[str, Any]) -> bool:
+        return self._request_kind(payload) == ASSISTANT_JOB_KIND
+
     def _max_replan_attempts(self: Any) -> int:
         try:
             return max(0, int(getattr(self.cfg, "max_replan_attempts", 1)))
@@ -318,8 +321,45 @@ class QueueExecutionMixin:
 
             try:
                 payload = self._load_job_payload_with_retry(job_path)
-                if str(payload.get("kind") or "").strip() == ASSISTANT_JOB_KIND:
-                    return self._process_assistant_job(job_path, payload)
+                if self._is_assistant_request(payload):
+                    request_kind = self._request_kind(payload)
+                    fast_lane_eligible, fast_lane_reason = (
+                        _queue_daemon_module().queue_assistant.evaluate_assistant_fast_lane_eligibility(
+                            payload,
+                            request_kind=request_kind,
+                        )
+                    )
+                    lane = "fast_read_only" if fast_lane_eligible else "queue"
+                    fast_lane_meta = {
+                        "used": fast_lane_eligible,
+                        "eligible": fast_lane_eligible,
+                        "eligibility_reason": fast_lane_reason,
+                        "request_kind": request_kind,
+                    }
+                    self._write_action_event(
+                        str(job_path),
+                        "assistant_fast_lane_evaluated",
+                        request_kind=request_kind,
+                        fast_lane_eligible=fast_lane_eligible,
+                        fast_lane_reason=fast_lane_reason,
+                        execution_lane=lane,
+                    )
+                    _queue_daemon_module().log(
+                        {
+                            "event": "assistant_fast_lane_evaluated",
+                            "job": str(job_path),
+                            "request_kind": request_kind,
+                            "fast_lane_eligible": fast_lane_eligible,
+                            "fast_lane_reason": fast_lane_reason,
+                            "execution_lane": lane,
+                        }
+                    )
+                    return self._process_assistant_job(
+                        job_path,
+                        payload,
+                        execution_lane=lane,
+                        fast_lane=fast_lane_meta,
+                    )
                 payload = self._normalize_payload(payload)
                 if self._ensure_hard_approval_gate(job_path, payload=payload):
                     return False
@@ -501,6 +541,8 @@ class QueueExecutionMixin:
                     queue_root=self.queue_root,
                     artifact_root=self.artifacts,
                     normalized_mode="mission",
+                    execution_lane="queue",
+                    fast_lane=None,
                     attempt_index=attempt_index,
                     replan_count=replan_count,
                     max_replans=max_replans,

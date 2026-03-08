@@ -231,7 +231,10 @@ Runtime component topology — how subsystems call each other:
 │  │    startup orphan detection → quarantine                        │
 │  │    SIGTERM → in-flight finalization → shutdown record           │
 │  └─ queue_assistant module  (queue_assistant.py)                   │
-│       assistant_question jobs → brain → response artifact          │
+│       assistant_question jobs → fast-lane eligibility gate         │
+│                                  ├─ eligible -> fast_read_only lane│
+│                                  └─ else -> normal queue lane      │
+│                               (both emit canonical artifacts)       │
 │                                                                    │
 │  Supporting helpers:                                               │
 │  queue_state.py   queue_paths.py   queue_inspect.py               │
@@ -930,6 +933,24 @@ This is intentionally additive and backward-compatible: canonical structured fie
 ## Producer-side queue intent contract (additive)
 
 In addition to execution-time artifacts, queue producer lanes now emit/normalize additive `job_intent` metadata for queued work. This is centralized in `src/voxera/core/queue_job_intent.py` and is intentionally tolerant of partial inputs. The daemon persists `artifacts/<job>/job_intent.json` when present and includes the same object under `execution_envelope.json -> request.job_intent`.
+
+### Assistant fast lane (read-only)
+
+The assistant queue path includes a narrow, fail-closed fast-lane gate for explicitly read-only advisory requests.
+
+- Scope: only assistant advisory requests (`assistant_question` request kind from payload kind or canonical `job_intent.request_kind`), not mission execution.
+- Deterministic eligibility signals (all required):
+  - `advisory=true`
+  - `read_only=true`
+  - `action_hints` exactly `['assistant.advisory']`
+  - no `goal`/`plan_goal`, no `mission_id`/`mission`, no `steps`, no `approval_required=true`
+- Fail-closed: any mismatch or uncertainty routes to normal `queue` lane.
+- Governance preserved in both lanes: runtime policy/capability boundaries are unchanged, canonical artifact shaping still occurs, and action/audit logs are emitted.
+- Operator evidence: lane selection is explicit in artifacts:
+  - `execution_result.json.execution_lane` (`fast_read_only` or `queue`)
+  - `execution_result.json.fast_lane` (`used`, `eligible`, `eligibility_reason`, `request_kind`)
+  - mirrored lane metadata in `assistant_response.json`
+  - assistant jobs also emit `execution_envelope.json` (`execution.mode=assistant_advisory`, `execution.lane`, `execution.fast_lane`)
 
 This keeps legacy queue payloads valid while giving newer jobs a deterministic planning-intent surface for panel detail views, ops bundles, and future retry/recovery logic.
 

@@ -18,12 +18,65 @@ from ..operator_assistant import (
     normalize_thread_id,
     read_assistant_thread,
 )
+from .queue_contracts import build_assistant_execution_envelope
 
 _ASSISTANT_FALLBACK_REASONS = frozenset({TIMEOUT, AUTH, RATE_LIMIT, MALFORMED, NETWORK})
+_FAST_LANE_ALLOWED_REQUEST_KINDS = frozenset({ASSISTANT_JOB_KIND})
+_FAST_LANE_ALLOWED_ACTION_HINTS = frozenset({"assistant.advisory"})
 
 
 def assistant_response_artifact_path(daemon: Any, job_ref: str) -> Path:
     return daemon._job_artifacts_dir(job_ref) / "assistant_response.json"
+
+
+def _write_assistant_execution_envelope(
+    daemon: Any,
+    *,
+    job_ref: str,
+    payload: dict[str, Any],
+    execution_lane: str,
+    fast_lane: dict[str, Any] | None,
+) -> None:
+    envelope = build_assistant_execution_envelope(
+        job_ref=job_ref,
+        payload=payload,
+        queue_root=daemon.queue_root,
+        artifact_root=daemon.artifacts,
+        execution_lane=execution_lane,
+        fast_lane=fast_lane,
+    )
+    (daemon._job_artifacts_dir(job_ref) / "execution_envelope.json").write_text(
+        json.dumps(envelope, indent=2),
+        encoding="utf-8",
+    )
+
+
+def evaluate_assistant_fast_lane_eligibility(
+    payload: dict[str, Any],
+    *,
+    request_kind: str,
+) -> tuple[bool, str]:
+    if request_kind not in _FAST_LANE_ALLOWED_REQUEST_KINDS:
+        return (False, "request_kind_not_eligible")
+    if payload.get("advisory") is not True:
+        return (False, "advisory_flag_missing")
+    if payload.get("read_only") is not True:
+        return (False, "read_only_flag_missing")
+    if payload.get("approval_required") is True:
+        return (False, "approval_required")
+    action_hints = payload.get("action_hints")
+    if not isinstance(action_hints, list) or not action_hints:
+        return (False, "action_hints_missing")
+    normalized_hints = {str(item).strip() for item in action_hints if str(item).strip()}
+    if normalized_hints != _FAST_LANE_ALLOWED_ACTION_HINTS:
+        return (False, "action_hints_not_eligible")
+    if payload.get("steps") is not None:
+        return (False, "inline_steps_not_allowed")
+    if payload.get("mission_id") or payload.get("mission"):
+        return (False, "mission_not_allowed")
+    if payload.get("goal") or payload.get("plan_goal"):
+        return (False, "goal_not_allowed")
+    return (True, "eligible_read_only_assistant_advisory")
 
 
 def create_assistant_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:
@@ -133,16 +186,31 @@ def assistant_answer_via_brain(
             ) from fallback_exc
 
 
-def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) -> bool:
+def process_assistant_job(
+    daemon: Any,
+    job_path: Path,
+    payload: dict[str, Any],
+    *,
+    execution_lane: str,
+    fast_lane: dict[str, Any] | None = None,
+) -> bool:
     question = str(payload.get("question") or "").strip()
     if not question:
         raise ValueError("assistant question is required")
     thread_id = normalize_thread_id(str(payload.get("thread_id") or ""))
+    assistant_payload = {**payload, "thread_id": thread_id, "question": question}
+    _write_assistant_execution_envelope(
+        daemon,
+        job_ref=str(job_path),
+        payload=assistant_payload,
+        execution_lane=execution_lane,
+        fast_lane=fast_lane,
+    )
 
     daemon._update_job_state(
         str(job_path),
         lifecycle_state="advisory_running",
-        payload={**payload, "thread_id": thread_id},
+        payload=assistant_payload,
     )
     daemon._write_action_event(str(job_path), "assistant_job_started", thread_id=thread_id)
 
@@ -177,6 +245,8 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
             "model": None,
             "advisory_mode": "queue",
             "degraded_reason": "queue_processing_failed",
+            "execution_lane": execution_lane,
+            "fast_lane": fast_lane if isinstance(fast_lane, dict) else None,
             "answered_at_ms": now_ms,
             "updated_at_ms": now_ms,
             "context": context,
@@ -189,9 +259,7 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
             return False
         daemon.stats.failed += 1
         failure_text = str(artifact_payload["error"])
-        daemon._write_failed_error_sidecar(
-            moved, error=failure_text, payload={**payload, "thread_id": thread_id}
-        )
+        daemon._write_failed_error_sidecar(moved, error=failure_text, payload=assistant_payload)
         daemon._write_execution_result_artifacts(
             str(moved),
             rr_data={
@@ -220,6 +288,8 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
                 "total_steps": 1,
                 "lifecycle_state": "step_failed",
                 "terminal_outcome": "failed",
+                "execution_lane": execution_lane,
+                "fast_lane": fast_lane if isinstance(fast_lane, dict) else None,
             },
             ok=False,
             terminal_outcome="failed",
@@ -228,7 +298,7 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
         daemon._update_job_state(
             str(moved),
             lifecycle_state="step_failed",
-            payload={**payload, "thread_id": thread_id},
+            payload=assistant_payload,
             terminal_outcome="failed",
             failure_summary=failure_text,
         )
@@ -278,6 +348,8 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
         "error_class": answer_data.get("error_class"),
         "advisory_mode": str(answer_data.get("advisory_mode") or "queue"),
         "degraded_reason": answer_data.get("degraded_reason"),
+        "execution_lane": execution_lane,
+        "fast_lane": fast_lane if isinstance(fast_lane, dict) else None,
         "context": context,
     }
     assistant_response_artifact_path(daemon, str(job_path)).write_text(
@@ -317,6 +389,8 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
             "total_steps": 1,
             "lifecycle_state": "done",
             "terminal_outcome": "succeeded",
+            "execution_lane": execution_lane,
+            "fast_lane": fast_lane if isinstance(fast_lane, dict) else None,
             "current_step_index": 1,
             "last_completed_step": 1,
             "last_attempted_step": 1,
@@ -328,7 +402,7 @@ def process_assistant_job(daemon: Any, job_path: Path, payload: dict[str, Any]) 
     daemon._update_job_state(
         str(moved),
         lifecycle_state="done",
-        payload={**payload, "thread_id": thread_id},
+        payload=assistant_payload,
         terminal_outcome="succeeded",
     )
     if artifact_payload["fallback_used"]:

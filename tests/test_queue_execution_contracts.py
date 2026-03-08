@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from voxera.core import queue_assistant
 from voxera.core.missions import MissionStep, MissionTemplate
 from voxera.core.queue_daemon import MissionQueueDaemon
 from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig, RunResult
@@ -141,7 +142,16 @@ def test_assistant_queue_writes_structured_execution_artifacts(tmp_path):
     }
     (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
     (queue_root / "inbox" / "job-assistant.json").write_text(
-        json.dumps({"kind": "assistant_question", "question": "What changed?", "thread_id": "t-1"})
+        json.dumps(
+            {
+                "kind": "assistant_question",
+                "question": "What changed?",
+                "thread_id": "t-1",
+                "advisory": True,
+                "read_only": True,
+                "action_hints": ["assistant.advisory"],
+            }
+        )
     )
 
     daemon.process_pending_once()
@@ -151,8 +161,196 @@ def test_assistant_queue_writes_structured_execution_artifacts(tmp_path):
             encoding="utf-8"
         )
     )
+    execution_envelope = json.loads(
+        (queue_root / "artifacts" / "job-assistant" / "execution_envelope.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert execution_result["ok"] is True
+    assert execution_result["execution_lane"] == "fast_read_only"
+    assert execution_result["fast_lane"]["used"] is True
     assert execution_result["step_results"][0]["skill_id"] == "assistant.advisory"
+
+    assistant_artifact = json.loads(
+        (queue_root / "artifacts" / "job-assistant" / "assistant_response.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_envelope["execution"]["mode"] == "assistant_advisory"
+    assert execution_envelope["execution"]["lane"] == "fast_read_only"
+    assert (
+        execution_envelope["execution"]["fast_lane"]["eligibility_reason"]
+        == "eligible_read_only_assistant_advisory"
+    )
+    assert execution_envelope["job"]["request_kind"] == "assistant_question"
+    assert assistant_artifact["execution_lane"] == execution_result["execution_lane"]
+    assert (
+        assistant_artifact["fast_lane"]
+        == execution_result["fast_lane"]
+        == execution_envelope["execution"]["fast_lane"]
+    )
+
+
+def test_assistant_non_eligible_payload_falls_back_to_normal_queue_lane(tmp_path):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon._assistant_answer_via_brain = lambda *args, **kwargs: {  # type: ignore[method-assign]
+        "answer": "queued answer",
+        "provider": "primary",
+        "model": "mock",
+        "fallback_used": False,
+        "fallback_reason": None,
+        "advisory_mode": "queue",
+        "degraded_reason": None,
+    }
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-assistant-non-eligible.json").write_text(
+        json.dumps(
+            {
+                "kind": "assistant_question",
+                "question": "What changed?",
+                "thread_id": "t-2",
+                "advisory": True,
+                "read_only": True,
+                "action_hints": ["assistant.advisory", "files.read_text"],
+            }
+        )
+    )
+
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (
+            queue_root / "artifacts" / "job-assistant-non-eligible" / "execution_result.json"
+        ).read_text(encoding="utf-8")
+    )
+    execution_envelope = json.loads(
+        (
+            queue_root / "artifacts" / "job-assistant-non-eligible" / "execution_envelope.json"
+        ).read_text(encoding="utf-8")
+    )
+    assistant_artifact = json.loads(
+        (
+            queue_root / "artifacts" / "job-assistant-non-eligible" / "assistant_response.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert execution_result["execution_lane"] == "queue"
+    assert execution_result["fast_lane"]["used"] is False
+    assert execution_result["fast_lane"]["eligibility_reason"] == "action_hints_not_eligible"
+    assert execution_envelope["execution"]["lane"] == "queue"
+    assert execution_envelope["execution"]["fast_lane"]["used"] is False
+    assert assistant_artifact["execution_lane"] == execution_result["execution_lane"]
+    assert (
+        assistant_artifact["fast_lane"]
+        == execution_result["fast_lane"]
+        == execution_envelope["execution"]["fast_lane"]
+    )
+
+
+def test_assistant_approval_flag_disables_fast_lane(tmp_path):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon._assistant_answer_via_brain = lambda *args, **kwargs: {  # type: ignore[method-assign]
+        "answer": "queued answer",
+        "provider": "primary",
+        "model": "mock",
+        "fallback_used": False,
+        "fallback_reason": None,
+        "advisory_mode": "queue",
+        "degraded_reason": None,
+    }
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-assistant-approval.json").write_text(
+        json.dumps(
+            {
+                "kind": "assistant_question",
+                "question": "What changed?",
+                "thread_id": "t-3",
+                "advisory": True,
+                "read_only": True,
+                "approval_required": True,
+                "action_hints": ["assistant.advisory"],
+            }
+        )
+    )
+
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-assistant-approval" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["execution_lane"] == "queue"
+    assert execution_result["fast_lane"]["eligibility_reason"] == "approval_required"
+
+
+def test_assistant_request_kind_in_job_intent_routes_to_assistant_lane(tmp_path):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon._assistant_answer_via_brain = lambda *args, **kwargs: {  # type: ignore[method-assign]
+        "answer": "queued answer",
+        "provider": "primary",
+        "model": "mock",
+        "fallback_used": False,
+        "fallback_reason": None,
+        "advisory_mode": "queue",
+        "degraded_reason": None,
+    }
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-assistant-intent-only.json").write_text(
+        json.dumps(
+            {
+                "question": "What changed?",
+                "thread_id": "t-4",
+                "advisory": True,
+                "read_only": True,
+                "action_hints": ["assistant.advisory"],
+                "job_intent": {"request_kind": "assistant_question"},
+            }
+        )
+    )
+
+    daemon.process_pending_once()
+
+    assert (queue_root / "done" / "job-assistant-intent-only.json").exists()
+    assert not (queue_root / "failed" / "job-assistant-intent-only.json").exists()
+    execution_result = json.loads(
+        (
+            queue_root / "artifacts" / "job-assistant-intent-only" / "execution_result.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert execution_result["ok"] is True
+    assert execution_result["terminal_outcome"] == "succeeded"
+    assert execution_result["execution_lane"] == "fast_read_only"
+
+
+def test_assistant_mutating_action_hint_is_not_fast_lane_eligible():
+    eligible, reason = queue_assistant.evaluate_assistant_fast_lane_eligibility(
+        {
+            "kind": "assistant_question",
+            "advisory": True,
+            "read_only": True,
+            "action_hints": ["clipboard.copy"],
+        },
+        request_kind="assistant_question",
+    )
+    assert eligible is False
+    assert reason == "action_hints_not_eligible"
+
+
+def test_assistant_malformed_payload_is_not_fast_lane_eligible():
+    eligible, reason = queue_assistant.evaluate_assistant_fast_lane_eligibility(
+        {
+            "kind": "assistant_question",
+            "advisory": True,
+            "read_only": "yes",
+            "action_hints": ["assistant.advisory"],
+        },
+        request_kind="assistant_question",
+    )
+    assert eligible is False
+    assert reason == "read_only_flag_missing"
 
 
 def test_step_results_include_structured_skill_result_fields(tmp_path, monkeypatch):

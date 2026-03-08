@@ -1005,8 +1005,21 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             create_brain=self._create_assistant_brain,
         )
 
-    def _process_assistant_job(self, job_path: Path, payload: dict[str, Any]) -> bool:
-        return queue_assistant.process_assistant_job(self, job_path, payload)
+    def _process_assistant_job(
+        self,
+        job_path: Path,
+        payload: dict[str, Any],
+        *,
+        execution_lane: str,
+        fast_lane: dict[str, Any] | None = None,
+    ) -> bool:
+        return queue_assistant.process_assistant_job(
+            self,
+            job_path,
+            payload,
+            execution_lane=execution_lane,
+            fast_lane=fast_lane,
+        )
 
     def _config_snapshot_path(self) -> Path:
         return self.queue_root / "_ops" / "config_snapshot.json"
