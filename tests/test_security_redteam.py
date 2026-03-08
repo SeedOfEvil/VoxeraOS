@@ -93,6 +93,66 @@ def test_redteam_planner_mismatch_rejection_is_terminal_failure(tmp_path, monkey
     assert execution_result["stop_reason"] == "planner_intent_route_rejected"
 
 
+def test_redteam_classifier_exact_traversal_cases_have_no_extracted_target():
+    goals = (
+        "read the file ~/VoxeraOS/notes/../secrets.txt",
+        "read ~/VoxeraOS/notes/../../etc/passwd",
+        "open and read ~/VoxeraOS/notes/../x.txt",
+    )
+    for goal in goals:
+        route = classify_simple_operator_intent(goal=goal)
+        assert route.intent_kind == "read_file"
+        assert route.deterministic is True
+        assert route.extracted_target is None
+
+
+def test_redteam_traversal_goal_metadata_has_no_deterministic_path_shortcut(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+
+    async def _wrong_plan(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
+        return MissionTemplate(
+            id="wrong-first-step",
+            title="Wrong First Step",
+            goal=goal,
+            steps=[MissionStep(skill_id="clipboard.copy", args={"text": "unsafe"})],
+            notes="red-team mismatch",
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _wrong_plan)
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-traversal.json").write_text(
+        json.dumps({"goal": "read the file ~/VoxeraOS/notes/../secrets.txt"}),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-traversal" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    plan_artifact = json.loads(
+        (queue_root / "artifacts" / "job-traversal" / "plan.json").read_text(encoding="utf-8")
+    )
+
+    assert execution_result["terminal_outcome"] == "failed"
+    assert execution_result["stop_reason"] == "planner_intent_route_rejected"
+
+    intent_route_result = execution_result.get("intent_route")
+    assert isinstance(intent_route_result, dict)
+    assert intent_route_result.get("intent_kind") == "read_file"
+    assert "extracted_target" not in intent_route_result
+
+    intent_route_plan = plan_artifact.get("intent_route")
+    assert isinstance(intent_route_plan, dict)
+    assert intent_route_plan.get("intent_kind") == "read_file"
+    assert "extracted_target" not in intent_route_plan
+
+
 def test_redteam_path_traversal_and_escape_phrases_do_not_get_safe_shortcuts():
     read_escape = classify_simple_operator_intent(goal="read ~/VoxeraOS/notes/../../secrets.txt")
     assert read_escape.intent_kind == "read_file"
