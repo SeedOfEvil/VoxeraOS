@@ -8,7 +8,7 @@
 - Security hardening: goal sanitization + 2,000-char cap, `[USER DATA START]`/`[USER DATA END]` prompt boundaries, panel auth lockout (10 attempts/60s window → HTTP 429 + `Retry-After: 60`).
 - Ops visibility: panel Daemon Health widget (health.json-sourced, no daemon calls), panel `/hygiene` page (prune dry-run + reconcile trigger, results in health.json).
 - `sandbox.exec` argv canonicalization (`canonicalize_argv`): `command`/`argv`/`cmd` aliases, shlex.split strings, reject shell-control ambiguity, fail-fast on invalid/empty argv.
-- Deterministic terminal demo skill (`system.terminal_run_once`) + deterministic planner route.
+- Deterministic open-intent routing refinement (`open_terminal`/`open_url`/`open_app`) with compound first-step preservation and meta/help guards.
 - OpenRouter invisible attribution headers (`voxeraos.ca` + `VoxeraOS`; invisible defaults; overrides preserved).
 - Reliability: e2e_golden4 approval hang fix (filesystem-based detection, phase timeouts, diagnostics).
 
@@ -58,7 +58,7 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 ### Simple-intent routing and fail-closed mismatch detection (SHIPPED — v1.3)
 
 - ✅ Deterministic simple-intent classifier (`src/voxera/core/simple_intent.py`) — intent set v1:
-  `assistant_question`, `open_resource`, `write_file`, `read_file`, `run_command`, `unknown_or_ambiguous`.
+  `assistant_question`, `open_terminal`, `open_url`, `open_app`, `write_file`, `read_file`, `run_command`, `unknown_or_ambiguous`.
 - ✅ Skill-family allowlists per intent; conservative regex-only classifier (no NLP).
 - ✅ `queue_simple_intent_routed` / `queue_simple_intent_mismatch` action events for goal-kind jobs.
 - ✅ Mismatch detection: fail closed before any skill execution; `execution_result.json` carries

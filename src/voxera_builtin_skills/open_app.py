@@ -9,6 +9,7 @@ from voxera.skills.result_contract import SKILL_RESULT_KEY, build_skill_result
 ALLOW = {
     "firefox": ["firefox"],
     "gnome-terminal": ["gnome-terminal"],
+    "gnome-calculator": ["gnome-calculator"],
     "gnome-control-center": ["gnome-control-center"],
 }
 

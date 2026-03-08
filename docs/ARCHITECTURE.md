@@ -984,19 +984,15 @@ goal string and the planner.  It classifies obvious operator asks into one of:
 | Intent kind                    | Trigger pattern                                                    | Allowed first-step skills                              |
 |--------------------------------|--------------------------------------------------------------------|--------------------------------------------------------|
 | `assistant_question`           | question verb / status phrase                                      | `assistant.advisory`, `system.status`                  |
-| `open_resource` (terminal)     | exactly `"open terminal"`                                          | `system.open_app`, `system.terminal_run_once`          |
-| `open_resource` (app/url)      | `open/launch/start <word>` or URL                                  | `system.open_app`, `system.open_url`                   |
+| `open_terminal`               | direct terminal-open imperative; can be compound-leading            | `system.open_app`                                      |
+| `open_url`                    | explicit `open/launch` verb bound to URL                            | `system.open_url`                                      |
+| `open_app`                    | explicit narrow app-open imperative                                  | `system.open_app`                                      |
 | `write_file`                   | write/append/create-file verb (articles accepted)                  | `files.write_text`                                     |
 | `read_file`                    | read/cat/display/view + `~/` or `/` path (articles accepted)       | `files.read_text`                                      |
-| `run_command`                  | run command / execute / exec verb                                  | `sandbox.exec`, `system.terminal_run_once`             |
+| `run_command`                  | run command / execute / exec verb                                  | `sandbox.exec`                                         |
 | `unknown_or_ambiguous`         | everything else                                                    | (no constraint — normal planning applies)              |
 
-> **Note on `open_resource` sub-routes**: the classifier returns a refined `allowed_skill_ids`
-> per goal.  For "open terminal" specifically it allows `system.terminal_run_once` (the
-> deterministic terminal demo skill) in addition to `system.open_app`, since both are valid
-> first steps.  `clipboard.copy` is **not** accepted as a first step for any recognised intent;
-> in particular it is not allowed for `read_file` goals even when the planner safety rewrite
-> converts a step to it.
+> Deterministic open routing is intentionally narrow: meta/help/explanatory text is guarded out; URL presence alone does not trigger `open_url`; and compound actionable requests preserve first-step metadata (`first_step_only`, `first_action_intent_kind`, `trailing_remainder`) so only step 1 is constrained fail-closed.
 
 **`read_file` accepted trigger patterns** (all require a `~/` or `/` path):
 

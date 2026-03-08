@@ -1,3 +1,10 @@
+## 2026-03-08 — Follow-up: narrow deterministic open-intent routing + demo/default hijack guard
+- Split deterministic open routing into `open_terminal`, `open_url`, and `open_app` and added compound first-step metadata (`compound_action`, `first_step_only`, `first_action_intent_kind`, `trailing_remainder`).
+- Added meta/help/explanatory guards so quoted/discussed/how/why phrasing does not trigger action execution.
+- Tightened skill families: `open_terminal` => `system.open_app`; `open_url` => `system.open_url`; `open_app` => `system.open_app`; `run_command` no longer allows `system.terminal_run_once`.
+- Removed deterministic terminal hello-world planning shortcut and updated planner preamble to avoid demo injection.
+- Updated `system.terminal_run_once` semantics to open a plain terminal only (no hello-world/canned command bootstrap).
+
 
 ## 2026-03-08 — PR #144 STV follow-up 3 — feat(intent): deterministic read routing + extracted_target + artifact consistency
 
