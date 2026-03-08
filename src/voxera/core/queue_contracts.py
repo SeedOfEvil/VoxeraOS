@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .missions import MissionTemplate
+from .simple_intent import sanitize_serialized_intent_route
 
 EXECUTION_ENVELOPE_SCHEMA_VERSION = 1
 STEP_RESULT_SCHEMA_VERSION = 1
@@ -80,9 +81,11 @@ def build_execution_envelope(
             "job_intent": payload.get("job_intent")
             if isinstance(payload.get("job_intent"), dict)
             else None,
-            "simple_intent": payload.get("_simple_intent")
-            if isinstance(payload.get("_simple_intent"), dict)
-            else None,
+            "simple_intent": (
+                sanitize_serialized_intent_route(payload.get("_simple_intent"))
+                if isinstance(payload.get("_simple_intent"), dict)
+                else None
+            ),
         },
         "mission": {
             "id": mission.id,
@@ -276,9 +279,11 @@ def build_execution_result(
         "evaluation_class": rr_data.get("evaluation_class"),
         "evaluation_reason": rr_data.get("evaluation_reason"),
         "stop_reason": rr_data.get("stop_reason"),
-        "intent_route": rr_data.get("intent_route")
-        if isinstance(rr_data.get("intent_route"), dict)
-        else None,
+        "intent_route": (
+            sanitize_serialized_intent_route(rr_data.get("intent_route"))
+            if isinstance(rr_data.get("intent_route"), dict)
+            else None
+        ),
         "approval_status": (
             "pending"
             if rr_data.get("status") == "pending_approval"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias
 
@@ -125,7 +126,9 @@ class SimpleIntentResult:
             "compound_action": self.compound_action,
             "first_step_only": self.first_step_only,
         }
-        if self.extracted_target is not None:
+        if self.extracted_target is not None and (
+            self.intent_kind != "read_file" or _is_safe_read_extracted_target(self.extracted_target)
+        ):
             d["extracted_target"] = self.extracted_target
         if self.first_action_intent_kind is not None:
             d["first_action_intent_kind"] = self.first_action_intent_kind
@@ -146,6 +149,15 @@ def _make_unknown(reason: str = "ambiguous_simple_intent") -> SimpleIntentResult
 
 def _normalize_goal(text: str) -> str:
     return _RE_LEADING_POLITE.sub("", text).strip()
+
+
+def _contains_parent_traversal(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    return any(segment == ".." for segment in normalized.split("/"))
+
+
+def _is_safe_read_extracted_target(path: str) -> bool:
+    return path.startswith("~/VoxeraOS/notes/") and not _contains_parent_traversal(path)
 
 
 def _split_compound(text: str) -> tuple[str, str | None]:
@@ -208,7 +220,7 @@ def classify_simple_operator_intent(
         extracted_path = None
         if path_match:
             raw_path = path_match.group("path").rstrip(".,;:!?\"'").strip()
-            if raw_path:
+            if raw_path and _is_safe_read_extracted_target(raw_path):
                 extracted_path = raw_path
         return SimpleIntentResult(
             "read_file",
@@ -273,3 +285,24 @@ def check_skill_family_mismatch(
     if first_step_skill_id in intent.allowed_skill_ids:
         return (False, "skill_family_matches")
     return (True, "simple_intent_skill_family_mismatch")
+
+
+def sanitize_serialized_intent_route(route: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return a defensive copy of serialized intent metadata.
+
+    This is a serialization-boundary guard so traversal-like read targets are
+    never emitted through artifacts even if upstream payloads were malformed.
+    """
+    if route is None:
+        return {}
+    cleaned = dict(route)
+    raw_kind = cleaned.get("intent_kind")
+    intent_kind = str(raw_kind).strip() if raw_kind is not None else ""
+    extracted = cleaned.get("extracted_target")
+    if intent_kind == "read_file":
+        extracted_text = str(extracted).strip() if extracted is not None else ""
+        if not extracted_text or not _is_safe_read_extracted_target(extracted_text):
+            cleaned.pop("extracted_target", None)
+        else:
+            cleaned["extracted_target"] = extracted_text
+    return cleaned

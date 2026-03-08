@@ -211,6 +211,15 @@ Golden contract workflow for operator-visible CLI surfaces:
 make golden-check
 ```
 
+Security regression workflow for adversarial fail-closed guardrails:
+
+```bash
+make security-check
+```
+
+- `make security-check` runs the focused red-team suite (`tests/test_security_redteam.py`) covering intent hijack resistance, planner mismatch fail-closed enforcement, notes/path-scope escape attempts, approval-gated state integrity, and progress/evidence consistency checks.
+- This target is a regression-hardening layer; it does not introduce new runtime feature surfaces.
+
 - `make golden-check` validates committed baselines in `tests/golden/` for high-value
   operator surfaces (`voxera --help`, key `voxera queue ... --help` commands, and a
   normalized empty `voxera queue health --json` payload).
@@ -225,13 +234,13 @@ For release-grade confidence, run:
 make full-validation-check
 ```
 
-`validation-check` is the standard quick gate (format/lint/type + critical queue/CLI/doctor contract suites). `full-validation-check` extends that with full pytest, release/failed-sidecar guardrails, and the Golden4 E2E script.
+`validation-check` is the standard quick gate (format/lint/type + golden + security red-team + critical queue/CLI/doctor contract suites). `full-validation-check` extends that with full pytest, release/failed-sidecar guardrails, and the Golden4 E2E script.
 For typing-ratchet baseline maintenance workflows, use `make update-mypy-baseline` intentionally (not as a routine shortcut).
 
 Note: preserve the existing merge gate semantics documented as `merge-readiness / merge-readiness` when touching release process docs.
 
 
-CI-required merge gate remains `make merge-readiness-check` (`merge-readiness / merge-readiness`).
+CI-required merge gate remains `make merge-readiness-check` (`merge-readiness / merge-readiness`), and now composes `make security-check` so adversarial regressions are merge-blocking.
 
 ## Structured execution artifact consumption (current behavior)
 

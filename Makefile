@@ -1,6 +1,6 @@
 .PHONY: venv install dev fmt fmt-check lint type test e2e check panel daemon-restart \
 	 type-check type-check-strict update-mypy-baseline quality-check release-check merge-readiness-check \
-	 golden-update golden-check validation-check full-validation-check test-failed-sidecar update update-fast services-install services-restart services-status services-stop services-disable premerge
+	 golden-update golden-check security-check validation-check full-validation-check test-failed-sidecar update update-fast services-install services-restart services-status services-stop services-disable premerge
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
 SYSTEMD_SRC_DIR := deploy/systemd/user
@@ -86,7 +86,7 @@ release-check: $(DEV_MARKER)
 		tests/test_docs_consistency.py \
 		tests/test_cli_version.py::test_root_version_option_prints_and_exits
 
-merge-readiness-check: quality-check release-check
+merge-readiness-check: quality-check release-check security-check
 
 golden-update: $(DEV_MARKER)
 	$(PYTHON) tools/golden_surfaces.py --update
@@ -94,11 +94,15 @@ golden-update: $(DEV_MARKER)
 golden-check: $(DEV_MARKER)
 	$(PYTHON) tools/golden_surfaces.py --check
 
+security-check: $(DEV_MARKER)
+	$(TEST_ENV_PREFIX) $(PYTEST) -q tests/test_security_redteam.py
+
 validation-check: $(DEV_MARKER)
 	$(RUFF) format --check .
 	$(RUFF) check .
 	$(MYPY) src/voxera
 	$(MAKE) golden-check
+	$(MAKE) security-check
 	$(TEST_ENV_PREFIX) $(PYTEST) -q \
 		tests/test_queue_daemon.py \
 		tests/test_queue_daemon_contract_snapshot.py \

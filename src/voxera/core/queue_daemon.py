@@ -40,6 +40,7 @@ from .queue_state import (
     update_job_state_snapshot,
     write_job_state,
 )
+from .simple_intent import sanitize_serialized_intent_route
 
 _PARSE_RETRY_ATTEMPTS = 4
 _PARSE_RETRY_BACKOFF_S = 0.1
@@ -395,6 +396,18 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             write_text_atomic=self._write_text_atomic,
         )
 
+    def _sanitize_payload_intent_route(
+        self, payload: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return payload
+        cleaned = dict(payload)
+        if isinstance(cleaned.get("_simple_intent"), dict):
+            cleaned["_simple_intent"] = sanitize_serialized_intent_route(
+                cleaned.get("_simple_intent")
+            )
+        return cleaned
+
     def _update_job_state(
         self,
         job_ref: str,
@@ -410,12 +423,13 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
     ) -> None:
         now_ms = int(time.time() * 1000)
         current = self._read_job_state(job_ref)
+        sanitized_payload = self._sanitize_payload_intent_route(payload)
         snapshot = update_job_state_snapshot(
             job_ref,
             lifecycle_state=lifecycle_state,
             current=current,
             now_ms=now_ms,
-            payload=payload,
+            payload=sanitized_payload,
             mission=mission,
             rr_data=rr_data,
             terminal_outcome=terminal_outcome,
@@ -438,7 +452,7 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
         plan_delta: dict[str, Any] | None = None,
     ) -> None:
         intent_route = (
-            payload.get("_simple_intent")
+            sanitize_serialized_intent_route(payload.get("_simple_intent"))
             if isinstance(payload.get("_simple_intent"), dict)
             else None
         )
@@ -648,8 +662,9 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             "timestamp_ms": int(time.time() * 1000),
         }
         self._validate_failed_sidecar_schema_version(details["schema_version"], mode="write")
-        if payload is not None:
-            details["payload"] = payload
+        sanitized_payload = self._sanitize_payload_intent_route(payload)
+        if sanitized_payload is not None:
+            details["payload"] = sanitized_payload
         self._validate_failed_error_sidecar(details, expected_job=failed_job.name)
         self._write_text_atomic(
             self._failed_error_sidecar(failed_job), json.dumps(details, indent=2)

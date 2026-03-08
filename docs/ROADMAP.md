@@ -154,6 +154,8 @@ Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 - [x] Added `tests/golden/` committed fixtures for high-value operator-visible CLI surfaces (`voxera --help`, key `queue` help commands, normalized `queue health --json`).
 - [x] Added `make golden-update` (explicit regeneration) and `make golden-check` (drift gate).
 - [x] Wired `make golden-check` into canonical `make validation-check` so local/CI merge-confidence flows run deterministic golden contract validation.
+- [x] Added a focused adversarial red-team regression pack (`tests/test_security_redteam.py`) for intent hijack, planner mismatch fail-closed behavior, notes path escape attempts, approval-state integrity, and progress/evidence consistency.
+- [x] Added `make security-check` and composed it into `make validation-check` and `make merge-readiness-check` so security regressions become a first-class merge gate.
 - [x] Added deterministic normalization in test tooling for unstable fields (timestamps + environment-dependent paths) without runtime behavior changes.
 
 **P4.2 — Release packaging polish (PLANNED)**
