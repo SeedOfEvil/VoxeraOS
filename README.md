@@ -258,3 +258,16 @@ Artifacts now include attempt/evaluation fields (`attempt_index`, `replan_count`
 Planner mismatch failures are also captured as first-class attempt artifacts: if a goal-planning pass
 returns an unknown skill, Voxera records `plan.attempt-1.json` with `planning_error` metadata and can
 bounded-replan once (`max_replan_attempts`) to produce a second governed attempt.
+
+### Skill result contract normalization (PR 5)
+
+Built-in skills now converge on a normalized `skill_result` shape for both success and failure paths:
+
+- `summary` (compact operator-facing result)
+- `machine_payload` (structured facts, no prose)
+- `output_artifacts` (explicit artifact paths when produced)
+- `operator_note` and `next_action_hint`
+- `retryable`, `blocked`, and `approval_status`
+- `error` and `error_class` for consistent failure semantics
+
+Major consumers (mission step shaping and queue structured artifact builders) now prefer this contract first and keep legacy fallbacks only for compatibility with older job artifacts.

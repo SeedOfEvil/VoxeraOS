@@ -1153,3 +1153,8 @@ Queue jobs may include additive `job_intent` metadata produced by panel/inbox/as
   - `artifacts/<job>/execution_envelope.json` (attempt/replan counters)
   - `artifacts/<job>/execution_result.json` (`attempt_index`, `replan_count`, `evaluation_class`, `stop_reason`)
 - This is controlled adaptation, not blind retry: the loop exits on success, approval pause, non-retryable block, or max-attempt bound.
+
+
+### PR 5: operator interpretation of normalized skill results
+
+When triaging step failures/blocks, prefer `step_results[].summary`, `operator_note`, `next_action_hint`, `error_class`, `retryable`, `blocked`, and `approval_status`. `machine_payload` is intended for deterministic machine facts; human guidance belongs in `operator_note`.

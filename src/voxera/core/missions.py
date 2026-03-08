@@ -424,7 +424,6 @@ class MissionRunner:
                     "args": ms.args,
                     "ok": rr.ok,
                     "output": rr.output,
-                    "error": rr.error,
                     "machine_payload": machine_payload,
                     "started_at_ms": step_started_at_ms,
                     "finished_at_ms": step_finished_at_ms,
@@ -451,6 +450,21 @@ class MissionRunner:
                             and isinstance(rr.data.get("retryable"), bool)
                             else None
                         )
+                    ),
+                    "blocked": (
+                        canonical.get("blocked")
+                        if isinstance(canonical.get("blocked"), bool)
+                        else None
+                    ),
+                    "approval_status": (
+                        str(canonical.get("approval_status"))
+                        if canonical.get("approval_status") is not None
+                        else None
+                    ),
+                    "error": (
+                        str(canonical.get("error"))
+                        if canonical.get("error") is not None
+                        else rr.error
                     ),
                     "error_class": (
                         canonical.get("error_class")

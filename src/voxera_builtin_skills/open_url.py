@@ -11,9 +11,10 @@ def run(url: str) -> RunResult:
     normalized = url.strip()
     parsed = urlparse(normalized)
     if parsed.scheme not in {"http", "https"}:
+        error = "Only http/https URLs are allowed"
         return RunResult(
             ok=False,
-            error="Only http/https URLs are allowed",
+            error=error,
             data={
                 SKILL_RESULT_KEY: build_skill_result(
                     summary="Rejected non-http(s) URL",
@@ -21,15 +22,19 @@ def run(url: str) -> RunResult:
                     operator_note="Use an http:// or https:// URL.",
                     next_action_hint="provide_supported_url",
                     retryable=False,
+                    blocked=False,
+                    approval_status="none",
+                    error=error,
                     error_class="invalid_input",
                 )
             },
         )
 
     if not normalized or not parsed.netloc or parsed.username or parsed.password:
+        error = "URL must include a host and must not embed credentials"
         return RunResult(
             ok=False,
-            error="URL must include a host and must not embed credentials",
+            error=error,
             data={
                 SKILL_RESULT_KEY: build_skill_result(
                     summary="Rejected unsafe URL form",
@@ -37,6 +42,9 @@ def run(url: str) -> RunResult:
                     operator_note="Provide a standard browser URL without embedded credentials.",
                     next_action_hint="provide_supported_url",
                     retryable=False,
+                    blocked=False,
+                    approval_status="none",
+                    error=error,
                     error_class="invalid_input",
                 )
             },
@@ -58,34 +66,42 @@ def run(url: str) -> RunResult:
                         operator_note="Browser launch requested successfully.",
                         next_action_hint="continue",
                         output_artifacts=[],
+                        retryable=False,
+                        blocked=False,
+                        approval_status="none",
                     )
                 },
             )
         except FileNotFoundError:
             continue
         except Exception as exc:
+            error = repr(exc)
             return RunResult(
                 ok=False,
-                error=repr(exc),
+                error=error,
                 data={
                     SKILL_RESULT_KEY: build_skill_result(
                         summary="Failed to open URL",
                         machine_payload={
                             "url": normalized,
                             "launcher": cmd[0],
-                            "exception": repr(exc),
+                            "exception": error,
                         },
                         operator_note="URL launch failed unexpectedly.",
                         next_action_hint="inspect_launcher",
                         retryable=True,
+                        blocked=False,
+                        approval_status="none",
+                        error=error,
                         error_class="launcher_error",
                     )
                 },
             )
 
+    error = "No browser launcher found (firefox/xdg-open)"
     return RunResult(
         ok=False,
-        error="No browser launcher found (firefox/xdg-open)",
+        error=error,
         data={
             SKILL_RESULT_KEY: build_skill_result(
                 summary="No supported browser launcher found",
@@ -93,6 +109,9 @@ def run(url: str) -> RunResult:
                 operator_note="Install firefox or xdg-open to enable URL launching.",
                 next_action_hint="install_launcher",
                 retryable=False,
+                blocked=False,
+                approval_status="none",
+                error=error,
                 error_class="missing_dependency",
             )
         },
