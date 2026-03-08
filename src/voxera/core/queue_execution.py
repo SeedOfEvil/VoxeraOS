@@ -227,6 +227,9 @@ class QueueExecutionMixin:
     def _request_kind(self: Any, payload: dict[str, Any]) -> str:
         return detect_request_kind(payload)
 
+    def _is_assistant_request(self: Any, payload: dict[str, Any]) -> bool:
+        return self._request_kind(payload) == ASSISTANT_JOB_KIND
+
     def _max_replan_attempts(self: Any) -> int:
         try:
             return max(0, int(getattr(self.cfg, "max_replan_attempts", 1)))
@@ -318,7 +321,7 @@ class QueueExecutionMixin:
 
             try:
                 payload = self._load_job_payload_with_retry(job_path)
-                if str(payload.get("kind") or "").strip() == ASSISTANT_JOB_KIND:
+                if self._is_assistant_request(payload):
                     request_kind = self._request_kind(payload)
                     fast_lane_eligible, fast_lane_reason = (
                         _queue_daemon_module().queue_assistant.evaluate_assistant_fast_lane_eligibility(

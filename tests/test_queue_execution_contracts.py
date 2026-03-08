@@ -254,6 +254,46 @@ def test_assistant_approval_flag_disables_fast_lane(tmp_path):
     assert execution_result["fast_lane"]["eligibility_reason"] == "approval_required"
 
 
+def test_assistant_request_kind_in_job_intent_routes_to_assistant_lane(tmp_path):
+    queue_root = tmp_path / "queue"
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon._assistant_answer_via_brain = lambda *args, **kwargs: {  # type: ignore[method-assign]
+        "answer": "queued answer",
+        "provider": "primary",
+        "model": "mock",
+        "fallback_used": False,
+        "fallback_reason": None,
+        "advisory_mode": "queue",
+        "degraded_reason": None,
+    }
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-assistant-intent-only.json").write_text(
+        json.dumps(
+            {
+                "question": "What changed?",
+                "thread_id": "t-4",
+                "advisory": True,
+                "read_only": True,
+                "action_hints": ["assistant.advisory"],
+                "job_intent": {"request_kind": "assistant_question"},
+            }
+        )
+    )
+
+    daemon.process_pending_once()
+
+    assert (queue_root / "done" / "job-assistant-intent-only.json").exists()
+    assert not (queue_root / "failed" / "job-assistant-intent-only.json").exists()
+    execution_result = json.loads(
+        (
+            queue_root / "artifacts" / "job-assistant-intent-only" / "execution_result.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert execution_result["ok"] is True
+    assert execution_result["terminal_outcome"] == "succeeded"
+    assert execution_result["execution_lane"] == "fast_read_only"
+
+
 def test_assistant_mutating_action_hint_is_not_fast_lane_eligible():
     eligible, reason = queue_assistant.evaluate_assistant_fast_lane_eligibility(
         {

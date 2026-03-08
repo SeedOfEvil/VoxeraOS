@@ -1128,3 +1128,4 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `execution_result.json.fast_lane` (`used`, `eligible`, `eligibility_reason`, `request_kind`)
   - mirrored lane metadata in `assistant_response.json`.
 - Added focused tests for eligibility, canonical artifact evidence, and fail-closed fallback cases (approval-flagged, mutating hint, malformed payload, non-eligible hint set).
+- Follow-up fix (PR #143 regression): assistant lane routing now keys off canonical request kind (`detect_request_kind`, including `job_intent.request_kind`) rather than raw `payload.kind` only, preventing mission-path misclassification (`ValueError: job must contain mission_id ...`) for valid assistant-shaped jobs and restoring CLI/panel outcome consistency for original queue jobs.

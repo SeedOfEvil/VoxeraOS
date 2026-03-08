@@ -938,7 +938,7 @@ In addition to execution-time artifacts, queue producer lanes now emit/normalize
 
 The assistant queue path includes a narrow, fail-closed fast-lane gate for explicitly read-only advisory requests.
 
-- Scope: only assistant advisory requests (`kind=assistant_question`), not mission execution.
+- Scope: only assistant advisory requests (`assistant_question` request kind from payload kind or canonical `job_intent.request_kind`), not mission execution.
 - Deterministic eligibility signals (all required):
   - `advisory=true`
   - `read_only=true`
