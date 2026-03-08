@@ -283,3 +283,13 @@ Built-in skills now converge on a normalized `skill_result` shape for both succe
 - `error` and `error_class` for consistent failure semantics
 
 Major consumers (mission step shaping and queue structured artifact builders) now prefer this contract first and keep legacy fallbacks only for compatibility with older job artifacts.
+
+## Live job progress in Panel (PR 7)
+
+The panel job detail pages now use **progressive enhancement** for live updates:
+
+- `/jobs/<job_id>` renders fully server-side first (works without JavaScript).
+- If JavaScript is available, the page polls `/jobs/<job_id>/progress` every ~2s and refreshes only evidence-backed fields.
+- `/assistant` keeps its server-rendered fallback and can poll `/assistant/progress/<request_id>` for advisory lifecycle transitions.
+
+Live fields are sourced from canonical artifacts only (`*.state.json`, `execution_result.json`, `step_results.json`, approval sidecars, failed sidecars, and assistant response artifacts). No speculative percentages or optimistic states are shown.

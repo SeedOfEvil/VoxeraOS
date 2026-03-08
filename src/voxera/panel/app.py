@@ -1279,6 +1279,76 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     }
 
 
+def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
+    payload = _job_detail_payload(queue_root, job_id)
+
+    execution_raw = payload.get("execution")
+    execution: dict[str, Any] = execution_raw if isinstance(execution_raw, dict) else {}
+
+    job_context_raw = payload.get("job_context")
+    job_context: dict[str, Any] = job_context_raw if isinstance(job_context_raw, dict) else {}
+
+    state_raw = payload.get("state")
+    state_payload: dict[str, Any] = state_raw if isinstance(state_raw, dict) else {}
+
+    approval_raw = payload.get("approval")
+    approval: dict[str, Any] = approval_raw if isinstance(approval_raw, dict) else {}
+
+    timeline_raw = payload.get("recent_timeline")
+    timeline: list[Any] = timeline_raw if isinstance(timeline_raw, list) else []
+
+    return {
+        "ok": True,
+        "job_id": payload.get("job_id") or f"{Path(job_id).stem}.json",
+        "bucket": payload.get("bucket") or "unknown",
+        "lifecycle_state": str(
+            execution.get("lifecycle_state")
+            or state_payload.get("lifecycle_state")
+            or payload.get("bucket")
+            or "unknown"
+        ),
+        "terminal_outcome": str(
+            execution.get("terminal_outcome") or state_payload.get("terminal_outcome") or ""
+        ),
+        "current_step_index": int(
+            execution.get("current_step_index") or state_payload.get("current_step_index") or 0
+        ),
+        "total_steps": int(execution.get("total_steps") or state_payload.get("total_steps") or 0),
+        "last_attempted_step": int(
+            execution.get("last_attempted_step") or state_payload.get("last_attempted_step") or 0
+        ),
+        "last_completed_step": int(
+            execution.get("last_completed_step") or state_payload.get("last_completed_step") or 0
+        ),
+        "approval_status": str(
+            execution.get("approval_status")
+            or job_context.get("approval_status")
+            or ("pending" if approval else "none")
+        ),
+        "execution_lane": str(execution.get("execution_lane") or ""),
+        "fast_lane": execution.get("fast_lane")
+        if isinstance(execution.get("fast_lane"), dict)
+        else {},
+        "intent_route": execution.get("intent_route")
+        if isinstance(execution.get("intent_route"), dict)
+        else {},
+        "latest_summary": str(execution.get("latest_summary") or ""),
+        "operator_note": str(execution.get("operator_note") or ""),
+        "failure_summary": str(job_context.get("failure_summary") or execution.get("error") or ""),
+        "stop_reason": str(execution.get("stop_reason") or ""),
+        "artifacts": {
+            "plan": bool(payload.get("plan")),
+            "actions": bool(payload.get("actions")),
+            "stdout": bool(payload.get("stdout")),
+            "stderr": bool(payload.get("stderr")),
+        },
+        "step_summaries": execution.get("step_summaries")
+        if isinstance(execution.get("step_summaries"), list)
+        else [],
+        "recent_timeline": timeline[:12],
+    }
+
+
 def _job_artifact_flags(queue_root: Path, job_id: str) -> dict[str, bool]:
     artifacts_dir = queue_root / "artifacts" / Path(job_id).stem
     return {
@@ -1372,6 +1442,7 @@ register_job_routes(
     job_artifact_flags=_job_artifact_flags,
     last_activity=_last_activity,
     job_detail_payload=_job_detail_payload,
+    job_progress_payload=_job_progress_payload,
     auth_setup_banner=_auth_setup_banner,
 )
 

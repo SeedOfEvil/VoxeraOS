@@ -1071,3 +1071,19 @@ cloud brain normally; the mismatch check then acts as the safety net.
   populated for goal-kind jobs when intent was classified
 - `actions.jsonl`: `queue_simple_intent_routed` (always for goal-kind) and
   `queue_simple_intent_mismatch` (on mismatch) events
+
+## Real-time panel progress surfaces
+
+Panel real-time UX is implemented as a narrow polling layer over canonical queue state:
+
+- `GET /jobs/{job_id}/progress` returns shaped lifecycle/step/approval metadata for mission and assistant-shaped jobs.
+- `GET /assistant/progress/{request_id}` returns advisory request lifecycle metadata.
+- Existing HTML pages remain authoritative baseline rendering; polling is additive.
+
+Truth sources remain unchanged:
+
+- queue bucket placement (`inbox/pending/done/failed/canceled`)
+- sidecars (`*.state.json`, `*.approval.json`, `*.error.json`)
+- execution artifacts (`execution_result.json`, `step_results.json`, `execution_envelope.json`, assistant response artifact)
+
+This keeps Voxera OS as the trust layer: UI reflects persisted control-plane evidence rather than inferred progress.

@@ -1273,3 +1273,13 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 - Added focused tests for eligibility, canonical artifact evidence, and fail-closed fallback cases (approval-flagged, mutating hint, malformed payload, non-eligible hint set).
 - Follow-up fix (PR #143 regression): assistant lane routing now keys off canonical request kind (`detect_request_kind`, including `job_intent.request_kind`) rather than raw `payload.kind` only, preventing mission-path misclassification (`ValueError: job must contain mission_id ...`) for valid assistant-shaped jobs and restoring CLI/panel outcome consistency for original queue jobs.
 - Follow-up contract gap fix: assistant jobs now emit canonical `execution_envelope.json` with assistant-shaped context and aligned lane metadata (`execution.lane`, `execution.fast_lane`) for both `fast_read_only` and `queue` advisory paths; envelope/result/assistant-response lane fields now agree.
+
+## PR 7 — Real-time assistant/job progress UX
+
+- Added additive JSON polling endpoints for live panel progress:
+  - `/jobs/{job_id}/progress`
+  - `/assistant/progress/{request_id}`
+- Added progressive-enhancement client polling on `job_detail.html` and `assistant.html` (no-JS fallback preserved).
+- Progress payloads are shaped from canonical artifacts/sidecars only; no optimistic synthetic completion values.
+- Surfaced lifecycle + step progress + approval status + lane metadata (`execution_lane`, `fast_lane`, `intent_route`) + terminal stop/failure summaries when available.
+- Added panel tests covering assistant running/done path, mission awaiting approval path, terminal failed path, and endpoint behavior.

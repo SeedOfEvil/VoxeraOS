@@ -943,6 +943,170 @@ def test_job_detail_prefers_structured_execution_artifacts(tmp_path, monkeypatch
     assert "Machine payload" in res.text
 
 
+def test_job_progress_endpoint_surfaces_live_execution_fields(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-live.json").write_text('{"goal":"live"}', encoding="utf-8")
+    (queue_dir / "pending" / "job-live.state.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "awaiting_approval",
+                "current_step_index": 1,
+                "total_steps": 3,
+                "last_attempted_step": 1,
+                "last_completed_step": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "pending" / "approvals" / "job-live.approval.json").write_text(
+        json.dumps({"job": "job-live.json", "step": 1, "reason": "ask"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-live"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "awaiting_approval",
+                "execution_lane": "queue",
+                "fast_lane": {"eligible": False, "reason": "approval_required"},
+                "intent_route": {"intent_kind": "open_url"},
+                "stop_reason": "approval_required",
+                "current_step_index": 1,
+                "total_steps": 3,
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.open_url",
+                        "status": "awaiting_approval",
+                        "summary": "Waiting for approval",
+                        "operator_note": "Approval gate",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs/job-live.json/progress")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["lifecycle_state"] == "awaiting_approval"
+    assert payload["approval_status"] == "pending"
+    assert payload["execution_lane"] == "queue"
+    assert payload["fast_lane"]["reason"] == "approval_required"
+    assert payload["intent_route"]["intent_kind"] == "open_url"
+    assert payload["latest_summary"] == "Waiting for approval"
+
+
+def test_job_progress_endpoint_surfaces_terminal_failed_state(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-failed.json").write_text('{"goal":"boom"}', encoding="utf-8")
+    (queue_dir / "failed" / "job-failed.error.json").write_text(
+        json.dumps({"error": "planner rejected route"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-failed"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "step_failed",
+                "terminal_outcome": "failed",
+                "stop_reason": "planner_intent_route_rejected",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "planner",
+                        "status": "failed",
+                        "summary": "Rejected",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs/job-failed.json/progress")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["bucket"] == "failed"
+    assert payload["terminal_outcome"] == "failed"
+    assert payload["stop_reason"] == "planner_intent_route_rejected"
+    assert payload["failure_summary"]
+
+
+def test_assistant_progress_endpoint_surfaces_running_and_done(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-assistant-live.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-live"}), encoding="utf-8"
+    )
+    (queue_dir / "pending" / "job-assistant-live.state.json").write_text(
+        json.dumps({"lifecycle_state": "advisory_running"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-assistant-live"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "advisory_running",
+                "execution_lane": "fast_read_only",
+                "fast_lane": {"eligible": True, "reason": "eligible_read_only_assistant_advisory"},
+                "current_step_index": 1,
+                "total_steps": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    running = client.get("/assistant/progress/job-assistant-live.json", headers=_operator_headers())
+    assert running.status_code == 200
+    running_payload = running.json()
+    assert running_payload["lifecycle_state"] == "advisory_running"
+    assert running_payload["execution_lane"] == "fast_read_only"
+
+    (queue_dir / "pending" / "job-assistant-live.json").unlink()
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-assistant-live.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-live"}), encoding="utf-8"
+    )
+    (art / "assistant_response.json").write_text(
+        json.dumps({"answer": "done", "advisory_mode": "queue"}), encoding="utf-8"
+    )
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "current_step_index": 1,
+                "total_steps": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    done = client.get("/assistant/progress/job-assistant-live.json", headers=_operator_headers())
+    assert done.status_code == 200
+    done_payload = done.json()
+    assert done_payload["status"] == "answered"
+    assert done_payload["lifecycle_state"] == "done"
+    assert done_payload["has_answer"] is True
+
+
 def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

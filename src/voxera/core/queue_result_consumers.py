@@ -151,6 +151,14 @@ def resolve_structured_execution(
     return {
         "terminal_outcome": terminal_outcome,
         "lifecycle_state": lifecycle_state,
+        "execution_lane": str(execution_result.get("execution_lane") or ""),
+        "fast_lane": execution_result.get("fast_lane")
+        if isinstance(execution_result.get("fast_lane"), dict)
+        else {},
+        "intent_route": execution_result.get("intent_route")
+        if isinstance(execution_result.get("intent_route"), dict)
+        else {},
+        "stop_reason": str(execution_result.get("stop_reason") or ""),
         "latest_summary": latest_summary,
         "last_attempted_step": int(last_attempted),
         "last_completed_step": int(last_completed),

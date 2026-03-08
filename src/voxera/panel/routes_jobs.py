@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..audit import log
 from ..core.queue_daemon import MissionQueueDaemon
@@ -26,6 +26,7 @@ def register_job_routes(
     job_artifact_flags: Callable[[Path, str], dict[str, bool]],
     last_activity: Callable[[Path], str],
     job_detail_payload: Callable[[Path, str], dict[str, Any]],
+    job_progress_payload: Callable[[Path, str], dict[str, Any]],
     auth_setup_banner: Callable[[], dict[str, str] | None],
 ) -> None:
     def _safe_jobs_n(raw: str) -> int:
@@ -147,6 +148,14 @@ def register_job_routes(
         response = HTMLResponse(content=html)
         response.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
         return response
+
+    @app.get("/jobs/{job_id}/progress", response_class=JSONResponse)
+    def jobs_detail_progress(job_id: str):
+        return JSONResponse(job_progress_payload(queue_root(), job_id))
+
+    @app.get("/queue/jobs/{job}/progress", response_class=JSONResponse)
+    def queue_job_detail_progress(job: str):
+        return jobs_detail_progress(job)
 
     @app.get("/jobs/{job_id}", response_class=HTMLResponse)
     def jobs_detail(job_id: str, request: Request):

@@ -71,17 +71,17 @@
       <h2>Advisory Request</h2>
       {% if request_result.request_id %}
       <p class="muted text-sm">Request: <span class="mono">{{request_result.request_id}}</span></p>
-      <p class="muted text-sm">Status: <b>{{request_result.status}}</b> · Lifecycle: <b>{{request_result.lifecycle_state}}</b></p>
+      <p class="muted text-sm">Status: <b id="assistant-live-status">{{request_result.status}}</b> · Lifecycle: <b id="assistant-live-lifecycle">{{request_result.lifecycle_state}}</b></p>
       <p class="muted text-sm">Mode: <b>{{request_result.advisory_mode or 'unknown'}}</b>{% if request_result.degraded_reason %} · Reason: <b>{{request_result.degraded_reason}}</b>{% endif %}</p>
       {% if request_result.provider %}
-      <p class="muted text-sm">Answered by: <b>{{request_result.provider}}</b>{% if request_result.model %} ({{request_result.model}}){% endif %}{% if request_result.fallback_used %} · fallback after {{request_result.fallback_reason or 'UNKNOWN'}}{% endif %}</p>
+      <p class="muted text-sm" id="assistant-live-provider">Answered by: <b>{{request_result.provider}}</b>{% if request_result.model %} ({{request_result.model}}){% endif %}{% if request_result.fallback_used %} · fallback after {{request_result.fallback_reason or 'UNKNOWN'}}{% endif %}</p>
       {% elif request_result.fallback_reason %}
       <p class="muted text-sm">Fallback reason: <b>{{request_result.fallback_reason}}</b></p>
       {% endif %}
       {% if request_result.answer %}
-      <pre class="assistant-response">{{request_result.answer}}</pre>
+      <pre class="assistant-response" id="assistant-live-answer">{{request_result.answer}}</pre>
       {% elif request_result.error %}
-      <div class="alert alert-danger">{{request_result.error}}</div>
+      <div class="alert alert-danger" id="assistant-live-error">{{request_result.error}}</div>
       {% else %}
       <div class="empty-state">Queued and waiting for Voxera advisory processing...</div>
       {% endif %}
@@ -101,5 +101,39 @@
       <p class="muted text-sm mt">Daemon state: <b>{{context.health_current_state.daemon_state if context.health_current_state else 'unknown'}}</b> · Queue paused: <b>{{context.queue_paused}}</b></p>
     </section>
   </div>
+
+{% if request_result.request_id %}
+<script>
+(() => {
+  const requestId = {{ request_result.request_id | tojson }};
+  if (!requestId) return;
+  const endpoint = `/assistant/progress/${requestId}`;
+  const terminal = new Set(["answered", "failed", "done", "canceled"]);
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const text = String(value ?? '').trim();
+    if (text) el.textContent = text;
+  };
+  const tick = async () => {
+    try {
+      const res = await fetch(endpoint, {headers: {"Accept": "application/json"}});
+      if (!res.ok) return;
+      const data = await res.json();
+      setText('assistant-live-status', data.status || 'unknown');
+      setText('assistant-live-lifecycle', data.lifecycle_state || 'unknown');
+      if (terminal.has(String(data.status || '').toLowerCase()) || terminal.has(String(data.lifecycle_state || '').toLowerCase())) {
+        clearInterval(timer);
+        if (!data.has_answer) location.reload();
+      }
+    } catch (_err) {
+      // Keep static page behavior when polling fails.
+    }
+  };
+  const timer = setInterval(tick, 2000);
+  tick();
+})();
+</script>
+{% endif %}
 </body>
 </html>
