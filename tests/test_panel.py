@@ -834,6 +834,96 @@ def test_assistant_progress_normalizes_empty_structured_fields(tmp_path, monkeyp
     assert payload["stop_reason"] is None
 
 
+def test_job_progress_preserves_intent_route_from_envelope_after_completion(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    pending_job = queue_dir / "pending" / "pr146-open-url.json"
+    pending_job.write_text('{"goal":"open https://example.com"}', encoding="utf-8")
+    (queue_dir / "pending" / "pr146-open-url.state.json").write_text(
+        json.dumps({"lifecycle_state": "awaiting_approval", "total_steps": 1}),
+        encoding="utf-8",
+    )
+    (queue_dir / "pending" / "approvals" / "pr146-open-url.approval.json").write_text(
+        json.dumps({"job": "pr146-open-url.json", "step": 1, "reason": "ask"}),
+        encoding="utf-8",
+    )
+
+    art = queue_dir / "artifacts" / "pr146-open-url"
+    art.mkdir(parents=True, exist_ok=True)
+    deterministic_intent = {
+        "intent_kind": "open_url",
+        "allowed_skill_ids": ["system.open_url"],
+        "routing_reason": "direct_open_url",
+    }
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "awaiting_approval",
+                "intent_route": deterministic_intent,
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.open_url",
+                        "status": "awaiting_approval",
+                        "summary": "waiting",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    pending_progress = client.get("/jobs/pr146-open-url.json/progress")
+    assert pending_progress.status_code == 200
+    assert pending_progress.json()["intent_route"] == deterministic_intent
+
+    pending_job.unlink()
+    (queue_dir / "pending" / "pr146-open-url.state.json").unlink()
+    (queue_dir / "pending" / "approvals" / "pr146-open-url.approval.json").unlink()
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "pr146-open-url.json").write_text(
+        '{"goal":"open https://example.com"}', encoding="utf-8"
+    )
+    (queue_dir / "done" / "pr146-open-url.state.json").write_text(
+        json.dumps({"lifecycle_state": "done", "terminal_outcome": "succeeded"}),
+        encoding="utf-8",
+    )
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.open_url",
+                        "status": "succeeded",
+                        "summary": "opened",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (art / "execution_envelope.json").write_text(
+        json.dumps({"request": {"simple_intent": deterministic_intent}}),
+        encoding="utf-8",
+    )
+
+    done_progress = client.get("/jobs/pr146-open-url.json/progress")
+    assert done_progress.status_code == 200
+    done_payload = done_progress.json()
+    assert done_payload["terminal_outcome"] == "succeeded"
+    assert done_payload["failure_summary"] is None
+    assert done_payload["stop_reason"] is None
+    assert done_payload["fast_lane"] is None
+    assert done_payload["intent_route"] == deterministic_intent
+
+
 def test_job_progress_endpoint_surfaces_live_execution_fields(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

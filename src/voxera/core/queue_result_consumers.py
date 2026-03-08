@@ -27,6 +27,38 @@ def _read_json_list(path: Path) -> list[dict[str, Any]]:
     return [item for item in payload if isinstance(item, dict)]
 
 
+def _resolve_intent_route(
+    *, artifacts_dir: Path, execution_result: dict[str, Any], state_payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    execution_intent = execution_result.get("intent_route")
+    if isinstance(execution_intent, dict):
+        return execution_intent
+
+    envelope = _read_json_dict(artifacts_dir / "execution_envelope.json")
+    request_payload = envelope.get("request")
+    if isinstance(request_payload, dict):
+        simple_intent = request_payload.get("simple_intent")
+        if isinstance(simple_intent, dict):
+            return simple_intent
+
+    plan_payload = _read_json_dict(artifacts_dir / "plan.json")
+    plan_intent = plan_payload.get("intent_route")
+    if isinstance(plan_intent, dict):
+        return plan_intent
+
+    for path in sorted(artifacts_dir.glob("plan.attempt-*.json"), reverse=True):
+        attempt_payload = _read_json_dict(path)
+        attempt_intent = attempt_payload.get("intent_route")
+        if isinstance(attempt_intent, dict):
+            return attempt_intent
+
+    sidecar_intent = state_payload.get("intent_route")
+    if isinstance(sidecar_intent, dict):
+        return sidecar_intent
+
+    return None
+
+
 def _safe_int(value: Any) -> int | None:
     try:
         parsed = int(value)
@@ -147,6 +179,11 @@ def resolve_structured_execution(
         if isinstance(latest_step.get("machine_payload"), dict)
         else {}
     )
+    intent_route = _resolve_intent_route(
+        artifacts_dir=artifacts_dir,
+        execution_result=execution_result,
+        state_payload=state_payload,
+    )
 
     return {
         "terminal_outcome": terminal_outcome,
@@ -155,9 +192,7 @@ def resolve_structured_execution(
         "fast_lane": execution_result.get("fast_lane")
         if isinstance(execution_result.get("fast_lane"), dict)
         else None,
-        "intent_route": execution_result.get("intent_route")
-        if isinstance(execution_result.get("intent_route"), dict)
-        else None,
+        "intent_route": intent_route,
         "stop_reason": str(execution_result.get("stop_reason") or ""),
         "latest_summary": latest_summary,
         "last_attempted_step": int(last_attempted),
