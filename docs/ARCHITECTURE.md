@@ -507,7 +507,7 @@ docs/                         — Architecture, security, ops, roadmap, memory
 Makefile                      — 30+ targets: dev, fmt, lint, type, test, e2e,
                                 check, panel, services-*, update, release-check,
                                 merge-readiness-check, golden-check,
-                                validation-check, full-validation-check
+                                security-check, validation-check, full-validation-check
 ```
 
 ---
@@ -894,7 +894,8 @@ Secrets: keyring preferred; fallback to `~/.config/voxera/env` (mode 0600).
 | `make merge-readiness-check` | Before every PR merge | fmt + lint + mypy ratchet + release consistency |
 | `make golden-check` | Before/inside validation-check; whenever CLI/help contracts change | Validate committed `tests/golden/` operator-surface baselines against live output |
 | `make golden-update` | Only when intentionally accepting reviewed output changes | Regenerate committed `tests/golden/` baselines |
-| `make validation-check` | Before every PR / local merge confidence | ruff format/check + mypy + `make golden-check` + critical queue/CLI/doctor contract suites |
+| `make security-check` | Before every PR touching routing/planning/approvals/progress contracts | Focused adversarial red-team regression suite for fail-closed semantics |
+| `make validation-check` | Before every PR / local merge confidence | ruff format/check + mypy + `make golden-check` + `make security-check` + critical queue/CLI/doctor contract suites |
 | `make full-validation-check` | Before releases or risky changes | validation-check + merge-readiness + failed-sidecar guardrails + full pytest + Golden4 E2E |
 | `make test-failed-sidecar` | Queue daemon changes | Sidecar schema policy + lifecycle smoke tests |
 

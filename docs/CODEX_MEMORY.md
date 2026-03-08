@@ -1,3 +1,20 @@
+## 2026-03-08 — PR #8 — security(red-team): add adversarial regression pack + `security-check` CI gate
+
+- Summary:
+  - Added `tests/test_security_redteam.py` with deterministic adversarial coverage for simple-intent hijack resistance, planner first-step mismatch fail-closed rejection, notes/path traversal escape attempts, approval-gated pending-state correctness, and progress/evidence consistency for terminal success/failure shaping.
+  - Hardened read-path extraction in `simple_intent` so traversal-style paths (for example `../`) no longer produce deterministic extracted targets.
+  - Added `make security-check` and wired it into both `make validation-check` and `make merge-readiness-check`.
+  - Updated operator docs (README/architecture/ops/roadmap/ubuntu testing) to describe scope, expectations, and interpretation of `security-check` failures as regressions in trust guarantees rather than new features.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
+
 ## 2026-03-08 — Follow-up: narrow deterministic open-intent routing + demo/default hijack guard
 - Split deterministic open routing into `open_terminal`, `open_url`, and `open_app` and added compound first-step metadata (`compound_action`, `first_step_only`, `first_action_intent_kind`, `trailing_remainder`).
 - Added meta/help/explanatory guards so quoted/discussed/how/why phrasing does not trigger action execution.

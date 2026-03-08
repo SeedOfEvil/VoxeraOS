@@ -470,8 +470,9 @@ This combines fast quality checks (format/lint/type) and release consistency che
 
 Validation tiers (post-refactor hardening pass):
 - Golden operator-surface gate: `make golden-check` (committed `tests/golden/` help/JSON baselines).
-- Canonical merge-confidence gate: `make validation-check` (format/lint/type + `make golden-check` + critical queue/CLI/doctor contract suites).
-- Required CI merge gate remains: `make merge-readiness-check`.
+- Focused adversarial gate: `make security-check` (intent hijack/planner mismatch/path escape/approval-state/progress-evidence fail-closed regressions).
+- Canonical merge-confidence gate: `make validation-check` (format/lint/type + `make golden-check` + `make security-check` + critical queue/CLI/doctor contract suites).
+- Required CI merge gate remains: `make merge-readiness-check` (now composes `make security-check`).
 - Broader local/release validation: `make full-validation-check` (`make premerge` alias), which includes `validation-check`, merge-readiness, failed-sidecar guardrails, full pytest, and Golden4 E2E.
 - Golden baseline refresh target: `make golden-update` (use only for intentional reviewed contract changes).
 

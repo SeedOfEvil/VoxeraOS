@@ -187,3 +187,22 @@ artifact candidates, and duplicate jobs. Should show 0 issues on a clean queue.
 5) Final panel verification
 - Disable JavaScript (or use a text browser) and confirm pages still render static detail correctly.
 - Re-enable JavaScript and confirm live polling enhancement resumes.
+
+## Security red-team regression gate (PR 8)
+
+Run from repository root:
+
+```bash
+make security-check
+```
+
+What it validates (fast, deterministic):
+- intent hijack/classifier abuse stays non-side-effecting,
+- planner first-step skill-family mismatches fail closed,
+- notes-root/path traversal-style phrasing does not get deterministic unsafe shortcuts,
+- approval-gated jobs remain `awaiting_approval` until explicit approval,
+- progress/evidence shaping does not leak stale failure context into succeeded views.
+
+Interpretation:
+- Any `security-check` failure is a trust-regression signal and should block merge until fixed or intentionally re-baselined with explicit review.
+- This gate is hardening-only and should not be treated as product feature expansion.

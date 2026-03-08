@@ -148,6 +148,11 @@ def _normalize_goal(text: str) -> str:
     return _RE_LEADING_POLITE.sub("", text).strip()
 
 
+def _contains_parent_traversal(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    return any(segment == ".." for segment in normalized.split("/"))
+
+
 def _split_compound(text: str) -> tuple[str, str | None]:
     m = _RE_COMPOUND_SPLIT.search(text)
     if not m:
@@ -208,7 +213,11 @@ def classify_simple_operator_intent(
         extracted_path = None
         if path_match:
             raw_path = path_match.group("path").rstrip(".,;:!?\"'").strip()
-            if raw_path:
+            if (
+                raw_path
+                and raw_path.startswith("~/VoxeraOS/notes/")
+                and not _contains_parent_traversal(raw_path)
+            ):
                 extracted_path = raw_path
         return SimpleIntentResult(
             "read_file",
