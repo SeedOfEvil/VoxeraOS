@@ -1,4 +1,29 @@
 
+## 2026-03-08 — PR #144 follow-up 2 — fix(intent): close write_file classifier gap for "create a file called X" goals
+
+- **Production failure reproduced**: goal "create a file called whatupboy.txt" (or any goal
+  starting with "create a/an/new/empty file ...") was classified as `unknown_or_ambiguous`
+  because `_RE_WRITE_VERB` matched `create\s+file` (literal "create file") but not
+  "create a file", "create a new file", or "create an empty file".  With no constraint
+  applied, the planner could produce any first step — including `system.terminal_run_once` —
+  and the job would succeed without mismatch detection.
+- **Root cause (verified)**: `re.match(r"^\s*(?:...|create\s+file)\b", "create a file called x")`
+  returns None because the article "a" between "create" and "file" breaks the match.
+- **Fix**: Updated `_RE_WRITE_VERB` in `simple_intent.py` to
+  `create\s+(?:(?:a|an|new|empty)\s+)*file\b`.  Non-file "create" goals ("create an
+  application", "create a task") still fall through to `unknown_or_ambiguous`.
+- **Also confirmed**: "write a file called whatupboy.txt" was always correctly classified as
+  `write_file`; the subtle gap was the "create a file" variant.
+- **Panel and CLI paths behave identically**: the simple_intent classification runs on the
+  normalized payload for ALL goal-kind jobs regardless of origin (panel vs CLI vs direct inbox).
+- **Regression tests added** (7 new, total 681 passed):
+  - `test_create_file_called_name`, `test_create_a_new_file` (classifier unit)
+  - `test_create_application_is_unknown`, `test_create_task_is_unknown` (classifier unit)
+  - `test_write_file_terminal_run_once_is_mismatch` (mismatch unit)
+  - `test_write_file_called_terminal_run_once_fails_closed` (integration, queue goal path)
+  - `test_create_file_called_panel_payload_fails_closed` (integration, panel payload path)
+- Validation: ruff ✓, mypy ✓, pytest 681 passed ✓.
+
 ## 2026-03-08 — PR #144 follow-up — fix(intent): refine open_resource terminal route and document clipboard.copy rejection
 
 - **STV findings addressed (PR #144)**:

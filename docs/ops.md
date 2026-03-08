@@ -247,14 +247,21 @@ deterministic intent classifier (`src/voxera/core/simple_intent.py`) before plan
 - Action events: `queue_simple_intent_routed` (always, for goal-kind) and
   `queue_simple_intent_mismatch` (when mismatch detected).
 - Does **not** bypass approvals, capability gates, policy, or any existing trust control.
-- **Sub-route notes** (v1.1 refinements):
+- **Sub-route notes** (v1.2 refinements):
   - `"open terminal"` (exact phrase): allows **both** `system.open_app` (e.g. gnome-terminal)
     and `system.terminal_run_once` (deterministic terminal demo skill) as valid first steps.
     Other `open_resource` goals (app names, URLs) only allow `system.open_app` / `system.open_url`.
+  - `write_file` goals: match `write …`, `create file …`, **and** `create a/an/new/empty file …`
+    (articles and adjectives before "file" are accepted).  All require `files.write_text` as
+    the first step.  `system.terminal_run_once` is **explicitly rejected** even if the planner
+    deterministic route would normally produce it.
   - `read_file` goals (e.g. `"read ~/path/to/file"`): only `files.read_text` is accepted as
     the first step.  `clipboard.copy` is **explicitly rejected** — the planner safety rewrite
     may convert sandbox.exec steps to clipboard.copy, but this is not a valid substitution for
     a declared read-file intent.
+  - **Panel and CLI paths are identical**: intent classification runs on the normalized payload
+    for all goal-kind jobs regardless of origin (panel, CLI, or direct inbox write).  There is
+    no bypass for panel-created payloads.
 ### Create Mission (panel) quick runbook
 
 - Open panel home (`/`) and locate **Create Mission**.

@@ -113,6 +113,20 @@ class TestClassifyOpenResource:
 
 
 class TestClassifyWriteFile:
+    def test_create_file_called_name(self):
+        """Regression: 'create a file called X' was incorrectly unknown_or_ambiguous."""
+        result = classify_simple_operator_intent(goal="create a file called whatupboy.txt")
+        assert result.intent_kind == "write_file"
+        assert result.deterministic is True
+        assert result.fail_closed is True
+        assert "files.write_text" in result.allowed_skill_ids
+
+    def test_create_a_new_file(self):
+        """Regression: 'create a new file called X' was incorrectly unknown_or_ambiguous."""
+        result = classify_simple_operator_intent(goal="create a new file called notes.md")
+        assert result.intent_kind == "write_file"
+        assert result.deterministic is True
+
     def test_write_with_filename(self):
         result = classify_simple_operator_intent(goal="write text.txt with hello world")
         assert result.intent_kind == "write_file"
@@ -228,6 +242,16 @@ class TestClassifyUnknown:
         # constraint is that it must NOT route to write_file or read_file.)
         assert result.intent_kind not in {"write_file", "read_file", "run_command"}
 
+    def test_create_application_is_unknown(self):
+        # "create an application" must NOT be classified as write_file
+        result = classify_simple_operator_intent(goal="create an application for me")
+        assert result.intent_kind == "unknown_or_ambiguous"
+
+    def test_create_task_is_unknown(self):
+        # "create a task" must NOT be classified as write_file
+        result = classify_simple_operator_intent(goal="create a task")
+        assert result.intent_kind == "unknown_or_ambiguous"
+
     def test_read_without_path_is_unknown(self):
         # "read" without a path should NOT be classified as read_file
         result = classify_simple_operator_intent(goal="read the situation carefully")
@@ -289,6 +313,23 @@ class TestCheckSkillFamilyMismatch:
         assert mismatch is False
 
     # --- Mismatch detected (wrong routing) ---
+
+    def test_write_file_terminal_run_once_is_mismatch(self):
+        """Regression: 'write/create a file' must not accept system.terminal_run_once.
+
+        This was the observed production failure: panel goal 'write a file called X'
+        (or 'create a file called X') succeeded with system.terminal_run_once because
+        'create a file called X' was incorrectly classified as unknown_or_ambiguous.
+        """
+        write_intent = classify_simple_operator_intent(goal="write a file called whatupboy.txt")
+        mismatch, reason = check_skill_family_mismatch(write_intent, "system.terminal_run_once")
+        assert mismatch is True
+        assert reason == "simple_intent_skill_family_mismatch"
+
+        create_intent = classify_simple_operator_intent(goal="create a file called whatupboy.txt")
+        mismatch2, reason2 = check_skill_family_mismatch(create_intent, "system.terminal_run_once")
+        assert mismatch2 is True
+        assert reason2 == "simple_intent_skill_family_mismatch"
 
     def test_open_terminal_terminal_run_once_no_mismatch(self):
         """Regression: 'open terminal' must accept system.terminal_run_once as first step."""
@@ -727,6 +768,118 @@ def test_advisory_drifting_to_write_text_fails_closed(tmp_path: Path, monkeypatc
     ir = result.get("intent_route")
     assert ir is not None
     assert ir["intent_kind"] == "assistant_question"
+
+
+def test_write_file_called_terminal_run_once_fails_closed(tmp_path: Path, monkeypatch: Any):
+    """Regression: 'write a file called whatupboy.txt' + system.terminal_run_once first step
+    must fail closed before any side effects — not succeed.
+
+    This is the exact production failure reported: a write-file goal executed
+    system.terminal_run_once (Opened terminal hello-world demo) and succeeded.
+    """
+    _force_policy_ask(monkeypatch)
+    _stub_plan_with_skill(monkeypatch, skill_id="system.terminal_run_once")
+
+    from voxera.core.queue_daemon import MissionQueueDaemon
+
+    side_effect_called = {"n": 0}
+    queue_root = tmp_path / "queue"
+    _make_inbox_job(queue_root, "job-write-tro", {"goal": "write a file called whatupboy.txt"})
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _should_not_run(*a, **kw):
+        side_effect_called["n"] += 1
+        from voxera.models import RunResult
+
+        return RunResult(ok=True, output="Opened terminal hello-world demo", data={})
+
+    daemon.mission_runner.run = _should_not_run  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    assert (queue_root / "failed" / "job-write-tro.json").exists(), (
+        "'write a file' with terminal_run_once must be rejected fail-closed"
+    )
+    assert not (queue_root / "done" / "job-write-tro.json").exists()
+    assert side_effect_called["n"] == 0, "mission.run must not be called on mismatch"
+
+    result = _read_artifact(queue_root, "job-write-tro", "execution_result.json")
+    assert result["ok"] is False
+    assert result["evaluation_reason"] == "simple_intent_skill_family_mismatch"
+    assert result["stop_reason"] == "planner_intent_route_rejected"
+
+    ir = result.get("intent_route")
+    assert ir is not None
+    assert ir["intent_kind"] == "write_file"
+    assert "system.terminal_run_once" not in ir["allowed_skill_ids"]
+    assert "files.write_text" in ir["allowed_skill_ids"]
+
+
+def test_create_file_called_panel_payload_fails_closed(tmp_path: Path, monkeypatch: Any):
+    """Regression: 'create a file called whatupboy.txt' via panel-style payload must fail closed
+    when planner produces system.terminal_run_once.
+
+    Root cause: 'create a file called X' was incorrectly classified as unknown_or_ambiguous
+    because _RE_WRITE_VERB only matched 'create file' (no article), not 'create a file'.
+    The fix: _RE_WRITE_VERB now matches 'create (a|an|new|empty)? file'.
+    """
+    _force_policy_ask(monkeypatch)
+    _stub_plan_with_skill(monkeypatch, skill_id="system.terminal_run_once")
+
+    from voxera.core.queue_daemon import MissionQueueDaemon
+    from voxera.core.queue_job_intent import enrich_queue_job_payload
+
+    side_effect_called = {"n": 0}
+    queue_root = tmp_path / "queue"
+    inbox = queue_root / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+
+    # Simulate a panel-created payload (same shape as _write_panel_mission_job)
+    panel_payload = enrich_queue_job_payload(
+        {
+            "id": "create-a-file-called-whatupboy-txt-abc123",
+            "goal": "create a file called whatupboy.txt",
+            "approval_required": False,
+            "summary": "Panel mission prompt queued for planner",
+            "approval_hints": ["none"],
+            "expected_artifacts": ["plan.json", "execution_envelope.json", "execution_result.json"],
+        },
+        source_lane="panel_mission_prompt",
+    )
+    job_path = inbox / "job-panel-create-file.json"
+    import json as _json
+
+    job_path.write_text(_json.dumps(panel_payload), encoding="utf-8")
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _should_not_run(*a, **kw):
+        side_effect_called["n"] += 1
+        from voxera.models import RunResult
+
+        return RunResult(ok=True, output="Opened terminal hello-world demo", data={})
+
+    daemon.mission_runner.run = _should_not_run  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    assert (queue_root / "failed" / "job-panel-create-file.json").exists(), (
+        "panel 'create a file' with terminal_run_once must be rejected fail-closed"
+    )
+    assert not (queue_root / "done" / "job-panel-create-file.json").exists()
+    assert side_effect_called["n"] == 0, "mission.run must not be called on mismatch"
+
+    result = _read_artifact(queue_root, "job-panel-create-file", "execution_result.json")
+    assert result["ok"] is False
+    assert result["evaluation_reason"] == "simple_intent_skill_family_mismatch"
+    assert result["stop_reason"] == "planner_intent_route_rejected"
+
+    ir = result.get("intent_route")
+    assert ir is not None
+    assert ir["intent_kind"] == "write_file"
+    assert "files.write_text" in ir["allowed_skill_ids"]
+    assert "system.terminal_run_once" not in ir["allowed_skill_ids"]
+    # Note: execution_envelope.json is only written on non-mismatch paths (mismatch
+    # is detected before the envelope write), so we verify via execution_result only.
 
 
 def test_open_terminal_routes_to_terminal_run_once_succeeds(tmp_path: Path, monkeypatch: Any):

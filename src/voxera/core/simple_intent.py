@@ -64,9 +64,11 @@ INTENT_ALLOWED_SKILLS: dict[str, frozenset[str]] = {
 # Regex patterns (conservative – only match when we are highly confident)
 # ---------------------------------------------------------------------------
 
-# write_file: starts with write/create/append/save + looks like a filename
+# write_file: starts with write/create/append/save verb
+# "create file" / "create a file" / "create a new file" / "create an empty file" are all
+# write-file intents regardless of articles or adjectives before "file".
 _RE_WRITE_VERB = re.compile(
-    r"^\s*(?:write|append\s+to|save\s+.+\s+to|create\s+file)\b",
+    r"^\s*(?:write|append\s+to|save\s+.+\s+to|create\s+(?:(?:a|an|new|empty)\s+)*file)\b",
     re.IGNORECASE,
 )
 
