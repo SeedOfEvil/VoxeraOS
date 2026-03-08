@@ -444,10 +444,10 @@ def register_assistant_routes(
                 "execution_lane": result.get("execution_lane") or "",
                 "fast_lane": result.get("fast_lane")
                 if isinstance(result.get("fast_lane"), dict)
-                else {},
+                else None,
                 "intent_route": result.get("intent_route")
                 if isinstance(result.get("intent_route"), dict)
-                else {},
+                else None,
                 "approval_status": result.get("approval_status") or "none",
                 "current_step_index": int(result.get("current_step_index") or 0),
                 "total_steps": int(result.get("total_steps") or 0),
@@ -455,7 +455,7 @@ def register_assistant_routes(
                 "last_completed_step": int(result.get("last_completed_step") or 0),
                 "latest_summary": str(result.get("latest_summary") or ""),
                 "terminal_outcome": str(result.get("terminal_outcome") or ""),
-                "stop_reason": str(result.get("stop_reason") or ""),
+                "stop_reason": result.get("stop_reason"),
                 "error": str(result.get("error") or ""),
                 "updated_at_ms": result.get("updated_at_ms"),
                 "has_answer": bool(str(result.get("answer") or "").strip()),

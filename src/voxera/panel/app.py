@@ -1297,19 +1297,53 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     timeline_raw = payload.get("recent_timeline")
     timeline: list[Any] = timeline_raw if isinstance(timeline_raw, list) else []
 
+    lifecycle_state = str(
+        execution.get("lifecycle_state")
+        or state_payload.get("lifecycle_state")
+        or payload.get("bucket")
+        or "unknown"
+    )
+    terminal_outcome = str(
+        execution.get("terminal_outcome") or state_payload.get("terminal_outcome") or ""
+    )
+    bucket = str(payload.get("bucket") or "unknown")
+
+    is_success_terminal = (
+        terminal_outcome == "succeeded" or lifecycle_state == "done" or bucket == "done"
+    )
+    is_failed_terminal = terminal_outcome in {"failed", "blocked", "canceled"} or bucket in {
+        "failed",
+        "canceled",
+    }
+
+    raw_failure_summary = str(job_context.get("failure_summary") or execution.get("error") or "")
+    failure_summary: str | None = (
+        raw_failure_summary if is_failed_terminal and raw_failure_summary else None
+    )
+
+    raw_stop_reason = str(execution.get("stop_reason") or "")
+    stop_reason: str | None = raw_stop_reason if is_failed_terminal and raw_stop_reason else None
+
+    filtered_timeline: list[Any] = []
+    for item in timeline:
+        if not isinstance(item, dict):
+            continue
+        event_name = str(item.get("event") or "")
+        if is_success_terminal and event_name in {"queue_job_failed", "assistant_advisory_failed"}:
+            continue
+        if is_failed_terminal and event_name in {"queue_job_done", "assistant_job_done"}:
+            continue
+        filtered_timeline.append(item)
+
+    fast_lane_raw = execution.get("fast_lane")
+    intent_route_raw = execution.get("intent_route")
+
     return {
         "ok": True,
         "job_id": payload.get("job_id") or f"{Path(job_id).stem}.json",
-        "bucket": payload.get("bucket") or "unknown",
-        "lifecycle_state": str(
-            execution.get("lifecycle_state")
-            or state_payload.get("lifecycle_state")
-            or payload.get("bucket")
-            or "unknown"
-        ),
-        "terminal_outcome": str(
-            execution.get("terminal_outcome") or state_payload.get("terminal_outcome") or ""
-        ),
+        "bucket": bucket,
+        "lifecycle_state": lifecycle_state,
+        "terminal_outcome": terminal_outcome,
         "current_step_index": int(
             execution.get("current_step_index") or state_payload.get("current_step_index") or 0
         ),
@@ -1326,16 +1360,12 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
             or ("pending" if approval else "none")
         ),
         "execution_lane": str(execution.get("execution_lane") or ""),
-        "fast_lane": execution.get("fast_lane")
-        if isinstance(execution.get("fast_lane"), dict)
-        else {},
-        "intent_route": execution.get("intent_route")
-        if isinstance(execution.get("intent_route"), dict)
-        else {},
+        "fast_lane": fast_lane_raw if isinstance(fast_lane_raw, dict) else None,
+        "intent_route": intent_route_raw if isinstance(intent_route_raw, dict) else None,
         "latest_summary": str(execution.get("latest_summary") or ""),
         "operator_note": str(execution.get("operator_note") or ""),
-        "failure_summary": str(job_context.get("failure_summary") or execution.get("error") or ""),
-        "stop_reason": str(execution.get("stop_reason") or ""),
+        "failure_summary": failure_summary,
+        "stop_reason": stop_reason,
         "artifacts": {
             "plan": bool(payload.get("plan")),
             "actions": bool(payload.get("actions")),
@@ -1345,7 +1375,7 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "step_summaries": execution.get("step_summaries")
         if isinstance(execution.get("step_summaries"), list)
         else [],
-        "recent_timeline": timeline[:12],
+        "recent_timeline": filtered_timeline[:12],
     }
 
 

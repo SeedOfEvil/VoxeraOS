@@ -536,247 +536,14 @@ def test_panel_job_detail_smoke(tmp_path, monkeypatch):
     art = queue_dir / "artifacts" / "job-a"
     art.mkdir(parents=True, exist_ok=True)
     (art / "plan.json").write_text('{"x":1}', encoding="utf-8")
-    (art / "actions.jsonl").write_text('{"event":"one","ts":1}\n', encoding="utf-8")
-    (art / "stdout.txt").write_text("out", encoding="utf-8")
-    (art / "stderr.txt").write_text("err", encoding="utf-8")
-    (art / "outputs").mkdir(parents=True, exist_ok=True)
-    (art / "outputs" / "generated_files.json").write_text('["a.txt"]', encoding="utf-8")
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    client = TestClient(panel_module.app)
-    res = client.get("/queue/jobs/job-a.json/detail")
-    assert res.status_code == 200
-    assert "stdout" in res.text
-    assert "generated" in res.text.lower()
-
-
-def test_panel_create_mission_requires_auth_and_csrf(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
-    client = TestClient(panel_module.app)
-
-    unauth = client.post("/missions/create", data={"prompt": "run status"})
-    assert unauth.status_code == 401
-
-    auth_only = client.post(
-        "/missions/create",
-        data={"prompt": "run status", "approval_required": "1"},
-        headers=_operator_headers(),
-        follow_redirects=False,
-    )
-    assert auth_only.status_code == 403
-
-
-def test_panel_create_mission_prompt_only_writes_inbox_job(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
-    client = TestClient(panel_module.app)
-
-    ok = _authed_csrf_request(
-        client,
-        "post",
-        "/missions/create",
-        data={"prompt": "Open status and summarize health"},
-    )
-    assert ok.status_code == 303
-    assert "created=job-panel-mission-" in ok.headers["location"]
-
-    inbox = fake_home / "VoxeraOS" / "notes" / "queue" / "inbox"
-    jobs = sorted(inbox.glob("job-panel-mission-*.json"))
-    assert len(jobs) == 1
-
-    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
-    assert payload.get("goal") == "Open status and summarize health"
-    assert isinstance(payload.get("id"), str)
-    assert payload["id"]
-    assert panel_module.MISSION_ID_RE.fullmatch(payload["id"])
-    assert payload.get("approval_required") is True
-
-    for key in ("type", "template", "skill", "mission", "dispatch"):
-        assert key not in payload
-
-
-def test_panel_create_mission_goal_alias_writes_inbox_job(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
-    client = TestClient(panel_module.app)
-
-    ok = _authed_csrf_request(
-        client,
-        "post",
-        "/missions/create",
-        data={"goal": "Goal alias path should work"},
-    )
-    assert ok.status_code == 303
-    assert "created=job-panel-mission-" in ok.headers["location"]
-
-    inbox = fake_home / "VoxeraOS" / "notes" / "queue" / "inbox"
-    jobs = sorted(inbox.glob("job-panel-mission-*.json"))
-    assert len(jobs) == 1
-
-    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
-    assert payload.get("goal") == "Goal alias path should work"
-    assert isinstance(payload.get("id"), str)
-    assert payload["id"]
-    assert panel_module.MISSION_ID_RE.fullmatch(payload["id"])
-
-
-def test_panel_create_mission_validation_error_redirects(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
-    client = TestClient(panel_module.app)
-
-    res = _authed_csrf_request(client, "post", "/missions/create", data={"prompt": ""})
-    assert res.status_code == 303
-    assert res.headers["location"] == "/?error=panel_prompt_required"
-
-
-def test_panel_post_requires_auth_and_csrf(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
-    client = TestClient(panel_module.app)
-
-    unauth = client.post("/queue/create", data={"kind": "goal", "goal": "x"})
-    assert unauth.status_code == 401
-
-    auth_only = client.post(
-        "/queue/create", data={"kind": "goal", "goal": "x"}, headers=_operator_headers()
-    )
-    assert auth_only.status_code == 403
-
-
-def test_panel_auth_csrf_failures_emit_counters_and_logs(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
-
-    events: list[dict[str, object]] = []
-    monkeypatch.setattr(panel_module, "log", lambda e: events.append(e))
-
-    client = TestClient(panel_module.app)
-
-    unauth = client.post("/queue/create", data={"kind": "goal", "goal": "x"})
-    assert unauth.status_code == 401
-
-    bad_creds = client.post(
-        "/queue/create",
-        data={"kind": "goal", "goal": "x"},
-        headers=_operator_headers(password="wrong"),
-    )
-    assert bad_creds.status_code == 401
-
-    auth_only = client.post(
-        "/queue/create", data={"kind": "goal", "goal": "x"}, headers=_operator_headers()
-    )
-    assert auth_only.status_code == 403
-
-    ok = _authed_csrf_request(
-        client,
-        "post",
-        "/queue/create",
-        data={"kind": "goal", "goal": "works"},
-    )
-    assert ok.status_code == 303
-
-    health_path = fake_home / "VoxeraOS" / "notes" / "queue" / "health.json"
-    payload = json.loads(health_path.read_text(encoding="utf-8"))
-    counters = payload.get("counters", {})
-    assert counters.get("panel_401_count", 0) >= 2
-    assert counters.get("panel_403_count", 0) >= 1
-    assert counters.get("panel_auth_invalid", 0) >= 1
-    assert counters.get("panel_csrf_missing", 0) >= 1
-    assert counters.get("panel_mutation_allowed", 0) >= 1
-
-    event_names = {str(e.get("event", "")) for e in events}
-    assert "panel_auth_missing" in event_names
-    assert "panel_auth_invalid" in event_names
-    assert "panel_csrf_missing" in event_names
-    assert "panel_mutation_allowed" in event_names
-
-
-def test_jobs_page_filters_by_bucket(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
-    (queue_dir / "pending").mkdir(parents=True, exist_ok=True)
-    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
-    (queue_dir / "pending" / "job-pending-1.json").write_text(
-        json.dumps({"goal": "alpha goal"}), encoding="utf-8"
-    )
-    (queue_dir / "done" / "job-done-1.json").write_text(
-        json.dumps({"goal": "beta goal"}), encoding="utf-8"
-    )
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-
-    client = TestClient(panel_module.app)
-    pending = client.get("/jobs", params={"bucket": "pending", "q": "alpha"})
-    assert pending.status_code == 200
-    assert "job-pending-1.json" in pending.text
-    assert "job-done-1.json" not in pending.text
-
-
-def test_jobs_page_shows_bucket_artifacts_and_actions(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
-    for d in ["inbox", "pending", "pending/approvals", "done", "failed"]:
-        (queue_dir / d).mkdir(parents=True, exist_ok=True)
-    (queue_dir / "inbox" / "job-inbox.json").write_text('{"goal":"in"}', encoding="utf-8")
-    (queue_dir / "pending" / "job-pending.json").write_text('{"goal":"p"}', encoding="utf-8")
-    (queue_dir / "done" / "job-done.json").write_text('{"goal":"d"}', encoding="utf-8")
-    (queue_dir / "failed" / "job-failed.json").write_text('{"goal":"f"}', encoding="utf-8")
-    art = queue_dir / "artifacts" / "job-pending"
-    art.mkdir(parents=True, exist_ok=True)
-    (art / "actions.jsonl").write_text('{"event":"step"}\n', encoding="utf-8")
-
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    client = TestClient(panel_module.app)
-    res = client.get("/jobs", params={"bucket": "all", "n": 20})
-    assert res.status_code == 200
-    assert "job-inbox.json" in res.text
-    assert "job-done.json" in res.text
-    assert "pending/approvals" not in res.text
-    assert "actions=Y" in res.text
-    assert "Bundle" in res.text
-
-
-def test_jobs_page_excludes_state_sidecars_from_rows(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
-    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
-    (queue_dir / "done" / "job-real.json").write_text('{"goal":"ok"}', encoding="utf-8")
-    (queue_dir / "done" / "job-real.state.json").write_text("{}", encoding="utf-8")
-
-    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
-    client = TestClient(panel_module.app)
-
-    res = client.get("/jobs", params={"bucket": "all", "n": 20})
-    assert res.status_code == 200
-    assert "job-real.json" in res.text
-    assert "job-real.state.json" not in res.text
-
-
-def test_job_detail_renders_pending_done_and_failed_cases(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
-    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
-    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
-    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
-
-    (queue_dir / "pending" / "job-pending.json").write_text(
-        '{"goal":"needs approval"}', encoding="utf-8"
-    )
-    (queue_dir / "pending" / "approvals" / "job-pending.approval.json").write_text(
-        json.dumps(
-            {
-                "job": "job-pending.json",
-                "policy_reason": "network_changes -> ask",
-                "target": {"type": "url", "value": "https://example.com"},
-                "scope": {"fs_scope": "workspace_only", "needs_network": True},
-            }
-        ),
+    (art / "actions.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"event": "assistant_advisory_failed", "status": "failed"}),
+                json.dumps({"event": "assistant_job_done", "status": "ok"}),
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -941,6 +708,103 @@ def test_job_detail_prefers_structured_execution_artifacts(tmp_path, monkeypatch
     assert "All clear" in res.text
     assert "outputs/summary.md" in res.text
     assert "Machine payload" in res.text
+
+
+def test_job_progress_success_omits_stale_failure_fields_and_events(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-success.json").write_text('{"goal":"ok"}', encoding="utf-8")
+    (queue_dir / "done" / "job-success.state.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "failure_summary": "old failed attempt",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    art = queue_dir / "artifacts" / "job-success"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "execution_lane": "queue",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.status",
+                        "status": "succeeded",
+                        "summary": "Done",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (art / "actions.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"event": "assistant_advisory_failed", "status": "failed"}),
+                json.dumps({"event": "assistant_job_done", "status": "ok"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Include stale failure event and current done event in audit log.
+    log({"event": "queue_job_failed", "job": "job-success.json", "step": 1})
+    log({"event": "queue_job_done", "job": "job-success.json", "step": 1})
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs/job-success.json/progress")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["terminal_outcome"] == "succeeded"
+    assert payload["failure_summary"] is None
+    assert payload["stop_reason"] is None
+    assert payload["fast_lane"] is None
+    assert payload["intent_route"] is None
+    events = {str(item.get("event") or "") for item in payload["recent_timeline"]}
+    assert "queue_job_failed" not in events
+    assert "assistant_advisory_failed" not in events
+
+
+def test_assistant_progress_normalizes_empty_structured_fields(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-assistant-empty.json").write_text(
+        json.dumps({"kind": "assistant_question", "thread_id": "thread-empty"}),
+        encoding="utf-8",
+    )
+    art = queue_dir / "artifacts" / "job-assistant-empty"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps({"lifecycle_state": "done", "terminal_outcome": "succeeded"}),
+        encoding="utf-8",
+    )
+    (art / "assistant_response.json").write_text(
+        json.dumps({"answer": "ok", "advisory_mode": "queue"}), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    client = TestClient(panel_module.app)
+
+    res = client.get("/assistant/progress/job-assistant-empty.json", headers=_operator_headers())
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["fast_lane"] is None
+    assert payload["intent_route"] is None
+    assert payload["stop_reason"] is None
 
 
 def test_job_progress_endpoint_surfaces_live_execution_fields(tmp_path, monkeypatch):

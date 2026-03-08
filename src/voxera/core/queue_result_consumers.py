@@ -154,10 +154,10 @@ def resolve_structured_execution(
         "execution_lane": str(execution_result.get("execution_lane") or ""),
         "fast_lane": execution_result.get("fast_lane")
         if isinstance(execution_result.get("fast_lane"), dict)
-        else {},
+        else None,
         "intent_route": execution_result.get("intent_route")
         if isinstance(execution_result.get("intent_route"), dict)
-        else {},
+        else None,
         "stop_reason": str(execution_result.get("stop_reason") or ""),
         "latest_summary": latest_summary,
         "last_attempted_step": int(last_attempted),

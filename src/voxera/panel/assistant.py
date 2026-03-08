@@ -154,17 +154,22 @@ def read_assistant_result(queue_root: Path, request_id: str) -> dict[str, Any]:
         or "",
         "fast_lane": structured.get("fast_lane")
         if isinstance(structured.get("fast_lane"), dict)
-        else {},
+        else None,
         "intent_route": structured.get("intent_route")
         if isinstance(structured.get("intent_route"), dict)
-        else {},
+        else None,
         "latest_summary": structured.get("latest_summary") or "",
         "approval_status": structured.get("approval_status") or "none",
         "current_step_index": int(structured.get("current_step_index") or 0),
         "total_steps": int(structured.get("total_steps") or 0),
         "last_attempted_step": int(structured.get("last_attempted_step") or 0),
         "last_completed_step": int(structured.get("last_completed_step") or 0),
-        "stop_reason": structured.get("stop_reason") or "",
+        "stop_reason": (
+            str(structured.get("stop_reason") or "")
+            if str(structured.get("terminal_outcome") or "") in {"failed", "blocked", "canceled"}
+            or str(bucket) in {"failed", "canceled"}
+            else None
+        ),
         "terminal_outcome": structured.get("terminal_outcome") or "",
     }
 
