@@ -1599,21 +1599,3 @@ def test_plan_payload_includes_capabilities_missions_and_allowed_apps():
     assert "missions:" in user_content
     assert "work_mode" in user_content
     assert "allowed_apps (system.open_app.name):" in user_content
-
-
-def test_terminal_hello_world_routes_to_terminal_run_once():
-    cfg = AppConfig()
-    reg = SkillRegistry()
-    reg.discover()
-
-    mission = asyncio.run(
-        plan_mission(
-            "open the terminal and present me with a hello world script command",
-            cfg=cfg,
-            registry=reg,
-        )
-    )
-
-    assert mission.title == "Terminal Hello World Demo"
-    assert mission.steps[0].skill_id == "system.terminal_run_once"
-    assert mission.steps[0].args["keep_open"] is True

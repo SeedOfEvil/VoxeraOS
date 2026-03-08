@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from voxera_builtin_skills.terminal_run_once import run
 
 
-def test_run_opens_gnome_terminal():
+def test_run_opens_plain_gnome_terminal_without_demo_script():
     mock_popen = MagicMock()
 
     with (
@@ -15,32 +15,13 @@ def test_run_opens_gnome_terminal():
         result = run()
 
     assert result.ok is True
-    assert "terminal" in result.output.lower() or "hello" in result.output.lower()
+    assert "opened terminal" in result.output.lower()
     mock_popen.assert_called_once()
     call_args = mock_popen.call_args[0][0]
-    assert "gnome-terminal" in call_args
-    assert "--" in call_args
-    assert "bash" in call_args
-    assert "-lc" in call_args
+    assert call_args == ["gnome-terminal"]
 
 
-def test_run_script_contains_hello_world_and_press_enter():
-    mock_popen = MagicMock()
-
-    with (
-        patch("shutil.which", return_value="/usr/bin/gnome-terminal"),
-        patch("subprocess.Popen", mock_popen),
-    ):
-        result = run(keep_open=True)
-
-    assert result.ok is True
-    call_args = mock_popen.call_args[0][0]
-    script = call_args[-1]
-    assert "Hello, world!" in script
-    assert "Press Enter" in script
-
-
-def test_run_without_keep_open_has_no_press_enter():
+def test_keep_open_flag_does_not_inject_commands():
     mock_popen = MagicMock()
 
     with (
@@ -51,9 +32,7 @@ def test_run_without_keep_open_has_no_press_enter():
 
     assert result.ok is True
     call_args = mock_popen.call_args[0][0]
-    script = call_args[-1]
-    assert "Hello, world!" in script
-    assert "Press Enter" not in script
+    assert call_args == ["gnome-terminal"]
 
 
 def test_run_fails_if_gnome_terminal_not_found():

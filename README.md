@@ -30,11 +30,10 @@ That architecture matters because it keeps behavior observable and recoverable e
   - `/assistant` submits queue-backed advisory jobs (`assistant_question`), with bounded thread continuity and degraded read-only fallback mode when queue transport is unavailable.
   - Explicitly read-only advisory requests can use an in-control-plane fast lane (`execution_lane=fast_read_only`) when deterministic eligibility checks pass (including canonical request-kind detection via `job_intent.request_kind`); uncertain or non-eligible requests fail closed to normal queue lane (`execution_lane=queue`).
 - **Simple-intent routing (semantic guardrail)**
-  - Goal-kind queue jobs pass through a deterministic classifier before planning: obvious operator
-    asks ("write text.txt with …", "read ~/…", "open terminal", "what is system status?") are
-    classified into a narrow intent family.  If the planner's first step falls outside the allowed
-    skill family the job fails closed before any side effects occur.
-  - Classifier is conservative — ambiguous or multi-step goals fall through to normal planning.
+  - Goal-kind queue jobs pass through a deterministic classifier before planning with explicit open-intent splits: `open_terminal`, `open_url`, `open_app`, plus `write_file`, `read_file`, `run_command`, and `assistant_question`.
+  - Open-intent routing is narrow and conservative: URL presence alone does **not** route to `open_url`, meta/help/explanatory phrasing does **not** execute actions, and ambiguous open phrasing remains `unknown_or_ambiguous`.
+  - Compound actionable requests preserve first-step intent metadata (`first_step_only`, `first_action_intent_kind`, `trailing_remainder`) so valid prefixes like "open terminal and …" constrain only step 1 without erasing the remainder.
+  - If the planner's first step falls outside the allowed skill family the job fails closed before any side effects occur.
   - Evidence is visible in `execution_result.json` (`intent_route`, `evaluation_reason`) and
     `plan.json` (`intent_route`); action events `queue_simple_intent_routed` /
     `queue_simple_intent_mismatch` are emitted.  No approvals, capabilities, or policy gates are

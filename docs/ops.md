@@ -231,7 +231,7 @@ Goal-kind queue jobs (those with a free-form `goal` string) pass through a small
 intent classifier (`src/voxera/core/simple_intent.py`) before planning:
 
 - Obvious operator verbs (`write`, `read the file ~/...`, `open terminal`, `what is ... status?`,
-  etc.) are classified into one of six intent classes: `assistant_question`, `open_resource`,
+  etc.) are classified into explicit intent classes: `assistant_question`, `open_terminal`, `open_url`, `open_app`,
   `write_file`, `read_file`, `run_command`, or `unknown_or_ambiguous`.
 - For recognised deterministic intents the classifier emits the set of allowed first-step skill
   IDs **and** an `extracted_target` when a file path can be parsed directly from the goal.
@@ -254,10 +254,12 @@ intent classifier (`src/voxera/core/simple_intent.py`) before planning:
 - Action events: `queue_simple_intent_routed` (always, for goal-kind) and
   `queue_simple_intent_mismatch` (when mismatch detected).
 - Does **not** bypass approvals, capability gates, policy, or any existing trust control.
-- **Sub-route notes** (v1.3 refinements):
-  - `"open terminal"` (exact phrase): allows **both** `system.open_app` (e.g. gnome-terminal)
-    and `system.terminal_run_once` (deterministic terminal demo skill) as valid first steps.
-    Other `open_resource` goals (app names, URLs) only allow `system.open_app` / `system.open_url`.
+- **Sub-route notes** (v1.4 refinements):
+  - `"open terminal"` and narrow variants (`open the terminal`, `launch terminal`, etc.) map to `open_terminal` and only allow `system.open_app` as deterministic first-step family.
+  - `open_url` requires an explicit open/launch verb tied to a URL; URL presence alone is insufficient.
+  - `open_app` is restricted to explicit narrow app-open phrasing; vague asks ("open an app", "open something") remain ambiguous.
+  - Compound actionable requests preserve deterministic first-step routing metadata rather than being discarded when they contain `and`/`then`.
+  - Meta/help/explanatory phrasing (how/why/debug/discussion/quoted phrase) does not trigger deterministic action execution.
   - `write_file` goals: match `write …`, `create file …`, **and** `create a/an/new/empty file …`
     (articles and adjectives before "file" are accepted).  All require `files.write_text` as
     the first step.  `system.terminal_run_once` is **explicitly rejected**.
