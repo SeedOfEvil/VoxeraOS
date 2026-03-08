@@ -125,7 +125,9 @@ class SimpleIntentResult:
             "compound_action": self.compound_action,
             "first_step_only": self.first_step_only,
         }
-        if self.extracted_target is not None:
+        if self.extracted_target is not None and (
+            self.intent_kind != "read_file" or _is_safe_read_extracted_target(self.extracted_target)
+        ):
             d["extracted_target"] = self.extracted_target
         if self.first_action_intent_kind is not None:
             d["first_action_intent_kind"] = self.first_action_intent_kind
@@ -151,6 +153,10 @@ def _normalize_goal(text: str) -> str:
 def _contains_parent_traversal(path: str) -> bool:
     normalized = path.replace("\\", "/")
     return any(segment == ".." for segment in normalized.split("/"))
+
+
+def _is_safe_read_extracted_target(path: str) -> bool:
+    return path.startswith("~/VoxeraOS/notes/") and not _contains_parent_traversal(path)
 
 
 def _split_compound(text: str) -> tuple[str, str | None]:
@@ -213,11 +219,7 @@ def classify_simple_operator_intent(
         extracted_path = None
         if path_match:
             raw_path = path_match.group("path").rstrip(".,;:!?\"'").strip()
-            if (
-                raw_path
-                and raw_path.startswith("~/VoxeraOS/notes/")
-                and not _contains_parent_traversal(raw_path)
-            ):
+            if raw_path and _is_safe_read_extracted_target(raw_path):
                 extracted_path = raw_path
         return SimpleIntentResult(
             "read_file",
