@@ -410,7 +410,6 @@ def _extract_named_file_write_args(goal: str) -> dict[str, str] | None:
     return {"path": candidate_path, "text": "", "mode": "overwrite"}
 
 
-
 def _extract_simple_write_args(goal: str) -> dict[str, str] | None:
     text = goal.strip()
     if not text:

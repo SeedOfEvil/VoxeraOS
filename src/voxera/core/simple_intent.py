@@ -71,7 +71,9 @@ _RE_QUESTION_VERB = re.compile(
     r"(?:what\s+is\s+(?:my\s+)?(?:current\s+)?system\s+status)\b)",
     re.IGNORECASE,
 )
-_RE_STATUS_PHRASE = re.compile(r"\b(?:system\s+status|current\s+status|health\s+status)\b", re.IGNORECASE)
+_RE_STATUS_PHRASE = re.compile(
+    r"\b(?:system\s+status|current\s+status|health\s+status)\b", re.IGNORECASE
+)
 _RE_LEADING_POLITE = re.compile(r"^\s*(?:please\s+|kindly\s+)", re.IGNORECASE)
 _RE_COMPOUND_SPLIT = re.compile(r"\s+(?:and\s+then|and|then)\s+", re.IGNORECASE)
 _RE_META_PREFIX = re.compile(
@@ -95,7 +97,9 @@ _RE_OPEN_APP_DIRECT = re.compile(
     r"^\s*(?:open|launch|start)\s+(?P<name>(?:gnome\s+calculator|gnome-calculator|calculator|firefox|gnome\s+terminal|terminal))\b",
     re.IGNORECASE,
 )
-_RE_OPEN_APP_VAGUE = re.compile(r"^\s*(?:open|launch|start)\s+(?:an\s+app|something|my\s+work\s+stuff)\b", re.IGNORECASE)
+_RE_OPEN_APP_VAGUE = re.compile(
+    r"^\s*(?:open|launch|start)\s+(?:an\s+app|something|my\s+work\s+stuff)\b", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -155,9 +159,7 @@ def _meta_or_explanatory(text: str) -> bool:
     lowered = text.lower()
     if _RE_META_PREFIX.match(lowered) or _RE_META_ANY.search(lowered):
         return True
-    if _RE_QUOTED_ACTION.search(text):
-        return True
-    return False
+    return bool(_RE_QUOTED_ACTION.search(text))
 
 
 def _classify_open_clause(clause: str) -> tuple[str | None, frozenset[str], str, str | None]:
@@ -176,7 +178,9 @@ def _classify_open_clause(clause: str) -> tuple[str | None, frozenset[str], str,
     return (None, _NO_CONSTRAINT, "not_direct_open_clause", None)
 
 
-def classify_simple_operator_intent(*, goal: str | None, action_hints: list[str] | None = None) -> SimpleIntentResult:
+def classify_simple_operator_intent(
+    *, goal: str | None, action_hints: list[str] | None = None
+) -> SimpleIntentResult:
     if not goal:
         return _make_unknown()
     text = goal.strip()
@@ -189,9 +193,13 @@ def classify_simple_operator_intent(*, goal: str | None, action_hints: list[str]
     norm = _normalize_goal(text)
 
     if _RE_QUESTION_VERB.match(norm):
-        return SimpleIntentResult("assistant_question", True, _ADVISORY_SKILLS, "goal_starts_with_question_verb", True)
+        return SimpleIntentResult(
+            "assistant_question", True, _ADVISORY_SKILLS, "goal_starts_with_question_verb", True
+        )
     if _RE_STATUS_PHRASE.search(norm) and len(norm.split()) <= 12:
-        return SimpleIntentResult("assistant_question", True, _ADVISORY_SKILLS, "goal_contains_status_phrase", True)
+        return SimpleIntentResult(
+            "assistant_question", True, _ADVISORY_SKILLS, "goal_contains_status_phrase", True
+        )
 
     if _RE_READ_VERB.match(norm):
         path_match = _RE_READ_PATH.match(norm)
@@ -200,7 +208,14 @@ def classify_simple_operator_intent(*, goal: str | None, action_hints: list[str]
             raw_path = path_match.group("path").rstrip(".,;:!?\"'").strip()
             if raw_path:
                 extracted_path = raw_path
-        return SimpleIntentResult("read_file", True, _READ_SKILLS, "goal_starts_with_read_verb_and_path", True, extracted_target=extracted_path)
+        return SimpleIntentResult(
+            "read_file",
+            True,
+            _READ_SKILLS,
+            "goal_starts_with_read_verb_and_path",
+            True,
+            extracted_target=extracted_path,
+        )
 
     if _RE_WRITE_VERB.match(norm):
         extracted_write = None
@@ -209,10 +224,19 @@ def classify_simple_operator_intent(*, goal: str | None, action_hints: list[str]
             raw_name = name_match.group("name").strip(".,;:!?\"'")
             if raw_name and "/" not in raw_name and "\\" not in raw_name:
                 extracted_write = f"~/VoxeraOS/notes/{raw_name}"
-        return SimpleIntentResult("write_file", True, _WRITE_SKILLS, "goal_starts_with_write_verb", True, extracted_target=extracted_write)
+        return SimpleIntentResult(
+            "write_file",
+            True,
+            _WRITE_SKILLS,
+            "goal_starts_with_write_verb",
+            True,
+            extracted_target=extracted_write,
+        )
 
     if _RE_RUN_VERB.match(norm):
-        return SimpleIntentResult("run_command", True, _RUN_SKILLS, "goal_starts_with_run_verb", True)
+        return SimpleIntentResult(
+            "run_command", True, _RUN_SKILLS, "goal_starts_with_run_verb", True
+        )
 
     first_clause, remainder = _split_compound(norm)
     intent_kind, allowed, reason, target = _classify_open_clause(first_clause)
@@ -235,7 +259,9 @@ def classify_simple_operator_intent(*, goal: str | None, action_hints: list[str]
     return _make_unknown()
 
 
-def check_skill_family_mismatch(intent: SimpleIntentResult, first_step_skill_id: str) -> tuple[bool, str]:
+def check_skill_family_mismatch(
+    intent: SimpleIntentResult, first_step_skill_id: str
+) -> tuple[bool, str]:
     if not intent.deterministic or not intent.fail_closed:
         return (False, "intent_not_deterministic")
     if intent.intent_kind == "unknown_or_ambiguous":
