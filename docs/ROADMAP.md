@@ -4,6 +4,7 @@
 
 **Released in v0.1.6:**
 - Queue contract completion (current lane): producer-side structured intent (`job_intent`) now spans queue entrypoints and flows into execution envelope/artifacts for clearer planning→execution contracts without breaking legacy payloads.
+- Assistant read-only fast lane (current lane): explicit low-risk advisory requests can use `execution_lane=fast_read_only` with deterministic fail-closed eligibility and canonical artifact/audit visibility preserved.
 - Security hardening: goal sanitization + 2,000-char cap, `[USER DATA START]`/`[USER DATA END]` prompt boundaries, panel auth lockout (10 attempts/60s window → HTTP 429 + `Retry-After: 60`).
 - Ops visibility: panel Daemon Health widget (health.json-sourced, no daemon calls), panel `/hygiene` page (prune dry-run + reconcile trigger, results in health.json).
 - `sandbox.exec` argv canonicalization (`canonicalize_argv`): `command`/`argv`/`cmd` aliases, shlex.split strings, reject shell-control ambiguity, fail-fast on invalid/empty argv.

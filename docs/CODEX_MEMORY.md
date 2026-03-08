@@ -1116,3 +1116,15 @@ This file is the single, persistent project memory for Codex-assisted work.
 ## PR 5 memory note: canonical skill result fields
 
 Contract fields to rely on across built-in skills: `summary`, `machine_payload`, `output_artifacts`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`.
+## 2026-03-08 — PR #TBD — feat(queue): add fail-closed read-only assistant fast lane
+- Added conservative fast-lane eligibility gate for assistant advisory queue jobs in `queue_execution.py` + `queue_assistant.py`.
+  - Eligible lane: `execution_lane=fast_read_only` for explicit read-only advisory payloads only.
+  - Fail-closed fallback: all non-eligible/uncertain payloads remain on normal `execution_lane=queue`.
+- Preserved trust/governance guarantees:
+  - No policy/capability bypasses; fast lane remains inside queue control plane.
+  - Canonical artifacts are still written for both lanes.
+- Added explicit operator/audit evidence fields:
+  - `execution_result.json.execution_lane`
+  - `execution_result.json.fast_lane` (`used`, `eligible`, `eligibility_reason`, `request_kind`)
+  - mirrored lane metadata in `assistant_response.json`.
+- Added focused tests for eligibility, canonical artifact evidence, and fail-closed fallback cases (approval-flagged, mutating hint, malformed payload, non-eligible hint set).

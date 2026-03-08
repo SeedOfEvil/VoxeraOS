@@ -41,6 +41,8 @@ def build_execution_envelope(
     replan_count: int = 0,
     max_replans: int = 1,
     supersedes_attempt: int | None = None,
+    execution_lane: str = "queue",
+    fast_lane: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": EXECUTION_ENVELOPE_SCHEMA_VERSION,
@@ -53,6 +55,8 @@ def build_execution_envelope(
         },
         "execution": {
             "mode": normalized_mode,
+            "lane": execution_lane,
+            "fast_lane": fast_lane if isinstance(fast_lane, dict) else None,
             "attempt_index": attempt_index,
             "replan_count": replan_count,
             "max_replans": max_replans,
@@ -183,6 +187,10 @@ def build_execution_result(
         "job": Path(job_ref).name,
         "ok": ok,
         "terminal_outcome": terminal_outcome,
+        "execution_lane": str(rr_data.get("execution_lane") or "queue"),
+        "fast_lane": rr_data.get("fast_lane")
+        if isinstance(rr_data.get("fast_lane"), dict)
+        else None,
         "lifecycle_state": rr_data.get("lifecycle_state"),
         "current_step_index": rr_data.get("current_step_index"),
         "last_completed_step": rr_data.get("last_completed_step"),
