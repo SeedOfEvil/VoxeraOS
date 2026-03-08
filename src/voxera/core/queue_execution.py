@@ -23,7 +23,7 @@ from .capabilities_snapshot import (
 from .execution_evaluator import evaluate_run_result, replan_allowed_for_class
 from .mission_planner import MissionPlannerError
 from .missions import MissionStep, MissionTemplate, get_mission
-from .queue_contracts import build_execution_envelope
+from .queue_contracts import build_execution_envelope, detect_request_kind
 from .queue_job_intent import build_queue_job_intent
 
 
@@ -225,13 +225,7 @@ class QueueExecutionMixin:
         return self._primary_jobs_in_bucket(self.pending)
 
     def _request_kind(self: Any, payload: dict[str, Any]) -> str:
-        if payload.get("mission_id"):
-            return "mission_id"
-        if payload.get("steps"):
-            return "inline_steps"
-        if payload.get("goal"):
-            return "goal"
-        return "unknown"
+        return detect_request_kind(payload)
 
     def _max_replan_attempts(self: Any) -> int:
         try:

@@ -555,3 +555,34 @@ def test_inline_unknown_skill_fails_structured_without_daemon_crash(tmp_path, mo
     assert execution_result["step_results"][0]["error_class"] == "skill_not_found"
     assert execution_result["attempt_index"] == 1
     assert execution_result["replan_count"] == 0
+
+
+def test_goal_plus_inline_unknown_skill_triggers_one_bounded_replan(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-goal-inline-unknown.json").write_text(
+        json.dumps(
+            {
+                "goal": "PR141 should do exactly one bounded replan on skill mismatch",
+                "steps": [{"skill_id": "system.not_a_real_skill", "args": {}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.cfg.max_replan_attempts = 1
+    daemon.process_pending_once()
+
+    artifacts = queue_root / "artifacts" / "job-goal-inline-unknown"
+    execution_result = json.loads((artifacts / "execution_result.json").read_text(encoding="utf-8"))
+
+    assert execution_result["attempt_index"] == 2
+    assert execution_result["replan_count"] == 1
+    assert execution_result["max_replans"] == 1
+    assert execution_result["evaluation_class"] == "replannable_mismatch"
+    assert execution_result["evaluation_reason"] == "skill_not_found"
+    assert execution_result["stop_reason"] == "terminal_failure"
+    assert (artifacts / "plan.attempt-1.json").exists()
+    assert (artifacts / "plan.attempt-2.json").exists()
