@@ -335,3 +335,4 @@ Non-goals preserved:
 
 
 - [x] PR 9A: added additive queue lineage metadata + evidence visibility (`plan.json`, `execution_envelope.json`, `execution_result.json`, panel/progress), with no orchestration behavior changes.
+- [x] PR 9B-lite: added explicit single-child enqueue primitive with deterministic lineage propagation and canonical enqueue evidence (`child_job_refs.json`, `actions.jsonl`, result/progress/panel child refs), without workflow orchestration.

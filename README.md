@@ -309,3 +309,27 @@ Live fields are sourced from canonical artifacts only (`*.state.json`, `executio
 Queue jobs now accept additive, descriptive lineage metadata: `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and optional `lineage_role` (`root`/`child`). This metadata is observational only and does **not** change execution behavior, approvals, fail-closed semantics, scheduling, or context passing.
 
 When present, lineage is surfaced in `plan.json`, `execution_envelope.json`, `execution_result.json`, job progress payloads, and panel job detail views.
+
+
+## Controlled child enqueue primitive (PR 9B-lite)
+
+Queue jobs can now explicitly request a **single** child enqueue by including:
+
+```json
+{
+  "goal": "parent goal",
+  "enqueue_child": {
+    "goal": "child goal",
+    "title": "optional child title"
+  }
+}
+```
+
+Behavior is intentionally narrow and fail-closed:
+- exactly one child can be enqueued from a parent execution
+- child enqueue is explicit (never inferred), non-recursive, and does not wait/aggregate
+- child is written as a normal `inbox/child-*.json` queue job
+- child lineage is computed/sanitized (`parent_job_id`, `root_job_id`, incremented depth, deterministic sequence index, role=`child`)
+- child enqueue is auditable in `actions.jsonl`, `child_job_refs.json`, `execution_result.json` (`child_refs`), job progress (`child_refs`), and panel job detail
+
+This is **not** a workflow engine: no dependency graph, no parent/child result passing, no autonomous decomposition, and no approval bypass.

@@ -214,3 +214,13 @@ Interpretation:
 2. Submit a job with lineage keys (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`).
 3. Verify successful execution and lineage visibility in `artifacts/<job>/execution_envelope.json`, `execution_result.json`, `plan.json`, `/jobs/<job>/progress`, and the panel job detail page.
 4. Confirm no automatic child scheduling or dependency behavior occurs.
+
+
+### Manual STV for controlled child enqueue (PR 9B-lite)
+
+1. Submit a parent queue job with `enqueue_child.goal` and no parent lineage metadata.
+2. Verify parent completes normally, exactly one `inbox/child-*.json` appears, and child lineage resolves to parent-root/depth+1/role=child.
+3. Submit a parent queue job with lineage metadata and `enqueue_child`; verify child inherits root and increments depth.
+4. Submit malformed `enqueue_child` payload (non-object, empty goal, extra keys); verify fail-closed behavior and no child job file.
+5. Use child goal that requires approval (for example, open URL) and process next tick; verify child enters normal `pending/approvals` flow and parent did not bypass approvals.
+6. Verify evidence surfaces: parent `child_job_refs.json`, parent `actions.jsonl` enqueue event, parent `execution_result.json` `child_refs`, panel job detail `Child Jobs`, and progress `child_refs`.

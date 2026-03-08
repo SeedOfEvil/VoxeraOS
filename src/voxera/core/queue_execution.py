@@ -23,7 +23,12 @@ from .capabilities_snapshot import (
 from .execution_evaluator import evaluate_run_result, replan_allowed_for_class
 from .mission_planner import MissionPlannerError
 from .missions import MissionStep, MissionTemplate, get_mission
-from .queue_contracts import build_execution_envelope, detect_request_kind, extract_lineage_metadata
+from .queue_contracts import (
+    build_execution_envelope,
+    detect_request_kind,
+    extract_enqueue_child_request,
+    extract_lineage_metadata,
+)
 from .queue_job_intent import build_queue_job_intent
 from .simple_intent import (
     SimpleIntentResult,
@@ -392,6 +397,7 @@ class QueueExecutionMixin:
                 return False
 
             try:
+                enqueue_child_request: dict[str, str | None] | None = None
                 payload = self._load_job_payload_with_retry(job_path)
                 if isinstance(payload.get("_simple_intent"), dict):
                     payload["_simple_intent"] = sanitize_serialized_intent_route(
@@ -437,6 +443,10 @@ class QueueExecutionMixin:
                         fast_lane=fast_lane_meta,
                     )
                 payload = self._normalize_payload(payload)
+                try:
+                    enqueue_child_request = extract_enqueue_child_request(payload)
+                except ValueError as exc:
+                    raise ValueError(f"invalid enqueue_child request: {exc}") from exc
                 if self._ensure_hard_approval_gate(job_path, payload=payload):
                     return False
             except Exception as exc:
@@ -906,6 +916,14 @@ class QueueExecutionMixin:
                     return False
 
                 rr.data.setdefault("stop_reason", "succeeded")
+                child_ref: dict[str, Any] | None = None
+                if enqueue_child_request is not None:
+                    child_ref = self._enqueue_child_job_from_parent(
+                        parent_job_ref=str(job_path),
+                        parent_payload=payload,
+                        enqueue_request=enqueue_child_request,
+                    )
+                    rr.data["child_refs"] = [child_ref]
                 moved = self._move_job(job_path, self.done)
                 if moved is None:
                     return False
@@ -920,6 +938,10 @@ class QueueExecutionMixin:
                     terminal_outcome=str(rr.data.get("terminal_outcome") or "succeeded"),
                     approval_status="approved" if rr.data.get("step_outcomes") else None,
                 )
+                if child_ref is not None:
+                    state = self._read_job_state(str(moved))
+                    state["child_refs"] = [child_ref]
+                    self._write_job_state(str(moved), state)
                 self._write_action_event(str(moved), "queue_job_done")
                 _queue_daemon_module().log({"event": "queue_job_done", "job": str(moved)})
                 record_mission_success(self.queue_root)

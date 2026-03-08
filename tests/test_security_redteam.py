@@ -407,3 +407,40 @@ def test_redteam_injected_payload_simple_intent_is_sanitized_in_envelope(tmp_pat
     plan_intent = plan_artifact.get("intent_route")
     assert isinstance(plan_intent, dict)
     assert "extracted_target" not in plan_intent
+
+
+def test_redteam_enqueue_child_lineage_override_and_nested_keys_are_rejected(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+
+    async def _plan(goal, cfg, registry, source="cli", job_ref=None, **_kwargs):
+        return MissionTemplate(
+            id="safe-plan",
+            title="Safe Plan",
+            goal=goal,
+            steps=[MissionStep(skill_id="system.status", args={})],
+            notes="enqueue-child-redteam",
+        )
+
+    monkeypatch.setattr("voxera.core.queue_daemon.plan_mission", _plan)
+
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-parent-redteam.json").write_text(
+        json.dumps(
+            {
+                "goal": "health",
+                "enqueue_child": {
+                    "goal": "child",
+                    "lineage_role": "root",
+                    "enqueue_child": {"goal": "grandchild"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    assert (queue_root / "failed" / "job-parent-redteam.json").exists()
+    assert sorted((queue_root / "inbox").glob("child-*.json")) == []
