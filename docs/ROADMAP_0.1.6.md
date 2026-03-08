@@ -93,8 +93,8 @@ Health degradation (P3.x) is deferred to v0.2.
 #### PR #91 — sandbox.exec canonicalize_argv (SHIPPED)
 - `canonicalize_argv(args)` as single source of truth in `src/voxera/skills/arg_normalizer.py`.
 - Accepts keys in priority order: `command` (canonical), `argv`, `cmd` (compatibility aliases).
-- String values tokenized with `shlex.split` (no implicit shell wrapper).
-- Empty/whitespace-only tokens silently stripped; non-string tokens raise `ValueError` with actionable message.
+- String values tokenized with `shlex.split` (no implicit shell wrapper); shell-control operators now rejected as ambiguous unless explicit shell argv is used.
+- Empty/whitespace-only argv list tokens are rejected (no silent stripping); non-string tokens raise `ValueError` with actionable message.
 - Two-layer defense: `PodmanSandboxRunner.run()` (execution path) + `canonicalize_args("sandbox.exec")` (pre-flight).
 
 ---

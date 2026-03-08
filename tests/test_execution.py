@@ -162,11 +162,8 @@ def test_sandbox_exec_cmd_alias_is_accepted(monkeypatch, tmp_path: Path):
     assert captured["cmd"][-2:] == ["ls", "-la"]
 
 
-def test_sandbox_exec_empty_tokens_stripped_from_list(monkeypatch, tmp_path: Path):
-    """Empty string tokens in a list command are silently stripped."""
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    captured = _patch_successful_run(monkeypatch)
-
+def test_sandbox_exec_empty_tokens_in_list_are_rejected(monkeypatch):
+    monkeypatch.setattr(PodmanSandboxRunner, "_assert_available", lambda self: None)
     runner = PodmanSandboxRunner()
     result = runner.run(
         manifest=_sandbox_manifest(),
@@ -176,8 +173,8 @@ def test_sandbox_exec_empty_tokens_stripped_from_list(monkeypatch, tmp_path: Pat
         job_id="job-empty-tokens",
     )
 
-    assert result.ok is True
-    assert captured["cmd"][-2:] == ["echo", "hello"]
+    assert result.ok is False
+    assert result.data[SKILL_RESULT_KEY]["error_class"] == "invalid_input"
 
 
 def test_sandbox_exec_all_empty_tokens_returns_error(monkeypatch):
@@ -195,6 +192,24 @@ def test_sandbox_exec_all_empty_tokens_returns_error(monkeypatch):
 
     assert result.ok is False
     assert "non-empty list of strings" in result.error
+
+
+def test_sandbox_exec_shell_control_string_returns_structured_block(monkeypatch):
+    monkeypatch.setattr(PodmanSandboxRunner, "_assert_available", lambda self: None)
+    runner = PodmanSandboxRunner()
+
+    result = runner.run(
+        manifest=_sandbox_manifest(),
+        args={"command": "echo hi && uname -a"},
+        fn=lambda **_kwargs: None,
+        cfg=AppConfig(),
+        job_id="job-shell-control",
+    )
+
+    assert result.ok is False
+    payload = result.data[SKILL_RESULT_KEY]
+    assert payload["summary"] == "Rejected sandbox command input"
+    assert payload["error_class"] == "invalid_input"
 
 
 def test_sandbox_exec_whitespace_and_empty_tokens_fail_with_actionable_message(monkeypatch):

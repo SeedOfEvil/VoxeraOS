@@ -78,6 +78,12 @@ On non-SELinux hosts the same mount option remains compatible.
 ```bash
 voxera run system.set_volume --arg level=35 --dry-run
 voxera run system.open_app --arg name=firefox --dry-run
+
+# Execution boundary checks (PR3 hardening)
+voxera run sandbox.exec --arg "command=['echo','ok']"
+voxera run sandbox.exec --arg "command=echo ok && uname -a"   # should fail closed
+voxera run files.write_text --arg path=demo.txt --arg text=ok
+voxera run files.write_text --arg path=../escape.txt --arg text=nope  # should fail closed
 ```
 
 Expected dry-run output is JSON with:

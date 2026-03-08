@@ -71,10 +71,17 @@ Unknown skill IDs or disallowed app targets are rejected before any execution, w
 All `sandbox.exec` command arguments are normalised through `canonicalize_argv` before execution:
 - Accepted keys (priority order): `command`, `argv`, `cmd`.
 - String values are tokenised with `shlex.split` (no implicit shell wrapper).
-- List values: all elements must be strings; empty/whitespace-only tokens are silently stripped.
-- If the final argv is empty, missing, or contains non-string tokens, execution fails fast with a clear error:
+- String values that include shell-control operators (`&&`, `;`, pipes, redirects) are rejected as ambiguous unless an explicit shell argv is provided.
+- List values: all elements must be strings and must not be empty/whitespace-only.
+- If argv is empty/missing/ambiguous or contains invalid tokens, execution fails fast with a clear error and canonical `skill_result` (`error_class=invalid_input`):
   `"sandbox.exec command must be a non-empty list of strings. Provide args.command as a list like ['bash','-lc','echo hello'] or a non-empty string."`
 - `shell=True` is never used; the argv list is passed directly to Podman.
+
+#### Confined file path normalization (`normalize_confined_path`)
+- `files.read_text` and `files.write_text` share centralized path-boundary enforcement in `src/voxera/skills/path_boundaries.py`.
+- Relative paths are rooted to `~/VoxeraOS/notes`, then normalized deterministically.
+- Traversal attempts (`..`), absolute out-of-root paths, and symlink escapes are blocked (`error_class=path_out_of_bounds`).
+- Invalid path forms (empty/null-byte) are rejected (`error_class=invalid_path`).
 
 Canonical best-practice format:
 ```json

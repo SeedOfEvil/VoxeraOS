@@ -153,6 +153,25 @@ class PodmanSandboxRunner(SandboxRunner):
     runner_name = "sandbox.podman"
 
     @staticmethod
+    def _blocked_result(
+        *, summary: str, error: str, error_class: str, details: dict[str, Any]
+    ) -> RunResult:
+        return RunResult(
+            ok=False,
+            error=error,
+            data={
+                SKILL_RESULT_KEY: build_skill_result(
+                    summary=summary,
+                    machine_payload=details,
+                    operator_note="Sandbox execution was blocked before launch.",
+                    next_action_hint="fix_input_and_retry",
+                    retryable=False,
+                    error_class=error_class,
+                )
+            },
+        )
+
+    @staticmethod
     def _parse_network_setting(raw_value: Any) -> bool:
         if isinstance(raw_value, bool):
             return raw_value
@@ -186,22 +205,42 @@ class PodmanSandboxRunner(SandboxRunner):
         try:
             command = canonicalize_argv(args)
         except ValueError as exc:
-            return RunResult(ok=False, error=str(exc))
+            return self._blocked_result(
+                summary="Rejected sandbox command input",
+                error=str(exc),
+                error_class="invalid_input",
+                details={"args": sanitize_audit_value(args)},
+            )
         args = {**args, "command": command}
 
         timeout_s = int(args.get("timeout_s", 60))
         if timeout_s <= 0:
-            return RunResult(ok=False, error="timeout_s must be greater than zero")
+            return self._blocked_result(
+                summary="Rejected sandbox timeout",
+                error="timeout_s must be greater than zero",
+                error_class="invalid_input",
+                details={"timeout_s": args.get("timeout_s")},
+            )
 
         try:
             requested_network = self._parse_network_setting(args.get("network", False))
         except ValueError as exc:
-            return RunResult(ok=False, error=str(exc))
+            return self._blocked_result(
+                summary="Rejected sandbox network setting",
+                error=str(exc),
+                error_class="invalid_input",
+                details={"network": args.get("network")},
+            )
         env_arg = args.get("env", {}) or {}
         if not isinstance(env_arg, dict) or not all(
             isinstance(k, str) and isinstance(v, str) for k, v in env_arg.items()
         ):
-            return RunResult(ok=False, error="env must be a dict of string keys and values")
+            return self._blocked_result(
+                summary="Rejected sandbox environment",
+                error="env must be a dict of string keys and values",
+                error_class="invalid_input",
+                details={"env": sanitize_audit_value(env_arg)},
+            )
 
         safe_env = {k: v for k, v in env_arg.items() if k in DEFAULT_ENV_ALLOWLIST}
         paths = ensure_job_paths(job_id)

@@ -83,7 +83,8 @@ VoxeraOS/
 │   │   │   ├── registry.py          — manifest.yml discovery + strict health classification (valid/invalid/incomplete/warning) + entrypoint loading
 │   │   │   ├── runner.py            — policy-gated skill execution + approval callbacks
 │   │   │   ├── execution.py         — sandbox selection + audit value sanitization
-│   │   │   └── arg_normalizer.py    — arg canonicalization + alias mapping
+│   │   │   ├── arg_normalizer.py    — arg canonicalization + alias mapping
+│   │   │   └── path_boundaries.py   — deterministic confined-path normalization
 │   │   ├── audio/                   — placeholder (STT/TTS, v0.3+)
 │   │   └── panel/
 │   │       ├── app.py               — FastAPI composition/wiring root
@@ -430,7 +431,8 @@ src/voxera/
 │   ├── runner.py             — Runtime capability enforcement (fail-closed) + policy/approval execution gate
 │   ├── execution.py          — Job ID generation, sandbox runner selection,
 │   │                           audit value sanitization
-│   └── arg_normalizer.py     — Argument canonicalization; alias mapping
+│   ├── arg_normalizer.py     — Argument canonicalization; alias mapping
+│   └── path_boundaries.py    — Confined path normalization for file skills
 │                               (e.g., content → text, skill → skill_id)
 │
 ├── audio/                    — Placeholder; STT/TTS planned for v0.3

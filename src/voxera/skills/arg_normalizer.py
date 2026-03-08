@@ -56,6 +56,14 @@ _SANDBOX_ARGV_EMPTY_MSG = (
     "Provide args.command as a list like ['bash','-lc','echo hello'] or a non-empty string."
 )
 
+_SANDBOX_ARGV_UNSAFE_STRING_MSG = (
+    "sandbox.exec command string contains shell-control operators that are ambiguous "
+    "without an explicit shell. Use argv list form or wrap explicitly as "
+    "['bash','-lc','<cmd>']."
+)
+
+_SHELL_CONTROL_TOKENS = {";", "&&", "||", "|", ">", ">>", "<", "2>", "&"}
+
 
 def canonicalize_argv(args: dict[str, Any]) -> list[str]:
     """Resolve and normalise sandbox command argv from an args dict.
@@ -81,14 +89,16 @@ def canonicalize_argv(args: dict[str, Any]) -> list[str]:
 
     if isinstance(raw, str):
         argv = shlex.split(raw.strip())
+        if any(token in _SHELL_CONTROL_TOKENS for token in argv):
+            raise ValueError(_SANDBOX_ARGV_UNSAFE_STRING_MSG)
     elif isinstance(raw, list):
         argv = []
         for token in raw:
             if not isinstance(token, str):
                 raise ValueError(_SANDBOX_ARGV_EMPTY_MSG)
-            stripped = token.strip()
-            if stripped:
-                argv.append(stripped)
+            if not token.strip() or "\x00" in token:
+                raise ValueError(_SANDBOX_ARGV_EMPTY_MSG)
+            argv.append(token)
     else:
         raise ValueError(_SANDBOX_ARGV_EMPTY_MSG)
 

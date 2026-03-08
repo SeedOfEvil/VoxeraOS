@@ -232,3 +232,10 @@ Operator-facing queue consumers now prefer canonical structured artifacts when p
 Queue producers now attach additive canonical `job_intent` metadata to queued jobs (for example panel mission prompts, inbox CLI jobs, and assistant advisory jobs). This internal shape captures request kind/source lane, normalized title/goal/notes, optional step summaries, candidate skills/action hints, approval/artifact hints, operator rationale/summary, and optional machine planning payload.
 
 During daemon normalization, Voxera also derives `job_intent` for legacy jobs that do not provide it, preserving backward compatibility while giving downstream consumers a deterministic intent contract. When available, daemon artifacts include `artifacts/<job>/job_intent.json`, and `execution_envelope.json` now carries `request.job_intent` for end-to-end planning→execution→operator traceability.
+
+## Execution boundary hardening (PR 3)
+
+- `sandbox.exec` now fails closed for ambiguous command strings containing shell-control operators (`&&`, `;`, pipes, redirects) unless the caller uses explicit argv shell wrapping like `['bash','-lc','...']`.
+- List-form argv no longer silently strips empty/whitespace tokens; malformed argv is rejected with canonical `skill_result` payloads (`error_class=invalid_input`).
+- `files.read_text` and `files.write_text` share centralized confined-path normalization with deterministic out-of-bounds/traversal/symlink-escape blocking.
+- `system.open_app` and `system.open_url` enforce stricter normalized inputs and now always emit canonical `skill_result` metadata for allowlist/input failures.

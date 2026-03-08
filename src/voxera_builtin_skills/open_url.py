@@ -8,7 +8,8 @@ from voxera.skills.result_contract import SKILL_RESULT_KEY, build_skill_result
 
 
 def run(url: str) -> RunResult:
-    parsed = urlparse(url.strip())
+    normalized = url.strip()
+    parsed = urlparse(normalized)
     if parsed.scheme not in {"http", "https"}:
         return RunResult(
             ok=False,
@@ -25,20 +26,35 @@ def run(url: str) -> RunResult:
             },
         )
 
+    if not normalized or not parsed.netloc or parsed.username or parsed.password:
+        return RunResult(
+            ok=False,
+            error="URL must include a host and must not embed credentials",
+            data={
+                SKILL_RESULT_KEY: build_skill_result(
+                    summary="Rejected unsafe URL form",
+                    machine_payload={"url": url},
+                    operator_note="Provide a standard browser URL without embedded credentials.",
+                    next_action_hint="provide_supported_url",
+                    retryable=False,
+                    error_class="invalid_input",
+                )
+            },
+        )
     candidates = [
-        ["firefox", "--new-tab", url],
-        ["xdg-open", url],
+        ["firefox", "--new-tab", normalized],
+        ["xdg-open", normalized],
     ]
     for cmd in candidates:
         try:
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return RunResult(
                 ok=True,
-                output=f"Opened URL: {url}",
+                output=f"Opened URL: {normalized}",
                 data={
                     SKILL_RESULT_KEY: build_skill_result(
-                        summary=f"Opened URL {url}",
-                        machine_payload={"url": url, "launcher": cmd[0]},
+                        summary=f"Opened URL {normalized}",
+                        machine_payload={"url": normalized, "launcher": cmd[0]},
                         operator_note="Browser launch requested successfully.",
                         next_action_hint="continue",
                         output_artifacts=[],
@@ -54,7 +70,11 @@ def run(url: str) -> RunResult:
                 data={
                     SKILL_RESULT_KEY: build_skill_result(
                         summary="Failed to open URL",
-                        machine_payload={"url": url, "launcher": cmd[0], "exception": repr(exc)},
+                        machine_payload={
+                            "url": normalized,
+                            "launcher": cmd[0],
+                            "exception": repr(exc),
+                        },
                         operator_note="URL launch failed unexpectedly.",
                         next_action_hint="inspect_launcher",
                         retryable=True,
@@ -69,7 +89,7 @@ def run(url: str) -> RunResult:
         data={
             SKILL_RESULT_KEY: build_skill_result(
                 summary="No supported browser launcher found",
-                machine_payload={"url": url, "candidates": ["firefox", "xdg-open"]},
+                machine_payload={"url": normalized, "candidates": ["firefox", "xdg-open"]},
                 operator_note="Install firefox or xdg-open to enable URL launching.",
                 next_action_hint="install_launcher",
                 retryable=False,
