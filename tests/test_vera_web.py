@@ -504,6 +504,30 @@ def test_note_write_variants_prepare_preview(tmp_path, monkeypatch, message, exp
     assert preview == {"goal": expected_goal}
 
 
+def test_contentful_file_write_phrase_prepares_structured_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called funnyjoke.txt with the content "Why don’t scientists trust atoms? Because they make up everything!"',
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/funnyjoke.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Why don’t scientists trust atoms? Because they make up everything!"
+    )
+
+
 def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

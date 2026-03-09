@@ -367,6 +367,23 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - Vera remains preview-first and truthful: prepared is not submitted, submitted is not executed, and execution truth comes from VoxeraOS evidence.
 
 
+### Structured file-write content queue contract (PR #157)
+
+VoxeraOS now supports a narrow structured file-write payload for governed queue execution:
+
+```json
+{
+  "goal": "write a file called hello.txt with provided content",
+  "write_file": {
+    "path": "~/VoxeraOS/notes/hello.txt",
+    "content": "hello world",
+    "mode": "overwrite"
+  }
+}
+```
+
+This preserves explicit filename/path and text content through queue intake, planning/execution rails, and canonical evidence (`step_results.json`, `execution_result.json`, `execution_envelope.json`). Writes still execute only via VoxeraOS approvals/policy boundaries.
+
 ### Vera evidence-aware job outcome review (PR #155)
 
 Vera can now review real VoxeraOS job outcomes from canonical queue evidence (not chat assumptions):

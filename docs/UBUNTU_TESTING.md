@@ -261,3 +261,11 @@ Use this quick manual check after starting Vera (`uvicorn voxera.vera_web.app:ap
 - Ask `did it work?` / `why did it fail?` and verify no invented execution claims appear when evidence is missing.
 - Ask `what should I do next?` and verify next-step guidance is tied to canonical evidence.
 - Ask `prepare the next step` and verify Vera drafts preview-only follow-up payload and does not auto-submit.
+
+
+## PR #157 quick validation — structured write_file content
+
+- Queue a payload with explicit `write_file.path` and `write_file.content` via Vera preview handoff or direct inbox JSON.
+- Run daemon once and confirm file content is written exactly to requested filename.
+- Verify `artifacts/<job>/execution_envelope.json` includes `request.write_file`.
+- Verify `step_results.json` and `execution_result.json` show the real write target/result.

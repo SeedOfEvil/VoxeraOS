@@ -994,3 +994,56 @@ def test_child_job_enters_normal_approval_flow_when_executed(tmp_path, monkeypat
     assert len(pending_children) == 1
     approval = queue_root / "pending" / "approvals" / f"{pending_children[0].stem}.approval.json"
     assert approval.exists()
+
+
+def test_structured_write_file_payload_preserves_path_and_content_end_to_end(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-write-structured.json").write_text(
+        json.dumps(
+            {
+                "goal": "write a file called funnyjoke.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/funnyjoke.txt",
+                    "content": "Why don’t scientists trust atoms? Because they make up everything!",
+                },
+            }
+        )
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    art = queue_root / "artifacts" / "job-write-structured"
+    envelope = json.loads((art / "execution_envelope.json").read_text(encoding="utf-8"))
+    plan = json.loads((art / "plan.json").read_text(encoding="utf-8"))
+    result = json.loads((art / "execution_result.json").read_text(encoding="utf-8"))
+    steps = json.loads((art / "step_results.json").read_text(encoding="utf-8"))
+
+    assert envelope["request"]["write_file"]["path"] == "~/VoxeraOS/notes/funnyjoke.txt"
+    assert (
+        envelope["request"]["write_file"]["content"]
+        == "Why don’t scientists trust atoms? Because they make up everything!"
+    )
+    assert plan["mission"]["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/funnyjoke.txt"
+    assert (
+        plan["mission"]["steps"][0]["args"]["text"]
+        == "Why don’t scientists trust atoms? Because they make up everything!"
+    )
+    assert result["step_results"][0]["effective_args"]["path"] == "~/VoxeraOS/notes/funnyjoke.txt"
+    assert steps[0]["effective_args"]["path"] == "~/VoxeraOS/notes/funnyjoke.txt"
+
+
+def test_structured_write_file_requires_object_shape(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-write-structured-invalid.json").write_text(
+        json.dumps({"goal": "write file", "write_file": "bad"})
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    assert (queue_root / "failed" / "job-write-structured-invalid.json").exists()

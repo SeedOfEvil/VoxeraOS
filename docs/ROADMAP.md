@@ -23,6 +23,7 @@
 - **GitHub PR #153 (completed)**: Added explicit Vera↔VoxeraOS queue handoff with structured job preview + explicit submit acknowledgement while preserving queue approval/policy/execution boundaries.
 - **GitHub PR #154 (completed)**: Improved Vera natural-language action detection + preview preparation quality (broader conversational phrasing support, same strict preview/submit/execution trust boundary).
 - **GitHub PR #155 (planned/current)**: Add evidence-aware Vera job outcome review + evidence-grounded next-step guidance with optional follow-up preview drafting (no auto-submit, no autonomy expansion).
+- **GitHub PR #157 (completed)**: Added a narrow structured `write_file` queue request (`path` + `content` + optional `mode`) so contentful file writes execute on governed VoxeraOS rails with canonical evidence artifacts.
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.
@@ -367,3 +368,5 @@ Non-goals preserved:
 ## GitHub PR #149 delivered: controlled child enqueue primitive
 
 - [x] PR 9B-lite (GitHub PR #149): added explicit single-child enqueue primitive with deterministic lineage propagation and canonical enqueue evidence (`child_job_refs.json`, `actions.jsonl`, result/progress/panel child refs), without workflow orchestration. Full approval/policy/fail-closed semantics preserved.
+
+- **GitHub PR #157 (completed)**: Added a narrow structured `write_file` queue request (`path` + `content` + optional `mode`) so contentful file writes execute on existing governed VoxeraOS rails with canonical artifact evidence.

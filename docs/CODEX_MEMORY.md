@@ -1,3 +1,10 @@
+## 2026-03-09 — GitHub PR #157 — feat(files/queue): structured file-write content support
+
+- Added a narrow governed queue contract: payloads can include `write_file` (`path`, `content`, optional `mode`).
+- Queue execution now preserves explicit filename/content and builds a single `files.write_text` mission on existing policy/approval/execution rails.
+- Canonical artifacts now carry structured write intent/evidence (`execution_envelope.request.write_file`, plus step/execution results).
+- Vera preview normalization now accepts and drafts contentful file-write payloads, enabling honest preview-to-queue handoff for this capability.
+
 ## 2026-03-09 — GitHub PR #155 — feat(vera): add evidence-aware job review and follow-up previewing
 
 - Added a narrow Vera evidence-review path for explicit job IDs or latest submitted session job (`handoff_job_id`) in the standalone Vera web app flow.

@@ -62,6 +62,7 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
         write_mode = "a" if mode == "append" else "w"
         with target.open(write_mode, encoding="utf-8") as f:
             f.write(text)
+        bytes_written = len(text.encode("utf-8"))
         action = "Appended" if mode == "append" else "Wrote"
         return RunResult(
             ok=True,
@@ -69,7 +70,11 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
             data={
                 SKILL_RESULT_KEY: build_skill_result(
                     summary=f"{action} text to {target}",
-                    machine_payload={"path": str(target), "mode": mode},
+                    machine_payload={
+                        "path": str(target),
+                        "mode": mode,
+                        "bytes_written": bytes_written,
+                    },
                     operator_note="Write completed in confined notes scope.",
                     next_action_hint="continue",
                     retryable=False,

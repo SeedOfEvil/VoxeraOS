@@ -1684,6 +1684,61 @@ def test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end(tmp_path, 
     assert "queue e2e ok." in (allowed_root / "ok.txt").read_text(encoding="utf-8")
 
 
+def test_queue_job_structured_write_file_writes_explicit_target_and_content(tmp_path, monkeypatch):
+    cfg = AppConfig(
+        policy=PolicyApprovals(system_settings="allow", network_changes="allow"),
+        privacy=PrivacyConfig(cloud_allowed=False, redact_logs=True),
+    )
+    monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    allowed_root = tmp_path / "VoxeraOS" / "notes"
+    monkeypatch.setattr(files_write_text_skill, "ALLOWED_ROOT", allowed_root)
+
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "job-write-structured.json").write_text(
+        json.dumps(
+            {
+                "goal": "write a file called jokester.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/jokester.txt",
+                    "content": "Why don’t scientists trust atoms? Because they make up everything!",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    _assert_job_moved(queue_dir / "done", "job-write-structured.json")
+    assert not (allowed_root / "ok.txt").exists()
+
+    target = allowed_root / "jokester.txt"
+    assert target.exists()
+    assert (
+        target.read_text(encoding="utf-8")
+        == "Why don’t scientists trust atoms? Because they make up everything!"
+    )
+
+    artifacts = sorted((queue_dir / "artifacts").glob("job-write-structured*/"))
+    artifact_dir = artifacts[-1]
+    step_results = json.loads((artifact_dir / "step_results.json").read_text(encoding="utf-8"))
+    execution_result = json.loads(
+        (artifact_dir / "execution_result.json").read_text(encoding="utf-8")
+    )
+
+    assert step_results[0]["effective_args"]["path"] == "~/VoxeraOS/notes/jokester.txt"
+    assert (
+        execution_result["step_results"][0]["effective_args"]["path"]
+        == "~/VoxeraOS/notes/jokester.txt"
+    )
+
+
 def test_queue_job_sandbox_argv_goal_reaches_done(tmp_path, monkeypatch):
     cfg = AppConfig(
         policy=PolicyApprovals(system_settings="allow", network_changes="allow"),
