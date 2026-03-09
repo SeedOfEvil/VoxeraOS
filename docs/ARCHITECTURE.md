@@ -1105,3 +1105,15 @@ Safety semantics:
 - no parent waiting, dependency resolution, or output passing
 - child lineage is computed server-side from sanitized parent lineage and cannot be user-overridden through child payload metadata
 - approval behavior is unchanged: child jobs enter normal approval flow when they execute
+
+
+## Vera v0 conversational boundary (PR #152)
+
+Vera v0 adds a minimal standalone chat surface (`voxera.vera_web.app`) intended to run on a separate port from the operator panel, with short session-scoped context stored under `notes/queue/artifacts/vera_sessions/`.
+
+- **Vera role:** reasoning + conversation layer (brain-backed text responses, planning help, structured request drafting).
+- **VoxeraOS role:** strict execution trust layer (queue intake, policy/approval, runtime execution, evidence artifacts).
+- **Boundary:** chat itself is never the execution engine; normal Vera chatting does not enqueue or execute jobs.
+- **Context model:** bounded rolling turn window (`MAX_SESSION_TURNS`) retained per session, intentionally restart-volatile for v0.
+
+Queue concept (developer framing): the queue is the structured path for real side effects; jobs are submitted into VoxeraOS and moved through lifecycle states with approvals/policy checks and evidence produced in VoxeraOS artifacts.

@@ -18,6 +18,11 @@ That architecture matters because it keeps behavior observable and recoverable e
 
 ## Current key capabilities
 
+- **Vera v0 conversational surface (new)**
+  - Minimal standalone Vera web app (`voxera.vera_web.app`) intended to run on a separate port from the operator panel with short session context.
+  - Explicit trust boundary messaging: Vera can converse, plan, and draft requests, but real-world side effects must go through VoxeraOS queue execution.
+  - Preview-only behavior in v0 (no direct execution, no implicit enqueue from normal chatting).
+
 - **Queue-driven mission execution**
   - Daemon reads `notes/queue/inbox/*.json`, enforces queue contracts, and drives deterministic lifecycle transitions.
 - **Approval workflow (HITL gates)**
@@ -104,6 +109,8 @@ Run the two core services locally:
 ```bash
 voxera daemon
 voxera panel --host 127.0.0.1 --port 8787
+# separate Vera app (different port)
+uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790
 ```
 
 Or install user services:

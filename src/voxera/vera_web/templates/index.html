@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vera</title>
+  <link rel="stylesheet" href="/static/vera.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>Vera</h1>
+        <p>Reasoning partner · VoxeraOS-only execution</p>
+      </div>
+      <div class="meta">
+        <span>Status: {{mode_status}}</span>
+      </div>
+    </header>
+
+    <section class="boundary">
+      <strong>Boundary:</strong> Real actions must go through VoxeraOS queue handoff. Chat never executes side effects.
+      <div class="sub">{{queue_boundary}}</div>
+    </section>
+
+    {% if error %}<div class="error">{{error}}</div>{% endif %}
+
+    <section class="thread" id="thread">
+      {% if turns and turns|length > 0 %}
+        {% for turn in turns %}
+          <article class="bubble {{turn.role}}">
+            <div class="role">{{turn.role}}</div>
+            <div class="text">{{turn.text}}</div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <div class="empty">How can I help? Ask anything about planning, brainstorming, or drafting a VoxeraOS request.</div>
+      {% endif %}
+    </section>
+
+    <form class="composer" method="post" action="/chat">
+      <input type="hidden" name="session_id" value="{{session_id}}" />
+      <textarea name="message" rows="2" required placeholder="Ask Vera anything..."></textarea>
+      <button type="submit">Send</button>
+    </form>
+  </main>
+</body>
+</html>

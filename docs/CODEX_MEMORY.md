@@ -1,3 +1,18 @@
+## 2026-03-09 — GitHub PR #152 — feat(vera): minimal chat web app with session context + VoxeraOS-only execution boundary
+
+- Summary:
+  - Follow-up refinement: moved Vera v0 to a standalone web app (`voxera.vera_web.app`) intended for a separate port from the operator panel, with a single-pane chat UI and bottom composer.
+  - Added lightweight per-session rolling context (`notes/queue/artifacts/vera_sessions/*.json`) with deterministic cap (`MAX_SESSION_TURNS=8`) for short back-and-forth continuity.
+  - Added a dedicated Vera system prompt (`src/voxera/vera/prompt.py`) defining identity/personality, strict Vera↔VoxeraOS boundary, queue framing, and execution-truthfulness states.
+  - Wired Vera chat generation through existing brain/provider stack (OpenAI-compatible + Gemini adapters), with clean degraded responses when providers are unavailable.
+  - Enforced preview-only behavior: normal Vera chatting does not enqueue queue jobs and does not claim side effects.
+  - Added focused panel-route tests covering render, chat response flow, session context retention + cap, prompt boundary contents, clean backend-unavailable behavior, non-enqueue guarantee, and unchanged home panel route.
+- Non-goals preserved:
+  - No direct tool execution from Vera chat.
+  - No approvals/policy changes.
+  - No queue lifecycle mutation except existing paths.
+  - No voice, streaming, multimodal, long-term memory, or orchestration/autonomy features.
+
 ## 2026-03-09 — GitHub PR #150 — feat(panel/progress): read-only parent child status rollups
 
 - Summary:

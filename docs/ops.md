@@ -1257,3 +1257,23 @@ For parent jobs that enqueue a child, operators can inspect:
 - `/jobs/<id>/progress` `child_refs` + `child_summary`
 
 Child summary is read-only operator visibility and does not change orchestration or approval semantics. Child jobs remain normal queue jobs and expose lineage through existing envelope/result/progress surfaces.
+
+## Vera v0 manual STV (preview-only boundary)
+
+1. Start services:
+   - `voxera daemon`
+   - `voxera panel --host 127.0.0.1 --port 8787`
+   - `uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`
+2. Open `http://127.0.0.1:8790/`.
+3. Send a greeting and verify you receive a conversational assistant reply.
+4. Send a follow-up that depends on prior context; verify short session context continuity.
+5. Continue chatting past the rolling cap and confirm behavior remains stable (older turns may roll off by design).
+6. Ask for an action-shaped request (for example: open URL, read file, write note).
+7. Verify Vera states the execution boundary: real actions must go through VoxeraOS queue handoff.
+8. Verify this PR's v0 behavior is preview-only (proposal/draft), with no direct execution claim.
+9. Verify queue inbox does not change from ordinary chatting alone.
+10. Verify operator panel routes (`/`, `/jobs`, `/assistant`) continue to work unchanged.
+
+Notes:
+- Context is session-scoped and intentionally lightweight for v0.
+- Restart persistence is not guaranteed for all deployment modes; this is acceptable in v0.
