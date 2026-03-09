@@ -550,6 +550,99 @@ def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monk
     assert payload["goal"] == "write a note called jokester.txt"
 
 
+def test_filename_refinement_replaces_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called funnyjoke.txt with the content "hello"',
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "actually rename it jokester.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
+
+
+def test_content_refinement_replaces_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write a file called funnyjoke.txt"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "put the joke inside the file"},
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'actually use this joke: "Why don’t scientists trust atoms? Because they make up everything!"',
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert (
+        preview["write_file"]["content"]
+        == "Why don’t scientists trust atoms? Because they make up everything!"
+    )
+
+
+def test_submit_clears_preview_only_after_confirmed_success(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+
+    assert vera_service.read_session_preview(queue, sid) is not None
+
+    client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    assert vera_service.read_session_preview(queue, sid) is None
+
+
+def test_failed_submit_keeps_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(vera_app_module, "submit_preview", _boom)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    before = vera_service.read_session_preview(queue, sid)
+
+    client.post("/chat", data={"session_id": sid, "message": "submit it"})
+    after = vera_service.read_session_preview(queue, sid)
+
+    assert before is not None
+    assert after == before
+
+
 def test_preview_replacement_uses_latest_payload_for_submit(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

@@ -269,3 +269,13 @@ Use this quick manual check after starting Vera (`uvicorn voxera.vera_web.app:ap
 - Run daemon once and confirm file content is written exactly to requested filename.
 - Verify `artifacts/<job>/execution_envelope.json` includes `request.write_file`.
 - Verify `step_results.json` and `execution_result.json` show the real write target/result.
+
+
+## Vera active preview draft replacement checks (PR #158)
+
+- Prepare preview: `open example.com`; verify `preview_available: True`.
+- Replace preview: `actually open openai.com instead`; verify updated preview is active.
+- Add lightweight follow-up (`looks good`) and verify preview remains active.
+- Submit (`submit it`) and verify inbox payload matches the updated preview.
+- Repeat with file flow: create draft -> add content -> rename filename -> submit; confirm latest draft is submitted.
+- Evidence flow: review prior job, ask `prepare the next step`, revise target, submit, verify latest revision reached queue.

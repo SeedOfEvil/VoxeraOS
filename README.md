@@ -366,6 +366,8 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - Submit phrasing (`submit it`, `queue it`, `send it to VoxeraOS`, etc.) only hands off when a preview exists.
 - Vera remains preview-first and truthful: prepared is not submitted, submitted is not executed, and execution truth comes from VoxeraOS evidence.
 
+- Active preview now behaves as a conversational draft: follow-up refinements replace the current structured preview, lightweight acknowledgements keep it intact, and explicit handoff always submits the latest draft only.
+
 
 ### Structured file-write content queue contract (PR #157)
 

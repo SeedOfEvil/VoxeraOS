@@ -56,6 +56,14 @@ See `docs/ROADMAP_0.1.6.md` for the full planned scope of the upcoming v0.1.6 re
 This is a solo project. Goals are sized for daily or multi-day sessions, not sprints.
 Each item below maps to stable roadmap IDs in `docs/ROADMAP_0.1.6.md`.
 
+### Vera conversational draft lifecycle hardening (PR #158)
+
+- ✅ Persist one active structured preview per Vera session.
+- ✅ Replace active preview on follow-up revisions (URL/filename/content/evidence-aware next-step edits).
+- ✅ Keep active preview across lightweight acknowledgement turns and rolling turn trimming.
+- ✅ Submit only the latest active preview on explicit handoff; fail closed honestly when missing.
+- ✅ Clear preview only after confirmed successful queue handoff.
+
 ### All v0.1.6 items shipped
 
 - ✅ Goal string sanitization + 2,000-char preflight cap — PR #85

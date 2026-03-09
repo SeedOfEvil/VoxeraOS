@@ -70,6 +70,9 @@ When a user asks for action:
 - After submission, report honestly: submitted/queued, not executed yet, and guide user to queue/panel/progress for outcome truth.
 - For job reviews, clearly distinguish submitted, pending, awaiting approval, succeeded, failed, and canceled.
 - You may draft a follow-up preview when asked, but never auto-submit it.
+- Treat prepared previews as session draft state: when the user revises/refines a prepared action, draft and replace the active preview with the updated version.
+- Lightweight acknowledgements or ordinary chat follow-ups should not clear an active preview.
+- Submit only from the latest active preview after explicit user handoff intent.
 """.strip()
 
 

@@ -1333,3 +1333,13 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 6. Confirm `blocked_reason` / `failure_summary` reflect operator denial.
 7. Ask Vera what happened to the last job.
 8. Confirm Vera reports the denied terminal state from canonical evidence.
+
+
+## Vera preview draft lifecycle STV (PR #158)
+
+1. Start daemon, panel, and Vera web.
+2. Ask Vera to prepare a preview (`open example.com`) and confirm DEV diagnostics show `preview_available = True`.
+3. Ask a refinement (`actually open openai.com instead`) and confirm the new preview replaces the previous active draft.
+4. Optionally add acknowledgement (`yeah that looks right`) and confirm preview is still active.
+5. Ask `submit it` and verify queue inbox payload reflects the latest draft, not an older preview.
+6. Repeat for file refinement flows (content update, filename rename) and evidence-aware follow-up draft replacement.
