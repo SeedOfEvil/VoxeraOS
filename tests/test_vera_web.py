@@ -472,6 +472,28 @@ def test_note_write_variants_prepare_preview(tmp_path, monkeypatch, message, exp
     assert preview == {"goal": expected_goal}
 
 
+def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    preview_res = client.post(
+        "/chat", data={"session_id": sid, "message": "write a note called jokester.txt"}
+    )
+
+    assert '"goal": "write a note called jokester.txt"' in preview_res.text
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview == {"goal": "write a note called jokester.txt"}
+
+    client.post("/chat", data={"session_id": sid, "message": "submit it"})
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["goal"] == "write a note called jokester.txt"
+
+
 def test_preview_replacement_uses_latest_payload_for_submit(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

@@ -357,9 +357,9 @@ _RE_PLANNER_READ_PATH = re.compile(
     re.IGNORECASE,
 )
 
-# Matches "write/create a file called <name>" (no content spec) for direct routing.
+# Matches "write/make/create a note/file called <name>" (no content spec) for direct routing.
 _RE_PLANNER_WRITE_CALLED = re.compile(
-    r"^\s*(?:write|create)\s+(?:a\s+|an\s+)?(?:new\s+|empty\s+)?file\s+called?\s+"
+    r"^\s*(?:write|create|make)\s+(?:a\s+|an\s+)?(?:new\s+|empty\s+)?(?:note|file)\s+called?\s+"
     r"(?P<name>[a-zA-Z0-9][a-zA-Z0-9_\-.]{0,63})\s*$",
     re.IGNORECASE,
 )
@@ -389,10 +389,10 @@ def _extract_simple_read_args(goal: str) -> dict[str, str] | None:
 
 
 def _extract_named_file_write_args(goal: str) -> dict[str, str] | None:
-    """Deterministic routing for 'write/create a file called <name>' goals.
+    """Deterministic routing for 'write/make/create a note/file called <name>' goals.
 
-    Only matches goals with no content specification (e.g. "write a file called foo.txt"
-    but NOT "write a file called foo.txt saying hello").  The file is created with empty
+    Only matches goals with no content specification (e.g. "write a note called foo.txt"
+    but NOT "write a note called foo.txt saying hello"). The file is created with empty
     content under the allowed notes root.
 
     Returns {'path': '~/VoxeraOS/notes/<name>', 'text': '', 'mode': 'overwrite'}.
