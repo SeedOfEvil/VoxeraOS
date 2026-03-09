@@ -956,7 +956,7 @@ The assistant queue path includes a narrow, fail-closed fast-lane gate for expli
 This keeps legacy queue payloads valid while giving newer jobs a deterministic planning-intent surface for panel detail views, ops bundles, and future retry/recovery logic.
 
 
-## PR 4 execution adaptation guardrail
+## Bounded evaluate-and-replan loop (execution adaptation guardrail)
 
 The queue execution lane now uses an explicit evaluate-and-replan loop:
 
@@ -972,12 +972,12 @@ The queue execution lane now uses an explicit evaluate-and-replan loop:
   `evaluation_class`, `evaluation_reason`, `stop_reason`) plus per-attempt `plan.attempt-<n>.json`.
 
 
-## PR 5 update: normalized skill_result contract
+## Normalized skill_result contract
 
 Built-in skills now emit a consistent canonical `skill_result` payload (`summary`, `machine_payload`, `output_artifacts`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`). Queue artifact shaping (`step_results.json`, `execution_result.json`) consumes these fields as structured-first inputs, with legacy sidecar fallback retained for backward compatibility.
 
 
-## Simple-intent routing (v1.3)
+## Simple-intent routing (v1.3 / GitHub PRs #144–#145)
 
 `src/voxera/core/simple_intent.py` adds a small deterministic layer between a natural-language
 goal string and the planner.  It classifies obvious operator asks into one of:
@@ -1073,13 +1073,13 @@ cloud brain normally; the mismatch check then acts as the safety net.
 - `actions.jsonl`: `queue_simple_intent_routed` (always for goal-kind) and
   `queue_simple_intent_mismatch` (on mismatch) events
 
-## Real-time panel progress surfaces
+## Real-time panel progress surfaces (GitHub PR #146)
 
 Panel real-time UX is implemented as a narrow polling layer over canonical queue state:
 
 - `GET /jobs/{job_id}/progress` returns shaped lifecycle/step/approval metadata for mission and assistant-shaped jobs.
 - `GET /assistant/progress/{request_id}` returns advisory request lifecycle metadata.
-- Existing HTML pages remain authoritative baseline rendering; polling is additive.
+- Existing HTML pages remain authoritative baseline rendering; polling is additive progressive enhancement.
 
 Truth sources remain unchanged:
 
@@ -1090,12 +1090,12 @@ Truth sources remain unchanged:
 This keeps Voxera OS as the trust layer: UI reflects persisted control-plane evidence rather than inferred progress.
 
 
-### Queue lineage metadata (descriptive only)
+### Queue lineage metadata (GitHub PR #148, descriptive only)
 
-The queue contract now carries optional lineage fields for future workflow observability: `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and `lineage_role`. In the current phase these fields are metadata-only; there is no dependency enforcement, child enqueue behavior, traversal, orchestration state machine, or output passing between jobs.
+The queue contract carries optional additive lineage fields for workflow observability: `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and `lineage_role`. These fields are metadata-only: there is no dependency enforcement, automatic child scheduling, traversal, orchestration state machine, or output passing between jobs. Presence, absence, or specific values of lineage fields have no effect on approvals, policy, scheduling, or execution behavior.
 
 
-### Controlled child enqueue primitive (PR 9B-lite)
+### Controlled child enqueue primitive (GitHub PR #149)
 
 Queue payloads may include a narrow `enqueue_child` object (`goal`, optional `title`). During parent execution success, Voxera may enqueue one normal child inbox job and emits audit evidence.
 

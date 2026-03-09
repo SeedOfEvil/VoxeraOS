@@ -12,8 +12,12 @@ When using OpenRouter via the OpenAI-compatible adapter, VoxeraOS sends `HTTP-Re
 | Prompt injection via user-controlled content | High | ✅ Goal strings sanitized + 2,000-char cap before planning (PR #85) + `[USER DATA START]`/`[USER DATA END]` prompt boundaries (PR #88) |
 | Secret leakage (API keys, tokens) | High | ✅ Keyring + 0600 fallback; redacted in config show/snapshot |
 | Over-permissioned skills | High | ✅ Capability declarations + policy engine |
-| Panel auth brute force | Medium | ✅ Per-IP failed-auth lockout (10 attempts / 60s) with HTTP 429 + `Retry-After: 60` + audit/health surfaces |
+| Intent hijack via meta/explanatory phrasing | High | ✅ Classifier rejects meta/help/why phrasing; fail-closed if first step mismatches allowed skill family (PR #144–#145) |
+| Path traversal leakage through intent metadata | High | ✅ Traversal targets stripped at classifier, serializer, runtime, and sidecar boundaries (PR #147) |
+| Panel auth brute force | Medium | ✅ Per-IP failed-auth lockout (10 attempts / 60s) with HTTP 429 + `Retry-After: 60` + audit/health surfaces (PR #89) |
 | Mid-job daemon crash leaving ambiguous state | Medium | ✅ Graceful SIGTERM handler (PR #80) + deterministic startup recovery (PR #81) |
+| Child enqueue bypassing approvals or policy | Medium | ✅ Child jobs enter normal queue lifecycle with full approval/policy/capability enforcement; server-side lineage prevents override (PR #149) |
+| Lineage metadata widening authority | Low | ✅ Lineage fields are observational only; presence or absence does not change approvals, policy, scheduling, or execution (PR #148) |
 | Artifact data accumulation | Low | ✅ `voxera artifacts prune` (v0.1.5) + `voxera queue prune` (v0.1.6) available |
 | Dependency supply chain | Low | No signing; standard pip install |
 
@@ -44,6 +48,58 @@ User-controlled planner fields are wrapped with explicit delimiters:
 Planner instructions require the model to treat everything inside this bounded region as **untrusted user data** and to never follow instructions found there.
 
 This boundary control complements existing goal hardening: sanitize ASCII control characters, strip ANSI escape sequences only when ESC-prefixed, preserve benign bracketed text, and enforce a 2,000-character goal length cap before planner calls.
+
+### Deterministic intent routing fail-closed guardrails (PR #144–#145)
+
+Goal-kind queue jobs pass through a conservative deterministic classifier before reaching the planner:
+- Classifies intent into one of: `open_terminal`, `open_url`, `open_app`, `write_file`, `read_file`, `run_command`, `assistant_question`, or `unknown_or_ambiguous`.
+- Meta/help/explanatory phrasing (e.g. "tell me how to open terminal", "explain what open_url does") is explicitly excluded from action routing; such goals do not trigger execution.
+- URL presence alone does **not** route a goal to `open_url`; the classifier requires explicit URL-open phrasing.
+- Ambiguous or unrecognized open phrasing stays `unknown_or_ambiguous` and is not force-routed.
+- If the planner's first step falls outside the intent's allowed skill family, the job fails closed **before any skill execution** with `stop_reason=planner_intent_route_rejected`.
+- Compound requests (e.g. "open terminal and run X") have compound metadata preserved (`first_step_only`, `first_action_intent_kind`, `trailing_remainder`) so intent constraints apply to step 1 only.
+- Terminal demo hijacks were removed in PR #145 to prevent canned-command injection through preamble shortcuts.
+
+### Red-team regression suite and multi-boundary hardening (GitHub PR #147)
+
+`tests/test_security_redteam.py` is a focused adversarial regression pack that runs as part of `make security-check`. It covers:
+- **Intent hijack resistance**: meta/explanatory phrasing does not produce executable routing decisions.
+- **Classifier compound smuggling**: multi-step goals with embedded action phrasing are limited to first-step constraint.
+- **Ambiguous open phrase handling**: vague `"open an app"` phrasing stays `unknown_or_ambiguous`.
+- **Planner mismatch fail-closed matrix**: multiple mismatch patterns all terminate before execution.
+- **Planner mismatch is terminal**: confirmed `stop_reason=planner_intent_route_rejected`, no retry/bypass.
+- **Safe notes-path read preserves extracted target**: legitimate file read paths are not blocked.
+- **Traversal cases produce no extracted target**: paths containing `../` or other traversal patterns produce no `extracted_target` at any artifact boundary.
+- **Traversal metadata omitted in all artifacts**: envelope, plan, sidecars, and state files do not leak traversal metadata.
+- **Injected payload simple-intent sanitized**: serialization-boundary sanitization (`sanitize_serialized_intent_route()`) prevents unsafe intent fields from escaping into artifacts.
+- **Approval-gated job remains pending**: `open_url` and similar goals requiring approval are never executed without explicit approval.
+- **Progress surface avoids stale failure context**: terminal success views do not inherit stale failure summaries from earlier states.
+
+Traversal leakage was specifically uncovered by this suite and fixed at four independent boundaries:
+1. **Classifier boundary** — `_contains_parent_traversal()` guard prevents traversal-shaped phrasing from producing actionable routing metadata.
+2. **Serializer boundary** — `sanitize_serialized_intent_route()` strips unsafe field values before they reach artifact serialization.
+3. **Runtime boundary** — traversal targets are not surfaced in envelope, plan, or failed-sidecar artifacts.
+4. **Sidecar boundary** — `_simple_intent` sanitized before writing to failed sidecar and state files.
+
+`make security-check` is wired into `make validation-check` and `make merge-readiness-check`. Any failure in this suite is a trust-regression signal and should block merge until fixed with explicit review.
+
+### Additive metadata does not widen authority (GitHub PR #148)
+
+Queue lineage metadata (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, `lineage_role`) is observational only:
+- Presence, absence, or specific values of lineage fields have **no effect** on approvals, policy decisions, capability grants, scheduling priority, or execution behavior.
+- Lineage is not a trust signal: a job with `lineage_role=root` is not granted elevated authority; a job with `orchestration_depth=0` is not treated as a privileged root.
+- Missing or malformed lineage values are sanitized and omitted without affecting execution.
+
+### Controlled child enqueue safety semantics (GitHub PR #149)
+
+The `enqueue_child` primitive is deliberately narrow and fail-closed:
+- Exactly **one** child can be requested per parent execution; recursive or nested `enqueue_child` structures are rejected.
+- Child enqueue is **explicit**, never inferred from skill outputs or job metadata.
+- Child **lineage is computed server-side** from sanitized parent lineage; user-supplied lineage overrides inside the `enqueue_child` payload are stripped and ignored.
+- The parent's approval gate is not transferred to the child: child jobs enter the normal queue lifecycle with their own full policy evaluation, approvals, capability checks, and fail-closed enforcement.
+- Validation is strict: `enqueue_child` must be a plain object with only `goal` (required, non-empty string) and `title` (optional); extra keys, nested structures, and non-string goals are all rejected.
+- No child is written if validation fails; there is no partial-enqueue or silent degradation.
+- All evidence is auditable: `child_job_refs.json`, `actions.jsonl` (`queue_child_enqueued` event), `execution_result.json` (`child_refs`), job progress, and panel job detail all surface child relationships.
 
 ### Planner output validation
 The mission planner only accepts:
@@ -154,7 +210,7 @@ and `voxera doctor --quick`.
 
 ---
 
-## Known gaps (being tracked in ROADMAP.md)
+## Previously tracked gaps (now resolved)
 
 ### Planner goal-string hardening (FIXED — PR #85 + PR #88)
 - Goal inputs are rejected when longer than 2,000 characters before any planner brain call.
@@ -162,6 +218,14 @@ and `voxera doctor --quick`.
 - Prompt embedding normalizes whitespace (collapse runs + trim ends) so planner sees stable user input.
 - User goal text is structurally isolated with `[USER DATA START]`/`[USER DATA END]` delimiters so the model treats it as untrusted input, not system instructions.
 
+### Intent routing fail-closed enforcement (FIXED — PR #144–#145)
+- Deterministic classifier guards all goal-kind jobs; mismatch between planner first step and allowed skill family terminates the job before any execution.
+- Meta/explanatory phrasing explicitly excluded from actionable routing.
+- Narrow conservative open-intent splits; fail-closed on ambiguity.
+
+### Traversal metadata leakage (FIXED — PR #147)
+- Traversal-shaped goals no longer produce deterministic extracted targets at classifier, serializer, runtime, or sidecar boundaries.
+- Red-team suite now verifies all four boundaries as merge-blocking tests.
 
 ---
 
@@ -169,12 +233,10 @@ and `voxera doctor --quick`.
 
 1. **LLM rate limiter** — prevent runaway planner calls from burning API quota (P6.2, v0.2).
 2. **Eager skill manifest validation** — catch broken manifests at startup, not mid-job (P6.1, v0.2).
-3. **Health degradation state tracking** — surface `daemon_state=degraded` after consecutive failures (P3.1, v0.2).
-4. **Brain planning backoff enforcement** — daemon applies bounded sleep before planning on repeated brain failures; latest applied delay is recorded in `health.json` (`brain_backoff_last_applied_s`, `brain_backoff_last_applied_ts`).
-5. **Podman seccomp / AppArmor profiles** — tighten sandbox beyond `--read-only`.
-6. **Signed skills + integrity verification** — prevent tampered skill entrypoints (v0.4).
-7. **Redaction pipeline for audit logs and telemetry** — strip PII and secrets from logs.
-8. **Safe-mode boot** — limited skill set, no network, confirmation-only execution (v0.4).
+3. **Podman seccomp / AppArmor profiles** — tighten sandbox beyond `--read-only`.
+4. **Signed skills + integrity verification** — prevent tampered skill entrypoints (v0.4).
+5. **Redaction pipeline for audit logs and telemetry** — strip PII and secrets from logs.
+6. **Safe-mode boot** — limited skill set, no network, confirmation-only execution (v0.4).
 
 Previously tracked items now resolved:
 - ~~Goal string sanitization + length cap~~ — FIXED in PR #85 (2,000-char cap + control-char stripping).
@@ -183,6 +245,10 @@ Previously tracked items now resolved:
 - ~~Graceful SIGTERM handler~~ — FIXED in PR #80–#81 (graceful shutdown + startup recovery).
 - ~~Artifact directory auto-pruning~~ — FIXED in v0.1.5 (`voxera artifacts prune`) + v0.1.6 (`voxera queue prune`).
 - ~~Brain fallback errors unstructured~~ — FIXED in PR #73 (`BrainFallbackReason` enum).
+- ~~Intent hijack via meta/explanatory phrasing~~ — FIXED in PR #144–#145 (classifier guards + fail-closed mismatch detection).
+- ~~Path traversal leakage through intent metadata~~ — FIXED in PR #147 (multi-boundary hardening: classifier, serializer, runtime, sidecar).
+- ~~Health degradation state tracking~~ — SHIPPED (P3.1: `consecutive_brain_failures`, `daemon_state=degraded` tracking implemented).
+- ~~Brain planning backoff enforcement~~ — SHIPPED (P3.2: `compute_brain_backoff_s()` ladder with env knobs and `health.json` reporting).
 
 ---
 

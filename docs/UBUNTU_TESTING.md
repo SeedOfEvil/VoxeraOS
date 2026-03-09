@@ -1,6 +1,6 @@
 # Ubuntu Testing Guide
 
-Use this checklist to run Voxera OS Alpha v0.1.6 end-to-end on an Ubuntu machine.
+Use this checklist to run Voxera OS Alpha v0.1.6+ (including GitHub PRs #145–#149) end-to-end on an Ubuntu machine.
 
 ## 1) System prerequisites
 
@@ -188,7 +188,7 @@ artifact candidates, and duplicate jobs. Should show 0 issues on a clean queue.
 - Disable JavaScript (or use a text browser) and confirm pages still render static detail correctly.
 - Re-enable JavaScript and confirm live polling enhancement resumes.
 
-## Security red-team regression gate (PR 8)
+## Security red-team regression gate (GitHub PR #147)
 
 Run from repository root:
 
@@ -216,7 +216,7 @@ Interpretation:
 4. Confirm no automatic child scheduling or dependency behavior occurs.
 
 
-### Manual STV for controlled child enqueue (PR 9B-lite)
+### Manual STV for controlled child enqueue (GitHub PR #149)
 
 1. Submit a parent queue job with `enqueue_child.goal` and no parent lineage metadata.
 2. Verify parent completes normally, exactly one `inbox/child-*.json` appears, and child lineage resolves to parent-root/depth+1/role=child.

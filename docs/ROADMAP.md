@@ -1,6 +1,6 @@
 # Roadmap
 
-## Current baseline — post Alpha v0.1.6 (active development)
+## Current baseline — post Alpha v0.1.6 + PRs #145–#149 (active development)
 
 **Released in v0.1.6:**
 - Queue contract completion (current lane): producer-side structured intent (`job_intent`) now spans queue entrypoints and flows into execution envelope/artifacts for clearer planning→execution contracts without breaking legacy payloads.
@@ -8,9 +8,16 @@
 - Security hardening: goal sanitization + 2,000-char cap, `[USER DATA START]`/`[USER DATA END]` prompt boundaries, panel auth lockout (10 attempts/60s window → HTTP 429 + `Retry-After: 60`).
 - Ops visibility: panel Daemon Health widget (health.json-sourced, no daemon calls), panel `/hygiene` page (prune dry-run + reconcile trigger, results in health.json).
 - `sandbox.exec` argv canonicalization (`canonicalize_argv`): `command`/`argv`/`cmd` aliases, shlex.split strings, reject shell-control ambiguity, fail-fast on invalid/empty argv.
-- Deterministic open-intent routing refinement (`open_terminal`/`open_url`/`open_app`) with compound first-step preservation and meta/help guards.
+- Deterministic open-intent routing with compound first-step preservation and meta/help guards.
 - OpenRouter invisible attribution headers (`voxeraos.ca` + `VoxeraOS`; invisible defaults; overrides preserved).
 - Reliability: e2e_golden4 approval hang fix (filesystem-based detection, phase timeouts, diagnostics).
+
+**Post-v0.1.6 PRs shipped (see `docs/CODEX_MEMORY.md` for full details):**
+- **GitHub PR #145**: tightened deterministic open-intent routing; removed terminal demo hijacks; restored fail-closed behavior for all open-intent categories.
+- **GitHub PR #146**: live job/assistant progress endpoints in panel; progressive-enhancement polling; fixed stale failure-context shaping in resolved job progress.
+- **GitHub PR #147**: adversarial red-team regression suite; traversal metadata leakage closed at classifier/serializer/runtime/sidecar boundaries; `make security-check` now a first-class merge gate.
+- **GitHub PR #148**: additive queue lineage metadata (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, `lineage_role`) surfaced in artifacts, progress, and panel; observational only, no behavior changes.
+- **GitHub PR #149**: controlled single child-enqueue primitive; server-side lineage computation; full approval/policy/fail-closed semantics preserved; canonical audit evidence surfaces.
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.
@@ -317,15 +324,24 @@ Audio stack is currently a placeholder in `src/voxera/audio/`.
 
 - Queue/panel/CLI/ops surfaces now consume canonical structured execution artifacts first (with legacy fallback) so operator and diagnostic views are more deterministic without breaking older jobs.
 
-## PR 7 delivered: real-time assistant + queue progress UX
+## GitHub PR #145 delivered: deterministic open-intent routing tightened
+
+- Narrowed open routing into `open_terminal`, `open_url`, `open_app` with explicit skill family allowlists.
+- Meta/help/explanatory phrasing now explicitly excluded from triggering action execution.
+- Removed terminal demo hijacks and canned-command shortcuts from planner preamble.
+- Compound first-step metadata (`first_step_only`, `first_action_intent_kind`, `trailing_remainder`) preserved for multi-step goals.
+- Fail-closed: URL presence alone does not route to `open_url`; ambiguous phrasing stays `unknown_or_ambiguous`.
+
+## GitHub PR #146 delivered: real-time assistant + queue progress UX
 
 Delivered scope:
 
-- live polling progress endpoints for panel job detail and assistant request detail
+- live polling progress endpoints (`GET /jobs/{job_id}/progress`, `GET /assistant/progress/{request_id}`) for panel job detail and assistant request detail
 - assistant lifecycle visibility (`queued -> planning -> advisory_running -> done/failed` when emitted)
 - mission/queue lifecycle + step progress + approval wait state + terminal summaries
 - lane metadata visibility (`execution_lane`, `fast_lane`, `intent_route`) in live payloads
 - progressive enhancement fallback (server-rendered pages still functional without JS)
+- fixed stale failure-context shaping bug: resolved job progress no longer inherits stale failure summaries
 
 Non-goals preserved:
 
@@ -333,6 +349,16 @@ Non-goals preserved:
 - no bypass of approvals/policy/fail-closed routing
 - no parallel truth source outside queue artifacts/contracts
 
+## GitHub PR #147 delivered: red-team regression suite + multi-boundary hardening
 
-- [x] PR 9A: added additive queue lineage metadata + evidence visibility (`plan.json`, `execution_envelope.json`, `execution_result.json`, panel/progress), with no orchestration behavior changes.
-- [x] PR 9B-lite: added explicit single-child enqueue primitive with deterministic lineage propagation and canonical enqueue evidence (`child_job_refs.json`, `actions.jsonl`, result/progress/panel child refs), without workflow orchestration.
+- Added `tests/test_security_redteam.py` adversarial regression pack (intent hijack, planner mismatch, path traversal, approval-state integrity, progress/evidence consistency).
+- Uncovered and fixed traversal metadata leakage at four boundaries: classifier, serializer, runtime, sidecar.
+- `make security-check` added and wired into `make validation-check` and `make merge-readiness-check` as a first-class merge gate.
+
+## GitHub PR #148 delivered: queue lineage metadata
+
+- [x] PR 9A (GitHub PR #148): added additive queue lineage metadata + evidence visibility (`plan.json`, `execution_envelope.json`, `execution_result.json`, panel/progress), with no orchestration behavior changes.
+
+## GitHub PR #149 delivered: controlled child enqueue primitive
+
+- [x] PR 9B-lite (GitHub PR #149): added explicit single-child enqueue primitive with deterministic lineage propagation and canonical enqueue evidence (`child_job_refs.json`, `actions.jsonl`, result/progress/panel child refs), without workflow orchestration. Full approval/policy/fail-closed semantics preserved.

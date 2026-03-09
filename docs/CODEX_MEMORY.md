@@ -1,8 +1,81 @@
-## 2026-03-08 — PR #8 — security(red-team): add adversarial regression pack + `security-check` CI gate
+## 2026-03-09 — GitHub PR #149 — feat(queue): controlled child enqueue primitive with deterministic lineage
 
 - Summary:
-  - Added `tests/test_security_redteam.py` with deterministic adversarial coverage for simple-intent hijack resistance, planner first-step mismatch fail-closed rejection, notes/path traversal escape attempts, approval-gated pending-state correctness, and progress/evidence consistency for terminal success/failure shaping.
-  - Hardened read-path extraction in `simple_intent` so traversal-style paths (for example `../`) no longer produce deterministic extracted targets.
+  - Added a narrow, explicit child-enqueue primitive: queue payloads may include `enqueue_child: {goal, title?}` to request one child job from a successfully completing parent execution.
+  - Child lineage (`parent_job_id`, `root_job_id`, `orchestration_depth`, incremented, `sequence_index`, `lineage_role=child`) is computed server-side from sanitized parent lineage. User-supplied lineage overrides inside the child payload are rejected.
+  - Validation is strict and fail-closed: `enqueue_child` must be a plain object with only the allowed keys (`goal`, `title`); non-object payloads, empty goals, extra keys, and nested `enqueue_child` structures are all rejected with no child written.
+  - Child is written as a normal `inbox/child-*.json` queue job and enters the full queue lifecycle including policy, approvals, and fail-closed semantics — no parent approval gate is bypassed.
+  - Evidence surfaces: `artifacts/<parent>/child_job_refs.json`, `artifacts/<parent>/actions.jsonl` (`queue_child_enqueued` event), `artifacts/<parent>/execution_result.json` (`child_refs`), job progress `child_refs`, and panel job detail `Child Jobs` section.
+  - This is not a workflow engine: no dependency graph, no parent/child result passing, no autonomous decomposition, and no approval bypass.
+- Why it matters:
+  - Provides a governed, observable, single-step child orchestration surface for use cases that genuinely need to queue follow-on work from within an execution — while preserving every existing safety guarantee.
+  - Server-side lineage computation prevents lineage spoofing via crafted payloads.
+- Validation:
+  - `ruff format --check .` ✓
+  - `ruff check .` ✓
+  - `mypy src/voxera` ✓
+  - `pytest -q` ✓
+  - `make security-check` ✓
+  - `make validation-check` ✓
+
+## 2026-03-09 — GitHub PR #148 — feat(queue): descriptive lineage metadata for jobs and surfaces
+
+- Summary:
+  - Added additive, descriptive lineage metadata to the queue contract: `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and optional `lineage_role` (`root` / `child`).
+  - When present, lineage is surfaced in `plan.json`, `execution_envelope.json`, `execution_result.json`, job progress payloads (`/jobs/{id}/progress`), and panel job detail views.
+  - Lineage metadata is observational only: it does not change execution behavior, approvals, fail-closed semantics, scheduling, or context passing between jobs.
+  - Missing or malformed values are sanitized and omitted without affecting execution.
+- Why it matters:
+  - Provides the observability foundation for tracking job family relationships in the panel and in artifacts without introducing any orchestration coupling or widening any authority surface.
+  - Additive design means all existing jobs and operator surfaces remain unaffected.
+- Validation:
+  - `ruff format --check .` ✓
+  - `ruff check .` ✓
+  - `mypy src/voxera` ✓
+  - `pytest -q` ✓
+  - `make validation-check` ✓
+
+## 2026-03-08 — GitHub PR #146 — feat(panel): live job progress endpoints and UI polling
+
+- Summary:
+  - Added `GET /jobs/{job_id}/progress` and `GET /assistant/progress/{request_id}` endpoints that return shaped lifecycle/step/approval metadata sourced exclusively from canonical queue artifacts (no speculative states).
+  - Panel job detail pages (`/jobs/<job_id>`) and assistant pages (`/assistant`) now use progressive enhancement: server-rendered first (works without JavaScript); with JavaScript, pages poll every ~2s and refresh only evidence-backed fields.
+  - Fixed stale failure-context shaping bug: resolved job progress no longer surfaces stale failure summaries for terminal success states.
+  - Preserved `intent_route` metadata in done-job progress payloads so operators can inspect routing decisions after completion.
+  - Live fields: `terminal_outcome`, `lifecycle_state`, `intent_route`, `lineage`, `child_refs`, `step_summaries`, `approval_status`, `blocked`, `retryable`, `execution_lane`, `fast_lane`.
+  - Non-goals preserved: no speculative percentages, no bypass of approvals/policy/fail-closed routing, no parallel truth source outside queue artifacts/contracts.
+- Why it matters:
+  - Operators can observe job lifecycle transitions in real time without refreshing pages or polling CLI tools.
+  - Progressive enhancement means panel remains fully functional for operators who prefer static views or restricted environments.
+- Validation:
+  - `ruff format --check .` ✓
+  - `ruff check .` ✓
+  - `mypy src/voxera` ✓
+  - `pytest -q` ✓
+  - `make validation-check` ✓
+
+## 2026-03-08 — GitHub PR #147 — security(red-team): adversarial regression pack + multi-boundary hardening + `security-check` CI gate
+
+- Summary:
+  - Added `tests/test_security_redteam.py` with deterministic adversarial coverage for: simple-intent hijack resistance, planner first-step mismatch fail-closed rejection, notes/path traversal escape attempts, approval-gated pending-state correctness, and progress/evidence consistency for terminal success/failure shaping.
+  - Uncovered and fixed traversal metadata leakage: traversal-style paths (for example `../`) in `read_file` goals were producing deterministic extracted targets in intent metadata; fixed so traversal-style goals produce no `extracted_target` at any artifact boundary.
+  - Hardened classifier boundary: `_contains_parent_traversal()` guard prevents traversal-shaped phrasing from creating actionable routing shortcuts.
+  - Hardened serializer boundary: `sanitize_serialized_intent_route()` strips potentially unsafe field values at the serialization layer so they cannot escape into artifacts, sidecars, or state writes.
+  - Hardened runtime boundary: traversal target metadata is not surfaced in envelope, plan, or sidecar artifacts even when extracted during classification.
+  - Hardened sidecar boundary: `_simple_intent` is sanitized before writing to failed sidecar and state files so boundary violations do not leak through failure paths.
+  - Added `make security-check` and wired it into both `make validation-check` and `make merge-readiness-check` so adversarial regressions are first-class merge gates.
+- Why it matters:
+  - Red-team regressions are now deterministic and merge-blocking. Any future change that weakens intent classification, serialization, or artifact boundaries will surface as a `security-check` failure before merge.
+  - The multi-boundary hardening closed a traversal leakage path where metadata about unsafe path inputs could propagate through artifacts into operator surfaces.
+- Validation:
+  - `ruff format --check .` ✓
+  - `ruff check .` ✓
+  - `mypy src/voxera` ✓
+  - `pytest -q` ✓
+  - `make security-check` ✓
+  - `make golden-check` ✓
+  - `make validation-check` ✓
+  - `make merge-readiness-check` ✓
   - Added `make security-check` and wired it into both `make validation-check` and `make merge-readiness-check`.
   - Updated operator docs (README/architecture/ops/roadmap/ubuntu testing) to describe scope, expectations, and interpretation of `security-check` failures as regressions in trust guarantees rather than new features.
 - Validation:
@@ -15,12 +88,17 @@
   - `make validation-check`
   - `make merge-readiness-check`
 
-## 2026-03-08 — Follow-up: narrow deterministic open-intent routing + demo/default hijack guard
+## 2026-03-08 — GitHub PR #145 — fix(intent): narrow deterministic open-intent routing + remove terminal demo hijacks
+
 - Split deterministic open routing into `open_terminal`, `open_url`, and `open_app` and added compound first-step metadata (`compound_action`, `first_step_only`, `first_action_intent_kind`, `trailing_remainder`).
 - Added meta/help/explanatory guards so quoted/discussed/how/why phrasing does not trigger action execution.
 - Tightened skill families: `open_terminal` => `system.open_app`; `open_url` => `system.open_url`; `open_app` => `system.open_app`; `run_command` no longer allows `system.terminal_run_once`.
 - Removed deterministic terminal hello-world planning shortcut and updated planner preamble to avoid demo injection.
 - Updated `system.terminal_run_once` semantics to open a plain terminal only (no hello-world/canned command bootstrap).
+- Why it matters:
+  - Narrowing open-intent routing prevents accidental or adversarial phrasing from triggering execute-type actions when the goal is explanatory or meta (e.g. "tell me how to open a terminal" must never execute).
+  - Compound first-step metadata (`first_step_only`, `first_action_intent_kind`, `trailing_remainder`) keeps valid multi-step goals like "open terminal and run X" constrained at step 1 without discarding the remainder.
+  - Fail-closed: URL presence alone does not route to `open_url`; ambiguous open phrasing stays `unknown_or_ambiguous`.
 
 
 ## 2026-03-08 — PR #144 STV follow-up 3 — feat(intent): deterministic read routing + extracted_target + artifact consistency
