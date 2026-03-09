@@ -20,7 +20,7 @@ body {
   margin: 18px auto;
   height: calc(100vh - 36px);
   display: grid;
-  grid-template-rows: auto auto auto 1fr auto;
+  grid-template-rows: auto auto auto 1fr auto auto;
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -56,9 +56,46 @@ body {
   background: #2a2b30;
 }
 .bubble.user { margin-left: auto; background: #1258b9; }
-.role { text-transform: uppercase; letter-spacing: .07em; font-size: .68rem; opacity: .8; margin-bottom: 4px; }
+.role {
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  font-size: .68rem;
+  opacity: .8;
+  margin-bottom: 4px;
+}
 .text { white-space: pre-wrap; line-height: 1.35; }
 .empty { color: var(--muted); text-align: center; margin-top: 26vh; }
+.actions-row { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.dev-panel {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(20, 21, 24, 0.75);
+}
+.dev-panel summary { cursor: pointer; color: var(--muted); }
+.dev-grid { margin-top: 8px; display: grid; gap: 4px; font-size: .82rem; }
+.dev-label { margin: 10px 0 6px; color: var(--muted); font-size: .82rem; }
+.prompt-box {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 10px;
+  background: #181a1f;
+  border: 1px solid var(--line);
+  white-space: pre-wrap;
+  font-size: .8rem;
+}
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.clear-btn {
+  border: 1px solid #6a2f2f;
+  border-radius: 12px;
+  background: rgba(106, 47, 47, 0.25);
+  color: #ffd5d5;
+  padding: 9px 12px;
+  font-weight: 600;
+}
 .composer {
   display: flex;
   gap: 8px;

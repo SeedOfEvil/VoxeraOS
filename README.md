@@ -22,6 +22,7 @@ That architecture matters because it keeps behavior observable and recoverable e
   - Minimal standalone Vera web app (`voxera.vera_web.app`) intended to run on a separate port from the operator panel with short session context.
   - Explicit trust boundary messaging: Vera can converse, plan, and draft requests, but real-world side effects must go through VoxeraOS queue execution.
   - Preview-only behavior in v0 (no direct execution, no implicit enqueue from normal chatting).
+  - DEV-friendly diagnostics panel exposes prompt + session metadata for development, and includes an explicit "Clear chat + context" action.
 
 - **Queue-driven mission execution**
   - Daemon reads `notes/queue/inbox/*.json`, enforces queue contracts, and drives deterministic lifecycle transitions.

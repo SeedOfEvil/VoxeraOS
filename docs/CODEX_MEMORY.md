@@ -6,7 +6,7 @@
   - Added a dedicated Vera system prompt (`src/voxera/vera/prompt.py`) defining identity/personality, strict Vera↔VoxeraOS boundary, queue framing, and execution-truthfulness states.
   - Wired Vera chat generation through existing brain/provider stack (OpenAI-compatible + Gemini adapters), with clean degraded responses when providers are unavailable.
   - Enforced preview-only behavior: normal Vera chatting does not enqueue queue jobs and does not claim side effects.
-  - Added focused panel-route tests covering render, chat response flow, session context retention + cap, prompt boundary contents, clean backend-unavailable behavior, non-enqueue guarantee, and unchanged home panel route.
+  - Added DEV-mode diagnostics support in standalone Vera UI (prompt/session debug visibility) and explicit clear-chat/context control (`/clear`) for iterative development workflows.
 - Non-goals preserved:
   - No direct tool execution from Vera chat.
   - No approvals/policy changes.

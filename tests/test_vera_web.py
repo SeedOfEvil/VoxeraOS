@@ -20,6 +20,7 @@ def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
     assert "Reasoning partner" in res.text
     assert "composer" in res.text
     assert "VoxeraOS queue handoff" in res.text
+    assert "DEV diagnostics" in res.text
 
 
 def test_vera_web_chat_returns_assistant_response(tmp_path, monkeypatch):
@@ -62,11 +63,33 @@ def test_vera_web_context_is_preserved_and_capped(tmp_path, monkeypatch):
     assert turns[0]["text"] == "msg-2"
 
 
+def test_vera_clear_chat_and_context(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    monkeypatch.setattr(vera_app_module, "queue_root", lambda: queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "keep context"})
+    assert vera_service.read_session_turns(queue, sid)
+
+    res = client.post("/clear", data={"session_id": sid})
+    assert res.status_code == 200
+    assert "How can I help?" in res.text
+    assert vera_service.read_session_turns(queue, sid) == []
+
+
 def test_vera_prompt_boundary_text_present():
     prompt = vera_prompt.VERA_SYSTEM_PROMPT
     assert "Vera, the conversational intelligence layer" in prompt
     assert "VoxeraOS is the execution trust layer" in prompt
     assert "Queue framing" in prompt
+    assert "developer mode" in prompt.lower()
 
 
 def test_vera_backend_unavailable_degrades_cleanly(monkeypatch):

@@ -1272,7 +1272,8 @@ Child summary is read-only operator visibility and does not change orchestration
 7. Verify Vera states the execution boundary: real actions must go through VoxeraOS queue handoff.
 8. Verify this PR's v0 behavior is preview-only (proposal/draft), with no direct execution claim.
 9. Verify queue inbox does not change from ordinary chatting alone.
-10. Verify operator panel routes (`/`, `/jobs`, `/assistant`) continue to work unchanged.
+10. Use "Clear chat + context" and verify prior turns are removed for the active session.
+11. Verify operator panel routes (`/`, `/jobs`, `/assistant`) continue to work unchanged.
 
 Notes:
 - Context is session-scoped and intentionally lightweight for v0.

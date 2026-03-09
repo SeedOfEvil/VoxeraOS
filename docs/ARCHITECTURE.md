@@ -1115,5 +1115,6 @@ Vera v0 adds a minimal standalone chat surface (`voxera.vera_web.app`) intended 
 - **VoxeraOS role:** strict execution trust layer (queue intake, policy/approval, runtime execution, evidence artifacts).
 - **Boundary:** chat itself is never the execution engine; normal Vera chatting does not enqueue or execute jobs.
 - **Context model:** bounded rolling turn window (`MAX_SESSION_TURNS`) retained per session, intentionally restart-volatile for v0.
+- **Developer tooling:** standalone Vera UI includes developer diagnostics (prompt + session metadata) and explicit context reset (`POST /clear`).
 
 Queue concept (developer framing): the queue is the structured path for real side effects; jobs are submitted into VoxeraOS and moved through lifecycle states with approvals/policy checks and evidence produced in VoxeraOS artifacts.

@@ -9,12 +9,14 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..paths import queue_root
-from ..vera.prompt import vera_queue_boundary_summary
+from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.service import (
     append_session_turn,
+    clear_session_turns,
     generate_vera_reply,
     new_session_id,
     read_session_turns,
+    session_debug_info,
 )
 
 app = FastAPI(title="Vera v0", version="0")
@@ -28,8 +30,13 @@ app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
 
 def _render_page(
-    *, session_id: str, turns: list[dict[str, str]], status: str, error: str = ""
+    *,
+    session_id: str,
+    turns: list[dict[str, str]],
+    status: str,
+    error: str = "",
 ) -> HTMLResponse:
+    root = queue_root()
     tmpl = templates.get_template("index.html")
     html = tmpl.render(
         session_id=session_id,
@@ -37,6 +44,8 @@ def _render_page(
         mode_status=status,
         queue_boundary=vera_queue_boundary_summary(),
         error=error,
+        debug_info=session_debug_info(root, session_id, mode_status=status),
+        system_prompt=VERA_SYSTEM_PROMPT,
     )
     response = HTMLResponse(content=html)
     response.set_cookie("vera_session_id", session_id, httponly=False, samesite="lax")
@@ -81,4 +90,20 @@ async def chat(request: Request):
         session_id=active_session,
         turns=read_session_turns(root, active_session),
         status=reply["status"],
+    )
+
+
+@app.post("/clear", response_class=HTMLResponse)
+async def clear_chat(request: Request):
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    parsed = parse_qs(raw, keep_blank_values=True)
+    session_id = str((parsed.get("session_id") or [""])[0]).strip()
+    active_session = session_id or (request.cookies.get("vera_session_id") or "").strip()
+    active_session = active_session or new_session_id()
+
+    clear_session_turns(queue_root(), active_session)
+    return _render_page(
+        session_id=active_session,
+        turns=[],
+        status="conversation",
     )

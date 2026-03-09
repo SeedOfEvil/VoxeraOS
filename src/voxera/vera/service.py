@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import time
@@ -54,11 +55,38 @@ def append_session_turn(
     turns = read_session_turns(queue_root, session_id)
     turns.append({"role": role, "text": text.strip()})
     turns = turns[-MAX_SESSION_TURNS:]
-    payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": turns}
+    payload = {
+        "session_id": session_id,
+        "updated_at_ms": int(time.time() * 1000),
+        "turns": turns,
+    }
     path = _session_path(queue_root, session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return turns
+
+
+def clear_session_turns(queue_root: Path, session_id: str) -> None:
+    path = _session_path(queue_root, session_id)
+    if path.exists():
+        path.unlink()
+
+
+def session_debug_info(
+    queue_root: Path, session_id: str, *, mode_status: str
+) -> dict[str, str | int | bool]:
+    path = _session_path(queue_root, session_id)
+    turns = read_session_turns(queue_root, session_id)
+    return {
+        "dev_mode": True,
+        "mode_status": mode_status,
+        "session_id": session_id,
+        "session_file": str(path),
+        "session_file_exists": path.exists(),
+        "turn_count": len(turns),
+        "max_session_turns": MAX_SESSION_TURNS,
+        "system_prompt_sha256": hashlib.sha256(VERA_SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
+    }
 
 
 def build_vera_messages(*, turns: list[dict[str, str]], user_message: str) -> list[dict[str, str]]:
