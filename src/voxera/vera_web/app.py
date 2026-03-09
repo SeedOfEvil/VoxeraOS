@@ -24,6 +24,7 @@ from ..vera.service import (
     clear_session_turns,
     generate_vera_reply,
     new_session_id,
+    read_session_handoff_state,
     read_session_preview,
     read_session_turns,
     session_debug_info,
@@ -97,6 +98,32 @@ def _submit_handoff(
             f"Submission failed with: {exc}",
             "handoff_submit_failed",
         )
+
+
+def _looks_like_submission_claim(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    suspicious_phrases = (
+        "submitted to voxeraos",
+        "submitted the job",
+        "request is now in the queue",
+        "handed off",
+        "queued",
+    )
+    return any(phrase in lowered for phrase in suspicious_phrases)
+
+
+def _guardrail_submission_claim(*, root: Path, session_id: str, text: str) -> str:
+    handoff = read_session_handoff_state(root, session_id) or {}
+    confirmed = str(handoff.get("status") or "") == "submitted" and bool(handoff.get("job_id"))
+    if _looks_like_submission_claim(text) and not confirmed:
+        return (
+            "I have not submitted anything to VoxeraOS yet. "
+            "No confirmed queue handoff is recorded for this session. "
+            "If you want to proceed, ask me to prepare a job preview first, then explicitly hand it off."
+        )
+    return text
 
 
 def _render_page(
@@ -194,7 +221,12 @@ async def chat(request: Request):
         )
 
     reply = await generate_vera_reply(turns=turns, user_message=message)
-    append_session_turn(root, active_session, role="assistant", text=reply["answer"])
+    guarded_answer = _guardrail_submission_claim(
+        root=root,
+        session_id=active_session,
+        text=reply["answer"],
+    )
+    append_session_turn(root, active_session, role="assistant", text=guarded_answer)
 
     return _render_page(
         session_id=active_session,

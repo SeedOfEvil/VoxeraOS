@@ -138,6 +138,21 @@ def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, mo
     assert list((queue / "inbox").glob("*.json")) == [] if (queue / "inbox").exists() else True
 
 
+def test_explicit_submit_phrase_without_preview_is_honest_non_submission(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "submit now please"})
+
+    assert (
+        "nothing was submitted" in res.text.lower() or "don't have a prepared" in res.text.lower()
+    )
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
 def test_explicit_handoff_creates_real_queue_job_and_ack(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -198,6 +213,25 @@ def test_handoff_failure_reports_honestly(tmp_path, monkeypatch):
 
     assert "could not submit" in res.text
     assert "nothing was queued" in res.text
+
+
+def test_chat_model_cannot_bypass_handoff_with_fake_submission_language(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": "I submitted the job to VoxeraOS and it is queued.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "hello"})
+
+    assert "I have not submitted anything to VoxeraOS yet" in res.text
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
 def test_context_intact_across_preview_to_submit_flow(tmp_path, monkeypatch):
@@ -271,6 +305,30 @@ def test_active_queue_root_uses_runtime_config(tmp_path, monkeypatch):
 
     jobs = list((queue / "inbox").glob("inbox-*.json"))
     assert len(jobs) == 1
+
+
+def test_rolling_turn_cap_does_not_drop_pending_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"ok {len(turns)} {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
+    for i in range(10):
+        client.post("/chat", data={"session_id": sid, "message": f"chat-{i}"})
+
+    assert vera_service.read_session_preview(queue, sid) is not None
+    res = client.post("/chat", data={"session_id": sid, "message": "submit it now"})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    assert len(list((queue / "inbox").glob("inbox-*.json"))) == 1
 
 
 def test_structured_job_drafting_helper_examples_are_valid():

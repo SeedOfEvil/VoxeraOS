@@ -20,11 +20,12 @@ _ALLOWED_TOP_LEVEL_KEYS = {
 }
 
 _HANDOFF_PATTERNS = (
-    "hand it off",
-    "submit it",
-    "send it to voxeraos",
-    "submit to voxeraos",
-    "handoff",
+    r"\bhand\s+it\s+off\b",
+    r"\bhandoff\b",
+    r"\bsubmit\s+it\b",
+    r"\bsubmit\s+to\s+voxeraos\b",
+    r"\bsend\s+it\s+to\s+voxeraos\b",
+    r"\b(submit|send|hand\s+off)\b.*\b(job|request|it|this|queue|voxeraos|now|please)\b",
 )
 
 
@@ -54,7 +55,9 @@ def drafting_guidance() -> DraftingGuidance:
 
 def is_explicit_handoff_request(message: str) -> bool:
     normalized = message.strip().lower()
-    return any(token in normalized for token in _HANDOFF_PATTERNS)
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in _HANDOFF_PATTERNS)
 
 
 def maybe_draft_job_payload(message: str) -> dict[str, Any] | None:
