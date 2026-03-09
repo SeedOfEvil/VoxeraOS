@@ -88,6 +88,35 @@ def extract_enqueue_child_request(payload: dict[str, Any]) -> dict[str, str | No
     return {"goal": child_goal, "title": child_title}
 
 
+def extract_write_file_request(payload: dict[str, Any]) -> dict[str, str] | None:
+    if "write_file" not in payload:
+        return None
+    raw = payload.get("write_file")
+    if not isinstance(raw, dict):
+        raise ValueError("write_file must be an object")
+
+    allowed_keys = {"path", "content", "mode"}
+    unknown_keys = sorted(set(raw.keys()) - allowed_keys)
+    if unknown_keys:
+        joined = ", ".join(unknown_keys)
+        raise ValueError(f"write_file contains unsupported keys: {joined}")
+
+    path = _sanitize_lineage_string(raw.get("path"))
+    if path is None:
+        raise ValueError("write_file.path must be a non-empty string")
+
+    content = raw.get("content")
+    if not isinstance(content, str):
+        raise ValueError("write_file.content must be a string")
+
+    mode = _sanitize_lineage_string(raw.get("mode")) or "overwrite"
+    normalized_mode = mode.lower()
+    if normalized_mode not in {"overwrite", "append"}:
+        raise ValueError("write_file.mode must be overwrite or append")
+
+    return {"path": path, "content": content, "mode": normalized_mode}
+
+
 def compute_child_lineage(
     *,
     parent_job_id: str,
@@ -190,6 +219,7 @@ def build_execution_envelope(
                 if isinstance(payload.get("_simple_intent"), dict)
                 else None
             ),
+            "write_file": extract_write_file_request(payload),
         },
         "mission": {
             "id": mission.id,

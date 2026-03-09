@@ -1298,6 +1298,17 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 9. Confirm informational asks like `what is example.com` do not auto-draft open-url previews.
 
 
+## Structured file-write content STV (PR #157)
+
+1. Start daemon, panel, and Vera web app.
+2. Ask Vera for a contentful write request (for example: `write a file called funnyjoke.txt with the content "Why don’t scientists trust atoms? Because they make up everything!"`).
+3. Confirm preview preserves explicit filename and content intent, and remains proposal-only.
+4. Explicitly submit/handoff to VoxeraOS.
+5. Confirm queue inbox job contains `goal` plus `write_file.path` and `write_file.content`.
+6. Confirm execution writes requested content to requested file path in notes scope.
+7. Inspect canonical evidence: `step_results.json`, `execution_result.json`, and `execution_envelope.json`.
+8. Verify evidence target path/result match actual on-disk file contents.
+
 ## Vera evidence-aware review STV (PR #155)
 
 1. Start daemon, panel, and Vera web app.

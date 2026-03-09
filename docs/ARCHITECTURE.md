@@ -1129,6 +1129,13 @@ Queue concept (developer framing): the queue is the structured path for real sid
 - Submission remains a separate explicit step that writes to queue inbox; no direct execution path exists in Vera.
 
 
+## Structured governed file-write content path (PR #157)
+
+- Queue goal payloads may now include a narrow `write_file` object with `path`, `content`, and optional `mode` (`overwrite|append`).
+- `MissionQueueDaemon` normalizes this shape fail-closed and builds a single-step `files.write_text` mission directly on queue rails (no out-of-band writes).
+- Explicit operator path/content are preserved into `plan.json`, `execution_envelope.json.request.write_file`, `step_results.json`, and `execution_result.json`.
+- Default filename fallback behavior remains limited to legacy goal-only natural-language routing; structured `write_file.path` is never substituted.
+
 ## Vera evidence-aware outcome review (PR #155)
 
 Vera v0 now includes a narrow job-outcome review capability in chat while preserving trust boundaries.

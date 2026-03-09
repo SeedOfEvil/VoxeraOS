@@ -28,6 +28,7 @@ from .queue_contracts import (
     detect_request_kind,
     extract_enqueue_child_request,
     extract_lineage_metadata,
+    extract_write_file_request,
 )
 from .queue_job_intent import build_queue_job_intent
 from .simple_intent import (
@@ -64,6 +65,10 @@ class QueueExecutionMixin:
 
         if "enqueue_child" in payload:
             normalized["enqueue_child"] = payload.get("enqueue_child")
+
+        write_file = extract_write_file_request(payload)
+        if write_file is not None:
+            normalized["write_file"] = write_file
 
         if "approval_required" in payload:
             normalized["approval_required"] = payload.get("approval_required") is True
@@ -143,6 +148,33 @@ class QueueExecutionMixin:
             return mission
         if "steps" in normalized:
             mission = self._build_inline_mission(normalized, job_ref=job_ref)
+            validate_mission_steps_against_snapshot(mission, snapshot)
+            return mission
+        if "write_file" in normalized:
+            write_file = normalized["write_file"]
+            write_path = str(write_file.get("path") or "").strip()
+            if not write_path:
+                raise ValueError("write_file.path must be a non-empty string")
+            write_content = write_file.get("content")
+            if not isinstance(write_content, str):
+                raise ValueError("write_file.content must be a string")
+            write_mode = str(write_file.get("mode") or "overwrite").strip().lower()
+            if write_mode not in {"overwrite", "append"}:
+                raise ValueError("write_file.mode must be overwrite or append")
+            title = str(payload.get("title") or f"Queued File Write {Path(job_ref).stem}")
+            goal = str(payload.get("goal") or f"write file {write_path} with provided content")
+            mission = MissionTemplate(
+                id=Path(job_ref).stem,
+                title=title,
+                goal=goal,
+                notes="structured_write_file_queue_job",
+                steps=[
+                    MissionStep(
+                        skill_id="files.write_text",
+                        args={"path": write_path, "text": write_content, "mode": write_mode},
+                    )
+                ],
+            )
             validate_mission_steps_against_snapshot(mission, snapshot)
             return mission
         if "goal" in normalized:

@@ -17,6 +17,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "sequence_index",
     "lineage_role",
     "enqueue_child",
+    "write_file",
 }
 
 _HANDOFF_PATTERNS = (
@@ -78,6 +79,49 @@ def _normalize_file_read_goal(message: str) -> str | None:
     return None
 
 
+def _extract_quoted_content(text: str) -> str | None:
+    quoted = re.search(r'"([^"]+)"', text)
+    if quoted:
+        return quoted.group(1)
+    single = re.search(r"'([^']+)'", text)
+    if single:
+        return single.group(1)
+    return None
+
+
+def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | None:
+    text = message.strip().rstrip("?.!")
+    lowered = text.lower()
+    if not re.search(r"\b(write|create|save|put)\b", lowered):
+        return None
+    if not re.search(r"\b(file|note)\b", lowered):
+        return None
+
+    named = re.search(r"\b(?:called|named|as)\s+([^\s]+)", text, re.IGNORECASE)
+    target = named.group(1).strip("\"'") if named else None
+    if not target:
+        return None
+
+    content = _extract_quoted_content(text)
+    if content is None:
+        content_match = re.search(
+            r"\b(?:with\s+(?:the\s+)?)?(?:content|text)\s+(.+)$", text, re.IGNORECASE
+        )
+        if content_match:
+            content = content_match.group(1).strip()
+    if content is None:
+        return None
+
+    normalized_path = target
+    if not target.startswith("~") and not target.startswith("/"):
+        normalized_path = f"~/VoxeraOS/notes/{target}"
+
+    return {
+        "goal": f"write a file called {target} with provided content",
+        "write_file": {"path": normalized_path, "content": content, "mode": "overwrite"},
+    }
+
+
 def _normalize_file_write_goal(message: str) -> str | None:
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
@@ -111,6 +155,10 @@ def drafting_guidance() -> DraftingGuidance:
             {"goal": "read the file ~/VoxeraOS/notes/stv-child-target.txt"},
             {"goal": "write a note called hello.txt"},
             {
+                "goal": "write a file called hello.txt with provided content",
+                "write_file": {"path": "~/VoxeraOS/notes/hello.txt", "content": "hello world"},
+            },
+            {
                 "goal": "read the file ~/VoxeraOS/notes/stv-child-target.txt",
                 "enqueue_child": {
                     "goal": "open https://example.com",
@@ -139,6 +187,10 @@ def maybe_draft_job_payload(message: str) -> dict[str, Any] | None:
     normalized_read = _normalize_file_read_goal(normalized)
     if normalized_read:
         return {"goal": normalized_read}
+
+    structured_write = _normalize_structured_file_write_payload(normalized)
+    if structured_write:
+        return structured_write
 
     normalized_write = _normalize_file_write_goal(normalized)
     if normalized_write:
@@ -177,6 +229,21 @@ def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if child_title:
             normalized_child["title"] = child_title
         cleaned["enqueue_child"] = normalized_child
+
+    write_file = cleaned.get("write_file")
+    if write_file is not None:
+        if not isinstance(write_file, dict):
+            raise ValueError("write_file must be an object")
+        path = str(write_file.get("path") or "").strip()
+        if not path:
+            raise ValueError("write_file.path is required")
+        content = write_file.get("content")
+        if not isinstance(content, str):
+            raise ValueError("write_file.content must be a string")
+        mode = str(write_file.get("mode") or "overwrite").strip().lower()
+        if mode not in {"overwrite", "append"}:
+            raise ValueError("write_file.mode must be overwrite or append")
+        cleaned["write_file"] = {"path": path, "content": content, "mode": mode}
 
     return cleaned
 
