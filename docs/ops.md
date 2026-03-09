@@ -1258,7 +1258,7 @@ For parent jobs that enqueue a child, operators can inspect:
 
 Child summary is read-only operator visibility and does not change orchestration or approval semantics. Child jobs remain normal queue jobs and expose lineage through existing envelope/result/progress surfaces.
 
-## Vera v0 manual STV (preview-only boundary)
+## Vera v0 manual STV (explicit preview + handoff boundary)
 
 1. Start services:
    - `voxera daemon`
@@ -1270,10 +1270,14 @@ Child summary is read-only operator visibility and does not change orchestration
 5. Continue chatting past the rolling cap and confirm behavior remains stable (older turns may roll off by design).
 6. Ask for an action-shaped request (for example: open URL, read file, write note).
 7. Verify Vera states the execution boundary: real actions must go through VoxeraOS queue handoff.
-8. Verify this PR's v0 behavior is preview-only (proposal/draft), with no direct execution claim.
-9. Verify queue inbox does not change from ordinary chatting alone.
-10. Use "Clear chat + context" and verify prior turns are removed for the active session.
-11. Verify operator panel routes (`/`, `/jobs`, `/assistant`) continue to work unchanged.
+8. Verify Vera returns a structured JSON preview and clearly states no execution happened yet.
+9. Explicitly request handoff (chat command or submit button) and verify a real inbox job is created.
+10. Verify Vera reports submission honestly (submitted/queued, not executed yet) with job id/ack when available.
+11. Confirm queue status/panel/progress surfaces show the real job lifecycle.
+12. If approval is required, verify approval remains in VoxeraOS controls (not bypassed by Vera).
+13. Verify Vera does not claim final execution unless VoxeraOS evidence confirms it.
+14. Use "Clear chat + context" and verify prior turns are removed for the active session.
+15. Verify operator panel routes (`/`, `/jobs`, `/assistant`) continue to work unchanged.
 
 Notes:
 - Context is session-scoped and intentionally lightweight for v0.

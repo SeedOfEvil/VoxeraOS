@@ -4,7 +4,7 @@ import pytest
 from typer.testing import CliRunner
 
 from voxera import cli
-from voxera.core.inbox import add_inbox_job, generate_inbox_id
+from voxera.core.inbox import add_inbox_job, add_inbox_payload, generate_inbox_id
 from voxera.core.missions import MissionStep, MissionTemplate
 from voxera.core.queue_daemon import MissionQueueDaemon
 from voxera.models import AppConfig, PolicyApprovals, PrivacyConfig
@@ -41,6 +41,21 @@ def test_inbox_add_writes_goal_and_id(tmp_path):
     assert payload["goal"] == "Write daily check-in"
     assert payload["job_intent"]["request_kind"] == "goal"
     assert payload["job_intent"]["source_lane"] == "inbox_cli"
+
+
+def test_inbox_add_payload_supports_structured_fields(tmp_path):
+    queue_dir = tmp_path / "queue"
+    created = add_inbox_payload(
+        queue_dir,
+        {"goal": "read the file ~/notes.txt", "title": "Read notes"},
+        job_id="payload-1",
+        source_lane="vera_handoff",
+    )
+
+    payload = json.loads(created.read_text(encoding="utf-8"))
+    assert payload["goal"] == "read the file ~/notes.txt"
+    assert payload["title"] == "Read notes"
+    assert payload["job_intent"]["source_lane"] == "vera_handoff"
 
 
 def test_inbox_add_rejects_duplicate_id_without_overwriting(tmp_path):

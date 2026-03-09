@@ -122,3 +122,6 @@ body {
   background: linear-gradient(180deg, #2997ff, var(--accent));
   font-weight: 600;
 }
+
+.preview { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: rgba(20,21,24,.7); }
+.preview button { margin-top: 8px; border: none; border-radius: 10px; padding: 8px 12px; color: white; background: linear-gradient(180deg, #2997ff, var(--accent)); font-weight: 600; }

@@ -1107,14 +1107,16 @@ Safety semantics:
 - approval behavior is unchanged: child jobs enter normal approval flow when they execute
 
 
-## Vera v0 conversational boundary (PR #152)
+## Vera v0 conversational boundary + explicit queue handoff (PR #152/#153)
 
 Vera v0 adds a minimal standalone chat surface (`voxera.vera_web.app`) intended to run on a separate port from the operator panel, with short session-scoped context stored under `notes/queue/artifacts/vera_sessions/`.
 
 - **Vera role:** reasoning + conversation layer (brain-backed text responses, planning help, structured request drafting).
 - **VoxeraOS role:** strict execution trust layer (queue intake, policy/approval, runtime execution, evidence artifacts).
 - **Boundary:** chat itself is never the execution engine; normal Vera chatting does not enqueue or execute jobs.
+- **Handoff path:** action-shaped requests produce a structured preview first; explicit user handoff then submits that payload into the real VoxeraOS queue intake path.
+- **Truth semantics:** Vera language must distinguish proposal/prepared/submitted from executed/verified evidence states.
 - **Context model:** bounded rolling turn window (`MAX_SESSION_TURNS`) retained per session, intentionally restart-volatile for v0.
-- **Developer tooling:** standalone Vera UI includes developer diagnostics (prompt + session metadata) and explicit context reset (`POST /clear`).
+- **Developer tooling:** standalone Vera UI includes developer diagnostics (prompt + session metadata), explicit preview visibility, submit control, and explicit context reset (`POST /clear`).
 
-Queue concept (developer framing): the queue is the structured path for real side effects; jobs are submitted into VoxeraOS and moved through lifecycle states with approvals/policy checks and evidence produced in VoxeraOS artifacts.
+Queue concept (developer framing): the queue is the structured path for real side effects; jobs are submitted into VoxeraOS and moved through lifecycle states with approvals/policy checks and evidence produced in VoxeraOS artifacts. Submission is not execution, and execution is not verification.
