@@ -241,3 +241,14 @@ Interpretation:
 2. In Vera, ask for an action like `open https://example.com`; confirm structured preview text and that nothing executed yet.
 3. Explicitly hand off (`submit it` or UI submit button) and confirm `notes/queue/inbox/inbox-*.json` appears.
 4. Confirm Vera reports submitted/queued and not yet executed; use queue/panel surfaces for runtime truth.
+
+## Vera natural-language preview + handoff checks (PR #154)
+
+Use this quick manual check after starting Vera (`uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`):
+
+- Ask `Can you go to example.com?` and verify Vera prepares a preview only.
+- Verify DEV diagnostics include `preview_available: True`.
+- Ask `submit it` and verify Vera reports submitted/queued (not executed yet).
+- Verify a real queue job appears in `~/VoxeraOS/notes/queue/inbox/` and panel queue views.
+- Repeat with: `visit example.com`, `take me to example.com`, `read ~/VoxeraOS/notes/test.txt`, and `make a note called hello.txt` (if enabled).
+- Confirm informational asks (`what is example.com`, `tell me about example.com`) stay conversational and do not auto-open URLs.

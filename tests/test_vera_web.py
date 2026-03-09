@@ -4,6 +4,7 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from voxera.models import AppConfig
@@ -133,7 +134,7 @@ def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, mo
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
 
-    assert "Prepared VoxeraOS job preview" in res.text
+    assert "job preview" in res.text
     assert "Nothing has been submitted or executed yet" in res.text
     assert list((queue / "inbox").glob("*.json")) == [] if (queue / "inbox").exists() else True
 
@@ -147,9 +148,7 @@ def test_explicit_submit_phrase_without_preview_is_honest_non_submission(tmp_pat
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "submit now please"})
 
-    assert (
-        "nothing was submitted" in res.text.lower() or "don't have a prepared" in res.text.lower()
-    )
+    assert "did not submit anything" in res.text.lower() or "prepared preview" in res.text.lower()
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -162,7 +161,7 @@ def test_prepare_preview_sets_preview_available_true_for_natural_open_phrase(tmp
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "Can you open example.com?"})
 
-    assert "Prepared VoxeraOS job preview" in res.text
+    assert "job preview" in res.text
     assert "preview_available</b>: True" in res.text
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
@@ -378,3 +377,135 @@ def test_structured_job_drafting_helper_examples_are_valid():
     for example in guidance.examples:
         normalized = normalize_preview_payload(example)
         assert normalized["goal"]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_goal"),
+    [
+        ("open example.com", "open https://example.com"),
+        ("go to example.com", "open https://example.com"),
+        ("visit example.com", "open https://example.com"),
+        ("take me to example.com", "open https://example.com"),
+        ("bring up example.com", "open https://example.com"),
+        ("can you open example.com", "open https://example.com"),
+        ("can you go to example.com", "open https://example.com"),
+    ],
+)
+def test_web_navigation_phrases_prepare_preview(tmp_path, monkeypatch, message, expected_goal):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": message})
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview == {"goal": expected_goal}
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "what is example.com",
+        "tell me about example.com",
+    ],
+)
+def test_informational_domain_phrases_do_not_auto_prepare_preview(tmp_path, monkeypatch, message):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": "info mode", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": message})
+
+    assert "info mode" in res.text
+    assert vera_service.read_session_preview(queue, sid) is None
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_goal"),
+    [
+        ("inspect ~/VoxeraOS/notes/test.txt", "read the file ~/VoxeraOS/notes/test.txt"),
+        ("show me ~/VoxeraOS/notes/test.txt", "read the file ~/VoxeraOS/notes/test.txt"),
+        ("open the file ~/VoxeraOS/notes/test.txt", "read the file ~/VoxeraOS/notes/test.txt"),
+    ],
+)
+def test_file_read_variants_prepare_preview(tmp_path, monkeypatch, message, expected_goal):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": message})
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview == {"goal": expected_goal}
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_goal"),
+    [
+        ("make a note called hello.txt", "write a note called hello.txt"),
+        ("create a file called hello.txt", "write a note called hello.txt"),
+        ("jot this down", "write a note"),
+    ],
+)
+def test_note_write_variants_prepare_preview(tmp_path, monkeypatch, message, expected_goal):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": message})
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview == {"goal": expected_goal}
+
+
+def test_preview_replacement_uses_latest_payload_for_submit(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    client.post("/chat", data={"session_id": sid, "message": "actually open openai.com instead"})
+    client.post("/chat", data={"session_id": sid, "message": "send it to VoxeraOS"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["goal"] == "open https://openai.com"
+
+
+def test_preview_persists_across_followup_turn_before_submit(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": "sounds good", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    client.post("/chat", data={"session_id": sid, "message": "yep that looks right"})
+    res = client.post("/chat", data={"session_id": sid, "message": "queue it"})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1

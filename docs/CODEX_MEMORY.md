@@ -1,3 +1,18 @@
+## 2026-03-09 — GitHub PR #154 — feat(vera): improve natural-language action detection and preview preparation for VoxeraOS handoff
+
+- Summary:
+  - Expanded Vera handoff phrase normalization to cover broader conversational action variants for URL navigation (`open/go to/visit/take me to/bring up/...`) with deterministic URL normalization to `open https://...` previews.
+  - Added explicit file-read phrase normalization for inspect/show/open/read variants when file target is explicit enough.
+  - Added basic note/file-write phrase normalization for supported request forms while preserving smallest valid preview payload shape.
+  - Expanded explicit handoff trigger phrase support (`submit/hand off/send/queue/enqueue/push through/...`) while keeping no-preview submits fail-closed and honest.
+  - Preserved session preview durability across follow-up turns and rolling turn caps; preview replaces cleanly when a newer action request is drafted.
+  - Refined preview wording to be more natural while preserving strict truth labels (prepared vs submitted vs executed).
+- Non-goals preserved:
+  - No execution semantics change.
+  - No policy/approval bypass.
+  - No direct side effects from chat.
+  - No orchestration/workflow expansion.
+
 ## 2026-03-09 — GitHub PR #152 — feat(vera): minimal chat web app with session context + VoxeraOS-only execution boundary
 
 - Summary:

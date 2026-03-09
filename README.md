@@ -355,3 +355,13 @@ Behavior is intentionally narrow and fail-closed:
 - child enqueue is auditable in `actions.jsonl`, `child_job_refs.json`, `execution_result.json` (`child_refs`), job progress (`child_refs`), and panel job detail
 
 This is **not** a workflow engine: no dependency graph, no parent/child result passing, no autonomous decomposition, and no approval bypass.
+
+### Vera natural-language preview drafting (PR #154)
+
+Vera now recognizes broader conversational action phrasing while keeping the same queue trust boundary:
+
+- Web nav phrasing like "open/go to/visit/take me to/bring up example.com" prepares the same minimal preview (`{"goal": "open https://example.com"}`).
+- Explicit file-inspection asks (for example `read/open/inspect/show me ~/path`) prepare a file-read preview when the target is explicit.
+- Common note/file-write asks (for example `make/create/write a note/file called hello.txt`) prepare the smallest supported write preview.
+- Submit phrasing (`submit it`, `queue it`, `send it to VoxeraOS`, etc.) only hands off when a preview exists.
+- Vera remains preview-first and truthful: prepared is not submitted, submitted is not executed, and execution truth comes from VoxeraOS evidence.

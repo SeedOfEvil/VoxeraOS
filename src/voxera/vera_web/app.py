@@ -65,7 +65,7 @@ def _submit_handoff(
             error="No prepared preview found",
         )
         return (
-            "No prepared VoxeraOS job was found for this session, so nothing was submitted.",
+            "I don’t have a prepared preview in this session yet, so I did not submit anything to VoxeraOS.",
             "handoff_missing_preview",
         )
 
