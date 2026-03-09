@@ -365,3 +365,14 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - Common note/file-write asks (for example `make/create/write a note/file called hello.txt`) prepare the smallest supported write preview.
 - Submit phrasing (`submit it`, `queue it`, `send it to VoxeraOS`, etc.) only hands off when a preview exists.
 - Vera remains preview-first and truthful: prepared is not submitted, submitted is not executed, and execution truth comes from VoxeraOS evidence.
+
+
+### Vera evidence-aware job outcome review (PR #155)
+
+Vera can now review real VoxeraOS job outcomes from canonical queue evidence (not chat assumptions):
+
+- Supports explicit job-id review (for example `job-123.json`) and latest submitted job in-session.
+- Reads canonical artifacts via shared queue result helpers (`execution_result.json`, `step_results.json`, `execution_envelope.json`, approval/failed sidecars, and state/progress fields when present).
+- Summarizes lifecycle state, terminal outcome, approval status, latest summary, failure summary, and child summary (when already available).
+- Proposes evidence-grounded next steps without bypassing VoxeraOS controls.
+- Can draft a follow-up preview when explicitly asked, but never auto-submits it.
