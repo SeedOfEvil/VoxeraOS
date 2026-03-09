@@ -174,6 +174,7 @@ def _extract_json_objects(text: str) -> list[dict[str, object]]:
 
 def _coerce_assistant_preview_update(text: str) -> tuple[dict[str, object] | None, bool]:
     saw_preview_like = False
+    latest_normalized: dict[str, object] | None = None
     for candidate in _extract_json_objects(text):
         if not any(
             key in candidate for key in ("goal", "title", "write_file", "enqueue_child", "content")
@@ -181,11 +182,10 @@ def _coerce_assistant_preview_update(text: str) -> tuple[dict[str, object] | Non
             continue
         saw_preview_like = True
         try:
-            normalized = normalize_preview_payload(candidate)
+            latest_normalized = normalize_preview_payload(candidate)
         except Exception:
             continue
-        return normalized, True
-    return None, saw_preview_like
+    return latest_normalized, saw_preview_like
 
 
 def _render_page(

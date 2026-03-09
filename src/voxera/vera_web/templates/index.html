@@ -90,11 +90,24 @@
       if (!thread) {
         return;
       }
-      const distanceFromBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
-      const shouldStick = distanceFromBottom < 120;
-      if (shouldStick) {
+
+      const manualScrollKey = "vera_thread_manual_scroll_up";
+      const distanceFromBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight;
+      const isNearBottom = () => distanceFromBottom() < 120;
+
+      const manuallyScrolledUp = sessionStorage.getItem(manualScrollKey) === "1";
+      if (!manuallyScrolledUp || isNearBottom()) {
         thread.scrollTop = thread.scrollHeight;
+        sessionStorage.removeItem(manualScrollKey);
       }
+
+      thread.addEventListener("scroll", () => {
+        if (isNearBottom()) {
+          sessionStorage.removeItem(manualScrollKey);
+        } else {
+          sessionStorage.setItem(manualScrollKey, "1");
+        }
+      });
     })();
   </script>
 </body>
