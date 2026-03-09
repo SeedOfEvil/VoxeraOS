@@ -378,3 +378,10 @@ Non-goals preserved:
 - [x] PR 9B-lite (GitHub PR #149): added explicit single-child enqueue primitive with deterministic lineage propagation and canonical enqueue evidence (`child_job_refs.json`, `actions.jsonl`, result/progress/panel child refs), without workflow orchestration. Full approval/policy/fail-closed semantics preserved.
 
 - **GitHub PR #157 (completed)**: Added a narrow structured `write_file` queue request (`path` + `content` + optional `mode`) so contentful file writes execute on existing governed VoxeraOS rails with canonical artifact evidence.
+
+
+## 2026-03-09 — PR #159 (planned/landed): authoritative Vera preview control surface
+- Make the visible preview pane authoritative over session draft state (displayed preview = active preview = submit target).
+- Add direct pane submit control wired to the existing VoxeraOS queue handoff path.
+- Map natural “use this preview” approval phrasing to active-preview submit only when preview exists; otherwise fail closed honestly.
+- Keep execution semantics unchanged: submission only, VoxeraOS remains the sole execution layer.

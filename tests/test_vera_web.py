@@ -167,6 +167,7 @@ def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, mo
     res = client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
 
     assert "job preview" in res.text
+    assert "Active VoxeraOS draft (authoritative, not submitted)" in res.text
     assert "Nothing has been submitted or executed yet" in res.text
     assert list((queue / "inbox").glob("*.json")) == [] if (queue / "inbox").exists() else True
 
@@ -680,6 +681,92 @@ def test_preview_persists_across_followup_turn_before_submit(tmp_path, monkeypat
     assert "I submitted the job to VoxeraOS" in res.text
     jobs = list((queue / "inbox").glob("inbox-*.json"))
     assert len(jobs) == 1
+
+
+def test_preview_pane_submit_button_submits_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    preview_res = client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+
+    assert "Submit current preview to VoxeraOS" in preview_res.text
+
+    submit_res = client.post("/handoff", data={"session_id": sid})
+    assert "I submitted the job to VoxeraOS" in submit_res.text
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["goal"] == "open https://example.com"
+
+
+def test_natural_preview_submit_phrase_uses_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    res = client.post("/chat", data={"session_id": sid, "message": "that looks good now use it"})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+
+
+def test_natural_preview_submit_phrase_without_preview_fails_closed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": "ordinary reply", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "use this preview"})
+
+    assert "I submitted the job to VoxeraOS" not in res.text
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
+def test_preview_replacement_updates_authoritative_pane_payload(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "actually open openai.com instead"},
+    )
+
+    assert '"goal": "open https://openai.com"' in res.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+
+
+def test_handoff_submit_clears_authoritative_preview_pane(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    res = client.post("/handoff", data={"session_id": sid})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    assert "Submit current preview to VoxeraOS" not in res.text
+    assert "preview_available</b>: False" in res.text
 
 
 def test_review_latest_submitted_job_succeeded(tmp_path, monkeypatch):

@@ -279,3 +279,15 @@ Use this quick manual check after starting Vera (`uvicorn voxera.vera_web.app:ap
 - Submit (`submit it`) and verify inbox payload matches the updated preview.
 - Repeat with file flow: create draft -> add content -> rename filename -> submit; confirm latest draft is submitted.
 - Evidence flow: review prior job, ask `prepare the next step`, revise target, submit, verify latest revision reached queue.
+
+
+## Manual STV: Vera authoritative preview pane + chat-first UX (PR #159)
+1. Launch Voxera queue daemon, panel, and Vera web UI.
+2. Ask for an action preview (`open example.com`) and verify the preview pane appears with active JSON draft.
+3. Verify DEV diagnostics report `preview_available = True`.
+4. Submit from pane (`Submit current preview to VoxeraOS`) and verify queue inbox job matches pane JSON exactly.
+5. Prepare preview A, revise to preview B, verify pane now shows B only, then submit and verify payload equals B.
+6. Use natural phrases (`that looks good now use it`, `use this preview`) and verify they submit only when active preview exists.
+7. Verify no-preview case fails honestly and creates no job.
+8. Verify successful submit clears preview pane affordance.
+9. During repeated turns, verify chat view stays near latest messages automatically and conversation area has more usable space than prior layout.

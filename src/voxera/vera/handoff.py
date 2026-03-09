@@ -33,6 +33,19 @@ _HANDOFF_PATTERNS = (
     r"\b(submit|send|hand\s+off)\b.*\b(job|request|it|this|queue|voxeraos|now|please)\b",
 )
 
+_ACTIVE_PREVIEW_SUBMIT_PATTERNS = (
+    r"\bthat\s+looks\s+good\s+now\b",
+    r"\buse\s+it\b",
+    r"\buse\s+this\s+preview\b",
+    r"\buse\s+the\s+current\s+preview\b",
+    r"\bthis\s+preview\s+is\s+correct\b",
+    r"\bokay\s+now\s+use\s+it\b",
+    r"\bthat\s+json\s+is\s+right\b",
+    r"\bsend\s+this\s+version\b",
+    r"\bsubmit\s+this\s+one\b",
+    r"\bgo\s+with\s+this\b",
+)
+
 _DOMAIN_RE = re.compile(r"\b([a-z0-9-]+(?:\.[a-z0-9-]+)+)(/[^\s]*)?\b", re.IGNORECASE)
 _URL_RE = re.compile(r"\bhttps?://[^\s)]+", re.IGNORECASE)
 _WEB_ACTION_RE = re.compile(
@@ -269,6 +282,13 @@ def is_explicit_handoff_request(message: str) -> bool:
     if not normalized:
         return False
     return any(re.search(pattern, normalized) for pattern in _HANDOFF_PATTERNS)
+
+
+def is_active_preview_submit_request(message: str) -> bool:
+    normalized = message.strip().lower()
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in _ACTIVE_PREVIEW_SUBMIT_PATTERNS)
 
 
 def maybe_draft_job_payload(

@@ -20,6 +20,7 @@ from ..vera.evidence_review import (
 )
 from ..vera.handoff import (
     drafting_guidance,
+    is_active_preview_submit_request,
     is_explicit_handoff_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
@@ -106,6 +107,12 @@ def _submit_handoff(
             f"Submission failed with: {exc}",
             "handoff_submit_failed",
         )
+
+
+def _is_active_preview_submit_intent(message: str, *, preview_available: bool) -> bool:
+    if not preview_available:
+        return False
+    return is_explicit_handoff_request(message) or is_active_preview_submit_request(message)
 
 
 def _looks_like_submission_claim(text: str) -> bool:
@@ -258,7 +265,7 @@ async def chat(request: Request):
             status="followup_preview_ready",
         )
 
-    if is_explicit_handoff_request(message):
+    if _is_active_preview_submit_intent(message, preview_available=pending_preview is not None):
         assistant_text, status = _submit_handoff(
             root=root,
             session_id=active_session,

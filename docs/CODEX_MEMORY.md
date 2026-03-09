@@ -1448,3 +1448,11 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 - Added follow-up draft replacement handling for common conversational edits (URL replacement, filename rename, and content refinement) while keeping explicit submit-only behavior.
 - Lightweight acknowledgements keep the active preview intact; explicit submit always uses latest active preview; preview clears only after confirmed handoff success.
 - Added focused Vera web coverage for replacement lifecycle, latest-preview submit semantics, and clear-on-success behavior.
+
+
+## 2026-03-09 — GitHub PR #159 — feat(vera/ui): make active preview authoritative and directly submittable
+- Fixed trust boundary mismatch by making the visible preview pane authoritative state: displayed JSON is always the active session draft and the submit target.
+- Added explicit preview-pane submit affordance wired to existing trusted handoff path; successful submit clears active preview/pane state.
+- Added natural active-preview approval phrase routing (`use this preview`, `that looks good now use it`, etc.) that submits only when an active preview exists; no-preview cases fail closed.
+- Kept queue/execution semantics unchanged: Vera submits to VoxeraOS, execution remains VoxeraOS-owned.
+- Added focused tests for authoritative pane rendering, pane-submit behavior, natural phrase routing, fail-closed behavior, and post-submit preview clearing.

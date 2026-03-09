@@ -1118,6 +1118,8 @@ Vera v0 adds a minimal standalone chat surface (`voxera.vera_web.app`) intended 
 - **Truth semantics:** Vera language must distinguish proposal/prepared/submitted from executed/verified evidence states.
 - **Context model:** bounded rolling turn window (`MAX_SESSION_TURNS`) retained per session, intentionally restart-volatile for v0.
 - **Developer tooling:** standalone Vera UI includes developer diagnostics (prompt + session metadata), explicit preview visibility, submit control, and explicit context reset (`POST /clear`).
+- **Authoritative preview semantics (PR #159):** visible preview pane JSON is the active session draft; pane submit always submits that exact draft through the same trusted queue handoff path; successful handoff clears active preview.
+- **Natural approval phrasing:** when an active preview exists, phrases like `use this preview` and `that looks good now use it` map to real handoff of the active draft; when no preview exists they fail closed.
 
 Queue concept (developer framing): the queue is the structured path for real side effects; jobs are submitted into VoxeraOS and moved through lifecycle states with approvals/policy checks and evidence produced in VoxeraOS artifacts. Submission is not execution, and execution is not verification.
 

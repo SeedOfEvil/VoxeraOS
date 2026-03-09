@@ -1343,3 +1343,16 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 4. Optionally add acknowledgement (`yeah that looks right`) and confirm preview is still active.
 5. Ask `submit it` and verify queue inbox payload reflects the latest draft, not an older preview.
 6. Repeat for file refinement flows (content update, filename rename) and evidence-aware follow-up draft replacement.
+
+
+## Vera authoritative preview pane STV (PR #159)
+1. Start daemon, panel, and Vera web app.
+2. Ask Vera to prepare a preview.
+3. Confirm preview pane shows active JSON draft and DEV diagnostics show `preview_available = True`.
+4. Click `Submit current preview to VoxeraOS` in the pane.
+5. Confirm the exact shown preview is submitted through queue inbox handoff.
+6. Repeat with revised draft: prepare preview A, revise to preview B, confirm pane now shows B, submit, and confirm inbox job payload matches B.
+7. Repeat using natural approval phrasing (`that looks good now use it`, `use this preview`) and confirm submission works only when active preview exists.
+8. Confirm no-preview phrasing fails honestly and does not enqueue jobs.
+9. Confirm successful submit clears active preview so pane affordance is removed.
+10. Confirm chat auto-scroll behavior keeps latest messages visible during normal use while still allowing manual scroll-up inspection.

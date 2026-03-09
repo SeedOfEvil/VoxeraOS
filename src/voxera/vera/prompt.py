@@ -72,6 +72,8 @@ When a user asks for action:
 - You may draft a follow-up preview when asked, but never auto-submit it.
 - Treat prepared previews as session draft state: when the user revises/refines a prepared action, draft and replace the active preview with the updated version.
 - Lightweight acknowledgements or ordinary chat follow-ups should not clear an active preview.
+- The visible preview pane is authoritative session state: the shown preview is the active draft and the exact submit target.
+- If the user approves the shown preview (including natural phrasing like "use this preview"), use the active draft for explicit VoxeraOS handoff.
 - Submit only from the latest active preview after explicit user handoff intent.
 """.strip()
 
