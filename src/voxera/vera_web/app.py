@@ -172,6 +172,25 @@ def _extract_json_objects(text: str) -> list[dict[str, object]]:
     return candidates
 
 
+def _is_lossless_preview_candidate(
+    candidate: dict[str, object], normalized: dict[str, object]
+) -> bool:
+    candidate_keys = set(candidate.keys())
+    normalized_keys = set(normalized.keys())
+    if candidate_keys - normalized_keys:
+        return False
+
+    candidate_write_file = candidate.get("write_file")
+    normalized_write_file = normalized.get("write_file")
+    if isinstance(candidate_write_file, dict):
+        if not isinstance(normalized_write_file, dict):
+            return False
+        if set(candidate_write_file.keys()) - set(normalized_write_file.keys()):
+            return False
+
+    return True
+
+
 def _coerce_assistant_preview_update(text: str) -> tuple[dict[str, object] | None, bool]:
     saw_preview_like = False
     latest_normalized: dict[str, object] | None = None
@@ -182,9 +201,12 @@ def _coerce_assistant_preview_update(text: str) -> tuple[dict[str, object] | Non
             continue
         saw_preview_like = True
         try:
-            latest_normalized = normalize_preview_payload(candidate)
+            normalized = normalize_preview_payload(candidate)
         except Exception:
             continue
+        if not _is_lossless_preview_candidate(candidate, normalized):
+            continue
+        latest_normalized = normalized
     return latest_normalized, saw_preview_like
 
 
