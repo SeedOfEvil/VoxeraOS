@@ -19,7 +19,8 @@
 - **GitHub PR #148**: additive queue lineage metadata (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, `lineage_role`) surfaced in artifacts, progress, and panel; observational only, no behavior changes.
 - **GitHub PR #149**: controlled single child-enqueue primitive; server-side lineage computation; full approval/policy/fail-closed semantics preserved; canonical audit evidence surfaces.
 - **GitHub PR #150**: additive read-only child status rollups (`child_summary`) in parent progress and panel job detail; observability-only with no parent/child orchestration behavior.
-- **GitHub PR #152 (planned/current)**: Vera v0 minimal standalone chat web app (separate port) with short session context, explicit Vera↔VoxeraOS boundary, and preview-only execution posture (real side effects via VoxeraOS queue only).
+- **GitHub PR #152 (completed)**: Vera v0 minimal standalone chat web app (separate port) with short session context, explicit Vera↔VoxeraOS boundary, and preview-first execution posture (real side effects via VoxeraOS queue only).
+- **GitHub PR #153 (planned/current)**: Add explicit Vera↔VoxeraOS queue handoff with structured job preview + explicit submit acknowledgement while preserving queue approval/policy/execution boundaries.
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.

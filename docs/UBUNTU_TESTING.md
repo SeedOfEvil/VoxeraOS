@@ -233,3 +233,11 @@ Interpretation:
 4. Confirm parent `child_summary.awaiting_approval=1` while child approval is pending.
 5. Approve the child; confirm parent summary moves to `done`/`succeeded` counts.
 6. Confirm parent execution semantics are unchanged; summary is read-only observational metadata.
+
+
+## Vera handoff smoke
+
+1. Start daemon/panel and run `uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`.
+2. In Vera, ask for an action like `open https://example.com`; confirm structured preview text and that nothing executed yet.
+3. Explicitly hand off (`submit it` or UI submit button) and confirm `notes/queue/inbox/inbox-*.json` appears.
+4. Confirm Vera reports submitted/queued and not yet executed; use queue/panel surfaces for runtime truth.

@@ -5,6 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .queue_job_intent import enrich_queue_job_payload
 
@@ -26,17 +27,31 @@ def generate_inbox_id(goal: str, *, now_ms: int | None = None) -> str:
 
 
 def add_inbox_job(queue_root: Path, goal: str, *, job_id: str | None = None) -> Path:
+    return add_inbox_payload(queue_root, {"goal": goal}, job_id=job_id)
+
+
+def add_inbox_payload(
+    queue_root: Path,
+    payload: dict[str, Any],
+    *,
+    job_id: str | None = None,
+    source_lane: str = "inbox_cli",
+) -> Path:
     queue_root = queue_root.expanduser()
     inbox_dir = queue_root / "inbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
 
-    resolved_id = (job_id or generate_inbox_id(goal)).strip()
+    payload_goal = str(payload.get("goal") or "").strip()
+    if not payload_goal:
+        raise ValueError("job payload requires a non-empty goal")
+
+    resolved_id = (job_id or generate_inbox_id(payload_goal)).strip()
     if not resolved_id:
         raise ValueError("job id cannot be empty")
 
     payload = enrich_queue_job_payload(
-        {"id": resolved_id, "goal": goal},
-        source_lane="inbox_cli",
+        {"id": resolved_id, **payload},
+        source_lane=source_lane,
     )
     target = inbox_dir / f"inbox-{resolved_id}.json"
     if target.exists():

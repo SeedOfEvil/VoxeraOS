@@ -25,17 +25,22 @@ def _session_path(queue_root: Path, session_id: str) -> Path:
     return queue_root / "artifacts" / "vera_sessions" / f"{Path(session_id).name}.json"
 
 
-def read_session_turns(queue_root: Path, session_id: str) -> list[dict[str, str]]:
+def _read_session_payload(queue_root: Path, session_id: str) -> dict[str, Any]:
     if not session_id:
-        return []
+        return {}
     path = _session_path(queue_root, session_id)
     if not path.exists():
-        return []
+        return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return []
-    turns = payload.get("turns") if isinstance(payload, dict) else []
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def read_session_turns(queue_root: Path, session_id: str) -> list[dict[str, str]]:
+    payload = _read_session_payload(queue_root, session_id)
+    turns = payload.get("turns")
     if not isinstance(turns, list):
         return []
     normalized: list[dict[str, str]] = []
@@ -55,15 +60,41 @@ def append_session_turn(
     turns = read_session_turns(queue_root, session_id)
     turns.append({"role": role, "text": text.strip()})
     turns = turns[-MAX_SESSION_TURNS:]
+    payload = _read_session_payload(queue_root, session_id)
+    pending_preview = payload.get("pending_job_preview") if isinstance(payload, dict) else None
     payload = {
         "session_id": session_id,
         "updated_at_ms": int(time.time() * 1000),
         "turns": turns,
     }
+    if isinstance(pending_preview, dict):
+        payload["pending_job_preview"] = pending_preview
     path = _session_path(queue_root, session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return turns
+
+
+def read_session_preview(queue_root: Path, session_id: str) -> dict[str, Any] | None:
+    payload = _read_session_payload(queue_root, session_id)
+    preview = payload.get("pending_job_preview")
+    return preview if isinstance(preview, dict) else None
+
+
+def write_session_preview(
+    queue_root: Path, session_id: str, preview: dict[str, Any] | None
+) -> None:
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    if preview is None:
+        payload.pop("pending_job_preview", None)
+    else:
+        payload["pending_job_preview"] = preview
+    path = _session_path(queue_root, session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def clear_session_turns(queue_root: Path, session_id: str) -> None:

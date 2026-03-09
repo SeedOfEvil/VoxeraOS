@@ -5,7 +5,9 @@
   - Added lightweight per-session rolling context (`notes/queue/artifacts/vera_sessions/*.json`) with deterministic cap (`MAX_SESSION_TURNS=8`) for short back-and-forth continuity.
   - Added a dedicated Vera system prompt (`src/voxera/vera/prompt.py`) defining identity/personality, strict Vera↔VoxeraOS boundary, queue framing, and execution-truthfulness states.
   - Wired Vera chat generation through existing brain/provider stack (OpenAI-compatible + Gemini adapters), with clean degraded responses when providers are unavailable.
-  - Enforced preview-only behavior: normal Vera chatting does not enqueue queue jobs and does not claim side effects.
+  - Enforced preview-only default behavior: normal Vera chatting does not enqueue queue jobs and does not claim side effects.
+  - Added explicit Vera→VoxeraOS handoff path: action-shaped requests draft structured job JSON previews, and explicit submit routes through queue inbox with honest queue acknowledgement.
+  - Added small internal drafting guide/examples for supported minimal job JSON (`{"goal": "..."}` + optional supported fields only).
   - Added DEV-mode diagnostics support in standalone Vera UI (prompt/session debug visibility) and explicit clear-chat/context control (`/clear`) for iterative development workflows.
 - Non-goals preserved:
   - No direct tool execution from Vera chat.

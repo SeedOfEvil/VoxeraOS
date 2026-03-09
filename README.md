@@ -21,7 +21,9 @@ That architecture matters because it keeps behavior observable and recoverable e
 - **Vera v0 conversational surface (new)**
   - Minimal standalone Vera web app (`voxera.vera_web.app`) intended to run on a separate port from the operator panel with short session context.
   - Explicit trust boundary messaging: Vera can converse, plan, and draft requests, but real-world side effects must go through VoxeraOS queue execution.
-  - Preview-only behavior in v0 (no direct execution, no implicit enqueue from normal chatting).
+  - Explicit structured handoff channel: Vera drafts a minimal JSON job preview, then submits to the real VoxeraOS queue only after explicit user intent.
+  - Normal chat remains preview-only by default (no implicit enqueue from ordinary conversation).
+  - Honest lifecycle language: proposal/prepared/submitted/queued are distinct from executed/verified evidence states.
   - DEV-friendly diagnostics panel exposes prompt + session metadata for development, and includes an explicit "Clear chat + context" action.
 
 - **Queue-driven mission execution**

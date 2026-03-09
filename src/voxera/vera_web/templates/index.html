@@ -23,6 +23,17 @@
       <div class="sub">{{queue_boundary}}</div>
     </section>
 
+    {% if pending_preview %}
+    <section class="preview">
+      <div><strong>Prepared VoxeraOS job (not submitted):</strong></div>
+      <pre class="prompt-box">{{pending_preview | tojson(indent=2)}}</pre>
+      <form method="post" action="/handoff">
+        <input type="hidden" name="session_id" value="{{session_id}}" />
+        <button type="submit">Submit prepared job to VoxeraOS</button>
+      </form>
+    </section>
+    {% endif %}
+
     {% if error %}<div class="error">{{error}}</div>{% endif %}
 
     <section class="thread" id="thread">
@@ -50,6 +61,8 @@
           <div><b>session_file</b>: <span class="mono">{{debug_info.session_file}}</span></div>
           <div><b>system_prompt_sha256</b>: <span class="mono">{{debug_info.system_prompt_sha256}}</span></div>
         </div>
+        <p class="dev-label">Structured drafting examples</p>
+        <pre class="prompt-box">{{drafting_examples | tojson(indent=2)}}</pre>
         <p class="dev-label">System prompt (developer-visible)</p>
         <pre class="prompt-box">{{system_prompt}}</pre>
       </details>
