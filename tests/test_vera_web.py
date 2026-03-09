@@ -5,6 +5,7 @@ import json
 
 from fastapi.testclient import TestClient
 
+from voxera.models import AppConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
 from voxera.vera.handoff import drafting_guidance, normalize_preview_payload
@@ -95,7 +96,7 @@ def test_vera_prompt_boundary_text_present():
 
 
 def test_vera_backend_unavailable_degrades_cleanly(monkeypatch):
-    monkeypatch.setenv("VOXERA_BRAIN_PRIMARY_TYPE", "")
+    monkeypatch.setattr(vera_service, "load_app_config", lambda: AppConfig())
     result = asyncio.run(vera_service.generate_vera_reply(turns=[], user_message="hello"))
     assert result["status"].startswith("degraded")
 
