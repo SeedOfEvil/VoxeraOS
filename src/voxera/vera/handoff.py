@@ -177,6 +177,40 @@ def _filename_from_preview(preview: dict[str, Any]) -> str | None:
     return None
 
 
+def _extract_content_refinement(
+    text: str, lowered: str, *, filename_hint: str | None = None
+) -> str | None:
+    content = _extract_quoted_content(text)
+    if content:
+        return content
+
+    patterns = [
+        r"\bput\s+(.+?)\s+(?:inside|in|into)\s+(?:the\s+)?file\b",
+        r"\buse\s+(?:this\s+)?(?:content|text|joke)\s*:?\s*(.+)$",
+        r"\badd\s+content\s+to\s+[^\s]+\s+(?:saying|with)\s+(.+)$",
+        r"\badd\s+content\s+to\s+[^\s]+\s+(.+)$",
+        r"\bmake\s+(?:the\s+)?file\s+contain\s+(.+)$",
+        r"\badd\s+(.+?)\s+to\s+(?:the\s+)?file\b",
+        r"\buse\s+this\s+as\s+(?:the\s+)?content\s*:?\s*(.+)$",
+    ]
+    if filename_hint:
+        escaped = re.escape(filename_hint)
+        patterns.insert(
+            0,
+            rf"\badd\s+content\s+to\s+{escaped}\s*(?:saying|with)?\s*(.+)$",
+        )
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = match.group(1).strip(" \"'`:")
+        if candidate:
+            return candidate
+
+    return None
+
+
 def _draft_revision_from_active_preview(
     message: str, active_preview: dict[str, Any] | None
 ) -> dict[str, Any] | None:
@@ -217,30 +251,20 @@ def _draft_revision_from_active_preview(
             if "write a note called" in current_goal:
                 return {"goal": f"write a note called {new_name}"}
 
-    if re.search(r"\b(put|use)\b", lowered) and re.search(r"\b(file|content|text|joke)\b", lowered):
-        content = _extract_quoted_content(text)
-        if content is None:
-            phrase_match = re.search(
-                r"\bput\s+(.+?)\s+(?:inside|in|into)\s+(?:the\s+)?file\b", text, re.IGNORECASE
-            )
-            if phrase_match:
-                content = phrase_match.group(1).strip()
-        if content is None:
-            use_match = re.search(
-                r"\buse\s+(?:this\s+)?(?:content|text|joke)\s*:?\s*(.+)$", text, re.IGNORECASE
-            )
-            if use_match:
-                content = use_match.group(1).strip(" \"'")
+    if re.search(r"\b(add|put|use|make)\b", lowered) and re.search(
+        r"\b(file|content|text|joke|script|it)\b", lowered
+    ):
+        filename = _filename_from_preview(active_preview) or "note.txt"
+        write_file = active_preview.get("write_file")
+        mode = "overwrite"
+        if isinstance(write_file, dict):
+            path = str(write_file.get("path") or f"~/VoxeraOS/notes/{filename}")
+            mode = str(write_file.get("mode") or "overwrite")
+        else:
+            path = f"~/VoxeraOS/notes/{filename}"
 
+        content = _extract_content_refinement(text, lowered, filename_hint=filename)
         if content:
-            filename = _filename_from_preview(active_preview) or "note.txt"
-            write_file = active_preview.get("write_file")
-            mode = "overwrite"
-            if isinstance(write_file, dict):
-                path = str(write_file.get("path") or f"~/VoxeraOS/notes/{filename}")
-                mode = str(write_file.get("mode") or "overwrite")
-            else:
-                path = f"~/VoxeraOS/notes/{filename}"
             return {
                 "goal": f"write a file called {filename} with provided content",
                 "write_file": {"path": path, "content": content, "mode": mode},

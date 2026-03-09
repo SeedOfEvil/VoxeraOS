@@ -289,6 +289,69 @@ def test_handoff_failure_reports_honestly(tmp_path, monkeypatch):
     assert "nothing was queued" in res.text
 
 
+def test_content_refinement_phrase_add_content_updates_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called skibbz.txt"})
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "add content to skibbz.txt saying hello",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbz.txt"
+    assert preview["write_file"]["content"] == "hello"
+
+
+def test_content_refinement_phrase_script_text_updates_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called script.ps1"})
+
+    script_text = "an Active Directory script that creates a user called Skibbidy"
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": f"add content to script.ps1 {script_text}"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
+    assert preview["write_file"]["content"] == script_text
+
+
+def test_latest_content_refinement_wins_for_handoff_payload(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called joke.txt"})
+    client.post("/chat", data={"session_id": sid, "message": "put this joke inside it: old"})
+    client.post("/chat", data={"session_id": sid, "message": "use this as the content: new"})
+    client.post("/handoff", data={"session_id": sid})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/joke.txt"
+    assert payload["write_file"]["content"] == "new"
+
+
 def test_model_preview_json_updates_active_preview_and_pane(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
