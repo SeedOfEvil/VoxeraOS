@@ -1201,7 +1201,7 @@ For job detail/status/bundle flows, Voxera now prefers canonical structured exec
 Queue jobs may include additive `job_intent` metadata produced by panel/inbox/assistant lanes or derived by daemon normalization. Operators may also see `artifacts/<job>/job_intent.json` for newer jobs. If absent, workflows continue using existing payload/state semantics; absence is expected for legacy jobs.
 
 
-## Bounded replan operations (PR 4)
+## Bounded replan operations
 
 - Queue execution evaluates each attempt and records evaluator class/reason in `execution_result.json`.
 - Planner unknown-skill mismatches are persisted in `plan.attempt-<n>.json` under `planning_error` and may trigger exactly one bounded replan for goal jobs.
@@ -1215,7 +1215,7 @@ Queue jobs may include additive `job_intent` metadata produced by panel/inbox/as
 - This is controlled adaptation, not blind retry: the loop exits on success, approval pause, non-retryable block, or max-attempt bound.
 
 
-### PR 5: operator interpretation of normalized skill results
+### Operator interpretation of normalized skill results
 
 When triaging step failures/blocks, prefer `step_results[].summary`, `operator_note`, `next_action_hint`, `error_class`, `retryable`, `blocked`, and `approval_status`. `machine_payload` is intended for deterministic machine facts; human guidance belongs in `operator_note`.
 

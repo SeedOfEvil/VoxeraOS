@@ -29,9 +29,9 @@ That architecture matters because it keeps behavior observable and recoverable e
 - **Assistant advisory lane**
   - `/assistant` submits queue-backed advisory jobs (`assistant_question`), with bounded thread continuity and degraded read-only fallback mode when queue transport is unavailable.
   - Explicitly read-only advisory requests can use an in-control-plane fast lane (`execution_lane=fast_read_only`) when deterministic eligibility checks pass (including canonical request-kind detection via `job_intent.request_kind`); uncertain or non-eligible requests fail closed to normal queue lane (`execution_lane=queue`).
-- **Simple-intent routing (semantic guardrail)**
+- **Simple-intent routing (semantic guardrail, GitHub PR #144–#145)**
   - Goal-kind queue jobs pass through a deterministic classifier before planning with explicit open-intent splits: `open_terminal`, `open_url`, `open_app`, plus `write_file`, `read_file`, `run_command`, and `assistant_question`.
-  - Open-intent routing is narrow and conservative: URL presence alone does **not** route to `open_url`, meta/help/explanatory phrasing does **not** execute actions, and ambiguous open phrasing remains `unknown_or_ambiguous`.
+  - Open-intent routing is narrow and conservative (tightened in PR #145): URL presence alone does **not** route to `open_url`, meta/help/explanatory phrasing does **not** execute actions, and ambiguous open phrasing remains `unknown_or_ambiguous`. Terminal demo hijacks were removed and fail-closed behavior was explicitly restored.
   - Compound actionable requests preserve first-step intent metadata (`first_step_only`, `first_action_intent_kind`, `trailing_remainder`) so valid prefixes like "open terminal and …" constrain only step 1 without erasing the remainder.
   - If the planner's first step falls outside the allowed skill family the job fails closed before any side effects occur.
   - Evidence is visible in `execution_result.json` (`intent_route`, `evaluation_reason`) and
@@ -172,8 +172,13 @@ VoxeraOS is in **Alpha (v0.1.6)** and already includes the major control-plane f
 - Panel route modularization and CLI modularization are completed.
 - Advisory assistant queue lane with fallback/degraded behavior is implemented.
 - Incident/ops bundle export, doctor checks, and health semantics are implemented.
+- **Deterministic open-intent routing tightened** (PR #145): fail-closed behavior restored for open actions; terminal demo hijacks removed; meta/help phrasing explicitly excluded.
+- **Live job progress endpoints** (PR #146): panel polls `/jobs/{id}/progress` and `/assistant/progress/{id}` for real-time lifecycle/step/approval state from canonical artifacts only.
+- **Red-team regression suite + multi-boundary hardening** (PR #147): `make security-check` gate now merge-blocking; traversal metadata leakage closed at classifier, serializer, runtime, and sidecar boundaries.
+- **Queue lineage metadata** (PR #148): additive `parent_job_id` / `root_job_id` / `orchestration_depth` / `sequence_index` / `lineage_role` surfaced in artifacts, progress, and panel — observational only, no behavior changes.
+- **Controlled child enqueue primitive** (PR #149): single child-job enqueue with server-side lineage computation, audit evidence, and full approval/policy/fail-closed semantics preserved.
 
-In short: the architecture extraction/modularization work is largely complete for queue, panel, and CLI boundaries; ongoing work is now mostly incremental hardening and UX improvements.
+In short: the architecture extraction/modularization work is largely complete for queue, panel, and CLI boundaries; recent work has focused on security hardening, operator observability, and controlled orchestration primitives.
 
 ## Roadmap / what’s next
 
@@ -189,6 +194,12 @@ Major completed milestones already backfilled in repo history:
 - **v0.1.4**: stability + UX baseline (queue daemon, approvals, mission flows, panel/doctor foundations).
 - **v0.1.5**: hygiene/recovery baseline (`artifacts prune`, `queue prune`, `queue reconcile`, lock/shutdown hardening).
 - **v0.1.6**: security hardening + panel ops visibility + sandbox argv canonicalization + modularization wave.
+- **Post-v0.1.6 PRs shipped** (tracked in `docs/CODEX_MEMORY.md`):
+  - **PR #145**: deterministic open-intent routing tightened; fail-closed behavior restored; terminal demo hijacks removed.
+  - **PR #146**: live job progress endpoints (`/jobs/{id}/progress`, `/assistant/progress/{id}`); progressive-enhancement panel polling; stale failure-context shaping fixed.
+  - **PR #147**: red-team regression suite (`tests/test_security_redteam.py`); traversal metadata leakage closed at four boundaries; `security-check` wired into merge gate.
+  - **PR #148**: queue lineage metadata (additive, observational, no behavior changes); surfaced in artifacts, progress, and panel.
+  - **PR #149**: controlled child enqueue primitive; server-side lineage computation; full approval/policy/fail-closed preservation; audit evidence surfaces.
 
 ## Contributing and maintenance guidance
 
@@ -217,7 +228,7 @@ Security regression workflow for adversarial fail-closed guardrails:
 make security-check
 ```
 
-- `make security-check` runs the focused red-team suite (`tests/test_security_redteam.py`) covering intent hijack resistance, planner mismatch fail-closed enforcement, notes/path-scope escape attempts, approval-gated state integrity, and progress/evidence consistency checks.
+- `make security-check` runs the focused red-team suite (`tests/test_security_redteam.py`) covering intent hijack resistance, planner mismatch fail-closed enforcement, notes/path-scope escape attempts, approval-gated state integrity, and progress/evidence consistency checks. Added in GitHub PR #147.
 - This target is a regression-hardening layer; it does not introduce new runtime feature surfaces.
 
 - `make golden-check` validates committed baselines in `tests/golden/` for high-value
@@ -293,7 +304,7 @@ Built-in skills now converge on a normalized `skill_result` shape for both succe
 
 Major consumers (mission step shaping and queue structured artifact builders) now prefer this contract first and keep legacy fallbacks only for compatibility with older job artifacts.
 
-## Live job progress in Panel (PR 7)
+## Live job progress in Panel (GitHub PR #146)
 
 The panel job detail pages now use **progressive enhancement** for live updates:
 
@@ -304,14 +315,14 @@ The panel job detail pages now use **progressive enhancement** for live updates:
 Live fields are sourced from canonical artifacts only (`*.state.json`, `execution_result.json`, `step_results.json`, approval sidecars, failed sidecars, and assistant response artifacts). No speculative percentages or optimistic states are shown.
 
 
-## Queue lineage metadata (PR 9A)
+## Queue lineage metadata (GitHub PR #148)
 
 Queue jobs now accept additive, descriptive lineage metadata: `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and optional `lineage_role` (`root`/`child`). This metadata is observational only and does **not** change execution behavior, approvals, fail-closed semantics, scheduling, or context passing.
 
 When present, lineage is surfaced in `plan.json`, `execution_envelope.json`, `execution_result.json`, job progress payloads, and panel job detail views.
 
 
-## Controlled child enqueue primitive (PR 9B-lite)
+## Controlled child enqueue primitive (GitHub PR #149)
 
 Queue jobs can now explicitly request a **single** child enqueue by including:
 
