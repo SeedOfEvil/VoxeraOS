@@ -10,6 +10,14 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import load_config as load_runtime_config
 from ..paths import queue_root as default_queue_root
+from ..vera.evidence_review import (
+    draft_followup_preview,
+    is_followup_preview_request,
+    is_review_request,
+    maybe_extract_job_id,
+    review_job_outcome,
+    review_message,
+)
 from ..vera.handoff import (
     drafting_guidance,
     is_explicit_handoff_request,
@@ -186,6 +194,70 @@ async def chat(request: Request):
     turns = read_session_turns(root, active_session)
 
     pending_preview = read_session_preview(root, active_session)
+    requested_job_id = maybe_extract_job_id(message)
+    if is_review_request(message) or requested_job_id is not None:
+        target_job_id = requested_job_id
+        if not target_job_id:
+            handoff = read_session_handoff_state(root, active_session) or {}
+            target_job_id = str(handoff.get("job_id") or "") or None
+        evidence = review_job_outcome(queue_root=root, requested_job_id=target_job_id)
+        if evidence is None:
+            assistant_text = (
+                "I could not resolve a VoxeraOS job to review from canonical evidence. "
+                "Share a job id (for example `job-123.json`) or submit a job first in this session."
+            )
+            status = "review_missing_job"
+        else:
+            assistant_text = review_message(evidence)
+            status = "reviewed_job_outcome"
+        append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status=status,
+        )
+
+    if is_followup_preview_request(message):
+        handoff = read_session_handoff_state(root, active_session) or {}
+        evidence = review_job_outcome(
+            queue_root=root,
+            requested_job_id=str(handoff.get("job_id") or "") or None,
+        )
+        if evidence is None:
+            assistant_text = (
+                "I can draft a follow-up preview once we have a resolvable VoxeraOS job outcome. "
+                "Please give me a job id or ask me to review your most recent submitted job first."
+            )
+            append_session_turn(root, active_session, role="assistant", text=assistant_text)
+            return _render_page(
+                session_id=active_session,
+                turns=read_session_turns(root, active_session),
+                status="followup_missing_evidence",
+            )
+
+        payload = draft_followup_preview(evidence)
+        write_session_preview(root, active_session, payload)
+        write_session_handoff_state(
+            root,
+            active_session,
+            attempted=False,
+            queue_path=str(root),
+            status="preview_ready",
+            error=None,
+            job_id=None,
+        )
+        assistant_text = (
+            f"I drafted a follow-up preview based on evidence from `{evidence.job_id}`.\n\n"
+            f"```json\n{payload}\n```\n\n"
+            "This is preview-only. I did not submit anything to VoxeraOS."
+        )
+        append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="followup_preview_ready",
+        )
+
     if is_explicit_handoff_request(message):
         assistant_text, status = _submit_handoff(
             root=root,

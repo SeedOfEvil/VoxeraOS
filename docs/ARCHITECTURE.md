@@ -1127,3 +1127,14 @@ Queue concept (developer framing): the queue is the structured path for real sid
 - Supported intent families in this layer are intentionally narrow: web navigation URL opens, explicit file reads, and basic note/file write intents.
 - Preview state is persisted per session (`pending_job_preview`) and is independent from rolling chat turn limits.
 - Submission remains a separate explicit step that writes to queue inbox; no direct execution path exists in Vera.
+
+
+## Vera evidence-aware outcome review (PR #155)
+
+Vera v0 now includes a narrow job-outcome review capability in chat while preserving trust boundaries.
+
+- Review path resolves either an explicit job id or the session's latest submitted `handoff_job_id`.
+- Outcome summaries are built from canonical queue evidence via shared helpers (`lookup_job` + `resolve_structured_execution`), not ad-hoc parsing.
+- Reported fields include state classification (`submitted|pending|awaiting_approval|succeeded|failed|canceled`), lifecycle state, terminal outcome, approval status, latest summary, failure summary, and child summary (if already exposed).
+- Next-step guidance is evidence-grounded (e.g., approve in VoxeraOS when awaiting approval; retry correction when failed).
+- Optional follow-up drafting writes a new preview only; submission remains explicit handoff and execution remains VoxeraOS-owned.

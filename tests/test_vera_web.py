@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,37 @@ from voxera.vera_web import app as vera_app_module
 
 def _set_queue_root(monkeypatch, queue):
     monkeypatch.setattr(vera_app_module, "_active_queue_root", lambda: queue)
+
+
+def _write_job_artifacts(
+    queue,
+    job_id,
+    *,
+    bucket="done",
+    execution_result=None,
+    state=None,
+    failed_sidecar=None,
+    approval=None,
+):
+    stem = Path(job_id).stem
+    job_payload = {"goal": "test goal"}
+    bucket_dir = queue / bucket
+    bucket_dir.mkdir(parents=True, exist_ok=True)
+    (bucket_dir / job_id).write_text(json.dumps(job_payload), encoding="utf-8")
+    art = queue / "artifacts" / stem
+    art.mkdir(parents=True, exist_ok=True)
+    if execution_result is not None:
+        (art / "execution_result.json").write_text(json.dumps(execution_result), encoding="utf-8")
+    if state is not None:
+        (bucket_dir / f"{stem}.state.json").write_text(json.dumps(state), encoding="utf-8")
+    if failed_sidecar is not None:
+        failed_dir = queue / "failed"
+        failed_dir.mkdir(parents=True, exist_ok=True)
+        (failed_dir / f"{stem}.error.json").write_text(json.dumps(failed_sidecar), encoding="utf-8")
+    if approval is not None:
+        approvals = queue / "pending" / "approvals"
+        approvals.mkdir(parents=True, exist_ok=True)
+        (approvals / f"{stem}.approval.json").write_text(json.dumps(approval), encoding="utf-8")
 
 
 def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
@@ -531,3 +563,141 @@ def test_preview_persists_across_followup_turn_before_submit(tmp_path, monkeypat
     assert "I submitted the job to VoxeraOS" in res.text
     jobs = list((queue / "inbox").glob("inbox-*.json"))
     assert len(jobs) == 1
+
+
+def test_review_latest_submitted_job_succeeded(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-111.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "step_results": [{"step_index": 1, "status": "succeeded", "summary": "Opened page"}],
+        },
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid")
+    res = client.post("/chat", data={"session_id": "sid", "message": "what happened to that job?"})
+
+    assert "I reviewed canonical VoxeraOS evidence" in res.text
+    assert "`succeeded`" in res.text
+    assert "Opened page" in res.text
+
+
+def test_review_specific_job_id_failed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _write_job_artifacts(
+        queue,
+        "job-fail-1.json",
+        bucket="failed",
+        execution_result={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "approval_status": "none",
+            "error": "invalid request shape",
+        },
+        failed_sidecar={"error": "invalid request shape"},
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "why did job-fail-1 fail?"})
+
+    assert "job-fail-1.json" in res.text
+    assert "`failed`" in res.text
+    assert "invalid request shape" in res.text
+
+
+def test_review_awaiting_approval_job(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _write_job_artifacts(
+        queue,
+        "job-await-1.json",
+        bucket="pending",
+        execution_result={
+            "lifecycle_state": "awaiting_approval",
+            "terminal_outcome": "awaiting_approval",
+            "approval_status": "pending",
+            "step_results": [
+                {"step_index": 1, "status": "blocked", "summary": "Need operator approval"}
+            ],
+        },
+        approval={"job": "job-await-1.json", "status": "pending"},
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat", data={"session_id": sid, "message": "what's the status of job-await-1?"}
+    )
+
+    assert "`awaiting_approval`" in res.text
+    assert "Approve or reject the pending approval" in res.text
+
+
+def test_review_missing_job_is_honest(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "what happened to job-404?"})
+
+    assert "could not resolve a VoxeraOS job" in res.text
+
+
+def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-222.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "step_results": [
+                {"step_index": 1, "status": "succeeded", "summary": "Read file complete"}
+            ],
+        },
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-follow",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-follow")
+    res = client.post(
+        "/chat", data={"session_id": "sid-follow", "message": "prepare the next step"}
+    )
+
+    assert "drafted a follow-up preview" in res.text
+    assert "did not submit anything" in res.text.lower()
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+    assert vera_service.read_session_preview(queue, "sid-follow") is not None

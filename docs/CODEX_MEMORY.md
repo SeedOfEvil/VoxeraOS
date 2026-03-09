@@ -1,3 +1,12 @@
+## 2026-03-09 — GitHub PR #155 — feat(vera): add evidence-aware job review and follow-up previewing
+
+- Added a narrow Vera evidence-review path for explicit job IDs or latest submitted session job (`handoff_job_id`) in the standalone Vera web app flow.
+- Reused canonical queue truth surfaces through shared helpers (`lookup_job`, `resolve_structured_execution`) so Vera summaries align with panel/queue evidence contracts.
+- Vera now summarizes lifecycle/outcome/approval/latest/failure/child summary fields conservatively and proposes evidence-grounded next steps.
+- Added bounded follow-up behavior: when explicitly asked, Vera drafts a new preview from evidence but never auto-submits it.
+- Reinforced Vera system prompt language to prefer canonical evidence and avoid invented outcomes under ambiguity.
+- Added focused Vera web tests for latest/specific job review, awaiting approval/success/failure/missing evidence handling, and follow-up draft-without-submit behavior.
+
 ## 2026-03-09 — GitHub PR #154 — feat(vera): improve natural-language action detection and preview preparation for VoxeraOS handoff
 
 - Summary:

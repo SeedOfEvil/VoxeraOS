@@ -1296,3 +1296,15 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 7. Confirm queue/panel shows the job lifecycle.
 8. Repeat with: `visit example.com`, `take me to example.com`, `read ~/VoxeraOS/notes/test.txt`, and (if supported) `make a note called hello.txt`.
 9. Confirm informational asks like `what is example.com` do not auto-draft open-url previews.
+
+
+## Vera evidence-aware review STV (PR #155)
+
+1. Start daemon, panel, and Vera web app.
+2. Ask Vera to prepare and submit a real job.
+3. Let that job land in one of: awaiting approval, succeeded, or failed.
+4. Ask Vera: `what happened to that job?`, `did it work?`, `why did it fail?`, `what should I do next?`.
+5. Verify Vera's answer matches canonical queue evidence (`execution_result.json`, step/state/approval/failed sidecars as applicable).
+6. Ask Vera to `prepare the next step` when appropriate.
+7. Verify Vera drafts preview-only follow-up JSON.
+8. Verify no automatic submit occurs unless explicit handoff is requested.

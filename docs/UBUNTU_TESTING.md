@@ -252,3 +252,12 @@ Use this quick manual check after starting Vera (`uvicorn voxera.vera_web.app:ap
 - Verify a real queue job appears in `~/VoxeraOS/notes/queue/inbox/` and panel queue views.
 - Repeat with: `visit example.com`, `take me to example.com`, `read ~/VoxeraOS/notes/test.txt`, and `make a note called hello.txt` (if enabled).
 - Confirm informational asks (`what is example.com`, `tell me about example.com`) stay conversational and do not auto-open URLs.
+
+
+## Vera evidence-aware outcome review checks (PR #155)
+
+- Prepare + submit a Vera job, then wait until it is awaiting approval, succeeded, or failed.
+- Ask Vera `what happened to that job?` and verify state/outcome language matches queue artifacts.
+- Ask `did it work?` / `why did it fail?` and verify no invented execution claims appear when evidence is missing.
+- Ask `what should I do next?` and verify next-step guidance is tied to canonical evidence.
+- Ask `prepare the next step` and verify Vera drafts preview-only follow-up payload and does not auto-submit.

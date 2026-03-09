@@ -21,7 +21,8 @@
 - **GitHub PR #150**: additive read-only child status rollups (`child_summary`) in parent progress and panel job detail; observability-only with no parent/child orchestration behavior.
 - **GitHub PR #152 (completed)**: Vera v0 minimal standalone chat web app (separate port) with short session context, explicit Vera↔VoxeraOS boundary, and preview-first execution posture (real side effects via VoxeraOS queue only).
 - **GitHub PR #153 (completed)**: Added explicit Vera↔VoxeraOS queue handoff with structured job preview + explicit submit acknowledgement while preserving queue approval/policy/execution boundaries.
-- **GitHub PR #154 (planned/current)**: Improve Vera natural-language action detection + preview preparation quality (broader conversational phrasing support, same strict preview/submit/execution trust boundary).
+- **GitHub PR #154 (completed)**: Improved Vera natural-language action detection + preview preparation quality (broader conversational phrasing support, same strict preview/submit/execution trust boundary).
+- **GitHub PR #155 (planned/current)**: Add evidence-aware Vera job outcome review + evidence-grounded next-step guidance with optional follow-up preview drafting (no auto-submit, no autonomy expansion).
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.
