@@ -153,6 +153,47 @@ def test_explicit_submit_phrase_without_preview_is_honest_non_submission(tmp_pat
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
+def test_prepare_preview_sets_preview_available_true_for_natural_open_phrase(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "Can you open example.com?"})
+
+    assert "Prepared VoxeraOS job preview" in res.text
+    assert "preview_available</b>: True" in res.text
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"] == "open https://example.com"
+
+
+def test_submit_now_uses_persisted_structured_preview_state(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    seen_payload: dict[str, object] = {}
+    original_submit = vera_app_module.submit_preview
+
+    def _capture_submit(*, queue_root, payload):
+        seen_payload.update(payload)
+        return original_submit(queue_root=queue_root, payload=payload)
+
+    monkeypatch.setattr(vera_app_module, "submit_preview", _capture_submit)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "Can you open example.com?"})
+    res = client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    assert seen_payload == {"goal": "open https://example.com"}
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+
+
 def test_explicit_handoff_creates_real_queue_job_and_ack(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

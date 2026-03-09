@@ -28,6 +28,24 @@ _HANDOFF_PATTERNS = (
     r"\b(submit|send|hand\s+off)\b.*\b(job|request|it|this|queue|voxeraos|now|please)\b",
 )
 
+_DOMAIN_RE = re.compile(r"\b([a-z0-9-]+(?:\.[a-z0-9-]+)+)(/[^\s]*)?\b", re.IGNORECASE)
+
+
+def _normalize_open_goal(message: str) -> str | None:
+    text = message.strip()
+    lowered = text.lower()
+    if "open" not in lowered:
+        return None
+    explicit = re.search(r"open\s+(https?://\S+)", text, flags=re.IGNORECASE)
+    if explicit:
+        return f"open {explicit.group(1)}"
+    bare = _DOMAIN_RE.search(text)
+    if bare:
+        host = bare.group(1)
+        suffix = bare.group(2) or ""
+        return f"open https://{host}{suffix}"
+    return None
+
 
 @dataclass(frozen=True)
 class DraftingGuidance:
@@ -65,8 +83,11 @@ def maybe_draft_job_payload(message: str) -> dict[str, Any] | None:
     if not normalized:
         return None
     lowered = normalized.lower()
-    if re.match(r"^(open\s+https?://\S+)", lowered):
-        return {"goal": normalized}
+
+    normalized_open = _normalize_open_goal(normalized)
+    if normalized_open:
+        return {"goal": normalized_open}
+
     if "read" in lowered and "file" in lowered:
         return {"goal": normalized}
     if "write" in lowered and ("file" in lowered or "note" in lowered):
