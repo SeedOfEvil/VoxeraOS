@@ -8,7 +8,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from ..paths import queue_root
+from ..config import load_config as load_runtime_config
+from ..paths import queue_root as default_queue_root
 from ..vera.handoff import (
     drafting_guidance,
     is_explicit_handoff_request,
@@ -26,6 +27,7 @@ from ..vera.service import (
     read_session_preview,
     read_session_turns,
     session_debug_info,
+    write_session_handoff_state,
     write_session_preview,
 )
 
@@ -39,6 +41,64 @@ templates = Environment(
 app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
 
+def _active_queue_root() -> Path:
+    try:
+        return load_runtime_config().queue_root
+    except Exception:
+        return default_queue_root()
+
+
+def _submit_handoff(
+    *,
+    root: Path,
+    session_id: str,
+    preview: dict[str, object] | None,
+) -> tuple[str, str]:
+    if preview is None:
+        write_session_handoff_state(
+            root,
+            session_id,
+            attempted=False,
+            queue_path=str(root),
+            status="missing_preview",
+            error="No prepared preview found",
+        )
+        return (
+            "No prepared VoxeraOS job was found for this session, so nothing was submitted.",
+            "handoff_missing_preview",
+        )
+
+    try:
+        ack = submit_preview(queue_root=root, payload=preview)
+        job_id = str(ack.get("job_id") or "").strip()
+        if not job_id:
+            raise RuntimeError("queue accepted payload but returned no job id")
+        write_session_handoff_state(
+            root,
+            session_id,
+            attempted=True,
+            queue_path=str(ack.get("queue_path") or root),
+            status="submitted",
+            job_id=job_id,
+        )
+        write_session_preview(root, session_id, None)
+        return str(ack["ack"]), "handoff_submitted"
+    except Exception as exc:
+        write_session_handoff_state(
+            root,
+            session_id,
+            attempted=True,
+            queue_path=str(root),
+            status="submit_failed",
+            error=str(exc),
+        )
+        return (
+            "I could not submit that job to VoxeraOS, so nothing was queued. "
+            f"Submission failed with: {exc}",
+            "handoff_submit_failed",
+        )
+
+
 def _render_page(
     *,
     session_id: str,
@@ -46,7 +106,7 @@ def _render_page(
     status: str,
     error: str = "",
 ) -> HTMLResponse:
-    root = queue_root()
+    root = _active_queue_root()
     tmpl = templates.get_template("index.html")
     html = tmpl.render(
         session_id=session_id,
@@ -67,9 +127,10 @@ def _render_page(
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+    root = _active_queue_root()
     return _render_page(
         session_id=session_id,
-        turns=read_session_turns(queue_root(), session_id),
+        turns=read_session_turns(root, session_id),
         status="conversation",
     )
 
@@ -85,37 +146,25 @@ async def chat(request: Request):
     active_session = active_session or new_session_id()
 
     if not message.strip():
+        root = _active_queue_root()
         return _render_page(
             session_id=active_session,
-            turns=read_session_turns(queue_root(), active_session),
+            turns=read_session_turns(root, active_session),
             status="conversation",
             error="Message is required.",
         )
 
-    root = queue_root()
+    root = _active_queue_root()
     append_session_turn(root, active_session, role="user", text=message)
     turns = read_session_turns(root, active_session)
 
     pending_preview = read_session_preview(root, active_session)
     if is_explicit_handoff_request(message):
-        if pending_preview is None:
-            assistant_text = (
-                "I don't have a prepared VoxeraOS job to submit yet. "
-                "Ask me for an action and I'll draft a structured preview first."
-            )
-            status = "handoff_missing_preview"
-        else:
-            try:
-                ack = submit_preview(queue_root=root, payload=pending_preview)
-                assistant_text = ack["ack"]
-                status = "handoff_submitted"
-                write_session_preview(root, active_session, None)
-            except Exception as exc:
-                assistant_text = (
-                    "I could not submit that job to VoxeraOS, so nothing was queued. "
-                    f"Submission failed with: {exc}"
-                )
-                status = "handoff_submit_failed"
+        assistant_text, status = _submit_handoff(
+            root=root,
+            session_id=active_session,
+            preview=pending_preview,
+        )
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
         return _render_page(
             session_id=active_session,
@@ -127,6 +176,15 @@ async def chat(request: Request):
     if drafted is not None:
         payload = normalize_preview_payload(drafted)
         write_session_preview(root, active_session, payload)
+        write_session_handoff_state(
+            root,
+            active_session,
+            attempted=False,
+            queue_path=str(root),
+            status="preview_ready",
+            error=None,
+            job_id=None,
+        )
         assistant_text = preview_message(payload)
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
         return _render_page(
@@ -152,27 +210,15 @@ async def handoff(request: Request):
     session_id = str((parsed.get("session_id") or [""])[0]).strip()
     active_session = session_id or (request.cookies.get("vera_session_id") or "").strip()
     active_session = active_session or new_session_id()
-    root = queue_root()
+    root = _active_queue_root()
     preview = read_session_preview(root, active_session)
 
     append_session_turn(root, active_session, role="user", text="[explicit handoff requested]")
-    if preview is None:
-        assistant_text = (
-            "No prepared VoxeraOS job was found for this session, so nothing was submitted."
-        )
-        status = "handoff_missing_preview"
-    else:
-        try:
-            ack = submit_preview(queue_root=root, payload=preview)
-            assistant_text = ack["ack"]
-            status = "handoff_submitted"
-            write_session_preview(root, active_session, None)
-        except Exception as exc:
-            assistant_text = (
-                "I could not submit that job to VoxeraOS, so nothing was queued. "
-                f"Submission failed with: {exc}"
-            )
-            status = "handoff_submit_failed"
+    assistant_text, status = _submit_handoff(
+        root=root,
+        session_id=active_session,
+        preview=preview,
+    )
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
 
     return _render_page(
@@ -190,7 +236,7 @@ async def clear_chat(request: Request):
     active_session = session_id or (request.cookies.get("vera_session_id") or "").strip()
     active_session = active_session or new_session_id()
 
-    clear_session_turns(queue_root(), active_session)
+    clear_session_turns(_active_queue_root(), active_session)
     return _render_page(
         session_id=active_session,
         turns=[],

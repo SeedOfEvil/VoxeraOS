@@ -38,6 +38,12 @@ def _read_session_payload(queue_root: Path, session_id: str) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _write_session_payload(queue_root: Path, session_id: str, payload: dict[str, Any]) -> None:
+    path = _session_path(queue_root, session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def read_session_turns(queue_root: Path, session_id: str) -> list[dict[str, str]]:
     payload = _read_session_payload(queue_root, session_id)
     turns = payload.get("turns")
@@ -60,18 +66,17 @@ def append_session_turn(
     turns = read_session_turns(queue_root, session_id)
     turns.append({"role": role, "text": text.strip()})
     turns = turns[-MAX_SESSION_TURNS:]
-    payload = _read_session_payload(queue_root, session_id)
-    pending_preview = payload.get("pending_job_preview") if isinstance(payload, dict) else None
-    payload = {
+    previous = _read_session_payload(queue_root, session_id)
+    payload: dict[str, Any] = {
         "session_id": session_id,
         "updated_at_ms": int(time.time() * 1000),
         "turns": turns,
     }
-    if isinstance(pending_preview, dict):
-        payload["pending_job_preview"] = pending_preview
-    path = _session_path(queue_root, session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    for preserved_key in ("pending_job_preview", "handoff"):
+        preserved = previous.get(preserved_key)
+        if isinstance(preserved, dict):
+            payload[preserved_key] = preserved
+    _write_session_payload(queue_root, session_id, payload)
     return turns
 
 
@@ -92,9 +97,38 @@ def write_session_preview(
         payload.pop("pending_job_preview", None)
     else:
         payload["pending_job_preview"] = preview
-    path = _session_path(queue_root, session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _write_session_payload(queue_root, session_id, payload)
+
+
+def write_session_handoff_state(
+    queue_root: Path,
+    session_id: str,
+    *,
+    attempted: bool,
+    queue_path: str,
+    status: str,
+    job_id: str | None = None,
+    error: str | None = None,
+) -> None:
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    payload["handoff"] = {
+        "attempted": attempted,
+        "queue_path": queue_path,
+        "status": status,
+        "job_id": job_id,
+        "error": error,
+        "updated_at_ms": int(time.time() * 1000),
+    }
+    _write_session_payload(queue_root, session_id, payload)
+
+
+def read_session_handoff_state(queue_root: Path, session_id: str) -> dict[str, Any] | None:
+    payload = _read_session_payload(queue_root, session_id)
+    handoff = payload.get("handoff")
+    return handoff if isinstance(handoff, dict) else None
 
 
 def clear_session_turns(queue_root: Path, session_id: str) -> None:
@@ -105,9 +139,11 @@ def clear_session_turns(queue_root: Path, session_id: str) -> None:
 
 def session_debug_info(
     queue_root: Path, session_id: str, *, mode_status: str
-) -> dict[str, str | int | bool]:
+) -> dict[str, str | int | bool | None]:
     path = _session_path(queue_root, session_id)
     turns = read_session_turns(queue_root, session_id)
+    preview = read_session_preview(queue_root, session_id)
+    handoff = read_session_handoff_state(queue_root, session_id) or {}
     return {
         "dev_mode": True,
         "mode_status": mode_status,
@@ -117,6 +153,12 @@ def session_debug_info(
         "turn_count": len(turns),
         "max_session_turns": MAX_SESSION_TURNS,
         "system_prompt_sha256": hashlib.sha256(VERA_SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
+        "preview_available": isinstance(preview, dict),
+        "handoff_attempted": handoff.get("attempted") is True,
+        "handoff_status": str(handoff.get("status") or "none"),
+        "handoff_queue_path": str(handoff.get("queue_path") or str(queue_root)),
+        "handoff_job_id": str(handoff.get("job_id") or "") or None,
+        "handoff_error": str(handoff.get("error") or "") or None,
     }
 
 

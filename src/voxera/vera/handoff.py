@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..core.inbox import add_inbox_payload
@@ -112,11 +113,16 @@ def preview_message(payload: dict[str, Any]) -> str:
     )
 
 
-def submit_preview(*, queue_root, payload: dict[str, Any]) -> dict[str, str]:
+def submit_preview(*, queue_root: Path, payload: dict[str, Any]) -> dict[str, str]:
     created = add_inbox_payload(queue_root, payload, source_lane="vera_handoff")
+    if not created.exists():
+        raise RuntimeError(f"queue write was not confirmed at {created}")
+
     job_id = created.stem.removeprefix("inbox-")
     return {
         "job_id": job_id,
+        "job_path": str(created),
+        "queue_path": str(queue_root),
         "ack": (
             f"I submitted the job to VoxeraOS. Job id: {job_id}. "
             "The request is now in the queue. Execution has not completed yet. "
