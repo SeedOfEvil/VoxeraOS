@@ -11,11 +11,15 @@ from ..core.queue_result_consumers import resolve_structured_execution
 
 _REVIEW_HINTS = (
     "what happened",
+    "what happened to that job",
     "did it work",
+    "did it succeed",
     "status",
     "check the last job",
     "last job",
+    "what should i do next",
     "why did",
+    "why did it fail",
     "why is it stuck",
     "stuck",
     "awaiting approval",
@@ -55,10 +59,8 @@ def maybe_extract_job_id(message: str) -> str | None:
     match = re.search(
         r"\b((?:job|inbox|pending|done|failed|canceled)[\w.-]*)(?:\.json)?\b", message
     )
-    if not match:
-        return None
-    candidate = match.group(1).strip()
-    if not candidate or candidate.lower() in {
+    candidate = match.group(1).strip() if match else ""
+    if candidate and candidate.lower() not in {
         "job",
         "inbox",
         "pending",
@@ -66,8 +68,12 @@ def maybe_extract_job_id(message: str) -> str | None:
         "failed",
         "canceled",
     }:
-        return None
-    return f"{Path(candidate).stem}.json"
+        return f"{Path(candidate).stem}.json"
+
+    short_match = re.search(r"\b(\d{10,}-[a-f0-9]{6,})\b", message.lower())
+    if short_match:
+        return short_match.group(1)
+    return None
 
 
 def is_review_request(message: str) -> bool:
@@ -117,7 +123,7 @@ def review_job_outcome(
 ) -> ReviewedJobEvidence | None:
     if not requested_job_id:
         return None
-    found = lookup_job(queue_root, requested_job_id)
+    found = _resolve_lookup_with_aliases(queue_root=queue_root, requested_job_id=requested_job_id)
     if found is None:
         return None
 
@@ -164,6 +170,41 @@ def review_job_outcome(
         failure_summary=failure_summary,
         child_summary=child_summary if isinstance(child_summary, dict) else None,
     )
+
+
+def _candidate_job_ids(requested_job_id: str) -> list[str]:
+    raw = Path(str(requested_job_id).strip()).name
+    if not raw:
+        return []
+    stem = Path(raw).stem
+
+    candidates: list[str] = []
+
+    def _add(value: str) -> None:
+        normalized = value.strip()
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    _add(raw)
+    _add(f"{stem}.json")
+
+    raw_stem = Path(raw).stem
+    if raw_stem.startswith("inbox-"):
+        short = raw_stem.removeprefix("inbox-")
+        _add(short)
+        _add(f"{short}.json")
+    else:
+        _add(f"inbox-{raw_stem}")
+        _add(f"inbox-{raw_stem}.json")
+    return candidates
+
+
+def _resolve_lookup_with_aliases(*, queue_root: Path, requested_job_id: str):
+    for candidate in _candidate_job_ids(requested_job_id):
+        found = lookup_job(queue_root, candidate)
+        if found is not None:
+            return found
+    return None
 
 
 def review_message(evidence: ReviewedJobEvidence) -> str:

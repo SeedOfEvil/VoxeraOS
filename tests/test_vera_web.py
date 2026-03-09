@@ -598,6 +598,112 @@ def test_review_latest_submitted_job_succeeded(tmp_path, monkeypatch):
     assert "Opened page" in res.text
 
 
+def test_review_latest_submitted_job_short_handoff_id_resolves_inbox_filename(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    short_job_id = "1773082365485-1336541d"
+    full_job_filename = f"inbox-{short_job_id}.json"
+    _write_job_artifacts(
+        queue,
+        full_job_filename,
+        bucket="pending",
+        execution_result={
+            "lifecycle_state": "awaiting_approval",
+            "terminal_outcome": "awaiting_approval",
+            "approval_status": "pending",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "status": "blocked",
+                    "summary": "open https://example.com requires approval",
+                }
+            ],
+        },
+        approval={"job": full_job_filename, "status": "pending"},
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-short",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=short_job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-short")
+    res = client.post(
+        "/chat", data={"session_id": "sid-short", "message": "What happened to that job?"}
+    )
+
+    assert "I reviewed canonical VoxeraOS evidence" in res.text
+    assert "`awaiting_approval`" in res.text
+    assert "open https://example.com" in res.text
+
+
+def test_review_explicit_short_handoff_job_id_works(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    short_job_id = "1773082365485-1336541d"
+    _write_job_artifacts(
+        queue,
+        f"inbox-{short_job_id}.json",
+        bucket="pending",
+        execution_result={
+            "lifecycle_state": "awaiting_approval",
+            "terminal_outcome": "awaiting_approval",
+            "approval_status": "pending",
+            "step_results": [
+                {"step_index": 1, "status": "blocked", "summary": "Need operator approval"}
+            ],
+        },
+        approval={"job": f"inbox-{short_job_id}.json", "status": "pending"},
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat", data={"session_id": sid, "message": f"did it work for {short_job_id}?"}
+    )
+
+    assert "I reviewed canonical VoxeraOS evidence" in res.text
+    assert "`awaiting_approval`" in res.text
+
+
+def test_review_explicit_full_queue_filename_works(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    full_job_filename = "inbox-1773082365485-1336541d.json"
+    _write_job_artifacts(
+        queue,
+        full_job_filename,
+        bucket="pending",
+        execution_result={
+            "lifecycle_state": "awaiting_approval",
+            "terminal_outcome": "awaiting_approval",
+            "approval_status": "pending",
+            "step_results": [
+                {"step_index": 1, "status": "blocked", "summary": "Need operator approval"}
+            ],
+        },
+        approval={"job": full_job_filename, "status": "pending"},
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": f"what's the status of {full_job_filename}?"},
+    )
+
+    assert "I reviewed canonical VoxeraOS evidence" in res.text
+    assert "`awaiting_approval`" in res.text
+
+
 def test_review_specific_job_id_failed(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -663,6 +769,27 @@ def test_review_missing_job_is_honest(tmp_path, monkeypatch):
     res = client.post("/chat", data={"session_id": sid, "message": "what happened to job-404?"})
 
     assert "could not resolve a VoxeraOS job" in res.text
+
+
+def test_review_missing_job_followups_stay_evidence_aware(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _generic_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": "generic model fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _generic_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    first = client.post("/chat", data={"session_id": sid, "message": "what happened to job-404?"})
+    second = client.post("/chat", data={"session_id": sid, "message": "did it work?"})
+
+    assert "could not resolve a VoxeraOS job" in first.text
+    assert "could not resolve a VoxeraOS job" in second.text
+    assert "generic model fallback" not in second.text
 
 
 def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypatch):
