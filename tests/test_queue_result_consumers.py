@@ -120,3 +120,100 @@ def test_resolve_structured_execution_sanitizes_malformed_lineage(tmp_path):
         "sequence_index": None,
         "lineage_role": None,
     }
+
+
+def test_resolve_structured_execution_child_summary_succeeded_child(tmp_path):
+    queue_root = tmp_path
+    parent_art = queue_root / "artifacts" / "parent"
+    parent_art.mkdir(parents=True)
+    (parent_art / "execution_result.json").write_text(
+        json.dumps({"child_refs": [{"child_job_id": "child-ok.json"}]}),
+        encoding="utf-8",
+    )
+
+    (queue_root / "done").mkdir(parents=True, exist_ok=True)
+    (queue_root / "done" / "child-ok.json").write_text(json.dumps({"goal": "ok"}), encoding="utf-8")
+    child_art = queue_root / "artifacts" / "child-ok"
+    child_art.mkdir(parents=True)
+    (child_art / "execution_result.json").write_text(
+        json.dumps({"lifecycle_state": "done", "terminal_outcome": "succeeded"}), encoding="utf-8"
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=parent_art)
+    assert payload["child_summary"] == {
+        "total": 1,
+        "done": 1,
+        "awaiting_approval": 0,
+        "pending": 0,
+        "failed": 0,
+        "canceled": 0,
+        "unknown": 0,
+    }
+
+
+def test_resolve_structured_execution_child_summary_awaiting_approval(tmp_path):
+    queue_root = tmp_path
+    parent_art = queue_root / "artifacts" / "parent"
+    parent_art.mkdir(parents=True)
+    (parent_art / "execution_result.json").write_text(
+        json.dumps({"child_refs": [{"child_job_id": "child-approval.json"}]}),
+        encoding="utf-8",
+    )
+
+    (queue_root / "pending").mkdir(parents=True, exist_ok=True)
+    (queue_root / "pending" / "child-approval.json").write_text(
+        json.dumps({"goal": "approval"}), encoding="utf-8"
+    )
+    (queue_root / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_root / "pending" / "approvals" / "child-approval.approval.json").write_text(
+        json.dumps({"reason": "manual"}), encoding="utf-8"
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=parent_art)
+    assert payload["child_summary"]["awaiting_approval"] == 1
+    assert payload["child_summary"]["total"] == 1
+
+
+def test_resolve_structured_execution_child_summary_mixed_and_missing(tmp_path):
+    queue_root = tmp_path
+    parent_art = queue_root / "artifacts" / "parent"
+    parent_art.mkdir(parents=True)
+    (parent_art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "child_refs": [
+                    {"child_job_id": "child-pending.json"},
+                    {"child_job_id": "child-failed.json"},
+                    {"child_job_id": "child-canceled.json"},
+                    {"child_job_id": "missing-child.json"},
+                    {"child_job_id": "   "},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    (queue_root / "pending").mkdir(parents=True, exist_ok=True)
+    (queue_root / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_root / "canceled").mkdir(parents=True, exist_ok=True)
+
+    (queue_root / "pending" / "child-pending.json").write_text(
+        json.dumps({"goal": "p"}), encoding="utf-8"
+    )
+    (queue_root / "failed" / "child-failed.json").write_text(
+        json.dumps({"goal": "f"}), encoding="utf-8"
+    )
+    (queue_root / "canceled" / "child-canceled.json").write_text(
+        json.dumps({"goal": "c"}), encoding="utf-8"
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=parent_art)
+    assert payload["child_summary"] == {
+        "total": 5,
+        "done": 0,
+        "awaiting_approval": 0,
+        "pending": 1,
+        "failed": 1,
+        "canceled": 1,
+        "unknown": 2,
+    }

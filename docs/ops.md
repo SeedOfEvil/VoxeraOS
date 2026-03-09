@@ -1253,7 +1253,7 @@ For parent jobs that enqueue a child, operators can inspect:
 - `artifacts/<parent>/child_job_refs.json`
 - `artifacts/<parent>/actions.jsonl` event `queue_child_enqueued`
 - `artifacts/<parent>/execution_result.json` field `child_refs`
-- panel job detail `Child Jobs` block
-- `/jobs/<id>/progress` `child_refs`
+- panel job detail `Child Jobs` block + `Child Summary` rollup
+- `/jobs/<id>/progress` `child_refs` + `child_summary`
 
-Child jobs remain normal queue jobs and expose lineage through existing envelope/result/progress surfaces.
+Child summary is read-only operator visibility and does not change orchestration or approval semantics. Child jobs remain normal queue jobs and expose lineage through existing envelope/result/progress surfaces.

@@ -18,6 +18,7 @@
 - **GitHub PR #147**: adversarial red-team regression suite; traversal metadata leakage closed at classifier/serializer/runtime/sidecar boundaries; `make security-check` now a first-class merge gate.
 - **GitHub PR #148**: additive queue lineage metadata (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, `lineage_role`) surfaced in artifacts, progress, and panel; observational only, no behavior changes.
 - **GitHub PR #149**: controlled single child-enqueue primitive; server-side lineage computation; full approval/policy/fail-closed semantics preserved; canonical audit evidence surfaces.
+- **GitHub PR #150**: additive read-only child status rollups (`child_summary`) in parent progress and panel job detail; observability-only with no parent/child orchestration behavior.
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.

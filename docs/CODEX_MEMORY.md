@@ -1,3 +1,12 @@
+## 2026-03-09 — GitHub PR #150 — feat(panel/progress): read-only parent child status rollups
+
+- Summary:
+  - Added additive `child_summary` rollups for parent jobs that expose `child_refs`.
+  - Rollups are computed from canonical child job evidence and normalized as: `total`, `done`, `pending`, `awaiting_approval`, `failed`, `canceled`, `unknown`.
+  - Surfaces updated: structured execution payload, `/jobs/{id}/progress`, and panel job detail (`Child Summary` block).
+- Guarantees:
+  - Observability-only: no parent waiting, no dependency semantics, no result/context aggregation, no approval semantics changes.
+
 ## 2026-03-09 — GitHub PR #149 — feat(queue): controlled child enqueue primitive with deterministic lineage
 
 - Summary:
