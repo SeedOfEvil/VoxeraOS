@@ -1308,3 +1308,17 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 6. Ask Vera to `prepare the next step` when appropriate.
 7. Verify Vera drafts preview-only follow-up JSON.
 8. Verify no automatic submit occurs unless explicit handoff is requested.
+
+### Denied approval terminal-state STV (PR #156)
+
+1. Submit an approval-gated job.
+2. Confirm it reaches `awaiting_approval`.
+3. Deny it from the VoxeraOS panel.
+4. Confirm queue and panel no longer report `awaiting_approval` as current truth.
+5. Confirm canonical evidence is terminal and consistent:
+   - `lifecycle_state = failed`
+   - `terminal_outcome = failed`
+   - `approval_status = denied` (not `pending`)
+6. Confirm `blocked_reason` / `failure_summary` reflect operator denial.
+7. Ask Vera what happened to the last job.
+8. Confirm Vera reports the denied terminal state from canonical evidence.

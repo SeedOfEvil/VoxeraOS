@@ -1025,6 +1025,68 @@ def test_job_progress_endpoint_surfaces_terminal_failed_state(tmp_path, monkeypa
     assert payload["failure_summary"]
 
 
+def test_job_progress_endpoint_denied_approval_is_terminal_failed(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-denied.json").write_text(
+        '{"goal":"Open https://example.com"}', encoding="utf-8"
+    )
+    (queue_dir / "failed" / "job-denied.state.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "failed",
+                "approval_status": "denied",
+                "failure_summary": "Denied in approval inbox",
+                "blocked_reason": "approval denied by operator",
+                "current_step_index": 1,
+                "last_attempted_step": 1,
+                "last_completed_step": 0,
+                "total_steps": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    art = queue_dir / "artifacts" / "job-denied"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "failed",
+                "approval_status": "denied",
+                "error": "Denied in approval inbox",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.open_url",
+                        "status": "failed",
+                        "summary": "Step blocked because operator denied approval",
+                        "operator_note": "Operator denied approval for this step.",
+                        "approval_status": "denied",
+                        "blocked": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    res = client.get("/jobs/job-denied.json/progress")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["bucket"] == "failed"
+    assert payload["lifecycle_state"] == "failed"
+    assert payload["terminal_outcome"] == "failed"
+    assert payload["approval_status"] == "denied"
+    assert payload["failure_summary"] == "Step blocked because operator denied approval"
+    assert payload["latest_summary"] == "Step blocked because operator denied approval"
+
+
 def test_assistant_progress_endpoint_surfaces_running_and_done(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"

@@ -549,8 +549,30 @@ class QueueApprovalMixin:
                 meta_path.unlink(missing_ok=True)
                 artifact_path.unlink(missing_ok=True)
                 return False
+            denied_step = int(meta.get("resume_step", 1) or 1)
+            mission_steps = (
+                (meta.get("mission") or {}).get("steps", []) if isinstance(meta, dict) else []
+            )
+            denied_rr_data = {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "failed",
+                "current_step_index": denied_step,
+                "last_attempted_step": denied_step,
+                "last_completed_step": max(denied_step - 1, 0),
+                "total_steps": len(mission_steps) if isinstance(mission_steps, list) else 0,
+                "approval_status": "denied",
+                "error": "Denied in approval inbox",
+            }
             self._write_failed_error_sidecar(
                 moved,
+                error="Denied in approval inbox",
+                payload=meta.get("payload") if isinstance(meta, dict) else None,
+            )
+            self._write_execution_result_artifacts(
+                str(moved),
+                rr_data=denied_rr_data,
+                ok=False,
+                terminal_outcome="failed",
                 error="Denied in approval inbox",
                 payload=meta.get("payload") if isinstance(meta, dict) else None,
             )
@@ -565,14 +587,11 @@ class QueueApprovalMixin:
             )
             self._update_job_state(
                 str(moved),
-                lifecycle_state="blocked",
+                lifecycle_state="failed",
                 payload=meta.get("payload") if isinstance(meta, dict) else None,
                 mission=denied_mission,
-                rr_data={
-                    "current_step_index": int(meta.get("resume_step", 1) or 1),
-                    "last_attempted_step": int(meta.get("resume_step", 1) or 1),
-                },
-                terminal_outcome="denied",
+                rr_data=denied_rr_data,
+                terminal_outcome="failed",
                 failure_summary="Denied in approval inbox",
                 blocked_reason="approval denied by operator",
                 approval_status="denied",

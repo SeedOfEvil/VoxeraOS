@@ -396,7 +396,10 @@ def build_execution_result(
         if isinstance(rr_data.get("child_refs"), list)
         else [],
         "approval_status": (
-            "pending"
+            rr_data.get("approval_status")
+            if isinstance(rr_data.get("approval_status"), str)
+            and str(rr_data.get("approval_status") or "").strip()
+            else "pending"
             if rr_data.get("status") == "pending_approval"
             else "approved"
             if terminal_outcome == "succeeded"

@@ -217,3 +217,36 @@ def test_resolve_structured_execution_child_summary_mixed_and_missing(tmp_path):
         "canceled": 1,
         "unknown": 2,
     }
+
+
+def test_resolve_structured_execution_denied_approval_is_not_pending(tmp_path):
+    art = tmp_path / "artifacts" / "job-denied"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "terminal_outcome": "failed",
+                "lifecycle_state": "failed",
+                "approval_status": "denied",
+                "error": "Denied in approval inbox",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.open_url",
+                        "status": "failed",
+                        "summary": "Step blocked because operator denied approval",
+                        "approval_status": "denied",
+                        "blocked": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=art)
+
+    assert payload["terminal_outcome"] == "failed"
+    assert payload["lifecycle_state"] == "failed"
+    assert payload["approval_status"] == "denied"
+    assert payload["latest_summary"] == "Step blocked because operator denied approval"

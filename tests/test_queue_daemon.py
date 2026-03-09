@@ -457,9 +457,16 @@ def test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny(tmp_path, monk
         for e in events
     )
     deny_state = json.loads((queue_dir / "failed" / "deny.state.json").read_text())
-    assert deny_state["lifecycle_state"] == "blocked"
-    assert deny_state["terminal_outcome"] == "denied"
+    assert deny_state["lifecycle_state"] == "failed"
+    assert deny_state["terminal_outcome"] == "failed"
     assert deny_state["approval_status"] == "denied"
+
+    deny_execution_result = json.loads(
+        (queue_dir / "artifacts" / "deny" / "execution_result.json").read_text(encoding="utf-8")
+    )
+    assert deny_execution_result["lifecycle_state"] == "failed"
+    assert deny_execution_result["terminal_outcome"] == "failed"
+    assert deny_execution_result["approval_status"] == "denied"
     assert any(e["event"] == "mission_denied" for e in events)
     assert "status=denied" in log_path.read_text(encoding="utf-8")
 
@@ -1306,6 +1313,18 @@ def test_failed_sidecar_schema_for_approval_denied(tmp_path, monkeypatch):
     assert sidecar["schema_version"] == 1
     assert sidecar["error"] == "Denied in approval inbox"
     assert sidecar["payload"] == {"goal": "Open https://example.com"}
+
+    state = json.loads((queue_dir / "failed" / "deny.state.json").read_text(encoding="utf-8"))
+    assert state["lifecycle_state"] == "failed"
+    assert state["terminal_outcome"] == "failed"
+    assert state["approval_status"] == "denied"
+
+    execution_result = json.loads(
+        (queue_dir / "artifacts" / "deny" / "execution_result.json").read_text(encoding="utf-8")
+    )
+    assert execution_result["lifecycle_state"] == "failed"
+    assert execution_result["terminal_outcome"] == "failed"
+    assert execution_result["approval_status"] == "denied"
 
 
 def test_failed_sidecar_schema_for_approval_resume_runtime_failure(tmp_path, monkeypatch):
