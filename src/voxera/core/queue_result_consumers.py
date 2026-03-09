@@ -142,6 +142,112 @@ def _terminal_outcome_from_step_status(step_status: str) -> str:
     return ""
 
 
+def _normalize_child_job_id(child_ref: dict[str, Any]) -> str | None:
+    child_job_id = child_ref.get("child_job_id")
+    if not isinstance(child_job_id, str):
+        return None
+    normalized = Path(child_job_id).name.strip()
+    if not normalized:
+        return None
+    return normalized if normalized.endswith(".json") else f"{Path(normalized).stem}.json"
+
+
+def _child_lookup(
+    queue_root: Path, child_job_id: str
+) -> tuple[str, Path, dict[str, Any], dict[str, Any]] | None:
+    stem = Path(child_job_id).stem
+    buckets: tuple[str, ...] = ("inbox", "pending", "done", "failed", "canceled")
+    primary_path: Path | None = None
+    bucket = ""
+    for candidate_bucket in buckets:
+        candidate = queue_root / candidate_bucket / child_job_id
+        if candidate.exists():
+            primary_path = candidate
+            bucket = candidate_bucket
+            break
+    if primary_path is None:
+        return None
+
+    state_sidecar = {}
+    for state_bucket in buckets:
+        state_path = queue_root / state_bucket / f"{stem}.state.json"
+        if not state_path.exists():
+            continue
+        state_sidecar = _read_json_dict(state_path)
+        if state_sidecar:
+            break
+
+    approval = _read_json_dict(queue_root / "pending" / "approvals" / f"{stem}.approval.json")
+    failed_sidecar = _read_json_dict(queue_root / "failed" / f"{stem}.error.json")
+    return (
+        bucket,
+        queue_root / "artifacts" / stem,
+        state_sidecar,
+        {
+            "approval": approval,
+            "failed_sidecar": failed_sidecar,
+        },
+    )
+
+
+def _classify_child_state(*, bucket: str, structured_execution: dict[str, Any]) -> str:
+    approval_status = str(structured_execution.get("approval_status") or "")
+    lifecycle_state = str(structured_execution.get("lifecycle_state") or "")
+    terminal_outcome = str(structured_execution.get("terminal_outcome") or "")
+
+    if approval_status == "pending" or lifecycle_state in {"awaiting_approval", "pending_approval"}:
+        return "awaiting_approval"
+    if terminal_outcome == "canceled" or lifecycle_state == "canceled" or bucket == "canceled":
+        return "canceled"
+    if (
+        terminal_outcome in {"failed", "blocked"}
+        or lifecycle_state == "failed"
+        or bucket == "failed"
+    ):
+        return "failed"
+    if terminal_outcome == "succeeded" or lifecycle_state == "done" or bucket == "done":
+        return "done"
+    if bucket in {"inbox", "pending", "approvals"}:
+        return "pending"
+    return "unknown"
+
+
+def _resolve_child_summary(
+    *, artifacts_dir: Path, child_refs: list[dict[str, Any]]
+) -> dict[str, int]:
+    summary: dict[str, int] = {
+        "total": len(child_refs),
+        "done": 0,
+        "awaiting_approval": 0,
+        "pending": 0,
+        "failed": 0,
+        "canceled": 0,
+        "unknown": 0,
+    }
+    if not child_refs:
+        return summary
+
+    queue_root = artifacts_dir.parent.parent
+    for child_ref in child_refs:
+        child_job_id = _normalize_child_job_id(child_ref)
+        if child_job_id is None:
+            summary["unknown"] += 1
+            continue
+        resolved = _child_lookup(queue_root, child_job_id)
+        if resolved is None:
+            summary["unknown"] += 1
+            continue
+        bucket, child_artifacts_dir, state_sidecar, metadata = resolved
+        structured = resolve_structured_execution(
+            artifacts_dir=child_artifacts_dir,
+            state_sidecar=state_sidecar,
+            approval=metadata["approval"],
+            failed_sidecar=metadata["failed_sidecar"],
+        )
+        summary[_classify_child_state(bucket=bucket, structured_execution=structured)] += 1
+    return summary
+
+
 def resolve_structured_execution(
     *,
     artifacts_dir: Path,
@@ -261,6 +367,11 @@ def resolve_structured_execution(
         if isinstance(raw_child_refs, list)
         else []
     )
+    child_summary = (
+        _resolve_child_summary(artifacts_dir=artifacts_dir, child_refs=child_refs)
+        if child_refs
+        else None
+    )
 
     return {
         "terminal_outcome": terminal_outcome,
@@ -272,6 +383,7 @@ def resolve_structured_execution(
         "intent_route": intent_route,
         "lineage": lineage,
         "child_refs": child_refs,
+        "child_summary": child_summary,
         "stop_reason": str(execution_result.get("stop_reason") or ""),
         "latest_summary": latest_summary,
         "last_attempted_step": int(last_attempted),

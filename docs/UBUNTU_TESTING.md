@@ -223,4 +223,13 @@ Interpretation:
 3. Submit a parent queue job with lineage metadata and `enqueue_child`; verify child inherits root and increments depth.
 4. Submit malformed `enqueue_child` payload (non-object, empty goal, extra keys); verify fail-closed behavior and no child job file.
 5. Use child goal that requires approval (for example, open URL) and process next tick; verify child enters normal `pending/approvals` flow and parent did not bypass approvals.
-6. Verify evidence surfaces: parent `child_job_refs.json`, parent `actions.jsonl` enqueue event, parent `execution_result.json` `child_refs`, panel job detail `Child Jobs`, and progress `child_refs`.
+6. Verify evidence surfaces: parent `child_job_refs.json`, parent `actions.jsonl` enqueue event, parent `execution_result.json` `child_refs` + `child_summary`, panel job detail `Child Jobs` + `Child Summary`, and progress `child_refs` + `child_summary`.
+
+### Manual STV for child status rollup visibility
+
+1. Create a parent that enqueues a simple read child.
+2. Confirm parent shows `child_refs` and `child_summary` with `done=1`.
+3. Create a parent that enqueues an `open_url` child.
+4. Confirm parent `child_summary.awaiting_approval=1` while child approval is pending.
+5. Approve the child; confirm parent summary moves to `done`/`succeeded` counts.
+6. Confirm parent execution semantics are unchanged; summary is read-only observational metadata.

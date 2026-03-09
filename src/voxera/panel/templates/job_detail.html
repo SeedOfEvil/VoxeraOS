@@ -55,6 +55,19 @@
   {% endif %}
 
   {% if payload.child_refs %}
+  <div class="section-label">Child Summary</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:var(--space-2);">
+      <dt>Total</dt><dd>{{payload.child_summary.total if payload.child_summary else 0}}</dd>
+      <dt>Done / succeeded</dt><dd>{{payload.child_summary.done if payload.child_summary else 0}}</dd>
+      <dt>Pending</dt><dd>{{payload.child_summary.pending if payload.child_summary else 0}}</dd>
+      <dt>Awaiting approval</dt><dd>{{payload.child_summary.awaiting_approval if payload.child_summary else 0}}</dd>
+      <dt>Failed</dt><dd>{{payload.child_summary.failed if payload.child_summary else 0}}</dd>
+      <dt>Canceled</dt><dd>{{payload.child_summary.canceled if payload.child_summary else 0}}</dd>
+      <dt>Unknown / missing</dt><dd>{{payload.child_summary.unknown if payload.child_summary else 0}}</dd>
+    </dl>
+  </section>
+
   <div class="section-label">Child Jobs</div>
   <section class="card mb">
     <div class="table-wrap">

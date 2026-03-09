@@ -1165,6 +1165,15 @@ def test_job_detail_and_progress_include_child_refs(tmp_path, monkeypatch):
     (queue_dir / "done" / "job-parent-child-refs.json").write_text(
         json.dumps({"goal": "ok"}), encoding="utf-8"
     )
+    (queue_dir / "done" / "child-123.json").write_text(
+        json.dumps({"goal": "child"}), encoding="utf-8"
+    )
+    child_art = queue_dir / "artifacts" / "child-123"
+    child_art.mkdir(parents=True, exist_ok=True)
+    (child_art / "execution_result.json").write_text(
+        json.dumps({"lifecycle_state": "done", "terminal_outcome": "succeeded"}),
+        encoding="utf-8",
+    )
     art = queue_dir / "artifacts" / "job-parent-child-refs"
     art.mkdir(parents=True, exist_ok=True)
     (art / "execution_result.json").write_text(
@@ -1190,12 +1199,42 @@ def test_job_detail_and_progress_include_child_refs(tmp_path, monkeypatch):
 
     detail = client.get("/jobs/job-parent-child-refs.json")
     assert detail.status_code == 200
+    assert "Child Summary" in detail.text
     assert "Child Jobs" in detail.text
     assert "child-123.json" in detail.text
+    assert "Done / succeeded</dt><dd>1" in detail.text
 
     progress = client.get("/jobs/job-parent-child-refs.json/progress")
     assert progress.status_code == 200
     assert progress.json()["child_refs"][0]["child_job_id"] == "child-123.json"
+    assert progress.json()["child_summary"]["done"] == 1
+
+
+def test_job_progress_without_child_refs_is_unchanged(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "done" / "job-no-children.json").write_text(
+        json.dumps({"goal": "solo"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-no-children"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps({"lifecycle_state": "done", "terminal_outcome": "succeeded"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    detail = client.get("/jobs/job-no-children.json")
+    assert detail.status_code == 200
+    assert "Child Summary" not in detail.text
+
+    progress = client.get("/jobs/job-no-children.json/progress")
+    assert progress.status_code == 200
+    assert progress.json()["child_refs"] == []
+    assert progress.json()["child_summary"] is None
 
 
 def test_job_bundle_export_contains_manifest_and_truncates(tmp_path, monkeypatch):

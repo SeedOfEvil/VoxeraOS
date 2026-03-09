@@ -177,6 +177,7 @@ VoxeraOS is in **Alpha (v0.1.6)** and already includes the major control-plane f
 - **Red-team regression suite + multi-boundary hardening** (PR #147): `make security-check` gate now merge-blocking; traversal metadata leakage closed at classifier, serializer, runtime, and sidecar boundaries.
 - **Queue lineage metadata** (PR #148): additive `parent_job_id` / `root_job_id` / `orchestration_depth` / `sequence_index` / `lineage_role` surfaced in artifacts, progress, and panel — observational only, no behavior changes.
 - **Controlled child enqueue primitive** (PR #149): single child-job enqueue with server-side lineage computation, audit evidence, and full approval/policy/fail-closed semantics preserved.
+- **Read-only child status rollups** (PR #150): parent progress and panel job detail now include `child_summary` (`total`, `done`, `pending`, `awaiting_approval`, `failed`, `canceled`, `unknown`) derived from canonical child job evidence; observational only (no orchestration semantics).
 
 In short: the architecture extraction/modularization work is largely complete for queue, panel, and CLI boundaries; recent work has focused on security hardening, operator observability, and controlled orchestration primitives.
 
