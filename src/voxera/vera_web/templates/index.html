@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vera</title>
+  <link rel="stylesheet" href="/static/vera.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>Vera</h1>
+        <p>Reasoning partner · VoxeraOS-only execution · DEV mode</p>
+      </div>
+      <div class="meta">
+        <span>Status: {{mode_status}}</span>
+      </div>
+    </header>
+
+    <section class="boundary">
+      <strong>Boundary:</strong> Real actions must go through VoxeraOS queue handoff. Chat never executes side effects.
+      <div class="sub">{{queue_boundary}}</div>
+    </section>
+
+    {% if error %}<div class="error">{{error}}</div>{% endif %}
+
+    <section class="thread" id="thread">
+      {% if turns and turns|length > 0 %}
+        {% for turn in turns %}
+          <article class="bubble {{turn.role}}">
+            <div class="role">{{turn.role}}</div>
+            <div class="text">{{turn.text}}</div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <div class="empty">How can I help? Ask anything about planning, specs, debugging, or drafting a VoxeraOS request.</div>
+      {% endif %}
+    </section>
+
+    <div class="actions-row">
+      <details class="dev-panel">
+        <summary>DEV diagnostics</summary>
+        <div class="dev-grid">
+          <div><b>dev_mode</b>: {{debug_info.dev_mode}}</div>
+          <div><b>mode_status</b>: {{debug_info.mode_status}}</div>
+          <div><b>session_id</b>: <span class="mono">{{debug_info.session_id}}</span></div>
+          <div><b>turn_count / max</b>: {{debug_info.turn_count}} / {{debug_info.max_session_turns}}</div>
+          <div><b>session_file_exists</b>: {{debug_info.session_file_exists}}</div>
+          <div><b>session_file</b>: <span class="mono">{{debug_info.session_file}}</span></div>
+          <div><b>system_prompt_sha256</b>: <span class="mono">{{debug_info.system_prompt_sha256}}</span></div>
+        </div>
+        <p class="dev-label">System prompt (developer-visible)</p>
+        <pre class="prompt-box">{{system_prompt}}</pre>
+      </details>
+      <form method="post" action="/clear">
+        <input type="hidden" name="session_id" value="{{session_id}}" />
+        <button class="clear-btn" type="submit">Clear chat + context</button>
+      </form>
+    </div>
+
+    <form class="composer" method="post" action="/chat">
+      <input type="hidden" name="session_id" value="{{session_id}}" />
+      <textarea name="message" rows="2" required placeholder="Ask Vera anything..."></textarea>
+      <button type="submit">Send</button>
+    </form>
+  </main>
+</body>
+</html>

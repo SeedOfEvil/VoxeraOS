@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vera v0 Chat</title>
+  <link rel="stylesheet" href="/static/panel.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <div>
+        <h1 class="title">Vera v0 — Reasoning Partner</h1>
+        <p class="subtitle">Conversational intelligence surface. VoxeraOS-only execution boundary is always enforced.</p>
+      </div>
+      <a class="btn" href="/">Back to Control Panel</a>
+    </header>
+
+    <section class="card mb">
+      <p><b>Mode:</b> Conversational / reasoning-first</p>
+      <p><b>Execution boundary:</b> Real actions must go through VoxeraOS queue handoff. Chat does not execute side effects.</p>
+      <p class="muted text-sm">{{queue_boundary}}</p>
+      <p class="muted text-sm">Session: <span class="mono">{{session_id}}</span> · Status: <span class="mono">{{mode_status}}</span></p>
+    </section>
+
+    <section class="card mb">
+      <h2>Chat</h2>
+      {% if error %}<div class="alert alert-danger">{{error}}</div>{% endif %}
+      <form class="form-stack" method="post" action="/vera/chat">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <input type="hidden" name="session_id" value="{{session_id}}" />
+        <label>Your message
+          <textarea class="textarea" name="message" rows="3" required placeholder="Hi Vera, help me think through ..."></textarea>
+        </label>
+        <button class="btn btn-primary" type="submit">Send</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Conversation (short session context)</h2>
+      {% if turns and turns|length > 0 %}
+        <div class="assistant-conversation">
+          {% for turn in turns %}
+          <article class="assistant-turn">
+            <p class="kpi-label"><b>{{turn.role}}</b></p>
+            <p style="margin:0; white-space:pre-wrap;">{{turn.text}}</p>
+          </article>
+          {% endfor %}
+        </div>
+      {% else %}
+      <div class="empty-state">No messages yet.</div>
+      {% endif %}
+    </section>
+  </div>
+</body>
+</html>

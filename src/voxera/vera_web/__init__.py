@@ -1,0 +1,1 @@
+"""Standalone Vera web app."""
