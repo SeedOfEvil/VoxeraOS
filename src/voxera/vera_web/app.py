@@ -271,7 +271,7 @@ async def chat(request: Request):
             status=status,
         )
 
-    drafted = maybe_draft_job_payload(message)
+    drafted = maybe_draft_job_payload(message, active_preview=pending_preview)
     if drafted is not None:
         payload = normalize_preview_payload(drafted)
         write_session_preview(root, active_session, payload)

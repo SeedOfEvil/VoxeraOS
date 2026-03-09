@@ -141,6 +141,101 @@ def _normalize_file_write_goal(message: str) -> str | None:
     return None
 
 
+def _extract_named_target(message: str) -> str | None:
+    named = re.search(r"\b(?:called|named|as|to)\s+([^\s]+)", message, re.IGNORECASE)
+    if named:
+        return named.group(1).strip("\"'.,!? ")
+    tail = re.search(r"\b(?:rename|make\s+that)\s+(?:it\s+)?([^\s]+)", message, re.IGNORECASE)
+    if tail:
+        return tail.group(1).strip("\"'.,!? ")
+    return None
+
+
+def _filename_from_preview(preview: dict[str, Any]) -> str | None:
+    write_file = preview.get("write_file")
+    if isinstance(write_file, dict):
+        path = str(write_file.get("path") or "").strip()
+        if path:
+            return Path(path).name
+    goal = str(preview.get("goal") or "")
+    match = re.search(r"\bcalled\s+([^\s]+)", goal, re.IGNORECASE)
+    if match:
+        return match.group(1).strip("\"'.,!? ")
+    return None
+
+
+def _draft_revision_from_active_preview(
+    message: str, active_preview: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    if not isinstance(active_preview, dict):
+        return None
+    text = message.strip().rstrip("?.!")
+    lowered = text.lower()
+
+    url_match = _URL_RE.search(text) or _DOMAIN_RE.search(text)
+    current_goal = str(active_preview.get("goal") or "")
+    if (
+        url_match
+        and current_goal.startswith("open ")
+        and re.search(r"\b(actually|instead|change|switch)\b", lowered)
+    ):
+        normalized_open = _normalize_open_goal(f"open {url_match.group(0)}")
+        if normalized_open:
+            return {"goal": normalized_open}
+
+    if re.search(r"\b(rename|make\s+that)\b", lowered):
+        new_name = _extract_named_target(text)
+        if new_name:
+            write_file = active_preview.get("write_file")
+            if isinstance(write_file, dict):
+                base_path = str(write_file.get("path") or "")
+                if "/" in base_path:
+                    rewritten_path = str(Path(base_path).with_name(new_name))
+                else:
+                    rewritten_path = f"~/VoxeraOS/notes/{new_name}"
+                return {
+                    "goal": f"write a file called {new_name} with provided content",
+                    "write_file": {
+                        "path": rewritten_path,
+                        "content": str(write_file.get("content") or ""),
+                        "mode": str(write_file.get("mode") or "overwrite"),
+                    },
+                }
+            if "write a note called" in current_goal:
+                return {"goal": f"write a note called {new_name}"}
+
+    if re.search(r"\b(put|use)\b", lowered) and re.search(r"\b(file|content|text|joke)\b", lowered):
+        content = _extract_quoted_content(text)
+        if content is None:
+            phrase_match = re.search(
+                r"\bput\s+(.+?)\s+(?:inside|in|into)\s+(?:the\s+)?file\b", text, re.IGNORECASE
+            )
+            if phrase_match:
+                content = phrase_match.group(1).strip()
+        if content is None:
+            use_match = re.search(
+                r"\buse\s+(?:this\s+)?(?:content|text|joke)\s*:?\s*(.+)$", text, re.IGNORECASE
+            )
+            if use_match:
+                content = use_match.group(1).strip(" \"'")
+
+        if content:
+            filename = _filename_from_preview(active_preview) or "note.txt"
+            write_file = active_preview.get("write_file")
+            mode = "overwrite"
+            if isinstance(write_file, dict):
+                path = str(write_file.get("path") or f"~/VoxeraOS/notes/{filename}")
+                mode = str(write_file.get("mode") or "overwrite")
+            else:
+                path = f"~/VoxeraOS/notes/{filename}"
+            return {
+                "goal": f"write a file called {filename} with provided content",
+                "write_file": {"path": path, "content": content, "mode": mode},
+            }
+
+    return None
+
+
 @dataclass(frozen=True)
 class DraftingGuidance:
     base_shape: dict[str, str]
@@ -176,7 +271,9 @@ def is_explicit_handoff_request(message: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in _HANDOFF_PATTERNS)
 
 
-def maybe_draft_job_payload(message: str) -> dict[str, Any] | None:
+def maybe_draft_job_payload(
+    message: str, *, active_preview: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
         return None
@@ -196,7 +293,7 @@ def maybe_draft_job_payload(message: str) -> dict[str, Any] | None:
     if normalized_write:
         return {"goal": normalized_write}
 
-    return None
+    return _draft_revision_from_active_preview(normalized, active_preview)
 
 
 def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:

@@ -1441,3 +1441,10 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 
 
 - PR 9B-lite introduced a constrained `enqueue_child` queue payload primitive: one explicit child enqueue per parent execution, deterministic/sanitized lineage propagation, and auditable evidence (`child_job_refs.json`, `queue_child_enqueued` action event, `child_refs` in result/progress/panel). No DAG/dependency/wait/result-passing behavior was added.
+
+## 2026-03-09 — GitHub PR #158 — feat(vera): persist and replace active previews across follow-up turns
+
+- Vera now keeps one active structured preview draft per session and replaces it when follow-up revisions produce a newer structured preview.
+- Added follow-up draft replacement handling for common conversational edits (URL replacement, filename rename, and content refinement) while keeping explicit submit-only behavior.
+- Lightweight acknowledgements keep the active preview intact; explicit submit always uses latest active preview; preview clears only after confirmed handoff success.
+- Added focused Vera web coverage for replacement lifecycle, latest-preview submit semantics, and clear-on-success behavior.
