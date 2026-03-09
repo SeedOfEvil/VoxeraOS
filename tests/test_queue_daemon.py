@@ -1592,6 +1592,49 @@ def test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_nam
     assert sidecar["job"] == moved.name
 
 
+def test_queue_job_named_note_write_preserves_filename_end_to_end(tmp_path, monkeypatch):
+    cfg = AppConfig(
+        policy=PolicyApprovals(system_settings="allow", network_changes="allow"),
+        privacy=PrivacyConfig(cloud_allowed=False, redact_logs=True),
+    )
+    monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    allowed_root = tmp_path / "VoxeraOS" / "notes"
+    monkeypatch.setattr(files_write_text_skill, "ALLOWED_ROOT", allowed_root)
+
+    queue_dir = tmp_path / "queue"
+    job = queue_dir / "job-write-named-note.json"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    job.write_text(
+        json.dumps({"goal": "write a note called jokester.txt"}),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(
+        queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
+    )
+    daemon.process_pending_once()
+
+    _assert_job_moved(queue_dir / "done", "job-write-named-note.json")
+    assert (allowed_root / "jokester.txt").exists()
+    assert not (allowed_root / "ok.txt").exists()
+
+    artifacts = sorted((queue_dir / "artifacts").glob("job-write-named-note*/"))
+    assert artifacts
+    artifact_dir = artifacts[-1]
+
+    plan = json.loads((artifact_dir / "plan.json").read_text(encoding="utf-8"))
+    step = plan["mission"]["steps"][0]
+    assert step["skill_id"] == "files.write_text"
+    assert step["args"]["path"] == "~/VoxeraOS/notes/jokester.txt"
+
+    step_results = json.loads((artifact_dir / "step_results.json").read_text(encoding="utf-8"))
+    first_result = step_results[0]
+    assert first_result["skill_id"] == "files.write_text"
+    assert first_result["effective_args"]["path"] == "~/VoxeraOS/notes/jokester.txt"
+
+
 def test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end(tmp_path, monkeypatch):
     cfg = AppConfig(
         policy=PolicyApprovals(system_settings="ask", network_changes="ask"),

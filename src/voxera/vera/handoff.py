@@ -25,25 +25,75 @@ _HANDOFF_PATTERNS = (
     r"\bsubmit\s+it\b",
     r"\bsubmit\s+to\s+voxeraos\b",
     r"\bsend\s+it\s+to\s+voxeraos\b",
+    r"\bqueue\s+it\b",
+    r"\benqueue\s+it\b",
+    r"\bpush\s+it\s+through\b",
+    r"\b(do\s+it|go\s+ahead|proceed)\b.*\b(voxeraos|submit|send|queue)?\b",
     r"\b(submit|send|hand\s+off)\b.*\b(job|request|it|this|queue|voxeraos|now|please)\b",
 )
 
 _DOMAIN_RE = re.compile(r"\b([a-z0-9-]+(?:\.[a-z0-9-]+)+)(/[^\s]*)?\b", re.IGNORECASE)
+_URL_RE = re.compile(r"\bhttps?://[^\s)]+", re.IGNORECASE)
+_WEB_ACTION_RE = re.compile(
+    r"\b(open|go\s+to|visit|take\s+me\s+to|bring\s+up|load|launch|navigate\s+to)\b",
+    re.IGNORECASE,
+)
+_INFO_ONLY_RE = re.compile(
+    r"\b(what\s+is|tell\s+me\s+about|summari[sz]e|explain|what\s+does\s+this\s+link\s+mean)\b",
+    re.IGNORECASE,
+)
+_FILE_PATH_RE = re.compile(r"(?:~|/)[^\s]+")
 
 
 def _normalize_open_goal(message: str) -> str | None:
     text = message.strip()
-    lowered = text.lower()
-    if "open" not in lowered:
+    if not _WEB_ACTION_RE.search(text):
         return None
-    explicit = re.search(r"open\s+(https?://\S+)", text, flags=re.IGNORECASE)
+    if _INFO_ONLY_RE.search(text):
+        return None
+    if re.search(r"\bfile\b", text, re.IGNORECASE):
+        return None
+    explicit = _URL_RE.search(text)
     if explicit:
-        return f"open {explicit.group(1)}"
+        return f"open {explicit.group(0)}"
     bare = _DOMAIN_RE.search(text)
     if bare:
         host = bare.group(1)
         suffix = bare.group(2) or ""
         return f"open https://{host}{suffix}"
+    return None
+
+
+def _normalize_file_read_goal(message: str) -> str | None:
+    text = message.strip()
+    if not re.search(
+        r"\b(read|open|inspect|show\s+me|pull\s+up|look\s+at|examine)\b", text, re.IGNORECASE
+    ):
+        return None
+    path_match = _FILE_PATH_RE.search(text)
+    if path_match:
+        return f"read the file {path_match.group(0)}"
+    if re.search(r"\b(this\s+file|the\s+file)\b", text, re.IGNORECASE):
+        return "read this file"
+    return None
+
+
+def _normalize_file_write_goal(message: str) -> str | None:
+    text = message.strip().rstrip("?.!")
+    lowered = text.lower()
+    file_match = re.search(
+        r"\b(?:write|make|create)\s+(?:a\s+)?(?:note|file)\s+called\s+([^\s]+)",
+        lowered,
+    )
+    if file_match:
+        return f"write a note called {file_match.group(1)}"
+    note_to_match = re.search(r"\bmake\s+a\s+note\s+to\s+(.+)$", lowered)
+    if note_to_match:
+        return f"write a note to {note_to_match.group(1).strip()}"
+    if re.search(
+        r"\b(write\s+this\s+down|jot\s+this\s+down|save\s+this\s+as\s+a\s+note)\b", lowered
+    ):
+        return "write a note"
     return None
 
 
@@ -82,16 +132,18 @@ def maybe_draft_job_payload(message: str) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
         return None
-    lowered = normalized.lower()
-
     normalized_open = _normalize_open_goal(normalized)
     if normalized_open:
         return {"goal": normalized_open}
 
-    if "read" in lowered and "file" in lowered:
-        return {"goal": normalized}
-    if "write" in lowered and ("file" in lowered or "note" in lowered):
-        return {"goal": normalized}
+    normalized_read = _normalize_file_read_goal(normalized)
+    if normalized_read:
+        return {"goal": normalized_read}
+
+    normalized_write = _normalize_file_write_goal(normalized)
+    if normalized_write:
+        return {"goal": normalized_write}
+
     return None
 
 
@@ -131,9 +183,9 @@ def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def preview_message(payload: dict[str, Any]) -> str:
     return (
-        "Prepared VoxeraOS job preview (proposal only):\n"
+        "I prepared a VoxeraOS job preview for you (proposal only):\n"
         f"```json\n{json.dumps(payload, indent=2)}\n```\n"
-        "Nothing has been submitted or executed yet. Say 'hand it off' or 'submit it' to enqueue it in VoxeraOS."
+        "Nothing has been submitted or executed yet. If this looks right, say 'hand it off' or 'submit it' and I’ll queue it in VoxeraOS."
     )
 
 

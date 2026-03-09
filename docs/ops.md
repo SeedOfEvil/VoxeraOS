@@ -1282,3 +1282,17 @@ Child summary is read-only operator visibility and does not change orchestration
 Notes:
 - Context is session-scoped and intentionally lightweight for v0.
 - Restart persistence is not guaranteed for all deployment modes; this is acceptable in v0.
+
+## Vera natural-language handoff STV (PR #154)
+
+Manual STV sequence for natural phrasing + strict queue handoff:
+
+1. Start daemon, panel, and Vera web app.
+2. In Vera, ask: `Can you go to example.com?`
+3. Confirm a prepared preview appears (proposal-only language).
+4. Confirm DEV diagnostics show `preview_available = True`.
+5. Ask: `submit it`.
+6. Confirm a real queue inbox job is created and Vera reports submitted/queued (not executed).
+7. Confirm queue/panel shows the job lifecycle.
+8. Repeat with: `visit example.com`, `take me to example.com`, `read ~/VoxeraOS/notes/test.txt`, and (if supported) `make a note called hello.txt`.
+9. Confirm informational asks like `what is example.com` do not auto-draft open-url previews.

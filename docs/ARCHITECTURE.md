@@ -1120,3 +1120,10 @@ Vera v0 adds a minimal standalone chat surface (`voxera.vera_web.app`) intended 
 - **Developer tooling:** standalone Vera UI includes developer diagnostics (prompt + session metadata), explicit preview visibility, submit control, and explicit context reset (`POST /clear`).
 
 Queue concept (developer framing): the queue is the structured path for real side effects; jobs are submitted into VoxeraOS and moved through lifecycle states with approvals/policy checks and evidence produced in VoxeraOS artifacts. Submission is not execution, and execution is not verification.
+
+## Vera preview drafting boundary notes (PR #154)
+
+- Vera uses a lightweight deterministic phrase-normalization layer (`src/voxera/vera/handoff.py`) to map common conversational action requests into the smallest supported queue preview payload.
+- Supported intent families in this layer are intentionally narrow: web navigation URL opens, explicit file reads, and basic note/file write intents.
+- Preview state is persisted per session (`pending_job_preview`) and is independent from rolling chat turn limits.
+- Submission remains a separate explicit step that writes to queue inbox; no direct execution path exists in Vera.
