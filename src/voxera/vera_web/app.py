@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -139,6 +141,51 @@ def _guardrail_submission_claim(*, root: Path, session_id: str, text: str) -> st
             "If you want to proceed, ask me to prepare a job preview first, then explicitly hand it off."
         )
     return text
+
+
+def _extract_json_objects(text: str) -> list[dict[str, object]]:
+    candidates: list[dict[str, object]] = []
+
+    for match in re.findall(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, flags=re.IGNORECASE):
+        try:
+            parsed = json.loads(match)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            candidates.append(parsed)
+
+    decoder = json.JSONDecoder()
+    scan_index = 0
+    while True:
+        start = text.find("{", scan_index)
+        if start < 0:
+            break
+        try:
+            parsed, end = decoder.raw_decode(text[start:])
+        except Exception:
+            scan_index = start + 1
+            continue
+        if isinstance(parsed, dict):
+            candidates.append(parsed)
+        scan_index = start + max(end, 1)
+
+    return candidates
+
+
+def _coerce_assistant_preview_update(text: str) -> tuple[dict[str, object] | None, bool]:
+    saw_preview_like = False
+    for candidate in _extract_json_objects(text):
+        if not any(
+            key in candidate for key in ("goal", "title", "write_file", "enqueue_child", "content")
+        ):
+            continue
+        saw_preview_like = True
+        try:
+            normalized = normalize_preview_payload(candidate)
+        except Exception:
+            continue
+        return normalized, True
+    return None, saw_preview_like
 
 
 def _render_page(
@@ -305,12 +352,37 @@ async def chat(request: Request):
         session_id=active_session,
         text=reply["answer"],
     )
-    append_session_turn(root, active_session, role="assistant", text=guarded_answer)
+    model_preview, saw_preview_like = _coerce_assistant_preview_update(guarded_answer)
+    if model_preview is not None:
+        write_session_preview(root, active_session, model_preview)
+        write_session_handoff_state(
+            root,
+            active_session,
+            attempted=False,
+            queue_path=str(root),
+            status="preview_ready",
+            error=None,
+            job_id=None,
+        )
+        assistant_text = preview_message(model_preview)
+        status = "prepared_preview"
+    elif saw_preview_like:
+        assistant_text = (
+            "I generated JSON-like draft text, but it was not stored as an active VoxeraOS preview "
+            "because it did not match the supported preview schema. I did not submit anything. "
+            "If you want a submit-ready draft, ask me to prepare a structured VoxeraOS preview."
+        )
+        status = reply["status"]
+    else:
+        assistant_text = guarded_answer
+        status = reply["status"]
+
+    append_session_turn(root, active_session, role="assistant", text=assistant_text)
 
     return _render_page(
         session_id=active_session,
         turns=read_session_turns(root, active_session),
-        status=reply["status"],
+        status=status,
     )
 
 
