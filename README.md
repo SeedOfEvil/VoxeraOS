@@ -183,7 +183,8 @@ voxera ops bundle job <job_ref>
 - **Architecture and module ownership**: `docs/ARCHITECTURE.md`
 - **Operations runbook and service workflows**: `docs/ops.md`
 - **Security posture and hardening notes**: `docs/SECURITY.md`
-- **Roadmap and release milestone tracking**: `docs/ROADMAP.md`, `docs/ROADMAP_0.1.6.md`
+- **Roadmap and release milestone tracking**: `docs/ROADMAP.md`
+- **North Star (product direction and non-negotiables)**: `docs/NORTH_STAR.md`
 - **Implementation memory / PR history**: `docs/CODEX_MEMORY.md`
 
 ## Project status
@@ -207,12 +208,13 @@ In short: the architecture extraction/modularization work is largely complete fo
 
 ## Roadmap / what’s next
 
-Near-term roadmap focus in `docs/ROADMAP.md` is on:
+Near-term roadmap focus in `docs/ROADMAP.md` is now organized as three explicit milestone chapters:
 
-- Additional reliability/ops hardening around daemon behavior and health semantics.
-- CI/release guardrail refinement and docs consistency automation.
-- Provider/model UX improvements (credential workflow and safer profiles).
-- Planned extensions such as skill validation and future voice-layer work (tracked, not yet implemented).
+- **v0.1.8-Alpha — Vera Control Layer**
+- **v0.1.9-Alpha — Governed Capability Expansion**
+- **v0.2.0-Alpha — First Platform Milestone**
+
+The product-direction North Star is documented in `docs/NORTH_STAR.md`.
 
 Major completed milestones already backfilled in repo history:
 
