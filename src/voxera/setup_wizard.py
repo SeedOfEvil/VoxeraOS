@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 import webbrowser
 from dataclasses import dataclass
@@ -329,6 +330,58 @@ def _configure_cloud_brains(cfg: AppConfig) -> None:
         _configure_brain_slot(cfg, slot=slot, existing=cfg.brain.get(slot.key))
 
 
+RUNTIME_SERVICE_UNITS: tuple[str, ...] = (
+    "voxera-daemon.service",
+    "voxera-panel.service",
+    "voxera-vera.service",
+)
+
+
+def _systemctl_user(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["systemctl", "--user", *args],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _ensure_runtime_services_running() -> dict[str, list[str]]:
+    started: list[str] = []
+    failed: list[str] = []
+
+    reload_result = _systemctl_user("daemon-reload")
+    if reload_result.returncode != 0:
+        console.print(
+            "[yellow]Could not run 'systemctl --user daemon-reload'. "
+            "Service startup may fail in this environment.[/yellow]"
+        )
+
+    for unit in RUNTIME_SERVICE_UNITS:
+        enable_start = _systemctl_user("enable", "--now", unit)
+        if enable_start.returncode != 0:
+            failed.append(unit)
+            detail = (enable_start.stderr or enable_start.stdout or "").strip()
+            console.print(f"[yellow]Failed to start {unit}:[/yellow] {detail or 'unknown error'}")
+            continue
+
+        active = _systemctl_user("is-active", "--quiet", unit)
+        if active.returncode == 0:
+            started.append(unit)
+        else:
+            failed.append(unit)
+            console.print(
+                f"[yellow]{unit} was enabled/started but is not active yet. "
+                f"Check 'systemctl --user status {unit}'.[/yellow]"
+            )
+
+    if started:
+        console.print("Runtime services running: " + ", ".join(started))
+    if failed:
+        console.print("[yellow]Runtime services not ready:[/yellow] " + ", ".join(failed))
+    return {"started": started, "failed": failed}
+
+
 def _confirm_write_config(path: Path) -> bool:
     if not path.exists():
         return True
@@ -341,12 +394,12 @@ def _confirm_write_config(path: Path) -> bool:
     return Confirm.ask("Overwrite existing config.yml with setup answers?", default=False)
 
 
-def _launch_choice() -> None:
+def _launch_choice(*, service_state: dict[str, list[str]]) -> None:
     console.print(
         Panel(
             "Setup is complete. You can optionally open local panels now:\n"
             "- voxera: http://127.0.0.1:8844\n"
-            "- vera:   http://127.0.0.1:8000",
+            "- vera:   http://127.0.0.1:8790",
             title="Finish",
         )
     )
@@ -356,10 +409,21 @@ def _launch_choice() -> None:
         default="none",
     )
     urls: list[str] = []
+    failed = set(service_state.get("failed", []))
     if choice in {"voxera", "both"}:
-        urls.append("http://127.0.0.1:8844")
+        if "voxera-panel.service" in failed:
+            console.print(
+                "[yellow]Skipping Voxera panel open because voxera-panel.service is not running.[/yellow]"
+            )
+        else:
+            urls.append("http://127.0.0.1:8844")
     if choice in {"vera", "both"}:
-        urls.append("http://127.0.0.1:8000")
+        if "voxera-vera.service" in failed:
+            console.print(
+                "[yellow]Skipping Vera panel open because voxera-vera.service is not running.[/yellow]"
+            )
+        else:
+            urls.append("http://127.0.0.1:8790")
     for url in urls:
         try:
             opened = webbrowser.open(url)
@@ -454,6 +518,7 @@ async def run_setup() -> AppConfig:
     console.print("Runtime ops config (panel/queue, optional): ~/.config/voxera/config.json")
     console.print("Policy: ~/.config/voxera/policy.yml")
     console.print("Capabilities: ~/.local/share/voxera/capabilities.json\n")
-    _launch_choice()
+    service_state = _ensure_runtime_services_running()
+    _launch_choice(service_state=service_state)
     _print_what_next()
     return cfg

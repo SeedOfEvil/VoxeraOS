@@ -1498,3 +1498,12 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - Preserved advanced manual model-id path and post-setup panel launch options.
   - Added maintainer refresh helper from live endpoint: `scripts/refresh_openrouter_catalog.py` + normalization/refresh logic in `src/voxera/openrouter_catalog.py`.
   - Added focused tests for curated catalog load/grouping/recommendation and refresh normalization path.
+
+
+## 2026-03-10 — PR #163 — fix(setup): ensure runtime services before finish-panel launch
+- Summary:
+  - Updated setup finish path to ensure runtime stack services start before panel launch choices are used: `voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`.
+  - Added systemd user-service helper flow in setup wizard: daemon-reload, enable/start, and active checks with honest per-service failure reporting.
+  - Kept explicit optional finish choices (open Voxera panel, Vera panel, both, none), but now skip panel auto-open when corresponding service failed to start.
+  - Corrected Vera panel launch URL to match runtime default (`http://127.0.0.1:8790`).
+  - Added focused tests for service-start helper behavior, failure handling, and setup finish ordering (ensure services before launch).

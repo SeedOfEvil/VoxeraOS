@@ -27,6 +27,7 @@
 - **GitHub PR #160 (completed)**: Promoted Vera to first-class ops runtime ergonomics with dedicated make targets, `voxera-vera.service`, and default service-stack inclusion alongside daemon + panel.
 - **GitHub PR #161 (completed)**: setup/demo productization pass — version/docs sync to 0.1.7, sequential brain-slot setup (`primary`/`fast`/`reasoning`/`fallback`), provider list selection, OpenRouter model selection UX upgrades, and explicit post-setup launch options for Voxera/Vera panels.
 - **GitHub PR #162 (completed)**: replaced painful raw OpenRouter table UX with curated vendor-grouped setup catalog + per-slot recommended defaults; added maintainer live-refresh script (`scripts/refresh_openrouter_catalog.py`).
+- **GitHub PR #163 (completed)**: setup finish flow now ensures daemon + panel + Vera user services are started before panel-open options, with honest failure reporting when service startup fails.
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.

@@ -133,7 +133,7 @@ For cloud setup in v0.1.7, `voxera setup` walks the brain chain one slot at a ti
 
 If OpenRouter is selected for a slot, setup uses the curated repo catalog (`src/voxera/data/openrouter_catalog.json`) and a vendor-first guided flow (`OpenAI`, `Google`, `Anthropic`, `Meta`, etc.) so onboarding stays manageable. The default recommended models are slot-specific: `primary=openai/gpt-4o-mini`, `fast=google/gemini-2.5-flash`, `reasoning=anthropic/claude-3.7-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`. Advanced users can still choose manual model-id entry when needed.
 
-After config save succeeds, setup offers an explicit optional launch step: open Voxera panel, Vera panel, both, or none.
+After config save succeeds, setup now ensures the standard user-service runtime stack is started first (`voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`) and reports per-service failures honestly. It then offers an explicit optional launch step: open Voxera panel, Vera panel, both, or none.
 
 Maintainer refresh path for curated catalog metadata from live endpoint:
 

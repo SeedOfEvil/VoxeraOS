@@ -52,7 +52,9 @@ This writes local config/state files:
 4. Verify recommended defaults are shown per slot: `primary=openai/gpt-4o-mini`, `fast=google/gemini-2.5-flash`, `reasoning=anthropic/claude-3.7-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`.
 5. Verify accepting the recommendation is easy and choosing an alternative vendor/model is also easy.
 6. Optionally verify advanced manual model-id path.
-7. Finish setup and verify explicit launch choices: Voxera panel / Vera panel / both / none.
+7. Finish setup and verify setup auto-starts `voxera-daemon.service`, `voxera-panel.service`, and `voxera-vera.service` before launch options are used.
+8. Verify explicit launch choices still work: Voxera panel / Vera panel / both / none.
+9. If a service fails to start, confirm setup reports the failing unit honestly.
 
 Maintainer live-refresh check (optional):
 
