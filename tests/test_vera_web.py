@@ -289,6 +289,31 @@ def test_handoff_failure_reports_honestly(tmp_path, monkeypatch):
     assert "nothing was queued" in res.text
 
 
+def test_contentful_natural_file_creation_phrase_produces_canonical_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": (
+                "ok create a skibbiddy.txt and as content add an Active directory script "
+                "that creates a user called Skibbidy"
+            ),
+        },
+    )
+
+    assert "job preview" in res.text
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbiddy.txt"
+    assert "Active directory script" in preview["write_file"]["content"]
+
+
 def test_content_refinement_phrase_add_content_updates_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -429,7 +454,7 @@ def test_invalid_model_preview_like_json_is_not_submit_ready(tmp_path, monkeypat
 
     res = client.post("/chat", data={"session_id": sid, "message": "add content"})
 
-    assert "not stored as an active VoxeraOS preview" in res.text
+    assert "couldn’t safely turn that into a submit-ready VoxeraOS preview" in res.text
     assert vera_service.read_session_preview(queue, sid) == {
         "goal": "write a note called scipptyaway.txt"
     }
@@ -511,7 +536,7 @@ def test_model_preview_with_extra_keys_does_not_overwrite_active_preview(tmp_pat
 
     res = client.post("/chat", data={"session_id": sid, "message": "revise with content"})
 
-    assert "not stored as an active VoxeraOS preview" in res.text
+    assert "couldn’t safely turn that into a submit-ready VoxeraOS preview" in res.text
     assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
 
 

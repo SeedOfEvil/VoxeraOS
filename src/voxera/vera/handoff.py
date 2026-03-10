@@ -105,23 +105,40 @@ def _extract_quoted_content(text: str) -> str | None:
 def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | None:
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
-    if not re.search(r"\b(write|create|save|put)\b", lowered):
+    if not re.search(r"\b(write|create|save|put|make)\b", lowered):
         return None
-    if not re.search(r"\b(file|note)\b", lowered):
+    if not re.search(r"\b(file|note|\w+\.[a-z0-9]{1,8})\b", lowered):
         return None
 
-    named = re.search(r"\b(?:called|named|as)\s+([^\s]+)", text, re.IGNORECASE)
-    target = named.group(1).strip("\"'") if named else None
+    direct = re.search(
+        r"\b(?:write|create|make)\s+(?:a\s+)?(?:file\s+)?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
+        text,
+        re.IGNORECASE,
+    )
+    target = direct.group(1).strip("\"'") if direct else None
+    if not target:
+        named = re.search(r"\b(?:called|named)\s+([^\s]+)", text, re.IGNORECASE)
+        target = named.group(1).strip("\"'") if named else None
     if not target:
         return None
 
     content = _extract_quoted_content(text)
     if content is None:
-        content_match = re.search(
-            r"\b(?:with\s+(?:the\s+)?)?(?:content|text)\s+(.+)$", text, re.IGNORECASE
+        patterns = (
+            r"\b(?:with\s+(?:the\s+)?)?(?:content|text)\s+(.+)$",
+            r"\bas\s+content\s+add\s+(.+)$",
+            r"\badd\s+content\s+to\s+[^\s]+\s+(?:saying|with)?\s*(.+)$",
+            r"\bput\s+(.+?)\s+(?:inside|in|into)\s+(?:it|the\s+file)\b",
+            r"\bmake\s+[^\s]+\s+and\s+add\s+(.+)$",
         )
-        if content_match:
-            content = content_match.group(1).strip()
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+            candidate = match.group(1).strip(" \"'`:")
+            if candidate:
+                content = candidate
+                break
     if content is None:
         return None
 

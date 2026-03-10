@@ -390,11 +390,10 @@ async def chat(request: Request):
         status = "prepared_preview"
     elif saw_preview_like:
         assistant_text = (
-            "I generated JSON-like draft text, but it was not stored as an active VoxeraOS preview "
-            "because it did not match the supported preview schema. I did not submit anything. "
-            "If you want a submit-ready draft, ask me to prepare a structured VoxeraOS preview."
+            "I couldn’t safely turn that into a submit-ready VoxeraOS preview yet. "
+            "Do you want me to create a file preview with explicit filename and exact content?"
         )
-        status = reply["status"]
+        status = "clarify_preview_shape"
     else:
         assistant_text = guarded_answer
         status = reply["status"]
