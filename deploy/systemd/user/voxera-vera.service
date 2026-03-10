@@ -1,0 +1,13 @@
+[Unit]
+Description=Voxera Vera (chat web app)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=@VOXERA_PROJECT_DIR@
+ExecStart=@VOXERA_PROJECT_DIR@/.venv/bin/python -m uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

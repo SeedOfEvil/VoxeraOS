@@ -1,10 +1,13 @@
-.PHONY: venv install dev fmt fmt-check lint type test e2e check panel daemon-restart \
+.PHONY: venv install dev fmt fmt-check lint type test e2e check panel vera daemon-restart \
 	 type-check type-check-strict update-mypy-baseline quality-check release-check merge-readiness-check \
-	 golden-update golden-check security-check validation-check full-validation-check test-failed-sidecar update update-fast services-install services-restart services-status services-stop services-disable premerge
+	 golden-update golden-check security-check validation-check full-validation-check test-failed-sidecar update update-fast services-install services-restart services-status services-stop services-disable vera-start vera-stop vera-restart vera-status vera-logs premerge
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
 SYSTEMD_SRC_DIR := deploy/systemd/user
-VOXERA_UNITS := voxera-daemon.service voxera-panel.service
+VOXERA_UNITS := voxera-daemon.service voxera-panel.service voxera-vera.service
+VERA_SERVICE := voxera-vera.service
+VERA_HOST ?= 127.0.0.1
+VERA_PORT ?= 8790
 VOXERA_PROJECT_DIR := $(abspath .)
 VENV_BIN := .venv/bin
 PYTHON := $(VENV_BIN)/python
@@ -58,6 +61,9 @@ endif
 
 panel: $(DEV_MARKER)
 	$(VOXERA) panel --host 127.0.0.1 --port 8787
+
+vera: $(DEV_MARKER)
+	$(PYTHON) -m uvicorn voxera.vera_web.app:app --host $(VERA_HOST) --port $(VERA_PORT)
 
 daemon-restart:
 	systemctl --user daemon-reload
@@ -122,7 +128,7 @@ update-fast: venv
 
 services-install:
 	mkdir -p "$(SYSTEMD_USER_DIR)"
-	for unit in voxera-daemon.service voxera-panel.service; do \
+	for unit in $(VOXERA_UNITS); do \
 		sed "s|@VOXERA_PROJECT_DIR@|$(VOXERA_PROJECT_DIR)|g" "$(SYSTEMD_SRC_DIR)/$$unit" > "$(SYSTEMD_USER_DIR)/$$unit"; \
 	done
 	systemctl --user daemon-reload
@@ -146,5 +152,22 @@ services-stop:
 
 services-disable:
 	systemctl --user disable --now $(VOXERA_UNITS)
+
+vera-start:
+	systemctl --user daemon-reload
+	systemctl --user start $(VERA_SERVICE)
+
+vera-stop:
+	systemctl --user stop $(VERA_SERVICE)
+
+vera-restart:
+	systemctl --user daemon-reload
+	systemctl --user restart $(VERA_SERVICE)
+
+vera-status:
+	systemctl --user --no-pager status $(VERA_SERVICE)
+
+vera-logs:
+	journalctl --user -u $(VERA_SERVICE) -n 100 --no-pager
 
 premerge: full-validation-check

@@ -89,7 +89,7 @@ VoxeraOS currently follows a **thin composition root + focused domain modules** 
 - `docs/ARCHITECTURE.md` — architecture map and module boundaries.
 - `docs/ops.md` — day-2 operations and incident workflows.
 - `docs/CODEX_MEMORY.md` — implementation history log across major PR milestones.
-- `deploy/systemd/user/` — user service units for daemon and panel.
+- `deploy/systemd/user/` — user service units for daemon, panel, and Vera.
 
 ## Quick start
 
@@ -107,20 +107,24 @@ voxera setup
 voxera queue init
 ```
 
-Run the two core services locally:
+Run the core runtime stack locally:
 
 ```bash
 voxera daemon
 voxera panel --host 127.0.0.1 --port 8787
-# separate Vera app (different port)
-uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790
+make vera
 ```
 
-Or install user services:
+Vera defaults to `127.0.0.1:8790` and can be overridden for local runs with `VERA_HOST` / `VERA_PORT`.
+
+For systemd user-service management:
 
 ```bash
 make services-install
 make services-status
+make vera-status
+make vera-logs
+make vera-restart
 ```
 
 ## Common workflows

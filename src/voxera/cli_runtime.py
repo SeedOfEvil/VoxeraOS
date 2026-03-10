@@ -111,3 +111,14 @@ def daemon_impl(
         raise typer.Exit(code=1) from exc
     except KeyboardInterrupt:
         console.print("Queue daemon stopped.")
+
+
+def vera_impl(*, host: str, port: int) -> None:
+    import uvicorn
+
+    uvicorn.run(
+        "voxera.vera_web.app:app",
+        host=host,
+        port=port,
+        reload=False,
+    )

@@ -28,6 +28,7 @@ def test_cli_public_command_surface_snapshot():
         "setup",
         "skills",
         "status",
+        "vera",
         "version",
     ]
     assert sorted(root.commands["config"].commands.keys()) == ["show", "snapshot", "validate"]

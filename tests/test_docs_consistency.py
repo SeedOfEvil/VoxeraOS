@@ -12,6 +12,9 @@ def test_core_operational_commands_are_documented():
     readme = Path("README.md").read_text(encoding="utf-8")
     assert "voxera queue init" in readme
     assert "make services-install" in readme
+    assert "make vera" in readme
+    assert "make vera-status" in readme
+    assert "make vera-logs" in readme
     assert "make merge-readiness-check" in readme
     assert "make full-validation-check" in readme
     assert "make update-mypy-baseline" in readme
@@ -24,6 +27,30 @@ def test_core_operational_commands_are_documented():
     assert "make merge-readiness-check" in ops
     assert "make full-validation-check" in ops
     assert "merge-readiness-logs" in ops
+    assert "make vera-start" in ops
+    assert "make vera-status" in ops
+    assert "make vera-logs" in ops
+
+
+def test_vera_service_contract_is_present():
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    assert (
+        "VOXERA_UNITS := voxera-daemon.service voxera-panel.service voxera-vera.service" in makefile
+    )
+    for target in (
+        "vera:",
+        "vera-start:",
+        "vera-stop:",
+        "vera-restart:",
+        "vera-status:",
+        "vera-logs:",
+    ):
+        assert target in makefile
+
+    unit = Path("deploy/systemd/user/voxera-vera.service").read_text(encoding="utf-8")
+    assert "Description=Voxera Vera (chat web app)" in unit
+    assert ".venv/bin/python -m uvicorn voxera.vera_web.app:app" in unit
+    assert "--host 127.0.0.1 --port 8790" in unit
 
 
 def test_merge_readiness_workflow_exists():
