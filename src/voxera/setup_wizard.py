@@ -398,8 +398,8 @@ def _launch_choice(*, service_state: dict[str, list[str]]) -> None:
     console.print(
         Panel(
             "Setup is complete. You can optionally open local panels now:\n"
-            "- voxera: http://127.0.0.1:8844\n"
-            "- vera:   http://127.0.0.1:8790",
+            "- VoxeraOS: http://127.0.0.1:8844/\n"
+            "- Vera:     http://127.0.0.1:8790/",
             title="Finish",
         )
     )
@@ -416,14 +416,14 @@ def _launch_choice(*, service_state: dict[str, list[str]]) -> None:
                 "[yellow]Skipping Voxera panel open because voxera-panel.service is not running.[/yellow]"
             )
         else:
-            urls.append("http://127.0.0.1:8844")
+            urls.append("http://127.0.0.1:8844/")
     if choice in {"vera", "both"}:
         if "voxera-vera.service" in failed:
             console.print(
                 "[yellow]Skipping Vera panel open because voxera-vera.service is not running.[/yellow]"
             )
         else:
-            urls.append("http://127.0.0.1:8790")
+            urls.append("http://127.0.0.1:8790/")
     for url in urls:
         try:
             opened = webbrowser.open(url)

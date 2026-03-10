@@ -109,7 +109,7 @@ voxera queue init
 
 `voxera setup` in v0.1.7 now guides each brain slot sequentially (`primary`, `fast`, `reasoning`, `fallback`), uses menu-style provider selection, and for OpenRouter uses a curated vendor-grouped model catalog with strong per-slot defaults (`primary`: `openai/gpt-4o-mini`, `fast`: `google/gemini-2.5-flash`, `reasoning`: `anthropic/claude-3.7-sonnet`, `fallback`: `meta-llama/llama-3.3-70b-instruct`).
 
-After setup saves successfully, the wizard first ensures the standard user-service stack is running (`voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`) and then offers an explicit finish step to open Voxera Panel, Vera Panel, both, or neither. Startup failures are reported honestly before any panel-open attempt.
+After setup saves successfully, the wizard first ensures the standard user-service stack is running (`voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`) and then offers an explicit finish step to open VoxeraOS (`http://127.0.0.1:8844/`), Vera (`http://127.0.0.1:8790/`), both, or neither. Startup failures are reported honestly before any panel-open attempt.
 
 Maintainers can refresh catalog metadata from the live OpenRouter endpoint with:
 

@@ -147,7 +147,7 @@ def test_launch_choice_opens_selected_panels(monkeypatch):
 
     setup_wizard._launch_choice(service_state={"failed": [], "started": []})
 
-    assert opened == ["http://127.0.0.1:8844", "http://127.0.0.1:8790"]
+    assert opened == ["http://127.0.0.1:8844/", "http://127.0.0.1:8790/"]
 
 
 def test_ensure_runtime_services_running_success(monkeypatch):
