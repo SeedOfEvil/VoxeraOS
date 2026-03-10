@@ -100,12 +100,16 @@ pip install -U pip
 pip install -e ".[dev]"
 ```
 
-Initialize local config + queue directories:
+Initialize local config + queue directories (guided wizard):
 
 ```bash
 voxera setup
 voxera queue init
 ```
+
+`voxera setup` in v0.1.7 now guides each brain slot sequentially (`primary`, `fast`, `reasoning`, `fallback`), lets you pick provider choices from a supported list, and (for OpenRouter) fetches the live model catalog from `https://openrouter.ai/api/v1/models` with search/filter + manual model-id fallback if the fetch fails.
+
+After setup saves successfully, an explicit finish step lets you open Voxera Panel, Vera Panel, both, or neither.
 
 Run the core runtime stack locally:
 
@@ -178,7 +182,7 @@ voxera ops bundle job <job_ref>
 
 ## Project status
 
-VoxeraOS is in **Alpha (v0.1.6)** and already includes the major control-plane foundation:
+VoxeraOS is in **Alpha (v0.1.7)** and already includes the major control-plane foundation:
 
 - Queue daemon and queue lifecycle buckets are implemented and operator-visible.
 - Approval artifacts, policy ask/allow/deny gates, and CLI/panel resolution flows are implemented.
@@ -208,8 +212,8 @@ Major completed milestones already backfilled in repo history:
 
 - **v0.1.4**: stability + UX baseline (queue daemon, approvals, mission flows, panel/doctor foundations).
 - **v0.1.5**: hygiene/recovery baseline (`artifacts prune`, `queue prune`, `queue reconcile`, lock/shutdown hardening).
-- **v0.1.6**: security hardening + panel ops visibility + sandbox argv canonicalization + modularization wave.
-- **Post-v0.1.6 PRs shipped** (tracked in `docs/CODEX_MEMORY.md`):
+- **v0.1.7**: productized onboarding flow (guided setup slots + OpenRouter live model picker + finish launch options).
+- **Post-v0.1.7 PRs shipped** (tracked in `docs/CODEX_MEMORY.md`):
   - **PR #145**: deterministic open-intent routing tightened; fail-closed behavior restored; terminal demo hijacks removed.
   - **PR #146**: live job progress endpoints (`/jobs/{id}/progress`, `/assistant/progress/{id}`); progressive-enhancement panel polling; stale failure-context shaping fixed.
   - **PR #147**: red-team regression suite (`tests/test_security_redteam.py`); traversal metadata leakage closed at four boundaries; `security-check` wired into merge gate.

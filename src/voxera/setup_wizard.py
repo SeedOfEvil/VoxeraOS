@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import time
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
+import httpx
 import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
+from rich.table import Table
 from rich.text import Text
 
 from .config import capabilities_report_path, default_config_path, save_config, save_policy
@@ -19,6 +23,7 @@ console = Console()
 
 _ModeLiteral = Literal["voice", "gui", "cli", "mixed"]
 _BrainTypeLiteral = Literal["gemini", "openai_compat"]
+_BrainSlotLiteral = Literal["primary", "fast", "reasoning", "fallback"]
 
 
 @dataclass(frozen=True)
@@ -28,6 +33,40 @@ class ProviderChoice:
     env_ref: str
     brain_type: _BrainTypeLiteral
     default_model: str
+    default_base_url: str | None = None
+
+
+@dataclass(frozen=True)
+class OpenRouterModel:
+    model_id: str
+    name: str
+    context_length: int | None
+    pricing_prompt: str | None
+    pricing_completion: str | None
+    supported_parameters: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BrainSlotSpec:
+    key: _BrainSlotLiteral
+    title: str
+    description: str
+
+
+BRAIN_SLOT_ORDER: tuple[BrainSlotSpec, ...] = (
+    BrainSlotSpec("primary", "Primary brain", "Default balanced brain for most tasks."),
+    BrainSlotSpec(
+        "fast", "Fast brain", "Lower-latency model for quick checks and lightweight tasks."
+    ),
+    BrainSlotSpec(
+        "reasoning", "Reasoning brain", "Higher-depth model for difficult planning and analysis."
+    ),
+    BrainSlotSpec(
+        "fallback",
+        "Fallback brain",
+        "Resilience slot when previous choices fail or are unavailable.",
+    ),
+)
 
 
 def _pick_mode() -> _ModeLiteral:
@@ -41,14 +80,6 @@ def _pick_mode() -> _ModeLiteral:
 def _pick_brain_type() -> str:
     console.print(Panel("Choose where Vera (the brain) runs", title="Brain Source"))
     return Prompt.ask("Brain", choices=["local", "cloud"], default="cloud")
-
-
-def _cloud_provider() -> str:
-    return Prompt.ask(
-        "Cloud provider adapter",
-        choices=["gemini", "openai_compat", "openrouter"],
-        default="openrouter",
-    )
 
 
 def _local_provider() -> str:
@@ -75,46 +106,6 @@ def _policy_defaults() -> PolicyApprovals:
     return p
 
 
-def _configure_openrouter_brains(cfg: AppConfig, api_key_ref: str) -> None:
-    console.print(
-        Panel(
-            "OpenRouter recommended setup: multiple model tiers with automatic app attribution.",
-            title="OpenRouter",
-        )
-    )
-    base_url = "https://openrouter.ai/api/v1"
-
-    fast_model = Prompt.ask("Fast/general model", default="google/gemini-2.5-flash")
-    balanced_model = Prompt.ask("Balanced quality model", default="openai/gpt-4o-mini")
-    reasoning_model = Prompt.ask("Deep reasoning model", default="anthropic/claude-3.7-sonnet")
-    fallback_model = Prompt.ask("Fallback/cost model", default="meta-llama/llama-3.3-70b-instruct")
-
-    cfg.brain["primary"] = BrainConfig(
-        type="openai_compat",
-        model=balanced_model,
-        base_url=base_url,
-        api_key_ref=api_key_ref,
-    )
-    cfg.brain["fast"] = BrainConfig(
-        type="openai_compat",
-        model=fast_model,
-        base_url=base_url,
-        api_key_ref=api_key_ref,
-    )
-    cfg.brain["reasoning"] = BrainConfig(
-        type="openai_compat",
-        model=reasoning_model,
-        base_url=base_url,
-        api_key_ref=api_key_ref,
-    )
-    cfg.brain["fallback"] = BrainConfig(
-        type="openai_compat",
-        model=fallback_model,
-        base_url=base_url,
-        api_key_ref=api_key_ref,
-    )
-
-
 def _provider_catalog() -> list[ProviderChoice]:
     return [
         ProviderChoice(
@@ -123,6 +114,7 @@ def _provider_catalog() -> list[ProviderChoice]:
             env_ref="OPENROUTER_API_KEY",
             brain_type="openai_compat",
             default_model="openai/gpt-4o-mini",
+            default_base_url="https://openrouter.ai/api/v1",
         ),
         ProviderChoice(
             slug="openai",
@@ -130,6 +122,7 @@ def _provider_catalog() -> list[ProviderChoice]:
             env_ref="OPENAI_API_KEY",
             brain_type="openai_compat",
             default_model="gpt-4o-mini",
+            default_base_url="https://api.openai.com/v1",
         ),
         ProviderChoice(
             slug="anthropic",
@@ -137,6 +130,7 @@ def _provider_catalog() -> list[ProviderChoice]:
             env_ref="ANTHROPIC_API_KEY",
             brain_type="openai_compat",
             default_model="anthropic/claude-3.7-sonnet",
+            default_base_url="https://api.anthropic.com/v1",
         ),
         ProviderChoice(
             slug="google",
@@ -191,49 +185,202 @@ def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | 
     return new_ref or provider.env_ref
 
 
-def _configure_provider_catalog(cfg: AppConfig) -> None:
-    lines = []
-    for p in _provider_catalog():
-        lines.append(f"- {p.label}: {p.env_ref}")
-    console.print(
-        Panel(
-            "Provider catalog (provider/model naming is supported via openai_compat adapters):\n"
-            + "\n".join(lines),
-            title="Providers",
-        )
-    )
+def _provider_summary_table() -> Table:
+    table = Table(title="Supported Providers")
+    table.add_column("Provider")
+    table.add_column("Adapter")
+    table.add_column("Default key ref")
+    for provider in _provider_catalog():
+        table.add_row(provider.slug, provider.brain_type, provider.env_ref)
+    return table
 
-    primary = Prompt.ask(
-        "Primary provider",
-        choices=[p.slug for p in _provider_catalog()],
+
+def _fetch_openrouter_models() -> list[OpenRouterModel]:
+    response = httpx.get("https://openrouter.ai/api/v1/models", timeout=10.0)
+    response.raise_for_status()
+    payload = response.json()
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        raise ValueError(
+            "OpenRouter models API returned invalid payload shape: expected top-level data[]"
+        )
+
+    models: list[OpenRouterModel] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        model_id = str(entry.get("id") or "").strip()
+        if not model_id:
+            continue
+        name = str(entry.get("name") or model_id)
+        context_raw = entry.get("context_length")
+        context_length = context_raw if isinstance(context_raw, int) else None
+
+        pricing_prompt: str | None = None
+        pricing_completion: str | None = None
+        pricing_raw = entry.get("pricing")
+        if isinstance(pricing_raw, dict):
+            p_prompt = pricing_raw.get("prompt")
+            p_completion = pricing_raw.get("completion")
+            pricing_prompt = str(p_prompt) if p_prompt is not None else None
+            pricing_completion = str(p_completion) if p_completion is not None else None
+
+        params: tuple[str, ...] = ()
+        params_raw = entry.get("supported_parameters")
+        if isinstance(params_raw, list):
+            normalized = [str(param) for param in params_raw if isinstance(param, str)]
+            params = tuple(sorted(set(normalized)))
+
+        models.append(
+            OpenRouterModel(
+                model_id=model_id,
+                name=name,
+                context_length=context_length,
+                pricing_prompt=pricing_prompt,
+                pricing_completion=pricing_completion,
+                supported_parameters=params,
+            )
+        )
+
+    return sorted(models, key=lambda item: item.model_id)
+
+
+def _display_openrouter_models(models: list[OpenRouterModel], *, limit: int = 15) -> None:
+    table = Table(title=f"OpenRouter live catalog ({len(models)} models)")
+    table.add_column("#", justify="right")
+    table.add_column("id")
+    table.add_column("name")
+    table.add_column("context")
+    table.add_column("pricing")
+    table.add_column("params")
+
+    for idx, item in enumerate(models[:limit], start=1):
+        pricing = "-"
+        if item.pricing_prompt or item.pricing_completion:
+            pricing = f"p:{item.pricing_prompt or '-'} c:{item.pricing_completion or '-'}"
+        params = ", ".join(item.supported_parameters[:3]) if item.supported_parameters else "-"
+        table.add_row(
+            str(idx),
+            item.model_id,
+            item.name,
+            str(item.context_length or "-"),
+            pricing,
+            params,
+        )
+    console.print(table)
+
+
+def _pick_openrouter_model(default_model: str) -> str:
+    models: list[OpenRouterModel] = []
+    while True:
+        try:
+            models = _fetch_openrouter_models()
+            break
+        except Exception as exc:
+            console.print(f"[yellow]Could not fetch OpenRouter catalog:[/yellow] {exc}")
+            choice = Prompt.ask(
+                "OpenRouter model source",
+                choices=["retry", "manual"],
+                default="retry",
+            )
+            if choice == "manual":
+                return (
+                    Prompt.ask("Enter OpenRouter model id", default=default_model).strip()
+                    or default_model
+                )
+
+    query = (
+        Prompt.ask("Optional search/filter (id or name contains, blank = all)", default="")
+        .strip()
+        .lower()
+    )
+    filtered = [
+        model
+        for model in models
+        if not query or query in model.model_id.lower() or query in model.name.lower()
+    ]
+    if not filtered:
+        console.print(
+            "[yellow]No models matched the filter. Falling back to manual entry.[/yellow]"
+        )
+        return (
+            Prompt.ask("Enter OpenRouter model id", default=default_model).strip() or default_model
+        )
+
+    _display_openrouter_models(filtered)
+    selection = Prompt.ask(
+        "Select model by number (or type model id)",
+        default="1",
+    ).strip()
+    if selection.isdigit():
+        index = int(selection)
+        if 1 <= index <= min(len(filtered), 15):
+            return filtered[index - 1].model_id
+
+    raw = selection.strip()
+    return raw or default_model
+
+
+def _configure_brain_slot(
+    cfg: AppConfig,
+    *,
+    slot: BrainSlotSpec,
+    existing: BrainConfig | None,
+) -> None:
+    console.print(Panel(slot.description, title=f"{slot.title} ({slot.key})"))
+    providers = _provider_catalog()
+    provider_map = {provider.slug: provider for provider in providers}
+    selected_slug = Prompt.ask(
+        f"Provider for {slot.key}",
+        choices=list(provider_map.keys()),
         default="openrouter",
     )
-    selected = {p.slug: p for p in _provider_catalog()}[primary]
+    provider = provider_map[selected_slug]
 
-    model = Prompt.ask("Primary model", default=selected.default_model)
-    existing_primary = cfg.brain.get("primary")
-    ref = _apply_provider_key_choice(
-        provider=selected, existing_ref=existing_primary.api_key_ref if existing_primary else None
-    )
-    if selected.slug == "openrouter":
-        if ref:
-            _configure_openrouter_brains(cfg, ref)
-        else:
-            cfg.brain["primary"] = BrainConfig(
-                type="openai_compat",
-                model=model,
-                base_url="https://openrouter.ai/api/v1",
-            )
-    elif selected.brain_type == "gemini":
-        cfg.brain["primary"] = BrainConfig(type="gemini", model=model, api_key_ref=ref)
+    existing_ref = existing.api_key_ref if existing else None
+    api_key_ref = _apply_provider_key_choice(provider, existing_ref=existing_ref)
+
+    if provider.slug == "openrouter":
+        model = _pick_openrouter_model(provider.default_model)
+        brain = BrainConfig(
+            type="openai_compat",
+            model=model,
+            base_url="https://openrouter.ai/api/v1",
+            api_key_ref=api_key_ref,
+        )
+    elif provider.brain_type == "gemini":
+        model = Prompt.ask(f"Model for {slot.key}", default=provider.default_model)
+        brain = BrainConfig(type="gemini", model=model, api_key_ref=api_key_ref)
     else:
-        base_url = Prompt.ask("OpenAI-compatible base URL", default="https://api.openai.com/v1")
-        cfg.brain["primary"] = BrainConfig(
+        model = Prompt.ask(f"Model for {slot.key}", default=provider.default_model)
+        base_url = Prompt.ask(
+            f"Base URL for {slot.key}",
+            default=provider.default_base_url or "https://api.openai.com/v1",
+        )
+        brain = BrainConfig(
             type="openai_compat",
             model=model,
             base_url=base_url,
-            api_key_ref=ref,
+            api_key_ref=api_key_ref,
         )
+
+    console.print(
+        Panel(
+            f"Provider: {provider.label}\nAdapter: {brain.type}\nModel: {brain.model}\n"
+            f"Base URL: {brain.base_url or '(n/a)'}\nAPI key ref: {brain.api_key_ref or '(none)'}",
+            title=f"Confirm {slot.key}",
+        )
+    )
+    if Confirm.ask(f"Save this {slot.key} slot?", default=True):
+        cfg.brain[slot.key] = brain
+    else:
+        console.print(f"[yellow]{slot.key} kept unchanged.[/yellow]")
+
+
+def _configure_cloud_brains(cfg: AppConfig) -> None:
+    console.print(_provider_summary_table())
+    for slot in BRAIN_SLOT_ORDER:
+        _configure_brain_slot(cfg, slot=slot, existing=cfg.brain.get(slot.key))
 
 
 def _confirm_write_config(path: Path) -> bool:
@@ -248,11 +395,41 @@ def _confirm_write_config(path: Path) -> bool:
     return Confirm.ask("Overwrite existing config.yml with setup answers?", default=False)
 
 
+def _launch_choice() -> None:
+    console.print(
+        Panel(
+            "Setup is complete. You can optionally open local panels now:\n"
+            "- voxera: http://127.0.0.1:8844\n"
+            "- vera:   http://127.0.0.1:8000",
+            title="Finish",
+        )
+    )
+    choice = Prompt.ask(
+        "Open panel(s)",
+        choices=["voxera", "vera", "both", "none"],
+        default="none",
+    )
+    urls: list[str] = []
+    if choice in {"voxera", "both"}:
+        urls.append("http://127.0.0.1:8844")
+    if choice in {"vera", "both"}:
+        urls.append("http://127.0.0.1:8000")
+    for url in urls:
+        try:
+            opened = webbrowser.open(url)
+            if opened:
+                console.print(f"Opened {url}")
+            else:
+                console.print(f"[yellow]Could not auto-open {url}. Open it manually.[/yellow]")
+        except Exception as exc:
+            console.print(f"[yellow]Launch failed for {url}:[/yellow] {exc}")
+
+
 def _print_what_next() -> None:
     console.print(
         Panel(
             "What you can do next:\n"
-            "- voxera demo  # offline, safe + repeatable\n"
+            "- voxera demo  # guided offline onboarding check\n"
             "- voxera demo --online  # opt-in provider readiness\n"
             "- voxera queue status\n"
             "- voxera queue reconcile\n"
@@ -293,8 +470,7 @@ async def run_setup() -> AppConfig:
     )
 
     if brain_source == "cloud":
-        _ = _cloud_provider()
-        _configure_provider_catalog(cfg)
+        _configure_cloud_brains(cfg)
     else:
         adapter = _local_provider()
         base_url = Prompt.ask("Local base URL", default="http://localhost:11434/v1")
@@ -320,7 +496,7 @@ async def run_setup() -> AppConfig:
     save_policy({"approvals": cfg.policy.model_dump()})
 
     cap = {
-        "ts": __import__("time").time(),
+        "ts": time.time(),
         "mode": cfg.mode,
         "brain": {k: v.model_dump() for k, v in cfg.brain.items()},
         "note": "Run 'voxera doctor' to execute live capability tests.",
@@ -332,5 +508,6 @@ async def run_setup() -> AppConfig:
     console.print("Runtime ops config (panel/queue, optional): ~/.config/voxera/config.json")
     console.print("Policy: ~/.config/voxera/policy.yml")
     console.print("Capabilities: ~/.local/share/voxera/capabilities.json\n")
+    _launch_choice()
     _print_what_next()
     return cfg

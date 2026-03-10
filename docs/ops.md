@@ -129,6 +129,12 @@ Provider auth choices are intentionally non-destructive:
 - Skip for now (continue with offline demo flows)
 - Enter new/replace key (explicit only)
 
+For cloud setup in v0.1.7, `voxera setup` walks the brain chain one slot at a time (`primary`, `fast`, `reasoning`, `fallback`) with explicit provider/model confirmation for each slot.
+
+If OpenRouter is selected for a slot, setup fetches the live models catalog (`https://openrouter.ai/api/v1/models`) and presents searchable model choices with metadata (`id`, `name`, `context_length`, pricing hints, and supported parameters when present). If fetch fails, setup offers retry and manual model-id entry so onboarding does not dead-end.
+
+After config save succeeds, setup offers an explicit optional launch step: open Voxera panel, Vera panel, both, or none.
+
 Run the guided checklist:
 
 ```bash
@@ -1104,7 +1110,7 @@ jq "{daemon_state, consecutive_brain_failures, brain_backoff_wait_s, brain_backo
 
 ### Data freshness
 
-The widget reflects the most recent `health.json` write. The daemon and panel both write to this file atomically (`health.json.tmp` → rename). If the daemon is not running, the widget still renders the last snapshot — staleness is not surfaced explicitly in v0.1.6.
+The widget reflects the most recent `health.json` write. The daemon and panel both write to this file atomically (`health.json.tmp` → rename). If the daemon is not running, the widget still renders the last snapshot — staleness is not surfaced explicitly in v0.1.7.
 
 ---
 

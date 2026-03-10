@@ -1,6 +1,6 @@
 # Ubuntu Testing Guide
 
-Use this checklist to run Voxera OS Alpha v0.1.6+ (including GitHub PRs #145–#149) end-to-end on an Ubuntu machine.
+Use this checklist to run Voxera OS Alpha v0.1.7+ (including GitHub PRs #145–#149) end-to-end on an Ubuntu machine.
 
 ## 1) System prerequisites
 
@@ -43,6 +43,15 @@ This writes local config/state files:
 - `~/.config/voxera/policy.yml`
 - `~/.local/share/voxera/capabilities.json`
 - `~/.local/share/voxera/audit/*.jsonl`
+
+## 4b) Setup wizard STV (v0.1.7 guided brain flow)
+
+1. Run `voxera setup`.
+2. Confirm provider/model setup is sequential across brain slots: `primary`, `fast`, `reasoning`, `fallback`.
+3. Select OpenRouter for at least one slot and verify live model fetch from `https://openrouter.ai/api/v1/models`.
+4. Verify model list usability (search/filter + metadata) and not a hardcoded static list.
+5. Simulate OpenRouter fetch failure (e.g., temporary network block) and verify retry + manual model-id fallback.
+6. Finish setup and verify explicit launch choices: Voxera panel / Vera panel / both / none.
 
 ## 5) Validate baseline behavior
 
