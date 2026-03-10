@@ -1,6 +1,6 @@
 # Ubuntu Testing Guide
 
-Use this checklist to run Voxera OS Alpha v0.1.6+ (including GitHub PRs #145–#149) end-to-end on an Ubuntu machine.
+Use this checklist to run Voxera OS Alpha v0.1.7+ (including GitHub PRs #145–#149) end-to-end on an Ubuntu machine.
 
 ## 1) System prerequisites
 
@@ -43,6 +43,24 @@ This writes local config/state files:
 - `~/.config/voxera/policy.yml`
 - `~/.local/share/voxera/capabilities.json`
 - `~/.local/share/voxera/audit/*.jsonl`
+
+## 4b) Setup wizard STV (v0.1.7 guided brain flow)
+
+1. Run `voxera setup`.
+2. Confirm provider/model setup is sequential across brain slots: `primary`, `fast`, `reasoning`, `fallback`.
+3. Select OpenRouter for at least one slot and verify vendor-grouped catalog flow (no giant raw table).
+4. Verify recommended defaults are shown per slot: `primary=openai/gpt-4o-mini`, `fast=google/gemini-2.5-flash`, `reasoning=anthropic/claude-3.7-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`.
+5. Verify accepting the recommendation is easy and choosing an alternative vendor/model is also easy.
+6. Optionally verify advanced manual model-id path.
+7. Finish setup and verify setup auto-starts `voxera-daemon.service`, `voxera-panel.service`, and `voxera-vera.service` before launch options are used.
+8. Verify explicit launch choices still work: Voxera panel / Vera panel / both / none.
+9. If a service fails to start, confirm setup reports the failing unit honestly.
+
+Maintainer live-refresh check (optional):
+
+```bash
+python scripts/refresh_openrouter_catalog.py
+```
 
 ## 5) Validate baseline behavior
 

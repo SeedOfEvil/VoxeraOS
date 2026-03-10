@@ -1465,3 +1465,45 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 - Added natural active-preview approval phrase routing (`use this preview`, `that looks good now use it`, etc.) that submits only when an active preview exists; no-preview cases fail closed.
 - Kept queue/execution semantics unchanged: Vera submits to VoxeraOS, execution remains VoxeraOS-owned.
 - Added focused tests for authoritative pane rendering, pane-submit behavior, natural phrase routing, fail-closed behavior, and post-submit preview clearing.
+
+
+## 2026-03-10 — PR #161 — feat(setup/demo): bump 0.1.7 and guided OpenRouter setup flow
+- Summary:
+  - Bumped package/version-facing truth to `0.1.7` in `pyproject.toml` and onboarding docs.
+  - Refactored `voxera setup` cloud flow into explicit sequential brain-slot configuration (`primary`, `fast`, `reasoning`, `fallback`).
+  - Added provider selection from supported catalog for each slot with per-slot confirmation summaries.
+  - Added live OpenRouter models retrieval from `https://openrouter.ai/api/v1/models` and exposed metadata-driven selection (`id`, `name`, context length, pricing hints, supported params when available).
+  - Added OpenRouter graceful degradation path: retry fetch or manual model-id entry when API fetch fails.
+  - Added explicit finish-step launch options after successful setup save: open Voxera panel, Vera panel, both, or none.
+  - Updated onboarding/docs surfaces (`README.md`, `docs/ARCHITECTURE.md`, `docs/ops.md`, `docs/UBUNTU_TESTING.md`, `docs/ROADMAP.md`) for setup/demo vocabulary alignment.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
+
+
+## 2026-03-10 — PR #162 — feat(setup): curated grouped OpenRouter setup catalog + slot defaults
+- Summary:
+  - Replaced raw live-table OpenRouter setup UX with curated static catalog (`src/voxera/data/openrouter_catalog.json`) grouped by vendor/maker for menu-style setup.
+  - Kept sequential brain-slot setup (`primary`, `fast`, `reasoning`, `fallback`) and added explicit strong default recommendations:
+    - `primary=openai/gpt-4o-mini`
+    - `fast=google/gemini-2.5-flash`
+    - `reasoning=anthropic/claude-3.7-sonnet`
+    - `fallback=meta-llama/llama-3.3-70b-instruct`
+  - Preserved advanced manual model-id path and post-setup panel launch options.
+  - Added maintainer refresh helper from live endpoint: `scripts/refresh_openrouter_catalog.py` + normalization/refresh logic in `src/voxera/openrouter_catalog.py`.
+  - Added focused tests for curated catalog load/grouping/recommendation and refresh normalization path.
+
+
+## 2026-03-10 — PR #163 — fix(setup): ensure runtime services before finish-panel launch
+- Summary:
+  - Updated setup finish path to ensure runtime stack services start before panel launch choices are used: `voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`.
+  - Added systemd user-service helper flow in setup wizard: daemon-reload, enable/start, and active checks with honest per-service failure reporting.
+  - Kept explicit optional finish choices (open Voxera panel, Vera panel, both, none), but now skip panel auto-open when corresponding service failed to start.
+  - Corrected Vera panel launch URL to match runtime default (`http://127.0.0.1:8790`).
+  - Added focused tests for service-start helper behavior, failure handling, and setup finish ordering (ensure services before launch).
