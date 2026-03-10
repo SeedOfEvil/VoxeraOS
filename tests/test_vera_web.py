@@ -62,6 +62,7 @@ def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
     assert "composer" in res.text
     assert "VoxeraOS queue handoff" in res.text
     assert "DEV diagnostics" in res.text
+    assert "vera_thread_manual_scroll_up" in res.text
 
 
 def test_vera_web_chat_returns_assistant_response(tmp_path, monkeypatch):
@@ -167,6 +168,7 @@ def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, mo
     res = client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
 
     assert "job preview" in res.text
+    assert "Active VoxeraOS draft (authoritative, not submitted)" in res.text
     assert "Nothing has been submitted or executed yet" in res.text
     assert list((queue / "inbox").glob("*.json")) == [] if (queue / "inbox").exists() else True
 
@@ -285,6 +287,317 @@ def test_handoff_failure_reports_honestly(tmp_path, monkeypatch):
 
     assert "could not submit" in res.text
     assert "nothing was queued" in res.text
+
+
+def test_contentful_natural_file_creation_phrase_produces_canonical_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": (
+                "ok create a skibbiddy.txt and as content add an Active directory script "
+                "that creates a user called Skibbidy"
+            ),
+        },
+    )
+
+    assert "job preview" in res.text
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbiddy.txt"
+    assert "Active directory script" in preview["write_file"]["content"]
+
+
+def test_content_refinement_phrase_add_content_updates_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called skibbz.txt"})
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "add content to skibbz.txt saying hello",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbz.txt"
+    assert preview["write_file"]["content"] == "hello"
+
+
+def test_content_refinement_phrase_script_text_updates_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called script.ps1"})
+
+    script_text = "an Active Directory script that creates a user called Skibbidy"
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": f"add content to script.ps1 {script_text}"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
+    assert preview["write_file"]["content"] == script_text
+
+
+def test_latest_content_refinement_wins_for_handoff_payload(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called joke.txt"})
+    client.post("/chat", data={"session_id": sid, "message": "put this joke inside it: old"})
+    client.post("/chat", data={"session_id": sid, "message": "use this as the content: new"})
+    client.post("/handoff", data={"session_id": sid})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/joke.txt"
+    assert payload["write_file"]["content"] == "new"
+
+
+def test_model_preview_json_updates_active_preview_and_pane(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": ('Updated draft:\n```json\n{"goal": "open https://openai.com"}\n```'),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    res = client.post("/chat", data={"session_id": sid, "message": "revise it"})
+
+    assert '"goal": "open https://openai.com"' in res.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+
+
+def test_submit_after_model_preview_replacement_uses_latest_payload(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": '```json\n{"goal": "open https://openai.com"}\n```',
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    client.post("/chat", data={"session_id": sid, "message": "actually update it"})
+    client.post("/handoff", data={"session_id": sid})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["goal"] == "open https://openai.com"
+
+
+def test_invalid_model_preview_like_json_is_not_submit_ready(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": (
+                "Candidate draft:\n"
+                "```json\n"
+                '{"goal": "write a note called scipptyaway.txt", "content": "hello"}\n'
+                "```"
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    baseline = client.post(
+        "/chat", data={"session_id": sid, "message": "write a note called scipptyaway.txt"}
+    )
+    assert '"goal": "write a note called scipptyaway.txt"' in baseline.text
+
+    res = client.post("/chat", data={"session_id": sid, "message": "add content"})
+
+    assert "couldn’t safely turn that into a submit-ready VoxeraOS preview" in res.text
+    assert vera_service.read_session_preview(queue, sid) == {
+        "goal": "write a note called scipptyaway.txt"
+    }
+
+
+def test_clear_resets_preview_and_new_preview_reinitializes_authoritative_state(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    first = client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    assert '"goal": "open https://example.com"' in first.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
+
+    cleared = client.post("/clear", data={"session_id": sid})
+    assert "Submit current preview to VoxeraOS" not in cleared.text
+    assert vera_service.read_session_preview(queue, sid) is None
+
+    second = client.post("/chat", data={"session_id": sid, "message": "open openai.com"})
+    assert '"goal": "open https://openai.com"' in second.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+
+
+def test_structured_write_file_preview_submits_exact_payload(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called skibbidy.txt with the content "hello world"',
+        },
+    )
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbidy.txt"
+
+    client.post("/handoff", data={"session_id": sid})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/skibbidy.txt"
+    assert payload["write_file"]["content"] == "hello world"
+
+
+def test_model_preview_with_extra_keys_does_not_overwrite_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": (
+                "Candidate draft:\n"
+                "```json\n"
+                '{"goal": "write a note called skibbidy.txt", "content": "hello"}\n'
+                "```"
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+
+    res = client.post("/chat", data={"session_id": sid, "message": "revise with content"})
+
+    assert "couldn’t safely turn that into a submit-ready VoxeraOS preview" in res.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
+
+
+def test_model_multiple_preview_replacements_latest_wins_in_pane(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "to b" in user_message:
+            return {
+                "answer": '```json\n{"goal": "open https://openai.com"}\n```',
+                "status": "ok:test",
+            }
+        if "to c" in user_message:
+            return {
+                "answer": '```json\n{"goal": "open https://github.com"}\n```',
+                "status": "ok:test",
+            }
+        return {"answer": "plain reply", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    a = client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    assert '"goal": "open https://example.com"' in a.text
+
+    b = client.post("/chat", data={"session_id": sid, "message": "update to b"})
+    assert '"goal": "open https://openai.com"' in b.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+
+    c = client.post("/chat", data={"session_id": sid, "message": "update to c"})
+    assert '"goal": "open https://github.com"' in c.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://github.com"}
+
+
+def test_model_reply_with_multiple_json_objects_uses_latest_valid_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": (
+                'Old candidate:\n```json\n{"goal": "open https://example.com"}\n```\n'
+                'New candidate:\n```json\n{"goal": "open https://openai.com"}\n```'
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "draft"})
+
+    assert '"goal": "open https://openai.com"' in res.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
 
 
 def test_chat_model_cannot_bypass_handoff_with_fake_submission_language(tmp_path, monkeypatch):
@@ -680,6 +993,92 @@ def test_preview_persists_across_followup_turn_before_submit(tmp_path, monkeypat
     assert "I submitted the job to VoxeraOS" in res.text
     jobs = list((queue / "inbox").glob("inbox-*.json"))
     assert len(jobs) == 1
+
+
+def test_preview_pane_submit_button_submits_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    preview_res = client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+
+    assert "Submit current preview to VoxeraOS" in preview_res.text
+
+    submit_res = client.post("/handoff", data={"session_id": sid})
+    assert "I submitted the job to VoxeraOS" in submit_res.text
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["goal"] == "open https://example.com"
+
+
+def test_natural_preview_submit_phrase_uses_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    res = client.post("/chat", data={"session_id": sid, "message": "that looks good now use it"})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+
+
+def test_natural_preview_submit_phrase_without_preview_fails_closed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": "ordinary reply", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "use this preview"})
+
+    assert "I submitted the job to VoxeraOS" not in res.text
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
+def test_preview_replacement_updates_authoritative_pane_payload(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "actually open openai.com instead"},
+    )
+
+    assert '"goal": "open https://openai.com"' in res.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+
+
+def test_handoff_submit_clears_authoritative_preview_pane(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    res = client.post("/handoff", data={"session_id": sid})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    assert "Submit current preview to VoxeraOS" not in res.text
+    assert "preview_available</b>: False" in res.text
 
 
 def test_review_latest_submitted_job_succeeded(tmp_path, monkeypatch):

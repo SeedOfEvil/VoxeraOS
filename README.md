@@ -367,6 +367,8 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - Vera remains preview-first and truthful: prepared is not submitted, submitted is not executed, and execution truth comes from VoxeraOS evidence.
 
 - Active preview now behaves as a conversational draft: follow-up refinements replace the current structured preview, lightweight acknowledgements keep it intact, and explicit handoff always submits the latest draft only.
+- The visible preview pane is authoritative: when JSON is shown there, that exact JSON is the active draft and direct submit target (`Submit current preview to VoxeraOS`).
+- Natural approval phrases such as `use this preview` / `that looks good now use it` submit only when an active preview exists; otherwise Vera fails closed honestly.
 
 
 ### Structured file-write content queue contract (PR #157)

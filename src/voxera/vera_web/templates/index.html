@@ -24,12 +24,12 @@
     </section>
 
     {% if pending_preview %}
-    <section class="preview">
-      <div><strong>Prepared VoxeraOS job (not submitted):</strong></div>
+    <section class="preview" aria-live="polite">
+      <div><strong>Active VoxeraOS draft (authoritative, not submitted):</strong></div>
       <pre class="prompt-box">{{pending_preview | tojson(indent=2)}}</pre>
       <form method="post" action="/handoff">
         <input type="hidden" name="session_id" value="{{session_id}}" />
-        <button type="submit">Submit prepared job to VoxeraOS</button>
+        <button type="submit">Submit current preview to VoxeraOS</button>
       </form>
     </section>
     {% endif %}
@@ -84,5 +84,31 @@
       <button type="submit">Send</button>
     </form>
   </main>
+  <script>
+    (() => {
+      const thread = document.getElementById("thread");
+      if (!thread) {
+        return;
+      }
+
+      const manualScrollKey = "vera_thread_manual_scroll_up";
+      const distanceFromBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight;
+      const isNearBottom = () => distanceFromBottom() < 120;
+
+      const manuallyScrolledUp = sessionStorage.getItem(manualScrollKey) === "1";
+      if (!manuallyScrolledUp || isNearBottom()) {
+        thread.scrollTop = thread.scrollHeight;
+        sessionStorage.removeItem(manualScrollKey);
+      }
+
+      thread.addEventListener("scroll", () => {
+        if (isNearBottom()) {
+          sessionStorage.removeItem(manualScrollKey);
+        } else {
+          sessionStorage.setItem(manualScrollKey, "1");
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
