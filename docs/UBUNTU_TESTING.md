@@ -48,10 +48,17 @@ This writes local config/state files:
 
 1. Run `voxera setup`.
 2. Confirm provider/model setup is sequential across brain slots: `primary`, `fast`, `reasoning`, `fallback`.
-3. Select OpenRouter for at least one slot and verify live model fetch from `https://openrouter.ai/api/v1/models`.
-4. Verify model list usability (search/filter + metadata) and not a hardcoded static list.
-5. Simulate OpenRouter fetch failure (e.g., temporary network block) and verify retry + manual model-id fallback.
-6. Finish setup and verify explicit launch choices: Voxera panel / Vera panel / both / none.
+3. Select OpenRouter for at least one slot and verify vendor-grouped catalog flow (no giant raw table).
+4. Verify recommended defaults are shown per slot: `primary=openai/gpt-4o-mini`, `fast=google/gemini-2.5-flash`, `reasoning=anthropic/claude-3.7-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`.
+5. Verify accepting the recommendation is easy and choosing an alternative vendor/model is also easy.
+6. Optionally verify advanced manual model-id path.
+7. Finish setup and verify explicit launch choices: Voxera panel / Vera panel / both / none.
+
+Maintainer live-refresh check (optional):
+
+```bash
+python scripts/refresh_openrouter_catalog.py
+```
 
 ## 5) Validate baseline behavior
 

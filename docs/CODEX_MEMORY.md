@@ -1485,3 +1485,16 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make golden-check`
   - `make validation-check`
   - `make merge-readiness-check`
+
+
+## 2026-03-10 — PR #162 — feat(setup): curated grouped OpenRouter setup catalog + slot defaults
+- Summary:
+  - Replaced raw live-table OpenRouter setup UX with curated static catalog (`src/voxera/data/openrouter_catalog.json`) grouped by vendor/maker for menu-style setup.
+  - Kept sequential brain-slot setup (`primary`, `fast`, `reasoning`, `fallback`) and added explicit strong default recommendations:
+    - `primary=openai/gpt-4o-mini`
+    - `fast=google/gemini-2.5-flash`
+    - `reasoning=anthropic/claude-3.7-sonnet`
+    - `fallback=meta-llama/llama-3.3-70b-instruct`
+  - Preserved advanced manual model-id path and post-setup panel launch options.
+  - Added maintainer refresh helper from live endpoint: `scripts/refresh_openrouter_catalog.py` + normalization/refresh logic in `src/voxera/openrouter_catalog.py`.
+  - Added focused tests for curated catalog load/grouping/recommendation and refresh normalization path.

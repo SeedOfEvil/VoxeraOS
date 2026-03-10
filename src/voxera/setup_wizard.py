@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-import httpx
 import yaml
 from rich.console import Console
 from rich.panel import Panel
@@ -17,6 +16,11 @@ from rich.text import Text
 
 from .config import capabilities_report_path, default_config_path, save_config, save_policy
 from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig
+from .openrouter_catalog import (
+    grouped_catalog,
+    load_curated_openrouter_catalog,
+    recommended_model_for_slot,
+)
 from .paths import ensure_dirs
 
 console = Console()
@@ -34,16 +38,6 @@ class ProviderChoice:
     brain_type: _BrainTypeLiteral
     default_model: str
     default_base_url: str | None = None
-
-
-@dataclass(frozen=True)
-class OpenRouterModel:
-    model_id: str
-    name: str
-    context_length: int | None
-    pricing_prompt: str | None
-    pricing_completion: str | None
-    supported_parameters: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -150,8 +144,7 @@ def _provider_catalog() -> list[ProviderChoice]:
 
 
 def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | None) -> str | None:
-    has_existing_ref = bool(existing_ref)
-    if has_existing_ref:
+    if existing_ref:
         choice = Prompt.ask(
             Text(f"Auth for {provider.label} [keep/skip/replace]"),
             choices=["keep", "skip", "replace"],
@@ -162,7 +155,6 @@ def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | 
             return existing_ref
         if choice == "skip":
             return None
-
         replacement_ref = Prompt.ask(
             f"Enter env/key reference for {provider.label}",
             default=provider.env_ref,
@@ -177,7 +169,6 @@ def _apply_provider_key_choice(provider: ProviderChoice, *, existing_ref: str | 
     )
     if choice == "skip":
         return None
-
     new_ref = Prompt.ask(
         f"Enter env/key reference for {provider.label}",
         default=provider.env_ref,
@@ -195,130 +186,85 @@ def _provider_summary_table() -> Table:
     return table
 
 
-def _fetch_openrouter_models() -> list[OpenRouterModel]:
-    response = httpx.get("https://openrouter.ai/api/v1/models", timeout=10.0)
-    response.raise_for_status()
-    payload = response.json()
-    data = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(data, list):
-        raise ValueError(
-            "OpenRouter models API returned invalid payload shape: expected top-level data[]"
-        )
-
-    models: list[OpenRouterModel] = []
-    for entry in data:
-        if not isinstance(entry, dict):
-            continue
-        model_id = str(entry.get("id") or "").strip()
-        if not model_id:
-            continue
-        name = str(entry.get("name") or model_id)
-        context_raw = entry.get("context_length")
-        context_length = context_raw if isinstance(context_raw, int) else None
-
-        pricing_prompt: str | None = None
-        pricing_completion: str | None = None
-        pricing_raw = entry.get("pricing")
-        if isinstance(pricing_raw, dict):
-            p_prompt = pricing_raw.get("prompt")
-            p_completion = pricing_raw.get("completion")
-            pricing_prompt = str(p_prompt) if p_prompt is not None else None
-            pricing_completion = str(p_completion) if p_completion is not None else None
-
-        params: tuple[str, ...] = ()
-        params_raw = entry.get("supported_parameters")
-        if isinstance(params_raw, list):
-            normalized = [str(param) for param in params_raw if isinstance(param, str)]
-            params = tuple(sorted(set(normalized)))
-
-        models.append(
-            OpenRouterModel(
-                model_id=model_id,
-                name=name,
-                context_length=context_length,
-                pricing_prompt=pricing_prompt,
-                pricing_completion=pricing_completion,
-                supported_parameters=params,
-            )
-        )
-
-    return sorted(models, key=lambda item: item.model_id)
-
-
-def _display_openrouter_models(models: list[OpenRouterModel], *, limit: int = 15) -> None:
-    table = Table(title=f"OpenRouter live catalog ({len(models)} models)")
-    table.add_column("#", justify="right")
-    table.add_column("id")
-    table.add_column("name")
-    table.add_column("context")
-    table.add_column("pricing")
-    table.add_column("params")
-
-    for idx, item in enumerate(models[:limit], start=1):
-        pricing = "-"
-        if item.pricing_prompt or item.pricing_completion:
-            pricing = f"p:{item.pricing_prompt or '-'} c:{item.pricing_completion or '-'}"
-        params = ", ".join(item.supported_parameters[:3]) if item.supported_parameters else "-"
-        table.add_row(
-            str(idx),
-            item.model_id,
-            item.name,
-            str(item.context_length or "-"),
-            pricing,
-            params,
-        )
-    console.print(table)
-
-
-def _pick_openrouter_model(default_model: str) -> str:
-    models: list[OpenRouterModel] = []
-    while True:
-        try:
-            models = _fetch_openrouter_models()
-            break
-        except Exception as exc:
-            console.print(f"[yellow]Could not fetch OpenRouter catalog:[/yellow] {exc}")
-            choice = Prompt.ask(
-                "OpenRouter model source",
-                choices=["retry", "manual"],
-                default="retry",
-            )
-            if choice == "manual":
-                return (
-                    Prompt.ask("Enter OpenRouter model id", default=default_model).strip()
-                    or default_model
-                )
-
-    query = (
-        Prompt.ask("Optional search/filter (id or name contains, blank = all)", default="")
-        .strip()
-        .lower()
+def _choose_numbered_option(items: list[str], *, prompt: str, default_index: int = 1) -> int:
+    for index, item in enumerate(items, start=1):
+        console.print(f"  {index}. {item}")
+    choice = Prompt.ask(
+        prompt,
+        choices=[str(i) for i in range(1, len(items) + 1)],
+        default=str(default_index),
     )
-    filtered = [
-        model
-        for model in models
-        if not query or query in model.model_id.lower() or query in model.name.lower()
-    ]
-    if not filtered:
-        console.print(
-            "[yellow]No models matched the filter. Falling back to manual entry.[/yellow]"
+    return int(choice) - 1
+
+
+def _pick_openrouter_model(slot_key: _BrainSlotLiteral) -> str:
+    recommended_id = recommended_model_for_slot(slot_key)
+    catalog = load_curated_openrouter_catalog()
+    by_vendor = grouped_catalog(catalog)
+    model_lookup = {str(model["id"]): model for model in catalog}
+
+    recommended = model_lookup.get(recommended_id)
+    recommended_name = str(recommended["name"]) if recommended else recommended_id
+    recommended_vendor = str(recommended["vendor"]) if recommended else "OpenAI"
+
+    console.print(
+        Panel(
+            f"Recommended for {slot_key}: {recommended_id} ({recommended_name})\n"
+            f"Vendor group: {recommended_vendor}",
+            title=f"OpenRouter model ({slot_key})",
         )
+    )
+
+    mode = Prompt.ask(
+        "Model selection mode",
+        choices=["recommended", "browse", "manual"],
+        default="recommended",
+    )
+    if mode == "recommended":
+        return recommended_id
+    if mode == "manual":
         return (
-            Prompt.ask("Enter OpenRouter model id", default=default_model).strip() or default_model
+            Prompt.ask("Enter OpenRouter model id", default=recommended_id).strip()
+            or recommended_id
         )
 
-    _display_openrouter_models(filtered)
-    selection = Prompt.ask(
-        "Select model by number (or type model id)",
-        default="1",
-    ).strip()
-    if selection.isdigit():
-        index = int(selection)
-        if 1 <= index <= min(len(filtered), 15):
-            return filtered[index - 1].model_id
+    vendor_labels = [f"{vendor} ({len(models)} models)" for vendor, models in by_vendor]
+    default_vendor_index = 1
+    for idx, (vendor, _) in enumerate(by_vendor, start=1):
+        if vendor == recommended_vendor:
+            default_vendor_index = idx
+            break
 
-    raw = selection.strip()
-    return raw or default_model
+    vendor_idx = _choose_numbered_option(
+        vendor_labels,
+        prompt="Choose vendor group",
+        default_index=default_vendor_index,
+    )
+    vendor, vendor_models = by_vendor[vendor_idx]
+
+    model_lines: list[str] = []
+    for model in vendor_models:
+        pricing = "-"
+        if model.get("pricing_prompt") or model.get("pricing_completion"):
+            pricing = (
+                f"p:{model.get('pricing_prompt') or '-'} c:{model.get('pricing_completion') or '-'}"
+            )
+        model_lines.append(
+            f"{model['id']} — {model['name']} (ctx={model.get('context_length') or '-'}, {pricing})"
+        )
+
+    default_model_index = 1
+    for idx, model in enumerate(vendor_models, start=1):
+        if model["id"] == recommended_id:
+            default_model_index = idx
+            break
+
+    model_idx = _choose_numbered_option(
+        model_lines,
+        prompt=f"Choose model from {vendor}",
+        default_index=default_model_index,
+    )
+    return str(vendor_models[model_idx]["id"])
 
 
 def _configure_brain_slot(
@@ -341,7 +287,7 @@ def _configure_brain_slot(
     api_key_ref = _apply_provider_key_choice(provider, existing_ref=existing_ref)
 
     if provider.slug == "openrouter":
-        model = _pick_openrouter_model(provider.default_model)
+        model = _pick_openrouter_model(slot.key)
         brain = BrainConfig(
             type="openai_compat",
             model=model,

@@ -131,9 +131,15 @@ Provider auth choices are intentionally non-destructive:
 
 For cloud setup in v0.1.7, `voxera setup` walks the brain chain one slot at a time (`primary`, `fast`, `reasoning`, `fallback`) with explicit provider/model confirmation for each slot.
 
-If OpenRouter is selected for a slot, setup fetches the live models catalog (`https://openrouter.ai/api/v1/models`) and presents searchable model choices with metadata (`id`, `name`, `context_length`, pricing hints, and supported parameters when present). If fetch fails, setup offers retry and manual model-id entry so onboarding does not dead-end.
+If OpenRouter is selected for a slot, setup uses the curated repo catalog (`src/voxera/data/openrouter_catalog.json`) and a vendor-first guided flow (`OpenAI`, `Google`, `Anthropic`, `Meta`, etc.) so onboarding stays manageable. The default recommended models are slot-specific: `primary=openai/gpt-4o-mini`, `fast=google/gemini-2.5-flash`, `reasoning=anthropic/claude-3.7-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`. Advanced users can still choose manual model-id entry when needed.
 
 After config save succeeds, setup offers an explicit optional launch step: open Voxera panel, Vera panel, both, or none.
+
+Maintainer refresh path for curated catalog metadata from live endpoint:
+
+```bash
+python scripts/refresh_openrouter_catalog.py
+```
 
 Run the guided checklist:
 

@@ -107,9 +107,15 @@ voxera setup
 voxera queue init
 ```
 
-`voxera setup` in v0.1.7 now guides each brain slot sequentially (`primary`, `fast`, `reasoning`, `fallback`), lets you pick provider choices from a supported list, and (for OpenRouter) fetches the live model catalog from `https://openrouter.ai/api/v1/models` with search/filter + manual model-id fallback if the fetch fails.
+`voxera setup` in v0.1.7 now guides each brain slot sequentially (`primary`, `fast`, `reasoning`, `fallback`), uses menu-style provider selection, and for OpenRouter uses a curated vendor-grouped model catalog with strong per-slot defaults (`primary`: `openai/gpt-4o-mini`, `fast`: `google/gemini-2.5-flash`, `reasoning`: `anthropic/claude-3.7-sonnet`, `fallback`: `meta-llama/llama-3.3-70b-instruct`).
 
 After setup saves successfully, an explicit finish step lets you open Voxera Panel, Vera Panel, both, or neither.
+
+Maintainers can refresh catalog metadata from the live OpenRouter endpoint with:
+
+```bash
+python scripts/refresh_openrouter_catalog.py
+```
 
 Run the core runtime stack locally:
 

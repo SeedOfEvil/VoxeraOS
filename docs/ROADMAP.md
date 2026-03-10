@@ -25,7 +25,8 @@
 - **GitHub PR #155 (planned/current)**: Add evidence-aware Vera job outcome review + evidence-grounded next-step guidance with optional follow-up preview drafting (no auto-submit, no autonomy expansion).
 - **GitHub PR #157 (completed)**: Added a narrow structured `write_file` queue request (`path` + `content` + optional `mode`) so contentful file writes execute on governed VoxeraOS rails with canonical evidence artifacts.
 - **GitHub PR #160 (completed)**: Promoted Vera to first-class ops runtime ergonomics with dedicated make targets, `voxera-vera.service`, and default service-stack inclusion alongside daemon + panel.
-- **GitHub PR #161 (completed)**: setup/demo productization pass — version/docs sync to 0.1.7, sequential brain-slot setup (`primary`/`fast`/`reasoning`/`fallback`), provider list selection, OpenRouter live model catalog retrieval with retry/manual fallback, and explicit post-setup launch options for Voxera/Vera panels.
+- **GitHub PR #161 (completed)**: setup/demo productization pass — version/docs sync to 0.1.7, sequential brain-slot setup (`primary`/`fast`/`reasoning`/`fallback`), provider list selection, OpenRouter model selection UX upgrades, and explicit post-setup launch options for Voxera/Vera panels.
+- **GitHub PR #162 (completed)**: replaced painful raw OpenRouter table UX with curated vendor-grouped setup catalog + per-slot recommended defaults; added maintainer live-refresh script (`scripts/refresh_openrouter_catalog.py`).
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.

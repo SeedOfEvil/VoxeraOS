@@ -52,9 +52,10 @@ VoxeraOS/
 │   │   ├── version.py               — version from pyproject.toml
 │   │   ├── paths.py                 — XDG path resolution (config/data/queue)
 │   │   ├── secrets.py               — keyring + 0600 file fallback
-│   │   ├── setup_wizard.py          — interactive first-run TUI wizard (sequential brain slots + OpenRouter live model picker + finish launch step)
+│   │   ├── setup_wizard.py          — interactive first-run TUI wizard (sequential brain slots + curated grouped OpenRouter model picker + finish launch step)
 │   │   ├── doctor.py                — diagnostic runner (doctor_sync)
 │   │   ├── demo.py                  — guided onboarding checklist
+│   │   ├── openrouter_catalog.py    — curated OpenRouter catalog loader/grouping + live refresh helpers
 │   │   ├── brain/
 │   │   │   ├── base.py              — Brain protocol (generate, capability_test)
 │   │   │   ├── openai_compat.py     — OpenAI-compatible adapter (OpenRouter, Ollama…)
@@ -329,7 +330,7 @@ src/voxera/
 ├── version.py                — Version from pyproject.toml or installed package
 ├── paths.py                  — XDG path resolution: config, data, queue directories
 ├── secrets.py                — Keyring integration; fallback to 0600 file
-├── setup_wizard.py           — Interactive TUI first-run setup (voxera setup; provider list, sequential brain slots, OpenRouter live model catalog, and post-setup panel launch choices)
+├── setup_wizard.py           — Interactive TUI first-run setup (voxera setup; provider list, sequential brain slots, curated vendor-grouped OpenRouter catalog, and post-setup panel launch choices)
 ├── doctor.py                 — Diagnostic CLI: endpoint health, model test,
 │                               and operator-visible skill registry health summary (`skills.registry`)
 │                               lock/auth checks, quick offline mode
