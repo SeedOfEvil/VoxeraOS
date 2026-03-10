@@ -701,6 +701,7 @@ voxera                        (cli.py — Typer composition root)
 ├── status           daemon status + health summary
 ├── audit            tail JSONL audit log
 ├── panel            start the web panel (uvicorn)
+├── vera             start the standalone Vera web app (uvicorn)
 ├── daemon           start the queue daemon
 ├── setup            interactive first-run TUI wizard
 ├── demo             guided onboarding checklist (offline + online modes)
@@ -1110,6 +1111,11 @@ Safety semantics:
 ## Vera v0 conversational boundary + explicit queue handoff (PR #152/#153)
 
 Vera v0 adds a minimal standalone chat surface (`voxera.vera_web.app`) intended to run on a separate port from the operator panel, with short session-scoped context stored under `notes/queue/artifacts/vera_sessions/`.
+
+Operational defaults:
+- local command: `make vera`
+- user service: `voxera-vera.service`
+- host/port: `127.0.0.1:8790`
 
 - **Vera role:** reasoning + conversation layer (brain-backed text responses, planning help, structured request drafting).
 - **VoxeraOS role:** strict execution trust layer (queue intake, policy/approval, runtime execution, evidence artifacts).

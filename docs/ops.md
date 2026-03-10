@@ -19,6 +19,22 @@ This installs user units from `deploy/systemd/user/` into `~/.config/systemd/use
 and enables/starts:
 - `voxera-daemon.service`
 - `voxera-panel.service`
+- `voxera-vera.service`
+
+Vera service runtime defaults:
+- host: `127.0.0.1`
+- port: `8790`
+- start command: `@VOXERA_PROJECT_DIR@/.venv/bin/python -m uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`
+
+Useful Vera service commands:
+
+```bash
+make vera-start
+make vera-stop
+make vera-restart
+make vera-status
+make vera-logs
+```
 
 
 ## Config + env locations
@@ -1263,7 +1279,7 @@ Child summary is read-only operator visibility and does not change orchestration
 1. Start services:
    - `voxera daemon`
    - `voxera panel --host 127.0.0.1 --port 8787`
-   - `uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`
+   - `make vera`
 2. Open `http://127.0.0.1:8790/`.
 3. Send a greeting and verify you receive a conversational assistant reply.
 4. Send a follow-up that depends on prior context; verify short session context continuity.

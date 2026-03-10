@@ -17,7 +17,15 @@ from .cli_config import config_show_impl, config_snapshot_impl, config_validate_
 from .cli_doctor import register as register_doctor
 from .cli_ops import ops_bundle_job_impl, ops_bundle_system_impl, ops_capabilities_impl
 from .cli_queue import artifacts_app, inbox_app, queue_app
-from .cli_runtime import audit_impl, daemon_impl, demo_cmd_impl, panel_impl, setup_impl, status_impl
+from .cli_runtime import (
+    audit_impl,
+    daemon_impl,
+    demo_cmd_impl,
+    panel_impl,
+    setup_impl,
+    status_impl,
+    vera_impl,
+)
 from .cli_skills_missions import (
     approval_prompt_impl,
     missions_list_impl,
@@ -302,6 +310,15 @@ def daemon(
         poll_interval=poll_interval,
         auto_approve_ask=auto_approve_ask,
     )
+
+
+@app.command()
+def vera(
+    host: str = typer.Option("127.0.0.1", "--host", help="Vera host override."),
+    port: int = typer.Option(8790, "--port", help="Vera port override."),
+):
+    """Run the standalone Vera web app."""
+    vera_impl(host=host, port=port)
 
 
 @ops_app.command("capabilities")

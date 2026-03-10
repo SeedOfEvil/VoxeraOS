@@ -24,6 +24,7 @@
 - **GitHub PR #154 (completed)**: Improved Vera natural-language action detection + preview preparation quality (broader conversational phrasing support, same strict preview/submit/execution trust boundary).
 - **GitHub PR #155 (planned/current)**: Add evidence-aware Vera job outcome review + evidence-grounded next-step guidance with optional follow-up preview drafting (no auto-submit, no autonomy expansion).
 - **GitHub PR #157 (completed)**: Added a narrow structured `write_file` queue request (`path` + `content` + optional `mode`) so contentful file writes execute on governed VoxeraOS rails with canonical evidence artifacts.
+- **GitHub PR #160 (completed)**: Promoted Vera to first-class ops runtime ergonomics with dedicated make targets, `voxera-vera.service`, and default service-stack inclusion alongside daemon + panel.
 
 **Released in v0.1.5:**
 - `voxera artifacts prune`: operator-grade artifact hygiene, dry-run by default, `--yes` to delete.

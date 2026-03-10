@@ -20,6 +20,7 @@
 │ audit        Show last N audit events.                                                           │
 │ panel        Run the minimal approvals/audit panel.                                              │
 │ daemon       Run mission queue daemon watching for JSON jobs.                                    │
+│ vera         Run the standalone Vera web app.                                                    │
 │ config       Runtime configuration utilities                                                     │
 │ artifacts    Artifact management utilities                                                       │
 │ skills       Manage skills                                                                       │

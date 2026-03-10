@@ -237,14 +237,14 @@ Interpretation:
 
 ## Vera handoff smoke
 
-1. Start daemon/panel and run `uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`.
+1. Start daemon/panel and run `make vera` (defaults: `127.0.0.1:8790`).
 2. In Vera, ask for an action like `open https://example.com`; confirm structured preview text and that nothing executed yet.
 3. Explicitly hand off (`submit it` or UI submit button) and confirm `notes/queue/inbox/inbox-*.json` appears.
 4. Confirm Vera reports submitted/queued and not yet executed; use queue/panel surfaces for runtime truth.
 
 ## Vera natural-language preview + handoff checks (PR #154)
 
-Use this quick manual check after starting Vera (`uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`):
+Use this quick manual check after starting Vera (`make vera`):
 
 - Ask `Can you go to example.com?` and verify Vera prepares a preview only.
 - Verify DEV diagnostics include `preview_available: True`.
@@ -291,3 +291,15 @@ Use this quick manual check after starting Vera (`uvicorn voxera.vera_web.app:ap
 7. Verify no-preview case fails honestly and creates no job.
 8. Verify successful submit clears preview pane affordance.
 9. During repeated turns, verify chat view stays near latest messages automatically and conversation area has more usable space than prior layout.
+
+## Optional: Vera as a user service
+
+```bash
+make services-install
+make vera-status
+make vera-logs
+make vera-restart
+make vera-stop
+```
+
+`make services-install` installs/enables `voxera-daemon.service`, `voxera-panel.service`, and `voxera-vera.service` in `~/.config/systemd/user/`.

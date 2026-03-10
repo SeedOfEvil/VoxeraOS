@@ -1,3 +1,12 @@
+## 2026-03-10 — GitHub PR #160 — chore(vera/ops): add first-class startup commands and user-service integration
+
+- Promoted Vera to a first-class runtime component in operations tooling.
+- Added dedicated Make targets for foreground Vera startup plus service lifecycle wrappers (`vera`, `vera-start`, `vera-stop`, `vera-restart`, `vera-status`, `vera-logs`).
+- Added `deploy/systemd/user/voxera-vera.service` with deterministic repo-venv startup command (`.venv/bin/python -m uvicorn ...`) on `127.0.0.1:8790`.
+- Updated `make services-install`/`services-*` flows so default user-service stack now includes daemon + panel + Vera.
+- Updated README/ops/architecture/Ubuntu testing docs so operators can run Vera locally, manage it with systemd user services, inspect logs/status, and treat daemon+panel+Vera as the standard runtime stack.
+- Non-goals preserved: no Vera feature-surface expansion, no queue semantics changes, no auth redesign, no orchestration redesign.
+
 ## 2026-03-09 — GitHub PR #157 — feat(files/queue): structured file-write content support
 
 - Added a narrow governed queue contract: payloads can include `write_file` (`path`, `content`, optional `mode`).
