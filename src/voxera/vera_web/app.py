@@ -172,7 +172,11 @@ def _looks_like_voxera_preview_dump(text: str) -> bool:
     lowered = text.strip().lower()
     if not lowered:
         return False
-    if "proposed voxeraos job" in lowered or "submit-ready voxeraos preview" in lowered:
+    if (
+        "proposed voxeraos job" in lowered
+        or "proposal for voxeraos" in lowered
+        or "submit-ready voxeraos preview" in lowered
+    ):
         return True
     return "```json" in lowered and any(
         marker in lowered
@@ -215,15 +219,20 @@ def _is_explicit_json_content_request(message: str) -> bool:
     )
 
 
-def _conversational_preview_update_message(*, updated: bool) -> str:
+def _conversational_preview_update_message(*, updated: bool, has_active_preview: bool) -> str:
     if updated:
         return (
             "I updated the draft in the preview. "
             "The preview pane is the authoritative version I would hand off."
         )
+    if has_active_preview:
+        return (
+            "I kept the current preview unchanged because I couldn’t produce a safe valid refinement yet. "
+            "If you want, I can refine it with more specific goal/target details."
+        )
     return (
-        "I kept the current preview unchanged because I couldn’t produce a safe valid refinement yet. "
-        "If you want, I can refine it with more specific goal/target details."
+        "I couldn’t safely create a VoxeraOS preview draft from that yet. "
+        "If you share a clearer target (URL/path/content), I’ll draft it in the preview pane."
     )
 
 
@@ -435,13 +444,17 @@ async def chat(request: Request):
 
     assistant_text = guarded_answer
     if should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer):
-        assistant_text = _conversational_preview_update_message(updated=builder_payload is not None)
+        assistant_text = _conversational_preview_update_message(
+            updated=builder_payload is not None, has_active_preview=pending_preview is not None
+        )
     elif (
         _looks_like_preview_update_claim(guarded_answer)
         and builder_payload is None
         and pending_preview is not None
     ):
-        assistant_text = _conversational_preview_update_message(updated=False)
+        assistant_text = _conversational_preview_update_message(
+            updated=False, has_active_preview=pending_preview is not None
+        )
 
     status = reply["status"]
 

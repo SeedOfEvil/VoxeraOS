@@ -248,6 +248,79 @@ def test_yes_please_with_active_preview_submits_only_on_real_ack(tmp_path, monke
     assert len(list((queue / "inbox").glob("inbox-*.json"))) == 1
 
 
+def test_file_write_question_uses_authoritative_preview_pane_not_visible_json(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "can you write a file called wittyjoke.txt?"},
+    )
+
+    assert "Proposal for VoxeraOS" not in res.text
+    assert "Proposed VoxeraOS Job" not in res.text
+    assert "```json" not in res.text
+    assert "Preview panel · Active VoxeraOS draft" in res.text
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert "wittyjoke.txt" in preview["goal"]
+
+
+def test_yes_please_submits_file_write_preview_when_present(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write a file called wittyjoke.txt"},
+    )
+    res = client.post("/chat", data={"session_id": sid, "message": "yes please"})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert "wittyjoke.txt" in payload["goal"]
+
+
+def test_note_write_and_file_read_requests_render_preview_pane_without_voxera_json(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    note_res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write a note called ideas.txt"},
+    )
+    assert "```json" not in note_res.text
+    assert "Preview panel · Active VoxeraOS draft" in note_res.text
+
+    read_res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "read the file ~/VoxeraOS/notes/ideas.txt"},
+    )
+    assert "```json" not in read_res.text
+    assert "Preview panel · Active VoxeraOS draft" in read_res.text
+    assert vera_service.read_session_preview(queue, sid) == {
+        "goal": "read the file ~/VoxeraOS/notes/ideas.txt"
+    }
+
+
 def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission(
     tmp_path, monkeypatch
 ):
