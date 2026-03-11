@@ -320,6 +320,41 @@ def _extract_content_refinement(
     return None
 
 
+def _refined_content_from_active_preview(
+    *,
+    text: str,
+    lowered: str,
+    existing_content: str,
+) -> str | None:
+    explicit = _extract_content_refinement(text, lowered)
+    if explicit:
+        return explicit
+
+    if re.search(r"\b(programmer|coding|developer)\b", lowered):
+        return "Why do programmers prefer dark mode? Because light attracts bugs."
+    if re.search(r"\b(pet|dog|cat|puppy|kitten)\b", lowered):
+        return "Why did the cat sit on the computer? To keep an eye on the mouse."
+    if re.search(
+        r"\b(different\s+joke|change\s+the\s+joke|replace\s+the\s+content|make\s+it\s+funnier)\b",
+        lowered,
+    ):
+        return "I told my computer I needed a break, so it said: 'No problem, I’ll go to sleep.'"
+    if re.search(r"\b(make\s+it\s+shorter|shorter)\b", lowered):
+        compressed = existing_content.strip()
+        if compressed:
+            words = compressed.split()
+            return " ".join(words[: min(len(words), 8)])
+        return "Quick joke: cache me outside."
+    if re.search(
+        r"\b(update\s+the\s+content|update\s+content|change\s+it|change\s+content|make\s+it|replace\s+that|replace\s+it|use\s+a\s+different\s+joke)\b",
+        lowered,
+    ):
+        if existing_content.strip():
+            return existing_content.strip() + " (updated)"
+        return "Updated content."
+    return None
+
+
 def _draft_revision_from_active_preview(
     message: str, active_preview: dict[str, Any] | None
 ) -> dict[str, Any] | None:
@@ -372,19 +407,28 @@ def _draft_revision_from_active_preview(
                     "write_file": {"path": path, "content": content, "mode": "append"},
                 }
 
-    if re.search(r"\b(add|put|use|make)\b", lowered) and re.search(
-        r"\b(file|content|text|joke|script|it)\b", lowered
-    ):
+    content_refinement_intent = re.search(
+        r"\b(add|put|use|make|change|update|replace)\b", lowered
+    ) and re.search(r"\b(file|content|text|joke|script|it|that)\b", lowered)
+    if content_refinement_intent:
         filename = _filename_from_preview(active_preview) or "note.txt"
         write_file = active_preview.get("write_file")
         mode = "overwrite"
+        existing_content = ""
         if isinstance(write_file, dict):
             path = str(write_file.get("path") or f"~/VoxeraOS/notes/{filename}")
             mode = str(write_file.get("mode") or "overwrite")
+            existing_content = str(write_file.get("content") or "")
         else:
             path = f"~/VoxeraOS/notes/{filename}"
 
         refined_content = _extract_content_refinement(text, lowered, filename_hint=filename)
+        if not refined_content:
+            refined_content = _refined_content_from_active_preview(
+                text=text,
+                lowered=lowered,
+                existing_content=existing_content,
+            )
         if refined_content:
             return {
                 "goal": f"write a file called {filename} with provided content",

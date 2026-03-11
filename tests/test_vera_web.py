@@ -1793,6 +1793,95 @@ def test_note_for_later_creates_structured_note_preview(tmp_path, monkeypatch):
     assert preview["write_file"]["content"] == "Reminder: buying milk"
 
 
+def test_active_preview_natural_content_refinement_updates_write_file_content(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make a file called jokes.txt with a funny joke"},
+    )
+    before = vera_service.read_session_preview(queue, sid)
+    assert before is not None
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "actually make it a programmer joke"},
+    )
+
+    after = vera_service.read_session_preview(queue, sid)
+    assert after is not None
+    assert "```json" not in res.text
+    assert "send it whenever" in res.text.lower()
+    assert after["write_file"]["path"] == before["write_file"]["path"]
+    assert after["write_file"]["mode"] == before["write_file"]["mode"]
+    assert "programmers" in after["write_file"]["content"].lower()
+
+
+def test_latest_preview_wins_across_multiple_natural_content_refinements(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make a file called jokes.txt with a funny joke"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "actually make it a programmer joke"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "actually make it a pet joke"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert (
+        "cat" in preview["write_file"]["content"].lower()
+        or "mouse" in preview["write_file"]["content"].lower()
+    )
+
+
+def test_update_content_refinement_and_submit_uses_latest_mutated_payload(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make a file called jokes.txt with a funny joke"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "and update the content"},
+    )
+
+    latest = vera_service.read_session_preview(queue, sid)
+    assert latest is not None
+    assert latest["write_file"]["content"].strip()
+
+    client.post("/chat", data={"session_id": sid, "message": "send it"})
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["goal"] == latest["goal"]
+    assert payload["write_file"] == latest["write_file"]
+
+
 def test_builder_prompt_describes_voxera_compiler_contract():
     assert "hidden Voxera Preview Compiler" in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
     assert (
