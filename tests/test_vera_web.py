@@ -202,6 +202,74 @@ def test_prepare_preview_sets_preview_available_true_for_natural_open_phrase(tmp
     assert preview["goal"] == "open https://example.com"
 
 
+def test_open_up_domain_phrase_prepares_preview_and_renders_authoritative_pane(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Open up cnn.com for me please"},
+    )
+
+    assert "Proposed VoxeraOS Job" not in res.text
+    assert "```json" not in res.text
+    assert "Preview panel · Active VoxeraOS draft" in res.text
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://cnn.com"}
+
+
+def test_yes_please_with_active_preview_submits_only_on_real_ack(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    seen_payload: dict[str, object] = {}
+    original_submit = vera_app_module.submit_preview
+
+    def _capture_submit(*, queue_root, payload):
+        seen_payload.update(payload)
+        return original_submit(queue_root=queue_root, payload=payload)
+
+    monkeypatch.setattr(vera_app_module, "submit_preview", _capture_submit)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    res = client.post("/chat", data={"session_id": sid, "message": "Yes please"})
+
+    assert "I submitted the job to VoxeraOS" in res.text
+    assert seen_payload == {"goal": "open https://example.com"}
+    assert len(list((queue / "inbox").glob("inbox-*.json"))) == 1
+
+
+def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": "I submitted the request to VoxeraOS.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "yes please"})
+
+    assert "did not submit anything" in res.text.lower()
+    assert "I submitted the request" not in res.text
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
 def test_submit_now_uses_persisted_structured_preview_state(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

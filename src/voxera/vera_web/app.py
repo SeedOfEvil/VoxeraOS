@@ -126,6 +126,10 @@ def _looks_like_submission_claim(text: str) -> bool:
         "request is now in the queue",
         "handed off",
         "queued",
+        "sent it to voxeraos",
+        "sent it to the queue",
+        "i sent it",
+        "i queued it",
     )
     return any(phrase in lowered for phrase in suspicious_phrases)
 
@@ -140,6 +144,28 @@ def _guardrail_submission_claim(*, root: Path, session_id: str, text: str) -> st
             "If you want to proceed, ask me to prepare a job preview first, then explicitly hand it off."
         )
     return text
+
+
+def _is_natural_confirmation_phrase(message: str) -> bool:
+    normalized = message.strip().lower()
+    if not normalized:
+        return False
+    return bool(
+        re.fullmatch(
+            r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|go\s+ahead|do\s+it|send\s+it|submit\s+it|hand\s+it\s+off)[.!?]*",
+            normalized,
+        )
+    )
+
+
+def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] | None) -> bool:
+    if active_preview is not None:
+        return True
+    if _is_natural_confirmation_phrase(message):
+        return True
+    if is_explicit_handoff_request(message) or is_active_preview_submit_request(message):
+        return True
+    return maybe_draft_job_payload(message, active_preview=None) is not None
 
 
 def _looks_like_voxera_preview_dump(text: str) -> bool:
@@ -324,6 +350,19 @@ async def chat(request: Request):
             status="followup_preview_ready",
         )
 
+    if _is_natural_confirmation_phrase(message) and pending_preview is None:
+        assistant_text, status = _submit_handoff(
+            root=root,
+            session_id=active_session,
+            preview=None,
+        )
+        append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status=status,
+        )
+
     if _is_active_preview_submit_intent(message, preview_available=pending_preview is not None):
         assistant_text, status = _submit_handoff(
             root=root,
@@ -389,7 +428,10 @@ async def chat(request: Request):
     )
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
     is_json_content_request = _is_explicit_json_content_request(message)
-    should_hide_voxera_preview_dump = in_voxera_preview_flow and not is_json_content_request
+    is_voxera_control_turn = _is_voxera_control_turn(message, active_preview=pending_preview)
+    should_hide_voxera_preview_dump = (
+        in_voxera_preview_flow or is_voxera_control_turn
+    ) and not is_json_content_request
 
     assistant_text = guarded_answer
     if should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer):

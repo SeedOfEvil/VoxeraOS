@@ -34,6 +34,8 @@ _HANDOFF_PATTERNS = (
 )
 
 _ACTIVE_PREVIEW_SUBMIT_PATTERNS = (
+    r"\byes\s+please\b",
+    r"\byes\s+go\s+ahead\b",
     r"\bthat\s+looks\s+good\s+now\b",
     r"\buse\s+it\b",
     r"\buse\s+this\s+preview\b",
