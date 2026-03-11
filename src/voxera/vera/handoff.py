@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -434,14 +433,6 @@ def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
         cleaned["write_file"] = {"path": path, "content": content, "mode": mode}
 
     return cleaned
-
-
-def preview_message(payload: dict[str, Any]) -> str:
-    return (
-        "I prepared a VoxeraOS job preview for you (proposal only):\n"
-        f"```json\n{json.dumps(payload, indent=2)}\n```\n"
-        "Nothing has been submitted or executed yet. If this looks right, say 'hand it off' or 'submit it' and I’ll queue it in VoxeraOS."
-    )
 
 
 def submit_preview(*, queue_root: Path, payload: dict[str, Any]) -> dict[str, str]:

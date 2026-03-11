@@ -196,6 +196,11 @@ def _looks_like_preview_update_claim(text: str) -> bool:
     return any(
         phrase in lowered
         for phrase in (
+            "prepared a proposal",
+            "prepared the following job",
+            "drafted a proposal",
+            "here is the prepared proposal",
+            "here is the json",
             "updated the draft in the preview",
             "updated the preview",
             "latest version is ready in the preview",
@@ -350,7 +355,11 @@ async def chat(request: Request):
             status="followup_preview_ready",
         )
 
-    if _is_natural_confirmation_phrase(message) and pending_preview is None:
+    if (
+        _is_natural_confirmation_phrase(message)
+        or is_explicit_handoff_request(message)
+        or is_active_preview_submit_request(message)
+    ) and pending_preview is None:
         assistant_text, status = _submit_handoff(
             root=root,
             session_id=active_session,
@@ -413,30 +422,15 @@ async def chat(request: Request):
     ) and not is_json_content_request
 
     assistant_text = guarded_answer
-    if is_voxera_control_turn and builder_payload is not None and not is_json_content_request:
-        assistant_text = _conversational_preview_update_message(
-            updated=True,
-            has_active_preview=pending_preview is not None,
-        )
-    elif should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer):
+    should_use_conversational_control_reply = (
+        (is_voxera_control_turn and not is_json_content_request)
+        or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
+        or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
+    )
+    if should_use_conversational_control_reply:
         assistant_text = _conversational_preview_update_message(
             updated=builder_payload is not None,
             has_active_preview=pending_preview is not None,
-        )
-    elif (
-        builder_payload is None
-        and pending_preview is not None
-        and (
-            _looks_like_preview_update_claim(guarded_answer)
-            or (
-                is_voxera_control_turn
-                and builder_preview is not None
-                and not is_json_content_request
-            )
-        )
-    ):
-        assistant_text = _conversational_preview_update_message(
-            updated=False, has_active_preview=pending_preview is not None
         )
 
     status = "prepared_preview" if builder_payload is not None else reply["status"]

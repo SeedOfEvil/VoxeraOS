@@ -1516,6 +1516,39 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
     assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
 
 
+def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": "I prepared a proposal for VoxeraOS. Let me know and I'll submit it.",
+            "status": "ok:test",
+        }
+
+    async def _fake_builder(*, turns, user_message, active_preview):
+        _ = (turns, user_message, active_preview)
+        return {"goal": "open https://example.com"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "open example.com"},
+    )
+
+    assert "prepared a proposal" not in res.text.lower()
+    assert "let me know and i'll submit" not in res.text.lower()
+    assert "send it whenever" in res.text.lower()
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
+
+
 def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -1601,3 +1634,10 @@ def test_builder_prompt_describes_voxera_compiler_contract():
         in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
     )
     assert '{"preview": null}' in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
+
+
+def test_vera_prompt_keeps_control_json_off_chat_surface_by_default():
+    prompt = vera_prompt.VERA_SYSTEM_PROMPT
+    assert "Do not emit VoxeraOS control JSON by default in chat." in prompt
+    assert "Do not say you prepared/drafted a proposal." in prompt
+    assert "If a user explicitly asks for general-purpose JSON content" in prompt
