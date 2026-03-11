@@ -12,6 +12,7 @@ from ..brain.gemini import GeminiBrain
 from ..brain.json_recovery import recover_json_object
 from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config
+from .brave_search import BraveSearchClient, WebSearchResult
 from .handoff import maybe_draft_job_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 
@@ -21,6 +22,61 @@ _SESSION_ID_LENGTH = 24
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
 PREVIEW_BUILDER_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
+
+
+def _is_operational_open_request(message: str) -> bool:
+    lowered = message.lower()
+    trigger_terms = ("open ", "launch ", "take me to", "bring up", "navigate to")
+    return any(term in lowered for term in trigger_terms)
+
+
+def _is_informational_web_query(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    if _is_operational_open_request(lowered):
+        return False
+    informational_terms = (
+        "what's on",
+        "what is on",
+        "look up",
+        "search for",
+        "search ",
+        "find out",
+        "latest",
+        "release notes",
+        "summarize",
+        "compare",
+        "what changed",
+        "docs",
+    )
+    web_hints = ("http://", "https://", ".com", ".io", "website", "web")
+    return any(term in lowered for term in informational_terms) or any(
+        hint in lowered for hint in web_hints
+    )
+
+
+def _format_web_investigation_answer(query: str, results: list[WebSearchResult]) -> str:
+    if not results:
+        return (
+            f"I ran a read-only web investigation for '{query}' but didn't find usable results. "
+            "Try refining the query or asking for a narrower topic."
+        )
+
+    bullets = []
+    for idx, result in enumerate(results[:5], start=1):
+        detail = result.description or "No summary provided."
+        age = f" ({result.age})" if result.age else ""
+        bullets.append(f"{idx}. {result.title}{age}\n   {detail}\n   Source: {result.url}")
+
+    joined = "\n".join(bullets)
+    return (
+        f"I used Brave Search in read-only mode to investigate: '{query}'. "
+        "Here are the top findings:\n"
+        f"{joined}\n\n"
+        "If you want, I can compare these sources or summarize a specific angle. "
+        "I have not opened anything in VoxeraOS."
+    )
 
 
 def new_session_id() -> str:
@@ -282,6 +338,35 @@ def _create_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:
 
 async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str) -> dict[str, str]:
     cfg = load_app_config()
+
+    web_cfg = cfg.web_investigation
+    if web_cfg is not None and _is_informational_web_query(user_message):
+        client = BraveSearchClient(
+            api_key_ref=web_cfg.api_key_ref,
+            env_api_key_var=web_cfg.env_api_key_var,
+        )
+        try:
+            results = await client.search(query=user_message, count=web_cfg.max_results)
+        except RuntimeError as exc:
+            msg = str(exc)
+            if "not configured" in msg:
+                return {
+                    "answer": (
+                        "Brave web investigation is not configured yet (missing API key). "
+                        "I can still help reason from what you provide, but I cannot fetch live web results yet."
+                    ),
+                    "status": "web_investigation_unconfigured",
+                }
+            return {
+                "answer": f"I couldn't complete read-only web investigation: {msg}",
+                "status": "web_investigation_error",
+            }
+
+        return {
+            "answer": _format_web_investigation_answer(user_message, results),
+            "status": "ok:web_investigation",
+        }
+
     attempts: list[tuple[str, Any]] = []
     for key in ("primary", "fallback"):
         provider = cfg.brain.get(key) if cfg.brain else None

@@ -18,6 +18,12 @@ privacy:
   cloud_allowed: true
   redact_logs: true
 
+web_investigation:
+  provider: brave
+  api_key_ref: BRAVE_API_KEY
+  env_api_key_var: BRAVE_API_KEY
+  max_results: 5
+
 sandbox_image: docker.io/library/ubuntu:24.04
 sandbox_memory: 512m
 sandbox_cpus: 1.0

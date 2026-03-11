@@ -34,6 +34,15 @@ class PrivacyConfig(BaseModel):
     redact_logs: bool = True
 
 
+class WebInvestigationConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["brave"] = "brave"
+    api_key_ref: str | None = None
+    env_api_key_var: str = "BRAVE_API_KEY"
+    max_results: int = Field(default=5, ge=1, le=10)
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -42,6 +51,7 @@ class AppConfig(BaseModel):
     brain: dict[str, BrainConfig] = Field(default_factory=dict)  # primary/fallback
     policy: PolicyApprovals = Field(default_factory=PolicyApprovals)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
+    web_investigation: WebInvestigationConfig | None = None
     skills_path: str | None = None
     sandbox_image: str = "docker.io/library/ubuntu:24.04"
     sandbox_memory: str = "512m"

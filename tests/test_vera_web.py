@@ -162,6 +162,29 @@ def test_vera_chat_does_not_enqueue_jobs(tmp_path, monkeypatch):
     assert not inbox.exists() or not list(inbox.glob("*.json"))
 
 
+def test_informational_web_query_does_not_auto_prepare_voxera_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": "Read-only findings from Brave", "status": "ok:web_investigation"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "What's on cnn right now?"},
+    )
+
+    assert res.status_code == 200
+    assert "Read-only findings from Brave" in res.text
+    assert vera_service.read_session_preview(queue, sid) is None
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
 def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
