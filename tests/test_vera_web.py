@@ -1344,3 +1344,355 @@ def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypa
     assert "did not submit anything" in res.text.lower()
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
     assert vera_service.read_session_preview(queue, "sid-follow") is not None
+
+
+# ---------------------------------------------------------------------------
+# PR 164: evidence-aware follow-up draft generation
+# ---------------------------------------------------------------------------
+
+
+def test_followup_from_failure_uses_original_goal_not_job_id(tmp_path, monkeypatch):
+    """After a failed job, 'draft the correction' should produce a goal mentioning the
+    original goal text rather than exposing the raw job_id."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-fail-followup.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="failed",
+        execution_result={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "approval_status": "none",
+            "error": "file not found at given path",
+        },
+        failed_sidecar={"error": "file not found at given path"},
+    )
+    # Write the job payload with an explicit goal (override the one _write_job_artifacts wrote)
+    (queue / "failed" / job_id).write_text(
+        json.dumps({"goal": "read the file ~/notes/missing.txt"}), encoding="utf-8"
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-fail-fup",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-fail-fup")
+    res = client.post(
+        "/chat", data={"session_id": "sid-fail-fup", "message": "draft the correction"}
+    )
+
+    assert "drafted a follow-up preview" in res.text
+    assert "did not submit anything" in res.text.lower()
+    preview = vera_service.read_session_preview(queue, "sid-fail-fup")
+    assert preview is not None
+    # Goal should reference the original action, not a raw job id token
+    goal = preview["goal"]
+    assert "missing.txt" in goal or "read the file" in goal
+    assert "file not found" in goal
+
+
+def test_followup_from_denial_safer_version_draft(tmp_path, monkeypatch):
+    """After an awaiting-approval job, 'make a safer version' should produce a
+    preview whose goal reflects the original request."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-deny-fup.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="pending",
+        execution_result={
+            "lifecycle_state": "awaiting_approval",
+            "terminal_outcome": "awaiting_approval",
+            "approval_status": "pending",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "status": "blocked",
+                    "summary": "requires approval: external network access",
+                }
+            ],
+        },
+        approval={"job": job_id, "status": "pending"},
+    )
+    (queue / "pending" / job_id).write_text(
+        json.dumps({"goal": "open https://external.example.com"}), encoding="utf-8"
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-deny-fup",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-deny-fup")
+    res = client.post(
+        "/chat", data={"session_id": "sid-deny-fup", "message": "make a safer version"}
+    )
+
+    assert "drafted a follow-up preview" in res.text
+    assert "did not submit anything" in res.text.lower()
+    preview = vera_service.read_session_preview(queue, "sid-deny-fup")
+    assert preview is not None
+    goal = preview["goal"]
+    assert "external.example.com" in goal
+    assert "safer" in goal.lower()
+
+
+def test_followup_from_success_next_step_mentions_original_goal(tmp_path, monkeypatch):
+    """After a successful job, 'prepare the next step' should produce a goal that
+    references what was accomplished, not a raw job id."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-success-fup.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "step_results": [
+                {"step_index": 1, "status": "succeeded", "summary": "Config file read complete"}
+            ],
+        },
+    )
+    (queue / "done" / job_id).write_text(
+        json.dumps({"goal": "read the file ~/config/settings.json"}), encoding="utf-8"
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-succ-fup",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-succ-fup")
+    res = client.post(
+        "/chat", data={"session_id": "sid-succ-fup", "message": "prepare the next step"}
+    )
+
+    assert "drafted a follow-up preview" in res.text
+    assert "did not submit anything" in res.text.lower()
+    preview = vera_service.read_session_preview(queue, "sid-succ-fup")
+    assert preview is not None
+    goal = preview["goal"]
+    assert "settings.json" in goal or "config" in goal or "next step" in goal.lower()
+
+
+def test_followup_retry_different_target_preserves_original_action(tmp_path, monkeypatch):
+    """'retry that with a different target' should keep the original action
+    in the draft (user edits the target afterwards)."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-retry-target.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "step_results": [{"step_index": 1, "status": "succeeded", "summary": "Done"}],
+        },
+    )
+    (queue / "done" / job_id).write_text(
+        json.dumps({"goal": "open https://old.example.com"}), encoding="utf-8"
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-retry-tgt",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-retry-tgt")
+    res = client.post(
+        "/chat",
+        data={"session_id": "sid-retry-tgt", "message": "retry that with a different target"},
+    )
+
+    assert "drafted a follow-up preview" in res.text
+    assert "did not submit anything" in res.text.lower()
+    preview = vera_service.read_session_preview(queue, "sid-retry-tgt")
+    assert preview is not None
+    # Original action preserved as starting point for user to update target
+    assert "old.example.com" in preview["goal"] or "open" in preview["goal"]
+
+
+@pytest.mark.parametrize(
+    ("phrase", "sid"),
+    [
+        ("fix it and try again", "sid-phrase-fix"),
+        ("continue from that result", "sid-phrase-cont"),
+        ("make a safer version", "sid-phrase-safer"),
+        ("retry that with a different target", "sid-phrase-retry"),
+        ("draft the correction", "sid-phrase-corr"),
+    ],
+)
+def test_followup_new_phrases_trigger_evidence_aware_draft(tmp_path, monkeypatch, phrase, sid):
+    """New follow-up phrases should be recognized and produce a preview from evidence."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-new-phrases.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "step_results": [{"step_index": 1, "status": "succeeded", "summary": "Done"}],
+        },
+    )
+    (queue / "done" / job_id).write_text(
+        json.dumps({"goal": "write a note called results.txt"}), encoding="utf-8"
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        sid,
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", sid)
+    res = client.post("/chat", data={"session_id": sid, "message": phrase})
+
+    assert "drafted a follow-up preview" in res.text, f"Expected draft for phrase: {phrase!r}"
+    assert "did not submit anything" in res.text.lower(), f"Expected no-submit for: {phrase!r}"
+
+
+def test_followup_insufficient_evidence_asks_for_clarification(tmp_path, monkeypatch):
+    """When there is no resolvable job, follow-up requests should ask for
+    clarification rather than hallucinating a draft."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post("/chat", data={"session_id": sid, "message": "make a safer version"})
+
+    assert "did not submit anything" not in res.text.lower() or "I can draft" in res.text
+    # No inbox job should be created
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+    # No active preview was set (no evidence to base it on)
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is None
+
+
+def test_followup_preview_lifecycle_not_broken_by_new_intents(tmp_path, monkeypatch):
+    """After a follow-up preview is created, the normal submit / clear lifecycle
+    should still work correctly."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-lifecycle-check.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="failed",
+        execution_result={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "approval_status": "none",
+            "error": "bad target",
+        },
+        failed_sidecar={"error": "bad target"},
+    )
+    (queue / "failed" / job_id).write_text(
+        json.dumps({"goal": "open https://bad.example"}), encoding="utf-8"
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-lc",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-lc")
+
+    # Step 1: generate a follow-up correction preview
+    res = client.post("/chat", data={"session_id": "sid-lc", "message": "draft the correction"})
+    assert "drafted a follow-up preview" in res.text
+    preview_before = vera_service.read_session_preview(queue, "sid-lc")
+    assert preview_before is not None
+
+    # Step 2: submit via /handoff — preview should clear
+    submit_res = client.post("/handoff", data={"session_id": "sid-lc"})
+    assert "I submitted the job to VoxeraOS" in submit_res.text
+    assert vera_service.read_session_preview(queue, "sid-lc") is None
+
+    # Step 3: verify a new inbox job was created
+    inbox_jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(inbox_jobs) == 1
+
+
+def test_followup_preview_state_has_valid_goal(tmp_path, monkeypatch):
+    """The follow-up preview stored in session state must have a valid string goal."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    job_id = "job-json-check.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "step_results": [{"step_index": 1, "status": "succeeded", "summary": "Done"}],
+        },
+    )
+    (queue / "done" / job_id).write_text(
+        json.dumps({"goal": "read the file ~/notes/test.txt"}), encoding="utf-8"
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-json",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-json")
+    client.post("/chat", data={"session_id": "sid-json", "message": "prepare the next step"})
+
+    # Check the preview object directly (not parsing HTML-escaped content)
+    preview = vera_service.read_session_preview(queue, "sid-json")
+    assert preview is not None
+    assert "goal" in preview
+    assert isinstance(preview["goal"], str)
+    assert preview["goal"]
+    # Goal should reference the original action
+    assert (
+        "test.txt" in preview["goal"]
+        or "notes" in preview["goal"]
+        or "next step" in preview["goal"].lower()
+    )

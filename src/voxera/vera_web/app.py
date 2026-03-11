@@ -14,6 +14,7 @@ from ..config import load_config as load_runtime_config
 from ..paths import queue_root as default_queue_root
 from ..vera.evidence_review import (
     draft_followup_preview,
+    followup_preview_message,
     is_followup_preview_request,
     is_review_request,
     maybe_extract_job_id,
@@ -311,7 +312,7 @@ async def chat(request: Request):
                 status="followup_missing_evidence",
             )
 
-        payload = draft_followup_preview(evidence)
+        payload = draft_followup_preview(evidence, user_message=message)
         write_session_preview(root, active_session, payload)
         write_session_handoff_state(
             root,
@@ -322,11 +323,7 @@ async def chat(request: Request):
             error=None,
             job_id=None,
         )
-        assistant_text = (
-            f"I drafted a follow-up preview based on evidence from `{evidence.job_id}`.\n\n"
-            f"```json\n{payload}\n```\n\n"
-            "This is preview-only. I did not submit anything to VoxeraOS."
-        )
+        assistant_text = followup_preview_message(evidence, payload, user_message=message)
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
         return _render_page(
             session_id=active_session,

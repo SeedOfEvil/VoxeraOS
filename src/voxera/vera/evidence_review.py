@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +30,68 @@ _FOLLOWUP_HINTS = (
     "prepare next step",
     "draft follow-up",
     "prepare a follow-up",
+    # correction intents
+    "draft the correction",
+    "draft a correction",
+    "fix it and try again",
+    "fix that and try",
+    "correct it and try",
+    # safer-version intents
+    "make a safer version",
+    "make it safer",
+    "try a safer",
+    "prepare a safer",
+    "safer alternative",
+    "safer version",
+    # retry-with-different-target intents
+    "retry that with a different target",
+    "retry with a different target",
+    "do the same but on another",
+    "do that on another",
+    "with a different target",
+    # continuation intents
+    "revise that based on what happened",
+    "fix it and try again",
+    "continue from that result",
+    "continue from the result",
 )
+
+# Intent-classification hint sets (subset of _FOLLOWUP_HINTS)
+_CORRECTION_HINTS = (
+    "draft the correction",
+    "draft a correction",
+    "fix it and try again",
+    "fix that and try",
+    "correct it and try",
+)
+_SAFER_VERSION_HINTS = (
+    "make a safer version",
+    "make it safer",
+    "try a safer",
+    "prepare a safer",
+    "safer alternative",
+    "safer version",
+)
+_RETRY_DIFFERENT_TARGET_HINTS = (
+    "retry that with a different target",
+    "retry with a different target",
+    "do the same but on another",
+    "do that on another",
+    "with a different target",
+)
+
+
+def _classify_followup_intent(message: str) -> str:
+    """Return the follow-up intent: 'retry_different_target', 'safer_version',
+    'correction', or 'next_step' (default)."""
+    lowered = message.strip().lower()
+    if any(h in lowered for h in _RETRY_DIFFERENT_TARGET_HINTS):
+        return "retry_different_target"
+    if any(h in lowered for h in _SAFER_VERSION_HINTS):
+        return "safer_version"
+    if any(h in lowered for h in _CORRECTION_HINTS):
+        return "correction"
+    return "next_step"
 
 
 @dataclass(frozen=True)
@@ -43,6 +104,7 @@ class ReviewedJobEvidence:
     latest_summary: str
     failure_summary: str
     child_summary: dict[str, int] | None
+    original_goal: str = field(default="")
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:
@@ -127,6 +189,8 @@ def review_job_outcome(
     if found is None:
         return None
 
+    job_payload = _read_json_dict(found.primary_path)
+    original_goal = str(job_payload.get("goal") or "")
     state_payload = _read_json_dict(
         found.primary_path.with_name(f"{found.primary_path.stem}.state.json")
     )
@@ -169,6 +233,7 @@ def review_job_outcome(
         latest_summary=latest_summary,
         failure_summary=failure_summary,
         child_summary=child_summary if isinstance(child_summary, dict) else None,
+        original_goal=original_goal,
     )
 
 
@@ -242,15 +307,112 @@ def _next_step(evidence: ReviewedJobEvidence) -> str:
     )
 
 
-def draft_followup_preview(evidence: ReviewedJobEvidence) -> dict[str, str]:
-    if evidence.state == "awaiting_approval":
-        goal = f"review approval requirements for {evidence.job_id}"
-    elif evidence.state == "failed":
-        summary = evidence.failure_summary or evidence.latest_summary or "the prior failure"
-        goal = f"prepare a corrected retry for {evidence.job_id} after addressing: {summary}"
-    elif evidence.state == "succeeded":
-        summary = evidence.latest_summary or "the completed result"
-        goal = f"inspect output details from {evidence.job_id}: {summary}"
-    else:
-        goal = f"check status and evidence for {evidence.job_id}"
+def draft_followup_preview(
+    evidence: ReviewedJobEvidence, *, user_message: str = ""
+) -> dict[str, Any]:
+    """Generate a follow-up preview payload grounded in canonical VoxeraOS evidence.
+
+    Uses the follow-up intent from the user message and the original job goal to
+    produce a specific, actionable draft rather than a generic placeholder.
+    """
+    intent = _classify_followup_intent(user_message)
+    original = evidence.original_goal.strip()
+
+    if intent == "retry_different_target":
+        # Preserve the original draft so the user has a starting point to edit.
+        # The assistant message (see followup_preview_message) tells them to update the target.
+        goal = original if original else "retry with a different target"
+
+    elif intent == "safer_version":
+        failure_ctx = evidence.failure_summary or evidence.latest_summary
+        if original and failure_ctx:
+            goal = f"{original} (safer version: address {failure_ctx})"
+        elif original:
+            goal = f"{original} (safer version)"
+        else:
+            goal = "prepare a safer version of the previous request"
+
+    elif intent == "correction":
+        failure_ctx = evidence.failure_summary or evidence.latest_summary
+        if original and failure_ctx:
+            goal = f"{original} (correcting: {failure_ctx})"
+        elif original:
+            goal = f"retry: {original}"
+        else:
+            failure_ctx = failure_ctx or "unknown failure"
+            goal = f"prepare a corrected retry after: {failure_ctx}"
+
+    else:  # next_step / generic
+        if evidence.state == "awaiting_approval":
+            goal = (
+                f"review approval requirements for: {original}"
+                if original
+                else f"review approval requirements for {evidence.job_id}"
+            )
+        elif evidence.state == "failed":
+            failure_ctx = evidence.failure_summary or evidence.latest_summary or "the prior failure"
+            goal = (
+                f"retry: {original} after addressing: {failure_ctx}"
+                if original
+                else f"prepare corrected retry after: {failure_ctx}"
+            )
+        elif evidence.state == "succeeded":
+            summary = evidence.latest_summary or "the completed result"
+            goal = (
+                f"prepare the next step after: {original}"
+                if original
+                else f"inspect and act on: {summary}"
+            )
+        else:
+            goal = (
+                f"prepare next action for: {original}"
+                if original
+                else f"check status and evidence for {evidence.job_id}"
+            )
+
     return {"goal": goal}
+
+
+def followup_preview_message(
+    evidence: ReviewedJobEvidence,
+    payload: dict[str, Any],
+    *,
+    user_message: str = "",
+) -> str:
+    """Format the assistant reply for a follow-up preview grounded in VoxeraOS evidence."""
+    intent = _classify_followup_intent(user_message)
+    intent_label = {
+        "correction": "correction after failure",
+        "safer_version": "safer version",
+        "retry_different_target": "retry with different target",
+        "next_step": "next step",
+    }.get(intent, "next step")
+
+    lines = [
+        f"I drafted a follow-up preview grounded in VoxeraOS evidence for `{evidence.job_id}` "
+        f"(state: `{evidence.state}`, intent: {intent_label}).",
+        "",
+        f"```json\n{json.dumps(payload, indent=2)}\n```",
+        "",
+    ]
+
+    if intent == "retry_different_target" and evidence.original_goal:
+        lines.append(
+            "Update the target in the draft before submitting — the goal above "
+            f"is based on your previous request (`{evidence.original_goal}`)."
+        )
+    elif evidence.state == "failed" and evidence.failure_summary:
+        lines.append(
+            f"The previous attempt failed with: {evidence.failure_summary}. "
+            "Revise the draft to correct the issue before submitting."
+        )
+    elif evidence.state == "awaiting_approval":
+        lines.append(
+            "The previous attempt is pending operator approval. "
+            "Revise the draft to narrow scope or clarify intent if needed."
+        )
+    elif evidence.state == "succeeded" and evidence.latest_summary:
+        lines.append(f"Previous result: {evidence.latest_summary}.")
+
+    lines.append("This is preview-only. I did not submit anything to VoxeraOS.")
+    return "\n".join(lines)
