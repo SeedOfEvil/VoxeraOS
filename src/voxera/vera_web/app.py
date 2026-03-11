@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -139,6 +140,65 @@ def _guardrail_submission_claim(*, root: Path, session_id: str, text: str) -> st
             "If you want to proceed, ask me to prepare a job preview first, then explicitly hand it off."
         )
     return text
+
+
+def _looks_like_voxera_preview_dump(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    if "proposed voxeraos job" in lowered or "submit-ready voxeraos preview" in lowered:
+        return True
+    return "```json" in lowered and any(
+        marker in lowered
+        for marker in (
+            '"goal"',
+            '"write_file"',
+            '"enqueue_child"',
+            "voxeraos",
+        )
+    )
+
+
+def _looks_like_preview_update_claim(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    return any(
+        phrase in lowered
+        for phrase in (
+            "updated the draft in the preview",
+            "updated the preview",
+            "latest version is ready in the preview",
+            "proposal in the preview",
+            "refined the proposal in the preview",
+        )
+    )
+
+
+def _is_explicit_json_content_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    if "voxera" in lowered and "json" in lowered:
+        return False
+    return bool(
+        re.search(
+            r"\b(json\s+(config|payload|body|schema|file|example)|return\s+json|show\s+me\s+json|generate\s+json|as\s+json)\b",
+            lowered,
+        )
+    )
+
+
+def _conversational_preview_update_message(*, updated: bool) -> str:
+    if updated:
+        return (
+            "I updated the draft in the preview. "
+            "The preview pane is the authoritative version I would hand off."
+        )
+    return (
+        "I kept the current preview unchanged because I couldn’t produce a safe valid refinement yet. "
+        "If you want, I can refine it with more specific goal/target details."
+    )
 
 
 def _render_page(
@@ -303,8 +363,8 @@ async def chat(request: Request):
         user_message=message,
         active_preview=pending_preview,
     )
+    builder_payload: dict[str, object] | None = None
     if builder_preview is not None:
-        builder_payload: dict[str, object] | None
         try:
             builder_payload = normalize_preview_payload(builder_preview)
         except Exception:
@@ -327,7 +387,20 @@ async def chat(request: Request):
         session_id=active_session,
         text=reply["answer"],
     )
+    in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
+    is_json_content_request = _is_explicit_json_content_request(message)
+    should_hide_voxera_preview_dump = in_voxera_preview_flow and not is_json_content_request
+
     assistant_text = guarded_answer
+    if should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer):
+        assistant_text = _conversational_preview_update_message(updated=builder_payload is not None)
+    elif (
+        _looks_like_preview_update_claim(guarded_answer)
+        and builder_payload is None
+        and pending_preview is not None
+    ):
+        assistant_text = _conversational_preview_update_message(updated=False)
+
     status = reply["status"]
 
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
