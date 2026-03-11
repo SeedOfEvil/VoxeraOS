@@ -4,19 +4,6 @@
   "models": [
     {
       "vendor": "OpenAI",
-      "id": "openai/gpt-4o-mini",
-      "name": "GPT-4o mini",
-      "context_length": 128000,
-      "pricing_prompt": "0.15",
-      "pricing_completion": "0.60",
-      "supported_parameters": [
-        "temperature",
-        "max_tokens"
-      ],
-      "recommended_for": []
-    },
-    {
-      "vendor": "OpenAI",
       "id": "openai/gpt-4.1-mini",
       "name": "GPT-4.1 mini",
       "context_length": 1047576,

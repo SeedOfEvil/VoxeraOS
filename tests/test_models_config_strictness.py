@@ -14,7 +14,7 @@ def test_app_config_valid_payload_still_loads() -> None:
             "brain": {
                 "primary": {
                     "type": "openai_compat",
-                    "model": "openai/gpt-4o-mini",
+                    "model": "google/gemini-3-flash-preview",
                     "base_url": "https://openrouter.ai/api/v1",
                     "api_key_ref": "OPENROUTER_API_KEY",
                     "extra_headers": {"X-Title": "VoxeraOS"},
@@ -42,7 +42,7 @@ def test_app_config_rejects_unknown_top_level_key() -> None:
             "brain": {
                 "primary": {
                     "type": "openai_compat",
-                    "model": "openai/gpt-4o-mini",
+                    "model": "google/gemini-3-flash-preview",
                     "unknown_brain_key": "nope",
                 }
             },

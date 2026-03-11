@@ -12,6 +12,7 @@ def test_load_curated_catalog_shape_and_recommendations():
     assert openrouter_catalog.recommended_model_for_slot("fast") in ids
     assert openrouter_catalog.recommended_model_for_slot("reasoning") in ids
     assert openrouter_catalog.recommended_model_for_slot("fallback") in ids
+    assert "openai/gpt-4o-mini" not in ids
 
 
 def test_grouped_catalog_by_vendor_contains_major_groups():
