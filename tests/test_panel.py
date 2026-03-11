@@ -2460,6 +2460,49 @@ def test_operator_assistant_degraded_mode_when_queue_unavailable(tmp_path, monke
     assert not any("was never awaited" in str(w.message) for w in recwarn)
 
 
+def test_degraded_assistant_prefers_fast_tier_for_assistant_default(monkeypatch):
+    monkeypatch.setattr(
+        panel_module,
+        "load_app_config",
+        lambda: SimpleNamespace(
+            brain={
+                "fast": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-fast",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+                "primary": SimpleNamespace(
+                    type="openai_compat",
+                    model="model-primary",
+                    base_url="",
+                    api_key_ref="",
+                    extra_headers={},
+                ),
+            }
+        ),
+    )
+
+    class _FastBrain:
+        async def generate(self, messages, tools=None):
+            return SimpleNamespace(text="fast lane assistant answer")
+
+    monkeypatch.setattr(
+        panel_module, "_create_panel_assistant_brain", lambda provider: _FastBrain()
+    )
+
+    result = panel_module._generate_degraded_assistant_answer(
+        "What is happening right now?",
+        {"health_current_state": {"daemon_state": "healthy"}, "queue_counts": {"pending": 0}},
+        thread_turns=[],
+        degraded_reason="daemon_paused",
+    )
+
+    assert result["provider"] == "fast"
+    assert result["model"] == "model-fast"
+
+
 def test_degraded_assistant_prefers_model_backed_primary(monkeypatch):
     monkeypatch.setattr(
         panel_module,

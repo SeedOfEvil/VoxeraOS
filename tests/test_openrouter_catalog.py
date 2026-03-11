@@ -31,7 +31,7 @@ def test_refresh_curated_catalog_from_live_normalizes_and_preserves_recommended(
         "models": [
             {
                 "vendor": "OpenAI",
-                "id": "openai/gpt-4o-mini",
+                "id": "google/gemini-3-flash-preview",
                 "name": "Old Name",
                 "recommended_for": ["primary"],
             }
@@ -48,8 +48,8 @@ def test_refresh_curated_catalog_from_live_normalizes_and_preserves_recommended(
             return {
                 "data": [
                     {
-                        "id": "openai/gpt-4o-mini",
-                        "name": "GPT-4o mini",
+                        "id": "google/gemini-3-flash-preview",
+                        "name": "Gemini 3 Flash",
                         "context_length": 128000,
                         "pricing": {"prompt": "0.15", "completion": "0.60"},
                         "supported_parameters": ["temperature", "max_tokens"],
@@ -64,6 +64,6 @@ def test_refresh_curated_catalog_from_live_normalizes_and_preserves_recommended(
     model = payload["models"][0]
 
     assert summary == {"total": 1, "matched": 1, "missing": 0}
-    assert model["name"] == "GPT-4o mini"
+    assert model["name"] == "Gemini 3 Flash"
     assert model["context_length"] == 128000
     assert model["recommended_for"] == ["primary"]

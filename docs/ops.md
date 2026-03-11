@@ -131,7 +131,9 @@ Provider auth choices are intentionally non-destructive:
 
 For cloud setup in v0.1.7, `voxera setup` walks the brain chain one slot at a time (`primary`, `fast`, `reasoning`, `fallback`) with explicit provider/model confirmation for each slot.
 
-If OpenRouter is selected for a slot, setup uses the curated repo catalog (`src/voxera/data/openrouter_catalog.json`) and a vendor-first guided flow (`OpenAI`, `Google`, `Anthropic`, `Meta`, etc.) so onboarding stays manageable. The default recommended models are slot-specific: `primary=openai/gpt-4o-mini`, `fast=google/gemini-2.5-flash`, `reasoning=anthropic/claude-3.7-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`. Advanced users can still choose manual model-id entry when needed.
+If OpenRouter is selected for a slot, setup uses the curated repo catalog (`src/voxera/data/openrouter_catalog.json`) and a vendor-first guided flow (`OpenAI`, `Google`, `Anthropic`, `Meta`, etc.) so onboarding stays manageable. The default recommended models are slot-specific: `primary=google/gemini-3-flash-preview`, `fast=google/gemini-3.1-flash-lite-preview`, `reasoning=anthropic/claude-3.5-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`. Advanced users can still choose manual model-id entry when needed.
+
+Policy framing: treat `primary` as the recommended minimum serious cloud brain floor (Gemini 3 Flash), `fast` as the lightweight/economy assistant lane (Gemini 3.1 Flash Lite, also the assistant default), and `reasoning` as the premium reasoning tier (Claude 3.5 Sonnet). This updates defaults/policy truth surfaces only; provider wiring and config contract stay unchanged.
 
 After config save succeeds, setup now ensures the standard user-service runtime stack is started first (`voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`) and reports per-service failures honestly. It then offers an explicit optional launch step: open Voxera panel, Vera panel, both, or none.
 

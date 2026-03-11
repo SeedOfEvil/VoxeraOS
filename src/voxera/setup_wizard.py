@@ -108,7 +108,7 @@ def _provider_catalog() -> list[ProviderChoice]:
             label="OpenRouter",
             env_ref="OPENROUTER_API_KEY",
             brain_type="openai_compat",
-            default_model="openai/gpt-4o-mini",
+            default_model="google/gemini-3-flash-preview",
             default_base_url="https://openrouter.ai/api/v1",
         ),
         ProviderChoice(
@@ -116,7 +116,7 @@ def _provider_catalog() -> list[ProviderChoice]:
             label="OpenAI",
             env_ref="OPENAI_API_KEY",
             brain_type="openai_compat",
-            default_model="gpt-4o-mini",
+            default_model="gpt-4.1-mini",
             default_base_url="https://api.openai.com/v1",
         ),
         ProviderChoice(
@@ -124,7 +124,7 @@ def _provider_catalog() -> list[ProviderChoice]:
             label="Anthropic",
             env_ref="ANTHROPIC_API_KEY",
             brain_type="openai_compat",
-            default_model="anthropic/claude-3.7-sonnet",
+            default_model="anthropic/claude-3.5-sonnet",
             default_base_url="https://api.anthropic.com/v1",
         ),
         ProviderChoice(
@@ -132,14 +132,14 @@ def _provider_catalog() -> list[ProviderChoice]:
             label="Google/Gemini",
             env_ref="GOOGLE_API_KEY",
             brain_type="gemini",
-            default_model="gemini-2.5-flash",
+            default_model="gemini-3.1-flash-lite-preview",
         ),
         ProviderChoice(
             slug="gemini",
             label="Gemini (legacy env)",
             env_ref="GEMINI_API_KEY",
             brain_type="gemini",
-            default_model="gemini-2.5-flash",
+            default_model="gemini-3.1-flash-lite-preview",
         ),
     ]
 

@@ -149,7 +149,7 @@ async def _generate_degraded_assistant_answer_async(
     messages = build_assistant_messages(prompt, context, thread_turns=thread_turns)
 
     attempts: list[tuple[str, Any]] = []
-    for key in ("primary", "fallback"):
+    for key in ("fast", "primary", "fallback"):
         provider = cfg.brain.get(key) if cfg.brain else None
         if provider is not None:
             attempts.append((key, provider))
