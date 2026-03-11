@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -26,13 +24,13 @@ from ..vera.handoff import (
     is_explicit_handoff_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
-    preview_message,
     submit_preview,
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.service import (
     append_session_turn,
     clear_session_turns,
+    generate_preview_builder_update,
     generate_vera_reply,
     new_session_id,
     read_session_handoff_state,
@@ -141,73 +139,6 @@ def _guardrail_submission_claim(*, root: Path, session_id: str, text: str) -> st
             "If you want to proceed, ask me to prepare a job preview first, then explicitly hand it off."
         )
     return text
-
-
-def _extract_json_objects(text: str) -> list[dict[str, object]]:
-    candidates: list[dict[str, object]] = []
-
-    for match in re.findall(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, flags=re.IGNORECASE):
-        try:
-            parsed = json.loads(match)
-        except Exception:
-            continue
-        if isinstance(parsed, dict):
-            candidates.append(parsed)
-
-    decoder = json.JSONDecoder()
-    scan_index = 0
-    while True:
-        start = text.find("{", scan_index)
-        if start < 0:
-            break
-        try:
-            parsed, end = decoder.raw_decode(text[start:])
-        except Exception:
-            scan_index = start + 1
-            continue
-        if isinstance(parsed, dict):
-            candidates.append(parsed)
-        scan_index = start + max(end, 1)
-
-    return candidates
-
-
-def _is_lossless_preview_candidate(
-    candidate: dict[str, object], normalized: dict[str, object]
-) -> bool:
-    candidate_keys = set(candidate.keys())
-    normalized_keys = set(normalized.keys())
-    if candidate_keys - normalized_keys:
-        return False
-
-    candidate_write_file = candidate.get("write_file")
-    normalized_write_file = normalized.get("write_file")
-    if isinstance(candidate_write_file, dict):
-        if not isinstance(normalized_write_file, dict):
-            return False
-        if set(candidate_write_file.keys()) - set(normalized_write_file.keys()):
-            return False
-
-    return True
-
-
-def _coerce_assistant_preview_update(text: str) -> tuple[dict[str, object] | None, bool]:
-    saw_preview_like = False
-    latest_normalized: dict[str, object] | None = None
-    for candidate in _extract_json_objects(text):
-        if not any(
-            key in candidate for key in ("goal", "title", "write_file", "enqueue_child", "content")
-        ):
-            continue
-        saw_preview_like = True
-        try:
-            normalized = normalize_preview_payload(candidate)
-        except Exception:
-            continue
-        if not _is_lossless_preview_candidate(candidate, normalized):
-            continue
-        latest_normalized = normalized
-    return latest_normalized, saw_preview_like
 
 
 def _render_page(
@@ -323,9 +254,8 @@ async def chat(request: Request):
             job_id=None,
         )
         assistant_text = (
-            f"I drafted a follow-up preview based on evidence from `{evidence.job_id}`.\n\n"
-            f"```json\n{payload}\n```\n\n"
-            "This is preview-only. I did not submit anything to VoxeraOS."
+            f"I drafted a follow-up proposal in the preview based on evidence from `{evidence.job_id}`. "
+            "This is preview-only; I did not submit anything to VoxeraOS."
         )
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
         return _render_page(
@@ -360,7 +290,7 @@ async def chat(request: Request):
             error=None,
             job_id=None,
         )
-        assistant_text = preview_message(payload)
+        assistant_text = "I drafted a VoxeraOS proposal in the preview. Nothing has been submitted or executed yet. Say ‘send it’ when you want me to hand it off."
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
         return _render_page(
             session_id=active_session,
@@ -368,35 +298,37 @@ async def chat(request: Request):
             status="prepared_preview",
         )
 
+    builder_preview = await generate_preview_builder_update(
+        turns=turns,
+        user_message=message,
+        active_preview=pending_preview,
+    )
+    if builder_preview is not None:
+        builder_payload: dict[str, object] | None
+        try:
+            builder_payload = normalize_preview_payload(builder_preview)
+        except Exception:
+            builder_payload = None
+        if builder_payload is not None:
+            write_session_preview(root, active_session, builder_payload)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+
     reply = await generate_vera_reply(turns=turns, user_message=message)
     guarded_answer = _guardrail_submission_claim(
         root=root,
         session_id=active_session,
         text=reply["answer"],
     )
-    model_preview, saw_preview_like = _coerce_assistant_preview_update(guarded_answer)
-    if model_preview is not None:
-        write_session_preview(root, active_session, model_preview)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
-        )
-        assistant_text = preview_message(model_preview)
-        status = "prepared_preview"
-    elif saw_preview_like:
-        assistant_text = (
-            "I couldn’t safely turn that into a submit-ready VoxeraOS preview yet. "
-            "Do you want me to create a file preview with explicit filename and exact content?"
-        )
-        status = "clarify_preview_shape"
-    else:
-        assistant_text = guarded_answer
-        status = reply["status"]
+    assistant_text = guarded_answer
+    status = reply["status"]
 
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
 

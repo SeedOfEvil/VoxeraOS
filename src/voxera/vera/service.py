@@ -9,12 +9,17 @@ from typing import Any
 
 from ..brain.fallback import classify_fallback_reason
 from ..brain.gemini import GeminiBrain
+from ..brain.json_recovery import recover_json_object
 from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config
-from .prompt import VERA_SYSTEM_PROMPT
+from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 
 MAX_SESSION_TURNS = 8
 _SESSION_ID_LENGTH = 24
+
+
+PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
+PREVIEW_BUILDER_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 
 def new_session_id() -> str:
@@ -168,6 +173,81 @@ def build_vera_messages(*, turns: list[dict[str, str]], user_message: str) -> li
         messages.append({"role": turn["role"], "content": turn["text"]})
     messages.append({"role": "user", "content": user_message.strip()})
     return messages
+
+
+def _build_preview_builder_messages(
+    *,
+    turns: list[dict[str, str]],
+    user_message: str,
+    active_preview: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    context_payload = {
+        "active_preview": active_preview,
+        "latest_user_message": user_message.strip(),
+        "recent_turns": turns[-MAX_SESSION_TURNS:],
+    }
+    return [
+        {"role": "system", "content": VERA_PREVIEW_BUILDER_PROMPT},
+        {
+            "role": "user",
+            "content": json.dumps(context_payload, ensure_ascii=False),
+        },
+    ]
+
+
+def _extract_preview_builder_payload(text: str) -> dict[str, Any] | None:
+    parsed, _ = recover_json_object(text)
+    if not isinstance(parsed, dict):
+        return None
+    preview = parsed.get("preview")
+    if preview is None:
+        return None
+    if isinstance(preview, dict):
+        return preview
+    return None
+
+
+async def generate_preview_builder_update(
+    *,
+    turns: list[dict[str, str]],
+    user_message: str,
+    active_preview: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    cfg = load_app_config()
+    api_key_ref = None
+    if cfg.brain:
+        for key in ("primary", "fallback", "fast", "reasoning"):
+            provider = cfg.brain.get(key)
+            if provider is not None and provider.api_key_ref:
+                api_key_ref = provider.api_key_ref
+                break
+
+    attempts: list[GeminiBrain] = []
+    if api_key_ref:
+        attempts.append(GeminiBrain(model=PREVIEW_BUILDER_MODEL, api_key_ref=api_key_ref))
+        if PREVIEW_BUILDER_FALLBACK_MODEL != PREVIEW_BUILDER_MODEL:
+            attempts.append(
+                GeminiBrain(model=PREVIEW_BUILDER_FALLBACK_MODEL, api_key_ref=api_key_ref)
+            )
+
+    if not attempts:
+        return None
+
+    messages = _build_preview_builder_messages(
+        turns=turns,
+        user_message=user_message,
+        active_preview=active_preview,
+    )
+
+    for brain in attempts:
+        try:
+            response = await brain.generate(messages, tools=[])
+        except Exception:
+            continue
+        payload = _extract_preview_builder_payload(str(response.text or ""))
+        if payload is not None:
+            return payload
+    return None
 
 
 def _create_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:

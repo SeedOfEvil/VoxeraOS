@@ -25,7 +25,7 @@
 
     {% if pending_preview %}
     <section class="preview" aria-live="polite">
-      <div><strong>Active VoxeraOS draft (authoritative, not submitted):</strong></div>
+      <div><strong>Preview panel · Active VoxeraOS draft (authoritative, not submitted):</strong></div>
       <pre class="prompt-box">{{pending_preview | tojson(indent=2)}}</pre>
       <form method="post" action="/handoff">
         <input type="hidden" name="session_id" value="{{session_id}}" />
