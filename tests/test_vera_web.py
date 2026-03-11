@@ -167,7 +167,7 @@ def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, mo
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
 
-    assert "proposal in the preview" in res.text
+    assert "send it whenever" in res.text
     assert "Preview panel · Active VoxeraOS draft (authoritative, not submitted)" in res.text
     assert "Nothing has been submitted or executed yet" in res.text
     assert list((queue / "inbox").glob("*.json")) == [] if (queue / "inbox").exists() else True
@@ -195,7 +195,7 @@ def test_prepare_preview_sets_preview_available_true_for_natural_open_phrase(tmp
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "Can you open example.com?"})
 
-    assert "proposal in the preview" in res.text
+    assert "send it whenever" in res.text
     assert "preview_available</b>: True" in res.text
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
@@ -448,7 +448,7 @@ def test_contentful_natural_file_creation_phrase_produces_canonical_preview(tmp_
         },
     )
 
-    assert "proposal in the preview" in res.text
+    assert "send it whenever" in res.text
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbiddy.txt"
@@ -524,7 +524,7 @@ def test_backend_builder_updates_active_preview_without_json_dumping_in_chat(tmp
 
     async def _fake_reply(*, turns, user_message):
         _ = (turns, user_message)
-        return {"answer": "I updated the draft in the preview.", "status": "ok:test"}
+        return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(*, turns, user_message, active_preview):
         _ = (turns, user_message, active_preview)
@@ -550,7 +550,7 @@ def test_submit_after_model_preview_replacement_uses_latest_payload(tmp_path, mo
 
     async def _fake_reply(*, turns, user_message):
         _ = (turns, user_message)
-        return {"answer": "I refined the proposal in the preview.", "status": "ok:test"}
+        return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(*, turns, user_message, active_preview):
         _ = turns
@@ -584,7 +584,7 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
 
     async def _fake_builder(*, turns, user_message, active_preview):
         _ = (turns, user_message, active_preview)
-        return {"goal": "write a note called scipptyaway.txt", "content": "hello"}
+        return {"goal": "", "write_file": "bad-shape"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
@@ -592,14 +592,11 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    baseline = client.post(
-        "/chat", data={"session_id": sid, "message": "write a note called scipptyaway.txt"}
-    )
-    assert '"goal": "write a note called scipptyaway.txt"' in baseline.text
+    vera_service.write_session_preview(queue, sid, {"goal": "write a note called scipptyaway.txt"})
 
     res = client.post("/chat", data={"session_id": sid, "message": "add content"})
 
-    assert "kept this conversational" in res.text
+    assert "still have the current request ready" in res.text
     assert vera_service.read_session_preview(queue, sid) == {
         "goal": "write a note called scipptyaway.txt"
     }
@@ -678,7 +675,7 @@ def test_builder_drops_extra_keys_and_keeps_supported_preview_shape(tmp_path, mo
 
     res = client.post("/chat", data={"session_id": sid, "message": "revise with content"})
 
-    assert "left the preview as-is" in res.text
+    assert "send it whenever" in res.text
     assert vera_service.read_session_preview(queue, sid) == {
         "goal": "write a note called skibbidy.txt"
     }
@@ -1483,7 +1480,7 @@ def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypa
         "/chat", data={"session_id": "sid-follow", "message": "prepare the next step"}
     )
 
-    assert "drafted a follow-up proposal in the preview" in res.text
+    assert "prepared a follow-up request" in res.text
     assert "did not submit anything" in res.text.lower()
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
     assert vera_service.read_session_preview(queue, "sid-follow") is not None
@@ -1515,7 +1512,7 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
 
     assert "Proposed VoxeraOS Job" not in res.text
     assert "```json" not in res.text
-    assert "updated the draft in the preview" in res.text
+    assert "send it whenever" in res.text
     assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
 
 
@@ -1525,7 +1522,7 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
 
     async def _fake_reply(*, turns, user_message):
         _ = (turns, user_message)
-        return {"answer": "I updated the draft in the preview.", "status": "ok:test"}
+        return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(*, turns, user_message, active_preview):
         _ = (turns, user_message, active_preview)
@@ -1537,11 +1534,11 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    client.post("/chat", data={"session_id": sid, "message": "open example.com"})
+    vera_service.write_session_preview(queue, sid, {"goal": "open https://example.com"})
 
     res = client.post("/chat", data={"session_id": sid, "message": "refine it"})
 
-    assert "kept the current preview unchanged" in res.text
+    assert "still have the current request ready" in res.text
     assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
 
 
@@ -1575,3 +1572,32 @@ def test_non_voxera_user_requested_json_content_is_still_allowed(tmp_path, monke
     assert "```json" in res.text
     assert "demo" in res.text
     assert vera_service.read_session_preview(queue, sid) is None
+
+
+def test_append_file_intent_compiles_structured_append_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": 'append "new line" to log.txt'},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/log.txt"
+    assert preview["write_file"]["content"] == "new line"
+    assert preview["write_file"]["mode"] == "append"
+
+
+def test_builder_prompt_describes_voxera_compiler_contract():
+    assert "hidden Voxera Preview Compiler" in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
+    assert (
+        "write_file: path (required), content (required string), mode (optional: overwrite|append)"
+        in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
+    )
+    assert '{"preview": null}' in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT

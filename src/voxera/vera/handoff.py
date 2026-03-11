@@ -107,13 +107,35 @@ def _extract_quoted_content(text: str) -> str | None:
 def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | None:
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
-    if not re.search(r"\b(write|create|save|put|make)\b", lowered):
+    append_mode = bool(re.search(r"\b(append|add\s+to)\b", lowered))
+    if not re.search(r"\b(write|create|save|put|make|append|add)\b", lowered):
         return None
     if not re.search(r"\b(file|note|\w+\.[a-z0-9]{1,8})\b", lowered):
         return None
 
+    if append_mode:
+        append_target = re.search(r"\bto\s+([^\s]+\.[a-zA-Z0-9]{1,8})\b", text, re.IGNORECASE)
+        target = append_target.group(1).strip("\"'`:,.") if append_target else None
+        if not target:
+            return None
+        content = _extract_quoted_content(text)
+        if content is None:
+            tail = re.search(r"\bappend\s+(.+?)\s+to\s+[^\s]+", text, re.IGNORECASE)
+            content = tail.group(1).strip(" \"'`:") if tail else None
+        if content is None:
+            return None
+        normalized_path = (
+            target
+            if target.startswith("~") or target.startswith("/")
+            else f"~/VoxeraOS/notes/{target}"
+        )
+        return {
+            "goal": f"append to a file called {target} with provided content",
+            "write_file": {"path": normalized_path, "content": content, "mode": "append"},
+        }
+
     direct = re.search(
-        r"\b(?:write|create|make)\s+(?:a\s+)?(?:file\s+)?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
+        r"\b(?:write|create|make|append)\s+(?:a\s+)?(?:file\s+)?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
         text,
         re.IGNORECASE,
     )
@@ -148,9 +170,11 @@ def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | N
     if not target.startswith("~") and not target.startswith("/"):
         normalized_path = f"~/VoxeraOS/notes/{target}"
 
+    mode = "overwrite"
+    goal_prefix = "write a file"
     return {
-        "goal": f"write a file called {target} with provided content",
-        "write_file": {"path": normalized_path, "content": content, "mode": "overwrite"},
+        "goal": f"{goal_prefix} called {target} with provided content",
+        "write_file": {"path": normalized_path, "content": content, "mode": mode},
     }
 
 
@@ -340,6 +364,10 @@ def maybe_draft_job_payload(
     normalized = message.strip()
     if not normalized:
         return None
+    revision = _draft_revision_from_active_preview(normalized, active_preview)
+    if revision is not None:
+        return revision
+
     normalized_open = _normalize_open_goal(normalized)
     if normalized_open:
         return {"goal": normalized_open}
@@ -356,7 +384,7 @@ def maybe_draft_job_payload(
     if normalized_write:
         return {"goal": normalized_write}
 
-    return _draft_revision_from_active_preview(normalized, active_preview)
+    return None
 
 
 def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:

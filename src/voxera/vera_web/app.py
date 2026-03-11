@@ -221,19 +221,10 @@ def _is_explicit_json_content_request(message: str) -> bool:
 
 def _conversational_preview_update_message(*, updated: bool, has_active_preview: bool) -> str:
     if updated:
-        return (
-            "I updated the draft in the preview. "
-            "The preview pane is the authoritative version I would hand off."
-        )
+        return "Understood. Nothing has been submitted or executed yet. I can send it whenever you’re ready."
     if has_active_preview:
-        return (
-            "I kept the current preview unchanged because I couldn’t produce a safe valid refinement yet. "
-            "If you want, I can refine it with more specific goal/target details."
-        )
-    return (
-        "I couldn’t safely create a VoxeraOS preview draft from that yet. "
-        "If you share a clearer target (URL/path/content), I’ll draft it in the preview pane."
-    )
+        return "Understood. I still have the current request ready whenever you want to send it."
+    return "I couldn’t safely prepare a request yet. If you share clearer target details, I can continue."
 
 
 def _render_page(
@@ -349,7 +340,7 @@ async def chat(request: Request):
             job_id=None,
         )
         assistant_text = (
-            f"I drafted a follow-up proposal in the preview based on evidence from `{evidence.job_id}`. "
+            f"I prepared a follow-up request based on evidence from `{evidence.job_id}`. "
             "This is preview-only; I did not submit anything to VoxeraOS."
         )
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
@@ -383,27 +374,6 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status=status,
-        )
-
-    drafted = maybe_draft_job_payload(message, active_preview=pending_preview)
-    if drafted is not None:
-        payload = normalize_preview_payload(drafted)
-        write_session_preview(root, active_session, payload)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
-        )
-        assistant_text = "I drafted a VoxeraOS proposal in the preview. Nothing has been submitted or executed yet. Say ‘send it’ when you want me to hand it off."
-        append_session_turn(root, active_session, role="assistant", text=assistant_text)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="prepared_preview",
         )
 
     builder_preview = await generate_preview_builder_update(
@@ -443,20 +413,33 @@ async def chat(request: Request):
     ) and not is_json_content_request
 
     assistant_text = guarded_answer
-    if should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer):
+    if is_voxera_control_turn and builder_payload is not None and not is_json_content_request:
         assistant_text = _conversational_preview_update_message(
-            updated=builder_payload is not None, has_active_preview=pending_preview is not None
+            updated=True,
+            has_active_preview=pending_preview is not None,
+        )
+    elif should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer):
+        assistant_text = _conversational_preview_update_message(
+            updated=builder_payload is not None,
+            has_active_preview=pending_preview is not None,
         )
     elif (
-        _looks_like_preview_update_claim(guarded_answer)
-        and builder_payload is None
+        builder_payload is None
         and pending_preview is not None
+        and (
+            _looks_like_preview_update_claim(guarded_answer)
+            or (
+                is_voxera_control_turn
+                and builder_preview is not None
+                and not is_json_content_request
+            )
+        )
     ):
         assistant_text = _conversational_preview_update_message(
             updated=False, has_active_preview=pending_preview is not None
         )
 
-    status = reply["status"]
+    status = "prepared_preview" if builder_payload is not None else reply["status"]
 
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
 

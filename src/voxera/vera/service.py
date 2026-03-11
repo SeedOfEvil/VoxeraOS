@@ -12,6 +12,7 @@ from ..brain.gemini import GeminiBrain
 from ..brain.json_recovery import recover_json_object
 from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config
+from .handoff import maybe_draft_job_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 
 MAX_SESSION_TURNS = 8
@@ -229,6 +230,14 @@ async def generate_preview_builder_update(
             attempts.append(
                 GeminiBrain(model=PREVIEW_BUILDER_FALLBACK_MODEL, api_key_ref=api_key_ref)
             )
+
+    # Deterministic Voxera-aware compiler pass first for supported draftable families.
+    deterministic_preview = maybe_draft_job_payload(
+        user_message,
+        active_preview=active_preview,
+    )
+    if deterministic_preview is not None:
+        return deterministic_preview
 
     if not attempts:
         return None
