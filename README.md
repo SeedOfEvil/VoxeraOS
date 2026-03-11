@@ -130,6 +130,17 @@ make vera
 
 Vera defaults to `127.0.0.1:8790` and can be overridden for local runs with `VERA_HOST` / `VERA_PORT`.
 
+### Secrets CLI (provider keys)
+
+Use the built-in secrets commands for provider/API key refs used by config (`api_key_ref`):
+
+- `voxera secrets set BRAVE_API_KEY`
+- `voxera secrets set OPENROUTER_API_KEY`
+- `voxera secrets get BRAVE_API_KEY --exists-only`
+- `voxera secrets unset BRAVE_API_KEY`
+
+`voxera secrets get` is safe-by-default (`present`/`missing`); use `--show-value` only when explicitly needed.
+
 For systemd user-service management:
 
 ```bash

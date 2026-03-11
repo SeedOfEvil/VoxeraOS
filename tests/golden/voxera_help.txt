@@ -28,4 +28,5 @@
 │ queue        Queue job utilities                                                                 │
 │ ops          Operational incident bundle utilities                                               │
 │ inbox        Human-friendly queue inbox                                                          │
+│ secrets      Manage provider/API secrets                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

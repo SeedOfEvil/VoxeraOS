@@ -46,6 +46,7 @@ from .core.capabilities_snapshot import generate_capabilities_snapshot
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .demo import run_demo
 from .paths import queue_root_display
+from .secrets import get_secret, unset_secret, write_secret
 from .setup_wizard import run_setup
 from .skills.registry import SkillRegistry
 from .skills.runner import SkillRunner
@@ -106,6 +107,7 @@ skills_app = typer.Typer(help="Manage skills")
 missions_app = typer.Typer(help="Run multi-step built-in missions")
 ops_app = typer.Typer(help="Operational incident bundle utilities")
 ops_bundle_app = typer.Typer(help="Export operator bundles")
+secrets_app = typer.Typer(help="Manage provider/API secrets")
 
 app.add_typer(config_app, name="config")
 app.add_typer(artifacts_app, name="artifacts")
@@ -114,7 +116,69 @@ app.add_typer(missions_app, name="missions")
 app.add_typer(queue_app, name="queue")
 app.add_typer(ops_app, name="ops")
 app.add_typer(inbox_app, name="inbox")
+app.add_typer(secrets_app, name="secrets")
 ops_app.add_typer(ops_bundle_app, name="bundle")
+
+
+@secrets_app.command("set")
+def secrets_set(
+    name: str = typer.Argument(..., help="Secret name/ref (for example BRAVE_API_KEY)."),
+    value: str | None = typer.Option(
+        None,
+        "--value",
+        help="Secret value. If omitted, prompts securely with hidden input.",
+    ),
+):
+    """Store a secret via keyring (with secure file fallback)."""
+    secret_value = value
+    if secret_value is None:
+        secret_value = typer.prompt("Secret value", hide_input=True, confirmation_prompt=True)
+    write_secret(name, secret_value)
+    console.print(f"Stored secret: {name}")
+
+
+@secrets_app.command("get")
+def secrets_get(
+    name: str = typer.Argument(..., help="Secret name/ref to query."),
+    exists_only: bool = typer.Option(
+        False,
+        "--exists-only",
+        help="Only report whether a secret exists (default behavior).",
+    ),
+    show_value: bool = typer.Option(
+        False,
+        "--show-value",
+        help="Print raw secret value. Use with caution.",
+    ),
+):
+    """Read secret metadata safely (raw value hidden by default)."""
+    resolved = get_secret(name)
+    exists = resolved is not None and bool(resolved.strip())
+
+    if exists_only or not show_value:
+        console.print("present" if exists else "missing")
+        if exists_only and not exists:
+            raise typer.Exit(code=1)
+        return
+
+    if not exists:
+        console.print("missing")
+        raise typer.Exit(code=1)
+
+    console.print(resolved)
+
+
+@secrets_app.command("unset")
+def secrets_unset(
+    name: str = typer.Argument(..., help="Secret name/ref to remove."),
+):
+    """Remove a stored secret from keyring/file fallback."""
+    removed = unset_secret(name)
+    if removed:
+        console.print(f"Removed secret: {name}")
+        return
+    console.print(f"Secret not found: {name}")
+    raise typer.Exit(code=1)
 
 
 @config_app.command("show")
