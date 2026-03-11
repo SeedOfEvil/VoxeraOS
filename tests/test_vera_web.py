@@ -941,14 +941,31 @@ def test_file_read_variants_prepare_preview(tmp_path, monkeypatch, message, expe
 
 
 @pytest.mark.parametrize(
-    ("message", "expected_goal"),
+    ("message", "expected_goal", "expected_path", "expect_structured"),
     [
-        ("make a note called hello.txt", "write a note called hello.txt"),
-        ("create a file called hello.txt", "write a note called hello.txt"),
-        ("jot this down", "write a note"),
+        (
+            "make a note called hello.txt",
+            "write a file called hello.txt with provided content",
+            "~/VoxeraOS/notes/hello.txt",
+            True,
+        ),
+        (
+            "create a file called hello.txt",
+            "write a file called hello.txt with provided content",
+            "~/VoxeraOS/notes/hello.txt",
+            True,
+        ),
+        ("jot this down", "write a note", None, False),
     ],
 )
-def test_note_write_variants_prepare_preview(tmp_path, monkeypatch, message, expected_goal):
+def test_note_write_variants_prepare_preview(
+    tmp_path,
+    monkeypatch,
+    message,
+    expected_goal,
+    expected_path,
+    expect_structured,
+):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -958,7 +975,12 @@ def test_note_write_variants_prepare_preview(tmp_path, monkeypatch, message, exp
     client.post("/chat", data={"session_id": sid, "message": message})
 
     preview = vera_service.read_session_preview(queue, sid)
-    assert preview == {"goal": expected_goal}
+    assert preview is not None
+    assert preview["goal"] == expected_goal
+    if expect_structured:
+        assert preview["write_file"]["path"] == expected_path
+        assert preview["write_file"]["mode"] == "overwrite"
+        assert preview["write_file"]["content"] == ""
 
 
 def test_contentful_file_write_phrase_prepares_structured_preview(tmp_path, monkeypatch):
@@ -992,19 +1014,20 @@ def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monk
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    preview_res = client.post(
-        "/chat", data={"session_id": sid, "message": "write a note called jokester.txt"}
-    )
+    client.post("/chat", data={"session_id": sid, "message": "write a note called jokester.txt"})
 
-    assert '"goal": "write a note called jokester.txt"' in preview_res.text
     preview = vera_service.read_session_preview(queue, sid)
-    assert preview == {"goal": "write a note called jokester.txt"}
+    assert preview is not None
+    assert preview["goal"] == "write a file called jokester.txt with provided content"
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
+    assert preview["write_file"]["mode"] == "overwrite"
 
     client.post("/chat", data={"session_id": sid, "message": "submit it"})
     jobs = list((queue / "inbox").glob("inbox-*.json"))
     assert len(jobs) == 1
     payload = json.loads(jobs[0].read_text(encoding="utf-8"))
-    assert payload["goal"] == "write a note called jokester.txt"
+    assert payload["goal"] == "write a file called jokester.txt with provided content"
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
 
 
 def test_filename_refinement_replaces_active_preview(tmp_path, monkeypatch):
@@ -1685,6 +1708,89 @@ def test_natural_append_mode_refinement_updates_active_preview(tmp_path, monkeyp
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/changelog.txt"
     assert preview["write_file"]["content"] == "release notes"
     assert preview["write_file"]["mode"] == "append"
+
+
+def test_natural_file_drafting_with_joke_infers_structured_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make a file called txt.txt with a joke in it"},
+    )
+
+    assert "```json" not in res.text
+    assert "send it whenever" in res.text.lower()
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/txt.txt"
+    assert preview["write_file"]["mode"] == "overwrite"
+    assert preview["write_file"]["content"]
+
+
+def test_file_drafting_with_called_typo_still_builds_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make a file calleddd txt.txt with a joke"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/txt.txt"
+    assert preview["write_file"]["content"]
+
+
+def test_minimal_file_drafting_defaults_to_empty_content(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "build me a file called hello.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/hello.txt"
+    assert preview["write_file"]["mode"] == "overwrite"
+    assert preview["write_file"]["content"] == ""
+
+
+def test_note_for_later_creates_structured_note_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make a note for later about buying milk"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"] == "write a note about buying milk"
+    assert preview["write_file"]["path"].startswith("~/VoxeraOS/notes/note-")
+    assert preview["write_file"]["path"].endswith(".txt")
+    assert preview["write_file"]["mode"] == "overwrite"
+    assert preview["write_file"]["content"] == "Reminder: buying milk"
 
 
 def test_builder_prompt_describes_voxera_compiler_contract():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -112,11 +113,29 @@ def _extract_quoted_content(text: str) -> str | None:
     return None
 
 
+def _infer_content_from_message(text: str) -> str | None:
+    lowered = text.lower()
+    if re.search(r"\b(joke|funny|humorous)\b", lowered):
+        return "Why did the developer go broke? Because they used up all their cache."
+    reminder = re.search(r"\b(?:about|to)\s+(.+)$", text, re.IGNORECASE)
+    if reminder and re.search(r"\b(remind|reminder|note\s+for\s+later)\b", lowered):
+        subject = reminder.group(1).strip(" .'\"`?!")
+        if subject:
+            return f"Reminder: {subject}"
+    if re.search(r"\bremind\s+me\b", lowered):
+        return "Reminder"
+    return None
+
+
+def _generated_note_path() -> str:
+    return f"~/VoxeraOS/notes/note-{int(time.time())}.txt"
+
+
 def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | None:
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
     append_mode = bool(re.search(r"\b(append|add\s+to)\b", lowered))
-    if not re.search(r"\b(write|create|save|put|make|append|add)\b", lowered):
+    if not re.search(r"\b(write|create|save|put|make|append|add|build)\b", lowered):
         return None
     if not re.search(r"\b(file|note|\w+\.[a-z0-9]{1,8})\b", lowered):
         return None
@@ -143,13 +162,13 @@ def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | N
         }
 
     direct = re.search(
-        r"\b(?:write|create|make|append)\s+(?:a\s+)?(?:file\s+)?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
+        r"\b(?:write|create|make|append|build)\s+(?:a\s+)?(?:file\s+)?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
         text,
         re.IGNORECASE,
     )
     target = direct.group(1).strip("\"'") if direct else None
     if not target:
-        named = re.search(r"\b(?:called|named)\s+([^\s]+)", text, re.IGNORECASE)
+        named = re.search(r"\b(?:called|call\w*|named)\s+([^\s]+)", text, re.IGNORECASE)
         target = named.group(1).strip("\"'") if named else None
     if not target:
         return None
@@ -172,7 +191,7 @@ def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | N
                 content = candidate
                 break
     if content is None:
-        return None
+        content = _infer_content_from_message(text) or ""
 
     normalized_path = target
     if not target.startswith("~") and not target.startswith("/"):
@@ -184,6 +203,41 @@ def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | N
         "goal": f"{goal_prefix} called {target} with provided content",
         "write_file": {"path": normalized_path, "content": content, "mode": mode},
     }
+
+
+def _normalize_structured_note_payload(message: str) -> dict[str, Any] | None:
+    text = message.strip().rstrip("?.!")
+    lowered = text.lower()
+    if not re.search(r"\b(note|remind|reminder)\b", lowered):
+        return None
+
+    if not re.search(r"\b(write|create|make|build|save|jot|remind)\b", lowered):
+        return None
+
+    topic = None
+    about = re.search(r"\babout\s+(.+)$", text, re.IGNORECASE)
+    if about:
+        topic = about.group(1).strip(" .'\"`?!")
+
+    if topic:
+        return {
+            "goal": f"write a note about {topic}",
+            "write_file": {
+                "path": _generated_note_path(),
+                "content": f"Reminder: {topic}",
+                "mode": "overwrite",
+            },
+        }
+
+    if re.search(
+        r"\b(note\s+for\s+later|make\s+me\s+(?:a\s+)?note|write\s+me\s+(?:a\s+)?note)\b", lowered
+    ):
+        return {
+            "goal": "write a note",
+            "write_file": {"path": _generated_note_path(), "content": "", "mode": "overwrite"},
+        }
+
+    return None
 
 
 def _normalize_file_write_goal(message: str) -> str | None:
@@ -412,6 +466,10 @@ def _draft_from_candidate_message(
     structured_write = _normalize_structured_file_write_payload(candidate)
     if structured_write:
         return structured_write
+
+    structured_note = _normalize_structured_note_payload(candidate)
+    if structured_note:
+        return structured_note
 
     normalized_write = _normalize_file_write_goal(candidate)
     if normalized_write:

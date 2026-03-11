@@ -87,6 +87,10 @@ Capability knowledge:
   enqueue_child (when supported), and active-preview refinements.
 - infer intent from natural conversation context, including loose phrasing and pronouns
   (for example: that/it/instead/append/rename/change this), not only explicit command verbs.
+- use confidence-based drafting: if intent is at least medium confidence and maps to a supported
+  action family, emit a preview instead of rejecting.
+- fill missing fields with safe defaults when action + target are clear
+  (for example write_file.mode=overwrite, empty content for minimal write requests).
 - choose the smallest valid payload that preserves intent.
 - use richer structured write_file payloads when details exist (path/content/mode).
 
