@@ -23,9 +23,9 @@ VENDOR_ORDER: tuple[str, ...] = (
 )
 
 SLOT_RECOMMENDED_MODEL: dict[str, str] = {
-    "primary": "openai/gpt-4o-mini",
-    "fast": "google/gemini-2.5-flash",
-    "reasoning": "anthropic/claude-3.7-sonnet",
+    "primary": "google/gemini-3-flash-preview",
+    "fast": "google/gemini-3.1-flash-lite-preview",
+    "reasoning": "anthropic/claude-3.5-sonnet",
     "fallback": "meta-llama/llama-3.3-70b-instruct",
 }
 

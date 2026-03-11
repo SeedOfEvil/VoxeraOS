@@ -96,7 +96,7 @@ def assistant_brain_candidates(cfg: Any) -> list[tuple[str, Any]]:
     if not cfg.brain:
         return []
     ordered: list[tuple[str, Any]] = []
-    for key in ("primary", "fallback"):
+    for key in ("fast", "primary", "fallback"):
         provider = cfg.brain.get(key)
         if provider is not None:
             ordered.append((key, provider))

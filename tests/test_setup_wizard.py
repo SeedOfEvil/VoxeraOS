@@ -12,7 +12,7 @@ def _provider() -> setup_wizard.ProviderChoice:
         label="OpenRouter",
         env_ref="OPENROUTER_API_KEY",
         brain_type="openai_compat",
-        default_model="openai/gpt-4o-mini",
+        default_model="google/gemini-3-flash-preview",
     )
 
 
@@ -79,8 +79,8 @@ def test_pick_openrouter_model_prefers_recommended(monkeypatch):
         lambda: [
             {
                 "vendor": "OpenAI",
-                "id": "openai/gpt-4o-mini",
-                "name": "GPT-4o mini",
+                "id": "google/gemini-3-flash-preview",
+                "name": "Gemini 3 Flash",
                 "context_length": 128000,
                 "pricing_prompt": "0.15",
                 "pricing_completion": "0.60",
@@ -92,7 +92,7 @@ def test_pick_openrouter_model_prefers_recommended(monkeypatch):
 
     model = setup_wizard._pick_openrouter_model("primary")
 
-    assert model == "openai/gpt-4o-mini"
+    assert model == "google/gemini-3-flash-preview"
 
 
 def test_pick_openrouter_model_manual_path(monkeypatch):
@@ -102,8 +102,8 @@ def test_pick_openrouter_model_manual_path(monkeypatch):
         lambda: [
             {
                 "vendor": "OpenAI",
-                "id": "openai/gpt-4o-mini",
-                "name": "GPT-4o mini",
+                "id": "google/gemini-3-flash-preview",
+                "name": "Gemini 3 Flash",
             }
         ],
     )

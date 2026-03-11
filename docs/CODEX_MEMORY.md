@@ -1491,9 +1491,9 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 - Summary:
   - Replaced raw live-table OpenRouter setup UX with curated static catalog (`src/voxera/data/openrouter_catalog.json`) grouped by vendor/maker for menu-style setup.
   - Kept sequential brain-slot setup (`primary`, `fast`, `reasoning`, `fallback`) and added explicit strong default recommendations:
-    - `primary=openai/gpt-4o-mini`
-    - `fast=google/gemini-2.5-flash`
-    - `reasoning=anthropic/claude-3.7-sonnet`
+    - `primary=google/gemini-3-flash-preview`
+    - `fast=google/gemini-3.1-flash-lite-preview`
+    - `reasoning=anthropic/claude-3.5-sonnet`
     - `fallback=meta-llama/llama-3.3-70b-instruct`
   - Preserved advanced manual model-id path and post-setup panel launch options.
   - Added maintainer refresh helper from live endpoint: `scripts/refresh_openrouter_catalog.py` + normalization/refresh logic in `src/voxera/openrouter_catalog.py`.

@@ -107,7 +107,9 @@ voxera setup
 voxera queue init
 ```
 
-`voxera setup` in v0.1.7 now guides each brain slot sequentially (`primary`, `fast`, `reasoning`, `fallback`), uses menu-style provider selection, and for OpenRouter uses a curated vendor-grouped model catalog with strong per-slot defaults (`primary`: `openai/gpt-4o-mini`, `fast`: `google/gemini-2.5-flash`, `reasoning`: `anthropic/claude-3.7-sonnet`, `fallback`: `meta-llama/llama-3.3-70b-instruct`).
+`voxera setup` in v0.1.7 now guides each brain slot sequentially (`primary`, `fast`, `reasoning`, `fallback`), uses menu-style provider selection, and for OpenRouter uses a curated vendor-grouped model catalog with strong per-slot defaults (`primary`: `google/gemini-3-flash-preview`, `fast`: `google/gemini-3.1-flash-lite-preview`, `reasoning`: `anthropic/claude-3.5-sonnet`, `fallback`: `meta-llama/llama-3.3-70b-instruct`).
+
+Cloud brain tier policy: Tier 1 recommended minimum serious cloud brain floor is Gemini 3 Flash (`google/gemini-3-flash-preview`), Tier 2 lightweight tier is Gemini 3.1 Flash Lite (`google/gemini-3.1-flash-lite-preview`), and Tier 3 premium reasoning tier is Claude 3.5 Sonnet (`anthropic/claude-3.5-sonnet`). The Voxera operator assistant defaults to the lightweight Tier 2 lane (`fast`) when configured.
 
 After setup saves successfully, the wizard first ensures the standard user-service stack is running (`voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`) and then offers an explicit finish step to open VoxeraOS (`http://127.0.0.1:8844/`), Vera (`http://127.0.0.1:8790/`), both, or neither. Startup failures are reported honestly before any panel-open attempt.
 

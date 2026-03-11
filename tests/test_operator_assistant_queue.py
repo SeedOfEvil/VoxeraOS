@@ -110,6 +110,22 @@ def test_assistant_result_reader_surfaces_answer_and_metadata(tmp_path):
     assert result["fallback_reason"] == "TIMEOUT"
 
 
+def test_assistant_brain_candidates_prefers_fast_for_assistant_default():
+    from voxera.core import queue_assistant
+
+    cfg = SimpleNamespace(
+        brain={
+            "primary": SimpleNamespace(type="openai_compat", model="m-primary"),
+            "fast": SimpleNamespace(type="openai_compat", model="m-fast"),
+            "fallback": SimpleNamespace(type="openai_compat", model="m-fallback"),
+        }
+    )
+
+    candidates = queue_assistant.assistant_brain_candidates(cfg)
+
+    assert [name for name, _ in candidates] == ["fast", "primary", "fallback"]
+
+
 def test_assistant_advisory_primary_success_metadata(tmp_path):
     queue_root = tmp_path / "queue"
     daemon = MissionQueueDaemon(queue_root=queue_root)

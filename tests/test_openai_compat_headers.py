@@ -45,7 +45,7 @@ def test_openrouter_default_attribution_headers_applied(monkeypatch):
     sink: dict = {}
     brain = OpenAICompatBrain(
         base_url="https://openrouter.ai/api/v1",
-        model="openai/gpt-4o-mini",
+        model="google/gemini-3-flash-preview",
         api_key_ref="OPENROUTER_API_KEY",
     )
 
@@ -61,7 +61,7 @@ def test_openrouter_user_override_headers_respected(monkeypatch):
     sink: dict = {}
     brain = OpenAICompatBrain(
         base_url="https://openrouter.ai/api/v1",
-        model="openai/gpt-4o-mini",
+        model="google/gemini-3-flash-preview",
         api_key_ref="OPENROUTER_API_KEY",
         extra_headers={"HTTP-Referer": "https://example.com", "X-OpenRouter-Title": "MyApp"},
     )
@@ -77,7 +77,7 @@ def test_openrouter_user_override_headers_respected(monkeypatch):
 def test_non_openrouter_no_attribution_headers(monkeypatch):
     sink: dict = {}
     brain = OpenAICompatBrain(
-        base_url="https://api.openai.com/v1", model="gpt-4o-mini", api_key_ref="OPENAI_API_KEY"
+        base_url="https://api.openai.com/v1", model="gpt-4.1-mini", api_key_ref="OPENAI_API_KEY"
     )
 
     _run_generate(brain, monkeypatch, sink)

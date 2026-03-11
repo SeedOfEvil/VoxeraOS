@@ -2,32 +2,272 @@
   "source_url": "https://openrouter.ai/api/v1/models",
   "refreshed_at": "2026-03-10T00:00:00Z",
   "models": [
-    {"vendor":"OpenAI","id":"openai/gpt-4o-mini","name":"GPT-4o mini","context_length":128000,"pricing_prompt":"0.15","pricing_completion":"0.60","supported_parameters":["temperature","max_tokens"],"recommended_for":["primary"]},
-    {"vendor":"OpenAI","id":"openai/gpt-4.1-mini","name":"GPT-4.1 mini","context_length":1047576,"pricing_prompt":"0.40","pricing_completion":"1.60","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-    {"vendor":"OpenAI","id":"openai/o3-mini","name":"o3-mini","context_length":200000,"pricing_prompt":"1.10","pricing_completion":"4.40","supported_parameters":["reasoning"],"recommended_for":[]},
-
-    {"vendor":"Google","id":"google/gemini-2.5-flash","name":"Gemini 2.5 Flash","context_length":1048576,"pricing_prompt":"0.15","pricing_completion":"0.60","supported_parameters":["temperature","max_tokens"],"recommended_for":["fast"]},
-    {"vendor":"Google","id":"google/gemini-2.5-pro","name":"Gemini 2.5 Pro","context_length":1048576,"pricing_prompt":"1.25","pricing_completion":"5.00","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-
-    {"vendor":"Anthropic","id":"anthropic/claude-3.7-sonnet","name":"Claude 3.7 Sonnet","context_length":200000,"pricing_prompt":"3.00","pricing_completion":"15.00","supported_parameters":["temperature","max_tokens"],"recommended_for":["reasoning"]},
-    {"vendor":"Anthropic","id":"anthropic/claude-3.5-haiku","name":"Claude 3.5 Haiku","context_length":200000,"pricing_prompt":"0.80","pricing_completion":"4.00","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-
-    {"vendor":"Meta","id":"meta-llama/llama-3.3-70b-instruct","name":"Llama 3.3 70B Instruct","context_length":131072,"pricing_prompt":"0.12","pricing_completion":"0.30","supported_parameters":["temperature","max_tokens"],"recommended_for":["fallback"]},
-    {"vendor":"Meta","id":"meta-llama/llama-3.1-405b-instruct","name":"Llama 3.1 405B Instruct","context_length":131072,"pricing_prompt":"1.30","pricing_completion":"2.60","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-
-    {"vendor":"Qwen","id":"qwen/qwen-2.5-72b-instruct","name":"Qwen 2.5 72B Instruct","context_length":131072,"pricing_prompt":"0.35","pricing_completion":"0.70","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-    {"vendor":"Qwen","id":"qwen/qwen-2.5-7b-instruct","name":"Qwen 2.5 7B Instruct","context_length":32768,"pricing_prompt":"0.05","pricing_completion":"0.10","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-
-    {"vendor":"Mistral","id":"mistralai/mistral-large","name":"Mistral Large","context_length":131072,"pricing_prompt":"2.00","pricing_completion":"6.00","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-    {"vendor":"Mistral","id":"mistralai/mistral-small","name":"Mistral Small","context_length":32768,"pricing_prompt":"0.20","pricing_completion":"0.60","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-
-    {"vendor":"DeepSeek","id":"deepseek/deepseek-chat","name":"DeepSeek Chat","context_length":65536,"pricing_prompt":"0.14","pricing_completion":"0.28","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-    {"vendor":"DeepSeek","id":"deepseek/deepseek-reasoner","name":"DeepSeek Reasoner","context_length":65536,"pricing_prompt":"0.55","pricing_completion":"2.19","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-
-    {"vendor":"xAI","id":"x-ai/grok-2-1212","name":"Grok 2 1212","context_length":131072,"pricing_prompt":"2.00","pricing_completion":"10.00","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-
-    {"vendor":"Alibaba","id":"alibaba/qwen-max","name":"Qwen Max","context_length":32768,"pricing_prompt":"0.40","pricing_completion":"1.20","supported_parameters":["temperature","max_tokens"],"recommended_for":[]},
-
-    {"vendor":"Others","id":"cohere/command-r-plus","name":"Command R+","context_length":128000,"pricing_prompt":"3.00","pricing_completion":"15.00","supported_parameters":["temperature","max_tokens"],"recommended_for":[]}
+    {
+      "vendor": "OpenAI",
+      "id": "openai/gpt-4.1-mini",
+      "name": "GPT-4.1 mini",
+      "context_length": 1047576,
+      "pricing_prompt": "0.40",
+      "pricing_completion": "1.60",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "OpenAI",
+      "id": "openai/o3-mini",
+      "name": "o3-mini",
+      "context_length": 200000,
+      "pricing_prompt": "1.10",
+      "pricing_completion": "4.40",
+      "supported_parameters": [
+        "reasoning"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Google",
+      "id": "google/gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "context_length": 1048576,
+      "pricing_prompt": "0.15",
+      "pricing_completion": "0.60",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Google",
+      "id": "google/gemini-2.5-pro",
+      "name": "Gemini 2.5 Pro",
+      "context_length": 1048576,
+      "pricing_prompt": "1.25",
+      "pricing_completion": "5.00",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Anthropic",
+      "id": "anthropic/claude-3.7-sonnet",
+      "name": "Claude 3.7 Sonnet",
+      "context_length": 200000,
+      "pricing_prompt": "3.00",
+      "pricing_completion": "15.00",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Anthropic",
+      "id": "anthropic/claude-3.5-haiku",
+      "name": "Claude 3.5 Haiku",
+      "context_length": 200000,
+      "pricing_prompt": "0.80",
+      "pricing_completion": "4.00",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Meta",
+      "id": "meta-llama/llama-3.3-70b-instruct",
+      "name": "Llama 3.3 70B Instruct",
+      "context_length": 131072,
+      "pricing_prompt": "0.12",
+      "pricing_completion": "0.30",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": [
+        "fallback"
+      ]
+    },
+    {
+      "vendor": "Meta",
+      "id": "meta-llama/llama-3.1-405b-instruct",
+      "name": "Llama 3.1 405B Instruct",
+      "context_length": 131072,
+      "pricing_prompt": "1.30",
+      "pricing_completion": "2.60",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Qwen",
+      "id": "qwen/qwen-2.5-72b-instruct",
+      "name": "Qwen 2.5 72B Instruct",
+      "context_length": 131072,
+      "pricing_prompt": "0.35",
+      "pricing_completion": "0.70",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Qwen",
+      "id": "qwen/qwen-2.5-7b-instruct",
+      "name": "Qwen 2.5 7B Instruct",
+      "context_length": 32768,
+      "pricing_prompt": "0.05",
+      "pricing_completion": "0.10",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Mistral",
+      "id": "mistralai/mistral-large",
+      "name": "Mistral Large",
+      "context_length": 131072,
+      "pricing_prompt": "2.00",
+      "pricing_completion": "6.00",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Mistral",
+      "id": "mistralai/mistral-small",
+      "name": "Mistral Small",
+      "context_length": 32768,
+      "pricing_prompt": "0.20",
+      "pricing_completion": "0.60",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "DeepSeek",
+      "id": "deepseek/deepseek-chat",
+      "name": "DeepSeek Chat",
+      "context_length": 65536,
+      "pricing_prompt": "0.14",
+      "pricing_completion": "0.28",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "DeepSeek",
+      "id": "deepseek/deepseek-reasoner",
+      "name": "DeepSeek Reasoner",
+      "context_length": 65536,
+      "pricing_prompt": "0.55",
+      "pricing_completion": "2.19",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "xAI",
+      "id": "x-ai/grok-2-1212",
+      "name": "Grok 2 1212",
+      "context_length": 131072,
+      "pricing_prompt": "2.00",
+      "pricing_completion": "10.00",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Alibaba",
+      "id": "alibaba/qwen-max",
+      "name": "Qwen Max",
+      "context_length": 32768,
+      "pricing_prompt": "0.40",
+      "pricing_completion": "1.20",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Others",
+      "id": "cohere/command-r-plus",
+      "name": "Command R+",
+      "context_length": 128000,
+      "pricing_prompt": "3.00",
+      "pricing_completion": "15.00",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": []
+    },
+    {
+      "vendor": "Google",
+      "id": "google/gemini-3-flash-preview",
+      "name": "Gemini 3 Flash",
+      "context_length": 1048576,
+      "pricing_prompt": "0.15",
+      "pricing_completion": "0.60",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": [
+        "primary"
+      ]
+    },
+    {
+      "vendor": "Google",
+      "id": "google/gemini-3.1-flash-lite-preview",
+      "name": "Gemini 3.1 Flash Lite",
+      "context_length": 1048576,
+      "pricing_prompt": "0.10",
+      "pricing_completion": "0.40",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": [
+        "fast"
+      ]
+    },
+    {
+      "vendor": "Anthropic",
+      "id": "anthropic/claude-3.5-sonnet",
+      "name": "Claude 3.5 Sonnet",
+      "context_length": 200000,
+      "pricing_prompt": "3.00",
+      "pricing_completion": "15.00",
+      "supported_parameters": [
+        "temperature",
+        "max_tokens"
+      ],
+      "recommended_for": [
+        "reasoning"
+      ]
+    }
   ]
 }

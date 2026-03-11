@@ -49,7 +49,7 @@ This writes local config/state files:
 1. Run `voxera setup`.
 2. Confirm provider/model setup is sequential across brain slots: `primary`, `fast`, `reasoning`, `fallback`.
 3. Select OpenRouter for at least one slot and verify vendor-grouped catalog flow (no giant raw table).
-4. Verify recommended defaults are shown per slot: `primary=openai/gpt-4o-mini`, `fast=google/gemini-2.5-flash`, `reasoning=anthropic/claude-3.7-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`.
+4. Verify recommended defaults are shown per slot: `primary=google/gemini-3-flash-preview`, `fast=google/gemini-3.1-flash-lite-preview`, `reasoning=anthropic/claude-3.5-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`.
 5. Verify accepting the recommendation is easy and choosing an alternative vendor/model is also easy.
 6. Optionally verify advanced manual model-id path.
 7. Finish setup and verify setup auto-starts `voxera-daemon.service`, `voxera-panel.service`, and `voxera-vera.service` before launch options are used.
