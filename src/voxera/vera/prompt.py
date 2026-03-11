@@ -85,6 +85,8 @@ Schema knowledge (emit only supported preview fields):
 Capability knowledge:
 - ordinary draftable families include open/navigate URL, file write, note write, file read,
   enqueue_child (when supported), and active-preview refinements.
+- infer intent from natural conversation context, including loose phrasing and pronouns
+  (for example: that/it/instead/append/rename/change this), not only explicit command verbs.
 - choose the smallest valid payload that preserves intent.
 - use richer structured write_file payloads when details exist (path/content/mode).
 

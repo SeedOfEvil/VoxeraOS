@@ -58,6 +58,10 @@ _INFO_ONLY_RE = re.compile(
     re.IGNORECASE,
 )
 _FILE_PATH_RE = re.compile(r"(?:~|/)[^\s]+")
+_BARE_WEB_TARGET_RE = re.compile(
+    r"\b(?:open|go\s+to|visit|take\s+me\s+to|bring\s+up|load|launch|navigate\s+to)\s+([a-z0-9-]{2,})(?:\b|$)",
+    re.IGNORECASE,
+)
 
 
 def _normalize_open_goal(message: str) -> str | None:
@@ -76,6 +80,11 @@ def _normalize_open_goal(message: str) -> str | None:
         host = bare.group(1)
         suffix = bare.group(2) or ""
         return f"open https://{host}{suffix}"
+    bare_target = _BARE_WEB_TARGET_RE.search(text)
+    if bare_target:
+        target = bare_target.group(1).strip().lower()
+        if target not in {"a", "an", "the", "this", "that", "it", "me", "for"}:
+            return f"open https://{target}.com"
     return None
 
 
@@ -189,6 +198,10 @@ def _normalize_file_write_goal(message: str) -> str | None:
     note_to_match = re.search(r"\bmake\s+a\s+note\s+to\s+(.+)$", lowered)
     if note_to_match:
         return f"write a note to {note_to_match.group(1).strip()}"
+    if re.search(r"\b(?:make|create|write)\s+me\s+(?:a\s+)?note\b", lowered) or re.search(
+        r"\bnote\s+for\s+later\b", lowered
+    ):
+        return "write a note"
     if re.search(
         r"\b(write\s+this\s+down|jot\s+this\s+down|save\s+this\s+as\s+a\s+note)\b", lowered
     ):
@@ -293,6 +306,18 @@ def _draft_revision_from_active_preview(
             if "write a note called" in current_goal:
                 return {"goal": f"write a note called {new_name}"}
 
+    if re.search(r"\bappend\b", lowered) and re.search(r"\b(?:same\s+file|it|this)\b", lowered):
+        write_file = active_preview.get("write_file")
+        if isinstance(write_file, dict):
+            path = str(write_file.get("path") or "").strip()
+            content = str(write_file.get("content") or "")
+            if path:
+                filename = Path(path).name
+                return {
+                    "goal": f"append to a file called {filename} with provided content",
+                    "write_file": {"path": path, "content": content, "mode": "append"},
+                }
+
     if re.search(r"\b(add|put|use|make)\b", lowered) and re.search(
         r"\b(file|content|text|joke|script|it)\b", lowered
     ):
@@ -305,11 +330,11 @@ def _draft_revision_from_active_preview(
         else:
             path = f"~/VoxeraOS/notes/{filename}"
 
-        content = _extract_content_refinement(text, lowered, filename_hint=filename)
-        if content:
+        refined_content = _extract_content_refinement(text, lowered, filename_hint=filename)
+        if refined_content:
             return {
                 "goal": f"write a file called {filename} with provided content",
-                "write_file": {"path": path, "content": content, "mode": mode},
+                "write_file": {"path": path, "content": refined_content, "mode": mode},
             }
 
     return None
@@ -357,31 +382,72 @@ def is_active_preview_submit_request(message: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in _ACTIVE_PREVIEW_SUBMIT_PATTERNS)
 
 
+def _looks_like_contextual_refinement(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    return bool(
+        re.search(
+            r"\b(actually|instead|change|switch|rename|append|make\s+it|put\s+.*\s+in\s+it|use\s+this|for\s+later)\b",
+            lowered,
+        )
+    )
+
+
+def _draft_from_candidate_message(
+    candidate: str, *, active_preview: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    revision = _draft_revision_from_active_preview(candidate, active_preview)
+    if revision is not None:
+        return revision
+
+    normalized_open = _normalize_open_goal(candidate)
+    if normalized_open:
+        return {"goal": normalized_open}
+
+    normalized_read = _normalize_file_read_goal(candidate)
+    if normalized_read:
+        return {"goal": normalized_read}
+
+    structured_write = _normalize_structured_file_write_payload(candidate)
+    if structured_write:
+        return structured_write
+
+    normalized_write = _normalize_file_write_goal(candidate)
+    if normalized_write:
+        return {"goal": normalized_write}
+
+    return None
+
+
 def maybe_draft_job_payload(
-    message: str, *, active_preview: dict[str, Any] | None = None
+    message: str,
+    *,
+    active_preview: dict[str, Any] | None = None,
+    recent_user_messages: list[str] | None = None,
 ) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
         return None
-    revision = _draft_revision_from_active_preview(normalized, active_preview)
-    if revision is not None:
-        return revision
 
-    normalized_open = _normalize_open_goal(normalized)
-    if normalized_open:
-        return {"goal": normalized_open}
+    primary = _draft_from_candidate_message(normalized, active_preview=active_preview)
+    if primary is not None:
+        return primary
 
-    normalized_read = _normalize_file_read_goal(normalized)
-    if normalized_read:
-        return {"goal": normalized_read}
+    if not recent_user_messages or not _looks_like_contextual_refinement(normalized):
+        return None
 
-    structured_write = _normalize_structured_file_write_payload(normalized)
-    if structured_write:
-        return structured_write
-
-    normalized_write = _normalize_file_write_goal(normalized)
-    if normalized_write:
-        return {"goal": normalized_write}
+    for prior in reversed(recent_user_messages[-4:]):
+        prior_text = prior.strip()
+        if not prior_text or prior_text == normalized:
+            continue
+        contextual_candidate = f"{prior_text}\n{normalized}"
+        contextual = _draft_from_candidate_message(
+            contextual_candidate,
+            active_preview=active_preview,
+        )
+        if contextual is not None:
+            return contextual
 
     return None
 

@@ -231,10 +231,18 @@ async def generate_preview_builder_update(
                 GeminiBrain(model=PREVIEW_BUILDER_FALLBACK_MODEL, api_key_ref=api_key_ref)
             )
 
-    # Deterministic Voxera-aware compiler pass first for supported draftable families.
+    recent_user_messages = [
+        str(turn.get("text") or "")
+        for turn in turns[-MAX_SESSION_TURNS:]
+        if str(turn.get("role") or "").strip().lower() == "user"
+    ]
+
+    # Deterministic Voxera-aware compiler pass first for supported draftable families,
+    # including contextual refinements that depend on recent user turns.
     deterministic_preview = maybe_draft_job_payload(
         user_message,
         active_preview=active_preview,
+        recent_user_messages=recent_user_messages,
     )
     if deterministic_preview is not None:
         return deterministic_preview

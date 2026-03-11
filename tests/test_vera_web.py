@@ -11,7 +11,11 @@ from fastapi.testclient import TestClient
 from voxera.models import AppConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
-from voxera.vera.handoff import drafting_guidance, normalize_preview_payload
+from voxera.vera.handoff import (
+    drafting_guidance,
+    maybe_draft_job_payload,
+    normalize_preview_payload,
+)
 from voxera.vera_web import app as vera_app_module
 
 
@@ -1624,6 +1628,62 @@ def test_append_file_intent_compiles_structured_append_preview(tmp_path, monkeyp
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/log.txt"
     assert preview["write_file"]["content"] == "new line"
+    assert preview["write_file"]["mode"] == "append"
+
+
+def test_open_target_without_tld_is_naturally_inferred_as_web_intent(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "open cnn for me"},
+    )
+
+    assert "```json" not in res.text
+    assert "send it whenever" in res.text.lower()
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://cnn.com"}
+
+
+def test_contextual_refinement_can_build_preview_from_recent_user_messages():
+    preview = maybe_draft_job_payload(
+        'put "Why do programmers prefer dark mode? Because light attracts bugs." in it instead',
+        recent_user_messages=["I want a text file called skiibz.txt"],
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skiibz.txt"
+    assert "dark mode" in preview["write_file"]["content"]
+
+
+def test_natural_append_mode_refinement_updates_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called changelog.txt with content "release notes"',
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it append to the same file"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/changelog.txt"
+    assert preview["write_file"]["content"] == "release notes"
     assert preview["write_file"]["mode"] == "append"
 
 
