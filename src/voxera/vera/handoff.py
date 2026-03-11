@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,6 +34,8 @@ _HANDOFF_PATTERNS = (
 )
 
 _ACTIVE_PREVIEW_SUBMIT_PATTERNS = (
+    r"\byes\s+please\b",
+    r"\byes\s+go\s+ahead\b",
     r"\bthat\s+looks\s+good\s+now\b",
     r"\buse\s+it\b",
     r"\buse\s+this\s+preview\b",
@@ -57,6 +59,10 @@ _INFO_ONLY_RE = re.compile(
     re.IGNORECASE,
 )
 _FILE_PATH_RE = re.compile(r"(?:~|/)[^\s]+")
+_BARE_WEB_TARGET_RE = re.compile(
+    r"\b(?:open|go\s+to|visit|take\s+me\s+to|bring\s+up|load|launch|navigate\s+to)\s+([a-z0-9-]{2,})(?:\b|$)",
+    re.IGNORECASE,
+)
 
 
 def _normalize_open_goal(message: str) -> str | None:
@@ -75,6 +81,11 @@ def _normalize_open_goal(message: str) -> str | None:
         host = bare.group(1)
         suffix = bare.group(2) or ""
         return f"open https://{host}{suffix}"
+    bare_target = _BARE_WEB_TARGET_RE.search(text)
+    if bare_target:
+        target = bare_target.group(1).strip().lower()
+        if target not in {"a", "an", "the", "this", "that", "it", "me", "for"}:
+            return f"open https://{target}.com"
     return None
 
 
@@ -102,22 +113,62 @@ def _extract_quoted_content(text: str) -> str | None:
     return None
 
 
+def _infer_content_from_message(text: str) -> str | None:
+    lowered = text.lower()
+    if re.search(r"\b(joke|funny|humorous)\b", lowered):
+        return "Why did the developer go broke? Because they used up all their cache."
+    reminder = re.search(r"\b(?:about|to)\s+(.+)$", text, re.IGNORECASE)
+    if reminder and re.search(r"\b(remind|reminder|note\s+for\s+later)\b", lowered):
+        subject = reminder.group(1).strip(" .'\"`?!")
+        if subject:
+            return f"Reminder: {subject}"
+    if re.search(r"\bremind\s+me\b", lowered):
+        return "Reminder"
+    return None
+
+
+def _generated_note_path() -> str:
+    return f"~/VoxeraOS/notes/note-{int(time.time())}.txt"
+
+
 def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | None:
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
-    if not re.search(r"\b(write|create|save|put|make)\b", lowered):
+    append_mode = bool(re.search(r"\b(append|add\s+to)\b", lowered))
+    if not re.search(r"\b(write|create|save|put|make|append|add|build)\b", lowered):
         return None
     if not re.search(r"\b(file|note|\w+\.[a-z0-9]{1,8})\b", lowered):
         return None
 
+    if append_mode:
+        append_target = re.search(r"\bto\s+([^\s]+\.[a-zA-Z0-9]{1,8})\b", text, re.IGNORECASE)
+        target = append_target.group(1).strip("\"'`:,.") if append_target else None
+        if not target:
+            return None
+        content = _extract_quoted_content(text)
+        if content is None:
+            tail = re.search(r"\bappend\s+(.+?)\s+to\s+[^\s]+", text, re.IGNORECASE)
+            content = tail.group(1).strip(" \"'`:") if tail else None
+        if content is None:
+            return None
+        normalized_path = (
+            target
+            if target.startswith("~") or target.startswith("/")
+            else f"~/VoxeraOS/notes/{target}"
+        )
+        return {
+            "goal": f"append to a file called {target} with provided content",
+            "write_file": {"path": normalized_path, "content": content, "mode": "append"},
+        }
+
     direct = re.search(
-        r"\b(?:write|create|make)\s+(?:a\s+)?(?:file\s+)?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
+        r"\b(?:write|create|make|append|build)\s+(?:a\s+)?(?:file\s+)?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
         text,
         re.IGNORECASE,
     )
     target = direct.group(1).strip("\"'") if direct else None
     if not target:
-        named = re.search(r"\b(?:called|named)\s+([^\s]+)", text, re.IGNORECASE)
+        named = re.search(r"\b(?:called|call\w*|named)\s+([^\s]+)", text, re.IGNORECASE)
         target = named.group(1).strip("\"'") if named else None
     if not target:
         return None
@@ -140,16 +191,53 @@ def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | N
                 content = candidate
                 break
     if content is None:
-        return None
+        content = _infer_content_from_message(text) or ""
 
     normalized_path = target
     if not target.startswith("~") and not target.startswith("/"):
         normalized_path = f"~/VoxeraOS/notes/{target}"
 
+    mode = "overwrite"
+    goal_prefix = "write a file"
     return {
-        "goal": f"write a file called {target} with provided content",
-        "write_file": {"path": normalized_path, "content": content, "mode": "overwrite"},
+        "goal": f"{goal_prefix} called {target} with provided content",
+        "write_file": {"path": normalized_path, "content": content, "mode": mode},
     }
+
+
+def _normalize_structured_note_payload(message: str) -> dict[str, Any] | None:
+    text = message.strip().rstrip("?.!")
+    lowered = text.lower()
+    if not re.search(r"\b(note|remind|reminder)\b", lowered):
+        return None
+
+    if not re.search(r"\b(write|create|make|build|save|jot|remind)\b", lowered):
+        return None
+
+    topic = None
+    about = re.search(r"\babout\s+(.+)$", text, re.IGNORECASE)
+    if about:
+        topic = about.group(1).strip(" .'\"`?!")
+
+    if topic:
+        return {
+            "goal": f"write a note about {topic}",
+            "write_file": {
+                "path": _generated_note_path(),
+                "content": f"Reminder: {topic}",
+                "mode": "overwrite",
+            },
+        }
+
+    if re.search(
+        r"\b(note\s+for\s+later|make\s+me\s+(?:a\s+)?note|write\s+me\s+(?:a\s+)?note)\b", lowered
+    ):
+        return {
+            "goal": "write a note",
+            "write_file": {"path": _generated_note_path(), "content": "", "mode": "overwrite"},
+        }
+
+    return None
 
 
 def _normalize_file_write_goal(message: str) -> str | None:
@@ -164,6 +252,10 @@ def _normalize_file_write_goal(message: str) -> str | None:
     note_to_match = re.search(r"\bmake\s+a\s+note\s+to\s+(.+)$", lowered)
     if note_to_match:
         return f"write a note to {note_to_match.group(1).strip()}"
+    if re.search(r"\b(?:make|create|write)\s+me\s+(?:a\s+)?note\b", lowered) or re.search(
+        r"\bnote\s+for\s+later\b", lowered
+    ):
+        return "write a note"
     if re.search(
         r"\b(write\s+this\s+down|jot\s+this\s+down|save\s+this\s+as\s+a\s+note)\b", lowered
     ):
@@ -228,6 +320,41 @@ def _extract_content_refinement(
     return None
 
 
+def _refined_content_from_active_preview(
+    *,
+    text: str,
+    lowered: str,
+    existing_content: str,
+) -> str | None:
+    explicit = _extract_content_refinement(text, lowered)
+    if explicit:
+        return explicit
+
+    if re.search(r"\b(programmer|coding|developer)\b", lowered):
+        return "Why do programmers prefer dark mode? Because light attracts bugs."
+    if re.search(r"\b(pet|dog|cat|puppy|kitten)\b", lowered):
+        return "Why did the cat sit on the computer? To keep an eye on the mouse."
+    if re.search(
+        r"\b(different\s+joke|change\s+the\s+joke|replace\s+the\s+content|make\s+it\s+funnier)\b",
+        lowered,
+    ):
+        return "I told my computer I needed a break, so it said: 'No problem, I’ll go to sleep.'"
+    if re.search(r"\b(make\s+it\s+shorter|shorter)\b", lowered):
+        compressed = existing_content.strip()
+        if compressed:
+            words = compressed.split()
+            return " ".join(words[: min(len(words), 8)])
+        return "Quick joke: cache me outside."
+    if re.search(
+        r"\b(update\s+the\s+content|update\s+content|change\s+it|change\s+content|make\s+it|replace\s+that|replace\s+it|use\s+a\s+different\s+joke)\b",
+        lowered,
+    ):
+        if existing_content.strip():
+            return existing_content.strip() + " (updated)"
+        return "Updated content."
+    return None
+
+
 def _draft_revision_from_active_preview(
     message: str, active_preview: dict[str, Any] | None
 ) -> dict[str, Any] | None:
@@ -268,23 +395,44 @@ def _draft_revision_from_active_preview(
             if "write a note called" in current_goal:
                 return {"goal": f"write a note called {new_name}"}
 
-    if re.search(r"\b(add|put|use|make)\b", lowered) and re.search(
-        r"\b(file|content|text|joke|script|it)\b", lowered
-    ):
+    if re.search(r"\bappend\b", lowered) and re.search(r"\b(?:same\s+file|it|this)\b", lowered):
+        write_file = active_preview.get("write_file")
+        if isinstance(write_file, dict):
+            path = str(write_file.get("path") or "").strip()
+            content = str(write_file.get("content") or "")
+            if path:
+                filename = Path(path).name
+                return {
+                    "goal": f"append to a file called {filename} with provided content",
+                    "write_file": {"path": path, "content": content, "mode": "append"},
+                }
+
+    content_refinement_intent = re.search(
+        r"\b(add|put|use|make|change|update|replace)\b", lowered
+    ) and re.search(r"\b(file|content|text|joke|script|it|that)\b", lowered)
+    if content_refinement_intent:
         filename = _filename_from_preview(active_preview) or "note.txt"
         write_file = active_preview.get("write_file")
         mode = "overwrite"
+        existing_content = ""
         if isinstance(write_file, dict):
             path = str(write_file.get("path") or f"~/VoxeraOS/notes/{filename}")
             mode = str(write_file.get("mode") or "overwrite")
+            existing_content = str(write_file.get("content") or "")
         else:
             path = f"~/VoxeraOS/notes/{filename}"
 
-        content = _extract_content_refinement(text, lowered, filename_hint=filename)
-        if content:
+        refined_content = _extract_content_refinement(text, lowered, filename_hint=filename)
+        if not refined_content:
+            refined_content = _refined_content_from_active_preview(
+                text=text,
+                lowered=lowered,
+                existing_content=existing_content,
+            )
+        if refined_content:
             return {
                 "goal": f"write a file called {filename} with provided content",
-                "write_file": {"path": path, "content": content, "mode": mode},
+                "write_file": {"path": path, "content": refined_content, "mode": mode},
             }
 
     return None
@@ -332,29 +480,78 @@ def is_active_preview_submit_request(message: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in _ACTIVE_PREVIEW_SUBMIT_PATTERNS)
 
 
+def _looks_like_contextual_refinement(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    return bool(
+        re.search(
+            r"\b(actually|instead|change|switch|rename|append|make\s+it|put\s+.*\s+in\s+it|use\s+this|for\s+later)\b",
+            lowered,
+        )
+    )
+
+
+def _draft_from_candidate_message(
+    candidate: str, *, active_preview: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    revision = _draft_revision_from_active_preview(candidate, active_preview)
+    if revision is not None:
+        return revision
+
+    normalized_open = _normalize_open_goal(candidate)
+    if normalized_open:
+        return {"goal": normalized_open}
+
+    normalized_read = _normalize_file_read_goal(candidate)
+    if normalized_read:
+        return {"goal": normalized_read}
+
+    structured_write = _normalize_structured_file_write_payload(candidate)
+    if structured_write:
+        return structured_write
+
+    structured_note = _normalize_structured_note_payload(candidate)
+    if structured_note:
+        return structured_note
+
+    normalized_write = _normalize_file_write_goal(candidate)
+    if normalized_write:
+        return {"goal": normalized_write}
+
+    return None
+
+
 def maybe_draft_job_payload(
-    message: str, *, active_preview: dict[str, Any] | None = None
+    message: str,
+    *,
+    active_preview: dict[str, Any] | None = None,
+    recent_user_messages: list[str] | None = None,
 ) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
         return None
-    normalized_open = _normalize_open_goal(normalized)
-    if normalized_open:
-        return {"goal": normalized_open}
 
-    normalized_read = _normalize_file_read_goal(normalized)
-    if normalized_read:
-        return {"goal": normalized_read}
+    primary = _draft_from_candidate_message(normalized, active_preview=active_preview)
+    if primary is not None:
+        return primary
 
-    structured_write = _normalize_structured_file_write_payload(normalized)
-    if structured_write:
-        return structured_write
+    if not recent_user_messages or not _looks_like_contextual_refinement(normalized):
+        return None
 
-    normalized_write = _normalize_file_write_goal(normalized)
-    if normalized_write:
-        return {"goal": normalized_write}
+    for prior in reversed(recent_user_messages[-4:]):
+        prior_text = prior.strip()
+        if not prior_text or prior_text == normalized:
+            continue
+        contextual_candidate = f"{prior_text}\n{normalized}"
+        contextual = _draft_from_candidate_message(
+            contextual_candidate,
+            active_preview=active_preview,
+        )
+        if contextual is not None:
+            return contextual
 
-    return _draft_revision_from_active_preview(normalized, active_preview)
+    return None
 
 
 def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -404,14 +601,6 @@ def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
         cleaned["write_file"] = {"path": path, "content": content, "mode": mode}
 
     return cleaned
-
-
-def preview_message(payload: dict[str, Any]) -> str:
-    return (
-        "I prepared a VoxeraOS job preview for you (proposal only):\n"
-        f"```json\n{json.dumps(payload, indent=2)}\n```\n"
-        "Nothing has been submitted or executed yet. If this looks right, say 'hand it off' or 'submit it' and I’ll queue it in VoxeraOS."
-    )
 
 
 def submit_preview(*, queue_root: Path, payload: dict[str, Any]) -> dict[str, str]:

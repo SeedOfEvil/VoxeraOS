@@ -20,9 +20,10 @@ That architecture matters because it keeps behavior observable and recoverable e
 
 - **Vera v0 conversational surface (new)**
   - Minimal standalone Vera web app (`voxera.vera_web.app`) intended to run on a separate port from the operator panel with short session context.
-  - Explicit trust boundary messaging: Vera can converse, plan, and draft requests, but real-world side effects must go through VoxeraOS queue execution.
-  - Explicit structured handoff channel: Vera drafts a minimal JSON job preview, then submits to the real VoxeraOS queue only after explicit user intent.
-  - Normal chat remains preview-only by default (no implicit enqueue from ordinary conversation).
+  - Explicit trust boundary messaging: Vera can converse and guide, but real-world side effects must go through VoxeraOS queue execution.
+  - Hidden backend **Voxera Preview Compiler** (Gemini-based) continuously compiles supported draftable intents into authoritative preview payload state.
+  - Preview pane is the single authoritative draft surface; chat remains conversational and does not default to showing Voxera control JSON.
+  - Explicit handoff/confirmation submits only from active preview and only claims success on real queue acknowledgment.
   - Honest lifecycle language: proposal/prepared/submitted/queued are distinct from executed/verified evidence states.
   - DEV-friendly diagnostics panel exposes prompt + session metadata for development, and includes an explicit "Clear chat + context" action.
 
@@ -373,6 +374,15 @@ Behavior is intentionally narrow and fail-closed:
 - child enqueue is auditable in `actions.jsonl`, `child_job_refs.json`, `execution_result.json` (`child_refs`), job progress (`child_refs`), and panel job detail
 
 This is **not** a workflow engine: no dependency graph, no parent/child result passing, no autonomous decomposition, and no approval bypass.
+
+### Hidden preview compiler architecture (follow-up)
+
+Vera is intentionally user-facing and conversational, while payload construction is handled by a hidden Voxera-aware preview compiler.
+
+- Draftable intent families (open URL, file write, note write, file read, and refinements) compile into active preview payload state.
+- The preview pane is authoritative (latest-preview-wins) and is the exact handoff submit target.
+- Natural confirmations (for example, `yes please`, `send it`) are fail-closed unless active preview exists and real queue ack succeeds.
+- Non-Voxera user-requested JSON content is still allowed in chat.
 
 ### Vera natural-language preview drafting (PR #154)
 

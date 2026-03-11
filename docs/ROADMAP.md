@@ -45,6 +45,7 @@ This is where Vera should stop feeling like a thin chat surface and start feelin
 - **PR 174** — `feat(vera)`: better multi-turn intent continuity and context carry-through
 - **PR 175** — `feat(vera)`: clearer conversational shaping for file / open / review flows
 - **PR 176** — `docs/demo`: sharpen Vera demo and operator story for 0.1.8
+- **PR 178** — `fix(vera)`: hidden Voxera-aware preview compiler + authoritative preview-pane routing across draftable intents
 - **PR 177** — `release(0.1.8)`: Vera Control Layer milestone packaging
 
 ---

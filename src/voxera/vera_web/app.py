@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -26,13 +25,13 @@ from ..vera.handoff import (
     is_explicit_handoff_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
-    preview_message,
     submit_preview,
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.service import (
     append_session_turn,
     clear_session_turns,
+    generate_preview_builder_update,
     generate_vera_reply,
     new_session_id,
     read_session_handoff_state,
@@ -127,6 +126,10 @@ def _looks_like_submission_claim(text: str) -> bool:
         "request is now in the queue",
         "handed off",
         "queued",
+        "sent it to voxeraos",
+        "sent it to the queue",
+        "i sent it",
+        "i queued it",
     )
     return any(phrase in lowered for phrase in suspicious_phrases)
 
@@ -143,71 +146,90 @@ def _guardrail_submission_claim(*, root: Path, session_id: str, text: str) -> st
     return text
 
 
-def _extract_json_objects(text: str) -> list[dict[str, object]]:
-    candidates: list[dict[str, object]] = []
-
-    for match in re.findall(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, flags=re.IGNORECASE):
-        try:
-            parsed = json.loads(match)
-        except Exception:
-            continue
-        if isinstance(parsed, dict):
-            candidates.append(parsed)
-
-    decoder = json.JSONDecoder()
-    scan_index = 0
-    while True:
-        start = text.find("{", scan_index)
-        if start < 0:
-            break
-        try:
-            parsed, end = decoder.raw_decode(text[start:])
-        except Exception:
-            scan_index = start + 1
-            continue
-        if isinstance(parsed, dict):
-            candidates.append(parsed)
-        scan_index = start + max(end, 1)
-
-    return candidates
-
-
-def _is_lossless_preview_candidate(
-    candidate: dict[str, object], normalized: dict[str, object]
-) -> bool:
-    candidate_keys = set(candidate.keys())
-    normalized_keys = set(normalized.keys())
-    if candidate_keys - normalized_keys:
+def _is_natural_confirmation_phrase(message: str) -> bool:
+    normalized = message.strip().lower()
+    if not normalized:
         return False
-
-    candidate_write_file = candidate.get("write_file")
-    normalized_write_file = normalized.get("write_file")
-    if isinstance(candidate_write_file, dict):
-        if not isinstance(normalized_write_file, dict):
-            return False
-        if set(candidate_write_file.keys()) - set(normalized_write_file.keys()):
-            return False
-
-    return True
+    return bool(
+        re.fullmatch(
+            r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|go\s+ahead|do\s+it|send\s+it|submit\s+it|hand\s+it\s+off)[.!?]*",
+            normalized,
+        )
+    )
 
 
-def _coerce_assistant_preview_update(text: str) -> tuple[dict[str, object] | None, bool]:
-    saw_preview_like = False
-    latest_normalized: dict[str, object] | None = None
-    for candidate in _extract_json_objects(text):
-        if not any(
-            key in candidate for key in ("goal", "title", "write_file", "enqueue_child", "content")
-        ):
-            continue
-        saw_preview_like = True
-        try:
-            normalized = normalize_preview_payload(candidate)
-        except Exception:
-            continue
-        if not _is_lossless_preview_candidate(candidate, normalized):
-            continue
-        latest_normalized = normalized
-    return latest_normalized, saw_preview_like
+def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] | None) -> bool:
+    if active_preview is not None:
+        return True
+    if _is_natural_confirmation_phrase(message):
+        return True
+    if is_explicit_handoff_request(message) or is_active_preview_submit_request(message):
+        return True
+    return maybe_draft_job_payload(message, active_preview=None) is not None
+
+
+def _looks_like_voxera_preview_dump(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    if (
+        "proposed voxeraos job" in lowered
+        or "proposal for voxeraos" in lowered
+        or "submit-ready voxeraos preview" in lowered
+    ):
+        return True
+    return "```json" in lowered and any(
+        marker in lowered
+        for marker in (
+            '"goal"',
+            '"write_file"',
+            '"enqueue_child"',
+            "voxeraos",
+        )
+    )
+
+
+def _looks_like_preview_update_claim(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    return any(
+        phrase in lowered
+        for phrase in (
+            "prepared a proposal",
+            "prepared the following job",
+            "drafted a proposal",
+            "here is the prepared proposal",
+            "here is the json",
+            "updated the draft in the preview",
+            "updated the preview",
+            "latest version is ready in the preview",
+            "proposal in the preview",
+            "refined the proposal in the preview",
+        )
+    )
+
+
+def _is_explicit_json_content_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    if "voxera" in lowered and "json" in lowered:
+        return False
+    return bool(
+        re.search(
+            r"\b(json\s+(config|payload|body|schema|file|example)|return\s+json|show\s+me\s+json|generate\s+json|as\s+json)\b",
+            lowered,
+        )
+    )
+
+
+def _conversational_preview_update_message(*, updated: bool, has_active_preview: bool) -> str:
+    if updated:
+        return "Understood. Nothing has been submitted or executed yet. I can send it whenever you’re ready."
+    if has_active_preview:
+        return "Understood. I still have the current request ready whenever you want to send it."
+    return "I couldn’t safely prepare a request yet. If you share clearer target details, I can continue."
 
 
 def _render_page(
@@ -323,15 +345,31 @@ async def chat(request: Request):
             job_id=None,
         )
         assistant_text = (
-            f"I drafted a follow-up preview based on evidence from `{evidence.job_id}`.\n\n"
-            f"```json\n{payload}\n```\n\n"
-            "This is preview-only. I did not submit anything to VoxeraOS."
+            f"I prepared a follow-up request based on evidence from `{evidence.job_id}`. "
+            "This is preview-only; I did not submit anything to VoxeraOS."
         )
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
         return _render_page(
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status="followup_preview_ready",
+        )
+
+    if (
+        _is_natural_confirmation_phrase(message)
+        or is_explicit_handoff_request(message)
+        or is_active_preview_submit_request(message)
+    ) and pending_preview is None:
+        assistant_text, status = _submit_handoff(
+            root=root,
+            session_id=active_session,
+            preview=None,
+        )
+        append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status=status,
         )
 
     if _is_active_preview_submit_intent(message, preview_available=pending_preview is not None):
@@ -347,26 +385,28 @@ async def chat(request: Request):
             status=status,
         )
 
-    drafted = maybe_draft_job_payload(message, active_preview=pending_preview)
-    if drafted is not None:
-        payload = normalize_preview_payload(drafted)
-        write_session_preview(root, active_session, payload)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
-        )
-        assistant_text = preview_message(payload)
-        append_session_turn(root, active_session, role="assistant", text=assistant_text)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="prepared_preview",
-        )
+    builder_preview = await generate_preview_builder_update(
+        turns=turns,
+        user_message=message,
+        active_preview=pending_preview,
+    )
+    builder_payload: dict[str, object] | None = None
+    if builder_preview is not None:
+        try:
+            builder_payload = normalize_preview_payload(builder_preview)
+        except Exception:
+            builder_payload = None
+        if builder_payload is not None:
+            write_session_preview(root, active_session, builder_payload)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
 
     reply = await generate_vera_reply(turns=turns, user_message=message)
     guarded_answer = _guardrail_submission_claim(
@@ -374,29 +414,26 @@ async def chat(request: Request):
         session_id=active_session,
         text=reply["answer"],
     )
-    model_preview, saw_preview_like = _coerce_assistant_preview_update(guarded_answer)
-    if model_preview is not None:
-        write_session_preview(root, active_session, model_preview)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
+    in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
+    is_json_content_request = _is_explicit_json_content_request(message)
+    is_voxera_control_turn = _is_voxera_control_turn(message, active_preview=pending_preview)
+    should_hide_voxera_preview_dump = (
+        in_voxera_preview_flow or is_voxera_control_turn
+    ) and not is_json_content_request
+
+    assistant_text = guarded_answer
+    should_use_conversational_control_reply = (
+        (is_voxera_control_turn and not is_json_content_request)
+        or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
+        or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
+    )
+    if should_use_conversational_control_reply:
+        assistant_text = _conversational_preview_update_message(
+            updated=builder_payload is not None,
+            has_active_preview=pending_preview is not None,
         )
-        assistant_text = preview_message(model_preview)
-        status = "prepared_preview"
-    elif saw_preview_like:
-        assistant_text = (
-            "I couldn’t safely turn that into a submit-ready VoxeraOS preview yet. "
-            "Do you want me to create a file preview with explicit filename and exact content?"
-        )
-        status = "clarify_preview_shape"
-    else:
-        assistant_text = guarded_answer
-        status = reply["status"]
+
+    status = "prepared_preview" if builder_payload is not None else reply["status"]
 
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
 
