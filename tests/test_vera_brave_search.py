@@ -191,3 +191,56 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
 
     assert result["status"] == "web_investigation_unconfigured"
     assert "not configured" in result["answer"]
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("can you find stock information about the big 7?", True),
+        ("what are the latest prices for the magnificent seven?", True),
+        ("compare Apple and Nvidia stock performance", True),
+        ("what's happening with Tesla stock?", True),
+        ("show me recent market news about Microsoft", True),
+        ("find information about VMware Horizon 8", True),
+        ("look into the latest Brave Search API docs", True),
+        ("research Nvidia earnings", True),
+        ("open cnn.com", False),
+        ("open cnn for me", False),
+        ("take me to cnn", False),
+    ],
+)
+def test_informational_query_classifier(message: str, expected: bool) -> None:
+    assert vera_service._is_informational_web_query(message) is expected
+
+
+def test_vera_finance_query_routes_to_brave(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = AppConfig(
+        web_investigation=WebInvestigationConfig(
+            api_key_ref="BRAVE_API_KEY", env_api_key_var="BRAVE_API_KEY"
+        )
+    )
+    monkeypatch.setattr(vera_service, "load_app_config", lambda: cfg)
+
+    seen: list[str] = []
+
+    async def _fake_search(self, *, query: str, count: int = 5):
+        seen.append(query)
+        return [
+            WebSearchResult(
+                title="Magnificent Seven overview",
+                url="https://example.com/mag7",
+                description="Market/stock overview",
+            )
+        ]
+
+    monkeypatch.setattr(BraveSearchClient, "search", _fake_search)
+
+    result = asyncio.run(
+        vera_service.generate_vera_reply(
+            turns=[],
+            user_message="can you find stock information about the big 7?",
+        )
+    )
+
+    assert seen == ["can you find stock information about the big 7?"]
+    assert result["status"] == "ok:web_investigation"

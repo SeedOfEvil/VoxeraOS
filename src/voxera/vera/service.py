@@ -25,9 +25,19 @@ PREVIEW_BUILDER_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 
 def _is_operational_open_request(message: str) -> bool:
-    lowered = message.lower()
-    trigger_terms = ("open ", "launch ", "take me to", "bring up", "navigate to")
-    return any(term in lowered for term in trigger_terms)
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    action_terms = (
+        "open ",
+        "launch ",
+        "take me to",
+        "bring up",
+        "navigate to",
+        "go to ",
+        "visit ",
+    )
+    return any(term in lowered for term in action_terms)
 
 
 def _is_informational_web_query(message: str) -> bool:
@@ -36,23 +46,57 @@ def _is_informational_web_query(message: str) -> bool:
         return False
     if _is_operational_open_request(lowered):
         return False
+
     informational_terms = (
         "what's on",
         "what is on",
         "look up",
+        "look into",
         "search for",
         "search ",
         "find out",
+        "find information",
+        "information about",
         "latest",
+        "recent",
+        "news",
+        "market news",
         "release notes",
         "summarize",
+        "summary",
         "compare",
+        "research",
         "what changed",
+        "what happened",
+        "what's happening",
         "docs",
+        "documentation",
+        "earnings",
+        "analyst",
+        "stock",
+        "stocks",
+        "price",
+        "prices",
+        "market",
+    )
+    question_starters = (
+        "what",
+        "why",
+        "how",
+        "when",
+        "who",
+        "can you find",
+        "could you find",
     )
     web_hints = ("http://", "https://", ".com", ".io", "website", "web")
-    return any(term in lowered for term in informational_terms) or any(
-        hint in lowered for hint in web_hints
+
+    contains_info_signal = any(term in lowered for term in informational_terms)
+    looks_like_question = lowered.endswith("?") or any(
+        lowered.startswith(starter) for starter in question_starters
+    )
+
+    return contains_info_signal or (
+        looks_like_question and any(hint in lowered for hint in web_hints)
     )
 
 
