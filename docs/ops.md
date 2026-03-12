@@ -42,6 +42,13 @@ make vera-logs
 - Use `.env.example` as the template for local values.
 - Keep secrets (for example `VOXERA_PANEL_OPERATOR_PASSWORD`) in `~/.config/voxera/env` when possible.
 - `.env` in the repo is intentionally gitignored for local overrides.
+
+### Vera read-only web investigation (Brave)
+
+- `voxera setup` now prompts to enable Vera's read-only Brave web investigation.
+- When enabled, the wizard stores `BRAVE_API_KEY` using Voxera secrets storage (system keyring when available, secure file fallback otherwise).
+- `config.yml` stores only references (`api_key_ref`, `env_api_key_var`) plus `provider: brave` and `max_results`; raw keys are not written to config.
+- Informational web queries use this lane and remain side-effect free (no queue submission, no preview generation, no execution).
 - Print the effective redacted runtime snapshot with:
 
 ```bash

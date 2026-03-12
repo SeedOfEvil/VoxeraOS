@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import time
 from pathlib import Path
@@ -190,17 +191,62 @@ def _format_web_investigation_answer(query: str, results: list[WebSearchResult])
 
     bullets = []
     for idx, result in enumerate(results[:5], start=1):
-        detail = result.description or "No summary provided."
+        detail = result.description or "No snippet available."
         age = f" ({result.age})" if result.age else ""
-        bullets.append(f"{idx}. {result.title}{age}\n   {detail}\n   Source: {result.url}")
+        bullets.append(f"{idx}. {result.title}{age}\n   Source: {result.url}\n   Snippet: {detail}")
 
     joined = "\n".join(bullets)
     return (
-        f"I used Brave Search in read-only mode to investigate: '{query}'. "
-        "Here are the top findings:\n"
+        "Here are the top findings I found via read-only Brave web investigation:\n\n"
         f"{joined}\n\n"
         "If you want, I can compare these sources or summarize a specific angle."
     )
+
+
+def _normalize_web_query(user_message: str) -> str:
+    query = re.sub(r"\s+", " ", user_message.strip())
+    lowered = query.lower()
+
+    overrides = {
+        "what's the news": "latest world news",
+        "whats the news": "latest world news",
+        "what is the news": "latest world news",
+        "what's happening today": "current world news today",
+        "whats happening today": "current world news today",
+        "what is happening today": "current world news today",
+        "what's going on today": "current world news today",
+        "whats going on today": "current world news today",
+        "stock info about the big 7": "magnificent seven stocks",
+        "stock information about the big 7": "magnificent seven stocks",
+        "find stock info about the big 7": "magnificent seven stocks",
+        "find stock information about the big 7": "magnificent seven stocks",
+    }
+
+    for raw, normalized in overrides.items():
+        if raw in lowered:
+            return normalized
+
+    prefix_patterns = (
+        r"^(hey|hi|hello|morning|evening)\s+vera[\s,]*",
+        r"^vera[\s,]+please\s+",
+        r"^vera[\s,:-]+",
+    )
+    for pattern in prefix_patterns:
+        query = re.sub(pattern, "", query, flags=re.IGNORECASE)
+
+    filler_patterns = (
+        r"\b(can you find|can you look up|can you|could you|would you|please|for me|i want to know)\b",
+        r"\b(find out|look up|look into|search for)\b",
+    )
+    for pattern in filler_patterns:
+        query = re.sub(pattern, " ", query, flags=re.IGNORECASE)
+
+    query = re.sub(r"\s+", " ", query).strip(" ,?.!")
+
+    if "latest" in query.lower() and "release notes" in query.lower():
+        query = re.sub(r"^the\s+", "", query, flags=re.IGNORECASE)
+
+    return query or user_message.strip()
 
 
 def new_session_id() -> str:
@@ -475,12 +521,13 @@ async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str)
         }
 
     if informational_web and web_cfg is not None:
+        normalized_query = _normalize_web_query(user_message)
         client = BraveSearchClient(
             api_key_ref=web_cfg.api_key_ref,
             env_api_key_var=web_cfg.env_api_key_var,
         )
         try:
-            results = await client.search(query=user_message, count=web_cfg.max_results)
+            results = await client.search(query=normalized_query, count=web_cfg.max_results)
         except RuntimeError as exc:
             msg = str(exc)
             if "not configured" in msg:
@@ -497,7 +544,7 @@ async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str)
             }
 
         return {
-            "answer": _format_web_investigation_answer(user_message, results),
+            "answer": _format_web_investigation_answer(normalized_query, results),
             "status": "ok:web_investigation",
         }
 

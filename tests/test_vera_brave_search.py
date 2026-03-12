@@ -138,10 +138,11 @@ def test_vera_informational_query_uses_brave_lane(monkeypatch: pytest.MonkeyPatc
         vera_service.generate_vera_reply(turns=[], user_message="What's on cnn right now?")
     )
 
-    assert calls == ["What's on cnn right now?"]
+    assert calls == ["What's on cnn right now"]
     assert result["status"] == "ok:web_investigation"
-    assert "read-only mode" in result["answer"]
+    assert "read-only Brave web investigation" in result["answer"]
     assert "Source: https://cnn.com" in result["answer"]
+    assert "Snippet: Top stories now" in result["answer"]
 
 
 def test_vera_operational_open_request_skips_brave_lane(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -254,8 +255,21 @@ def test_vera_finance_query_routes_to_brave(monkeypatch: pytest.MonkeyPatch) -> 
         )
     )
 
-    assert seen == ["can you find stock information about the big 7?"]
+    assert seen == ["magnificent seven stocks"]
     assert result["status"] == "ok:web_investigation"
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("Evening Vera, whats the news?", "latest world news"),
+        ("Hey Vera find stock info about the big 7", "magnificent seven stocks"),
+        ("Morning Vera what's happening today", "current world news today"),
+        ("Look into the latest Horizon 8 release notes", "latest Horizon 8 release notes"),
+    ],
+)
+def test_normalize_web_query(message: str, expected: str) -> None:
+    assert vera_service._normalize_web_query(message) == expected
 
 
 def test_web_investigation_answer_avoids_voxera_execution_language(
