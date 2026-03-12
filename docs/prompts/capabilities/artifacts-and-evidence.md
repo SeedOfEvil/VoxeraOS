@@ -16,6 +16,13 @@ Artifacts and evidence are authoritative for what actually happened after execut
 - Artifacts are not speculative.
 - Artifacts are runtime outputs or canonical reviews derived from runtime outputs.
 
+Execution review consumers should prefer normalized contract fields in
+`execution_result.json` when present:
+- `artifact_families`
+- `artifact_refs`
+- `review_summary`
+- `evidence_bundle.trace`
+
 
 - Expected artifact families from capability declarations are part of reviewer context: compare expected vs produced evidence.
 

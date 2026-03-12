@@ -520,6 +520,7 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             terminal_outcome=terminal_outcome,
             ok=ok,
             error=error,
+            artifacts_dir=artifact_dir,
         )
         (artifact_dir / "execution_result.json").write_text(
             json.dumps(execution_result, indent=2), encoding="utf-8"

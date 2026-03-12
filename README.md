@@ -299,6 +299,12 @@ CI-required merge gate remains `make merge-readiness-check` (`merge-readiness / 
 
 Operator-facing queue consumers now prefer canonical structured artifacts when present (`execution_result.json`, then `step_results.json`) and fall back to legacy state/error/approval sidecars when absent. This keeps old jobs readable while making panel/CLI/ops bundle summaries more deterministic for new jobs.
 
+`execution_result.json` now includes an additive normalized artifact/evidence contract for reviewer and verifier grounding:
+- `artifact_families`: normalized produced artifact families for the job
+- `artifact_refs`: concrete artifact file refs by family
+- `review_summary`: reviewer-facing "what happened" summary fields
+- `evidence_bundle`: canonical trace bundle linking job/step execution context to produced artifacts and review summary
+
 Assistant queue artifacts now also include additive lane metadata (`execution_envelope.execution.lane`/`execution_envelope.execution.fast_lane`, `execution_result.execution_lane`/`execution_result.fast_lane`, mirrored in `assistant_response.json`) so operators can see whether the request used `fast_read_only` or standard queue routing and why.
 
 ## Structured producer intent (queue producer/planner lane)
