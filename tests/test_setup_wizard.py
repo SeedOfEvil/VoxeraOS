@@ -230,6 +230,7 @@ def test_run_setup_finish_path_ensures_services_before_launch(monkeypatch):
     monkeypatch.setattr(setup_wizard, "_pick_mode", lambda: "mixed")
     monkeypatch.setattr(setup_wizard, "_pick_brain_type", lambda: "cloud")
     monkeypatch.setattr(setup_wizard, "_configure_cloud_brains", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_configure_web_investigation", lambda cfg: None)
     monkeypatch.setattr(setup_wizard, "_policy_defaults", lambda: setup_wizard.PolicyApprovals())
     monkeypatch.setattr(setup_wizard, "_confirm_write_config", lambda path: True)
     monkeypatch.setattr(setup_wizard, "save_config", lambda *args, **kwargs: None)
@@ -257,3 +258,38 @@ def test_run_setup_finish_path_ensures_services_before_launch(monkeypatch):
     asyncio.run(setup_wizard.run_setup())
 
     assert calls == ["ensure", "launch"]
+
+
+def test_configure_web_investigation_disabled(monkeypatch):
+    cfg = AppConfig()
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: False)
+
+    setup_wizard._configure_web_investigation(cfg)
+
+    assert cfg.web_investigation is None
+
+
+def test_configure_web_investigation_persists_secret_ref_and_max_results(monkeypatch):
+    cfg = AppConfig()
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: True)
+    answers = iter(["brave-live-key", "7"])
+    monkeypatch.setattr(setup_wizard.Prompt, "ask", lambda *args, **kwargs: next(answers))
+
+    stored: dict[str, str] = {}
+
+    def _set_secret(ref: str, value: str) -> str:
+        stored["ref"] = ref
+        stored["value"] = value
+        return "keyring:BRAVE_API_KEY"
+
+    monkeypatch.setattr(setup_wizard, "set_secret", _set_secret)
+    monkeypatch.setattr(setup_wizard.console, "print", lambda *args, **kwargs: None)
+
+    setup_wizard._configure_web_investigation(cfg)
+
+    assert stored == {"ref": "BRAVE_API_KEY", "value": "brave-live-key"}
+    assert cfg.web_investigation is not None
+    assert cfg.web_investigation.provider == "brave"
+    assert cfg.web_investigation.api_key_ref == "BRAVE_API_KEY"
+    assert cfg.web_investigation.env_api_key_var == "BRAVE_API_KEY"
+    assert cfg.web_investigation.max_results == 7

@@ -16,13 +16,14 @@ from rich.table import Table
 from rich.text import Text
 
 from .config import capabilities_report_path, default_config_path, save_config, save_policy
-from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig
+from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig, WebInvestigationConfig
 from .openrouter_catalog import (
     grouped_catalog,
     load_curated_openrouter_catalog,
     recommended_model_for_slot,
 )
 from .paths import ensure_dirs
+from .secrets import set_secret
 
 console = Console()
 
@@ -330,6 +331,42 @@ def _configure_cloud_brains(cfg: AppConfig) -> None:
         _configure_brain_slot(cfg, slot=slot, existing=cfg.brain.get(slot.key))
 
 
+def _configure_web_investigation(cfg: AppConfig) -> None:
+    console.print(Panel("Optional read-only web investigation for Vera", title="Web Investigation"))
+    if not Confirm.ask(
+        "Enable read-only web investigation via Brave Search?",
+        default=False,
+    ):
+        cfg.web_investigation = None
+        return
+
+    key_ref = "BRAVE_API_KEY"
+    while True:
+        brave_api_key = Prompt.ask("Brave API key", password=True).strip()
+        if brave_api_key:
+            break
+        console.print(
+            "[yellow]Brave API key is required when web investigation is enabled.[/yellow]"
+        )
+
+    max_results_input = Prompt.ask("Brave max results (1-10)", default="5").strip()
+    try:
+        max_results = int(max_results_input)
+    except ValueError:
+        max_results = 5
+    max_results = max(1, min(max_results, 10))
+
+    storage = set_secret(key_ref, brave_api_key)
+    console.print(f"Stored Brave API key via {storage}.")
+
+    cfg.web_investigation = WebInvestigationConfig(
+        provider="brave",
+        api_key_ref=key_ref,
+        env_api_key_var=key_ref,
+        max_results=max_results,
+    )
+
+
 RUNTIME_SERVICE_UNITS: tuple[str, ...] = (
     "voxera-daemon.service",
     "voxera-panel.service",
@@ -496,6 +533,7 @@ async def run_setup() -> AppConfig:
     cfg.privacy = privacy
 
     cfg.policy = _policy_defaults()
+    _configure_web_investigation(cfg)
 
     if _confirm_write_config(config_path):
         save_config(cfg, path=config_path)

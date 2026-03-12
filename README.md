@@ -432,9 +432,15 @@ This preserves explicit filename/path and text content through queue intake, pla
 Vera now supports a dedicated informational web lane backed by Brave Search API while preserving the execution wall:
 
 - Informational asks (for example `what's on cnn right now?`, `compare these GPUs`, `look up latest docs`) use read-only Brave search and return summarized findings with source URLs.
+- Conversational prefixes/filler are normalized before Brave lookup (for example `Evening Vera, what's the news?` → `latest world news`; `Hey Vera find stock info about the big 7` → `magnificent seven stocks`) to improve search quality.
 - Operational asks (for example `open cnn.com`) remain VoxeraOS-governed action requests and continue through preview/handoff flows.
 - No downloads, browser automation, file writes, or local side effects occur in the Brave investigation lane.
 - If Brave API credentials are missing, Vera responds honestly that web investigation is not configured (no fake answers).
+
+Setup wizard support:
+
+- `voxera setup` can now enable Brave read-only web investigation directly.
+- The wizard stores the Brave key through Voxera secrets (`keyring` preferred, secure file fallback) and writes only refs in config (never the raw key).
 
 Configuration (`config.yml`) follows existing secret-ref patterns:
 
