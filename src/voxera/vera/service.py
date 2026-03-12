@@ -89,10 +89,13 @@ def _is_informational_web_query(message: str) -> bool:
         "search ",
         "find out",
         "find information",
+        "give me information",
         "stock information",
         "information about",
+        "tell me about",
         "latest",
         "latest news",
+        "latest stories",
         "latest updates",
         "recent",
         "news",
@@ -115,6 +118,11 @@ def _is_informational_web_query(message: str) -> bool:
         "what changed",
         "what happened",
         "what's happening",
+        "what's new",
+        "what's the latest",
+        "what are the latest",
+        "what's going on",
+        "what is going on",
         "docs",
         "documentation",
         "documentation for",
@@ -138,6 +146,8 @@ def _is_informational_web_query(message: str) -> bool:
         "who",
         "can you find",
         "could you find",
+        "tell me",
+        "give me",
     )
     web_hints = ("http://", "https://", ".com", ".io", "website", "web")
 
@@ -169,8 +179,7 @@ def _format_web_investigation_answer(query: str, results: list[WebSearchResult])
         f"I used Brave Search in read-only mode to investigate: '{query}'. "
         "Here are the top findings:\n"
         f"{joined}\n\n"
-        "If you want, I can compare these sources or summarize a specific angle. "
-        "I have not opened anything in VoxeraOS."
+        "If you want, I can compare these sources or summarize a specific angle."
     )
 
 

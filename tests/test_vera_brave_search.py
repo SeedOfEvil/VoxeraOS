@@ -197,6 +197,10 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
     "message,expected",
     [
         ("can you find stock information about the big 7?", True),
+        ("What's the news today?", True),
+        ("search for the top news", True),
+        ("what's going on in the world", True),
+        ("tell me about the latest VMware Horizon updates", True),
         ("what are the latest prices for the magnificent seven?", True),
         ("compare Apple and Nvidia stock performance", True),
         ("what's happening with Tesla stock?", True),
@@ -250,3 +254,34 @@ def test_vera_finance_query_routes_to_brave(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert seen == ["can you find stock information about the big 7?"]
     assert result["status"] == "ok:web_investigation"
+
+
+def test_web_investigation_answer_avoids_voxera_execution_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = AppConfig(
+        web_investigation=WebInvestigationConfig(
+            api_key_ref="BRAVE_API_KEY", env_api_key_var="BRAVE_API_KEY"
+        )
+    )
+    monkeypatch.setattr(vera_service, "load_app_config", lambda: cfg)
+
+    async def _fake_search(self, *, query: str, count: int = 5):
+        return [
+            WebSearchResult(
+                title="Top headlines",
+                url="https://example.com/news",
+                description="Daily summary",
+            )
+        ]
+
+    monkeypatch.setattr(BraveSearchClient, "search", _fake_search)
+
+    result = asyncio.run(
+        vera_service.generate_vera_reply(turns=[], user_message="What's the news today?")
+    )
+
+    lowered = result["answer"].lower()
+    assert "voxeraos" not in lowered
+    assert "prepare a plan" not in lowered
+    assert "hand this off" not in lowered
