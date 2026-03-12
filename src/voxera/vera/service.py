@@ -40,11 +40,44 @@ def _is_operational_open_request(message: str) -> bool:
     return any(term in lowered for term in action_terms)
 
 
+def _is_operational_side_effect_request(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    action_terms = (
+        "write",
+        "create",
+        "make",
+        "run",
+        "execute",
+        "delete",
+        "remove",
+        "install",
+        "uninstall",
+        "rename",
+        "move",
+        "copy",
+        "save",
+    )
+    targets = (
+        "file",
+        "directory",
+        "folder",
+        "script",
+        "app",
+        "application",
+        "command",
+    )
+    return any(term in lowered for term in action_terms) and any(t in lowered for t in targets)
+
+
 def _is_informational_web_query(message: str) -> bool:
     lowered = message.lower().strip()
     if not lowered:
         return False
     if _is_operational_open_request(lowered):
+        return False
+    if _is_operational_side_effect_request(lowered):
         return False
 
     informational_terms = (
@@ -56,21 +89,35 @@ def _is_informational_web_query(message: str) -> bool:
         "search ",
         "find out",
         "find information",
+        "stock information",
         "information about",
         "latest",
+        "latest news",
+        "latest updates",
         "recent",
         "news",
+        "world news",
+        "global news",
+        "world wide news",
+        "current events",
+        "headlines",
+        "breaking news",
         "market news",
+        "market updates",
         "release notes",
         "summarize",
         "summary",
         "compare",
         "research",
+        "explain",
+        "what is",
+        "what does",
         "what changed",
         "what happened",
         "what's happening",
         "docs",
         "documentation",
+        "documentation for",
         "earnings",
         "analyst",
         "stock",
@@ -78,9 +125,13 @@ def _is_informational_web_query(message: str) -> bool:
         "price",
         "prices",
         "market",
+        "company performance",
+        "magnificent seven",
+        "big 7",
     )
     question_starters = (
         "what",
+        "whats",
         "why",
         "how",
         "when",

@@ -208,6 +208,34 @@ def test_finance_informational_query_does_not_auto_prepare_voxera_preview(tmp_pa
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
+def test_news_query_skips_preview_builder_and_stays_informational(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _builder_should_not_run(**kwargs):
+        raise AssertionError("preview builder should not run for informational web turns")
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": "Global headlines summary", "status": "ok:web_investigation"}
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _builder_should_not_run)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Whats the latest world wide news?"},
+    )
+
+    assert res.status_code == 200
+    assert "Global headlines summary" in res.text
+    assert vera_service.read_session_preview(queue, sid) is None
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
 def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

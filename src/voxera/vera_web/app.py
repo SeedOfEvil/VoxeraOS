@@ -29,6 +29,7 @@ from ..vera.handoff import (
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.service import (
+    _is_informational_web_query,
     append_session_turn,
     clear_session_turns,
     generate_preview_builder_update,
@@ -385,11 +386,14 @@ async def chat(request: Request):
             status=status,
         )
 
-    builder_preview = await generate_preview_builder_update(
-        turns=turns,
-        user_message=message,
-        active_preview=pending_preview,
-    )
+    informational_web_turn = _is_informational_web_query(message)
+    builder_preview: dict[str, object] | None = None
+    if not informational_web_turn:
+        builder_preview = await generate_preview_builder_update(
+            turns=turns,
+            user_message=message,
+            active_preview=pending_preview,
+        )
     builder_payload: dict[str, object] | None = None
     if builder_preview is not None:
         try:

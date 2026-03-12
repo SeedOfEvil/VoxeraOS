@@ -201,12 +201,18 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
         ("compare Apple and Nvidia stock performance", True),
         ("what's happening with Tesla stock?", True),
         ("show me recent market news about Microsoft", True),
+        ("whats the latest world wide news?", True),
+        ("what are the latest global headlines?", True),
+        ("look up cnn for me", True),
+        ("explain what VMware Horizon does", True),
         ("find information about VMware Horizon 8", True),
         ("look into the latest Brave Search API docs", True),
         ("research Nvidia earnings", True),
         ("open cnn.com", False),
         ("open cnn for me", False),
         ("take me to cnn", False),
+        ("launch facebook.com", False),
+        ("write a file called changelog.txt with release notes", False),
     ],
 )
 def test_informational_query_classifier(message: str, expected: bool) -> None:
