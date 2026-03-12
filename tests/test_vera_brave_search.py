@@ -199,6 +199,8 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
         ("can you find stock information about the big 7?", True),
         ("What's the news today?", True),
         ("search for the top news", True),
+        ("use your internal internet web search please", True),
+        ("use your web search", True),
         ("what's going on in the world", True),
         ("tell me about the latest VMware Horizon updates", True),
         ("what are the latest prices for the magnificent seven?", True),
@@ -285,3 +287,18 @@ def test_web_investigation_answer_avoids_voxera_execution_language(
     assert "voxeraos" not in lowered
     assert "prepare a plan" not in lowered
     assert "hand this off" not in lowered
+
+
+def test_informational_query_without_web_config_is_honest(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(vera_service, "load_app_config", lambda: AppConfig())
+
+    result = asyncio.run(
+        vera_service.generate_vera_reply(
+            turns=[], user_message="use your internal internet web search please"
+        )
+    )
+
+    assert result["status"] == "web_investigation_unconfigured"
+    lowered = result["answer"].lower()
+    assert "not configured" in lowered
+    assert "voxeraos" not in lowered

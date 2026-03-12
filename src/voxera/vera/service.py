@@ -71,12 +71,32 @@ def _is_operational_side_effect_request(message: str) -> bool:
     return any(term in lowered for term in action_terms) and any(t in lowered for t in targets)
 
 
+def _is_explicit_internal_search_request(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    patterns = (
+        "use your internal internet web search",
+        "use your internal web search",
+        "use your web search",
+        "use your internal search",
+        "search the web for me",
+        "look this up for me",
+        "search this online",
+        "look this up online",
+        "search online for me",
+    )
+    return any(pattern in lowered for pattern in patterns)
+
+
 def _is_informational_web_query(message: str) -> bool:
     lowered = message.lower().strip()
     if not lowered:
         return False
     if _is_operational_open_request(lowered):
         return False
+    if _is_explicit_internal_search_request(lowered):
+        return True
     if _is_operational_side_effect_request(lowered):
         return False
 
@@ -444,7 +464,17 @@ async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str)
     cfg = load_app_config()
 
     web_cfg = cfg.web_investigation
-    if web_cfg is not None and _is_informational_web_query(user_message):
+    informational_web = _is_informational_web_query(user_message)
+    if informational_web and web_cfg is None:
+        return {
+            "answer": (
+                "Read-only web investigation is not configured yet (Brave API key missing). "
+                "I can still help reason from what you provide, but I cannot fetch live web results yet."
+            ),
+            "status": "web_investigation_unconfigured",
+        }
+
+    if informational_web and web_cfg is not None:
         client = BraveSearchClient(
             api_key_ref=web_cfg.api_key_ref,
             env_api_key_var=web_cfg.env_api_key_var,

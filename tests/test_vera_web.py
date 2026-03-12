@@ -297,6 +297,37 @@ def test_missing_key_informational_query_is_honest_and_no_preview(tmp_path, monk
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
+def test_explicit_internal_search_request_stays_no_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _builder_should_not_run(**kwargs):
+        raise AssertionError("preview builder should not run for informational web turns")
+
+    async def _fake_reply(*, turns, user_message):
+        return {
+            "answer": "I can check that online and summarize it.",
+            "status": "ok:web_investigation",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _builder_should_not_run)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "use your internal internet web search please"},
+    )
+
+    assert res.status_code == 200
+    assert "summarize" in res.text.lower()
+    assert vera_service.read_session_preview(queue, sid) is None
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
 def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
