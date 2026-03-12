@@ -1,3 +1,11 @@
+## 2026-03-12 — GitHub PR #TBD — feat(prompts): capability prompt docs + runtime composition
+
+- Added core capability prompt docs under `docs/prompts/capabilities/` (preview schema, queue lifecycle, artifacts/evidence, handoff/submit, web investigation).
+- Added hidden-compiler-specific payload guidance doc with schema/refinement/truth-discipline examples and stronger role boundaries.
+- Added runtime prompt composition loader (`src/voxera/prompts.py`) with deterministic shared -> role -> capability ordering.
+- Wired major prompt surfaces to composed markdown docs (Vera system prompt, hidden compiler prompt, planner preamble default path).
+- Added focused tests for loader behavior, deterministic composition, hidden compiler rich bundle inclusion, and runtime integration hooks.
+
 ## 2026-03-10 — GitHub PR #160 — chore(vera/ops): add first-class startup commands and user-service integration
 
 - Promoted Vera to a first-class runtime component in operations tooling.
