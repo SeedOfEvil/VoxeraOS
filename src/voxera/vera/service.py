@@ -588,6 +588,11 @@ async def generate_preview_builder_update(
             continue
         candidate: dict[str, Any] | None = None
         if decision.action == "no_change":
+            if deterministic_preview is not None:
+                try:
+                    return normalize_preview_payload(deterministic_preview)
+                except Exception:
+                    return active_preview
             return active_preview
         if decision.action == "replace_preview":
             candidate = decision.updated_preview

@@ -156,3 +156,37 @@ def test_generate_preview_builder_update_refinement_from_pronoun_patch(monkeypat
     assert preview is not None
     assert "dark mode" in preview["write_file"]["content"]
     assert preview["write_file"]["mode"] == "overwrite"
+
+
+def test_generate_preview_builder_update_no_change_uses_safe_deterministic_refinement(monkeypatch):
+    _mock_config_with_brain(monkeypatch)
+
+    class _FakeBrain:
+        def __init__(self, model, api_key_ref):
+            _ = (model, api_key_ref)
+
+        async def generate(self, messages, tools):
+            _ = (messages, tools)
+            return _FakeResponse(
+                '{"action":"no_change","intent_type":"unclear","updated_preview":null,"patch":null}'
+            )
+
+    monkeypatch.setattr(vera_service, "GeminiBrain", _FakeBrain)
+
+    preview = asyncio.run(
+        vera_service.generate_preview_builder_update(
+            turns=[],
+            user_message="call it funnierjoke.txt instead",
+            active_preview={
+                "goal": "write a file called jokes.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/jokes.txt",
+                    "content": "hello",
+                    "mode": "overwrite",
+                },
+            },
+        )
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/funnierjoke.txt"
