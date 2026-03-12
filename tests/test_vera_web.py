@@ -132,10 +132,9 @@ def test_vera_clear_chat_and_context(tmp_path, monkeypatch):
 
 def test_vera_prompt_boundary_text_present():
     prompt = vera_prompt.VERA_SYSTEM_PROMPT
-    assert "Vera, the conversational intelligence layer" in prompt
-    assert "VoxeraOS is the execution trust layer" in prompt
-    assert "Queue framing" in prompt
-    assert "submitted/sent to VoxeraOS" in prompt
+    assert "# System Overview" in prompt
+    assert "# Vera Role" in prompt
+    assert "# Capability: Handoff and Submit Rules" in prompt
 
 
 def test_vera_backend_unavailable_degrades_cleanly(monkeypatch):
@@ -2049,16 +2048,14 @@ def test_update_content_refinement_and_submit_uses_latest_mutated_payload(tmp_pa
 
 
 def test_builder_prompt_describes_voxera_compiler_contract():
-    assert "hidden Voxera Preview Compiler" in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
-    assert (
-        "write_file: path (required), content (required string), mode (optional: overwrite|append)"
-        in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
-    )
-    assert '{"preview": null}' in vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
+    prompt = vera_prompt.VERA_PREVIEW_BUILDER_PROMPT
+    assert "# Hidden Compiler Role" in prompt
+    assert "# Capability: Preview Payload Schema" in prompt
+    assert "# Capability: Hidden Compiler Payload Guidance" in prompt
+    assert "open https://cnn.com" in prompt
 
 
 def test_vera_prompt_keeps_control_json_off_chat_surface_by_default():
     prompt = vera_prompt.VERA_SYSTEM_PROMPT
-    assert "Do not emit VoxeraOS control JSON by default in chat." in prompt
-    assert "Do not say you prepared/drafted a proposal." in prompt
-    assert "If a user explicitly asks for general-purpose JSON content" in prompt
+    assert "Do not expose Voxera control JSON unless explicitly needed" in prompt
+    assert "preview creation for informational research" in prompt

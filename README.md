@@ -90,6 +90,7 @@ VoxeraOS currently follows a **thin composition root + focused domain modules** 
 - `docs/ARCHITECTURE.md` — architecture map and module boundaries.
 - `docs/ops.md` — day-2 operations and incident workflows.
 - `docs/CODEX_MEMORY.md` — implementation history log across major PR milestones.
+- `docs/prompts/` — modular model-guidance source of truth (shared + role + capability markdown docs). Runtime prompt composition now loads these docs deterministically.
 - `deploy/systemd/user/` — user service units for daemon, panel, and Vera.
 
 ## Quick start
