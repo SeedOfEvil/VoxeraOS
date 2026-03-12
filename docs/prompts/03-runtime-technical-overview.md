@@ -47,6 +47,9 @@ Execution is capability-governed:
 - execution helpers handle sandboxing and audit sanitization
 - argument normalization canonicalizes action inputs
 
+
+Execution capability declarations should be explicit (side effects, filesystem/network scope, secrets, sandbox profile, expected artifacts), not ambient assumptions.
+
 ## 7) Cross-Cutting Operational Surfaces
 - audit logs (JSONL)
 - health snapshots/counters/backoff

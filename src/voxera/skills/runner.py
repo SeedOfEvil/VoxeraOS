@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal, cast
 
 from ..audit import log
+from ..core.execution_capabilities import normalize_manifest_capabilities
 from ..models import AppConfig, PlanSimulation, PlanStep, RunResult, SkillManifest
 from ..policy import CAPABILITY_EFFECT_CLASS, decide
 from .arg_normalizer import canonicalize_args
@@ -25,6 +26,7 @@ class CapabilityEnforcementResult:
         decision: _PolicyDecisionLiteral,
         capabilities: list[str],
         effect_classes: list[str],
+        declaration: dict[str, Any],
     ) -> None:
         self.allowed = allowed
         self.needs_approval = needs_approval
@@ -34,6 +36,7 @@ class CapabilityEnforcementResult:
         self.decision = decision
         self.capabilities = capabilities
         self.effect_classes = effect_classes
+        self.declaration = declaration
 
 
 def _normalize_policy_decision(value: str) -> _PolicyDecisionLiteral:
@@ -48,6 +51,7 @@ def _enforce_runtime_capabilities(
     policy,
     args: dict[str, Any],
 ) -> CapabilityEnforcementResult:
+    normalized_declaration = normalize_manifest_capabilities(manifest).as_dict()
     raw_caps = manifest.capabilities
     if not isinstance(raw_caps, list) or len(raw_caps) == 0:
         return CapabilityEnforcementResult(
@@ -59,6 +63,7 @@ def _enforce_runtime_capabilities(
             decision="deny",
             capabilities=[],
             effect_classes=[],
+            declaration=normalized_declaration,
         )
 
     normalized_caps: list[str] = []
@@ -74,6 +79,7 @@ def _enforce_runtime_capabilities(
                 decision="deny",
                 capabilities=[],
                 effect_classes=[],
+                declaration=normalized_declaration,
             )
         normalized_caps.append(cap_str)
 
@@ -87,6 +93,7 @@ def _enforce_runtime_capabilities(
             decision="deny",
             capabilities=sorted(set(normalized_caps)),
             effect_classes=[],
+            declaration=normalized_declaration,
         )
 
     unknown_caps = sorted(cap for cap in normalized_caps if cap not in CAPABILITY_EFFECT_CLASS)
@@ -100,6 +107,7 @@ def _enforce_runtime_capabilities(
             decision="deny",
             capabilities=sorted(normalized_caps),
             effect_classes=[],
+            declaration=normalized_declaration,
         )
 
     effect_classes = sorted({CAPABILITY_EFFECT_CLASS[cap] for cap in normalized_caps})
@@ -115,6 +123,7 @@ def _enforce_runtime_capabilities(
         decision=policy_decision,
         capabilities=sorted(normalized_caps),
         effect_classes=effect_classes,
+        declaration=normalized_declaration,
     )
 
 
@@ -181,6 +190,7 @@ class SkillRunner:
                     "reason_class": enforcement.reason_class,
                     "required_capabilities": enforcement.capabilities,
                     "required_effect_classes": enforcement.effect_classes,
+                    "execution_capabilities": enforcement.declaration,
                 }
             )
             return RunResult(
@@ -201,6 +211,7 @@ class SkillRunner:
                             "required_capabilities": enforcement.capabilities,
                             "required_effect_classes": enforcement.effect_classes,
                             "policy_decision": enforcement.decision,
+                            "execution_capabilities": enforcement.declaration,
                         },
                         operator_note=enforcement.reason,
                         next_action_hint=(
@@ -257,6 +268,7 @@ class SkillRunner:
                                 "required_capabilities": enforcement.capabilities,
                                 "required_effect_classes": enforcement.effect_classes,
                                 "policy_decision": enforcement.decision,
+                                "execution_capabilities": enforcement.declaration,
                             },
                             operator_note="Approval is required before this step may execute.",
                             next_action_hint="await_operator_approval",
@@ -296,6 +308,7 @@ class SkillRunner:
                                 "reason": "User rejected approval.",
                                 "required_capabilities": enforcement.capabilities,
                                 "required_effect_classes": enforcement.effect_classes,
+                                "execution_capabilities": enforcement.declaration,
                             },
                             operator_note="Operator denied approval for this step.",
                             next_action_hint="operator_review_required",
@@ -331,6 +344,7 @@ class SkillRunner:
                 "job_id": job_id,
                 "required_capabilities": enforcement.capabilities,
                 "required_effect_classes": enforcement.effect_classes,
+                "execution_capabilities": enforcement.declaration,
             }
         )
         try:

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..health import record_mission_success
+from .execution_capabilities import normalize_manifest_capabilities
 from .missions import MissionStep, MissionTemplate
 
 
@@ -45,6 +46,7 @@ class QueueApprovalMixin:
             "fs_scope": manifest.fs_scope,
             "needs_network": bool(manifest.needs_network),
         }
+        execution_capabilities = normalize_manifest_capabilities(manifest).as_dict()
 
         approval_key = (self.current_job_ref or "", int(step or 0), manifest.id)
         if approval_key in self._approved_steps:
@@ -60,6 +62,7 @@ class QueueApprovalMixin:
                     "skill": manifest.id,
                     "capability": capability,
                     "scope": scope,
+                    "execution_capabilities": execution_capabilities,
                 }
             )
             return True
@@ -75,6 +78,7 @@ class QueueApprovalMixin:
                     "capability": capability,
                     "target": target,
                     "scope": scope,
+                    "execution_capabilities": execution_capabilities,
                 }
             )
             return True
@@ -89,6 +93,7 @@ class QueueApprovalMixin:
                 "capability": capability,
                 "target": target,
                 "scope": scope,
+                "execution_capabilities": execution_capabilities,
             }
         )
         return {
@@ -101,6 +106,7 @@ class QueueApprovalMixin:
             "args": redacted_args,
             "target": target,
             "scope": scope,
+            "execution_capabilities": execution_capabilities,
         }
 
     def _approval_target(self: Any, skill_id: str, args: dict[str, Any]) -> dict[str, str]:
@@ -201,6 +207,7 @@ class QueueApprovalMixin:
                 "fs_scope": (run_data.get("scope") or {}).get("fs_scope", "workspace_only"),
                 "needs_network": bool((run_data.get("scope") or {}).get("needs_network", False)),
             },
+            "execution_capabilities": run_data.get("execution_capabilities", {}),
             "status": "pending_approval",
             "ts": time.time(),
         }
