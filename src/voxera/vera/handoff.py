@@ -264,10 +264,18 @@ def _normalize_file_write_goal(message: str) -> str | None:
 
 
 def _extract_named_target(message: str) -> str | None:
-    named = re.search(r"\b(?:called|named|as|to)\s+([^\s]+)", message, re.IGNORECASE)
+    named = re.search(
+        r"\b(?:called|named|as|to|call\s+(?:it|that))\s+([^\s]+)",
+        message,
+        re.IGNORECASE,
+    )
     if named:
         return named.group(1).strip("\"'.,!? ")
-    tail = re.search(r"\b(?:rename|make\s+that)\s+(?:it\s+)?([^\s]+)", message, re.IGNORECASE)
+    tail = re.search(
+        r"\b(?:rename|make\s+that|change\s+(?:the\s+)?(?:name|filename|file\s+name))\s+(?:it\s+)?([^\s]+)",
+        message,
+        re.IGNORECASE,
+    )
     if tail:
         return tail.group(1).strip("\"'.,!? ")
     return None
@@ -332,6 +340,8 @@ def _refined_content_from_active_preview(
 
     if re.search(r"\b(programmer|coding|developer)\b", lowered):
         return "Why do programmers prefer dark mode? Because light attracts bugs."
+    if re.search(r"\b(dad\s+joke|dad\s+style|corny)\b", lowered):
+        return "I'm reading a book on anti-gravity. It's impossible to put down."
     if re.search(r"\b(pet|dog|cat|puppy|kitten)\b", lowered):
         return "Why did the cat sit on the computer? To keep an eye on the mouse."
     if re.search(
@@ -374,7 +384,10 @@ def _draft_revision_from_active_preview(
         if normalized_open:
             return {"goal": normalized_open}
 
-    if re.search(r"\b(rename|make\s+that)\b", lowered):
+    if re.search(
+        r"\b(rename|make\s+that|call\s+(?:it|that)|change\s+(?:the\s+)?(?:name|filename|file\s+name))\b",
+        lowered,
+    ):
         new_name = _extract_named_target(text)
         if new_name:
             write_file = active_preview.get("write_file")

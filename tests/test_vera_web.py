@@ -1936,6 +1936,59 @@ def test_minimal_file_drafting_defaults_to_empty_content(tmp_path, monkeypatch):
     assert preview["write_file"]["content"] == ""
 
 
+def test_filename_refinement_call_it_updates_path(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called jokes.txt with content "hello"',
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "call it funnierjoke.txt instead"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/funnierjoke.txt"
+    assert preview["write_file"]["content"] == "hello"
+    assert preview["write_file"]["mode"] == "overwrite"
+
+
+def test_content_style_refinement_dad_joke_updates_content(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called jokes.txt with content "hello"',
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it a dad joke"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokes.txt"
+    assert "anti-gravity" in preview["write_file"]["content"]
+
+
 def test_note_for_later_creates_structured_note_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

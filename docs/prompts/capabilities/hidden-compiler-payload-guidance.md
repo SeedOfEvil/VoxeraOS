@@ -191,3 +191,66 @@ If refinement is “call it funnierjoke.txt instead”, mutate path and preserve
 ## 10) Composition Reminder
 Hidden compiler prompt bundle must be rich: shared worldview + hidden-compiler role + payload schema + handoff rules + queue lifecycle + artifacts/evidence + this guidance.
 Understand more than you emit.
+
+
+## 11) Structured Decision Envelope (Required)
+Emit exactly one JSON object with this decision contract:
+
+```json
+{
+  "action": "replace_preview | patch_preview | no_change",
+  "intent_type": "new_intent | refinement | unclear",
+  "updated_preview": {"goal": "..."} | null,
+  "patch": {"write_file": {"content": "..."}} | null
+}
+```
+
+Decision rules:
+- `replace_preview`: use for clear new intent or when replacing the whole active draft is safer.
+- `patch_preview`: use for targeted refinement of existing fields.
+- `no_change`: use when refinement is too unclear or unsafe.
+- Preserve stable fields unless explicitly changed.
+- Prefer minimal patches for refinement turns.
+
+Examples:
+
+New intent:
+```json
+{
+  "action": "replace_preview",
+  "intent_type": "new_intent",
+  "updated_preview": {
+    "goal": "write a file called jokes.txt with provided content",
+    "write_file": {
+      "path": "~/VoxeraOS/notes/jokes.txt",
+      "content": "Why do programmers prefer dark mode? Because light attracts bugs.",
+      "mode": "overwrite"
+    }
+  },
+  "patch": null
+}
+```
+
+Refinement (pronoun-heavy):
+```json
+{
+  "action": "patch_preview",
+  "intent_type": "refinement",
+  "updated_preview": null,
+  "patch": {
+    "write_file": {
+      "content": "Why did the cat sit on the keyboard? It wanted to keep tabs on the mouse."
+    }
+  }
+}
+```
+
+Unclear refinement:
+```json
+{
+  "action": "no_change",
+  "intent_type": "unclear",
+  "updated_preview": null,
+  "patch": null
+}
+```

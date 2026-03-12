@@ -14,7 +14,7 @@ from ..brain.json_recovery import recover_json_object
 from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config
 from .brave_search import BraveSearchClient, WebSearchResult
-from .handoff import maybe_draft_job_payload
+from .handoff import drafting_guidance, maybe_draft_job_payload, normalize_preview_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 
 MAX_SESSION_TURNS = 8
@@ -23,6 +23,58 @@ _SESSION_ID_LENGTH = 24
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
 PREVIEW_BUILDER_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
+
+
+class HiddenCompilerDecision:
+    def __init__(
+        self,
+        *,
+        action: str,
+        intent_type: str,
+        updated_preview: dict[str, Any] | None = None,
+        patch: dict[str, Any] | None = None,
+    ) -> None:
+        self.action = action
+        self.intent_type = intent_type
+        self.updated_preview = updated_preview
+        self.patch = patch
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> HiddenCompilerDecision:
+        allowed = {"action", "intent_type", "updated_preview", "patch"}
+        if not set(payload).issubset(allowed):
+            raise ValueError("hidden compiler decision contains unsupported keys")
+
+        action = str(payload.get("action") or "").strip()
+        intent_type = str(payload.get("intent_type") or "").strip()
+        updated_preview = payload.get("updated_preview")
+        patch = payload.get("patch")
+
+        if action not in {"replace_preview", "patch_preview", "no_change"}:
+            raise ValueError("action must be replace_preview, patch_preview, or no_change")
+        if intent_type not in {"new_intent", "refinement", "unclear"}:
+            raise ValueError("intent_type must be new_intent, refinement, or unclear")
+
+        if action == "replace_preview":
+            if not isinstance(updated_preview, dict):
+                raise ValueError("replace_preview requires updated_preview object")
+            if patch is not None:
+                raise ValueError("replace_preview cannot include patch")
+        elif action == "patch_preview":
+            if not isinstance(patch, dict):
+                raise ValueError("patch_preview requires patch object")
+            if updated_preview is not None:
+                raise ValueError("patch_preview cannot include updated_preview")
+        else:
+            if updated_preview is not None or patch is not None:
+                raise ValueError("no_change cannot include updated_preview or patch")
+
+        return cls(
+            action=action,
+            intent_type=intent_type,
+            updated_preview=updated_preview if isinstance(updated_preview, dict) else None,
+            patch=patch if isinstance(patch, dict) else None,
+        )
 
 
 def _is_operational_open_request(message: str) -> bool:
@@ -408,10 +460,32 @@ def _build_preview_builder_messages(
     user_message: str,
     active_preview: dict[str, Any] | None,
 ) -> list[dict[str, str]]:
+    guidance = drafting_guidance()
     context_payload = {
         "active_preview": active_preview,
         "latest_user_message": user_message.strip(),
         "recent_turns": turns[-MAX_SESSION_TURNS:],
+        "decision_contract": {
+            "action": ["replace_preview", "patch_preview", "no_change"],
+            "intent_type": ["new_intent", "refinement", "unclear"],
+            "updated_preview": "object | null",
+            "patch": "object | null",
+        },
+        "preview_schema": {
+            "goal": "required string",
+            "title": "optional string",
+            "write_file": {
+                "path": "required string",
+                "content": "required string",
+                "mode": "overwrite | append",
+            },
+            "enqueue_child": {
+                "goal": "required string",
+                "title": "optional string",
+            },
+        },
+        "guidance_base_shape": guidance.base_shape,
+        "guidance_examples": guidance.examples,
     }
     return [
         {"role": "system", "content": VERA_PREVIEW_BUILDER_PROMPT},
@@ -422,16 +496,37 @@ def _build_preview_builder_messages(
     ]
 
 
-def _extract_preview_builder_payload(text: str) -> dict[str, Any] | None:
+def _extract_hidden_compiler_decision(text: str) -> HiddenCompilerDecision | None:
     parsed, _ = recover_json_object(text)
     if not isinstance(parsed, dict):
         return None
-    preview = parsed.get("preview")
-    if preview is None:
+    try:
+        return HiddenCompilerDecision.from_payload(parsed)
+    except ValueError:
         return None
-    if isinstance(preview, dict):
-        return preview
-    return None
+
+
+def _apply_preview_patch(
+    *,
+    active_preview: dict[str, Any] | None,
+    patch: dict[str, Any],
+) -> dict[str, Any] | None:
+    if active_preview is None:
+        return None
+    merged: dict[str, Any] = dict(active_preview)
+    for key, value in patch.items():
+        if key == "write_file" and isinstance(value, dict):
+            current = merged.get("write_file")
+            if isinstance(current, dict):
+                merged["write_file"] = {**current, **value}
+                continue
+        if key == "enqueue_child" and isinstance(value, dict):
+            current = merged.get("enqueue_child")
+            if isinstance(current, dict):
+                merged["enqueue_child"] = {**current, **value}
+                continue
+        merged[key] = value
+    return merged
 
 
 async def generate_preview_builder_update(
@@ -463,18 +558,19 @@ async def generate_preview_builder_update(
         if str(turn.get("role") or "").strip().lower() == "user"
     ]
 
-    # Deterministic Voxera-aware compiler pass first for supported draftable families,
-    # including contextual refinements that depend on recent user turns.
     deterministic_preview = maybe_draft_job_payload(
         user_message,
         active_preview=active_preview,
         recent_user_messages=recent_user_messages,
     )
-    if deterministic_preview is not None:
-        return deterministic_preview
 
     if not attempts:
-        return None
+        if deterministic_preview is None:
+            return None
+        try:
+            return normalize_preview_payload(deterministic_preview)
+        except Exception:
+            return None
 
     messages = _build_preview_builder_messages(
         turns=turns,
@@ -487,10 +583,46 @@ async def generate_preview_builder_update(
             response = await brain.generate(messages, tools=[])
         except Exception:
             continue
-        payload = _extract_preview_builder_payload(str(response.text or ""))
-        if payload is not None:
-            return payload
-    return None
+        decision = _extract_hidden_compiler_decision(str(response.text or ""))
+        if decision is None:
+            continue
+        candidate: dict[str, Any] | None = None
+        if decision.action == "no_change":
+            if deterministic_preview is not None:
+                try:
+                    return normalize_preview_payload(deterministic_preview)
+                except Exception:
+                    return active_preview
+            return active_preview
+        if decision.action == "replace_preview":
+            candidate = decision.updated_preview
+        elif decision.action == "patch_preview" and decision.patch is not None:
+            candidate = _apply_preview_patch(active_preview=active_preview, patch=decision.patch)
+
+        if candidate is None:
+            if deterministic_preview is None:
+                return active_preview
+            try:
+                return normalize_preview_payload(deterministic_preview)
+            except Exception:
+                return active_preview
+
+        try:
+            return normalize_preview_payload(candidate)
+        except Exception:
+            if deterministic_preview is None:
+                return active_preview
+            try:
+                return normalize_preview_payload(deterministic_preview)
+            except Exception:
+                return active_preview
+
+    if deterministic_preview is None:
+        return active_preview
+    try:
+        return normalize_preview_payload(deterministic_preview)
+    except Exception:
+        return active_preview
 
 
 def _create_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:
