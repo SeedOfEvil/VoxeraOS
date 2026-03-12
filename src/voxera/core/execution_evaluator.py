@@ -41,6 +41,12 @@ class EvaluationResult:
 
 
 def evaluate_run_result(*, run_result: RunResult, request_kind: str) -> EvaluationResult:
+    """Classify runtime outcomes for queue lifecycle handling.
+
+    This classification supports queue state transitions but does not replace
+    evidence-grounded review. Verifier/reviewer truth remains queue terminal
+    state plus runtime artifacts/evidence, not planner or conversation quality.
+    """
     if run_result.ok:
         return EvaluationResult(
             evaluation_class="succeeded",

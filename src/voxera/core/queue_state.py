@@ -5,6 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .queue_object_model import COMPLETED_AT_LIFECYCLE_STATES, QueueLifecycleState
+
 JOB_STATE_SCHEMA_VERSION = 1
 
 
@@ -80,7 +82,7 @@ def write_job_state(
 def update_job_state_snapshot(
     job_ref: str,
     *,
-    lifecycle_state: str,
+    lifecycle_state: QueueLifecycleState | str,
     current: dict[str, Any],
     now_ms: int,
     payload: dict[str, Any] | None = None,
@@ -91,6 +93,12 @@ def update_job_state_snapshot(
     blocked_reason: str | None = None,
     approval_status: str | None = None,
 ) -> dict[str, Any]:
+    """Build a queue-owned lifecycle snapshot for a submitted job.
+
+    Queue state sidecars are the authoritative submitted lifecycle surface.
+    Runtime outcome truth is later grounded by artifacts/evidence attached to
+    this same job id.
+    """
     started_at_ms = int(current.get("started_at_ms") or now_ms)
     raw_transitions = current.get("transitions")
     transitions: dict[str, Any] = dict(raw_transitions) if isinstance(raw_transitions, dict) else {}
@@ -152,9 +160,7 @@ def update_job_state_snapshot(
         "step_outcomes": step_outcomes,
         "started_at_ms": started_at_ms,
         "updated_at_ms": now_ms,
-        "completed_at_ms": now_ms
-        if lifecycle_state in {"done", "step_failed", "blocked", "canceled"}
-        else None,
+        "completed_at_ms": now_ms if lifecycle_state in COMPLETED_AT_LIFECYCLE_STATES else None,
         "transitions": transitions,
     }
     if payload is not None:

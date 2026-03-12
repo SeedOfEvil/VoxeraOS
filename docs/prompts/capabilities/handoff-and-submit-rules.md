@@ -10,4 +10,10 @@
 - No-preview submit must fail closed and be reported honestly.
 - Failed submit must never be represented as success.
 
-Submission is not execution; execution truth still belongs to queue + artifacts.
+## Post-Submit Contract
+- Preview truth ends at successful handoff.
+- Queue job (`<job>.json`) becomes canonical submitted work.
+- Job state sidecars and lifecycle buckets are the authoritative progression surface.
+- Artifacts/evidence determine post-execution outcome truth.
+
+Submission is not execution; execution is not verification.

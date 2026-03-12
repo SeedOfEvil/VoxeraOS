@@ -69,3 +69,6 @@ Typical flow:
 `queued -> planning -> running -> (awaiting_approval -> resumed|failed) -> done|failed|canceled`
 
 Recovery and assistant-specific states may appear, but terminal truth still belongs to queue + artifacts.
+
+
+See also: `docs/QUEUE_OBJECT_MODEL.md` for the canonical queue/job/artifact/evidence contract.

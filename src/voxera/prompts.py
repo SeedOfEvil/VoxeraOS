@@ -20,20 +20,24 @@ _ROLE_DOCS: dict[str, str] = {
 _ROLE_CAPABILITY_DOCS: dict[str, tuple[str, ...]] = {
     "vera": (
         "capabilities/handoff-and-submit-rules.md",
+        "capabilities/queue-object-model.md",
         "capabilities/web-investigation-rules.md",
     ),
     "hidden_compiler": (
         "capabilities/preview-payload-schema.md",
         "capabilities/handoff-and-submit-rules.md",
+        "capabilities/queue-object-model.md",
         "capabilities/queue-lifecycle.md",
         "capabilities/artifacts-and-evidence.md",
         "capabilities/hidden-compiler-payload-guidance.md",
     ),
     "planner": (
+        "capabilities/queue-object-model.md",
         "capabilities/queue-lifecycle.md",
         "capabilities/artifacts-and-evidence.md",
     ),
     "verifier": (
+        "capabilities/queue-object-model.md",
         "capabilities/artifacts-and-evidence.md",
         "capabilities/queue-lifecycle.md",
     ),
