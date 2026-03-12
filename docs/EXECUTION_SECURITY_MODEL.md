@@ -103,6 +103,13 @@ Verifier/reviewer should be able to answer:
 - What artifacts were expected?
 - What evidence proves execution stayed in bounds?
 
+Canonical verifier-facing execution artifacts should rely on the normalized contract in
+`execution_result.json`:
+- `artifact_families`
+- `artifact_refs`
+- `review_summary`
+- `evidence_bundle` (including `trace` linkage fields)
+
 Expected artifact families are part of the declaration contract and should be comparable against produced runtime evidence.
 
 ## 8) Relationship to queue/object model and policy gates

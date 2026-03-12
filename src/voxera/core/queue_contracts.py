@@ -10,6 +10,8 @@ from .simple_intent import sanitize_serialized_intent_route
 EXECUTION_ENVELOPE_SCHEMA_VERSION = 1
 STEP_RESULT_SCHEMA_VERSION = 1
 EXECUTION_RESULT_SCHEMA_VERSION = 1
+EVIDENCE_BUNDLE_SCHEMA_VERSION = 1
+REVIEW_SUMMARY_SCHEMA_VERSION = 1
 _LINEAGE_ROLES = frozenset({"root", "child"})
 
 
@@ -394,8 +396,26 @@ def build_execution_result(
     terminal_outcome: str,
     ok: bool,
     error: str | None = None,
+    artifacts_dir: Path | None = None,
 ) -> dict[str, Any]:
     lineage = extract_lineage_metadata(rr_data)
+    artifact_families, artifact_refs = _build_artifact_contract(artifacts_dir)
+    review_summary = _build_review_summary(
+        job_ref=job_ref,
+        rr_data=rr_data,
+        step_results=step_results,
+        terminal_outcome=terminal_outcome,
+        ok=ok,
+        error=error,
+    )
+    evidence_bundle = _build_evidence_bundle(
+        job_ref=job_ref,
+        rr_data=rr_data,
+        terminal_outcome=terminal_outcome,
+        artifact_families=artifact_families,
+        artifact_refs=artifact_refs,
+        review_summary=review_summary,
+    )
     return {
         "schema_version": EXECUTION_RESULT_SCHEMA_VERSION,
         "job": Path(job_ref).name,
@@ -435,7 +455,108 @@ def build_execution_result(
             if terminal_outcome == "succeeded"
             else None
         ),
+        "artifact_families": artifact_families,
+        "artifact_refs": artifact_refs,
+        "evidence_bundle": evidence_bundle,
+        "review_summary": review_summary,
         "step_results": step_results,
         "error": error,
         "updated_at_ms": int(time.time() * 1000),
+    }
+
+
+def _build_artifact_contract(artifacts_dir: Path | None) -> tuple[list[str], list[dict[str, Any]]]:
+    if artifacts_dir is None:
+        return (["step_results", "execution_result"], [])
+
+    file_to_family = {
+        "plan.json": "plan",
+        "actions.jsonl": "actions",
+        "stdout.txt": "stdout",
+        "stderr.txt": "stderr",
+        "execution_envelope.json": "execution_envelope",
+        "execution_result.json": "execution_result",
+        "step_results.json": "step_results",
+        "job_intent.json": "job_intent",
+        "assistant_response.json": "assistant_advisory",
+        "review_summary.json": "review_summary",
+        "evidence_bundle.json": "evidence_bundle",
+    }
+    refs: list[dict[str, Any]] = []
+    families: set[str] = {"step_results", "execution_result"}
+    for filename, family in file_to_family.items():
+        path = artifacts_dir / filename
+        if not path.exists():
+            continue
+        families.add(family)
+        refs.append(
+            {
+                "artifact_family": family,
+                "artifact_path": filename,
+                "exists": True,
+            }
+        )
+
+    refs.sort(key=lambda item: str(item.get("artifact_path") or ""))
+    return sorted(families), refs
+
+
+def _build_review_summary(
+    *,
+    job_ref: str,
+    rr_data: dict[str, Any],
+    step_results: list[dict[str, Any]],
+    terminal_outcome: str,
+    ok: bool,
+    error: str | None,
+) -> dict[str, Any]:
+    latest_step = step_results[-1] if step_results else {}
+    latest_summary = str(
+        latest_step.get("summary") or latest_step.get("operator_note") or error or ""
+    )
+    return {
+        "schema_version": REVIEW_SUMMARY_SCHEMA_VERSION,
+        "job_id": Path(job_ref).name,
+        "terminal_outcome": terminal_outcome,
+        "ok": ok,
+        "execution_lane": str(rr_data.get("execution_lane") or "queue"),
+        "lifecycle_state": rr_data.get("lifecycle_state"),
+        "approval_status": rr_data.get("approval_status"),
+        "attempt_index": rr_data.get("attempt_index"),
+        "replan_count": rr_data.get("replan_count"),
+        "total_steps": rr_data.get("total_steps"),
+        "last_attempted_step": rr_data.get("last_attempted_step"),
+        "last_completed_step": rr_data.get("last_completed_step"),
+        "latest_step_status": latest_step.get("status"),
+        "latest_summary": latest_summary,
+        "error": error,
+    }
+
+
+def _build_evidence_bundle(
+    *,
+    job_ref: str,
+    rr_data: dict[str, Any],
+    terminal_outcome: str,
+    artifact_families: list[str],
+    artifact_refs: list[dict[str, Any]],
+    review_summary: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": EVIDENCE_BUNDLE_SCHEMA_VERSION,
+        "bundle_kind": "queue_job_execution_evidence",
+        "job_id": Path(job_ref).name,
+        "trace": {
+            "job_id": Path(job_ref).name,
+            "attempt_index": rr_data.get("attempt_index"),
+            "replan_count": rr_data.get("replan_count"),
+            "last_attempted_step": rr_data.get("last_attempted_step"),
+            "last_completed_step": rr_data.get("last_completed_step"),
+            "total_steps": rr_data.get("total_steps"),
+            "execution_lane": str(rr_data.get("execution_lane") or "queue"),
+            "terminal_outcome": terminal_outcome,
+        },
+        "artifact_families": artifact_families,
+        "artifact_refs": artifact_refs,
+        "review_summary": review_summary,
     }

@@ -188,12 +188,44 @@ def test_step_results_and_execution_result_written_for_failure(tmp_path, monkeyp
     )
     assert execution_result["ok"] is False
     assert execution_result["terminal_outcome"] == "failed"
+    assert "execution_result" in execution_result["artifact_families"]
+    assert "step_results" in execution_result["artifact_families"]
+    assert execution_result["review_summary"]["job_id"] == "job-fail.json"
+    assert execution_result["review_summary"]["terminal_outcome"] == "failed"
+    assert execution_result["evidence_bundle"]["bundle_kind"] == "queue_job_execution_evidence"
+    assert execution_result["evidence_bundle"]["trace"]["job_id"] == "job-fail.json"
 
     step_results = json.loads(
         (queue_root / "artifacts" / "job-fail" / "step_results.json").read_text(encoding="utf-8")
     )
     assert step_results[0]["status"] == "failed"
     assert step_results[0]["duration_ms"] == 1
+
+
+def test_execution_result_includes_normalized_artifact_refs(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-artifacts.json").write_text(json.dumps({"goal": "health"}))
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-artifacts" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    refs = execution_result["artifact_refs"]
+    assert any(
+        item["artifact_family"] == "execution_envelope"
+        and item["artifact_path"] == "execution_envelope.json"
+        for item in refs
+    )
+    assert any(
+        item["artifact_family"] == "plan" and item["artifact_path"] == "plan.json" for item in refs
+    )
 
 
 def test_assistant_queue_writes_structured_execution_artifacts(tmp_path):

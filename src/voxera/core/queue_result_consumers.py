@@ -307,6 +307,7 @@ def resolve_structured_execution(
     latest_summary = str(
         latest_step.get("summary")
         or latest_step.get("operator_note")
+        or execution_result.get("review_summary", {}).get("latest_summary")
         or execution_result.get("error")
         or state_payload.get("failure_summary")
         or failed_payload.get("error")
@@ -434,4 +435,10 @@ def resolve_structured_execution(
             "failed_sidecar": bool(failed_payload),
             "approval": bool(approval_payload),
         },
+        "review_summary": execution_result.get("review_summary")
+        if isinstance(execution_result.get("review_summary"), dict)
+        else None,
+        "evidence_bundle": execution_result.get("evidence_bundle")
+        if isinstance(execution_result.get("evidence_bundle"), dict)
+        else None,
     }

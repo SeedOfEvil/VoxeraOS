@@ -1232,6 +1232,12 @@ Panel home includes a read-only **Performance Stats** tab that surfaces these sa
 
 For job detail/status/bundle flows, Voxera now prefers canonical structured execution artifacts (`execution_result.json`, `step_results.json`) to derive terminal outcome, lifecycle state, step summaries, approval/blocked/retryable hints, and declared output artifacts. If these files are missing or partial, operators still get legacy sidecar and audit-based summaries.
 
+`execution_result.json` also carries an additive normalized artifact/evidence contract for review operations:
+- `artifact_families` (normalized produced family names)
+- `artifact_refs` (family/path refs)
+- `review_summary` (reviewer-facing status/summary fields)
+- `evidence_bundle` (traceable evidence bundle that links job/step execution context to artifacts)
+
 
 ### Producer intent artifacts and compatibility
 

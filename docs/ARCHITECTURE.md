@@ -978,6 +978,8 @@ The queue execution lane now uses an explicit evaluate-and-replan loop:
 
 Built-in skills now emit a consistent canonical `skill_result` payload (`summary`, `machine_payload`, `output_artifacts`, `operator_note`, `next_action_hint`, `retryable`, `blocked`, `approval_status`, `error`, `error_class`). Queue artifact shaping (`step_results.json`, `execution_result.json`) consumes these fields as structured-first inputs, with legacy sidecar fallback retained for backward compatibility.
 
+`execution_result.json` also includes additive normalized review/evidence contract blocks for downstream consumers: `artifact_families`, `artifact_refs`, `review_summary`, and `evidence_bundle` (with `trace` linkage).
+
 
 ## Simple-intent routing (v1.3 / GitHub PRs #144–#145)
 

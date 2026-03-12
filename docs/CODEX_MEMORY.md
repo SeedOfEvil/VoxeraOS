@@ -1,3 +1,14 @@
+## 2026-03-12 — GitHub PR #TBD — feat(queue): normalize execution artifact/evidence contract surfaces
+
+- Added additive normalized contract fields to `execution_result.json`:
+  - `artifact_families`
+  - `artifact_refs`
+  - `review_summary`
+  - `evidence_bundle` (with `trace` linkage)
+- Kept runtime behavior stable: queue lifecycle, approvals, capability enforcement, and terminal semantics are unchanged.
+- Updated structured execution consumer helpers so reviewer-facing summary fallback can use `review_summary.latest_summary` when present.
+- Updated canonical docs (README/ops/architecture/queue object model/execution security/prompt capability docs/CODEX) to keep artifact/evidence terminology aligned.
+
 ## 2026-03-12 — GitHub PR #TBD — feat(prompts): capability prompt docs + runtime composition
 
 - Added core capability prompt docs under `docs/prompts/capabilities/` (preview schema, queue lifecycle, artifacts/evidence, handoff/submit, web investigation).

@@ -94,6 +94,12 @@ Artifact rules:
 - Artifacts are not speculative.
 - Artifacts are runtime outputs or canonical review outputs of runtime data.
 
+Canonical execution summary artifacts now standardize an additive contract:
+- `execution_result.json.artifact_families` — normalized produced artifact family names.
+- `execution_result.json.artifact_refs` — concrete produced artifact refs (`artifact_family`, `artifact_path`).
+- `execution_result.json.review_summary` — reviewer-facing summary surface for "what happened".
+- `execution_result.json.evidence_bundle` — normalized evidence/trace bundle linking job/step context to artifact refs and review summary.
+
 ## 4) Evidence model
 
 Evidence is the runtime-grounded material used to determine what actually happened.
@@ -103,6 +109,8 @@ Evidence is typically built from:
 - execution artifacts (`execution_result`, `step_results`, approval records, lane metadata)
 - error sidecars and recovery records
 - concrete output artifacts produced by executed skills
+
+`evidence_bundle.trace` is the canonical execution-to-evidence link surface for job/attempt/step context in outcome review.
 
 Planner text, intent text, and conversation can provide context but are **not** execution proof.
 
