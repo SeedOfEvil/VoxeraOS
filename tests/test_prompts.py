@@ -33,6 +33,7 @@ def test_compose_hidden_compiler_prompt_includes_rich_capabilities() -> None:
     assert "# Capability: Preview Payload Schema" in prompt_text
     assert "# Capability: Queue Lifecycle" in prompt_text
     assert "# Capability: Artifacts and Evidence" in prompt_text
+    assert "# Capability: Execution Security Model" in prompt_text
     assert "# Capability: Hidden Compiler Payload Guidance" in prompt_text
 
 
@@ -63,6 +64,7 @@ def test_planner_preamble_includes_prompt_docs() -> None:
     assert "# Planner Role" in preamble
     assert "# Capability: Queue Lifecycle" in preamble
     assert "# Capability: Artifacts and Evidence" in preamble
+    assert "# Capability: Execution Security Model" in preamble
 
 
 def test_all_prompt_docs_exist_for_declared_roles() -> None:

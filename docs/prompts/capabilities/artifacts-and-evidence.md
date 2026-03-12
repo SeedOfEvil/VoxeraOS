@@ -16,6 +16,9 @@ Artifacts and evidence are authoritative for what actually happened after execut
 - Artifacts are not speculative.
 - Artifacts are runtime outputs or canonical reviews derived from runtime outputs.
 
+
+- Expected artifact families from capability declarations are part of reviewer context: compare expected vs produced evidence.
+
 ## Verifier/Reviewer Grounding Contract
 - Plans describe intent; they do not prove outcomes.
 - Conversation can summarize; it does not establish execution truth.
