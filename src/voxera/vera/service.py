@@ -12,6 +12,7 @@ from ..brain.gemini import GeminiBrain
 from ..brain.json_recovery import recover_json_object
 from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config
+from .brave_search import BraveSearchClient, WebSearchResult
 from .handoff import maybe_draft_job_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 
@@ -21,6 +22,185 @@ _SESSION_ID_LENGTH = 24
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
 PREVIEW_BUILDER_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
+
+
+def _is_operational_open_request(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    action_terms = (
+        "open ",
+        "launch ",
+        "take me to",
+        "bring up",
+        "navigate to",
+        "go to ",
+        "visit ",
+    )
+    return any(term in lowered for term in action_terms)
+
+
+def _is_operational_side_effect_request(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    action_terms = (
+        "write",
+        "create",
+        "make",
+        "run",
+        "execute",
+        "delete",
+        "remove",
+        "install",
+        "uninstall",
+        "rename",
+        "move",
+        "copy",
+        "save",
+    )
+    targets = (
+        "file",
+        "directory",
+        "folder",
+        "script",
+        "app",
+        "application",
+        "command",
+    )
+    return any(term in lowered for term in action_terms) and any(t in lowered for t in targets)
+
+
+def _is_explicit_internal_search_request(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    patterns = (
+        "use your internal internet web search",
+        "use your internal web search",
+        "use your web search",
+        "use your internal search",
+        "search the web for me",
+        "look this up for me",
+        "search this online",
+        "look this up online",
+        "search online for me",
+    )
+    return any(pattern in lowered for pattern in patterns)
+
+
+def _is_informational_web_query(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    if _is_operational_open_request(lowered):
+        return False
+    if _is_explicit_internal_search_request(lowered):
+        return True
+    if _is_operational_side_effect_request(lowered):
+        return False
+
+    informational_terms = (
+        "what's on",
+        "what is on",
+        "look up",
+        "look into",
+        "search for",
+        "search ",
+        "find out",
+        "find information",
+        "give me information",
+        "stock information",
+        "information about",
+        "tell me about",
+        "latest",
+        "latest news",
+        "latest stories",
+        "latest updates",
+        "recent",
+        "news",
+        "world news",
+        "global news",
+        "world wide news",
+        "current events",
+        "headlines",
+        "breaking news",
+        "market news",
+        "market updates",
+        "release notes",
+        "summarize",
+        "summary",
+        "compare",
+        "research",
+        "explain",
+        "what is",
+        "what does",
+        "what changed",
+        "what happened",
+        "what's happening",
+        "what's new",
+        "what's the latest",
+        "what are the latest",
+        "what's going on",
+        "what is going on",
+        "docs",
+        "documentation",
+        "documentation for",
+        "earnings",
+        "analyst",
+        "stock",
+        "stocks",
+        "price",
+        "prices",
+        "market",
+        "company performance",
+        "magnificent seven",
+        "big 7",
+    )
+    question_starters = (
+        "what",
+        "whats",
+        "why",
+        "how",
+        "when",
+        "who",
+        "can you find",
+        "could you find",
+        "tell me",
+        "give me",
+    )
+    web_hints = ("http://", "https://", ".com", ".io", "website", "web")
+
+    contains_info_signal = any(term in lowered for term in informational_terms)
+    looks_like_question = lowered.endswith("?") or any(
+        lowered.startswith(starter) for starter in question_starters
+    )
+
+    return contains_info_signal or (
+        looks_like_question and any(hint in lowered for hint in web_hints)
+    )
+
+
+def _format_web_investigation_answer(query: str, results: list[WebSearchResult]) -> str:
+    if not results:
+        return (
+            f"I ran a read-only web investigation for '{query}' but didn't find usable results. "
+            "Try refining the query or asking for a narrower topic."
+        )
+
+    bullets = []
+    for idx, result in enumerate(results[:5], start=1):
+        detail = result.description or "No summary provided."
+        age = f" ({result.age})" if result.age else ""
+        bullets.append(f"{idx}. {result.title}{age}\n   {detail}\n   Source: {result.url}")
+
+    joined = "\n".join(bullets)
+    return (
+        f"I used Brave Search in read-only mode to investigate: '{query}'. "
+        "Here are the top findings:\n"
+        f"{joined}\n\n"
+        "If you want, I can compare these sources or summarize a specific angle."
+    )
 
 
 def new_session_id() -> str:
@@ -282,6 +462,45 @@ def _create_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:
 
 async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str) -> dict[str, str]:
     cfg = load_app_config()
+
+    web_cfg = cfg.web_investigation
+    informational_web = _is_informational_web_query(user_message)
+    if informational_web and web_cfg is None:
+        return {
+            "answer": (
+                "Read-only web investigation is not configured yet (Brave API key missing). "
+                "I can still help reason from what you provide, but I cannot fetch live web results yet."
+            ),
+            "status": "web_investigation_unconfigured",
+        }
+
+    if informational_web and web_cfg is not None:
+        client = BraveSearchClient(
+            api_key_ref=web_cfg.api_key_ref,
+            env_api_key_var=web_cfg.env_api_key_var,
+        )
+        try:
+            results = await client.search(query=user_message, count=web_cfg.max_results)
+        except RuntimeError as exc:
+            msg = str(exc)
+            if "not configured" in msg:
+                return {
+                    "answer": (
+                        "Brave web investigation is not configured yet (missing API key). "
+                        "I can still help reason from what you provide, but I cannot fetch live web results yet."
+                    ),
+                    "status": "web_investigation_unconfigured",
+                }
+            return {
+                "answer": f"I couldn't complete read-only web investigation: {msg}",
+                "status": "web_investigation_error",
+            }
+
+        return {
+            "answer": _format_web_investigation_answer(user_message, results),
+            "status": "ok:web_investigation",
+        }
+
     attempts: list[tuple[str, Any]] = []
     for key in ("primary", "fallback"):
         provider = cfg.brain.get(key) if cfg.brain else None

@@ -25,6 +25,7 @@ def test_cli_public_command_surface_snapshot():
         "panel",
         "queue",
         "run",
+        "secrets",
         "setup",
         "skills",
         "status",
@@ -33,6 +34,7 @@ def test_cli_public_command_surface_snapshot():
     ]
     assert sorted(root.commands["config"].commands.keys()) == ["show", "snapshot", "validate"]
     assert sorted(root.commands["ops"].commands.keys()) == ["bundle", "capabilities"]
+    assert sorted(root.commands["secrets"].commands.keys()) == ["get", "set", "unset"]
     assert sorted(root.commands["queue"].commands.keys()) == [
         "approvals",
         "bundle",

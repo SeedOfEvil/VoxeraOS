@@ -130,6 +130,17 @@ make vera
 
 Vera defaults to `127.0.0.1:8790` and can be overridden for local runs with `VERA_HOST` / `VERA_PORT`.
 
+### Secrets CLI (provider keys)
+
+Use the built-in secrets commands for provider/API key refs used by config (`api_key_ref`):
+
+- `voxera secrets set BRAVE_API_KEY`
+- `voxera secrets set OPENROUTER_API_KEY`
+- `voxera secrets get BRAVE_API_KEY --exists-only`
+- `voxera secrets unset BRAVE_API_KEY`
+
+`voxera secrets get` is safe-by-default (`present`/`missing`); use `--show-value` only when explicitly needed.
+
 For systemd user-service management:
 
 ```bash
@@ -415,6 +426,27 @@ VoxeraOS now supports a narrow structured file-write payload for governed queue 
 ```
 
 This preserves explicit filename/path and text content through queue intake, planning/execution rails, and canonical evidence (`step_results.json`, `execution_result.json`, `execution_envelope.json`). Writes still execute only via VoxeraOS approvals/policy boundaries.
+
+### Vera read-only web investigation via Brave Search (PR #next)
+
+Vera now supports a dedicated informational web lane backed by Brave Search API while preserving the execution wall:
+
+- Informational asks (for example `what's on cnn right now?`, `compare these GPUs`, `look up latest docs`) use read-only Brave search and return summarized findings with source URLs.
+- Operational asks (for example `open cnn.com`) remain VoxeraOS-governed action requests and continue through preview/handoff flows.
+- No downloads, browser automation, file writes, or local side effects occur in the Brave investigation lane.
+- If Brave API credentials are missing, Vera responds honestly that web investigation is not configured (no fake answers).
+
+Configuration (`config.yml`) follows existing secret-ref patterns:
+
+```yaml
+web_investigation:
+  provider: brave
+  api_key_ref: BRAVE_API_KEY
+  env_api_key_var: BRAVE_API_KEY
+  max_results: 5
+```
+
+Brave auth uses `X-Subscription-Token` and never hardcodes API keys in source or docs examples.
 
 ### Vera evidence-aware job outcome review (PR #155)
 
