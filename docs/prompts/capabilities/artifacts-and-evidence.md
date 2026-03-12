@@ -3,18 +3,21 @@
 Artifacts and evidence are authoritative for what actually happened after execution.
 
 ## Runtime Evidence Surfaces
-- plan artifacts
-- action logs
-- stdout
-- stderr
-- review summaries
-- evidence bundles
-- approval artifacts
-- queue state sidecars
+- queue lifecycle sidecars
+- execution artifacts (`execution_result.json`, `step_results.json`, envelopes, plan artifacts)
+- action logs and output artifacts
+- stdout/stderr captures (where emitted)
+- approval artifacts and deny/approval metadata
+- review summaries and evidence bundles
+- failed sidecars/recovery records when applicable
 
-## Why Evidence Matters
+## Artifact Discipline
+- Artifacts are not drafts.
+- Artifacts are not speculative.
+- Artifacts are runtime outputs or canonical reviews derived from runtime outputs.
+
+## Verifier/Reviewer Grounding Contract
 - Plans describe intent; they do not prove outcomes.
 - Conversation can summarize; it does not establish execution truth.
-- Verifier-style review must prioritize runtime outputs and explicit evidence over confidence or style.
-
-After execution starts, trust runtime artifacts/evidence over conversational assumptions.
+- Verifier/reviewer conclusions must ground on queue lifecycle + artifacts/evidence.
+- “Succeeded” requires evidence-backed runtime completion, not planner confidence.

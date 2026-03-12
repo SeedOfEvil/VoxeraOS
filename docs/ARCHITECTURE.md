@@ -1130,6 +1130,11 @@ Operational defaults:
 
 Queue concept (developer framing): the queue is the structured path for real side effects; jobs are submitted into VoxeraOS and moved through lifecycle states with approvals/policy checks and evidence produced in VoxeraOS artifacts. Submission is not execution, and execution is not verification.
 
+## Queue object model (canonical contract)
+
+For an explicit, stable definition of queue jobs, lifecycle states, artifact/evidence semantics,
+truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
+
 ## Vera preview drafting boundary notes (PR #154)
 
 - Vera uses a lightweight deterministic phrase-normalization layer (`src/voxera/vera/handoff.py`) to map common conversational action requests into the smallest supported queue preview payload.
