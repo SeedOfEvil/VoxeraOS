@@ -1,3 +1,4 @@
+- Added forward-looking expected-artifact defaults for canonical assistant/queue lanes so new jobs carry explicit expectation intent into runtime review surfaces.
 ## 2026-03-13 — GitHub PR #TBD — feat(queue/verifier): surface execution capability declarations and expected-vs-observed artifact evidence
 
 - Extended `execution_result` contract shaping to include additive capability/evidence context in `review_summary` and `evidence_bundle`: normalized `execution_capabilities` visibility plus deterministic expected-artifact observation (`status`, `expected`, `observed`, `missing`).

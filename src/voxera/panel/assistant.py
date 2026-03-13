@@ -35,7 +35,12 @@ def enqueue_assistant_question(
             "read_only": True,
             "summary": "Queue advisory answer requested by operator",
             "action_hints": ["assistant.advisory"],
-            "expected_artifacts": ["assistant_response.json"],
+            "expected_artifacts": [
+                "assistant_response.json",
+                "execution_envelope.json",
+                "execution_result.json",
+                "step_results.json",
+            ],
         },
         source_lane="assistant_advisory",
     )

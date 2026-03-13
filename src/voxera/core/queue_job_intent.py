@@ -4,6 +4,19 @@ from typing import Any
 
 from .queue_contracts import detect_request_kind
 
+_QUEUE_BASELINE_EXPECTED_ARTIFACTS = [
+    "plan.json",
+    "execution_envelope.json",
+    "execution_result.json",
+    "step_results.json",
+]
+_ASSISTANT_BASELINE_EXPECTED_ARTIFACTS = [
+    "assistant_response.json",
+    "execution_envelope.json",
+    "execution_result.json",
+    "step_results.json",
+]
+
 
 def _clean_text(value: Any) -> str | None:
     if value is None:
@@ -44,6 +57,19 @@ def _coerce_planning_payload(value: Any) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _default_expected_artifacts(*, request_kind: str, source_lane: str) -> list[str]:
+    normalized_request_kind = request_kind.strip()
+    if normalized_request_kind == "assistant_question":
+        return list(_ASSISTANT_BASELINE_EXPECTED_ARTIFACTS)
+    if normalized_request_kind in {"mission_id", "goal", "inline_steps", "write_file"}:
+        return list(_QUEUE_BASELINE_EXPECTED_ARTIFACTS)
+    if source_lane.strip() in {"assistant_advisory", "panel_mission_prompt", "inbox_cli"}:
+        if source_lane.strip() == "assistant_advisory":
+            return list(_ASSISTANT_BASELINE_EXPECTED_ARTIFACTS)
+        return list(_QUEUE_BASELINE_EXPECTED_ARTIFACTS)
+    return []
+
+
 def build_queue_job_intent(
     payload: dict[str, Any],
     *,
@@ -53,6 +79,14 @@ def build_queue_job_intent(
     existing = existing_raw if isinstance(existing_raw, dict) else {}
 
     request_kind = _clean_text(existing.get("request_kind")) or detect_request_kind(payload)
+    expected_artifacts = _clean_list(
+        existing.get("expected_artifacts") or payload.get("expected_artifacts")
+    )
+    if not expected_artifacts:
+        expected_artifacts = _default_expected_artifacts(
+            request_kind=request_kind,
+            source_lane=_clean_text(existing.get("source_lane")) or source_lane,
+        )
     mission_id = _clean_text(
         existing.get("mission_id") or payload.get("mission_id") or payload.get("mission")
     )
@@ -76,9 +110,7 @@ def build_queue_job_intent(
         "approval_hints": _clean_list(
             existing.get("approval_hints") or payload.get("approval_hints")
         ),
-        "expected_artifacts": _clean_list(
-            existing.get("expected_artifacts") or payload.get("expected_artifacts")
-        ),
+        "expected_artifacts": expected_artifacts,
         "operator_summary": _clean_text(
             existing.get("operator_summary")
             or payload.get("planner_summary")
@@ -101,6 +133,10 @@ def build_queue_job_intent(
 def enrich_queue_job_payload(payload: dict[str, Any], *, source_lane: str) -> dict[str, Any]:
     enriched = dict(payload)
     enriched["job_intent"] = build_queue_job_intent(enriched, source_lane=source_lane)
+    if "expected_artifacts" not in enriched and isinstance(
+        enriched["job_intent"].get("expected_artifacts"), list
+    ):
+        enriched["expected_artifacts"] = list(enriched["job_intent"]["expected_artifacts"])
     if "title" not in enriched and isinstance(enriched["job_intent"].get("title"), str):
         enriched["title"] = enriched["job_intent"]["title"]
     if "goal" not in enriched and isinstance(enriched["job_intent"].get("goal"), str):

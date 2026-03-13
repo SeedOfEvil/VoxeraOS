@@ -403,9 +403,16 @@ def build_execution_result(
     execution_capabilities = _extract_execution_capabilities(
         rr_data=rr_data, step_results=step_results
     )
+    declared_expected_artifacts = _normalize_expected_artifacts(rr_data.get("expected_artifacts"))
+    if not declared_expected_artifacts and isinstance(rr_data.get("job_intent"), dict):
+        declared_expected_artifacts = _normalize_expected_artifacts(
+            rr_data.get("job_intent", {}).get("expected_artifacts")
+        )
     expected_artifacts = _normalize_expected_artifacts(
         execution_capabilities.get("expected_artifacts") if execution_capabilities else []
     )
+    if not expected_artifacts:
+        expected_artifacts = declared_expected_artifacts
     expected_artifact_observation = _compare_expected_artifacts(
         expected_artifacts=expected_artifacts,
         artifact_families=artifact_families,

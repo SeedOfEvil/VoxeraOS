@@ -1167,3 +1167,6 @@ Vera v0 now includes a narrow job-outcome review capability in chat while preser
 - State-aware next-step guidance remains fail-closed and must not claim terminal success without queue + artifact/evidence support.
 - Next-step guidance is evidence-grounded (e.g., approve in VoxeraOS when awaiting approval; retry correction when failed), and becomes explicit when expected artifacts are missing (inspect logs/output paths/approval decisions before rerun).
 - Optional follow-up drafting writes a new preview only; submission remains explicit handoff and execution remains VoxeraOS-owned.
+
+
+- Canonical queue/assistant lanes now use forward-looking expected-artifact defaults so new jobs carry explicit artifact intent from job creation through runtime/review (without historical backfill).

@@ -42,3 +42,5 @@ These are done. Do not list them as open work:
 - Additive artifact design: new fields are additive; existing jobs remain readable.
 - Policy/approval gates are not bypassable by metadata, lineage, or child enqueue payloads.
 - Merge gate: `make merge-readiness-check` includes `security-check` — all 17 red-team tests must pass.
+
+- Queue job intent normalization should preserve explicit, forward-looking expected-artifact declarations for canonical lanes so runtime/review can compare expected vs observed artifacts deterministically.

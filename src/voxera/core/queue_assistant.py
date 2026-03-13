@@ -19,6 +19,7 @@ from ..operator_assistant import (
     read_assistant_thread,
 )
 from .queue_contracts import build_assistant_execution_envelope
+from .queue_job_intent import build_queue_job_intent
 
 _ASSISTANT_FALLBACK_REASONS = frozenset({TIMEOUT, AUTH, RATE_LIMIT, MALFORMED, NETWORK})
 _FAST_LANE_ALLOWED_REQUEST_KINDS = frozenset({ASSISTANT_JOB_KIND})
@@ -199,6 +200,17 @@ def process_assistant_job(
         raise ValueError("assistant question is required")
     thread_id = normalize_thread_id(str(payload.get("thread_id") or ""))
     assistant_payload = {**payload, "thread_id": thread_id, "question": question}
+    if not isinstance(assistant_payload.get("job_intent"), dict):
+        assistant_payload["job_intent"] = build_queue_job_intent(
+            assistant_payload,
+            source_lane="queue_daemon",
+        )
+    if "expected_artifacts" not in assistant_payload and isinstance(
+        assistant_payload.get("job_intent", {}).get("expected_artifacts"), list
+    ):
+        assistant_payload["expected_artifacts"] = list(
+            assistant_payload["job_intent"].get("expected_artifacts") or []
+        )
     _write_assistant_execution_envelope(
         daemon,
         job_ref=str(job_path),

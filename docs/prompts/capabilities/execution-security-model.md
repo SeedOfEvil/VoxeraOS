@@ -25,3 +25,5 @@ Expected artifacts are part of the contract. Outcome claims should align:
 - produced artifacts/evidence
 
 Do not treat undeclared capability assumptions as valid execution authority.
+
+- Apply expected-artifact declaration improvements forward only; historical jobs are not backfilled and may remain `none_declared`.
