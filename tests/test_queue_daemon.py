@@ -1843,6 +1843,8 @@ def test_pending_approval_payload_includes_target_scope_and_policy_reason(tmp_pa
     assert approval["scope"]["fs_scope"] == "broader"
     assert approval["scope"]["needs_network"] is True
     assert "policy_reason" in approval
+    assert "capability_boundary_notes" in approval
+    assert isinstance(approval["capability_boundary_notes"], list)
 
 
 def test_approval_always_grant_allows_matching_scope_only(tmp_path, monkeypatch):

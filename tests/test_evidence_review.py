@@ -214,6 +214,11 @@ def test_review_outcome_surfaces_execution_capabilities_and_missing_expected_art
                     "fs_scope": "confined",
                     "sandbox_profile": "host_local",
                 },
+                "capability_boundary_violation": {
+                    "boundary": "network",
+                    "declared_network_scope": "none",
+                    "requested_network": True,
+                },
                 "expected_artifacts": ["execution_result", "stdout"],
                 "expected_artifact_status": "partial",
                 "observed_expected_artifacts": ["execution_result"],
@@ -231,6 +236,7 @@ def test_review_outcome_surfaces_execution_capabilities_and_missing_expected_art
 
     message = review_message(evidence)
     assert "Execution capabilities:" in message
+    assert "Capability boundary violation: boundary=network" in message
     assert "Expected artifacts were partially observed" in message
     assert "Missing expected artifacts: stdout" in message
     assert "Execution failed with partial expected outputs" in message
@@ -274,6 +280,11 @@ def test_review_outcome_canceled_missing_expected_artifacts_frames_absence_hones
             "terminal_outcome": "canceled",
             "review_summary": {
                 "latest_summary": "Execution canceled",
+                "capability_boundary_violation": {
+                    "boundary": "network",
+                    "declared_network_scope": "none",
+                    "requested_network": True,
+                },
                 "expected_artifacts": ["execution_result", "stdout"],
                 "expected_artifact_status": "missing",
                 "observed_expected_artifacts": [],
@@ -303,6 +314,11 @@ def test_review_outcome_missing_expected_artifacts_while_awaiting_approval_are_n
             "approval_status": "pending",
             "review_summary": {
                 "latest_summary": "Waiting for operator approval",
+                "capability_boundary_violation": {
+                    "boundary": "network",
+                    "declared_network_scope": "none",
+                    "requested_network": True,
+                },
                 "expected_artifacts": ["execution_result", "stdout"],
                 "expected_artifact_status": "missing",
                 "observed_expected_artifacts": [],

@@ -18,3 +18,5 @@ The Verifier evaluates whether intended outcomes match actual runtime results.
 - Do not overstate completion without supporting runtime proof.
 
 The verifier is responsible for evidence-grounded outcome review.
+
+- When `capability_boundary_violation` is present in canonical review/evidence artifacts, surface it explicitly and keep language deterministic (boundary, declared scope, requested behavior).

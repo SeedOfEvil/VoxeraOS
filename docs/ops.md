@@ -1261,6 +1261,7 @@ Queue jobs may include additive `job_intent` metadata produced by panel/inbox/as
 ### Operator interpretation of normalized skill results
 
 When triaging step failures/blocks, prefer `step_results[].summary`, `operator_note`, `next_action_hint`, `error_class`, `retryable`, `blocked`, and `approval_status`. `machine_payload` is intended for deterministic machine facts; human guidance belongs in `operator_note`.
+When triaging capability boundaries, also inspect `review_summary.capability_boundary_violation` and approval payload `capability_boundary_notes`; these are deterministic declared-vs-requested mismatch signals (for example runtime network request against declared `network_scope=none`).
 
 ## Operator live progress expectations
 

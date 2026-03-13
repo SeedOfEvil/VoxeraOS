@@ -627,6 +627,12 @@ def _build_review_summary(
         "latest_summary": latest_summary,
         "error": error,
         "execution_capabilities": execution_capabilities,
+        "capability_boundary_violation": (
+            execution_capabilities.get("runtime_boundary_violation")
+            if isinstance(execution_capabilities, dict)
+            and isinstance(execution_capabilities.get("runtime_boundary_violation"), dict)
+            else None
+        ),
         "expected_artifacts": expected_artifact_observation.get("expected", []),
         "expected_artifact_status": expected_artifact_observation.get("status", "none_declared"),
         "observed_expected_artifacts": expected_artifact_observation.get("observed", []),

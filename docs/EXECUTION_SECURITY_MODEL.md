@@ -122,6 +122,7 @@ Execution governance flow:
 2. Queue submission creates canonical execution contract.
 3. Policy (`allow` / `ask` / `deny`) evaluates declared capabilities.
 4. Runtime executes within declared scope/isolation posture.
-5. Artifacts/evidence become outcome truth for verifier/reviewer.
+   - Deterministic fail-closed guard: if runtime arguments request network access while declared `network_scope=none`/`needs_network=false`, execution is blocked as a capability boundary mismatch before launch.
+5. Artifacts/evidence become outcome truth for verifier/reviewer (including explicit capability-boundary violation details when present).
 
 This model is additive to current behavior and is intended to make permissions explicit before expanding capability/skill surface area.

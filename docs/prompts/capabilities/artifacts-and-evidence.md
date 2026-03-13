@@ -39,3 +39,5 @@ Reviewer/verifier “what happened?” shaping should:
 - “Succeeded” requires evidence-backed runtime completion, not planner confidence.
 
 - For canonical future job lanes, forward-declare deterministic expected artifacts at queue creation/normalization so review can compare declared intent vs observed evidence without guessing.
+
+- Review summaries may include `capability_boundary_violation` when runtime behavior request exceeds declared boundaries; treat this as high-signal enforcement evidence (not a speculative claim).
