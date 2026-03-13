@@ -2042,6 +2042,87 @@ def test_active_preview_natural_content_refinement_updates_write_file_content(
     assert "programmers" in after["write_file"]["content"].lower()
 
 
+def test_active_preview_news_summary_refinement_updates_content(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called testnews.txt with content "placeholder"',
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make the content a summary of today's top news"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/testnews.txt"
+    assert preview["write_file"]["mode"] == "overwrite"
+    assert "summary" in preview["write_file"]["content"].lower()
+
+
+def test_active_preview_put_that_into_file_is_fail_closed_without_grounded_content(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called testnews.txt with content "placeholder"',
+        },
+    )
+    before = vera_service.read_session_preview(queue, sid)
+    assert before is not None
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "put that into the file"},
+    )
+
+    after = vera_service.read_session_preview(queue, sid)
+    assert after == before
+
+
+def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called notes.txt with content "hey"',
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it more formal"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert "formal" in preview["write_file"]["content"].lower()
+
+
 def test_latest_preview_wins_across_multiple_natural_content_refinements(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

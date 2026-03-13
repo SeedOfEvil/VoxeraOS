@@ -1143,6 +1143,7 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Supported intent families in this layer are intentionally narrow: web navigation URL opens, explicit file reads, and basic note/file write intents.
 - Preview state is persisted per session (`pending_job_preview`) and is independent from rolling chat turn limits.
 - The session keeps exactly one active preview draft; follow-up revisions replace that draft, while lightweight acknowledgements leave it unchanged.
+- Hidden compiler/deterministic fallback prioritize semantic active-preview refinement interpretation (content/path/mode, pronouns) while preserving strict preview-only JSON mutation contracts and fail-closed behavior.
 - Explicit handoff submits only the latest active draft, and successful submit clears the draft after queue confirmation.
 - Submission remains a separate explicit step that writes to queue inbox; no direct execution path exists in Vera.
 

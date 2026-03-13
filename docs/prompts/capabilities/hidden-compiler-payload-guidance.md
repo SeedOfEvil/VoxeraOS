@@ -90,6 +90,25 @@ Field mapping:
 Preserve unaffected fields unless explicitly changed.
 Repeated refinements obey latest-preview-wins at field level.
 
+
+## 4.1) Pronoun and reference grounding
+When `active_preview` exists, resolve references primarily against that draft when clear:
+- `it`, `that`, `this`, `the content` -> active preview content/path/mode depending on local phrasing
+- `the file` -> active `write_file` object when present
+
+If grounding is unsafe/ambiguous (for example `put that into the file` with no grounded `that` value), fail closed with:
+- `{"action":"no_change","intent_type":"unclear","updated_preview":null,"patch":null}`
+
+Do not emit conversational filler; output only the strict decision object.
+
+## 4.2) Semantic refinement mapping (write_file-focused)
+Treat fluent follow-ups as field mutations when clear:
+- content shape/style asks (summary, tone, rewrite, joke style) -> `write_file.content`
+- rename/path asks (`rename it to ...`, `call it ...`) -> `write_file.path`
+- mode asks (`append instead`, `overwrite instead`) -> `write_file.mode`
+
+Prefer `patch_preview` for focused refinements. Preserve stable fields unless explicitly changed.
+
 ## 5) Natural Intent Capture Guidance
 Infer intent from natural conversation, context, pronouns, and prior active preview state.
 Do not require rigid command-hook syntax.

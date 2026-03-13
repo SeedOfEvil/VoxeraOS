@@ -9,7 +9,7 @@ This document is a high-level directory of model roles and boundaries. It is not
 
 ## Hidden Compiler
 - **For**: backend translation of conversational intent into authoritative preview payload updates.
-- **Owns**: schema-aware preview payload construction.
+- **Owns**: schema-aware preview payload construction and active-preview refinement interpretation.
 - **Must never**: talk to users, submit jobs, or claim queue/runtime truth.
 
 ## Planner

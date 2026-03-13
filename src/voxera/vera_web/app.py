@@ -386,7 +386,7 @@ async def chat(request: Request):
             status=status,
         )
 
-    informational_web_turn = _is_informational_web_query(message)
+    informational_web_turn = _is_informational_web_query(message) and pending_preview is None
     builder_preview: dict[str, object] | None = None
     if not informational_web_turn:
         builder_preview = await generate_preview_builder_update(
