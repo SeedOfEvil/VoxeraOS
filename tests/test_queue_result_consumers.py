@@ -285,3 +285,36 @@ def test_resolve_structured_execution_exposes_normalized_artifact_contract_field
             "exists": True,
         }
     ]
+
+
+def test_resolve_structured_execution_exposes_expected_artifact_observation_fields(tmp_path):
+    art = tmp_path / "artifacts" / "job-expected"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "review_summary": {
+                    "execution_capabilities": {
+                        "side_effect_class": "class_b",
+                        "network_scope": "read_only",
+                        "fs_scope": "confined",
+                        "sandbox_profile": "sandbox_no_network",
+                        "expected_artifacts": ["execution_result", "review_summary"],
+                    },
+                    "expected_artifacts": ["execution_result", "review_summary"],
+                    "expected_artifact_status": "partial",
+                    "observed_expected_artifacts": ["execution_result"],
+                    "missing_expected_artifacts": ["review_summary"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=art)
+
+    assert payload["execution_capabilities"]["side_effect_class"] == "class_b"
+    assert payload["expected_artifacts"] == ["execution_result", "review_summary"]
+    assert payload["expected_artifact_status"] == "partial"
+    assert payload["observed_expected_artifacts"] == ["execution_result"]
+    assert payload["missing_expected_artifacts"] == ["review_summary"]

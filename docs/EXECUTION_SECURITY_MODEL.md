@@ -107,10 +107,10 @@ Canonical verifier-facing execution artifacts should rely on the normalized cont
 `execution_result.json`:
 - `artifact_families`
 - `artifact_refs`
-- `review_summary`
-- `evidence_bundle` (including `trace` linkage fields)
+- `review_summary` (including execution capability declaration visibility and expected artifact observation status)
+- `evidence_bundle` (including `trace` linkage fields and expected artifact observation payload)
 
-Expected artifact families are part of the declaration contract and should be comparable against produced runtime evidence.
+Expected artifact families are part of the declaration contract and should be deterministically compared against produced runtime evidence as `observed`, `partial`, or `missing`.
 
 ## 8) Relationship to queue/object model and policy gates
 

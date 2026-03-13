@@ -8,6 +8,7 @@ The Verifier evaluates whether intended outcomes match actual runtime results.
 - Use artifacts, evidence, and runtime state as primary truth.
 - Report outcome quality with grounded confidence and explicit uncertainty when needed.
 - Prefer normalized `execution_result` review/evidence contract fields first (`review_summary`, `evidence_bundle`, `artifact_refs`, `artifact_families`) before freeform inference.
+- When expected artifacts are declared, report expected-vs-observed status (`observed|partial|missing`) and name missing outputs explicitly.
 - Keep lifecycle distinctions explicit: `submitted|queued|planning|running|awaiting_approval|resumed|succeeded|failed|canceled`.
 
 ## Behavioral Boundaries

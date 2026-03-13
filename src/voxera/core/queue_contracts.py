@@ -400,6 +400,17 @@ def build_execution_result(
 ) -> dict[str, Any]:
     lineage = extract_lineage_metadata(rr_data)
     artifact_families, artifact_refs = _build_artifact_contract(artifacts_dir)
+    execution_capabilities = _extract_execution_capabilities(
+        rr_data=rr_data, step_results=step_results
+    )
+    expected_artifacts = _normalize_expected_artifacts(
+        execution_capabilities.get("expected_artifacts") if execution_capabilities else []
+    )
+    expected_artifact_observation = _compare_expected_artifacts(
+        expected_artifacts=expected_artifacts,
+        artifact_families=artifact_families,
+        artifact_refs=artifact_refs,
+    )
     review_summary = _build_review_summary(
         job_ref=job_ref,
         rr_data=rr_data,
@@ -407,6 +418,8 @@ def build_execution_result(
         terminal_outcome=terminal_outcome,
         ok=ok,
         error=error,
+        execution_capabilities=execution_capabilities,
+        expected_artifact_observation=expected_artifact_observation,
     )
     evidence_bundle = _build_evidence_bundle(
         job_ref=job_ref,
@@ -415,6 +428,7 @@ def build_execution_result(
         artifact_families=artifact_families,
         artifact_refs=artifact_refs,
         review_summary=review_summary,
+        expected_artifact_observation=expected_artifact_observation,
     )
     return {
         "schema_version": EXECUTION_RESULT_SCHEMA_VERSION,
@@ -465,6 +479,79 @@ def build_execution_result(
     }
 
 
+def _extract_execution_capabilities(
+    *, rr_data: dict[str, Any], step_results: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    direct = rr_data.get("execution_capabilities")
+    if isinstance(direct, dict):
+        return direct
+    for step in reversed(step_results):
+        machine_payload = step.get("machine_payload")
+        if not isinstance(machine_payload, dict):
+            continue
+        nested = machine_payload.get("execution_capabilities")
+        if isinstance(nested, dict):
+            return nested
+    return None
+
+
+def _normalize_expected_artifacts(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    normalized = sorted({str(item).strip() for item in value if str(item).strip()})
+    return normalized
+
+
+def _compare_expected_artifacts(
+    *,
+    expected_artifacts: list[str],
+    artifact_families: list[str],
+    artifact_refs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not expected_artifacts:
+        return {
+            "status": "none_declared",
+            "expected": [],
+            "observed": [],
+            "missing": [],
+        }
+
+    observed_families = {str(item).strip() for item in artifact_families if str(item).strip()}
+    observed_paths = {
+        str(item.get("artifact_path") or "").strip()
+        for item in artifact_refs
+        if isinstance(item, dict) and str(item.get("artifact_path") or "").strip()
+    }
+    observed_path_stems = {Path(path).stem for path in observed_paths}
+    observed: list[str] = []
+    missing: list[str] = []
+    for expected in expected_artifacts:
+        expected_token = expected.strip()
+        expected_stem = Path(expected_token).stem
+        if (
+            expected_token in observed_families
+            or expected_token in observed_paths
+            or expected_stem in observed_families
+            or expected_stem in observed_path_stems
+        ):
+            observed.append(expected_token)
+        else:
+            missing.append(expected_token)
+
+    if not missing:
+        status = "observed"
+    elif observed:
+        status = "partial"
+    else:
+        status = "missing"
+    return {
+        "status": status,
+        "expected": expected_artifacts,
+        "observed": observed,
+        "missing": missing,
+    }
+
+
 def _build_artifact_contract(artifacts_dir: Path | None) -> tuple[list[str], list[dict[str, Any]]]:
     if artifacts_dir is None:
         return (["step_results", "execution_result"], [])
@@ -509,6 +596,8 @@ def _build_review_summary(
     terminal_outcome: str,
     ok: bool,
     error: str | None,
+    execution_capabilities: dict[str, Any] | None,
+    expected_artifact_observation: dict[str, Any],
 ) -> dict[str, Any]:
     latest_step = step_results[-1] if step_results else {}
     latest_summary = str(
@@ -530,6 +619,11 @@ def _build_review_summary(
         "latest_step_status": latest_step.get("status"),
         "latest_summary": latest_summary,
         "error": error,
+        "execution_capabilities": execution_capabilities,
+        "expected_artifacts": expected_artifact_observation.get("expected", []),
+        "expected_artifact_status": expected_artifact_observation.get("status", "none_declared"),
+        "observed_expected_artifacts": expected_artifact_observation.get("observed", []),
+        "missing_expected_artifacts": expected_artifact_observation.get("missing", []),
     }
 
 
@@ -541,6 +635,7 @@ def _build_evidence_bundle(
     artifact_families: list[str],
     artifact_refs: list[dict[str, Any]],
     review_summary: dict[str, Any],
+    expected_artifact_observation: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "schema_version": EVIDENCE_BUNDLE_SCHEMA_VERSION,
@@ -559,4 +654,5 @@ def _build_evidence_bundle(
         "artifact_families": artifact_families,
         "artifact_refs": artifact_refs,
         "review_summary": review_summary,
+        "expected_artifacts": expected_artifact_observation,
     }

@@ -1,3 +1,12 @@
+## 2026-03-13 — GitHub PR #TBD — feat(queue/verifier): surface execution capability declarations and expected-vs-observed artifact evidence
+
+- Extended `execution_result` contract shaping to include additive capability/evidence context in `review_summary` and `evidence_bundle`: normalized `execution_capabilities` visibility plus deterministic expected-artifact observation (`status`, `expected`, `observed`, `missing`).
+- Added deterministic expected-vs-observed artifact comparison helper logic (`observed|partial|missing|none_declared`) grounded in produced `artifact_families`/`artifact_refs` only.
+- Updated structured execution consumer output to expose these additive review fields for downstream reviewers/verifiers.
+- Hardened Vera evidence review output and next-step guidance to surface execution capability declarations and call out missing expected artifacts explicitly with evidence-grounded operator actions.
+- Added focused tests across queue execution contracts, structured consumers, and Vera review messaging for partial/missing expected artifact cases.
+- Updated docs/prompts to reflect the new reviewer contract without altering queue lifecycle, policy/approval semantics, or execution surface area.
+
 ## 2026-03-13 — GitHub PR #TBD — feat(vera/enrichment): enrichment-to-preview bridge for grounded pronoun resolution
 
 - Added read-only enrichment bridge: when an active preview exists and the user makes an informational web query, `run_web_enrichment` runs in the service layer and stores `{query, summary, retrieved_at_ms}` as `last_enrichment` in the session file.

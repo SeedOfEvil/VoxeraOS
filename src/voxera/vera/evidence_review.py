@@ -46,6 +46,11 @@ class ReviewedJobEvidence:
     artifact_refs: tuple[str, ...]
     evidence_trace: tuple[str, ...]
     child_summary: dict[str, int] | None
+    execution_capabilities: dict[str, Any] | None
+    expected_artifacts: tuple[str, ...]
+    observed_expected_artifacts: tuple[str, ...]
+    missing_expected_artifacts: tuple[str, ...]
+    expected_artifact_status: str
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:
@@ -147,6 +152,13 @@ def _normalize_families(value: Any) -> tuple[str, ...]:
         return ()
     families = sorted({str(item).strip() for item in value if str(item).strip()})
     return tuple(families)
+
+
+def _normalize_strings(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    normalized = sorted({str(item).strip() for item in value if str(item).strip()})
+    return tuple(normalized)
 
 
 def _evidence_trace(structured: dict[str, Any]) -> tuple[str, ...]:
@@ -269,6 +281,9 @@ def review_job_outcome(
     artifact_refs = _normalize_artifact_refs(
         structured.get("artifact_refs") or evidence_bundle.get("artifact_refs") or []
     )
+    review_summary = structured.get("review_summary")
+    review_summary_dict = review_summary if isinstance(review_summary, dict) else {}
+    execution_capabilities = review_summary_dict.get("execution_capabilities")
     return ReviewedJobEvidence(
         job_id=found.job_id,
         state=_classify_state(
@@ -286,6 +301,17 @@ def review_job_outcome(
         artifact_refs=artifact_refs,
         evidence_trace=_evidence_trace(structured),
         child_summary=child_summary if isinstance(child_summary, dict) else None,
+        execution_capabilities=(
+            execution_capabilities if isinstance(execution_capabilities, dict) else None
+        ),
+        expected_artifacts=_normalize_strings(review_summary_dict.get("expected_artifacts") or []),
+        observed_expected_artifacts=_normalize_strings(
+            review_summary_dict.get("observed_expected_artifacts") or []
+        ),
+        missing_expected_artifacts=_normalize_strings(
+            review_summary_dict.get("missing_expected_artifacts") or []
+        ),
+        expected_artifact_status=str(review_summary_dict.get("expected_artifact_status") or ""),
     )
 
 
@@ -343,6 +369,27 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
         lines.append(f"- Artifact refs: {', '.join(evidence.artifact_refs[:5])}")
     if evidence.evidence_trace:
         lines.append(f"- Evidence trace: {', '.join(evidence.evidence_trace)}")
+    if evidence.execution_capabilities:
+        lines.append(
+            "- Execution capabilities: "
+            f"side_effect_class={evidence.execution_capabilities.get('side_effect_class', 'unknown')}, "
+            f"network_scope={evidence.execution_capabilities.get('network_scope', 'unknown')}, "
+            f"fs_scope={evidence.execution_capabilities.get('fs_scope', 'unknown')}, "
+            f"sandbox_profile={evidence.execution_capabilities.get('sandbox_profile', 'unknown')}"
+        )
+    if evidence.expected_artifacts:
+        lines.append(
+            f"- Expected artifacts ({evidence.expected_artifact_status or 'unknown'}): "
+            + ", ".join(evidence.expected_artifacts)
+        )
+        if evidence.observed_expected_artifacts:
+            lines.append(
+                "- Observed expected artifacts: " + ", ".join(evidence.observed_expected_artifacts)
+            )
+        if evidence.missing_expected_artifacts:
+            lines.append(
+                "- Missing expected artifacts: " + ", ".join(evidence.missing_expected_artifacts)
+            )
     lines.append(f"Next step: {_next_step(evidence)}")
     return "\n".join(lines)
 
@@ -369,8 +416,18 @@ def _next_step(evidence: ReviewedJobEvidence) -> str:
             return "The job is pending because approval is still required; approve or reject in VoxeraOS."
         return "The job is non-terminal and evidence is incomplete; poll queue progress before deciding next action."
     if evidence.state == "succeeded":
+        if evidence.missing_expected_artifacts:
+            return (
+                "Execution succeeded but some expected artifacts were not observed; inspect step logs "
+                "and artifact output paths, then rerun if evidence is incomplete."
+            )
         return "No action is required unless you want me to draft a follow-up preview grounded in these results."
     if evidence.state == "failed":
+        if evidence.missing_expected_artifacts:
+            return (
+                "Execution failed and expected artifacts were missing; inspect step logs, approval decisions, "
+                "and declared output paths before retrying with corrected inputs."
+            )
         return "Execution failed; use the grounded failure summary to correct inputs/permissions, then submit a revised preview."
     if evidence.state == "canceled":
         return "Execution was canceled (not failed); if still needed, submit a new preview and rerun intentionally."

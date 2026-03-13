@@ -447,4 +447,37 @@ def resolve_structured_execution(
         "artifact_refs": execution_result.get("artifact_refs")
         if isinstance(execution_result.get("artifact_refs"), list)
         else None,
+        "execution_capabilities": execution_result.get("review_summary", {}).get(
+            "execution_capabilities"
+        )
+        if isinstance(execution_result.get("review_summary"), dict)
+        and isinstance(
+            execution_result.get("review_summary", {}).get("execution_capabilities"), dict
+        )
+        else None,
+        "expected_artifacts": execution_result.get("review_summary", {}).get("expected_artifacts")
+        if isinstance(execution_result.get("review_summary"), dict)
+        and isinstance(execution_result.get("review_summary", {}).get("expected_artifacts"), list)
+        else None,
+        "expected_artifact_status": str(
+            execution_result.get("review_summary", {}).get("expected_artifact_status") or ""
+        )
+        if isinstance(execution_result.get("review_summary"), dict)
+        else "",
+        "observed_expected_artifacts": execution_result.get("review_summary", {}).get(
+            "observed_expected_artifacts"
+        )
+        if isinstance(execution_result.get("review_summary"), dict)
+        and isinstance(
+            execution_result.get("review_summary", {}).get("observed_expected_artifacts"), list
+        )
+        else None,
+        "missing_expected_artifacts": execution_result.get("review_summary", {}).get(
+            "missing_expected_artifacts"
+        )
+        if isinstance(execution_result.get("review_summary"), dict)
+        and isinstance(
+            execution_result.get("review_summary", {}).get("missing_expected_artifacts"), list
+        )
+        else None,
     }
