@@ -30,6 +30,7 @@ Reviewer/verifier “what happened?” shaping should:
 
 
 - Expected artifact families from capability declarations are part of reviewer context: compare expected vs produced evidence and report `observed|partial|missing` deterministically.
+- Missing/partial artifact interpretation must remain lifecycle-aware: do not frame `awaiting_approval` gaps as runtime failures, and do not conflate `canceled` with `failed`.
 
 ## Verifier/Reviewer Grounding Contract
 - Plans describe intent; they do not prove outcomes.

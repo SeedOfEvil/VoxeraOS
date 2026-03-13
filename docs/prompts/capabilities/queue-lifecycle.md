@@ -30,3 +30,5 @@ Assistant/recovery variants may appear, but queue state sidecars and terminal bu
 - Keep active lifecycle (`submitted|queued|planning|running|awaiting_approval|resumed`) distinct from terminal outcomes.
 - Never report succeeded/done unless canonical queue placement and artifact/evidence truth support it.
 - Keep canceled distinct from failed.
+
+- Expected-artifact interpretation must follow lifecycle truth: `awaiting_approval` means execution is paused, `canceled` means output absence may be normal, `failed` means inspect failure evidence first, and `succeeded` with partial outputs should be treated as an evidence-gap check rather than automatic failure.

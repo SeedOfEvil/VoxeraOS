@@ -377,6 +377,10 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
             f"fs_scope={evidence.execution_capabilities.get('fs_scope', 'unknown')}, "
             f"sandbox_profile={evidence.execution_capabilities.get('sandbox_profile', 'unknown')}"
         )
+    artifact_observation = _artifact_observation_line(evidence)
+    if artifact_observation:
+        lines.append(f"- {artifact_observation}")
+
     if evidence.expected_artifacts:
         lines.append(
             f"- Expected artifacts ({evidence.expected_artifact_status or 'unknown'}): "
@@ -390,14 +394,45 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
             lines.append(
                 "- Missing expected artifacts: " + ", ".join(evidence.missing_expected_artifacts)
             )
+    else:
+        lines.append("- Expected artifacts: none declared for this job.")
     lines.append(f"Next step: {_next_step(evidence)}")
     return "\n".join(lines)
+
+
+def _artifact_observation_line(evidence: ReviewedJobEvidence) -> str:
+    if not evidence.expected_artifacts:
+        return ""
+
+    expected = ", ".join(evidence.expected_artifacts)
+    observed = ", ".join(evidence.observed_expected_artifacts) or "none"
+    missing = ", ".join(evidence.missing_expected_artifacts) or "none"
+    status = evidence.expected_artifact_status.strip().lower()
+
+    if status == "observed" and not evidence.missing_expected_artifacts:
+        return f"Expected artifacts were fully observed ({expected})."
+    if status == "partial" or (
+        evidence.observed_expected_artifacts and evidence.missing_expected_artifacts
+    ):
+        return (
+            f"Expected artifacts were partially observed: observed={observed}; missing={missing}."
+        )
+    if status == "missing" or (
+        not evidence.observed_expected_artifacts and evidence.missing_expected_artifacts
+    ):
+        return f"Expected artifacts were not observed: missing={missing}."
+    return f"Expected artifact observation is '{status or 'unknown'}': observed={observed}; missing={missing}."
 
 
 def _next_step(evidence: ReviewedJobEvidence) -> str:
     lifecycle = evidence.lifecycle_state.strip().lower()
     approval = evidence.approval_status.strip().lower()
     if evidence.state == "awaiting_approval":
+        if evidence.expected_artifacts and evidence.missing_expected_artifacts:
+            return (
+                "Job is blocked on operator approval; missing runtime outputs are expected until approval allows execution to continue. "
+                "Approve or reject in VoxeraOS first."
+            )
         return "Job is blocked on operator approval; approve or reject in VoxeraOS before execution can continue."
     if evidence.state == "queued":
         return "The job is accepted and queued; wait for planning/running evidence before asking for outcome."
@@ -417,19 +452,34 @@ def _next_step(evidence: ReviewedJobEvidence) -> str:
         return "The job is non-terminal and evidence is incomplete; poll queue progress before deciding next action."
     if evidence.state == "succeeded":
         if evidence.missing_expected_artifacts:
+            if evidence.observed_expected_artifacts:
+                return (
+                    "The job succeeded with partial expected outputs; inspect execution_result and logs to verify whether "
+                    "the missing artifacts are benign evidence gaps or require a rerun for complete capture."
+                )
             return (
-                "Execution succeeded but some expected artifacts were not observed; inspect step logs "
-                "and artifact output paths, then rerun if evidence is incomplete."
+                "The job succeeded but expected outputs were not observed; inspect execution_result, step logs, "
+                "and artifact output paths, then rerun if evidence capture is required."
             )
         return "No action is required unless you want me to draft a follow-up preview grounded in these results."
     if evidence.state == "failed":
         if evidence.missing_expected_artifacts:
+            if evidence.observed_expected_artifacts:
+                return (
+                    "Execution failed with partial expected outputs; inspect stderr and step_results first, then validate "
+                    "declared output paths and approval decisions before retrying."
+                )
             return (
-                "Execution failed and expected artifacts were missing; inspect step logs, approval decisions, "
-                "and declared output paths before retrying with corrected inputs."
+                "Execution failed and expected outputs were not observed; inspect stderr and step_results first, then "
+                "check approval decisions and declared output paths before retrying with corrected inputs."
             )
         return "Execution failed; use the grounded failure summary to correct inputs/permissions, then submit a revised preview."
     if evidence.state == "canceled":
+        if evidence.expected_artifacts and evidence.missing_expected_artifacts:
+            return (
+                "Execution was canceled (not failed); missing expected outputs may be caused by cancellation before artifact "
+                "production. If still needed, submit a new preview and rerun intentionally."
+            )
         return "Execution was canceled (not failed); if still needed, submit a new preview and rerun intentionally."
     return (
         "Evidence is incomplete; verify in the VoxeraOS panel/queue before deciding on a follow-up."

@@ -231,5 +231,115 @@ def test_review_outcome_surfaces_execution_capabilities_and_missing_expected_art
 
     message = review_message(evidence)
     assert "Execution capabilities:" in message
+    assert "Expected artifacts were partially observed" in message
     assert "Missing expected artifacts: stdout" in message
-    assert "Execution failed and expected artifacts were missing" in message
+    assert "Execution failed with partial expected outputs" in message
+
+
+def test_review_outcome_succeeded_with_partial_expected_artifacts_is_state_aware(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-succeeded-partial.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "review_summary": {
+                "latest_summary": "Execution succeeded",
+                "expected_artifacts": ["execution_result", "review_summary"],
+                "expected_artifact_status": "partial",
+                "observed_expected_artifacts": ["execution_result"],
+                "missing_expected_artifacts": ["review_summary"],
+            },
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-succeeded-partial.json")
+
+    assert evidence is not None
+    message = review_message(evidence)
+    assert "Expected artifacts were partially observed" in message
+    assert "succeeded with partial expected outputs" in message
+
+
+def test_review_outcome_canceled_missing_expected_artifacts_frames_absence_honestly(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-canceled-missing.json",
+        bucket="canceled",
+        execution_result={
+            "lifecycle_state": "canceled",
+            "terminal_outcome": "canceled",
+            "review_summary": {
+                "latest_summary": "Execution canceled",
+                "expected_artifacts": ["execution_result", "stdout"],
+                "expected_artifact_status": "missing",
+                "observed_expected_artifacts": [],
+                "missing_expected_artifacts": ["stdout"],
+            },
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-canceled-missing.json")
+
+    assert evidence is not None
+    message = review_message(evidence)
+    assert "Expected artifacts were not observed" in message
+    assert "missing expected outputs may be caused by cancellation" in message
+
+
+def test_review_outcome_missing_expected_artifacts_while_awaiting_approval_are_not_misframed(
+    tmp_path: Path,
+):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-approval-missing.json",
+        bucket="pending",
+        execution_result={
+            "lifecycle_state": "awaiting_approval",
+            "approval_status": "pending",
+            "review_summary": {
+                "latest_summary": "Waiting for operator approval",
+                "expected_artifacts": ["execution_result", "stdout"],
+                "expected_artifact_status": "missing",
+                "observed_expected_artifacts": [],
+                "missing_expected_artifacts": ["stdout"],
+            },
+        },
+        approval={"reason": "manual gate"},
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-approval-missing.json")
+
+    assert evidence is not None
+    message = review_message(evidence)
+    assert "Expected artifacts were not observed" in message
+    assert (
+        "missing runtime outputs are expected until approval allows execution to continue"
+        in message
+    )
+
+
+def test_review_outcome_handles_jobs_without_declared_expected_artifacts(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-no-expected.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "review_summary": {
+                "latest_summary": "Execution succeeded",
+            },
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-no-expected.json")
+
+    assert evidence is not None
+    message = review_message(evidence)
+    assert "Expected artifacts: none declared for this job." in message
