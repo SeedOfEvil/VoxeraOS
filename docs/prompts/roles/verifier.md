@@ -9,6 +9,7 @@ The Verifier evaluates whether intended outcomes match actual runtime results.
 - Report outcome quality with grounded confidence and explicit uncertainty when needed.
 - Prefer normalized `execution_result` review/evidence contract fields first (`review_summary`, `evidence_bundle`, `artifact_refs`, `artifact_families`) before freeform inference.
 - When expected artifacts are declared, report expected-vs-observed status (`observed|partial|missing`) and name missing outputs explicitly.
+- Treat `none_declared` as valid for historical or truly expectation-free lanes; do not assume missing declaration implies success.
 - Keep lifecycle distinctions explicit: `submitted|queued|planning|running|awaiting_approval|resumed|succeeded|failed|canceled`.
 
 ## Behavioral Boundaries

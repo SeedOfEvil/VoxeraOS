@@ -1402,3 +1402,5 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 8. Confirm no-preview phrasing fails honestly and does not enqueue jobs.
 9. Confirm successful submit clears active preview so pane affordance is removed.
 10. Confirm chat auto-scroll behavior keeps latest messages visible during normal use while still allowing manual scroll-up inspection.
+
+- Operator note: `expected_artifact_status=none_declared` is expected on historical jobs; focus on forward-created jobs to validate new deterministic expected-artifact declarations.

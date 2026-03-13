@@ -100,6 +100,8 @@ Canonical execution summary artifacts now standardize an additive contract:
 - `execution_result.json.review_summary` — reviewer-facing summary surface for "what happened".
 - `execution_result.json.evidence_bundle` — normalized evidence/trace bundle linking job/step context to artifact refs and review summary.
 
+Forward-looking expectation contract: for supported canonical future lanes, queue creation/normalization should declare deterministic `expected_artifacts` intent up front (for example mission/goal/inline/write-file baseline artifacts, and assistant advisory response artifacts). Review remains evidence-grounded and may still report `partial`/`missing` when production does not satisfy declared expectations.
+
 ## 4) Evidence model
 
 Evidence is the runtime-grounded material used to determine what actually happened.

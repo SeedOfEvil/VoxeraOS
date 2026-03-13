@@ -502,6 +502,13 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
     ) -> None:
         artifact_dir = self._job_artifacts_dir(job_ref)
         rr_enriched = dict(rr_data)
+        if isinstance(payload, dict):
+            if "expected_artifacts" not in rr_enriched and isinstance(
+                payload.get("expected_artifacts"), list
+            ):
+                rr_enriched["expected_artifacts"] = payload.get("expected_artifacts")
+            if "job_intent" not in rr_enriched and isinstance(payload.get("job_intent"), dict):
+                rr_enriched["job_intent"] = payload.get("job_intent")
         if not isinstance(rr_enriched.get("lineage"), dict) and isinstance(payload, dict):
             lineage = extract_lineage_metadata(payload)
             if lineage is not None:

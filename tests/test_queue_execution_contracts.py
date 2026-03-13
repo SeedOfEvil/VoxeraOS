@@ -47,6 +47,18 @@ def test_execution_envelope_normalizes_goal_job(tmp_path, monkeypatch):
     assert envelope["job"]["request_kind"] == "goal"
     assert envelope["request"]["job_intent"]["source_lane"] == "queue_daemon"
     assert envelope["execution"]["steps"][0]["skill_id"] == "system.status"
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-goal" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["review_summary"]["expected_artifacts"] == [
+        "execution_envelope.json",
+        "execution_result.json",
+        "plan.json",
+        "step_results.json",
+    ]
+    assert execution_result["review_summary"]["expected_artifact_status"] == "observed"
     job_intent_artifact = json.loads(
         (queue_root / "artifacts" / "job-goal" / "job_intent.json").read_text(encoding="utf-8")
     )
@@ -339,6 +351,13 @@ def test_assistant_queue_writes_structured_execution_artifacts(tmp_path):
     assert execution_result["execution_lane"] == "fast_read_only"
     assert execution_result["fast_lane"]["used"] is True
     assert execution_result["step_results"][0]["skill_id"] == "assistant.advisory"
+    assert execution_result["review_summary"]["expected_artifacts"] == [
+        "assistant_response.json",
+        "execution_envelope.json",
+        "execution_result.json",
+        "step_results.json",
+    ]
+    assert execution_result["review_summary"]["expected_artifact_status"] == "observed"
 
     assistant_artifact = json.loads(
         (queue_root / "artifacts" / "job-assistant" / "assistant_response.json").read_text(

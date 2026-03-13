@@ -315,6 +315,8 @@ Queue producers now attach additive canonical `job_intent` metadata to queued jo
 
 During daemon normalization, Voxera also derives `job_intent` for legacy jobs that do not provide it, preserving backward compatibility while giving downstream consumers a deterministic intent contract. When available, daemon artifacts include `artifacts/<job>/job_intent.json`, and `execution_envelope.json` now carries `request.job_intent` for end-to-end planning→execution→operator traceability.
 
+For forward-created canonical lanes, Voxera now normalizes deterministic `expected_artifacts` defaults early (`assistant_question` and queue mission/goal/inline/write-file lanes). This forward declaration is intent only: review still compares declared expectations vs produced evidence, and missing artifacts remain explicit evidence outcomes (not inferred success).
+
 ## Execution boundary hardening (PR 3)
 
 - `sandbox.exec` now fails closed for ambiguous command strings containing shell-control operators (`&&`, `;`, pipes, redirects) unless the caller uses explicit argv shell wrapping like `['bash','-lc','...']`.

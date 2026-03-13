@@ -112,6 +112,8 @@ Canonical verifier-facing execution artifacts should rely on the normalized cont
 
 Expected artifact families are part of the declaration contract and should be deterministically compared against produced runtime evidence as `observed`, `partial`, or `missing`.
 
+For forward-created jobs, canonical queue/assistant lanes should populate expected-artifact declarations during submission or daemon normalization; historical jobs without declarations remain valid (`none_declared`) and are not backfilled.
+
 ## 8) Relationship to queue/object model and policy gates
 
 Execution governance flow:

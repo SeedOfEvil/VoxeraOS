@@ -45,3 +45,29 @@ def test_enrich_queue_job_payload_is_additive() -> None:
     assert enriched["goal"] == "Run diagnostics"
     assert "job_intent" in enriched
     assert enriched["job_intent"]["goal"] == "Run diagnostics"
+    assert enriched["expected_artifacts"] == enriched["job_intent"]["expected_artifacts"]
+
+
+def test_build_queue_job_intent_sets_expected_artifact_defaults_for_goal_jobs() -> None:
+    intent = build_queue_job_intent({"goal": "Run diagnostics"}, source_lane="inbox_cli")
+
+    assert intent["expected_artifacts"] == [
+        "plan.json",
+        "execution_envelope.json",
+        "execution_result.json",
+        "step_results.json",
+    ]
+
+
+def test_build_queue_job_intent_sets_expected_artifact_defaults_for_assistant_jobs() -> None:
+    intent = build_queue_job_intent(
+        {"kind": "assistant_question", "question": "What is happening?"},
+        source_lane="assistant_advisory",
+    )
+
+    assert intent["expected_artifacts"] == [
+        "assistant_response.json",
+        "execution_envelope.json",
+        "execution_result.json",
+        "step_results.json",
+    ]

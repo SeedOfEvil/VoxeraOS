@@ -825,7 +825,12 @@ def _write_panel_mission_job(*, prompt: str, approval_required: bool) -> tuple[s
             "approval_required": approval_required,
             "summary": "Panel mission prompt queued for planner",
             "approval_hints": ["manual" if approval_required else "none"],
-            "expected_artifacts": ["plan.json", "execution_envelope.json", "execution_result.json"],
+            "expected_artifacts": [
+                "plan.json",
+                "execution_envelope.json",
+                "execution_result.json",
+                "step_results.json",
+            ],
         },
         source_lane="panel_mission_prompt",
     )
