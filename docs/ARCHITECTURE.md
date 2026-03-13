@@ -1165,7 +1165,7 @@ Vera v0 now includes a narrow job-outcome review capability in chat while preser
 - Review shaping is deterministic and lifecycle-aware: when available it prefers normalized `execution_result.review_summary.latest_summary` and `execution_result.evidence_bundle.trace` over ad-hoc prose fallback.
 - Review output also surfaces normalized execution capability declaration context (`side_effect_class`, network/fs scope, sandbox profile) and expected-vs-observed artifact status (`observed|partial|missing`) when declared.
 - State-aware next-step guidance remains fail-closed and must not claim terminal success without queue + artifact/evidence support.
-- Next-step guidance is evidence-grounded (e.g., approve in VoxeraOS when awaiting approval; retry correction when failed), and becomes explicit when expected artifacts are missing (inspect logs/output paths/approval decisions before rerun).
+- Next-step guidance is evidence-grounded and state-aware: awaiting approval explains that runtime output gaps are expected until approval; canceled explains output gaps may be cancellation-driven; failed guidance prioritizes `stderr`/`step_results`; succeeded+partial guidance asks operators to validate whether artifact gaps are benign evidence capture gaps or require rerun.
 - Optional follow-up drafting writes a new preview only; submission remains explicit handoff and execution remains VoxeraOS-owned.
 
 

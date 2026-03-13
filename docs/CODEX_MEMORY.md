@@ -5,6 +5,7 @@
 - Added deterministic expected-vs-observed artifact comparison helper logic (`observed|partial|missing|none_declared`) grounded in produced `artifact_families`/`artifact_refs` only.
 - Updated structured execution consumer output to expose these additive review fields for downstream reviewers/verifiers.
 - Hardened Vera evidence review output and next-step guidance to surface execution capability declarations and call out missing expected artifacts explicitly with evidence-grounded operator actions.
+- Refined reviewer/verifier messaging for expected artifacts to distinguish fully observed, partial, missing, and none-declared cases with explicit state-aware next-step guidance (`succeeded`, `failed`, `canceled`, `awaiting_approval`).
 - Added focused tests across queue execution contracts, structured consumers, and Vera review messaging for partial/missing expected artifact cases.
 - Updated docs/prompts to reflect the new reviewer contract without altering queue lifecycle, policy/approval semantics, or execution surface area.
 
