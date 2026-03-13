@@ -20,8 +20,8 @@ Execution review consumers should prefer normalized contract fields in
 `execution_result.json` when present:
 - `artifact_families`
 - `artifact_refs`
-- `review_summary`
-- `evidence_bundle` (including `trace`)
+- `review_summary` (including expected-vs-observed artifact comparison fields)
+- `evidence_bundle` (including `trace` and expected artifact observation)
 
 Reviewer/verifier “what happened?” shaping should:
 - select latest grounded summary from normalized review/evidence blocks before legacy fallbacks,
@@ -29,7 +29,7 @@ Reviewer/verifier “what happened?” shaping should:
 - fail closed when evidence is thin or missing.
 
 
-- Expected artifact families from capability declarations are part of reviewer context: compare expected vs produced evidence.
+- Expected artifact families from capability declarations are part of reviewer context: compare expected vs produced evidence and report `observed|partial|missing` deterministically.
 
 ## Verifier/Reviewer Grounding Contract
 - Plans describe intent; they do not prove outcomes.

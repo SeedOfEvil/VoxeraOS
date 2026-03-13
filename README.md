@@ -302,8 +302,8 @@ Operator-facing queue consumers now prefer canonical structured artifacts when p
 `execution_result.json` now includes an additive normalized artifact/evidence contract for reviewer and verifier grounding:
 - `artifact_families`: normalized produced artifact families for the job
 - `artifact_refs`: concrete artifact file refs by family
-- `review_summary`: reviewer-facing "what happened" summary fields
-- `evidence_bundle`: canonical trace bundle linking job/step execution context to produced artifacts and review summary
+- `review_summary`: reviewer-facing "what happened" summary fields, including normalized execution capability declaration visibility and expected-vs-observed artifact comparison (`expected_artifact_status`, `missing_expected_artifacts`)
+- `evidence_bundle`: canonical trace bundle linking job/step execution context to produced artifacts, review summary, and expected artifact observation
 
 Vera's evidence-aware "what happened?" review path now deterministically prefers normalized review/evidence blocks (`review_summary.latest_summary` and `evidence_bundle.trace`) and explicitly reports lifecycle-aware state distinctions (`submitted`, `queued`, `planning`, `running`, `awaiting_approval`, `resumed`, terminal outcomes) with state-appropriate next steps.
 

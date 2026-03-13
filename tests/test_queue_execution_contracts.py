@@ -228,6 +228,75 @@ def test_execution_result_includes_normalized_artifact_refs(tmp_path, monkeypatc
     )
 
 
+def test_execution_result_includes_expected_artifact_observation(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    _stub_plan(monkeypatch)
+    queue_root = tmp_path / "queue"
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-expected-artifacts.json").write_text(
+        json.dumps({"goal": "health"})
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+
+    def _run_with_expected(*args, **kwargs):
+        return RunResult(
+            ok=True,
+            data={
+                "results": [
+                    {
+                        "step": 1,
+                        "skill": "system.status",
+                        "args": {},
+                        "ok": True,
+                        "output": "done",
+                        "machine_payload": {
+                            "execution_capabilities": {
+                                "side_effect_class": "class_a",
+                                "needs_network": False,
+                                "network_scope": "none",
+                                "fs_scope": "confined",
+                                "sandbox_profile": "host_local",
+                                "expected_artifacts": [
+                                    "execution_result",
+                                    "plan",
+                                    "nonexistent_bundle",
+                                ],
+                            }
+                        },
+                    }
+                ],
+                "step_outcomes": [{"step": 1, "skill": "system.status", "outcome": "succeeded"}],
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "current_step_index": 1,
+                "last_completed_step": 1,
+                "last_attempted_step": 1,
+                "total_steps": 1,
+            },
+        )
+
+    daemon.mission_runner.run = _run_with_expected  # type: ignore[method-assign]
+    daemon.process_pending_once()
+
+    execution_result = json.loads(
+        (queue_root / "artifacts" / "job-expected-artifacts" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    review_summary = execution_result["review_summary"]
+    assert review_summary["expected_artifact_status"] == "partial"
+    assert review_summary["expected_artifacts"] == [
+        "execution_result",
+        "nonexistent_bundle",
+        "plan",
+    ]
+    assert review_summary["observed_expected_artifacts"] == ["execution_result", "plan"]
+    assert review_summary["missing_expected_artifacts"] == ["nonexistent_bundle"]
+    assert execution_result["evidence_bundle"]["expected_artifacts"]["status"] == "partial"
+
+
 def test_assistant_queue_writes_structured_execution_artifacts(tmp_path):
     queue_root = tmp_path / "queue"
     daemon = MissionQueueDaemon(queue_root=queue_root)

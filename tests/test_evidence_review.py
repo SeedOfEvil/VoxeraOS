@@ -193,3 +193,43 @@ def test_review_outcome_prefers_normalized_failure_summary(tmp_path: Path):
     assert "Execution failed; use the grounded failure summary" in message
     assert "lifecycle_state=failed" in message
     assert "approval_status=none" in message
+
+
+def test_review_outcome_surfaces_execution_capabilities_and_missing_expected_artifacts(
+    tmp_path: Path,
+):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-missing-artifacts.json",
+        bucket="failed",
+        execution_result={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "review_summary": {
+                "latest_summary": "Execution failed",
+                "execution_capabilities": {
+                    "side_effect_class": "class_b",
+                    "network_scope": "none",
+                    "fs_scope": "confined",
+                    "sandbox_profile": "host_local",
+                },
+                "expected_artifacts": ["execution_result", "stdout"],
+                "expected_artifact_status": "partial",
+                "observed_expected_artifacts": ["execution_result"],
+                "missing_expected_artifacts": ["stdout"],
+            },
+        },
+        state_sidecar={"failure_summary": "runtime failed before writing stdout"},
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-missing-artifacts.json")
+
+    assert evidence is not None
+    assert evidence.expected_artifact_status == "partial"
+    assert evidence.missing_expected_artifacts == ("stdout",)
+
+    message = review_message(evidence)
+    assert "Execution capabilities:" in message
+    assert "Missing expected artifacts: stdout" in message
+    assert "Execution failed and expected artifacts were missing" in message
