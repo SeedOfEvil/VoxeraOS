@@ -25,3 +25,8 @@ Assistant/recovery variants may appear, but queue state sidecars and terminal bu
 - Preview truth ends at submit acknowledgment.
 - Queue truth begins once accepted in `inbox/`.
 - Artifact/evidence truth determines what actually happened after runtime execution.
+
+## Reviewer/Verifier lifecycle output discipline
+- Keep active lifecycle (`submitted|planning|running|awaiting_approval|resumed`) distinct from terminal outcomes.
+- Never report succeeded/done unless canonical queue placement and artifact/evidence truth support it.
+- Keep canceled distinct from failed.

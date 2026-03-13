@@ -250,3 +250,38 @@ def test_resolve_structured_execution_denied_approval_is_not_pending(tmp_path):
     assert payload["lifecycle_state"] == "failed"
     assert payload["approval_status"] == "denied"
     assert payload["latest_summary"] == "Step blocked because operator denied approval"
+
+
+def test_resolve_structured_execution_exposes_normalized_artifact_contract_fields(tmp_path):
+    art = tmp_path / "artifacts" / "job-artifacts"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "artifact_families": ["execution_result", "review_summary"],
+                "artifact_refs": [
+                    {
+                        "artifact_family": "review_summary",
+                        "artifact_path": "review_summary.json",
+                        "exists": True,
+                    }
+                ],
+                "review_summary": {"latest_summary": "summary from review block"},
+                "evidence_bundle": {
+                    "trace": {"execution_lane": "queue", "terminal_outcome": "succeeded"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=art)
+
+    assert payload["artifact_families"] == ["execution_result", "review_summary"]
+    assert payload["artifact_refs"] == [
+        {
+            "artifact_family": "review_summary",
+            "artifact_path": "review_summary.json",
+            "exists": True,
+        }
+    ]

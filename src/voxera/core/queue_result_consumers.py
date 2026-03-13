@@ -441,4 +441,10 @@ def resolve_structured_execution(
         "evidence_bundle": execution_result.get("evidence_bundle")
         if isinstance(execution_result.get("evidence_bundle"), dict)
         else None,
+        "artifact_families": execution_result.get("artifact_families")
+        if isinstance(execution_result.get("artifact_families"), list)
+        else None,
+        "artifact_refs": execution_result.get("artifact_refs")
+        if isinstance(execution_result.get("artifact_refs"), list)
+        else None,
     }

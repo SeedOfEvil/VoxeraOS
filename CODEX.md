@@ -16,6 +16,7 @@ Post-v0.1.6 hardening and observability work is complete (PRs #145–#149). Curr
 - **Provider UX improvements**: keyring availability shown at setup start; credential test before save; named provider profile presets.
 - **Panel-first UX**: mobile-responsive layout; full mission authoring from panel; template picker.
 - **Artifact/evidence contract hardening**: keep execution outputs review/verifier-friendly via additive normalized `execution_result.json` contract fields (`artifact_families`, `artifact_refs`, `review_summary`, `evidence_bundle.trace`).
+- **Verifier review hardening**: keep "what happened?" review deterministic and lifecycle-aware by grounding summary/next-step shaping on canonical queue state + normalized review/evidence contract fields.
 
 ## Hardening already shipped (do not re-implement)
 

@@ -21,7 +21,12 @@ Execution review consumers should prefer normalized contract fields in
 - `artifact_families`
 - `artifact_refs`
 - `review_summary`
-- `evidence_bundle.trace`
+- `evidence_bundle` (including `trace`)
+
+Reviewer/verifier “what happened?” shaping should:
+- select latest grounded summary from normalized review/evidence blocks before legacy fallbacks,
+- report explicit lifecycle and terminal fields,
+- fail closed when evidence is thin or missing.
 
 
 - Expected artifact families from capability declarations are part of reviewer context: compare expected vs produced evidence.
