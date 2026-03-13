@@ -461,13 +461,10 @@ async def chat(request: Request):
     ) and not is_json_content_request
 
     assistant_text = guarded_answer
-    should_use_conversational_control_reply = (
-        not is_enrichment_turn
-        and (
-            (is_voxera_control_turn and not is_json_content_request)
-            or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
-            or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
-        )
+    should_use_conversational_control_reply = not is_enrichment_turn and (
+        (is_voxera_control_turn and not is_json_content_request)
+        or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
+        or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
     )
     if should_use_conversational_control_reply:
         assistant_text = _conversational_preview_update_message(
