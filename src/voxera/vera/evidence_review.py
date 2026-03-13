@@ -42,6 +42,9 @@ class ReviewedJobEvidence:
     approval_status: str
     latest_summary: str
     failure_summary: str
+    artifact_families: tuple[str, ...]
+    artifact_refs: tuple[str, ...]
+    evidence_trace: tuple[str, ...]
     child_summary: dict[str, int] | None
 
 
@@ -111,11 +114,81 @@ def _classify_state(
         or bucket == "canceled"
     ):
         return "canceled"
+    if normalized_lifecycle in {"queued"}:
+        return "submitted"
+    if normalized_lifecycle in {"planning"}:
+        return "planning"
+    if normalized_lifecycle in {"running", "advisory_running"}:
+        return "running"
+    if normalized_lifecycle in {"resumed"}:
+        return "resumed"
     if bucket == "inbox":
         return "submitted"
     if bucket == "pending":
         return "pending"
     return "pending"
+
+
+def _normalize_artifact_refs(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    refs: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        family = str(item.get("artifact_family") or "").strip() or "unknown"
+        path = str(item.get("artifact_path") or "").strip() or "unknown"
+        refs.append(f"{family}:{path}")
+    return tuple(sorted(set(refs)))
+
+
+def _normalize_families(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    families = sorted({str(item).strip() for item in value if str(item).strip()})
+    return tuple(families)
+
+
+def _evidence_trace(structured: dict[str, Any]) -> tuple[str, ...]:
+    review_summary: dict[str, Any] = {}
+    review_summary_raw = structured.get("review_summary")
+    if isinstance(review_summary_raw, dict):
+        review_summary = review_summary_raw
+
+    evidence_bundle = structured.get("evidence_bundle")
+    trace_payload = evidence_bundle.get("trace") if isinstance(evidence_bundle, dict) else {}
+    if not isinstance(trace_payload, dict):
+        trace_payload = {}
+    trace = {
+        f"terminal_outcome={str(trace_payload.get('terminal_outcome') or review_summary.get('terminal_outcome') or '').strip()}",
+        f"execution_lane={str(trace_payload.get('execution_lane') or review_summary.get('execution_lane') or '').strip()}",
+        f"attempt_index={str(trace_payload.get('attempt_index') or review_summary.get('attempt_index') or '').strip()}",
+    }
+    return tuple(sorted(item for item in trace if not item.endswith("=")))
+
+
+def _select_latest_summary(*, structured: dict[str, Any], state_payload: dict[str, Any]) -> str:
+    review_summary: dict[str, Any] = {}
+    review_summary_raw = structured.get("review_summary")
+    if isinstance(review_summary_raw, dict):
+        review_summary = review_summary_raw
+
+    evidence_bundle: dict[str, Any] = {}
+    evidence_bundle_raw = structured.get("evidence_bundle")
+    if isinstance(evidence_bundle_raw, dict):
+        evidence_bundle = evidence_bundle_raw
+
+    nested_summary: dict[str, Any] = {}
+    nested_summary_raw = evidence_bundle.get("review_summary")
+    if isinstance(nested_summary_raw, dict):
+        nested_summary = nested_summary_raw
+    return str(
+        review_summary.get("latest_summary")
+        or nested_summary.get("latest_summary")
+        or structured.get("latest_summary")
+        or state_payload.get("failure_summary")
+        or ""
+    )
 
 
 def review_job_outcome(
@@ -147,7 +220,7 @@ def review_job_outcome(
     approval_status = str(
         structured.get("approval_status") or state_payload.get("approval_status") or "none"
     )
-    latest_summary = str(structured.get("latest_summary") or "")
+    latest_summary = _select_latest_summary(structured=structured, state_payload=state_payload)
     failure_summary = str(
         structured.get("error")
         or state_payload.get("failure_summary")
@@ -155,6 +228,16 @@ def review_job_outcome(
         or ""
     )
     child_summary = structured.get("child_summary")
+    evidence_bundle: dict[str, Any] = {}
+    evidence_bundle_raw = structured.get("evidence_bundle")
+    if isinstance(evidence_bundle_raw, dict):
+        evidence_bundle = evidence_bundle_raw
+    artifact_families = _normalize_families(
+        structured.get("artifact_families") or evidence_bundle.get("artifact_families") or []
+    )
+    artifact_refs = _normalize_artifact_refs(
+        structured.get("artifact_refs") or evidence_bundle.get("artifact_refs") or []
+    )
     return ReviewedJobEvidence(
         job_id=found.job_id,
         state=_classify_state(
@@ -168,6 +251,9 @@ def review_job_outcome(
         approval_status=approval_status,
         latest_summary=latest_summary,
         failure_summary=failure_summary,
+        artifact_families=artifact_families,
+        artifact_refs=artifact_refs,
+        evidence_trace=_evidence_trace(structured),
         child_summary=child_summary if isinstance(child_summary, dict) else None,
     )
 
@@ -220,6 +306,12 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
         lines.append(f"- Failure summary: {evidence.failure_summary}")
     if evidence.child_summary:
         lines.append(f"- Child summary: {evidence.child_summary}")
+    if evidence.artifact_families:
+        lines.append(f"- Artifact families: {', '.join(evidence.artifact_families)}")
+    if evidence.artifact_refs:
+        lines.append(f"- Artifact refs: {', '.join(evidence.artifact_refs[:5])}")
+    if evidence.evidence_trace:
+        lines.append(f"- Evidence trace: {', '.join(evidence.evidence_trace)}")
     lines.append(f"Next step: {_next_step(evidence)}")
     return "\n".join(lines)
 
@@ -229,6 +321,12 @@ def _next_step(evidence: ReviewedJobEvidence) -> str:
         return "Approve or reject the pending approval in VoxeraOS; chat cannot bypass this gate."
     if evidence.state == "submitted":
         return "The job is only submitted so far; wait for VoxeraOS to start execution and check progress again."
+    if evidence.state == "planning":
+        return "VoxeraOS is planning now; wait for runtime step evidence before judging execution outcome."
+    if evidence.state == "running":
+        return "VoxeraOS is executing now; check again after new step evidence is persisted."
+    if evidence.state == "resumed":
+        return "The job resumed after interruption/approval; wait for terminal queue and evidence state before concluding."
     if evidence.state == "pending":
         return "The job is still running in VoxeraOS; check progress again after more execution evidence is written."
     if evidence.state == "succeeded":

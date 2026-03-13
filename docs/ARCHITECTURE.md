@@ -1161,5 +1161,7 @@ Vera v0 now includes a narrow job-outcome review capability in chat while preser
 - Review path resolves either an explicit job id or the session's latest submitted `handoff_job_id`.
 - Outcome summaries are built from canonical queue evidence via shared helpers (`lookup_job` + `resolve_structured_execution`), not ad-hoc parsing.
 - Reported fields include state classification (`submitted|pending|awaiting_approval|succeeded|failed|canceled`), lifecycle state, terminal outcome, approval status, latest summary, failure summary, and child summary (if already exposed).
+- Review shaping is deterministic and lifecycle-aware: when available it prefers normalized `execution_result.review_summary.latest_summary` and `execution_result.evidence_bundle.trace` over ad-hoc prose fallback.
+- State-aware next-step guidance remains fail-closed and must not claim terminal success without queue + artifact/evidence support.
 - Next-step guidance is evidence-grounded (e.g., approve in VoxeraOS when awaiting approval; retry correction when failed).
 - Optional follow-up drafting writes a new preview only; submission remains explicit handoff and execution remains VoxeraOS-owned.

@@ -1,3 +1,11 @@
+## 2026-03-12 — GitHub PR #TBD — feat(vera/verifier): harden lifecycle-aware evidence-grounded review shaping
+
+- Hardened Vera evidence review output shaping so "what happened?" responses are more deterministic and lifecycle-aware while remaining additive.
+- Review summary selection now prefers normalized execution contract fields first (`review_summary.latest_summary`, then `evidence_bundle.review_summary.latest_summary`) before legacy fallback summaries.
+- Review responses now surface normalized artifact/evidence context (`artifact_families`, `artifact_refs`, and selected `evidence_bundle.trace` fields) when available.
+- Lifecycle-specific state handling and next-step guidance were expanded (`submitted`, `planning`, `running`, `awaiting_approval`, `resumed`, terminal outcomes), preserving fail-closed semantics.
+- Structured execution consumers now expose additive `artifact_families`/`artifact_refs` passthrough for downstream reviewers.
+
 ## 2026-03-12 — GitHub PR #TBD — feat(queue): normalize execution artifact/evidence contract surfaces
 
 - Added additive normalized contract fields to `execution_result.json`:

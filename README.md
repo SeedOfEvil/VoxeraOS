@@ -305,6 +305,8 @@ Operator-facing queue consumers now prefer canonical structured artifacts when p
 - `review_summary`: reviewer-facing "what happened" summary fields
 - `evidence_bundle`: canonical trace bundle linking job/step execution context to produced artifacts and review summary
 
+Vera's evidence-aware "what happened?" review path now deterministically prefers normalized review/evidence blocks (`review_summary.latest_summary` and `evidence_bundle.trace`) and explicitly reports lifecycle-aware state distinctions (`submitted`, `planning`, `running`, `awaiting_approval`, `resumed`, terminal outcomes) with state-appropriate next steps.
+
 Assistant queue artifacts now also include additive lane metadata (`execution_envelope.execution.lane`/`execution_envelope.execution.fast_lane`, `execution_result.execution_lane`/`execution_result.fast_lane`, mirrored in `assistant_response.json`) so operators can see whether the request used `fast_read_only` or standard queue routing and why.
 
 ## Structured producer intent (queue producer/planner lane)
