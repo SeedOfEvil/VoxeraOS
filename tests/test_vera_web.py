@@ -1658,7 +1658,7 @@ def test_review_awaiting_approval_job(tmp_path, monkeypatch):
     )
 
     assert "`awaiting_approval`" in res.text
-    assert "Approve or reject the pending approval" in res.text
+    assert "blocked on operator approval" in res.text
 
 
 def test_review_missing_job_is_honest(tmp_path, monkeypatch):

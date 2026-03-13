@@ -100,6 +100,8 @@ def _classify_state(
         "pending_approval",
     }:
         return "awaiting_approval"
+    if normalized_lifecycle == "queued":
+        return "queued"
     if normalized_outcome == "succeeded" or normalized_lifecycle == "done" or bucket == "done":
         return "succeeded"
     if (
@@ -114,8 +116,6 @@ def _classify_state(
         or bucket == "canceled"
     ):
         return "canceled"
-    if normalized_lifecycle in {"queued"}:
-        return "submitted"
     if normalized_lifecycle in {"planning"}:
         return "planning"
     if normalized_lifecycle in {"running", "advisory_running"}:
@@ -163,6 +163,8 @@ def _evidence_trace(structured: dict[str, Any]) -> tuple[str, ...]:
         f"terminal_outcome={str(trace_payload.get('terminal_outcome') or review_summary.get('terminal_outcome') or '').strip()}",
         f"execution_lane={str(trace_payload.get('execution_lane') or review_summary.get('execution_lane') or '').strip()}",
         f"attempt_index={str(trace_payload.get('attempt_index') or review_summary.get('attempt_index') or '').strip()}",
+        f"lifecycle_state={str(trace_payload.get('lifecycle_state') or review_summary.get('lifecycle_state') or structured.get('lifecycle_state') or '').strip()}",
+        f"approval_status={str(trace_payload.get('approval_status') or review_summary.get('approval_status') or structured.get('approval_status') or '').strip()}",
     }
     return tuple(sorted(item for item in trace if not item.endswith("=")))
 
@@ -182,11 +184,41 @@ def _select_latest_summary(*, structured: dict[str, Any], state_payload: dict[st
     nested_summary_raw = evidence_bundle.get("review_summary")
     if isinstance(nested_summary_raw, dict):
         nested_summary = nested_summary_raw
-    return str(
+    preferred = str(
         review_summary.get("latest_summary")
         or nested_summary.get("latest_summary")
         or structured.get("latest_summary")
+    )
+    if preferred:
+        return preferred
+
+    terminal_outcome = (
+        str(structured.get("terminal_outcome") or state_payload.get("terminal_outcome") or "")
+        .strip()
+        .lower()
+    )
+    if terminal_outcome in {"failed", "blocked"}:
+        return str(state_payload.get("failure_summary") or "")
+    return ""
+
+
+def _select_failure_summary(
+    *, structured: dict[str, Any], state_payload: dict[str, Any], failed_payload: dict[str, Any]
+) -> str:
+    review_summary = structured.get("review_summary")
+    review_summary_dict = review_summary if isinstance(review_summary, dict) else {}
+
+    evidence_bundle = structured.get("evidence_bundle")
+    evidence_bundle_dict = evidence_bundle if isinstance(evidence_bundle, dict) else {}
+    nested_summary = evidence_bundle_dict.get("review_summary")
+    nested_summary_dict = nested_summary if isinstance(nested_summary, dict) else {}
+
+    return str(
+        review_summary_dict.get("failure_summary")
+        or nested_summary_dict.get("failure_summary")
+        or structured.get("error")
         or state_payload.get("failure_summary")
+        or failed_payload.get("error")
         or ""
     )
 
@@ -221,11 +253,10 @@ def review_job_outcome(
         structured.get("approval_status") or state_payload.get("approval_status") or "none"
     )
     latest_summary = _select_latest_summary(structured=structured, state_payload=state_payload)
-    failure_summary = str(
-        structured.get("error")
-        or state_payload.get("failure_summary")
-        or failed_payload.get("error")
-        or ""
+    failure_summary = _select_failure_summary(
+        structured=structured,
+        state_payload=state_payload,
+        failed_payload=failed_payload,
     )
     child_summary = structured.get("child_summary")
     evidence_bundle: dict[str, Any] = {}
@@ -317,24 +348,32 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
 
 
 def _next_step(evidence: ReviewedJobEvidence) -> str:
+    lifecycle = evidence.lifecycle_state.strip().lower()
+    approval = evidence.approval_status.strip().lower()
     if evidence.state == "awaiting_approval":
-        return "Approve or reject the pending approval in VoxeraOS; chat cannot bypass this gate."
+        return "Job is blocked on operator approval; approve or reject in VoxeraOS before execution can continue."
+    if evidence.state == "queued":
+        return "The job is accepted and queued; wait for planning/running evidence before asking for outcome."
     if evidence.state == "submitted":
-        return "The job is only submitted so far; wait for VoxeraOS to start execution and check progress again."
+        return "The job is submitted but not yet queued for active execution; check queue intake and poll again."
     if evidence.state == "planning":
         return "VoxeraOS is planning now; wait for runtime step evidence before judging execution outcome."
     if evidence.state == "running":
-        return "VoxeraOS is executing now; check again after new step evidence is persisted."
+        return "VoxeraOS is actively running; do not treat this as done yet—check again after new evidence is persisted."
     if evidence.state == "resumed":
         return "The job resumed after interruption/approval; wait for terminal queue and evidence state before concluding."
     if evidence.state == "pending":
-        return "The job is still running in VoxeraOS; check progress again after more execution evidence is written."
+        if lifecycle == "running":
+            return "The job remains in-flight; wait for a terminal queue state and fresh evidence before concluding."
+        if approval == "pending":
+            return "The job is pending because approval is still required; approve or reject in VoxeraOS."
+        return "The job is non-terminal and evidence is incomplete; poll queue progress before deciding next action."
     if evidence.state == "succeeded":
         return "No action is required unless you want me to draft a follow-up preview grounded in these results."
     if evidence.state == "failed":
-        return "Use the failure summary to correct the request, then I can draft a safer follow-up preview for you."
+        return "Execution failed; use the grounded failure summary to correct inputs/permissions, then submit a revised preview."
     if evidence.state == "canceled":
-        return "If you still want this outcome, I can draft a new preview for resubmission."
+        return "Execution was canceled (not failed); if still needed, submit a new preview and rerun intentionally."
     return (
         "Evidence is incomplete; verify in the VoxeraOS panel/queue before deciding on a follow-up."
     )
