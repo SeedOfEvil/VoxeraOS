@@ -113,3 +113,83 @@ def test_review_outcome_classifies_lifecycle_states_for_next_step(tmp_path: Path
     assert evidence is not None
     assert evidence.state == "planning"
     assert "planning now" in review_message(evidence)
+
+
+def test_review_outcome_awaiting_approval_reports_blocked_next_step(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-approval.json",
+        bucket="pending",
+        execution_result={
+            "lifecycle_state": "awaiting_approval",
+            "approval_status": "pending",
+            "review_summary": {"latest_summary": "Waiting for operator approval."},
+        },
+        approval={"reason": "manual gate"},
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-approval.json")
+
+    assert evidence is not None
+    assert evidence.state == "awaiting_approval"
+    message = review_message(evidence)
+    assert "blocked on operator approval" in message
+
+
+def test_review_outcome_distinguishes_queued_from_submitted(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-queued.json",
+        bucket="pending",
+        execution_result={
+            "lifecycle_state": "queued",
+            "terminal_outcome": "",
+        },
+        state_sidecar={"lifecycle_state": "queued"},
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-queued.json")
+
+    assert evidence is not None
+    assert evidence.state == "queued"
+    assert "accepted and queued" in review_message(evidence)
+
+
+def test_review_outcome_prefers_normalized_failure_summary(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-fail.json",
+        bucket="failed",
+        execution_result={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "error": "generic runtime failure",
+            "review_summary": {
+                "latest_summary": "Execution failed",
+                "failure_summary": "Permission denied for target path",
+            },
+            "evidence_bundle": {
+                "review_summary": {
+                    "failure_summary": "fallback failure summary",
+                },
+                "trace": {
+                    "lifecycle_state": "failed",
+                    "approval_status": "none",
+                },
+            },
+        },
+        state_sidecar={"failure_summary": "state sidecar failure"},
+        failed_sidecar={"error": "legacy sidecar failure"},
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-fail.json")
+
+    assert evidence is not None
+    assert evidence.failure_summary == "Permission denied for target path"
+    message = review_message(evidence)
+    assert "Execution failed; use the grounded failure summary" in message
+    assert "lifecycle_state=failed" in message
+    assert "approval_status=none" in message

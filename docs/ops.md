@@ -1361,7 +1361,7 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 5. Verify Vera's answer matches canonical queue evidence (`execution_result.json`, step/state/approval/failed sidecars as applicable).
    - Verify summaries prefer normalized `review_summary.latest_summary` when present.
    - Verify evidence trace metadata is grounded in `evidence_bundle.trace` when present.
-   - Verify lifecycle wording clearly distinguishes submitted/planning/running/awaiting_approval/resumed from terminal outcomes.
+   - Verify lifecycle wording clearly distinguishes submitted/queued/planning/running/awaiting_approval/resumed from terminal outcomes.
 6. Ask Vera to `prepare the next step` when appropriate.
 7. Verify Vera drafts preview-only follow-up JSON.
 8. Verify no automatic submit occurs unless explicit handoff is requested.

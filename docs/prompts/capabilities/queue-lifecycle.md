@@ -27,6 +27,6 @@ Assistant/recovery variants may appear, but queue state sidecars and terminal bu
 - Artifact/evidence truth determines what actually happened after runtime execution.
 
 ## Reviewer/Verifier lifecycle output discipline
-- Keep active lifecycle (`submitted|planning|running|awaiting_approval|resumed`) distinct from terminal outcomes.
+- Keep active lifecycle (`submitted|queued|planning|running|awaiting_approval|resumed`) distinct from terminal outcomes.
 - Never report succeeded/done unless canonical queue placement and artifact/evidence truth support it.
 - Keep canceled distinct from failed.
