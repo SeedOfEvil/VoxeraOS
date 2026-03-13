@@ -35,10 +35,13 @@ from ..vera.service import (
     generate_preview_builder_update,
     generate_vera_reply,
     new_session_id,
+    read_session_enrichment,
     read_session_handoff_state,
     read_session_preview,
     read_session_turns,
+    run_web_enrichment,
     session_debug_info,
+    write_session_enrichment,
     write_session_handoff_state,
     write_session_preview,
 )
@@ -403,13 +406,28 @@ async def chat(request: Request):
             status=status,
         )
 
-    informational_web_turn = _is_informational_web_query(message) and pending_preview is None
+    is_info_query = _is_informational_web_query(message)
+    informational_web_turn = is_info_query and pending_preview is None
+
+    # When an active preview exists and the user makes an informational query,
+    # run read-only enrichment and store it for follow-up pronoun resolution.
+    is_enrichment_turn = is_info_query and pending_preview is not None
+    session_enrichment = read_session_enrichment(root, active_session)
+    if is_enrichment_turn:
+        fresh_enrichment = await run_web_enrichment(user_message=message)
+        if fresh_enrichment is not None:
+            write_session_enrichment(root, active_session, fresh_enrichment)
+            session_enrichment = fresh_enrichment
+
+    enrichment_context = session_enrichment if pending_preview is not None else None
+
     builder_preview: dict[str, object] | None = None
     if not informational_web_turn:
         builder_preview = await generate_preview_builder_update(
             turns=turns,
             user_message=message,
             active_preview=pending_preview,
+            enrichment_context=enrichment_context,
         )
     builder_payload: dict[str, object] | None = None
     if builder_preview is not None:
@@ -444,9 +462,12 @@ async def chat(request: Request):
 
     assistant_text = guarded_answer
     should_use_conversational_control_reply = (
-        (is_voxera_control_turn and not is_json_content_request)
-        or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
-        or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
+        not is_enrichment_turn
+        and (
+            (is_voxera_control_turn and not is_json_content_request)
+            or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
+            or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
+        )
     )
     if should_use_conversational_control_reply:
         assistant_text = _conversational_preview_update_message(

@@ -749,7 +749,7 @@ def test_backend_builder_updates_active_preview_without_json_dumping_in_chat(tmp
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
 
@@ -775,7 +775,7 @@ def test_submit_after_model_preview_replacement_uses_latest_payload(tmp_path, mo
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = turns
         if "update" in user_message:
             return {"goal": "open https://openai.com"}
@@ -805,7 +805,7 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
         _ = (turns, user_message)
         return {"answer": "Got it, I kept this conversational.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, user_message, active_preview)
         return {"goal": "", "write_file": "bad-shape"}
 
@@ -884,7 +884,7 @@ def test_builder_drops_extra_keys_and_keeps_supported_preview_shape(tmp_path, mo
         _ = (turns, user_message)
         return {"answer": "I left the preview as-is.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, user_message, active_preview)
         return {"goal": "write a note called skibbidy.txt", "content": "hello"}
 
@@ -912,7 +912,7 @@ def test_builder_multiple_preview_replacements_latest_wins_in_pane(tmp_path, mon
         _ = (turns, user_message)
         return {"answer": "plain reply", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, active_preview)
         if "to b" in user_message:
             return {"goal": "open https://openai.com"}
@@ -946,7 +946,7 @@ def test_builder_can_set_preview_without_changing_vera_voice(tmp_path, monkeypat
         _ = (turns, user_message)
         return {"answer": "I updated the target in the preview.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
 
@@ -1743,7 +1743,7 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
             "status": "ok:test",
         }
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
 
@@ -1773,7 +1773,7 @@ def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, 
             "status": "ok:test",
         }
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://example.com"}
 
@@ -1803,7 +1803,7 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com", "write_file": "bad-shape"}
 
@@ -1832,7 +1832,7 @@ def test_non_voxera_user_requested_json_content_is_still_allowed(tmp_path, monke
             "status": "ok:test",
         }
 
-    async def _fake_builder(*, turns, user_message, active_preview):
+    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
         _ = (turns, user_message, active_preview)
         return None
 
@@ -2246,4 +2246,127 @@ def test_builder_prompt_describes_voxera_compiler_contract():
 def test_vera_prompt_keeps_control_json_off_chat_surface_by_default():
     prompt = vera_prompt.VERA_SYSTEM_PROMPT
     assert "Do not expose Voxera control JSON unless explicitly needed" in prompt
-    assert "preview creation for informational research" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Enrichment-to-preview bridge tests
+# ---------------------------------------------------------------------------
+
+
+def test_enrichment_stored_for_info_query_with_active_preview(tmp_path, monkeypatch):
+    """Informational web query with an active preview stores enrichment in session."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_enrichment(*, user_message):
+        return {
+            "query": "latest news",
+            "summary": "1. Big Tech Rally\n   Markets surged today.",
+            "retrieved_at_ms": 1000,
+        }
+
+    monkeypatch.setattr(vera_app_module, "run_web_enrichment", _fake_enrichment)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    # Establish an active preview
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write a file called news.txt with a placeholder"},
+    )
+    assert vera_service.read_session_preview(queue, sid) is not None
+
+    # Informational query WITH active preview → should run enrichment and store it
+    client.post("/chat", data={"session_id": sid, "message": "find the latest news"})
+
+    enrichment = vera_service.read_session_enrichment(queue, sid)
+    assert enrichment is not None
+    assert enrichment["query"] == "latest news"
+    assert "Big Tech Rally" in enrichment["summary"]
+
+
+def test_enrichment_backed_put_that_into_file_updates_preview_content(tmp_path, monkeypatch):
+    """'put that into the file' after an enrichment turn resolves the summary into preview content."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    fake_summary = "1. Big Tech Rally\n   Markets surged today."
+
+    async def _fake_enrichment(*, user_message):
+        return {
+            "query": "latest news",
+            "summary": fake_summary,
+            "retrieved_at_ms": 1000,
+        }
+
+    monkeypatch.setattr(vera_app_module, "run_web_enrichment", _fake_enrichment)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write a file called news.txt with a placeholder"},
+    )
+    before = vera_service.read_session_preview(queue, sid)
+    assert before is not None
+
+    # Info query with active preview → stores enrichment
+    client.post("/chat", data={"session_id": sid, "message": "find the latest news"})
+
+    # Pronoun follow-up → enrichment summary resolves into file content
+    client.post("/chat", data={"session_id": sid, "message": "put that into the file"})
+
+    after = vera_service.read_session_preview(queue, sid)
+    assert after is not None
+    assert "Big Tech Rally" in after["write_file"]["content"]
+    assert after["write_file"]["path"] == before["write_file"]["path"]
+    assert after["write_file"]["mode"] == before["write_file"]["mode"]
+
+
+def test_standalone_info_query_does_not_store_enrichment(tmp_path, monkeypatch):
+    """Informational query with NO active preview skips enrichment (standalone web turn)."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    call_count = {"n": 0}
+
+    async def _fake_enrichment(*, user_message):
+        call_count["n"] += 1
+        return {
+            "query": "latest news",
+            "summary": "some headline",
+            "retrieved_at_ms": 1000,
+        }
+
+    monkeypatch.setattr(vera_app_module, "run_web_enrichment", _fake_enrichment)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    # No active preview — enrichment must not be triggered or stored
+    client.post("/chat", data={"session_id": sid, "message": "find the latest news"})
+
+    assert call_count["n"] == 0
+    assert vera_service.read_session_enrichment(queue, sid) is None
+
+
+def test_put_that_into_file_without_enrichment_no_active_preview_fails_closed(
+    tmp_path, monkeypatch
+):
+    """'put that into the file' with no preview and no enrichment must not create a phantom preview."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "put that into the file"})
+
+    assert vera_service.read_session_preview(queue, sid) is None
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))

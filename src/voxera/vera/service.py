@@ -356,7 +356,7 @@ def append_session_turn(
         "updated_at_ms": int(time.time() * 1000),
         "turns": turns,
     }
-    for preserved_key in ("pending_job_preview", "handoff"):
+    for preserved_key in ("pending_job_preview", "handoff", "last_enrichment"):
         preserved = previous.get(preserved_key)
         if isinstance(preserved, dict):
             payload[preserved_key] = preserved
@@ -421,12 +421,78 @@ def clear_session_turns(queue_root: Path, session_id: str) -> None:
         path.unlink()
 
 
+def read_session_enrichment(queue_root: Path, session_id: str) -> dict[str, Any] | None:
+    """Return the most recent read-only enrichment stored for this session, or None."""
+    payload = _read_session_payload(queue_root, session_id)
+    enrichment = payload.get("last_enrichment")
+    return enrichment if isinstance(enrichment, dict) else None
+
+
+def write_session_enrichment(
+    queue_root: Path, session_id: str, enrichment: dict[str, Any] | None
+) -> None:
+    """Persist read-only enrichment state into the session for preview-authoring use."""
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    if enrichment is None:
+        payload.pop("last_enrichment", None)
+    else:
+        payload["last_enrichment"] = enrichment
+    _write_session_payload(queue_root, session_id, payload)
+
+
+async def run_web_enrichment(*, user_message: str) -> dict[str, Any] | None:
+    """Perform a read-only web search and return structured enrichment suitable for preview authoring.
+
+    Returns a dict with ``query``, ``summary`` (plain-text, file-content ready), and
+    ``retrieved_at_ms``.  Returns None if web investigation is not configured, the
+    message is not an informational query, or the search produces no usable results.
+    No side effects; never submits to the queue.
+    """
+    cfg = load_app_config()
+    web_cfg = cfg.web_investigation
+    if web_cfg is None:
+        return None
+    if not _is_informational_web_query(user_message):
+        return None
+
+    normalized_query = _normalize_web_query(user_message)
+    client = BraveSearchClient(
+        api_key_ref=web_cfg.api_key_ref,
+        env_api_key_var=web_cfg.env_api_key_var,
+    )
+    try:
+        results = await client.search(query=normalized_query, count=web_cfg.max_results)
+    except RuntimeError:
+        return None
+
+    if not results:
+        return None
+
+    lines: list[str] = []
+    for i, r in enumerate(results[:5], start=1):
+        snippet = r.description or ""
+        if snippet:
+            lines.append(f"{i}. {r.title}\n   {snippet}")
+        else:
+            lines.append(f"{i}. {r.title}")
+
+    return {
+        "query": normalized_query,
+        "summary": "\n".join(lines),
+        "retrieved_at_ms": int(time.time() * 1000),
+    }
+
+
 def session_debug_info(
     queue_root: Path, session_id: str, *, mode_status: str
 ) -> dict[str, str | int | bool | None]:
     path = _session_path(queue_root, session_id)
     turns = read_session_turns(queue_root, session_id)
     preview = read_session_preview(queue_root, session_id)
+    enrichment = read_session_enrichment(queue_root, session_id)
     handoff = read_session_handoff_state(queue_root, session_id) or {}
     return {
         "dev_mode": True,
@@ -438,6 +504,7 @@ def session_debug_info(
         "max_session_turns": MAX_SESSION_TURNS,
         "system_prompt_sha256": hashlib.sha256(VERA_SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
         "preview_available": isinstance(preview, dict),
+        "enrichment_available": isinstance(enrichment, dict),
         "handoff_attempted": handoff.get("attempted") is True,
         "handoff_status": str(handoff.get("status") or "none"),
         "handoff_queue_path": str(handoff.get("queue_path") or str(queue_root)),
@@ -459,9 +526,10 @@ def _build_preview_builder_messages(
     turns: list[dict[str, str]],
     user_message: str,
     active_preview: dict[str, Any] | None,
+    enrichment_context: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     guidance = drafting_guidance()
-    context_payload = {
+    context_payload: dict[str, Any] = {
         "active_preview": active_preview,
         "latest_user_message": user_message.strip(),
         "recent_turns": turns[-MAX_SESSION_TURNS:],
@@ -487,6 +555,8 @@ def _build_preview_builder_messages(
         "guidance_base_shape": guidance.base_shape,
         "guidance_examples": guidance.examples,
     }
+    if enrichment_context is not None:
+        context_payload["enrichment_context"] = enrichment_context
     return [
         {"role": "system", "content": VERA_PREVIEW_BUILDER_PROMPT},
         {
@@ -534,6 +604,7 @@ async def generate_preview_builder_update(
     turns: list[dict[str, str]],
     user_message: str,
     active_preview: dict[str, Any] | None,
+    enrichment_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     cfg = load_app_config()
     api_key_ref = None
@@ -562,6 +633,7 @@ async def generate_preview_builder_update(
         user_message,
         active_preview=active_preview,
         recent_user_messages=recent_user_messages,
+        enrichment_context=enrichment_context,
     )
 
     if not attempts:
@@ -576,6 +648,7 @@ async def generate_preview_builder_update(
         turns=turns,
         user_message=user_message,
         active_preview=active_preview,
+        enrichment_context=enrichment_context,
     )
 
     for brain in attempts:
