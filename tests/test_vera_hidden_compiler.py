@@ -231,6 +231,42 @@ def test_generate_preview_builder_update_no_change_uses_semantic_news_content_re
     assert "news" in preview["write_file"]["content"].lower()
 
 
+def test_generate_preview_builder_update_append_instead_switches_mode(monkeypatch):
+    _mock_config_with_brain(monkeypatch)
+
+    class _FakeBrain:
+        def __init__(self, model, api_key_ref):
+            _ = (model, api_key_ref)
+
+        async def generate(self, messages, tools):
+            _ = (messages, tools)
+            return _FakeResponse(
+                '{"action":"no_change","intent_type":"unclear","updated_preview":null,"patch":null}'
+            )
+
+    monkeypatch.setattr(vera_service, "GeminiBrain", _FakeBrain)
+
+    preview = asyncio.run(
+        vera_service.generate_preview_builder_update(
+            turns=[],
+            user_message="append instead",
+            active_preview={
+                "goal": "write a file called log.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/log.txt",
+                    "content": "some content",
+                    "mode": "overwrite",
+                },
+            },
+        )
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["mode"] == "append"
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/log.txt"
+    assert preview["write_file"]["content"] == "some content"
+
+
 def test_generate_preview_builder_update_no_change_put_that_into_file_is_fail_closed(monkeypatch):
     _mock_config_with_brain(monkeypatch)
 
@@ -263,3 +299,48 @@ def test_generate_preview_builder_update_no_change_put_that_into_file_is_fail_cl
     )
 
     assert preview == active
+
+
+def test_generate_preview_builder_update_enrichment_context_resolves_that_into_content(
+    monkeypatch,
+):
+    _mock_config_with_brain(monkeypatch)
+
+    class _FakeBrain:
+        def __init__(self, model, api_key_ref):
+            _ = (model, api_key_ref)
+
+        async def generate(self, messages, tools):
+            _ = (messages, tools)
+            return _FakeResponse(
+                '{"action":"no_change","intent_type":"unclear","updated_preview":null,"patch":null}'
+            )
+
+    monkeypatch.setattr(vera_service, "GeminiBrain", _FakeBrain)
+
+    enrichment = {
+        "query": "latest news",
+        "summary": "1. Big Tech Rally\n   Markets surged.",
+        "retrieved_at_ms": 1000,
+    }
+
+    preview = asyncio.run(
+        vera_service.generate_preview_builder_update(
+            turns=[],
+            user_message="put that into the file",
+            active_preview={
+                "goal": "write a file called news.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/news.txt",
+                    "content": "placeholder",
+                    "mode": "overwrite",
+                },
+            },
+            enrichment_context=enrichment,
+        )
+    )
+
+    assert preview is not None
+    assert "Big Tech Rally" in preview["write_file"]["content"]
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/news.txt"
+    assert preview["write_file"]["mode"] == "overwrite"

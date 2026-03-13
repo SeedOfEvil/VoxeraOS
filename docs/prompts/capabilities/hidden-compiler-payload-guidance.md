@@ -96,7 +96,11 @@ When `active_preview` exists, resolve references primarily against that draft wh
 - `it`, `that`, `this`, `the content` -> active preview content/path/mode depending on local phrasing
 - `the file` -> active `write_file` object when present
 
-If grounding is unsafe/ambiguous (for example `put that into the file` with no grounded `that` value), fail closed with:
+When `enrichment_context` is provided (query, summary, retrieved_at_ms), pronoun references that are unresolvable against `active_preview` alone may resolve against `enrichment_context.summary`:
+- `put that into the file`, `use that as the content`, `use those results` -> `write_file.content = enrichment_context.summary`
+- Only apply enrichment resolution when the pronoun clearly refers to the web result and `write_file` exists in the active preview.
+
+If grounding is still unsafe/ambiguous after checking both active_preview and enrichment_context, fail closed with:
 - `{"action":"no_change","intent_type":"unclear","updated_preview":null,"patch":null}`
 
 Do not emit conversational filler; output only the strict decision object.

@@ -396,7 +396,10 @@ def _refined_content_from_active_preview(
 
 
 def _draft_revision_from_active_preview(
-    message: str, active_preview: dict[str, Any] | None
+    message: str,
+    active_preview: dict[str, Any] | None,
+    *,
+    enrichment_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if not isinstance(active_preview, dict):
         return None
@@ -438,7 +441,9 @@ def _draft_revision_from_active_preview(
             if "write a note called" in current_goal:
                 return {"goal": f"write a note called {new_name}"}
 
-    if re.search(r"\bappend\b", lowered) and re.search(r"\b(?:same\s+file|it|this)\b", lowered):
+    if re.search(r"\bappend\b", lowered) and re.search(
+        r"\b(?:same\s+file|it|this|instead|switch)\b", lowered
+    ):
         write_file = active_preview.get("write_file")
         if isinstance(write_file, dict):
             path = str(write_file.get("path") or "").strip()
@@ -472,6 +477,13 @@ def _draft_revision_from_active_preview(
                 lowered=lowered,
                 existing_content=existing_content,
             )
+        if not refined_content and enrichment_context is not None:
+            enrich_summary = str(enrichment_context.get("summary") or "").strip()
+            if enrich_summary and re.search(
+                r"\b(that|it|this|the\s+result|the\s+results|the\s+summary|those)\b",
+                lowered,
+            ):
+                refined_content = enrich_summary
         if refined_content:
             return {
                 "goal": f"write a file called {filename} with provided content",
@@ -536,9 +548,14 @@ def _looks_like_contextual_refinement(message: str) -> bool:
 
 
 def _draft_from_candidate_message(
-    candidate: str, *, active_preview: dict[str, Any] | None
+    candidate: str,
+    *,
+    active_preview: dict[str, Any] | None,
+    enrichment_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    revision = _draft_revision_from_active_preview(candidate, active_preview)
+    revision = _draft_revision_from_active_preview(
+        candidate, active_preview, enrichment_context=enrichment_context
+    )
     if revision is not None:
         return revision
 
@@ -570,12 +587,15 @@ def maybe_draft_job_payload(
     *,
     active_preview: dict[str, Any] | None = None,
     recent_user_messages: list[str] | None = None,
+    enrichment_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
         return None
 
-    primary = _draft_from_candidate_message(normalized, active_preview=active_preview)
+    primary = _draft_from_candidate_message(
+        normalized, active_preview=active_preview, enrichment_context=enrichment_context
+    )
     if primary is not None:
         return primary
 
@@ -590,6 +610,7 @@ def maybe_draft_job_payload(
         contextual = _draft_from_candidate_message(
             contextual_candidate,
             active_preview=active_preview,
+            enrichment_context=enrichment_context,
         )
         if contextual is not None:
             return contextual

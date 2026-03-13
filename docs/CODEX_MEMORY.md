@@ -1,3 +1,13 @@
+## 2026-03-13 — GitHub PR #TBD — feat(vera/enrichment): enrichment-to-preview bridge for grounded pronoun resolution
+
+- Added read-only enrichment bridge: when an active preview exists and the user makes an informational web query, `run_web_enrichment` runs in the service layer and stores `{query, summary, retrieved_at_ms}` as `last_enrichment` in the session file.
+- Standalone informational turns (no active preview) skip enrichment storage — behavior and routing unchanged.
+- Hidden compiler now receives `enrichment_context` as optional read-only input in the context payload; it never performs web calls itself.
+- Deterministic layer (`handoff.py`) uses `enrichment_context.summary` to resolve pronoun references like "put that into the file" into `write_file.content` when ungrounded against the active preview alone.
+- Fail-closed preserved: if no enrichment exists and the pronoun reference is ambiguous, returns `no_change`/active preview unchanged.
+- `_is_enrichment_turn` exception added to conversational-control-reply suppression so web results are surfaced in chat when an active preview exists.
+- Updated docs: `web-investigation-rules.md` (enrichment bridge section), `hidden-compiler-payload-guidance.md` (section 4.1 enrichment_context grounding).
+
 ## 2026-03-13 — GitHub PR #TBD — feat(vera/compiler): improve active-preview semantic refinement while keeping strict JSON mutations
 
 - Improved deterministic active-preview refinement interpretation for fluent follow-up language focused on `write_file.content`, `write_file.path`, and `write_file.mode`.
