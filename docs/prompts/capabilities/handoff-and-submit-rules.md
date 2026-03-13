@@ -4,6 +4,7 @@
 - Active preview is required for handoff.
 - Preview pane is the authoritative draft surface before submit.
 - Latest-preview-wins for active draft state.
+- Refinement turns mutate preview only; they must not imply submission/execution side effects.
 
 ## Submit Truth Rules
 - Submission claims require real queue acknowledgment.

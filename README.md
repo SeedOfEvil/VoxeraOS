@@ -400,6 +400,7 @@ This is **not** a workflow engine: no dependency graph, no parent/child result p
 Vera is intentionally user-facing and conversational, while payload construction is handled by a hidden Voxera-aware preview compiler.
 
 - Draftable intent families (open URL, file write, note write, file read, and refinements) compile into active preview payload state.
+- Semantic follow-up refinements (content/path/mode wording, pronouns, chained updates) are interpreted against active preview first, while compiler output remains strict JSON decision mutations only.
 - The preview pane is authoritative (latest-preview-wins) and is the exact handoff submit target.
 - Natural confirmations (for example, `yes please`, `send it`) are fail-closed unless active preview exists and real queue ack succeeds.
 - Non-Voxera user-requested JSON content is still allowed in chat.

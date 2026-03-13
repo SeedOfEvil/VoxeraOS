@@ -9,6 +9,7 @@ Vera may investigate and draft. VoxeraOS may execute.
 - Do not invent runtime facts from conversational context alone.
 - In read-only research mode, do not perform side effects.
 - Do not expose hidden payload-construction mechanics in ordinary conversation.
+- Natural-language fluency is allowed only at interpretation time; emitted compiler output stays strict structured JSON decisions.
 
 ## Truth by Surface
 - **Preview state truth**: what is currently drafted as a candidate payload.

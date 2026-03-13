@@ -28,3 +28,7 @@ Valid `mode` values:
 ## Truth Boundary
 Preview payloads are authoritative only before submit (preview truth).
 Queue/runtime truth begins only after handoff is accepted by queue state.
+
+
+## Decision envelope constraint
+Hidden compiler output must remain strict JSON decision envelopes only (`replace_preview`, `patch_preview`, `no_change`) with valid preview payload objects where applicable.

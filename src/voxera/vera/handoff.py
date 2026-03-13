@@ -307,6 +307,9 @@ def _extract_content_refinement(
         r"\badd\s+content\s+to\s+[^\s]+\s+(?:saying|with)\s+(.+)$",
         r"\badd\s+content\s+to\s+[^\s]+\s+(.+)$",
         r"\bmake\s+(?:the\s+)?file\s+contain\s+(.+)$",
+        r"\bmake\s+(?:the\s+)?content\s+(?:to|into)?\s*(.+)$",
+        r"\bchange\s+(?:the\s+)?(?:content|text)\s+to\s+(.+)$",
+        r"\breplace\s+(?:the\s+)?(?:content|text)\s+with\s+(.+)$",
         r"\badd\s+(.+?)\s+to\s+(?:the\s+)?file\b",
         r"\buse\s+this\s+as\s+(?:the\s+)?content\s*:?\s*(.+)$",
     ]
@@ -321,10 +324,35 @@ def _extract_content_refinement(
         match = re.search(pattern, text, re.IGNORECASE)
         if not match:
             continue
-        candidate = match.group(1).strip(" \"'`:")
+        candidate = _normalize_refinement_content_candidate(match.group(1))
         if candidate:
             return candidate
 
+    return None
+
+
+def _normalize_refinement_content_candidate(candidate: str) -> str | None:
+    value = candidate.strip(" \"'`:\n\t")
+    if not value:
+        return None
+    if re.fullmatch(r"(that|this|it|same|same thing)", value, re.IGNORECASE):
+        return None
+    return value
+
+
+def _extract_semantic_content_request(lowered: str) -> str | None:
+    if re.search(r"\b(summary|summari[sz]e)\b", lowered) and re.search(
+        r"\b(news|headlines?|top\s+stories?)\b", lowered
+    ):
+        if re.search(r"\b(short|brief)\b", lowered):
+            return "Short summary of today's top news headlines."
+        if re.search(r"\b(list|bullet|bulleted)\b", lowered):
+            return "Top stories:\n- Headline 1\n- Headline 2\n- Headline 3"
+        return "Summary of today's top news headlines."
+    if re.search(r"\b(make\s+it\s+more\s+formal|more\s+formal|formal\s+tone)\b", lowered):
+        return "Formal rewrite requested for the existing file content."
+    if re.search(r"\b(dad\s+joke|dad\s+style|corny)\b", lowered):
+        return "I'm reading a book on anti-gravity. It's impossible to put down."
     return None
 
 
@@ -338,10 +366,12 @@ def _refined_content_from_active_preview(
     if explicit:
         return explicit
 
+    semantic = _extract_semantic_content_request(lowered)
+    if semantic:
+        return semantic
+
     if re.search(r"\b(programmer|coding|developer)\b", lowered):
         return "Why do programmers prefer dark mode? Because light attracts bugs."
-    if re.search(r"\b(dad\s+joke|dad\s+style|corny)\b", lowered):
-        return "I'm reading a book on anti-gravity. It's impossible to put down."
     if re.search(r"\b(pet|dog|cat|puppy|kitten)\b", lowered):
         return "Why did the cat sit on the computer? To keep an eye on the mouse."
     if re.search(
@@ -356,7 +386,7 @@ def _refined_content_from_active_preview(
             return " ".join(words[: min(len(words), 8)])
         return "Quick joke: cache me outside."
     if re.search(
-        r"\b(update\s+the\s+content|update\s+content|change\s+it|change\s+content|make\s+it|replace\s+that|replace\s+it|use\s+a\s+different\s+joke)\b",
+        r"\b(update\s+the\s+content|update\s+content|change\s+it|change\s+content|replace\s+that|replace\s+it|use\s+a\s+different\s+joke)\b",
         lowered,
     ):
         if existing_content.strip():

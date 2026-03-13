@@ -1,3 +1,10 @@
+## 2026-03-13 — GitHub PR #TBD — feat(vera/compiler): improve active-preview semantic refinement while keeping strict JSON mutations
+
+- Improved deterministic active-preview refinement interpretation for fluent follow-up language focused on `write_file.content`, `write_file.path`, and `write_file.mode`.
+- Added semantic content refinement support for phrases like summary/news and formal-tone rewrites, while preserving fail-closed behavior for ambiguous references (for example `put that into the file` when `that` is ungrounded).
+- Kept compiler contract strict: only preview mutation decisions (`replace_preview`, `patch_preview`, `no_change`) with valid preview JSON; no submission/runtime claims added.
+- Added focused tests in hidden compiler + Vera web flows covering semantic content updates, fail-closed ambiguous references, and active-preview refinement stability.
+
 ## 2026-03-12 — GitHub PR #TBD — feat(vera/verifier): harden lifecycle-aware evidence-grounded review shaping
 
 - Hardened Vera evidence review output shaping so "what happened?" responses are more deterministic and lifecycle-aware while remaining additive.

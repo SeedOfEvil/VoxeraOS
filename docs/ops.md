@@ -1388,7 +1388,7 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 3. Ask a refinement (`actually open openai.com instead`) and confirm the new preview replaces the previous active draft.
 4. Optionally add acknowledgement (`yeah that looks right`) and confirm preview is still active.
 5. Ask `submit it` and verify queue inbox payload reflects the latest draft, not an older preview.
-6. Repeat for file refinement flows (content update, filename rename) and evidence-aware follow-up draft replacement.
+6. Repeat for file refinement flows (content update, filename rename, append/overwrite mode switch, semantic refinement like `make it more formal` or `summary of top news`) and evidence-aware follow-up draft replacement.
 
 
 ## Vera authoritative preview pane STV (PR #159)
