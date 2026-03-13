@@ -438,7 +438,9 @@ def _draft_revision_from_active_preview(
             if "write a note called" in current_goal:
                 return {"goal": f"write a note called {new_name}"}
 
-    if re.search(r"\bappend\b", lowered) and re.search(r"\b(?:same\s+file|it|this)\b", lowered):
+    if re.search(r"\bappend\b", lowered) and re.search(
+        r"\b(?:same\s+file|it|this|instead|switch)\b", lowered
+    ):
         write_file = active_preview.get("write_file")
         if isinstance(write_file, dict):
             path = str(write_file.get("path") or "").strip()

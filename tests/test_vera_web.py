@@ -235,6 +235,60 @@ def test_news_query_skips_preview_builder_and_stays_informational(tmp_path, monk
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
+def test_mode_refinement_append_instead_updates_active_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write a file called log.txt"},
+    )
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "append instead"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["mode"] == "append"
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/log.txt"
+
+
+def test_put_that_into_file_after_informational_turn_does_not_claim_phantom_preview(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        if "put" in user_message.lower():
+            return {
+                "answer": "I've prepared a draft for the file with the news content.",
+                "status": "ok:test",
+            }
+        return {"answer": "Top headlines summary.", "status": "ok:web_investigation"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "find the latest news"})
+    assert vera_service.read_session_preview(queue, sid) is None
+
+    res = client.post("/chat", data={"session_id": sid, "message": "put that into the file"})
+
+    assert "I've prepared a draft" not in res.text
+    assert vera_service.read_session_preview(queue, sid) is None
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
 def test_informational_query_then_send_it_does_not_enqueue(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
