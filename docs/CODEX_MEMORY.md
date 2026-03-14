@@ -1,3 +1,9 @@
+## 2026-03-14 — GitHub PR #TBD — feat(queue/review): normalize non-success outcome taxonomy for evidence review
+
+- Added additive structured-execution `normalized_outcome_class` shaping so reviewer/operator surfaces can distinguish approval blocks, policy denial, capability/path boundary blocks, dependency-missing runtime failures, generic runtime execution failures, cancellations, and artifact-evidence gaps.
+- Updated Vera evidence review output to surface normalized outcome class directly and use class-specific next-step guidance while preserving canonical queue lifecycle truth.
+- Added focused tests across structured execution consumers and evidence review for policy-denied, capability boundary mismatch, path-blocked scope, runtime dependency missing, and partial artifact-gap classification coverage.
+
 ## 2026-03-14 — GitHub PR #TBD — fix(skills/files): block queue control-plane paths from file skills
 
 - Tightened confined path normalization to reject access to `~/VoxeraOS/notes/queue/**` for all notes-root file skills (`files.read_text`, `files.write_text`, `files.list_dir`, `files.copy_file`, `files.move_file`, `files.mkdir`, `files.exists`, `files.stat`, `files.delete_file`).

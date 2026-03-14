@@ -52,6 +52,7 @@ class ReviewedJobEvidence:
     observed_expected_artifacts: tuple[str, ...]
     missing_expected_artifacts: tuple[str, ...]
     expected_artifact_status: str
+    normalized_outcome_class: str
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:
@@ -319,6 +320,7 @@ def review_job_outcome(
             review_summary_dict.get("missing_expected_artifacts") or []
         ),
         expected_artifact_status=str(review_summary_dict.get("expected_artifact_status") or ""),
+        normalized_outcome_class=str(structured.get("normalized_outcome_class") or ""),
     )
 
 
@@ -364,6 +366,7 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
         f"- Lifecycle state: `{evidence.lifecycle_state or 'unknown'}`",
         f"- Terminal outcome: `{evidence.terminal_outcome or 'not terminal yet'}`",
         f"- Approval status: `{evidence.approval_status or 'none'}`",
+        f"- Normalized outcome class: `{evidence.normalized_outcome_class or 'unknown'}`",
         f"- Latest summary: {evidence.latest_summary or 'No summary is available yet.'}",
     ]
     if evidence.failure_summary:
@@ -441,6 +444,7 @@ def _artifact_observation_line(evidence: ReviewedJobEvidence) -> str:
 def _next_step(evidence: ReviewedJobEvidence) -> str:
     lifecycle = evidence.lifecycle_state.strip().lower()
     approval = evidence.approval_status.strip().lower()
+    outcome_class = evidence.normalized_outcome_class.strip().lower()
     if evidence.state == "awaiting_approval":
         if evidence.expected_artifacts and evidence.missing_expected_artifacts:
             return (
@@ -465,6 +469,16 @@ def _next_step(evidence: ReviewedJobEvidence) -> str:
             return "The job is pending because approval is still required; approve or reject in VoxeraOS."
         return "The job is non-terminal and evidence is incomplete; poll queue progress before deciding next action."
     if evidence.state == "succeeded":
+        if outcome_class == "incomplete_evidence":
+            return (
+                "The job succeeded but expected outputs were not observed; inspect execution_result, step logs, "
+                "and artifact output paths, then rerun if evidence capture is required."
+            )
+        if outcome_class == "partial_artifact_gap":
+            return (
+                "The job succeeded with partial expected outputs; inspect execution_result and logs to verify whether "
+                "the missing artifacts are benign evidence gaps or require a rerun for complete capture."
+            )
         if evidence.missing_expected_artifacts:
             if evidence.observed_expected_artifacts:
                 return (
@@ -477,6 +491,14 @@ def _next_step(evidence: ReviewedJobEvidence) -> str:
             )
         return "No action is required unless you want me to draft a follow-up preview grounded in these results."
     if evidence.state == "failed":
+        if outcome_class == "policy_denied":
+            return "Execution was denied by policy; adjust policy/approval scope or submit a lower-risk preview before retrying."
+        if outcome_class == "capability_boundary_mismatch":
+            return "Execution hit a capability boundary mismatch; align declared capabilities with runtime requests before rerunning."
+        if outcome_class == "path_blocked_scope":
+            return "Execution was blocked by path scope controls; choose an allowed workspace path or update the plan to avoid control-plane paths."
+        if outcome_class == "runtime_dependency_missing":
+            return "Execution failed because a required runtime dependency/tool is missing; install or correct the executable/tool reference, then rerun."
         if evidence.missing_expected_artifacts:
             if evidence.observed_expected_artifacts:
                 return (

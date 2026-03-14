@@ -305,6 +305,7 @@ Operator-facing queue consumers now prefer canonical structured artifacts when p
 - `artifact_refs`: concrete artifact file refs by family
 - `review_summary`: reviewer-facing "what happened" summary fields, including normalized execution capability declaration visibility and expected-vs-observed artifact comparison (`expected_artifact_status`, `missing_expected_artifacts`)
 - `evidence_bundle`: canonical trace bundle linking job/step execution context to produced artifacts, review summary, and expected artifact observation
+- `normalized_outcome_class`: deterministic non-success/outcome shaping for reviewer/operator clarity (`approval_blocked`, `policy_denied`, `capability_boundary_mismatch`, `path_blocked_scope`, `runtime_dependency_missing`, `runtime_execution_failed`, `canceled`, `partial_artifact_gap`, `incomplete_evidence`, plus `succeeded|in_progress`)
 
 Vera's evidence-aware "what happened?" review path now deterministically prefers normalized review/evidence blocks (`review_summary.latest_summary` and `evidence_bundle.trace`) and explicitly reports lifecycle-aware state distinctions (`submitted`, `queued`, `planning`, `running`, `awaiting_approval`, `resumed`, terminal outcomes) with state-appropriate next steps, including state-sensitive expected-artifact interpretation (fully observed vs partial vs missing vs none declared).
 

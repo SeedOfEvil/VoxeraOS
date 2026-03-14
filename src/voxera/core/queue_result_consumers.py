@@ -4,6 +4,16 @@ import json
 from pathlib import Path
 from typing import Any
 
+_DEPENDENCY_ERROR_CLASSES = frozenset(
+    {
+        "dependency_missing",
+        "missing_dependency",
+        "missing_executable",
+        "tool_not_found",
+        "executable_not_found",
+    }
+)
+
 
 def _read_json_dict(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -314,6 +324,7 @@ def resolve_structured_execution(
         or failed_payload.get("message")
         or ""
     )
+    latest_error_class = str(latest_step.get("error_class") or "").strip().lower()
 
     step_status = str(latest_step.get("status") or "")
     terminal_outcome = str(
@@ -373,6 +384,36 @@ def resolve_structured_execution(
         if child_refs
         else None
     )
+    review_summary: dict[str, Any] = {}
+    review_summary_raw = execution_result.get("review_summary")
+    if isinstance(review_summary_raw, dict):
+        review_summary = review_summary_raw
+    expected_artifact_status = str(review_summary.get("expected_artifact_status") or "")
+    observed_expected_artifacts: list[Any] = []
+    observed_expected_artifacts_raw = review_summary.get("observed_expected_artifacts")
+    if isinstance(observed_expected_artifacts_raw, list):
+        observed_expected_artifacts = observed_expected_artifacts_raw
+    missing_expected_artifacts: list[Any] = []
+    missing_expected_artifacts_raw = review_summary.get("missing_expected_artifacts")
+    if isinstance(missing_expected_artifacts_raw, list):
+        missing_expected_artifacts = missing_expected_artifacts_raw
+    capability_boundary_violation = (
+        review_summary.get("capability_boundary_violation")
+        if isinstance(review_summary.get("capability_boundary_violation"), dict)
+        else None
+    )
+    normalized_outcome_class = _classify_outcome(
+        lifecycle_state=lifecycle_state,
+        terminal_outcome=terminal_outcome,
+        approval_status=approval_status,
+        latest_error_class=latest_error_class,
+        latest_error=str(latest_step.get("error") or execution_result.get("error") or ""),
+        expected_artifact_status=expected_artifact_status,
+        observed_expected_artifacts=observed_expected_artifacts,
+        missing_expected_artifacts=missing_expected_artifacts,
+        capability_boundary_violation=capability_boundary_violation,
+        has_structured_sources=bool(execution_result or normalized_steps or state_payload),
+    )
 
     return {
         "terminal_outcome": terminal_outcome,
@@ -398,6 +439,7 @@ def resolve_structured_execution(
         "next_action_hint": str(latest_step.get("next_action_hint") or ""),
         "output_artifacts": [str(item) for item in output_artifacts],
         "machine_payload": machine_payload,
+        "normalized_outcome_class": normalized_outcome_class,
         "error": str(
             execution_result.get("error")
             or latest_step.get("error")
@@ -435,9 +477,7 @@ def resolve_structured_execution(
             "failed_sidecar": bool(failed_payload),
             "approval": bool(approval_payload),
         },
-        "review_summary": execution_result.get("review_summary")
-        if isinstance(execution_result.get("review_summary"), dict)
-        else None,
+        "review_summary": review_summary if review_summary else None,
         "evidence_bundle": execution_result.get("evidence_bundle")
         if isinstance(execution_result.get("evidence_bundle"), dict)
         else None,
@@ -459,25 +499,62 @@ def resolve_structured_execution(
         if isinstance(execution_result.get("review_summary"), dict)
         and isinstance(execution_result.get("review_summary", {}).get("expected_artifacts"), list)
         else None,
-        "expected_artifact_status": str(
-            execution_result.get("review_summary", {}).get("expected_artifact_status") or ""
-        )
-        if isinstance(execution_result.get("review_summary"), dict)
-        else "",
-        "observed_expected_artifacts": execution_result.get("review_summary", {}).get(
-            "observed_expected_artifacts"
-        )
-        if isinstance(execution_result.get("review_summary"), dict)
-        and isinstance(
-            execution_result.get("review_summary", {}).get("observed_expected_artifacts"), list
-        )
-        else None,
-        "missing_expected_artifacts": execution_result.get("review_summary", {}).get(
-            "missing_expected_artifacts"
-        )
-        if isinstance(execution_result.get("review_summary"), dict)
-        and isinstance(
-            execution_result.get("review_summary", {}).get("missing_expected_artifacts"), list
-        )
-        else None,
+        "expected_artifact_status": expected_artifact_status,
+        "observed_expected_artifacts": observed_expected_artifacts or None,
+        "missing_expected_artifacts": missing_expected_artifacts or None,
     }
+
+
+def _classify_outcome(
+    *,
+    lifecycle_state: str,
+    terminal_outcome: str,
+    approval_status: str,
+    latest_error_class: str,
+    latest_error: str,
+    expected_artifact_status: str,
+    observed_expected_artifacts: list[Any],
+    missing_expected_artifacts: list[Any],
+    capability_boundary_violation: dict[str, Any] | None,
+    has_structured_sources: bool,
+) -> str:
+    lifecycle = lifecycle_state.strip().lower()
+    terminal = terminal_outcome.strip().lower()
+    approval = approval_status.strip().lower()
+    error_class = latest_error_class.strip().lower()
+    error_text = latest_error.strip().lower()
+    artifact_status = expected_artifact_status.strip().lower()
+
+    if approval == "pending" or lifecycle in {"awaiting_approval", "pending_approval"}:
+        return "approval_blocked"
+    if approval == "denied" or error_class == "policy_denied" or "denied by policy" in error_text:
+        return "policy_denied"
+    if capability_boundary_violation is not None or error_class == "capability_boundary_mismatch":
+        return "capability_boundary_mismatch"
+    if error_class == "path_blocked_scope":
+        return "path_blocked_scope"
+    if terminal == "canceled" or lifecycle == "canceled":
+        return "canceled"
+    if terminal == "succeeded":
+        if artifact_status == "partial" or (
+            observed_expected_artifacts and missing_expected_artifacts
+        ):
+            return "partial_artifact_gap"
+        if artifact_status == "missing" or missing_expected_artifacts:
+            return "incomplete_evidence"
+        return "succeeded"
+    if terminal in {"failed", "blocked"} or lifecycle == "failed":
+        if (
+            error_class in _DEPENDENCY_ERROR_CLASSES
+            or ("no such file or directory" in error_text and "executable" in error_text)
+            or "command not found" in error_text
+        ):
+            return "runtime_dependency_missing"
+        return "runtime_execution_failed"
+    if artifact_status == "missing" or missing_expected_artifacts:
+        return "incomplete_evidence"
+    if artifact_status == "partial":
+        return "partial_artifact_gap"
+    if not has_structured_sources:
+        return "incomplete_evidence"
+    return "in_progress"

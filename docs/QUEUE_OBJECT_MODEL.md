@@ -99,6 +99,7 @@ Canonical execution summary artifacts now standardize an additive contract:
 - `execution_result.json.artifact_refs` — concrete produced artifact refs (`artifact_family`, `artifact_path`).
 - `execution_result.json.review_summary` — reviewer-facing summary surface for "what happened".
 - `execution_result.json.evidence_bundle` — normalized evidence/trace bundle linking job/step context to artifact refs and review summary.
+- `resolve_structured_execution(...).normalized_outcome_class` — additive evidence-grounded reviewer/operator classification that preserves canonical queue state as source of lifecycle truth.
 
 Forward-looking expectation contract: for supported canonical future lanes, queue creation/normalization should declare deterministic `expected_artifacts` intent up front (for example mission/goal/inline/write-file baseline artifacts, and assistant advisory response artifacts). Review remains evidence-grounded and may still report `partial`/`missing` when production does not satisfy declared expectations.
 

@@ -133,7 +133,9 @@ def test_review_outcome_awaiting_approval_reports_blocked_next_step(tmp_path: Pa
 
     assert evidence is not None
     assert evidence.state == "awaiting_approval"
+    assert evidence.normalized_outcome_class == "approval_blocked"
     message = review_message(evidence)
+    assert "Normalized outcome class: `approval_blocked`" in message
     assert "blocked on operator approval" in message
 
 
@@ -239,7 +241,7 @@ def test_review_outcome_surfaces_execution_capabilities_and_missing_expected_art
     assert "Capability boundary violation: boundary=network" in message
     assert "Expected artifacts were partially observed" in message
     assert "Missing expected artifacts: stdout" in message
-    assert "Execution failed with partial expected outputs" in message
+    assert "Normalized outcome class: `capability_boundary_mismatch`" in message
 
 
 def test_review_outcome_succeeded_with_partial_expected_artifacts_is_state_aware(tmp_path: Path):
@@ -359,3 +361,67 @@ def test_review_outcome_handles_jobs_without_declared_expected_artifacts(tmp_pat
     assert evidence is not None
     message = review_message(evidence)
     assert "Expected artifacts: none declared for this job." in message
+
+
+def test_review_outcome_surfaces_path_boundary_class_and_next_step(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-path-blocked.json",
+        bucket="failed",
+        execution_result={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "review_summary": {
+                "latest_summary": "Path blocked by control-plane scope",
+            },
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "status": "failed",
+                    "error_class": "path_blocked_scope",
+                    "error": "Path is inside queue scope",
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-path-blocked.json")
+
+    assert evidence is not None
+    assert evidence.normalized_outcome_class == "path_blocked_scope"
+    message = review_message(evidence)
+    assert "Normalized outcome class: `path_blocked_scope`" in message
+    assert "blocked by path scope controls" in message
+
+
+def test_review_outcome_surfaces_runtime_dependency_missing_guidance(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-dep-missing.json",
+        bucket="failed",
+        execution_result={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "review_summary": {
+                "latest_summary": "Runner failed",
+            },
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "status": "failed",
+                    "error_class": "missing_executable",
+                    "error": "command not found",
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-dep-missing.json")
+
+    assert evidence is not None
+    assert evidence.normalized_outcome_class == "runtime_dependency_missing"
+    message = review_message(evidence)
+    assert "Normalized outcome class: `runtime_dependency_missing`" in message
+    assert "required runtime dependency/tool is missing" in message
