@@ -13,6 +13,8 @@ Top-level supported fields:
 - `title`
 - `write_file`
 - `enqueue_child`
+- `file_organize`
+- `steps`
 
 `write_file` fields:
 - `path`
@@ -23,11 +25,25 @@ Top-level supported fields:
 - `goal`
 - `title`
 
+`file_organize` fields:
+- `source_path` (required, ~/VoxeraOS/notes/ scope)
+- `destination_dir` (required, ~/VoxeraOS/notes/ scope)
+- `mode` (`copy` | `move`)
+- `overwrite` (boolean, default false)
+- `delete_original` (boolean, default false)
+
+`steps` array of:
+- `skill_id` (required, bounded file skill id)
+- `args` (object)
+
 Rules:
 - `goal` is the required semantic anchor.
 - `title` is optional metadata.
 - use `write_file` for precision file-authoring intent.
 - use `enqueue_child` only when child enqueue structure is truly intended/supported.
+- use `file_organize` for copy/move/archive/organize bounded file workflows.
+- use `steps` for direct single-skill bounded file actions (exists, stat, read_text, mkdir, delete).
+- workspace-root-relative path shorthand (`/foo/bar.txt`) resolves to `~/VoxeraOS/notes/foo/bar.txt`.
 - never invent unsupported top-level keys.
 - never emit arbitrary runtime metadata.
 
@@ -62,6 +78,30 @@ Append example:
     "content": "hello world",
     "mode": "append"
   }
+}
+```
+
+Use `file_organize` for bounded copy/move/archive workflows:
+```json
+{
+  "goal": "copy report.txt into receipts",
+  "file_organize": {
+    "source_path": "~/VoxeraOS/notes/report.txt",
+    "destination_dir": "~/VoxeraOS/notes/receipts",
+    "mode": "copy",
+    "overwrite": false,
+    "delete_original": false
+  }
+}
+```
+
+Use `steps` for direct bounded file skill actions:
+```json
+{
+  "goal": "check if a.txt exists in notes",
+  "steps": [
+    {"skill_id": "files.exists", "args": {"path": "~/VoxeraOS/notes/a.txt"}}
+  ]
 }
 ```
 
@@ -222,6 +262,87 @@ If refinement is “make it a programmer joke”, keep path/mode stable and muta
 
 ### E. Filename refinement
 If refinement is “call it funnierjoke.txt instead”, mutate path and preserve content/mode unless changed.
+
+### F. Bounded file existence check
+Input: “check if a.txt exists”
+Output:
+```json
+{
+  “action”: “replace_preview”,
+  “intent_type”: “new_intent”,
+  “updated_preview”: {
+    “goal”: “check if a.txt exists in notes”,
+    “steps”: [{“skill_id”: “files.exists”, “args”: {“path”: “~/VoxeraOS/notes/a.txt”}}]
+  },
+  “patch”: null
+}
+```
+
+### G. Bounded file organize (archive/copy/move)
+Input: “archive today.md into my archive folder”
+Output:
+```json
+{
+  “action”: “replace_preview”,
+  “intent_type”: “new_intent”,
+  “updated_preview”: {
+    “goal”: “archive today.md into archive”,
+    “file_organize”: {
+      “source_path”: “~/VoxeraOS/notes/today.md”,
+      “destination_dir”: “~/VoxeraOS/notes/archive”,
+      “mode”: “copy”,
+      “overwrite”: false,
+      “delete_original”: false
+    }
+  },
+  “patch”: null
+}
+```
+
+### H. Bounded mkdir
+Input: “make a folder called testdir in my notes”
+Output:
+```json
+{
+  “action”: “replace_preview”,
+  “intent_type”: “new_intent”,
+  “updated_preview”: {
+    “goal”: “create folder testdir in notes”,
+    “steps”: [{“skill_id”: “files.mkdir”, “args”: {“path”: “~/VoxeraOS/notes/testdir”, “parents”: true}}]
+  },
+  “patch”: null
+}
+```
+
+### I. Bounded read (workspace-relative shorthand)
+Input: “read /skillpack-wave2/a.txt”
+Output:
+```json
+{
+  “action”: “replace_preview”,
+  “intent_type”: “new_intent”,
+  “updated_preview”: {
+    “goal”: “read /skillpack-wave2/a.txt from notes”,
+    “steps”: [{“skill_id”: “files.read_text”, “args”: {“path”: “~/VoxeraOS/notes/skillpack-wave2/a.txt”}}]
+  },
+  “patch”: null
+}
+```
+
+### J. Bounded stat (workspace-relative shorthand)
+Input: “show me info about /skillpack-wave2/a.txt”
+Output:
+```json
+{
+  “action”: “replace_preview”,
+  “intent_type”: “new_intent”,
+  “updated_preview”: {
+    “goal”: “show file info for /skillpack-wave2/a.txt”,
+    “steps”: [{“skill_id”: “files.stat”, “args”: {“path”: “~/VoxeraOS/notes/skillpack-wave2/a.txt”}}]
+  },
+  “patch”: null
+}
+```
 
 ## 10) Composition Reminder
 Hidden compiler prompt bundle must be rich: shared worldview + hidden-compiler role + payload schema + handoff rules + queue lifecycle + artifacts/evidence + this guidance.

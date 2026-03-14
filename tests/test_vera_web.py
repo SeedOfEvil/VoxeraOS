@@ -539,9 +539,35 @@ def test_note_write_and_file_read_requests_render_preview_pane_without_voxera_js
     )
     assert "```json" not in read_res.text
     assert "Preview panel · Active VoxeraOS draft" in read_res.text
-    assert vera_service.read_session_preview(queue, sid) == {
-        "goal": "read the file ~/VoxeraOS/notes/ideas.txt"
-    }
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"] == "read ~/VoxeraOS/notes/ideas.txt from notes"
+    assert preview["steps"][0]["skill_id"] == "files.read_text"
+    assert preview["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/ideas.txt"
+
+
+def test_blocked_queue_path_returns_clean_refusal_no_preview(tmp_path, monkeypatch):
+    """Queue control-plane paths via shorthand must fail closed with a clear refusal."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "check if /queue/health.json exists"},
+    )
+    # Must NOT contain pseudo action JSON or preview panel
+    assert "voxera_control" not in res.text
+    assert '"action"' not in res.text
+    assert "```json" not in res.text
+    # Must contain a clear refusal explanation
+    assert "blocked" in res.text.lower()
+    # Must NOT create a preview
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is None
 
 
 def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission(
@@ -610,7 +636,8 @@ def test_explicit_handoff_creates_real_queue_job_and_ack(tmp_path, monkeypatch):
     jobs = list((queue / "inbox").glob("inbox-*.json"))
     assert len(jobs) == 1
     payload = json.loads(jobs[0].read_text(encoding="utf-8"))
-    assert payload["goal"] == "read the file ~/VoxeraOS/notes/stv-child-target.txt"
+    assert payload["goal"] == "read ~/VoxeraOS/notes/stv-child-target.txt from notes"
+    assert payload["steps"][0]["skill_id"] == "files.read_text"
 
 
 def test_submit_success_wording_requires_real_job_creation(tmp_path, monkeypatch):

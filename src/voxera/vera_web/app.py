@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import load_config as load_runtime_config
+from ..core.file_intent import detect_blocked_file_intent
 from ..paths import queue_root as default_queue_root
 from ..vera.evidence_review import (
     draft_followup_preview,
@@ -404,6 +405,18 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status=status,
+        )
+
+    # Blocked bounded file intent: fail closed with a clear refusal before
+    # the message reaches the LLM, which might produce a misleading pseudo
+    # action blob.
+    blocked_refusal = detect_blocked_file_intent(message)
+    if blocked_refusal is not None:
+        append_session_turn(root, active_session, role="assistant", text=blocked_refusal)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="blocked_path",
         )
 
     is_info_query = _is_informational_web_query(message)

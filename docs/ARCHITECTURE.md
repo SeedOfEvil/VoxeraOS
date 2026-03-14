@@ -77,6 +77,7 @@ VoxeraOS/
 │   │   │   ├── missions.py          — MissionTemplate, MissionRunner, built-ins
 │   │   │   ├── mission_planner.py   — LLM planning + brain fallback orchestration
 │   │   │   ├── router.py            — intent routing (local vs cloud lane)
+│   │   │   ├── file_intent.py       — bounded file intent classifier (exists/stat/mkdir/delete/copy/move/archive → preview payloads)
 │   │   │   ├── inbox.py             — atomic job intake
 │   │   │   ├── capabilities_snapshot.py  — runtime skill/mission catalog + validation
 │   │   │   └── planner_context.py   — LLM prompt preamble assembly

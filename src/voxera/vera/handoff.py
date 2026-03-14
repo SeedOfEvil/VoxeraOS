@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..core.file_intent import classify_bounded_file_intent
 from ..core.inbox import add_inbox_payload
 
 _ALLOWED_TOP_LEVEL_KEYS = {
@@ -18,6 +19,8 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "lineage_role",
     "enqueue_child",
     "write_file",
+    "file_organize",
+    "steps",
 }
 
 _HANDOFF_PATTERNS = (
@@ -602,6 +605,38 @@ def drafting_guidance() -> DraftingGuidance:
                     "title": "Child Open URL",
                 },
             },
+            {
+                "goal": "check if a.txt exists in notes",
+                "steps": [{"skill_id": "files.exists", "args": {"path": "~/VoxeraOS/notes/a.txt"}}],
+            },
+            {
+                "goal": "read /skillpack-wave2/a.txt from notes",
+                "steps": [
+                    {
+                        "skill_id": "files.read_text",
+                        "args": {"path": "~/VoxeraOS/notes/skillpack-wave2/a.txt"},
+                    }
+                ],
+            },
+            {
+                "goal": "create folder archive in notes",
+                "steps": [
+                    {
+                        "skill_id": "files.mkdir",
+                        "args": {"path": "~/VoxeraOS/notes/archive", "parents": True},
+                    }
+                ],
+            },
+            {
+                "goal": "copy report.txt into receipts",
+                "file_organize": {
+                    "source_path": "~/VoxeraOS/notes/report.txt",
+                    "destination_dir": "~/VoxeraOS/notes/receipts",
+                    "mode": "copy",
+                    "overwrite": False,
+                    "delete_original": False,
+                },
+            },
         ],
     )
 
@@ -651,6 +686,13 @@ def _draft_from_candidate_message(
     normalized_open = _normalize_open_goal(candidate)
     if normalized_open:
         return {"goal": normalized_open}
+
+    # Bounded file intent: exists, stat, read, mkdir, delete, copy, move, archive
+    # Must run before the generic file-read goal so that info/stat/read intents
+    # route to bounded skills instead of falling through to a generic goal string.
+    bounded_file = classify_bounded_file_intent(candidate)
+    if bounded_file is not None:
+        return bounded_file
 
     normalized_read = _normalize_file_read_goal(candidate)
     if normalized_read:
@@ -759,6 +801,50 @@ def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if mode not in {"overwrite", "append"}:
             raise ValueError("write_file.mode must be overwrite or append")
         cleaned["write_file"] = {"path": path, "content": content, "mode": mode}
+
+    file_organize = cleaned.get("file_organize")
+    if file_organize is not None:
+        if not isinstance(file_organize, dict):
+            raise ValueError("file_organize must be an object")
+        source_path = str(file_organize.get("source_path") or "").strip()
+        if not source_path:
+            raise ValueError("file_organize.source_path is required")
+        destination_dir = str(file_organize.get("destination_dir") or "").strip()
+        if not destination_dir:
+            raise ValueError("file_organize.destination_dir is required")
+        fo_mode = str(file_organize.get("mode") or "copy").strip().lower()
+        if fo_mode not in {"copy", "move"}:
+            raise ValueError("file_organize.mode must be copy or move")
+        overwrite = file_organize.get("overwrite", False)
+        if not isinstance(overwrite, bool):
+            raise ValueError("file_organize.overwrite must be a boolean")
+        delete_original = file_organize.get("delete_original", False)
+        if not isinstance(delete_original, bool):
+            raise ValueError("file_organize.delete_original must be a boolean")
+        cleaned["file_organize"] = {
+            "source_path": source_path,
+            "destination_dir": destination_dir,
+            "mode": fo_mode,
+            "overwrite": overwrite,
+            "delete_original": delete_original,
+        }
+
+    steps = cleaned.get("steps")
+    if steps is not None:
+        if not isinstance(steps, list) or not steps:
+            raise ValueError("steps must be a non-empty list")
+        validated_steps: list[dict[str, Any]] = []
+        for idx, step in enumerate(steps, start=1):
+            if not isinstance(step, dict):
+                raise ValueError(f"step {idx} must be an object")
+            skill_id = str(step.get("skill_id") or "").strip()
+            if not skill_id:
+                raise ValueError(f"step {idx} requires a non-empty skill_id")
+            args = step.get("args", {})
+            if not isinstance(args, dict):
+                raise ValueError(f"step {idx} args must be an object")
+            validated_steps.append({"skill_id": skill_id, "args": args})
+        cleaned["steps"] = validated_steps
 
     return cleaned
 
