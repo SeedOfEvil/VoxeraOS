@@ -4,3 +4,8 @@ description: Read text currently stored in the OS clipboard.
 entrypoint: voxera_builtin_skills.clipboard_paste:run
 capabilities: ["clipboard.read"]
 risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []

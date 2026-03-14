@@ -4,3 +4,8 @@ description: Launch an application by name (MVP allowlist).
 entrypoint: voxera_builtin_skills.open_app:run
 capabilities: ["apps.open"]
 risk: medium
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []

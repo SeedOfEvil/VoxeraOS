@@ -76,9 +76,12 @@ def normalize_manifest_capabilities(manifest: SkillManifest) -> ExecutionCapabil
         NetworkScope.BROADER if manifest.needs_network else NetworkScope.NONE
     )
 
-    fs_scope: FilesystemScope = (
-        FilesystemScope.BROADER if manifest.fs_scope == "broader" else FilesystemScope.CONFINED
-    )
+    fs_scope_map = {
+        "workspace_only": FilesystemScope.CONFINED,
+        "read_only": FilesystemScope.NONE,
+        "broader": FilesystemScope.BROADER,
+    }
+    fs_scope = fs_scope_map[manifest.fs_scope]
 
     sandbox_profile: SandboxProfile = SandboxProfile.HOST_LOCAL
     if manifest.exec_mode == "sandbox":

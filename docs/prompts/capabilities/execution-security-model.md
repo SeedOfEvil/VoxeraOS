@@ -9,6 +9,7 @@ When reasoning about skills/tools, model each as declared capabilities including
 - secret needs
 - sandbox/isolation profile
 - expected artifact families
+- For built-in skills, expect a consistent manifest baseline (`exec_mode`, `needs_network`, `fs_scope`, `output_schema`, `output_artifacts`) so approval/review scope comparisons stay deterministic.
 
 ## Runtime governance worldview
 

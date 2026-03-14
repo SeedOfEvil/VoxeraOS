@@ -76,6 +76,25 @@ Network scope must be explicit:
 
 `needs_network=true` alone is not a sufficient long-term contract. Domain/purpose scoping is preferred where practical.
 
+## 4.1) Built-in skill manifest baseline
+
+To keep approval/review outputs comparable, built-in skills should declare a consistent baseline metadata set in `manifest.yml`:
+
+- `exec_mode`
+- `needs_network`
+- `fs_scope`
+- `output_schema` (`skill_result.v1` for current built-ins)
+- `output_artifacts` (deterministic list; `[]` allowed when there are no deterministic file artifacts)
+
+Current conventions in this repository:
+
+- read-mostly local skills use `fs_scope=read_only`
+- confined notes/file skills use `fs_scope=workspace_only`
+- broad browser/network skills use `needs_network=true` with `fs_scope=broader`
+- sandbox skills remain explicit and may declare deterministic runtime artifact outputs
+
+This baseline improves governance comparability without broadening runtime permissions.
+
 ## 5) Secret access model
 
 Secrets are explicit capability requirements, not ambient permissions:

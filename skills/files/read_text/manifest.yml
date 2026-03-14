@@ -4,5 +4,8 @@ description: Read UTF-8 text from allowlisted notes paths.
 entrypoint: voxera_builtin_skills.files_read_text:run
 capabilities: ["files.read"]
 risk: low
+exec_mode: local
+needs_network: false
+fs_scope: workspace_only
 output_schema: skill_result.v1
 output_artifacts: []

@@ -1,3 +1,11 @@
+## 2026-03-14 — GitHub PR #TBD — chore(skills): normalize built-in skill governance metadata baseline
+
+- Normalized built-in skill manifests so comparable skills now consistently declare governance fields: `exec_mode`, `needs_network`, `fs_scope`, `output_schema`, and `output_artifacts`.
+- Standardized local read-mostly skills to `fs_scope=read_only`; retained `workspace_only` for confined file skills; kept `system.open_url` explicit as `needs_network=true` + `fs_scope=broader`; left sandbox skill explicit with deterministic artifacts.
+- Tightened capability normalization by mapping manifest `fs_scope` values explicitly (`workspace_only -> confined`, `read_only -> none`, `broader -> broader`) so review/approval capability declarations better reflect declared intent.
+- Added focused tests to lock built-in metadata consistency and read-only fs-scope normalization behavior.
+- Updated docs to make the baseline explicit for future skill additions.
+
 ## 2026-03-14 — GitHub PR #TBD — feat(web/ux): productization pass across Vera and VoxeraOS panel surfaces
 
 - **Vera web (vera_web/)**: Overhauled chat UX with send-state management (disabled send button + spinner during in-flight), prevention of accidental double-sends via `isSubmitting` guard, Enter-to-send keyboard shortcut (Shift+Enter for newline), textarea auto-resize, and smooth message-in animations. Humanized role labels ("You" / "Vera"). Improved visual design: modern bubble styling with distinct user vs. Vera message treatment, polished empty state with instructional copy, redesigned composer, cleaner topbar with animated status indicator, condensed boundary notice.
