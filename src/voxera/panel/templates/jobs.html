@@ -74,13 +74,30 @@
             {% for row in rows %}
               <tr>
                 <td><a href="/jobs/{{row.job_id}}" class="mono text-sm">{{row.job_id}}</a></td>
-                <td><span class="badge">{{row.bucket_ref}}</span></td>
-                <td class="mono text-xs">{{row.lifecycle_state or "-"}}{% if row.total_steps %} ({{row.current_step_index}}/{{row.total_steps}}){% endif %}{% if row.terminal_outcome %} · {{row.terminal_outcome}}{% endif %}</td>
                 <td>
-                  plan={{ 'Y' if row.artifacts.plan else 'N' }} |
-                  actions={{ 'Y' if row.artifacts.actions else 'N' }} |
-                  stdout={{ 'Y' if row.artifacts.stdout else 'N' }} |
-                  stderr={{ 'Y' if row.artifacts.stderr else 'N' }}
+                  <span class="badge
+                    {% if row.bucket_ref == 'done' %}badge-done
+                    {% elif row.bucket_ref == 'failed' %}badge-failed
+                    {% elif row.bucket_ref == 'approvals' %}badge-approval
+                    {% elif row.bucket_ref == 'pending' %}badge-pending
+                    {% elif row.bucket_ref == 'inbox' %}badge-inbox
+                    {% elif row.bucket_ref == 'canceled' %}badge-canceled
+                    {% else %}badge-running{% endif %}">{{row.bucket_ref}}</span>
+                </td>
+                <td>
+                  <div class="lifecycle-cell">
+                    <span class="text-sm">{{row.lifecycle_state or "—"}}</span>
+                    {% if row.total_steps %}<span class="step-progress">Step {{row.current_step_index}} of {{row.total_steps}}</span>{% endif %}
+                    {% if row.terminal_outcome %}<span class="text-xs muted">{{row.terminal_outcome}}</span>{% endif %}
+                  </div>
+                </td>
+                <td>
+                  <div class="artifact-pills">
+                    <span class="artifact-pill {% if row.artifacts.plan %}present{% else %}missing{% endif %}">plan</span>
+                    <span class="artifact-pill {% if row.artifacts.actions %}present{% else %}missing{% endif %}">actions</span>
+                    <span class="artifact-pill {% if row.artifacts.stdout %}present{% else %}missing{% endif %}">stdout</span>
+                    <span class="artifact-pill {% if row.artifacts.stderr %}present{% else %}missing{% endif %}">stderr</span>
+                  </div>
                 </td>
                 <td class="mono text-xs muted">{{row.last_activity}}</td>
                 <td class="text-xs muted">{{row.updated_ts}}</td>

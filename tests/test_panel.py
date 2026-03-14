@@ -55,17 +55,17 @@ def test_panel_home_renders_queue_and_mission_log(tmp_path, monkeypatch):
     assert "Voxera Control Pane" in body
     assert "Control" in body
     assert "Logging" in body
-    assert "Queue Status + Failed Metadata Health" in body
-    assert "Failed retention max age (s)" in body
-    assert "Latest prune removed jobs/sidecars" in body
+    assert "Queue Status" in body
+    assert "Max age" in body
+    assert "Last prune removed" in body
     assert "Approval Command Center" in body
     assert "Active Work" in body
     assert "Mission Library" in body
-    assert "Daemon Lock Event Counters" in body
-    assert "Last OK" in body
+    assert "Daemon Lock History" in body
+    assert "Last healthy event" in body
     assert "daemon_tick @ 123" in body
-    assert "Last Error" in body
-    assert "Panel Mutation Security Counters" in body
+    assert "Last error" in body
+    assert "Panel Security Counters" in body
     assert "Create Mission" in body
     assert "Mission Log (last 20 lines)" in body
     assert "line-29" in body
@@ -148,9 +148,9 @@ def test_home_renders_daemon_health_widget_with_fields(tmp_path, monkeypatch):
     assert "fallback" in body
     assert "RATE_LIMIT" in body
     assert "2023-11-14 22:13:20 UTC" in body
-    assert "job_count" in body
+    assert "Jobs recovered" in body
     assert ">2<" in body
-    assert "orphan_count" in body
+    assert "Orphans found" in body
     assert ">4<" in body
     assert "failed_shutdown" in body
     assert "KeyboardInterrupt" in body
@@ -685,7 +685,7 @@ def test_job_detail_renders_assistant_job_context(tmp_path, monkeypatch):
 
     res = client.get("/jobs/job-assistant.json")
     assert res.status_code == 200
-    assert "Lifecycle & Context" in res.text
+    assert "Execution State" in res.text
     assert "Recent Action Timeline" in res.text
     assert "assistant_response.json" in res.text
 
