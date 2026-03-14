@@ -1164,6 +1164,16 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Explicit operator path/content are preserved into `plan.json`, `execution_envelope.json.request.write_file`, `step_results.json`, and `execution_result.json`.
 - Default filename fallback behavior remains limited to legacy goal-only natural-language routing; structured `write_file.path` is never substituted.
 
+
+## Structured bounded file-organize mission path (PR #next)
+
+- Queue payloads may include a narrow `file_organize` object: `source_path`, `destination_dir`, `mode` (`copy|move`), optional `overwrite`, optional `delete_original`.
+- `MissionQueueDaemon` validates this shape fail-closed and builds a governed multi-step mission on normal queue rails:
+  `files.exists` → `files.stat` → `files.mkdir` → `files.copy_file|files.move_file` → optional `files.delete_file`.
+- This path is additive and does not change queue lifecycle architecture: standard planning/execution artifacts (`execution_envelope.json`, `step_results.json`, `execution_result.json`) remain authoritative.
+- Trust boundaries remain unchanged: confined notes-root paths only; control-plane `~/VoxeraOS/notes/queue/**` is blocked by shared path-boundary enforcement.
+- Destructive cleanup (`delete_original`) only executes when explicitly requested and remains policy/approval-governed through the existing `file.delete` capability.
+
 ## Vera evidence-aware outcome review (PR #155)
 
 Vera v0 now includes a narrow job-outcome review capability in chat while preserving trust boundaries.

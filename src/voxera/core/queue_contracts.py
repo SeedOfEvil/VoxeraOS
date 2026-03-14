@@ -119,6 +119,56 @@ def extract_write_file_request(payload: dict[str, Any]) -> dict[str, str] | None
     return {"path": path, "content": content, "mode": normalized_mode}
 
 
+def extract_file_organize_request(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if "file_organize" not in payload:
+        return None
+
+    raw = payload.get("file_organize")
+    if not isinstance(raw, dict):
+        raise ValueError("file_organize must be an object")
+
+    allowed_keys = {
+        "source_path",
+        "destination_dir",
+        "mode",
+        "overwrite",
+        "delete_original",
+    }
+    unknown_keys = sorted(set(raw.keys()) - allowed_keys)
+    if unknown_keys:
+        joined = ", ".join(unknown_keys)
+        raise ValueError(f"file_organize contains unsupported keys: {joined}")
+
+    source_path = _sanitize_lineage_string(raw.get("source_path"))
+    if source_path is None:
+        raise ValueError("file_organize.source_path must be a non-empty string")
+
+    destination_dir = _sanitize_lineage_string(raw.get("destination_dir"))
+    if destination_dir is None:
+        raise ValueError("file_organize.destination_dir must be a non-empty string")
+
+    raw_mode = _sanitize_lineage_string(raw.get("mode")) or "copy"
+    mode = raw_mode.lower()
+    if mode not in {"copy", "move"}:
+        raise ValueError("file_organize.mode must be copy or move")
+
+    overwrite_raw = raw.get("overwrite", False)
+    if not isinstance(overwrite_raw, bool):
+        raise ValueError("file_organize.overwrite must be a boolean when provided")
+
+    delete_original_raw = raw.get("delete_original", False)
+    if not isinstance(delete_original_raw, bool):
+        raise ValueError("file_organize.delete_original must be a boolean when provided")
+
+    return {
+        "source_path": source_path,
+        "destination_dir": destination_dir,
+        "mode": mode,
+        "overwrite": overwrite_raw,
+        "delete_original": delete_original_raw,
+    }
+
+
 def compute_child_lineage(
     *,
     parent_job_id: str,
@@ -156,6 +206,8 @@ def detect_request_kind(payload: dict[str, Any]) -> str:
         return kind
     if payload.get("mission_id") or payload.get("mission"):
         return "mission_id"
+    if payload.get("file_organize"):
+        return "file_organize"
     if payload.get("goal") or payload.get("plan_goal"):
         return "goal"
     if payload.get("steps"):
@@ -222,6 +274,7 @@ def build_execution_envelope(
                 else None
             ),
             "write_file": extract_write_file_request(payload),
+            "file_organize": extract_file_organize_request(payload),
         },
         "mission": {
             "id": mission.id,

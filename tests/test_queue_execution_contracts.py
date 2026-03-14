@@ -1167,3 +1167,119 @@ def test_structured_write_file_requires_object_shape(tmp_path, monkeypatch):
     daemon.process_pending_once()
 
     assert (queue_root / "failed" / "job-write-structured-invalid.json").exists()
+
+
+def test_execution_envelope_normalizes_file_organize_job(tmp_path, monkeypatch):
+    cfg = AppConfig(
+        policy=PolicyApprovals(system_settings="ask", network_changes="ask", file_delete="allow"),
+        privacy=PrivacyConfig(redact_logs=True),
+    )
+    monkeypatch.setattr("voxera.core.queue_daemon.load_config", lambda: cfg)
+    queue_root = tmp_path / "queue"
+    notes_root = tmp_path / "notes"
+    source_dir = notes_root / "inbox"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "todo.txt").write_text("ship\n", encoding="utf-8")
+
+    import voxera_builtin_skills.files_copy_file as files_copy
+    import voxera_builtin_skills.files_delete_file as files_delete
+    import voxera_builtin_skills.files_exists as files_exists
+    import voxera_builtin_skills.files_mkdir as files_mkdir
+    import voxera_builtin_skills.files_move_file as files_move
+    import voxera_builtin_skills.files_stat as files_stat
+
+    for module in (files_copy, files_delete, files_exists, files_mkdir, files_move, files_stat):
+        monkeypatch.setattr(module, "ALLOWED_ROOT", notes_root)
+
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-organize.json").write_text(
+        json.dumps(
+            {
+                "file_organize": {
+                    "source_path": str(source_dir / "todo.txt"),
+                    "destination_dir": str(notes_root / "archive"),
+                    "mode": "copy",
+                    "delete_original": True,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    envelope = json.loads(
+        (queue_root / "artifacts" / "job-organize" / "execution_envelope.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert envelope["job"]["request_kind"] == "file_organize"
+    assert envelope["request"]["file_organize"]["mode"] == "copy"
+
+    step_results = json.loads(
+        (queue_root / "artifacts" / "job-organize" / "step_results.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [step["skill_id"] for step in step_results] == [
+        "files.exists",
+        "files.stat",
+        "files.mkdir",
+        "files.copy_file",
+        "files.delete_file",
+    ]
+    assert (notes_root / "archive" / "todo.txt").exists()
+    assert not (source_dir / "todo.txt").exists()
+
+
+def test_file_organize_control_plane_path_fails_closed(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_root = tmp_path / "queue"
+    notes_root = tmp_path / "notes"
+    queue_control = notes_root / "queue"
+    queue_control.mkdir(parents=True, exist_ok=True)
+    blocked_source = queue_control / "job.json"
+    blocked_source.write_text("x", encoding="utf-8")
+
+    import voxera_builtin_skills.files_copy_file as files_copy
+    import voxera_builtin_skills.files_delete_file as files_delete
+    import voxera_builtin_skills.files_exists as files_exists
+    import voxera_builtin_skills.files_mkdir as files_mkdir
+    import voxera_builtin_skills.files_move_file as files_move
+    import voxera_builtin_skills.files_stat as files_stat
+
+    for module in (files_copy, files_delete, files_exists, files_mkdir, files_move, files_stat):
+        monkeypatch.setattr(module, "ALLOWED_ROOT", notes_root)
+
+    (queue_root / "inbox").mkdir(parents=True, exist_ok=True)
+    (queue_root / "inbox" / "job-organize-blocked.json").write_text(
+        json.dumps(
+            {
+                "file_organize": {
+                    "source_path": str(blocked_source),
+                    "destination_dir": str(notes_root / "archive"),
+                    "mode": "move",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_root)
+    daemon.process_pending_once()
+
+    result = json.loads(
+        (queue_root / "artifacts" / "job-organize-blocked" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert result["terminal_outcome"] == "failed"
+
+    step_results = json.loads(
+        (queue_root / "artifacts" / "job-organize-blocked" / "step_results.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert step_results[0]["status"] == "failed"
+    assert step_results[0]["error_class"] == "path_blocked_scope"

@@ -99,6 +99,33 @@ MISSION_TEMPLATES: dict[str, MissionTemplate] = {
         ],
         notes="Review notes, copy summary text, and lower volume.",
     ),
+    "notes_archive_flow": MissionTemplate(
+        id="notes_archive_flow",
+        title="Notes Archive Flow",
+        goal="Archive an inbox note into organized notes archive with bounded file skills",
+        steps=[
+            MissionStep(skill_id="files.exists", args={"path": "~/VoxeraOS/notes/inbox/today.md"}),
+            MissionStep(skill_id="files.stat", args={"path": "~/VoxeraOS/notes/inbox/today.md"}),
+            MissionStep(
+                skill_id="files.mkdir", args={"path": "~/VoxeraOS/notes/archive", "parents": True}
+            ),
+            MissionStep(
+                skill_id="files.copy_file",
+                args={
+                    "source_path": "~/VoxeraOS/notes/inbox/today.md",
+                    "destination_path": "~/VoxeraOS/notes/archive/today.md",
+                    "overwrite": False,
+                },
+            ),
+            MissionStep(
+                skill_id="files.delete_file", args={"path": "~/VoxeraOS/notes/inbox/today.md"}
+            ),
+        ],
+        notes=(
+            "Uses bounded notes-scope file skills end-to-end: preflight existence and metadata, "
+            "ensure destination directory, copy into archive, then delete original (delete requires approval policy)."
+        ),
+    ),
     "system_check": MissionTemplate(
         id="system_check",
         title="System Check",

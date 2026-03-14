@@ -443,6 +443,30 @@ VoxeraOS now supports a narrow structured file-write payload for governed queue 
 
 This preserves explicit filename/path and text content through queue intake, planning/execution rails, and canonical evidence (`step_results.json`, `execution_result.json`, `execution_envelope.json`). Writes still execute only via VoxeraOS approvals/policy boundaries.
 
+
+### Structured bounded file-organize queue contract (PR #next)
+
+VoxeraOS also supports a deterministic bounded file-organization payload that composes multiple file skills into one governed mission flow:
+
+```json
+{
+  "file_organize": {
+    "source_path": "~/VoxeraOS/notes/inbox/today.md",
+    "destination_dir": "~/VoxeraOS/notes/archive/2026-03",
+    "mode": "copy",
+    "overwrite": false,
+    "delete_original": false
+  }
+}
+```
+
+Queue execution translates this into a coherent mission sequence (`files.exists` → `files.stat` → `files.mkdir` → `files.copy_file|files.move_file` → optional `files.delete_file`).
+
+Safety/truth guarantees remain unchanged:
+- bounded to `~/VoxeraOS/notes/**` via path normalization,
+- fail-closed blocking for control-plane scope `~/VoxeraOS/notes/queue/**`,
+- deletion only when explicitly requested (`delete_original=true`) and still policy/approval-governed (`file.delete`).
+
 ### Vera read-only web investigation via Brave Search (PR #next)
 
 Vera now supports a dedicated informational web lane backed by Brave Search API while preserving the execution wall:

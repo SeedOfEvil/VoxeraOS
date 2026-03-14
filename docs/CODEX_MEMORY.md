@@ -1,3 +1,10 @@
+## 2026-03-14 — GitHub PR #TBD — feat(queue/missions): add bounded notes archive workflow mission composition
+
+- Added a product-grade bounded filesystem workflow mission `notes_archive_flow` that composes `files.exists`, `files.stat`, `files.mkdir`, `files.copy_file`, and `files.delete_file` as one coherent end-to-end notes archive flow.
+- Added a structured queue contract `file_organize` (`source_path`, `destination_dir`, `mode`, `overwrite`, `delete_original`) that deterministically builds a governed multi-step mission on queue rails (including optional delete only when explicitly requested).
+- Preserved trust boundaries and fail-closed security semantics: all file paths remain bounded to notes scope and control-plane `~/VoxeraOS/notes/queue/**` stays blocked (`path_blocked_scope`).
+- Added focused queue execution and contract tests for successful composed file-organize jobs and blocked control-plane-path behavior, plus docs updates for operator/developer workflows.
+
 ## 2026-03-14 — GitHub PR #TBD — feat(queue/review): normalize non-success outcome taxonomy for evidence review
 
 - Added additive structured-execution `normalized_outcome_class` shaping so reviewer/operator surfaces can distinguish approval blocks, policy denial, capability/path boundary blocks, dependency-missing runtime failures, generic runtime execution failures, cancellations, and artifact-evidence gaps.

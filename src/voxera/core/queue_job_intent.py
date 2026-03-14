@@ -61,7 +61,13 @@ def _default_expected_artifacts(*, request_kind: str, source_lane: str) -> list[
     normalized_request_kind = request_kind.strip()
     if normalized_request_kind == "assistant_question":
         return list(_ASSISTANT_BASELINE_EXPECTED_ARTIFACTS)
-    if normalized_request_kind in {"mission_id", "goal", "inline_steps", "write_file"}:
+    if normalized_request_kind in {
+        "mission_id",
+        "goal",
+        "inline_steps",
+        "write_file",
+        "file_organize",
+    }:
         return list(_QUEUE_BASELINE_EXPECTED_ARTIFACTS)
     if source_lane.strip() in {"assistant_advisory", "panel_mission_prompt", "inbox_cli"}:
         if source_lane.strip() == "assistant_advisory":
@@ -93,6 +99,8 @@ def build_queue_job_intent(
     goal = _clean_text(existing.get("goal") or payload.get("goal") or payload.get("plan_goal"))
     title = _clean_text(existing.get("title") or payload.get("title") or payload.get("name"))
     notes = _clean_text(existing.get("notes") or payload.get("notes"))
+    file_organize_raw = payload.get("file_organize")
+    file_organize = file_organize_raw if isinstance(file_organize_raw, dict) else None
 
     intent: dict[str, Any] = {
         "schema_version": 1,
@@ -120,9 +128,26 @@ def build_queue_job_intent(
         "planning_payload": _coerce_planning_payload(
             existing.get("planning_payload") or payload.get("planning_payload")
         ),
+        "file_organize": {
+            "source_path": _clean_text(file_organize.get("source_path")),
+            "destination_dir": _clean_text(file_organize.get("destination_dir")),
+            "mode": _clean_text(file_organize.get("mode")),
+            "overwrite": file_organize.get("overwrite"),
+            "delete_original": file_organize.get("delete_original"),
+        }
+        if file_organize is not None
+        else None,
     }
     # Keep permissive + deterministic: prune nulls while preserving empty list fields.
-    for key in ("mission_id", "title", "goal", "notes", "operator_summary", "rationale"):
+    for key in (
+        "mission_id",
+        "title",
+        "goal",
+        "notes",
+        "operator_summary",
+        "rationale",
+        "file_organize",
+    ):
         if intent.get(key) is None:
             intent.pop(key, None)
     if intent.get("planning_payload") is None:

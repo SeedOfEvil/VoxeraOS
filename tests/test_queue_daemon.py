@@ -293,9 +293,13 @@ def test_queue_daemon_rejects_invalid_schema_with_clear_error(tmp_path, monkeypa
     sidecar = failed_job.with_name(f"{failed_job.stem}.error.json")
     assert sidecar.exists()
     details = json.loads(sidecar.read_text(encoding="utf-8"))
-    assert "mission_id (or mission), goal (or plan_goal), or inline steps" in details["error"]
+    assert (
+        "mission_id (or mission), file_organize, write_file, goal (or plan_goal), or inline steps"
+        in details["error"]
+    )
     assert any(
-        "mission_id (or mission), goal (or plan_goal), or inline steps" in evt.get("error", "")
+        "mission_id (or mission), file_organize, write_file, goal (or plan_goal), or inline steps"
+        in evt.get("error", "")
         for evt in events
         if evt.get("event") == "queue_job_failed"
     )

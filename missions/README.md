@@ -25,6 +25,7 @@ Pre-defined multi-step missions available in `missions/`:
 - `incident_mode` — escalated context for incident response.
 - `wrap_up` — end-of-session hygiene.
 - `system_check` — quick health and capability snapshot.
+- `notes_archive_flow` — bounded end-to-end notes/workspace organization flow (exists → stat → mkdir → copy → optional delete).
 
 ## Cloud-assisted mission planning
 
@@ -96,3 +97,29 @@ The panel (`voxera panel --host 127.0.0.1 --port 8787`) provides:
 - Controlled child enqueue (PR #149): missions can request one child job; child enters normal queue lifecycle with full policy/approval enforcement.
 - Live progress (PR #146): panel job detail pages poll for real-time lifecycle/step updates from canonical artifacts.
 - Mission catalog: six built-in templates ship with the repo; catalog expansion is a v0.2 milestone.
+
+
+## Structured bounded file-organize queue jobs
+
+Queue producers can submit a deterministic bounded file workflow using `file_organize`:
+
+```json
+{
+  "file_organize": {
+    "source_path": "~/VoxeraOS/notes/inbox/today.md",
+    "destination_dir": "~/VoxeraOS/notes/archive/2026-03",
+    "mode": "copy",
+    "overwrite": false,
+    "delete_original": false
+  }
+}
+```
+
+Execution composes confined file skills as one mission:
+1. `files.exists` (preflight source check)
+2. `files.stat` (metadata evidence)
+3. `files.mkdir` (ensure destination dir)
+4. `files.copy_file` or `files.move_file`
+5. optional `files.delete_file` only when `delete_original=true`
+
+All paths remain constrained to `~/VoxeraOS/notes/**`, and control-plane paths under `~/VoxeraOS/notes/queue/**` are rejected fail-closed by path-boundary enforcement.
