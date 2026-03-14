@@ -21,7 +21,7 @@
 
     <div class="alert alert-info">
       <div>
-        Responses are generated through Voxera Queue in advisory mode. This lane is read-only: no tool execution, no approvals, no state mutation.
+        <b>Read-only advisory lane.</b> Responses are generated through the Voxera queue in advisory mode &mdash; no tool execution, no approvals, no state mutation.
       </div>
     </div>
 
@@ -30,13 +30,16 @@
       {% if error %}
       <div class="alert alert-danger">{{error}}</div>
       {% endif %}
-      <form class="form-stack" method="post" action="/assistant/ask">
+      <form class="form-stack" method="post" action="/assistant/ask" id="assistant-ask-form">
         <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
         <input type="hidden" name="thread_id" value="{{thread_id}}" />
         <label>Question
           <textarea class="textarea" name="question" rows="3" placeholder="What is happening right now?" required>{{question}}</textarea>
         </label>
-        <button class="btn btn-primary" type="submit">Ask via Voxera Queue</button>
+        <button class="btn btn-primary" type="submit" id="assistant-ask-btn">
+          <span class="assistant-ask-label">Ask via Voxera Queue</span>
+          <span class="assistant-ask-spinner spinner-inline" style="display:none;" aria-hidden="true"></span>
+        </button>
       </form>
       <div class="mt">
         <p class="kpi-label"><b>Example prompts</b></p>
@@ -58,8 +61,11 @@
         <div class="assistant-conversation">
           {% for turn in thread_turns %}
             <article class="assistant-turn">
-              <p class="kpi-label"><b>{{turn.role}}</b>{% if turn.request_id %} · <span class="mono">{{turn.request_id}}</span>{% endif %}</p>
-              <p style="margin:0; white-space:pre-wrap;">{{turn.text}}</p>
+              <div class="assistant-turn-role">
+                {% if turn.role == 'user' %}You{% elif turn.role == 'assistant' %}Voxera{% else %}{{turn.role}}{% endif %}
+                {% if turn.request_id %}<span class="muted text-xs" style="font-weight:400; margin-left:6px;">{{turn.request_id}}</span>{% endif %}
+              </div>
+              <p style="margin:0; white-space:pre-wrap; line-height:1.55;">{{turn.text}}</p>
             </article>
           {% endfor %}
         </div>
@@ -101,6 +107,22 @@
       <p class="muted text-sm mt">Daemon state: <b>{{context.health_current_state.daemon_state if context.health_current_state else 'unknown'}}</b> · Queue paused: <b>{{context.queue_paused}}</b></p>
     </section>
   </div>
+
+<script>
+(() => {
+  const form = document.getElementById('assistant-ask-form');
+  const btn = document.getElementById('assistant-ask-btn');
+  if (!form || !btn) return;
+  let submitting = false;
+  form.addEventListener('submit', (e) => {
+    if (submitting) { e.preventDefault(); return; }
+    submitting = true;
+    btn.disabled = true;
+    btn.querySelector('.assistant-ask-label').style.display = 'none';
+    btn.querySelector('.assistant-ask-spinner').style.display = 'inline-block';
+  });
+})();
+</script>
 
 {% if request_result.request_id %}
 <script>

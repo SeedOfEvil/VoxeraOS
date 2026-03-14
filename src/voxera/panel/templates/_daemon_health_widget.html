@@ -6,52 +6,49 @@
         <span class="badge {% if daemon_health.daemon_state in ('running', 'healthy') %}badge-ok{% elif daemon_health.daemon_state in ('stopped', 'unknown') %}badge-paused{% elif daemon_health.daemon_state == 'degraded' %}badge-fail{% else %}badge-warn{% endif %}">
           {{daemon_health.daemon_state}}
         </span>
-        <span class="muted text-xs">from <span class="mono">notes/queue/health.json</span> (no daemon calls)</span>
+        <span class="muted text-xs">from <span class="mono">notes/queue/health.json</span></span>
       </div>
     </summary>
 
     <div class="grid grid-2 daemon-health-grid">
       <article>
         <h3>Lock Status</h3>
-        <p class="kpi-label"><b>Status</b></p>
-        <p>{{daemon_health.lock_status}}</p>
-        <p class="kpi-label"><b>Lock PID</b></p>
-        <p>{{daemon_health.lock_pid if daemon_health.lock_pid is not none else "—"}}</p>
-        <p class="kpi-label"><b>Stale age</b></p>
-        <p>{{daemon_health.lock_stale_age_label}}</p>
+        <div class="queue-detail-row"><span class="queue-detail-label">Status</span><span class="queue-detail-value">{{daemon_health.lock_status}}</span></div>
+        <div class="queue-detail-row"><span class="queue-detail-label">PID</span><span class="queue-detail-value">{{daemon_health.lock_pid if daemon_health.lock_pid is not none else "—"}}</span></div>
+        <div class="queue-detail-row"><span class="queue-detail-label">Stale age</span><span class="queue-detail-value">{{daemon_health.lock_stale_age_label}}</span></div>
       </article>
 
       <article>
         <h3>Last Brain Fallback</h3>
         {% if daemon_health.last_brain_fallback.present %}
-          <p class="kpi-label"><b>Tier</b></p><p>{{daemon_health.last_brain_fallback.tier}}</p>
-          <p class="kpi-label"><b>Reason</b></p><p>{{daemon_health.last_brain_fallback.reason}}</p>
-          <p class="kpi-label"><b>Timestamp</b></p><p>{{daemon_health.last_brain_fallback.ts}}</p>
+          <div class="queue-detail-row"><span class="queue-detail-label">Tier</span><span class="queue-detail-value">{{daemon_health.last_brain_fallback.tier}}</span></div>
+          <div class="queue-detail-row"><span class="queue-detail-label">Reason</span><span class="queue-detail-value">{{daemon_health.last_brain_fallback.reason}}</span></div>
+          <div class="queue-detail-row"><span class="queue-detail-label">When</span><span class="queue-detail-value text-sm muted">{{daemon_health.last_brain_fallback.ts}}</span></div>
         {% else %}
-          <p class="muted">No recent fallbacks.</p>
+          <p class="muted text-sm" style="margin-top:var(--space-2);">No recent fallbacks.</p>
         {% endif %}
       </article>
 
       <article>
         <h3>Last Startup Recovery</h3>
         {% if daemon_health.last_startup_recovery.present %}
-          <p class="kpi-label"><b>job_count</b></p><p>{{daemon_health.last_startup_recovery.job_count}}</p>
-          <p class="kpi-label"><b>orphan_count</b></p><p>{{daemon_health.last_startup_recovery.orphan_count}}</p>
-          <p class="kpi-label"><b>Timestamp</b></p><p>{{daemon_health.last_startup_recovery.ts}}</p>
+          <div class="queue-detail-row"><span class="queue-detail-label">Jobs recovered</span><span class="queue-detail-value">{{daemon_health.last_startup_recovery.job_count}}</span></div>
+          <div class="queue-detail-row"><span class="queue-detail-label">Orphans found</span><span class="queue-detail-value">{{daemon_health.last_startup_recovery.orphan_count}}</span></div>
+          <div class="queue-detail-row"><span class="queue-detail-label">When</span><span class="queue-detail-value text-sm muted">{{daemon_health.last_startup_recovery.ts}}</span></div>
         {% else %}
-          <p class="muted">clean</p>
+          <p class="muted text-sm" style="margin-top:var(--space-2);">Clean startup &mdash; no recovery needed.</p>
         {% endif %}
       </article>
 
       <article>
-        <h3>Last Shutdown Outcome</h3>
+        <h3>Last Shutdown</h3>
         {% if daemon_health.last_shutdown.present %}
-          <p class="kpi-label"><b>Outcome</b></p><p>{{daemon_health.last_shutdown.outcome}}</p>
-          <p class="kpi-label"><b>Timestamp</b></p><p>{{daemon_health.last_shutdown.ts}}</p>
-          <p class="kpi-label"><b>Reason</b></p><p>{{daemon_health.last_shutdown.reason}}</p>
-          <p class="kpi-label"><b>Job</b></p><p>{{daemon_health.last_shutdown.job}}</p>
+          <div class="queue-detail-row"><span class="queue-detail-label">Outcome</span><span class="queue-detail-value">{{daemon_health.last_shutdown.outcome}}</span></div>
+          <div class="queue-detail-row"><span class="queue-detail-label">Reason</span><span class="queue-detail-value">{{daemon_health.last_shutdown.reason or "—"}}</span></div>
+          <div class="queue-detail-row"><span class="queue-detail-label">Job</span><span class="queue-detail-value mono text-xs">{{daemon_health.last_shutdown.job or "—"}}</span></div>
+          <div class="queue-detail-row"><span class="queue-detail-label">When</span><span class="queue-detail-value text-sm muted">{{daemon_health.last_shutdown.ts}}</span></div>
         {% else %}
-          <p class="muted">unknown</p>
+          <p class="muted text-sm" style="margin-top:var(--space-2);">No shutdown recorded.</p>
         {% endif %}
       </article>
     </div>

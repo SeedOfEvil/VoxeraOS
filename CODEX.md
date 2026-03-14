@@ -14,7 +14,7 @@ Post-v0.1.6 hardening and observability work is complete (PRs #145–#149). Curr
 - **LLM rate limiter**: token-bucket around `brain.generate()` calls; default 30 RPM; configurable via `VOXERA_BRAIN_RATE_LIMIT_RPM`; `brain_rate_limited` audit events.
 - **E2E test environment**: Podman + Xvfb for clipboard and window-management skill testing; `make e2e-full` target.
 - **Provider UX improvements**: keyring availability shown at setup start; credential test before save; named provider profile presets.
-- **Panel-first UX**: mobile-responsive layout; full mission authoring from panel; template picker.
+- **Panel-first UX**: mobile-responsive layout; full mission authoring from panel; template picker. UX productization pass shipped (PR #TBD): send-state management, humanized labels, semantic badge coloring, bubble-based Vera chat layout — see CODEX_MEMORY.md for full scope.
 - **Artifact/evidence contract hardening**: keep execution outputs review/verifier-friendly via additive normalized `execution_result.json` contract fields (`artifact_families`, `artifact_refs`, `review_summary`, `evidence_bundle.trace`).
 - **Verifier review hardening**: keep "what happened?" review deterministic and lifecycle-aware by grounding summary/next-step shaping on canonical queue state + normalized review/evidence contract fields (including explicit `queued` vs `submitted` handling).
 - **State-aware expected-artifact review**: keep reviewer guidance explicit for fully observed/partial/missing/none-declared outputs without conflating approval-blocked/canceled states with runtime failure.

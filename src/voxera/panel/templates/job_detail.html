@@ -14,7 +14,14 @@
       <p class="subtitle">Job detail — <span class="mono text-sm">{{payload.bucket}}</span></p>
     </div>
     <div class="action-group">
-      <span class="badge {% if payload.bucket == 'failed' %}badge-fail{% elif payload.bucket == 'done' %}badge-ok{% elif payload.bucket == 'approvals' %}badge-warn{% else %}badge-running{% endif %}">
+      <span class="badge
+        {% if payload.bucket == 'failed' %}badge-failed
+        {% elif payload.bucket == 'done' %}badge-done
+        {% elif payload.bucket == 'approvals' %}badge-approval
+        {% elif payload.bucket == 'pending' %}badge-pending
+        {% elif payload.bucket == 'inbox' %}badge-inbox
+        {% elif payload.bucket == 'canceled' %}badge-canceled
+        {% else %}badge-running{% endif %}">
         {{payload.bucket}}
       </span>
       {% if payload.paused %}<span class="badge badge-paused">paused</span>{% endif %}
@@ -22,8 +29,7 @@
     </div>
   </header>
 
-  <div class="section-label">Execution State</div>
-  <div class="section-label">Lifecycle & Context</div>
+  <div class="section-label">Lifecycle &amp; Execution State</div>
   <section class="card mb">
     <dl class="detail-grid" style="margin-bottom:var(--space-2);">
       <dt>Lifecycle state</dt><dd id="live-lifecycle">{{payload.execution.lifecycle_state or payload.state.lifecycle_state or payload.bucket}}</dd>
@@ -202,8 +208,22 @@
 
   <div class="section-label">Output</div>
   <section class="grid grid-2 mb">
-    <article class="card"><h2>stdout <span class="muted text-xs">(max 64 KB)</span></h2>{% if payload.stdout %}<pre>{{payload.stdout}}</pre>{% else %}<div class="empty-state">No stdout output.</div>{% endif %}</article>
-    <article class="card"><h2>stderr <span class="muted text-xs">(max 64 KB)</span></h2>{% if payload.stderr %}<pre style="border-color:var(--danger);">{{payload.stderr}}</pre>{% else %}<div class="empty-state">No stderr output.</div>{% endif %}</article>
+    <article class="card">
+      <h2>Standard Output <span class="muted text-xs">(up to 64 KB)</span></h2>
+      {% if payload.stdout %}
+        <pre>{{payload.stdout}}</pre>
+      {% else %}
+        <div class="empty-state">No output captured.</div>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2>Standard Error <span class="muted text-xs">(up to 64 KB)</span></h2>
+      {% if payload.stderr %}
+        <pre style="border-color:var(--danger); background:var(--danger-soft);">{{payload.stderr}}</pre>
+      {% else %}
+        <div class="empty-state">No errors captured.</div>
+      {% endif %}
+    </article>
   </section>
 
   <div class="section-label">Execution</div>

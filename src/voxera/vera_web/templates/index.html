@@ -8,47 +8,63 @@
 </head>
 <body>
   <main class="shell">
+
+    <!-- Topbar -->
     <header class="topbar">
-      <div>
-        <h1>Vera</h1>
-        <p>Reasoning partner · VoxeraOS-only execution · DEV mode</p>
+      <div class="topbar-brand">
+        <div class="vera-dot"></div>
+        <div>
+          <h1>Vera</h1>
+          <p>Reasoning partner &middot; VoxeraOS execution</p>
+        </div>
       </div>
-      <div class="meta">
-        <span>Status: {{mode_status}}</span>
+      <div class="topbar-meta">
+        <span class="status-chip {% if 'active' in mode_status|lower or 'ready' in mode_status|lower %}active{% endif %}">
+          {{mode_status}}
+        </span>
       </div>
     </header>
 
-    <section class="boundary">
-      <strong>Boundary:</strong> Real actions must go through VoxeraOS queue handoff. Chat never executes side effects.
-      <div class="sub">{{queue_boundary}}</div>
+    <!-- Boundary notice -->
+    <section class="boundary" role="note">
+      <strong>Execution boundary:</strong>
+      Real actions go through VoxeraOS queue handoff only &mdash; chat never executes side effects directly.
     </section>
 
+    <!-- Active preview pane -->
     {% if pending_preview %}
     <section class="preview" aria-live="polite">
-      <div><strong>Preview panel · Active VoxeraOS draft (authoritative, not submitted):</strong></div>
+      <div class="preview-label">Preview panel · Active VoxeraOS draft (authoritative, not submitted)</div>
       <pre class="prompt-box">{{pending_preview | tojson(indent=2)}}</pre>
-      <form method="post" action="/handoff">
-        <input type="hidden" name="session_id" value="{{session_id}}" />
-        <button type="submit">Submit current preview to VoxeraOS</button>
-      </form>
+      <div class="preview-actions">
+        <form method="post" action="/handoff">
+          <input type="hidden" name="session_id" value="{{session_id}}" />
+          <button class="btn-handoff" type="submit">Submit current preview to VoxeraOS</button>
+        </form>
+      </div>
     </section>
     {% endif %}
 
-    {% if error %}<div class="error">{{error}}</div>{% endif %}
+    {% if error %}<div class="error" role="alert">{{error}}</div>{% endif %}
 
-    <section class="thread" id="thread">
+    <!-- Conversation thread -->
+    <section class="thread" id="thread" aria-label="Conversation">
       {% if turns and turns|length > 0 %}
         {% for turn in turns %}
           <article class="bubble {{turn.role}}">
-            <div class="role">{{turn.role}}</div>
+            <div class="role">{% if turn.role == 'user' %}You{% elif turn.role == 'assistant' %}Vera{% else %}{{turn.role}}{% endif %}</div>
             <div class="text">{{turn.text}}</div>
           </article>
         {% endfor %}
       {% else %}
-        <div class="empty">How can I help? Ask anything about planning, specs, debugging, or drafting a VoxeraOS request.</div>
+        <div class="empty">
+          <div class="empty-title">Ask Vera anything</div>
+          <div class="empty-hint">How can I help? Ask about planning, specs, debugging, or draft a VoxeraOS request.<br/>Real execution always goes through the queue with your approval.</div>
+        </div>
       {% endif %}
     </section>
 
+    <!-- Actions row -->
     <div class="actions-row">
       <details class="dev-panel">
         <summary>DEV diagnostics</summary>
@@ -59,56 +75,112 @@
           <div><b>turn_count / max</b>: {{debug_info.turn_count}} / {{debug_info.max_session_turns}}</div>
           <div><b>session_file_exists</b>: {{debug_info.session_file_exists}}</div>
           <div><b>session_file</b>: <span class="mono">{{debug_info.session_file}}</span></div>
-          <div><b>system_prompt_sha256</b>: <span class="mono">{{debug_info.system_prompt_sha256}}</span></div>
           <div><b>preview_available</b>: {{debug_info.preview_available}}</div>
-          <div><b>handoff_attempted</b>: {{debug_info.handoff_attempted}}</div>
           <div><b>handoff_status</b>: {{debug_info.handoff_status}}</div>
-          <div><b>handoff_queue_path</b>: <span class="mono">{{debug_info.handoff_queue_path}}</span></div>
           <div><b>handoff_job_id</b>: <span class="mono">{{debug_info.handoff_job_id}}</span></div>
-          <div><b>handoff_error</b>: {{debug_info.handoff_error}}</div>
         </div>
-        <p class="dev-label">Structured drafting examples</p>
+        <p class="dev-label">Drafting examples</p>
         <pre class="prompt-box">{{drafting_examples | tojson(indent=2)}}</pre>
-        <p class="dev-label">System prompt (developer-visible)</p>
+        <p class="dev-label">System prompt</p>
         <pre class="prompt-box">{{system_prompt}}</pre>
       </details>
       <form method="post" action="/clear">
         <input type="hidden" name="session_id" value="{{session_id}}" />
-        <button class="clear-btn" type="submit">Clear chat + context</button>
+        <button class="btn-clear" type="submit">Clear session</button>
       </form>
     </div>
 
-    <form class="composer" method="post" action="/chat">
+    <!-- Composer -->
+    <form class="composer" method="post" action="/chat" id="chat-form" autocomplete="off">
       <input type="hidden" name="session_id" value="{{session_id}}" />
-      <textarea name="message" rows="2" required placeholder="Ask Vera anything..."></textarea>
-      <button type="submit">Send</button>
+      <textarea
+        id="message-input"
+        name="message"
+        rows="1"
+        required
+        placeholder="Message Vera&hellip;"
+        aria-label="Message input"
+      ></textarea>
+      <button class="btn-send" type="submit" id="send-btn" aria-label="Send message">
+        <div class="spinner"></div>
+        <svg class="send-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M3.105 3.105a.75.75 0 01.814-.156l13 5.5a.75.75 0 010 1.102l-13 5.5a.75.75 0 01-1.05-.886L4.72 10 2.869 5.834a.75.75 0 01.236-.729z"/>
+        </svg>
+      </button>
     </form>
+
   </main>
+
   <script>
-    (() => {
-      const thread = document.getElementById("thread");
-      if (!thread) {
-        return;
-      }
+  (() => {
+    // ── Send state management ─────────────────────────────────────────────
+    const form = document.getElementById('chat-form');
+    const sendBtn = document.getElementById('send-btn');
+    const textarea = document.getElementById('message-input');
 
-      const manualScrollKey = "vera_thread_manual_scroll_up";
-      const distanceFromBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight;
-      const isNearBottom = () => distanceFromBottom() < 120;
+    if (form && sendBtn && textarea) {
+      let isSubmitting = false;
 
-      const manuallyScrolledUp = sessionStorage.getItem(manualScrollKey) === "1";
-      if (!manuallyScrolledUp || isNearBottom()) {
-        thread.scrollTop = thread.scrollHeight;
-        sessionStorage.removeItem(manualScrollKey);
-      }
+      // Prevent double-send: disable controls on first submit
+      form.addEventListener('submit', (e) => {
+        if (isSubmitting) {
+          e.preventDefault();
+          return;
+        }
+        const msg = textarea.value.trim();
+        if (!msg) {
+          e.preventDefault();
+          return;
+        }
+        isSubmitting = true;
+        sendBtn.disabled = true;
+        sendBtn.classList.add('is-sending');
+        textarea.disabled = true;
+        // Page will reload with the response; no cleanup needed
+      });
 
-      thread.addEventListener("scroll", () => {
-        if (isNearBottom()) {
-          sessionStorage.removeItem(manualScrollKey);
-        } else {
-          sessionStorage.setItem(manualScrollKey, "1");
+      // Keyboard shortcut: Enter to send, Shift+Enter for newline
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (!isSubmitting && textarea.value.trim()) {
+            form.requestSubmit();
+          }
         }
       });
-    })();
+
+      // Auto-resize textarea as user types
+      textarea.addEventListener('input', () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
+      });
+
+      // Focus on load if thread has content or is empty
+      textarea.focus();
+    }
+
+    // ── Thread auto-scroll ────────────────────────────────────────────────
+    const thread = document.getElementById('thread');
+    if (!thread) return;
+
+    const manualScrollKey = 'vera_thread_manual_scroll_up';
+    const distanceFromBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight;
+    const isNearBottom = () => distanceFromBottom() < 100;
+
+    const manuallyScrolledUp = sessionStorage.getItem(manualScrollKey) === '1';
+    if (!manuallyScrolledUp || isNearBottom()) {
+      thread.scrollTop = thread.scrollHeight;
+      sessionStorage.removeItem(manualScrollKey);
+    }
+
+    thread.addEventListener('scroll', () => {
+      if (isNearBottom()) {
+        sessionStorage.removeItem(manualScrollKey);
+      } else {
+        sessionStorage.setItem(manualScrollKey, '1');
+      }
+    });
+  })();
   </script>
 </body>
 </html>

@@ -10,8 +10,8 @@
   <div class="container">
     <header class="page-header">
       <div>
-        <h1 class="title">Voxera Control Panel</h1>
-        <p class="subtitle">Mission operations center — queue orchestration, approvals, and live activity.</p>
+        <h1 class="title">VoxeraOS</h1>
+        <p class="subtitle">Operator control panel &mdash; queue orchestration, approvals, and live activity.</p>
       </div>
       {% if queue.paused %}
         <span class="badge badge-paused">Queue Paused</span>
@@ -21,7 +21,7 @@
     </header>
 
     <nav class="page-nav">
-      <a href="/jobs">Browse Jobs</a>
+      <a href="/jobs">Job Browser</a>
       <span class="sep">·</span>
       <a href="/hygiene">Queue Hygiene</a>
       <span class="sep">·</span>
@@ -29,7 +29,9 @@
       <span class="sep">·</span>
       <a href="/recovery">Recovery Inspector</a>
       <span class="sep">·</span>
-      <a href="/bundle/system">Download System Bundle</a>
+      <a href="/vera">Vera</a>
+      <span class="sep">·</span>
+      <a href="/bundle/system">System Bundle</a>
     </nav>
 
     {% if auth_setup_banner %}
@@ -73,14 +75,14 @@
       <section class="grid grid-4 mb">
         <article class="card">
           <p class="kpi">{{queue.counts.pending}}</p>
-          <p class="kpi-label">Pending</p>
+          <p class="kpi-label">In Progress</p>
         </article>
         <article class="card">
-          <p class="kpi{% if queue.counts.pending_approvals > 0 %}" style="color:var(--warn){% endif %}">{{queue.counts.pending_approvals}}</p>
-          <p class="kpi-label">Awaiting Approval</p>
+          <p class="kpi {% if queue.counts.pending_approvals > 0 %}kpi-warn{% endif %}">{{queue.counts.pending_approvals}}</p>
+          <p class="kpi-label">Need Approval</p>
         </article>
         <article class="card">
-          <p class="kpi{% if queue.counts.failed > 0 %}" style="color:var(--danger){% endif %}">{{queue.counts.failed}}</p>
+          <p class="kpi {% if queue.counts.failed > 0 %}kpi-danger{% endif %}">{{queue.counts.failed}}</p>
           <p class="kpi-label">Failed</p>
         </article>
         <article class="card">
@@ -118,7 +120,12 @@
                   <td>{{item.capability}}</td>
                   <td>{{item.policy_reason or item.reason}}</td>
                   <td class="text-sm">{{item.target.type}}: {{item.target.value}}</td>
-                  <td class="text-xs muted">fs={{item.scope.fs_scope}}<br/>net={{item.scope.needs_network}}</td>
+                  <td>
+                    <div class="scope-tags">
+                      <span class="scope-tag">Files: {{item.scope.fs_scope or 'none'}}</span>
+                      {% if item.scope.needs_network %}<span class="scope-tag">Network: yes</span>{% endif %}
+                    </div>
+                  </td>
                   <td>
                     <div class="action-group">
                       <form method="post" action="/queue/approvals/{{item.job}}/approve">
@@ -246,48 +253,61 @@
       <!-- Queue Status + health (secondary details) -->
       <div class="section-label">Queue Details</div>
       <section class="card mb">
-        <h2>Queue Status + Failed Metadata Health</h2>
+        <h2>Queue Status</h2>
         {% if not queue.exists %}
-          <p class="muted">Queue root not found: {{queue_root}}</p>
+          <div class="alert alert-warn">Queue root not found: <span class="mono text-xs">{{queue_root}}</span></div>
         {% endif %}
         <div class="grid grid-3">
           <div>
-            <p class="kpi-label"><b>inbox/</b></p><p>{{queue.counts.inbox}}</p>
-            <p class="kpi-label"><b>pending/</b></p><p>{{queue.counts.pending}}</p>
-            <p class="kpi-label"><b>pending/approvals/</b></p><p>{{queue.counts.pending_approvals}}</p>
-            <p class="kpi-label"><b>done/</b></p><p>{{queue.counts.done}}</p>
-            <p class="kpi-label"><b>failed/</b></p><p>{{queue.counts.failed}}</p>
+            <h3>Bucket Counts</h3>
+            <div class="queue-detail-row"><span class="queue-detail-label">Inbox</span><span class="queue-detail-value">{{queue.counts.inbox}}</span></div>
+            <div class="queue-detail-row"><span class="queue-detail-label">In Progress</span><span class="queue-detail-value">{{queue.counts.pending}}</span></div>
+            <div class="queue-detail-row"><span class="queue-detail-label">Awaiting Approval</span><span class="queue-detail-value">{{queue.counts.pending_approvals}}</span></div>
+            <div class="queue-detail-row"><span class="queue-detail-label">Completed</span><span class="queue-detail-value">{{queue.counts.done}}</span></div>
+            <div class="queue-detail-row"><span class="queue-detail-label">Failed</span><span class="queue-detail-value">{{queue.counts.failed}}</span></div>
           </div>
           <div>
-            <p class="kpi-label"><b>Failed metadata valid</b></p><p>{{queue.failed_sidecars_valid}}</p>
-            <p class="kpi-label"><b>Failed metadata invalid</b></p><p>{{queue.failed_sidecars_invalid}}</p>
-            <p class="kpi-label"><b>Failed metadata missing</b></p><p>{{queue.failed_sidecars_missing}}</p>
+            <h3>Failed Record Health</h3>
+            <div class="queue-detail-row"><span class="queue-detail-label">Valid records</span><span class="queue-detail-value">{{queue.failed_sidecars_valid}}</span></div>
+            <div class="queue-detail-row"><span class="queue-detail-label">Invalid records</span><span class="queue-detail-value">{{queue.failed_sidecars_invalid}}</span></div>
+            <div class="queue-detail-row"><span class="queue-detail-label">Missing records</span><span class="queue-detail-value">{{queue.failed_sidecars_missing}}</span></div>
+            <h3 style="margin-top:var(--space-3);">Retention Policy</h3>
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Max age</span>
+              <span class="queue-detail-value">{% if queue.failed_retention.max_age_s is not none %}{{queue.failed_retention.max_age_s}}s{% else %}not set{% endif %}</span>
+            </div>
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Max count</span>
+              <span class="queue-detail-value">{% if queue.failed_retention.max_count is not none %}{{queue.failed_retention.max_count}}{% else %}not set{% endif %}</span>
+            </div>
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Last prune removed</span>
+              <span class="queue-detail-value">{{queue.failed_prune_last.removed_jobs}} jobs / {{queue.failed_prune_last.removed_sidecars}} records</span>
+            </div>
           </div>
           <div>
-            <p class="kpi-label"><b>Failed retention max age (s)</b></p>
-            <p>{{queue.failed_retention.max_age_s if queue.failed_retention.max_age_s is not none else "(unset)"}}</p>
-            <p class="kpi-label"><b>Failed retention max count</b></p>
-            <p>{{queue.failed_retention.max_count if queue.failed_retention.max_count is not none else "(unset)"}}</p>
-            <p class="kpi-label"><b>Latest prune removed jobs/sidecars</b></p>
-            <p>{{queue.failed_prune_last.removed_jobs}} / {{queue.failed_prune_last.removed_sidecars}}</p>
-            <p class="kpi-label"><b>Queue Root</b></p>
-            <p class="muted mono text-xs">{{queue_root}}</p>
-            <p class="kpi-label"><b>Intake</b></p>
-            <p class="muted mono text-xs">{{queue.intake_glob}}</p>
-            <p class="kpi-label"><b>Daemon paused</b></p>
-            <p>{{queue.paused}}</p>
-            <p class="kpi-label"><b>Last OK</b></p>
-            <p>{{queue.last_ok_event or "-"}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% elif not queue.last_ok_event %}{% endif %}</p>
-            <p class="kpi-label"><b>Last Error</b></p>
-            <p>{{queue.last_error or "-"}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% elif not queue.last_error %}{% endif %}</p>
-            <div class="action-group" style="margin-top:var(--space-2);">
+            <h3>Runtime Status</h3>
+            <div class="queue-detail-row"><span class="queue-detail-label">Paused</span><span class="queue-detail-value">{{queue.paused}}</span></div>
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Last healthy event</span>
+              <span class="queue-detail-value text-sm">{{queue.last_ok_event or "—"}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% endif %}</span>
+            </div>
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Last error</span>
+              <span class="queue-detail-value text-sm">{{queue.last_error or "—"}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% endif %}</span>
+            </div>
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Queue root</span>
+              <span class="muted mono text-xs" style="word-break:break-all;">{{queue_root}}</span>
+            </div>
+            <div class="action-group" style="margin-top:var(--space-3);">
               <form method="post" action="/queue/pause">
                 <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                <button class="btn btn-sm" type="submit">Pause</button>
+                <button class="btn btn-sm" type="submit">Pause Queue</button>
               </form>
               <form method="post" action="/queue/resume">
                 <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                <button class="btn btn-sm btn-primary" type="submit">Resume</button>
+                <button class="btn btn-sm btn-primary" type="submit">Resume Queue</button>
               </form>
             </div>
           </div>
@@ -297,32 +317,32 @@
       <!-- Diagnostic counters -->
       <section class="grid grid-2 mb">
         <article class="card">
-          <h2>Daemon Lock Event Counters</h2>
+          <h2>Daemon Lock History</h2>
           <div class="table-wrap"><table>
             <thead><tr><th>Event</th><th>Count</th></tr></thead>
             <tbody>
-              <tr><td>acquired</td><td>{{queue.daemon_lock_counters.lock_acquire_ok or 0}}</td></tr>
-              <tr><td>released</td><td>{{queue.daemon_lock_counters.lock_released or 0}}</td></tr>
-              <tr><td>stale reclaimed</td><td>{{queue.daemon_lock_counters.lock_reclaimed or 0}}</td></tr>
-              <tr><td>acquire failed (active lock)</td><td>{{queue.daemon_lock_counters.lock_acquire_fail or 0}}</td></tr>
-              <tr><td>unlocked stale</td><td>{{queue.daemon_lock_counters.unlock_ok or 0}}</td></tr>
-              <tr><td>unlock refused (live pid)</td><td>{{queue.daemon_lock_counters.unlock_refused or 0}}</td></tr>
-              <tr><td>force unlocked</td><td>{{queue.daemon_lock_counters.force_unlock_count or 0}}</td></tr>
+              <tr><td>Lock acquired</td><td>{{queue.daemon_lock_counters.lock_acquire_ok or 0}}</td></tr>
+              <tr><td>Lock released cleanly</td><td>{{queue.daemon_lock_counters.lock_released or 0}}</td></tr>
+              <tr><td>Stale lock reclaimed</td><td>{{queue.daemon_lock_counters.lock_reclaimed or 0}}</td></tr>
+              <tr><td>Acquire blocked (live lock)</td><td>{{queue.daemon_lock_counters.lock_acquire_fail or 0}}</td></tr>
+              <tr><td>Stale lock cleared</td><td>{{queue.daemon_lock_counters.unlock_ok or 0}}</td></tr>
+              <tr><td>Unlock refused (live PID)</td><td>{{queue.daemon_lock_counters.unlock_refused or 0}}</td></tr>
+              <tr><td>Force-unlocked</td><td>{{queue.daemon_lock_counters.force_unlock_count or 0}}</td></tr>
             </tbody>
           </table></div>
         </article>
 
         <article class="card">
-          <h2>Panel Mutation Security Counters</h2>
+          <h2>Panel Security Counters</h2>
           <div class="table-wrap"><table>
             <thead><tr><th>Event</th><th>Count</th></tr></thead>
             <tbody>
-              <tr><td>mutation allowed</td><td>{{panel_security_counters.panel_mutation_allowed or 0}}</td></tr>
-              <tr><td>http 401 count</td><td>{{panel_security_counters.panel_401_count or 0}}</td></tr>
-              <tr><td>http 403 count</td><td>{{panel_security_counters.panel_403_count or 0}}</td></tr>
-              <tr><td>auth invalid</td><td>{{panel_security_counters.panel_auth_invalid or 0}}</td></tr>
-              <tr><td>csrf missing</td><td>{{panel_security_counters.panel_csrf_missing or 0}}</td></tr>
-              <tr><td>csrf invalid</td><td>{{panel_security_counters.panel_csrf_invalid or 0}}</td></tr>
+              <tr><td>Mutations allowed</td><td>{{panel_security_counters.panel_mutation_allowed or 0}}</td></tr>
+              <tr><td>Unauthorized (401)</td><td>{{panel_security_counters.panel_401_count or 0}}</td></tr>
+              <tr><td>Forbidden (403)</td><td>{{panel_security_counters.panel_403_count or 0}}</td></tr>
+              <tr><td>Bad credentials</td><td>{{panel_security_counters.panel_auth_invalid or 0}}</td></tr>
+              <tr><td>CSRF token missing</td><td>{{panel_security_counters.panel_csrf_missing or 0}}</td></tr>
+              <tr><td>CSRF token invalid</td><td>{{panel_security_counters.panel_csrf_invalid or 0}}</td></tr>
             </tbody>
           </table></div>
         </article>

@@ -3,54 +3,212 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Vera v0 Chat</title>
+  <title>Vera &middot; VoxeraOS Panel</title>
   <link rel="stylesheet" href="/static/panel.css" />
 </head>
 <body>
   <div class="container">
     <header class="page-header">
       <div>
-        <h1 class="title">Vera v0 — Reasoning Partner</h1>
-        <p class="subtitle">Conversational intelligence surface. VoxeraOS-only execution boundary is always enforced.</p>
+        <h1 class="title">Vera</h1>
+        <p class="subtitle">Conversational reasoning partner &mdash; VoxeraOS execution boundary enforced.</p>
       </div>
       <a class="btn" href="/">Back to Control Panel</a>
     </header>
 
-    <section class="card mb">
-      <p><b>Mode:</b> Conversational / reasoning-first</p>
-      <p><b>Execution boundary:</b> Real actions must go through VoxeraOS queue handoff. Chat does not execute side effects.</p>
-      <p class="muted text-sm">{{queue_boundary}}</p>
-      <p class="muted text-sm">Session: <span class="mono">{{session_id}}</span> · Status: <span class="mono">{{mode_status}}</span></p>
-    </section>
+    <div class="alert alert-info" role="note">
+      <div>
+        <b>Execution boundary:</b> Vera never executes actions directly. Real requests go through the VoxeraOS queue with full approval and audit visibility.
+        <span class="muted text-xs" style="display:block; margin-top:3px;">Session: <span class="mono">{{session_id}}</span> &middot; {{mode_status}}</span>
+      </div>
+    </div>
 
-    <section class="card mb">
-      <h2>Chat</h2>
-      {% if error %}<div class="alert alert-danger">{{error}}</div>{% endif %}
-      <form class="form-stack" method="post" action="/vera/chat">
+    {% if error %}<div class="alert alert-danger" role="alert">{{error}}</div>{% endif %}
+
+    <!-- Conversation thread -->
+    <section class="card mb vera-chat-card">
+      <div class="vera-thread" id="vera-thread" aria-label="Conversation with Vera">
+        {% if turns and turns|length > 0 %}
+          {% for turn in turns %}
+            <article class="vera-bubble {{turn.role}}">
+              <div class="vera-role">
+                {% if turn.role == 'user' %}You{% elif turn.role == 'assistant' %}Vera{% else %}{{turn.role}}{% endif %}
+              </div>
+              <div class="vera-text">{{turn.text}}</div>
+            </article>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state" style="margin-top:3rem;">
+            Start a conversation &mdash; ask Vera to help plan, reason, or draft a VoxeraOS request.
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Composer -->
+      <form class="vera-composer" method="post" action="/vera/chat" id="vera-form" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
         <input type="hidden" name="session_id" value="{{session_id}}" />
-        <label>Your message
-          <textarea class="textarea" name="message" rows="3" required placeholder="Hi Vera, help me think through ..."></textarea>
-        </label>
-        <button class="btn btn-primary" type="submit">Send</button>
+        <textarea
+          id="vera-message"
+          class="textarea"
+          name="message"
+          rows="2"
+          required
+          placeholder="Ask Vera anything&hellip;"
+          aria-label="Message to Vera"
+        ></textarea>
+        <div class="vera-composer-actions">
+          <button class="btn btn-primary" type="submit" id="vera-send-btn">
+            <span class="vera-send-label">Send</span>
+            <span class="vera-send-spinner" aria-hidden="true"></span>
+          </button>
+        </div>
       </form>
     </section>
 
-    <section class="card">
-      <h2>Conversation (short session context)</h2>
-      {% if turns and turns|length > 0 %}
-        <div class="assistant-conversation">
-          {% for turn in turns %}
-          <article class="assistant-turn">
-            <p class="kpi-label"><b>{{turn.role}}</b></p>
-            <p style="margin:0; white-space:pre-wrap;">{{turn.text}}</p>
-          </article>
-          {% endfor %}
-        </div>
-      {% else %}
-      <div class="empty-state">No messages yet.</div>
-      {% endif %}
-    </section>
   </div>
+
+  <style>
+  /* Vera chat styles scoped to panel context */
+  .vera-chat-card {
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .vera-thread {
+    flex: 1;
+    min-height: 320px;
+    max-height: 520px;
+    overflow-y: auto;
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    scroll-behavior: smooth;
+  }
+  .vera-bubble {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 80%;
+    animation: veraFadeIn 0.18s ease;
+  }
+  @keyframes veraFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .vera-bubble.user { margin-left: auto; align-items: flex-end; }
+  .vera-bubble.assistant { align-items: flex-start; }
+  .vera-role {
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--muted);
+    padding: 0 var(--space-1);
+  }
+  .vera-bubble.user .vera-role { color: var(--accent); }
+  .vera-text {
+    white-space: pre-wrap;
+    line-height: 1.55;
+    word-break: break-word;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
+    font-size: .9rem;
+  }
+  .vera-bubble.user .vera-text {
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-bottom-right-radius: var(--radius-sm);
+    color: var(--text);
+  }
+  .vera-bubble.assistant .vera-text {
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-bottom-left-radius: var(--radius-sm);
+    color: var(--text);
+  }
+  .vera-composer {
+    border-top: 1px solid var(--border-soft);
+    padding: var(--space-3) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    background: var(--surface);
+  }
+  .vera-composer-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .vera-composer .textarea {
+    resize: none;
+    min-height: 56px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+  /* Send spinner (inline) */
+  #vera-send-btn .vera-send-spinner {
+    display: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: veraSpinBtn 0.7s linear infinite;
+  }
+  #vera-send-btn.is-sending .vera-send-label { display: none; }
+  #vera-send-btn.is-sending .vera-send-spinner { display: inline-block; }
+  @keyframes veraSpinBtn {
+    to { transform: rotate(360deg); }
+  }
+  </style>
+
+  <script>
+  (() => {
+    const form = document.getElementById('vera-form');
+    const sendBtn = document.getElementById('vera-send-btn');
+    const textarea = document.getElementById('vera-message');
+    const thread = document.getElementById('vera-thread');
+
+    // ── Send state ────────────────────────────────────────────────
+    if (form && sendBtn && textarea) {
+      let isSubmitting = false;
+
+      form.addEventListener('submit', (e) => {
+        if (isSubmitting) { e.preventDefault(); return; }
+        const msg = textarea.value.trim();
+        if (!msg) { e.preventDefault(); return; }
+        isSubmitting = true;
+        sendBtn.disabled = true;
+        sendBtn.classList.add('is-sending');
+        textarea.disabled = true;
+      });
+
+      // Enter to send, Shift+Enter for newline
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (!isSubmitting && textarea.value.trim()) {
+            form.requestSubmit();
+          }
+        }
+      });
+
+      // Auto-resize
+      textarea.addEventListener('input', () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 140) + 'px';
+      });
+    }
+
+    // ── Auto-scroll thread ─────────────────────────────────────────
+    if (thread) {
+      thread.scrollTop = thread.scrollHeight;
+    }
+  })();
+  </script>
 </body>
 </html>
