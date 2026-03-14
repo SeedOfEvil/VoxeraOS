@@ -12,6 +12,7 @@ Post-v0.1.6 hardening and observability work is complete (PRs #145–#149). Curr
 - **Mission catalog expansion**: document 10+ production-usable missions in `missions/` with manifests, test data, and validated `--dry-run` smoke paths.
 - **`voxera skills validate` command**: eager manifest validation at the CLI level without daemon launch; `skill_manifest_invalid` audit events; surface in `voxera doctor` (partial: `skills.registry` row already ships in doctor).
 - **Built-in skill metadata baseline discipline**: keep manifests aligned on governance fields (`exec_mode`, `needs_network`, `fs_scope`, `output_schema`, `output_artifacts`) so approval/review capability surfaces remain comparable before wider skill-pack expansion.
+- **Filesystem productivity wave 1 (bounded)**: additive `files.list_dir`, `files.copy_file`, and `files.move_file` with confined notes-root path enforcement and deterministic skill-result payload evidence.
 - **LLM rate limiter**: token-bucket around `brain.generate()` calls; default 30 RPM; configurable via `VOXERA_BRAIN_RATE_LIMIT_RPM`; `brain_rate_limited` audit events.
 - **E2E test environment**: Podman + Xvfb for clipboard and window-management skill testing; `make e2e-full` target.
 - **Provider UX improvements**: keyring availability shown at setup start; credential test before save; named provider profile presets.

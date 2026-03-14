@@ -20,6 +20,15 @@ def normalize_confined_path(*, path: str, allowed_root: Path, must_exist: bool) 
         raise PathBoundaryError("path contains a null byte", "invalid_path")
 
     root = allowed_root.expanduser().resolve(strict=False)
+    blocked_control_plane_root = (root / "queue").resolve(strict=False)
+
+    def _assert_not_control_plane(target: Path) -> None:
+        if target.is_relative_to(blocked_control_plane_root):
+            raise PathBoundaryError(
+                f"Path is within blocked control-plane scope: {target}",
+                "path_blocked_scope",
+            )
+
     candidate = Path(path).expanduser()
     target = candidate if candidate.is_absolute() else root / candidate
 
@@ -27,6 +36,7 @@ def normalize_confined_path(*, path: str, allowed_root: Path, must_exist: bool) 
     if must_exist:
         if not resolved.is_relative_to(root):
             raise PathBoundaryError(f"Path is outside allowlist: {resolved}", "path_out_of_bounds")
+        _assert_not_control_plane(resolved)
         if not resolved.exists():
             raise FileNotFoundError(path)
     else:
@@ -39,8 +49,10 @@ def normalize_confined_path(*, path: str, allowed_root: Path, must_exist: bool) 
             raise PathBoundaryError(
                 f"Path parent escapes allowlist: {resolved_parent}", "path_out_of_bounds"
             )
+        _assert_not_control_plane(resolved_parent)
         resolved = target.resolve(strict=False)
 
     if not resolved.is_relative_to(root):
         raise PathBoundaryError(f"Path is outside allowlist: {resolved}", "path_out_of_bounds")
+    _assert_not_control_plane(resolved)
     return resolved

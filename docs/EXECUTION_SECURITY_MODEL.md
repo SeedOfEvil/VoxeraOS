@@ -145,3 +145,10 @@ Execution governance flow:
 5. Artifacts/evidence become outcome truth for verifier/reviewer (including explicit capability-boundary violation details when present).
 
 This model is additive to current behavior and is intended to make permissions explicit before expanding capability/skill surface area.
+
+
+## Filesystem productivity pack boundary (wave 1)
+
+- `files.list_dir` is read-only inspection (`fs_scope=read_only`, local-only, no network).
+- `files.copy_file` and `files.move_file` are confined mutation skills (`fs_scope=workspace_only`, local-only, no network).
+- All file skills remain constrained to allowlisted notes-root path normalization and fail closed on boundary violations.
