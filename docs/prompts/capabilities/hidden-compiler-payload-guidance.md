@@ -42,7 +42,8 @@ Rules:
 - use `write_file` for precision file-authoring intent.
 - use `enqueue_child` only when child enqueue structure is truly intended/supported.
 - use `file_organize` for copy/move/archive/organize bounded file workflows.
-- use `steps` for direct single-skill bounded file actions (exists, stat, mkdir, delete).
+- use `steps` for direct single-skill bounded file actions (exists, stat, read_text, mkdir, delete).
+- workspace-root-relative path shorthand (`/foo/bar.txt`) resolves to `~/VoxeraOS/notes/foo/bar.txt`.
 - never invent unsupported top-level keys.
 - never emit arbitrary runtime metadata.
 
@@ -308,6 +309,36 @@ Output:
   “updated_preview”: {
     “goal”: “create folder testdir in notes”,
     “steps”: [{“skill_id”: “files.mkdir”, “args”: {“path”: “~/VoxeraOS/notes/testdir”, “parents”: true}}]
+  },
+  “patch”: null
+}
+```
+
+### I. Bounded read (workspace-relative shorthand)
+Input: “read /skillpack-wave2/a.txt”
+Output:
+```json
+{
+  “action”: “replace_preview”,
+  “intent_type”: “new_intent”,
+  “updated_preview”: {
+    “goal”: “read /skillpack-wave2/a.txt from notes”,
+    “steps”: [{“skill_id”: “files.read_text”, “args”: {“path”: “~/VoxeraOS/notes/skillpack-wave2/a.txt”}}]
+  },
+  “patch”: null
+}
+```
+
+### J. Bounded stat (workspace-relative shorthand)
+Input: “show me info about /skillpack-wave2/a.txt”
+Output:
+```json
+{
+  “action”: “replace_preview”,
+  “intent_type”: “new_intent”,
+  “updated_preview”: {
+    “goal”: “show file info for /skillpack-wave2/a.txt”,
+    “steps”: [{“skill_id”: “files.stat”, “args”: {“path”: “~/VoxeraOS/notes/skillpack-wave2/a.txt”}}]
   },
   “patch”: null
 }

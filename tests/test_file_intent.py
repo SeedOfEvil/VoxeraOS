@@ -35,6 +35,18 @@ def test_exists_rejects_queue_path():
     assert result is None
 
 
+def test_exists_with_workspace_relative_shorthand():
+    result = classify_bounded_file_intent("check if /skillpack-wave2/a.txt exists")
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.exists"
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+
+
+def test_exists_rejects_queue_shorthand():
+    result = classify_bounded_file_intent("check if /queue/health.json exists")
+    assert result is None
+
+
 def test_exists_rejects_parent_traversal():
     result = classify_bounded_file_intent("check if ../../../etc/passwd exists")
     assert result is None
@@ -63,6 +75,61 @@ def test_stat_with_explicit_path():
     result = classify_bounded_file_intent("show me info about ~/VoxeraOS/notes/report.txt")
     assert result is not None
     assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/report.txt"
+
+
+def test_stat_with_workspace_relative_shorthand():
+    result = classify_bounded_file_intent("show me info about /skillpack-wave2/a.txt")
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.stat"
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+
+
+def test_stat_with_workspace_relative_shorthand_no_subdir():
+    result = classify_bounded_file_intent("info about /report.txt")
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.stat"
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/report.txt"
+
+
+# ---------------------------------------------------------------------------
+# classify_bounded_file_intent: read
+# ---------------------------------------------------------------------------
+
+
+def test_read_file():
+    for msg in (
+        "read /skillpack-wave2/a.txt",
+        "read the file /skillpack-wave2/a.txt",
+        "cat /skillpack-wave2/a.txt",
+    ):
+        result = classify_bounded_file_intent(msg)
+        assert result is not None, f"should match: {msg}"
+        assert result["steps"][0]["skill_id"] == "files.read_text"
+        assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+
+
+def test_read_bare_filename():
+    result = classify_bounded_file_intent("read notes.txt")
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.read_text"
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/notes.txt"
+
+
+def test_read_explicit_path():
+    result = classify_bounded_file_intent("read ~/VoxeraOS/notes/inbox/today.md")
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.read_text"
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/inbox/today.md"
+
+
+def test_read_rejects_queue_path():
+    result = classify_bounded_file_intent("read /queue/inbox.json")
+    assert result is None
+
+
+def test_read_rejects_parent_traversal():
+    result = classify_bounded_file_intent("read /../../etc/passwd")
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +262,12 @@ def test_ambiguous_returns_none():
 
 def test_outside_notes_scope_returns_none():
     result = classify_bounded_file_intent("delete /etc/passwd")
-    assert result is None
+    # /etc/passwd normalizes to ~/VoxeraOS/notes/etc/passwd via workspace shorthand,
+    # which is actually safe (it's within notes root). The key invariant is that
+    # leading / never means "host absolute root" — it always means workspace-relative.
+    # This test verifies the workspace-relative interpretation holds.
+    assert result is not None
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/etc/passwd"
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +319,29 @@ def test_handoff_routes_delete():
     assert result is not None
     assert "steps" in result
     assert result["steps"][0]["skill_id"] == "files.delete_file"
+
+
+def test_handoff_routes_read():
+    result = maybe_draft_job_payload("read /skillpack-wave2/a.txt")
+    assert result is not None
+    assert "steps" in result
+    assert result["steps"][0]["skill_id"] == "files.read_text"
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+
+
+def test_handoff_routes_stat_workspace_relative():
+    """The exact STV failure case: 'show me info about /skillpack-wave2/a.txt'."""
+    result = maybe_draft_job_payload("show me info about /skillpack-wave2/a.txt")
+    assert result is not None
+    assert "steps" in result
+    assert result["steps"][0]["skill_id"] == "files.stat"
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+
+
+def test_handoff_rejects_queue_shorthand():
+    """Queue paths via shorthand must still be blocked at handoff level."""
+    result = maybe_draft_job_payload("check if /queue/health.json exists")
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +405,24 @@ def test_end_to_end_exists_to_normalized_preview():
     normalized = normalize_preview_payload(draft)
     assert normalized["goal"] == "check if a.txt exists in notes"
     assert normalized["steps"][0]["skill_id"] == "files.exists"
+
+
+def test_end_to_end_read_workspace_relative_to_normalized_preview():
+    draft = maybe_draft_job_payload("read /skillpack-wave2/a.txt")
+    assert draft is not None
+    normalized = normalize_preview_payload(draft)
+    assert normalized["steps"][0]["skill_id"] == "files.read_text"
+    assert normalized["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+
+
+def test_end_to_end_stat_workspace_relative_to_normalized_preview():
+    """End-to-end for the original STV failure case."""
+    draft = maybe_draft_job_payload("show me info about /skillpack-wave2/a.txt")
+    assert draft is not None
+    normalized = normalize_preview_payload(draft)
+    assert normalized["goal"] == "show file info for /skillpack-wave2/a.txt"
+    assert normalized["steps"][0]["skill_id"] == "files.stat"
+    assert normalized["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/skillpack-wave2/a.txt"
 
 
 def test_end_to_end_copy_to_normalized_preview():

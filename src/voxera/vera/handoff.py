@@ -610,6 +610,15 @@ def drafting_guidance() -> DraftingGuidance:
                 "steps": [{"skill_id": "files.exists", "args": {"path": "~/VoxeraOS/notes/a.txt"}}],
             },
             {
+                "goal": "read /skillpack-wave2/a.txt from notes",
+                "steps": [
+                    {
+                        "skill_id": "files.read_text",
+                        "args": {"path": "~/VoxeraOS/notes/skillpack-wave2/a.txt"},
+                    }
+                ],
+            },
+            {
                 "goal": "create folder archive in notes",
                 "steps": [
                     {
@@ -678,14 +687,16 @@ def _draft_from_candidate_message(
     if normalized_open:
         return {"goal": normalized_open}
 
-    normalized_read = _normalize_file_read_goal(candidate)
-    if normalized_read:
-        return {"goal": normalized_read}
-
-    # Bounded file intent: exists, stat, mkdir, delete, copy, move, archive
+    # Bounded file intent: exists, stat, read, mkdir, delete, copy, move, archive
+    # Must run before the generic file-read goal so that info/stat/read intents
+    # route to bounded skills instead of falling through to a generic goal string.
     bounded_file = classify_bounded_file_intent(candidate)
     if bounded_file is not None:
         return bounded_file
+
+    normalized_read = _normalize_file_read_goal(candidate)
+    if normalized_read:
+        return {"goal": normalized_read}
 
     structured_write = _normalize_structured_file_write_payload(
         candidate, assistant_content_candidates=assistant_content_candidates

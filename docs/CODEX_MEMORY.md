@@ -1,3 +1,13 @@
+## 2026-03-14 — GitHub PR #TBD — fix(vera/planner): workspace-relative path shorthand and read intent routing
+
+- Fixed path normalization gap: leading-`/` paths (e.g. `/skillpack-wave2/a.txt`) are now interpreted as workspace-root-relative shorthand → `~/VoxeraOS/notes/skillpack-wave2/a.txt`, not host absolute paths.
+- Added `files.read_text` bounded intent classifier (`_classify_read`) for "read", "cat", "display", "print", "output" verbs.
+- Reordered handoff routing: bounded file intent now runs before generic file-read goal so stat/info/read intents map to bounded skills instead of falling through to generic planner.
+- Added `_WORKSPACE_RELATIVE_PATH_RE` for extracting `/path` tokens from text.
+- Parent traversal and queue control-plane rejection remain fail-closed.
+- Added 14 new focused tests covering workspace-relative shorthand, read intent, queue shorthand rejection, and end-to-end preview normalization.
+- Updated hidden-compiler payload guidance and preview payload schema docs.
+
 ## 2026-03-14 — GitHub PR #TBD — feat(vera/planner): bounded filesystem intent-to-workflow routing
 
 - Added `file_intent.py` deterministic classifier that routes natural-language file requests to bounded file skills or the `file_organize` queue contract:

@@ -39,11 +39,17 @@ Paths outside ~/VoxeraOS/notes/ or within ~/VoxeraOS/notes/queue/ are rejected.
 
 ## `steps` Structure
 Array of objects, each with:
-- `skill_id` (required — bounded file skill id like `files.exists`, `files.stat`, `files.mkdir`, `files.delete_file`)
+- `skill_id` (required — bounded file skill id like `files.exists`, `files.stat`, `files.read_text`, `files.mkdir`, `files.delete_file`)
 - `args` (object)
 
 Use `steps` for direct single-skill bounded file actions when the intent maps cleanly
-to one skill invocation (e.g. existence check, file stat, mkdir, delete).
+to one skill invocation (e.g. existence check, file stat, read, mkdir, delete).
+
+## Workspace-Root-Relative Path Shorthand
+A leading `/` in a bounded file path is interpreted as workspace-root-relative, not host absolute:
+- `/foo/bar.txt` resolves to `~/VoxeraOS/notes/foo/bar.txt`
+- `/queue/health.json` is still rejected (queue control-plane)
+- Parent traversal (`..`) is still rejected
 
 ## Truth Boundary
 Preview payloads are authoritative only before submit (preview truth).

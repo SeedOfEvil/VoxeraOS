@@ -1,8 +1,8 @@
 """Bounded file intent classifier for Vera/planner routing.
 
 Detects natural-language user requests that map to bounded file skills
-(files.exists, files.stat, files.mkdir, files.delete_file, files.copy_file,
-files.move_file) or the structured file_organize queue contract.
+(files.exists, files.stat, files.read_text, files.mkdir, files.delete_file,
+files.copy_file, files.move_file) or the structured file_organize queue contract.
 
 Returns preview-ready payloads or None when intent is unclear.
 All paths are confined to ~/VoxeraOS/notes/ scope.
@@ -21,6 +21,11 @@ _QUEUE_SEGMENT = "queue"
 # ---------------------------------------------------------------------------
 
 _EXPLICIT_PATH_RE = re.compile(r"(~/[^\s]+|/home/[^\s]+)")
+
+# Workspace-root-relative shorthand: /foo/bar.txt or /foo — a leading slash
+# followed by a non-space path component.  Must contain at least one path char
+# after the slash to avoid matching stray punctuation.
+_WORKSPACE_RELATIVE_PATH_RE = re.compile(r"(/[a-zA-Z0-9_][^\s]*)")
 
 # A filename looks like: word.ext or word/subpath — must contain a dot or slash
 # to distinguish from natural-language words.
@@ -45,12 +50,23 @@ def _is_safe_notes_path(path: str) -> bool:
 
 
 def _normalize_notes_path(name: str) -> str:
-    """Normalize a bare filename or relative name to a full notes path."""
+    """Normalize a bare filename or relative name to a full notes path.
+
+    Supported forms:
+    - ``~/VoxeraOS/notes/foo.txt``  → returned as-is (explicit)
+    - ``/home/.../foo.txt``         → returned as-is (explicit)
+    - ``/foo/bar.txt``              → workspace-root-relative shorthand
+                                      → ``~/VoxeraOS/notes/foo/bar.txt``
+    - ``foo.txt``                   → bare name → ``~/VoxeraOS/notes/foo.txt``
+    """
     name = name.strip().strip("\"'`.,;:!? ")
     if not name:
         return ""
     if name.startswith("~/") or name.startswith("/home/"):
         return name
+    # Workspace-root-relative shorthand: /foo → ~/VoxeraOS/notes/foo
+    if name.startswith("/"):
+        return f"{_NOTES_ROOT}/{name.lstrip('/')}"
     return f"{_NOTES_ROOT}/{name}"
 
 
@@ -64,6 +80,15 @@ def _extract_path_from_text(text: str, *, allow_bare_name: bool = False) -> str 
     explicit = _EXPLICIT_PATH_RE.search(text)
     if explicit:
         return explicit.group(1).rstrip(".,;:!?\"' ")
+
+    # Try workspace-root-relative shorthand (/foo/bar.txt)
+    ws_rel = _WORKSPACE_RELATIVE_PATH_RE.search(text)
+    if ws_rel:
+        token = ws_rel.group(1).rstrip(".,;:!?\"' ")
+        # Reject if the surrounding text contains parent traversal that the
+        # regex skipped over (e.g. "../..//etc/passwd" → extracted "/etc/passwd").
+        if not _contains_parent_traversal(text):
+            return token
 
     # Try filename with extension
     ext_match = _FILENAME_WITH_EXT_RE.search(text)
@@ -127,6 +152,11 @@ def _extract_path_from_text(text: str, *, allow_bare_name: bool = False) -> str 
             "examine",
             "stats",
             "stat",
+            "read",
+            "cat",
+            "display",
+            "print",
+            "output",
         }
         for word in text.split():
             cleaned = word.strip("\"'`.,;:!? ")
@@ -152,6 +182,11 @@ _RE_STAT = re.compile(
     r"(?:about|for|on|of)\b"
     r"|\b(?:file\s+info|what(?:'s|\s+is)\s+(?:the\s+)?(?:info|details?|metadata|size|stats?)\s+(?:of|for|about|on))\b"
     r"|\b(?:inspect|examine)\s+(?:the\s+)?(?:file|metadata)\b",
+    re.IGNORECASE,
+)
+
+_RE_READ = re.compile(
+    r"\b(?:read|cat|display|print|output)\s+(?:the\s+)?(?:file\s+)?",
     re.IGNORECASE,
 )
 
@@ -220,6 +255,28 @@ def _classify_stat(text: str) -> dict[str, Any] | None:
     return {
         "goal": f"show file info for {path_token}",
         "steps": [{"skill_id": "files.stat", "args": {"path": full_path}}],
+    }
+
+
+def _classify_read(text: str) -> dict[str, Any] | None:
+    if not _RE_READ.search(text):
+        return None
+    # Don't match "read" inside archive/organize compound phrases
+    if _RE_ARCHIVE_ORGANIZE.search(text):
+        return None
+    read_match = _RE_READ.search(text)
+    if not read_match:
+        return None
+    after_verb = text[read_match.end() :].strip()
+    path_token = _extract_path_from_text(after_verb) or _extract_path_from_text(text)
+    if not path_token:
+        return None
+    full_path = _normalize_notes_path(path_token)
+    if not _is_safe_notes_path(full_path):
+        return None
+    return {
+        "goal": f"read {path_token} from notes",
+        "steps": [{"skill_id": "files.read_text", "args": {"path": full_path}}],
     }
 
 
@@ -433,6 +490,10 @@ def classify_bounded_file_intent(message: str) -> dict[str, Any] | None:
         return result
 
     result = _classify_stat(text)
+    if result is not None:
+        return result
+
+    result = _classify_read(text)
     if result is not None:
         return result
 

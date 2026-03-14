@@ -539,9 +539,11 @@ def test_note_write_and_file_read_requests_render_preview_pane_without_voxera_js
     )
     assert "```json" not in read_res.text
     assert "Preview panel · Active VoxeraOS draft" in read_res.text
-    assert vera_service.read_session_preview(queue, sid) == {
-        "goal": "read the file ~/VoxeraOS/notes/ideas.txt"
-    }
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"] == "read ~/VoxeraOS/notes/ideas.txt from notes"
+    assert preview["steps"][0]["skill_id"] == "files.read_text"
+    assert preview["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/ideas.txt"
 
 
 def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission(
@@ -610,7 +612,8 @@ def test_explicit_handoff_creates_real_queue_job_and_ack(tmp_path, monkeypatch):
     jobs = list((queue / "inbox").glob("inbox-*.json"))
     assert len(jobs) == 1
     payload = json.loads(jobs[0].read_text(encoding="utf-8"))
-    assert payload["goal"] == "read the file ~/VoxeraOS/notes/stv-child-target.txt"
+    assert payload["goal"] == "read ~/VoxeraOS/notes/stv-child-target.txt from notes"
+    assert payload["steps"][0]["skill_id"] == "files.read_text"
 
 
 def test_submit_success_wording_requires_real_job_creation(tmp_path, monkeypatch):
