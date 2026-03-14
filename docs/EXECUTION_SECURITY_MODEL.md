@@ -147,6 +147,35 @@ Execution governance flow:
 This model is additive to current behavior and is intended to make permissions explicit before expanding capability/skill surface area.
 
 
+## 9) Queue-first direct CLI mutation gate
+
+Direct CLI execution (`voxera run <skill_id>`) is gated by the skill's mutation posture:
+
+- **Read-only skills** (all declared capabilities have `read` effect class): execute directly.
+- **Mutating skills** (any capability has `write` or `execute` effect class): blocked by default.
+
+Blocked direct mutation runs print an actionable message explaining:
+- Which skill was blocked and why.
+- What effect classes triggered the gate.
+- How to use the governed queue path instead.
+- How to use the explicit dev-mode override.
+
+### Dev-mode override
+
+For development workflows, mutating skills can be executed directly with both:
+1. `VOXERA_DEV_MODE=1` environment variable set, **and**
+2. `--allow-direct-mutation` CLI flag passed.
+
+Both are required. The override logs a visible warning. This is intentionally loud and explicit — it is not the product trust path.
+
+### Dry-run is unaffected
+
+`voxera run <skill_id> --dry-run` bypasses the mutation gate for all skills, since dry-run does not execute.
+
+### Classification
+
+Skill mutability is determined by the canonical `CAPABILITY_EFFECT_CLASS` mapping in `policy.py`. A skill is read-only only when every declared capability maps to `read`. Skills with no declared capabilities are treated as non-read-only (fail-closed).
+
 ## Filesystem productivity pack boundary (waves 1–2)
 
 - `files.list_dir`, `files.exists`, and `files.stat` are read-only inspection skills (`fs_scope=read_only`, local-only, no network).

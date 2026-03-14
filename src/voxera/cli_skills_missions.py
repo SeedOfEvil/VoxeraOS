@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import Callable
 
 import typer
@@ -17,7 +18,7 @@ from .core.capabilities_snapshot import (
 from .core.mission_planner import MissionPlannerError, plan_mission
 from .core.missions import MissionRunner, _make_dryrun_deterministic, get_mission, list_missions
 from .skills.registry import SkillRegistry
-from .skills.runner import SkillRunner
+from .skills.runner import SkillRunner, is_skill_read_only
 
 
 def approval_prompt_impl(manifest, decision):
@@ -50,6 +51,11 @@ def skills_list_impl(*, skill_registry_cls: type[SkillRegistry]) -> None:
     console.print(table)
 
 
+def _is_dev_mode() -> bool:
+    """Return True when the VOXERA_DEV_MODE environment variable is truthy."""
+    return os.environ.get("VOXERA_DEV_MODE", "").strip().lower() in {"1", "true", "yes"}
+
+
 def run_impl(
     *,
     load_config: Callable[[], AppConfig],
@@ -59,6 +65,7 @@ def run_impl(
     skill_id: str,
     arg: list[str] | None,
     dry_run: bool,
+    allow_direct_mutation: bool = False,
 ) -> None:
     cfg = load_config()
     reg = skill_registry_cls()
@@ -79,12 +86,54 @@ def run_impl(
         console.print(json.dumps(sim.model_dump(), indent=2))
         return
 
+    # ── Queue-first mutation gate ──────────────────────────────────────
+    # Direct CLI execution is allowed for read-only skills.  Mutating
+    # skills must go through the governed queue path unless the operator
+    # explicitly opts in via --allow-direct-mutation in dev mode.
+    if not is_skill_read_only(manifest):
+        if allow_direct_mutation and _is_dev_mode():
+            console.print(
+                f"[yellow]WARNING:[/yellow] Running mutating skill [bold]{manifest.id}[/bold] "
+                "directly (dev-mode override). "
+                "In production, use the governed queue path instead."
+            )
+        elif allow_direct_mutation and not _is_dev_mode():
+            console.print(
+                f"[red]BLOCKED:[/red] --allow-direct-mutation requires VOXERA_DEV_MODE=1.\n"
+                f"  Skill [bold]{manifest.id}[/bold] is mutating "
+                f"(effect classes: {_effect_classes_for(manifest)}).\n"
+                f"  Set VOXERA_DEV_MODE=1 to enable the dev-only override, or\n"
+                f"  submit via the governed queue path:\n"
+                f"    voxera queue submit --goal '<your goal>'"
+            )
+            raise typer.Exit(code=1)
+        else:
+            console.print(
+                f"[red]BLOCKED:[/red] Direct CLI execution of mutating skill "
+                f"[bold]{manifest.id}[/bold] is not allowed.\n"
+                f"  Effect classes: {_effect_classes_for(manifest)}\n"
+                f"  The queue-first governance model requires mutating skills to be\n"
+                f"  submitted through the governed queue path:\n"
+                f"    voxera queue submit --goal '<your goal>'\n"
+                f"  For development, use: VOXERA_DEV_MODE=1 voxera run {manifest.id} "
+                f"--allow-direct-mutation"
+            )
+            raise typer.Exit(code=1)
+
     result = runner.run(manifest, args=args, policy=cfg.policy, require_approval_cb=approval_prompt)
     if result.ok:
         console.print(result.output or "OK")
     else:
         console.print(f"[red]ERROR:[/red] {result.error}")
         raise typer.Exit(code=1)
+
+
+def _effect_classes_for(manifest) -> str:
+    """Return a human-readable summary of effect classes for a manifest."""
+    from .policy import CAPABILITY_EFFECT_CLASS
+
+    classes = sorted({CAPABILITY_EFFECT_CLASS.get(c, "unknown") for c in manifest.capabilities})
+    return ", ".join(classes) if classes else "unknown"
 
 
 def missions_list_impl() -> None:
