@@ -184,7 +184,7 @@
         isSubmitting = true;
         sendBtn.disabled = true;
         sendBtn.classList.add('is-sending');
-        textarea.disabled = true;
+        textarea.readOnly = true;  // readOnly preserves value in form submission; disabled would drop it
       });
 
       // Enter to send, Shift+Enter for newline

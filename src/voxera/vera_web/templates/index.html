@@ -135,7 +135,7 @@
         isSubmitting = true;
         sendBtn.disabled = true;
         sendBtn.classList.add('is-sending');
-        textarea.disabled = true;
+        textarea.readOnly = true;  // readOnly (not disabled) — disabled fields are excluded from form submission
         // Page will reload with the response; no cleanup needed
       });
 
