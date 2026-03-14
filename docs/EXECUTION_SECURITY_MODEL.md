@@ -147,8 +147,8 @@ Execution governance flow:
 This model is additive to current behavior and is intended to make permissions explicit before expanding capability/skill surface area.
 
 
-## Filesystem productivity pack boundary (wave 1)
+## Filesystem productivity pack boundary (waves 1–2)
 
-- `files.list_dir` is read-only inspection (`fs_scope=read_only`, local-only, no network).
-- `files.copy_file` and `files.move_file` are confined mutation skills (`fs_scope=workspace_only`, local-only, no network).
+- `files.list_dir`, `files.exists`, and `files.stat` are read-only inspection skills (`fs_scope=read_only`, local-only, no network).
+- `files.copy_file`, `files.move_file`, `files.mkdir`, and `files.delete_file` are confined mutation skills (`fs_scope=workspace_only`, local-only, no network).
 - All file skills remain constrained to allowlisted notes-root path normalization and fail closed on boundary violations.

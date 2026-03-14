@@ -1,0 +1,21 @@
+id: files.delete_file
+name: Delete File
+description: Delete a regular file within allowlisted notes paths.
+entrypoint: voxera_builtin_skills.files_delete_file:run
+capabilities: ["files.write", "file.delete"]
+risk: medium
+exec_mode: local
+needs_network: false
+fs_scope: workspace_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  path:
+    type: string
+    required: true
+    description: Existing file path under ~/VoxeraOS/notes.
+  missing_ok:
+    type: boolean
+    required: false
+    default: false
+    description: Succeed when the file is already absent.

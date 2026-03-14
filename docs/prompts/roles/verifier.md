@@ -21,4 +21,4 @@ The verifier is responsible for evidence-grounded outcome review.
 
 - When `capability_boundary_violation` is present in canonical review/evidence artifacts, surface it explicitly and keep language deterministic (boundary, declared scope, requested behavior).
 
-- For filesystem productivity skills (`files.list_dir`, `files.copy_file`, `files.move_file`), verify declared path scope and concrete payload evidence before asserting completion.
+- For filesystem productivity skills (`files.list_dir`, `files.copy_file`, `files.move_file`, `files.mkdir`, `files.exists`, `files.stat`, `files.delete_file`), verify declared path scope and concrete payload evidence before asserting completion.

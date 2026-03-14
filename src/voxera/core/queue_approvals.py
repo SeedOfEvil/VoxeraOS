@@ -151,7 +151,15 @@ class QueueApprovalMixin:
             return {"type": "url", "value": str(args.get("url", ""))}
         if skill_id == "system.open_app":
             return {"type": "app", "value": str(args.get("name", ""))}
-        if skill_id in {"files.read_text", "files.write_text", "files.list_dir"}:
+        if skill_id in {
+            "files.read_text",
+            "files.write_text",
+            "files.list_dir",
+            "files.exists",
+            "files.stat",
+            "files.mkdir",
+            "files.delete_file",
+        }:
             return {"type": "file", "value": str(args.get("path", ""))}
         if skill_id in {"files.copy_file", "files.move_file"}:
             source = str(args.get("source_path", ""))

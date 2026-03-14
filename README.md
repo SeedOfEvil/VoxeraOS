@@ -322,8 +322,8 @@ For forward-created canonical lanes, Voxera now normalizes deterministic `expect
 
 - `sandbox.exec` now fails closed for ambiguous command strings containing shell-control operators (`&&`, `;`, pipes, redirects) unless the caller uses explicit argv shell wrapping like `['bash','-lc','...']`.
 - List-form argv no longer silently strips empty/whitespace tokens; malformed argv is rejected with canonical `skill_result` payloads (`error_class=invalid_input`).
-- `files.read_text`, `files.write_text`, `files.list_dir`, `files.copy_file`, and `files.move_file` share centralized confined-path normalization with deterministic out-of-bounds/traversal/symlink-escape blocking.
-- Filesystem productivity wave 1 is intentionally bounded: local-only, `needs_network=false`, and confined to `~/VoxeraOS/notes` for write/move/copy operations.
+- `files.read_text`, `files.write_text`, `files.list_dir`, `files.copy_file`, `files.move_file`, `files.mkdir`, `files.exists`, `files.stat`, and `files.delete_file` share centralized confined-path normalization with deterministic out-of-bounds/traversal/symlink-escape blocking.
+- Filesystem productivity waves 1–2 are intentionally bounded: local-only, `needs_network=false`, and confined to `~/VoxeraOS/notes` for directory/file mutations (`files.write_text`, `files.copy_file`, `files.move_file`, `files.mkdir`, `files.delete_file`) with read-only inspection via `files.read_text`, `files.list_dir`, `files.exists`, and `files.stat`.
 - Notes-root confinement explicitly excludes VoxeraOS control-plane state under `~/VoxeraOS/notes/queue` (`error_class=path_blocked_scope`).
 - `system.open_app` and `system.open_url` enforce stricter normalized inputs and now always emit canonical `skill_result` metadata for allowlist/input failures.
 

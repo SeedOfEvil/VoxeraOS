@@ -31,4 +31,4 @@ Do not treat undeclared capability assumptions as valid execution authority.
 
 - Runtime must fail closed on deterministic declaration mismatches. Current enforced example: runtime `network=true` request with declared `network_scope=none` is blocked before execution and reported as `capability_boundary_mismatch`.
 
-- Filesystem wave-1 guidance: keep `files.list_dir` read-only and keep `files.copy_file`/`files.move_file` confined mutations with explicit notes-root boundaries.
+- Filesystem waves 1–2 guidance: keep `files.list_dir`/`files.exists`/`files.stat` read-only and keep `files.copy_file`/`files.move_file`/`files.mkdir`/`files.delete_file` confined mutations with explicit notes-root boundaries and blocked `notes/queue/**` paths.

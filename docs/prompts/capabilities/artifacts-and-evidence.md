@@ -42,4 +42,4 @@ Reviewer/verifier “what happened?” shaping should:
 
 - Review summaries may include `capability_boundary_violation` when runtime behavior request exceeds declared boundaries; treat this as high-signal enforcement evidence (not a speculative claim).
 
-- For bounded filesystem skills, prefer machine payload evidence (for example `entries`, `source_path`, `destination_path`, `bytes_copied`) over speculative prose.
+- For bounded filesystem skills, prefer machine payload evidence (for example `entries`, `source_path`, `destination_path`, `bytes_copied`, `created`, `exists`, `size_bytes`, `deleted`) over speculative prose.

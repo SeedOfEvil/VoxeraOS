@@ -1032,11 +1032,11 @@ a deterministic single-step plan:
 | `write_file` (named)| `_extract_named_file_write_args()` | `files.write_text` |
 
 
-### Filesystem productivity skill pack (bounded wave 1)
+### Filesystem productivity skill pack (bounded waves 1–2)
 
 Additive file-scope skills extend the existing read/write pair without widening trust boundaries:
-- `files.list_dir` (inspection): local, `needs_network=false`, `fs_scope=read_only`, notes-root confined.
-- `files.copy_file` and `files.move_file` (mutation): local, `needs_network=false`, `fs_scope=workspace_only`, notes-root confined.
+- `files.list_dir`, `files.exists`, and `files.stat` (inspection): local, `needs_network=false`, `fs_scope=read_only`, notes-root confined.
+- `files.copy_file`, `files.move_file`, `files.mkdir`, and `files.delete_file` (mutation): local, `needs_network=false`, `fs_scope=workspace_only`, notes-root confined.
 
 All rely on centralized confined-path normalization and fail closed on traversal/symlink escape/out-of-root paths.
 

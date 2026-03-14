@@ -1,0 +1,16 @@
+id: files.exists
+name: Check Path Exists
+description: Check whether a path exists within allowlisted notes paths.
+entrypoint: voxera_builtin_skills.files_exists:run
+capabilities: ["files.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  path:
+    type: string
+    required: true
+    description: File or directory path under ~/VoxeraOS/notes.
