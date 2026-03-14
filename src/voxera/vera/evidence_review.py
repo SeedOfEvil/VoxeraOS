@@ -47,6 +47,7 @@ class ReviewedJobEvidence:
     evidence_trace: tuple[str, ...]
     child_summary: dict[str, int] | None
     execution_capabilities: dict[str, Any] | None
+    capability_boundary_violation: dict[str, Any] | None
     expected_artifacts: tuple[str, ...]
     observed_expected_artifacts: tuple[str, ...]
     missing_expected_artifacts: tuple[str, ...]
@@ -284,6 +285,7 @@ def review_job_outcome(
     review_summary = structured.get("review_summary")
     review_summary_dict = review_summary if isinstance(review_summary, dict) else {}
     execution_capabilities = review_summary_dict.get("execution_capabilities")
+    capability_boundary_violation = review_summary_dict.get("capability_boundary_violation")
     return ReviewedJobEvidence(
         job_id=found.job_id,
         state=_classify_state(
@@ -303,6 +305,11 @@ def review_job_outcome(
         child_summary=child_summary if isinstance(child_summary, dict) else None,
         execution_capabilities=(
             execution_capabilities if isinstance(execution_capabilities, dict) else None
+        ),
+        capability_boundary_violation=(
+            capability_boundary_violation
+            if isinstance(capability_boundary_violation, dict)
+            else None
         ),
         expected_artifacts=_normalize_strings(review_summary_dict.get("expected_artifacts") or []),
         observed_expected_artifacts=_normalize_strings(
@@ -376,6 +383,13 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
             f"network_scope={evidence.execution_capabilities.get('network_scope', 'unknown')}, "
             f"fs_scope={evidence.execution_capabilities.get('fs_scope', 'unknown')}, "
             f"sandbox_profile={evidence.execution_capabilities.get('sandbox_profile', 'unknown')}"
+        )
+    if evidence.capability_boundary_violation:
+        lines.append(
+            "- Capability boundary violation: "
+            f"boundary={evidence.capability_boundary_violation.get('boundary', 'unknown')}, "
+            f"declared_network_scope={evidence.capability_boundary_violation.get('declared_network_scope', 'unknown')}, "
+            f"requested_network={evidence.capability_boundary_violation.get('requested_network', 'unknown')}"
         )
     artifact_observation = _artifact_observation_line(evidence)
     if artifact_observation:

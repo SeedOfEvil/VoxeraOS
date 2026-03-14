@@ -39,6 +39,26 @@ class CapabilityEnforcementResult:
         self.declaration = declaration
 
 
+def _network_boundary_violation(
+    *, declaration: dict[str, Any], args: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Return deterministic mismatch details when runtime args exceed declared network scope."""
+    if bool(declaration.get("needs_network", False)):
+        return None
+    raw_network = args.get("network", False)
+    requested_network = raw_network is True or (
+        isinstance(raw_network, str) and raw_network.strip().lower() in {"1", "true", "yes", "on"}
+    )
+    if not requested_network:
+        return None
+    return {
+        "boundary": "network",
+        "declared_network_scope": declaration.get("network_scope", "none"),
+        "requested_network": True,
+        "runtime_arg": "network",
+    }
+
+
 def _normalize_policy_decision(value: str) -> _PolicyDecisionLiteral:
     if value not in {"allow", "ask", "deny"}:
         raise ValueError(f"Unexpected policy decision: {value}")
@@ -111,6 +131,29 @@ def _enforce_runtime_capabilities(
         )
 
     effect_classes = sorted({CAPABILITY_EFFECT_CLASS[cap] for cap in normalized_caps})
+    network_violation = _network_boundary_violation(
+        declaration=normalized_declaration,
+        args=args,
+    )
+    if network_violation is not None:
+        return CapabilityEnforcementResult(
+            allowed=False,
+            needs_approval=False,
+            denied=True,
+            reason=(
+                "Runtime requested network access but this skill declares "
+                "network_scope=none (fail-closed)."
+            ),
+            reason_class="capability_boundary_mismatch",
+            decision="deny",
+            capabilities=sorted(normalized_caps),
+            effect_classes=effect_classes,
+            declaration={
+                **normalized_declaration,
+                "runtime_boundary_violation": network_violation,
+            },
+        )
+
     policy_result = decide(manifest, policy, args=args)
     policy_decision = _normalize_policy_decision(policy_result.decision)
 

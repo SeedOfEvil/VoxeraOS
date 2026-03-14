@@ -162,3 +162,29 @@ def test_run_returns_pending_approval_with_capability_evidence(monkeypatch):
     assert rr.data["status"] == "pending_approval"
     assert rr.data["capabilities"] == ["system.settings"]
     assert rr.data["effect_classes"] == ["write"]
+
+
+def test_run_fail_closed_on_runtime_network_boundary_mismatch():
+    reg = SkillRegistry()
+    manifest = SkillManifest(
+        id="sandbox.exec",
+        name="Sandbox Exec",
+        description="Run one command in sandbox",
+        entrypoint="voxera_builtin_skills.sandbox_exec:run",
+        capabilities=["sandbox.exec"],
+        needs_network=False,
+    )
+    reg.load_entrypoint = lambda _mf: lambda **_kwargs: "should-not-run"
+    runner = SkillRunner(reg)
+
+    rr = runner.run(
+        manifest,
+        args={"command": ["echo", "hello"], "network": True},
+        policy=PolicyApprovals(),
+    )
+
+    assert rr.ok is False
+    assert rr.data["status"] == "blocked"
+    assert rr.data["blocked_reason_class"] == "capability_boundary_mismatch"
+    payload = rr.data["skill_result"]["machine_payload"]["execution_capabilities"]
+    assert payload["runtime_boundary_violation"]["boundary"] == "network"

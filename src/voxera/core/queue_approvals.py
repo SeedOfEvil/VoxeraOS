@@ -29,6 +29,38 @@ _AUTO_APPROVE_ALLOWLIST = {"system.settings"}
 _APPROVAL_GRANTS_FILE = "grants.json"
 
 
+def _capability_boundary_notes(execution_capabilities: dict[str, Any]) -> list[str]:
+    notes: list[str] = []
+    runtime_violation = execution_capabilities.get("runtime_boundary_violation")
+    if isinstance(runtime_violation, dict):
+        boundary = str(runtime_violation.get("boundary") or "unknown")
+        if boundary == "network":
+            notes.append(
+                "Runtime requested network access while declaration sets network_scope=none."
+            )
+        else:
+            notes.append(f"Runtime boundary mismatch detected ({boundary}).")
+
+    allowed_domains = execution_capabilities.get("allowed_domains")
+    if isinstance(allowed_domains, list) and allowed_domains:
+        notes.append(f"Allowed domains: {', '.join(str(item) for item in allowed_domains)}")
+
+    allowed_paths = execution_capabilities.get("allowed_paths")
+    if isinstance(allowed_paths, list) and allowed_paths:
+        notes.append(f"Allowed paths: {', '.join(str(item) for item in allowed_paths)}")
+
+    secret_refs = execution_capabilities.get("secret_refs")
+    if isinstance(secret_refs, list) and secret_refs:
+        refs = []
+        for item in secret_refs:
+            if isinstance(item, dict) and str(item.get("ref") or "").strip():
+                refs.append(str(item.get("ref")).strip())
+        if refs:
+            notes.append(f"Declared secret refs: {', '.join(refs)}")
+
+    return notes
+
+
 class QueueApprovalMixin:
     current_job_ref: Any
 
@@ -47,6 +79,7 @@ class QueueApprovalMixin:
             "needs_network": bool(manifest.needs_network),
         }
         execution_capabilities = normalize_manifest_capabilities(manifest).as_dict()
+        capability_boundary_notes = _capability_boundary_notes(execution_capabilities)
 
         approval_key = (self.current_job_ref or "", int(step or 0), manifest.id)
         if approval_key in self._approved_steps:
@@ -63,6 +96,7 @@ class QueueApprovalMixin:
                     "capability": capability,
                     "scope": scope,
                     "execution_capabilities": execution_capabilities,
+                    "capability_boundary_notes": capability_boundary_notes,
                 }
             )
             return True
@@ -79,6 +113,7 @@ class QueueApprovalMixin:
                     "target": target,
                     "scope": scope,
                     "execution_capabilities": execution_capabilities,
+                    "capability_boundary_notes": capability_boundary_notes,
                 }
             )
             return True
@@ -94,6 +129,7 @@ class QueueApprovalMixin:
                 "target": target,
                 "scope": scope,
                 "execution_capabilities": execution_capabilities,
+                "capability_boundary_notes": capability_boundary_notes,
             }
         )
         return {
@@ -107,6 +143,7 @@ class QueueApprovalMixin:
             "target": target,
             "scope": scope,
             "execution_capabilities": execution_capabilities,
+            "capability_boundary_notes": capability_boundary_notes,
         }
 
     def _approval_target(self: Any, skill_id: str, args: dict[str, Any]) -> dict[str, str]:
@@ -208,6 +245,7 @@ class QueueApprovalMixin:
                 "needs_network": bool((run_data.get("scope") or {}).get("needs_network", False)),
             },
             "execution_capabilities": run_data.get("execution_capabilities", {}),
+            "capability_boundary_notes": run_data.get("capability_boundary_notes", []),
             "status": "pending_approval",
             "ts": time.time(),
         }

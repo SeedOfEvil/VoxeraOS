@@ -27,3 +27,5 @@ Expected artifacts are part of the contract. Outcome claims should align:
 Do not treat undeclared capability assumptions as valid execution authority.
 
 - Apply expected-artifact declaration improvements forward only; historical jobs are not backfilled and may remain `none_declared`.
+
+- Runtime must fail closed on deterministic declaration mismatches. Current enforced example: runtime `network=true` request with declared `network_scope=none` is blocked before execution and reported as `capability_boundary_mismatch`.

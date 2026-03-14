@@ -1,3 +1,10 @@
+## 2026-03-13 — GitHub PR #TBD — feat(runtime/approval): enforce declared network boundary mismatch + surface capability boundary notes
+
+- Added deterministic runtime enforcement for declared network boundary: when a skill declaration resolves to `network_scope=none` (`needs_network=false`) but runtime args request `network=true`, execution blocks before launch with `capability_boundary_mismatch` and structured `runtime_boundary_violation` evidence.
+- Added capability-boundary review context in approval surfaces: pending approval/log payloads now include `capability_boundary_notes` derived from normalized execution capabilities (runtime mismatch notes, allowed domains/paths, declared secret refs when present).
+- Extended canonical review/evidence shaping and Vera review output to include `capability_boundary_violation` so operators can see declared-vs-requested boundary mismatches directly from post-execution evidence.
+- Added focused tests covering fail-closed boundary enforcement, approval payload visibility, and verifier message surfacing.
+
 - Added forward-looking expected-artifact defaults for canonical assistant/queue lanes so new jobs carry explicit expectation intent into runtime review surfaces.
 ## 2026-03-13 — GitHub PR #TBD — feat(queue/verifier): surface execution capability declarations and expected-vs-observed artifact evidence
 
