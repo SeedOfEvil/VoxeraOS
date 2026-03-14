@@ -411,7 +411,8 @@ src/voxera/
 │   │
 │   ├── missions.py           — Mission templates + runner; YAML/JSON mission loading
 │   │                           built-in mission IDs: work_mode, focus_mode,
-│   │                           daily_checkin, incident_mode, wrap_up, system_check
+│   │                           daily_checkin, incident_mode, wrap_up, system_check,
+│   │                           system_inspect
 │   ├── mission_planner.py    — LLM-based planning; fallback chains (primary→fast→fallback);
 │   │                           deterministic write/terminal-demo routes; step normalization
 │   │                           and rewriting; error classification; planner timeouts (25s)

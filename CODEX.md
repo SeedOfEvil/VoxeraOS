@@ -14,6 +14,7 @@ Post-v0.1.6 hardening and observability work is complete (PRs #145–#149). Curr
 - **Built-in skill metadata baseline discipline**: keep manifests aligned on governance fields (`exec_mode`, `needs_network`, `fs_scope`, `output_schema`, `output_artifacts`) so approval/review capability surfaces remain comparable before wider skill-pack expansion.
 - **Filesystem productivity waves 1–2 (bounded)**: additive `files.list_dir`, `files.copy_file`, `files.move_file`, `files.mkdir`, `files.exists`, `files.stat`, and `files.delete_file` with confined notes-root path enforcement and deterministic skill-result payload evidence.
 - **Bounded filesystem planner routing**: deterministic `file_intent.py` classifier routes natural-language file requests into bounded file skills and `file_organize` contracts via Vera handoff, eliminating generic fallback for clear file intents.
+- **System inspection workflow**: `system_inspect` mission composes `system.status`, `system.disk_usage`, `system.process_list`, and `system.window_list` into a bounded read-only diagnostic workflow that executes through the queue for canonical audit evidence.
 - **LLM rate limiter**: token-bucket around `brain.generate()` calls; default 30 RPM; configurable via `VOXERA_BRAIN_RATE_LIMIT_RPM`; `brain_rate_limited` audit events.
 - **E2E test environment**: Podman + Xvfb for clipboard and window-management skill testing; `make e2e-full` target.
 - **Provider UX improvements**: keyring availability shown at setup start; credential test before save; named provider profile presets.

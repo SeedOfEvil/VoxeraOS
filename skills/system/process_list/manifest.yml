@@ -1,0 +1,11 @@
+id: system.process_list
+name: Process List
+description: List running processes with CPU and memory usage.
+entrypoint: voxera_builtin_skills.process_list:run
+capabilities: ["state.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []
