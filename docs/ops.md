@@ -1041,6 +1041,7 @@ When `invalid`/`incomplete` is non-zero, review the reason codes and apply the h
 Built-in skills should also follow a consistent manifest governance baseline so approval/review output stays comparable:
 - always declare `exec_mode`, `needs_network`, `fs_scope`, `output_schema`, and `output_artifacts`
 - use `fs_scope=read_only` for local read-mostly skills with no filesystem artifact expectations
+- filesystem productivity wave 1 skills: `files.list_dir` (`read_only`) and `files.copy_file`/`files.move_file` (`workspace_only`) remain local-only with `needs_network=false` and notes-root path confinement.
 - keep deterministic `output_artifacts` empty (`[]`) when no file artifacts are predictably produced
 
 ## Brain fallback reason observability

@@ -1,3 +1,13 @@
+## 2026-03-14 — GitHub PR #TBD — feat(skills/files): bounded filesystem productivity wave 1
+
+- Added three additive filesystem skills with normalized manifest governance fields:
+  - `files.list_dir` (read-only listing payload in `skill_result.machine_payload.entries`)
+  - `files.copy_file` (bounded file copy within notes scope)
+  - `files.move_file` (bounded file move/rename within notes scope)
+- Preserved fail-closed path boundary semantics by reusing `normalize_confined_path` for both source and destination paths.
+- Kept trust boundaries narrow: local-only execution, `needs_network=false`; inspection skill uses `fs_scope=read_only`, mutating skills use `fs_scope=workspace_only`.
+- Added focused tests for metadata/scope expectations, path-boundary enforcement, and runtime behavior contracts.
+
 ## 2026-03-14 — GitHub PR #TBD — chore(skills): normalize built-in skill governance metadata baseline
 
 - Normalized built-in skill manifests so comparable skills now consistently declare governance fields: `exec_mode`, `needs_network`, `fs_scope`, `output_schema`, and `output_artifacts`.

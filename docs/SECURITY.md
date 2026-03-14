@@ -134,7 +134,7 @@ All `sandbox.exec` command arguments are normalised through `canonicalize_argv` 
 - `shell=True` is never used; the argv list is passed directly to Podman.
 
 #### Confined file path normalization (`normalize_confined_path`)
-- `files.read_text` and `files.write_text` share centralized path-boundary enforcement in `src/voxera/skills/path_boundaries.py`.
+- `files.read_text`, `files.write_text`, `files.list_dir`, `files.copy_file`, and `files.move_file` share centralized path-boundary enforcement in `src/voxera/skills/path_boundaries.py`.
 - Relative paths are rooted to `~/VoxeraOS/notes`, then normalized deterministically.
 - Traversal attempts (`..`), absolute out-of-root paths, and symlink escapes are blocked (`error_class=path_out_of_bounds`).
 - Invalid path forms (empty/null-byte) are rejected (`error_class=invalid_path`).

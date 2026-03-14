@@ -41,3 +41,5 @@ Reviewer/verifier “what happened?” shaping should:
 - For canonical future job lanes, forward-declare deterministic expected artifacts at queue creation/normalization so review can compare declared intent vs observed evidence without guessing.
 
 - Review summaries may include `capability_boundary_violation` when runtime behavior request exceeds declared boundaries; treat this as high-signal enforcement evidence (not a speculative claim).
+
+- For bounded filesystem skills, prefer machine payload evidence (for example `entries`, `source_path`, `destination_path`, `bytes_copied`) over speculative prose.

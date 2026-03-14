@@ -1,0 +1,21 @@
+id: files.list_dir
+name: List Directory
+description: List directory entries from allowlisted notes paths.
+entrypoint: voxera_builtin_skills.files_list_dir:run
+capabilities: ["files.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  path:
+    type: string
+    required: true
+    description: Absolute or ~/ path under ~/VoxeraOS/notes.
+  include_hidden:
+    type: boolean
+    required: false
+    default: false
+    description: Include dotfiles and dot-directories when true.

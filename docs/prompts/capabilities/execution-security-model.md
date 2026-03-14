@@ -30,3 +30,5 @@ Do not treat undeclared capability assumptions as valid execution authority.
 - Apply expected-artifact declaration improvements forward only; historical jobs are not backfilled and may remain `none_declared`.
 
 - Runtime must fail closed on deterministic declaration mismatches. Current enforced example: runtime `network=true` request with declared `network_scope=none` is blocked before execution and reported as `capability_boundary_mismatch`.
+
+- Filesystem wave-1 guidance: keep `files.list_dir` read-only and keep `files.copy_file`/`files.move_file` confined mutations with explicit notes-root boundaries.

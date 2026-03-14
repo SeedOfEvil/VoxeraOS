@@ -1031,6 +1031,15 @@ a deterministic single-step plan:
 | `read_file`| `_extract_simple_read_args()`       | `files.read_text`  |
 | `write_file` (named)| `_extract_named_file_write_args()` | `files.write_text` |
 
+
+### Filesystem productivity skill pack (bounded wave 1)
+
+Additive file-scope skills extend the existing read/write pair without widening trust boundaries:
+- `files.list_dir` (inspection): local, `needs_network=false`, `fs_scope=read_only`, notes-root confined.
+- `files.copy_file` and `files.move_file` (mutation): local, `needs_network=false`, `fs_scope=workspace_only`, notes-root confined.
+
+All rely on centralized confined-path normalization and fail closed on traversal/symlink escape/out-of-root paths.
+
 If extraction fails or the path is outside the allowed root, the planner falls through to the
 cloud brain normally; the mismatch check then acts as the safety net.
 

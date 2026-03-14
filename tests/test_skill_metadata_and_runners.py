@@ -82,8 +82,15 @@ def test_builtin_skill_metadata_has_foundational_governance_fields():
             continue
 
         assert manifest.exec_mode == "local"
-        if manifest.id.startswith("files."):
+        if manifest.id in {
+            "files.read_text",
+            "files.write_text",
+            "files.copy_file",
+            "files.move_file",
+        }:
             assert manifest.fs_scope == "workspace_only"
+        elif manifest.id == "files.list_dir":
+            assert manifest.fs_scope == "read_only"
         elif manifest.id == "system.open_url":
             assert manifest.fs_scope == "broader"
             assert manifest.needs_network is True
