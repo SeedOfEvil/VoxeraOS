@@ -1,3 +1,19 @@
+## 2026-03-14 — GitHub PR #TBD — feat(vera/planner): bounded filesystem intent-to-workflow routing
+
+- Added `file_intent.py` deterministic classifier that routes natural-language file requests to bounded file skills or the `file_organize` queue contract:
+  - exists → `files.exists` inline step
+  - stat/info → `files.stat` inline step
+  - mkdir → `files.mkdir` inline step
+  - delete → `files.delete_file` inline step
+  - copy/move → `file_organize` structured contract
+  - archive/organize → `file_organize` structured contract
+- Extended preview payload schema to support `file_organize` and `steps` top-level keys in Vera handoff, enabling deterministic routing without cloud planner for clear bounded file intents.
+- Wired file intent classifier into `handoff.py` `_draft_from_candidate_message()` so Vera prefers bounded file skills over generic fallback when user intent is clear.
+- Updated hidden-compiler payload guidance, preview payload schema, and role docs (vera, hidden-compiler, planner) to document bounded file routing patterns.
+- Added 31 focused tests covering intent classification, path safety, queue control-plane rejection, handoff integration, and preview normalization.
+- Preserved fail-closed behavior: ambiguous paths, paths outside notes scope, and queue control-plane paths all return None (no preview drafted).
+- All side effects remain behind preview/handoff/queue semantics — no direct mutations in chat.
+
 ## 2026-03-14 — GitHub PR #TBD — feat(queue/missions): add bounded notes archive workflow mission composition
 
 - Added a product-grade bounded filesystem workflow mission `notes_archive_flow` that composes `files.exists`, `files.stat`, `files.mkdir`, `files.copy_file`, and `files.delete_file` as one coherent end-to-end notes archive flow.

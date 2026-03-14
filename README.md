@@ -467,6 +467,20 @@ Safety/truth guarantees remain unchanged:
 - fail-closed blocking for control-plane scope `~/VoxeraOS/notes/queue/**`,
 - deletion only when explicitly requested (`delete_original=true`) and still policy/approval-governed (`file.delete`).
 
+### Bounded filesystem intent-to-workflow routing (PR #next)
+
+Vera now deterministically routes clear natural-language file requests into the appropriate bounded file skills or `file_organize` contracts without requiring the cloud planner:
+
+- "check if a.txt exists" → `files.exists` inline step preview
+- "show me info about file.txt" → `files.stat` inline step preview
+- "make a folder called testdir in my notes" → `files.mkdir` inline step preview
+- "delete temp.txt" → `files.delete_file` inline step preview
+- "copy report.txt into receipts" → `file_organize` contract (mode=copy)
+- "move a.txt to archive.txt" → `file_organize` contract (mode=move)
+- "archive today.md into my archive folder" → `file_organize` contract
+
+Intent detection is fail-closed: ambiguous paths, paths outside `~/VoxeraOS/notes/` scope, and queue control-plane paths produce no preview. All mutating actions still flow through preview → handoff → queue → governed execution.
+
 ### Vera read-only web investigation via Brave Search (PR #next)
 
 Vera now supports a dedicated informational web lane backed by Brave Search API while preserving the execution wall:

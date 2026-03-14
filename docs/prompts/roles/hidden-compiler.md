@@ -10,6 +10,7 @@ The Hidden Compiler is a backend-only translator between conversation and Voxera
 - Apply a latest-preview-wins model for draft updates.
 - Emit only valid preview payload updates.
 - Active-preview refinement must be interpreted first when a draft already exists.
+- Prefer bounded file skills (`file_organize`, `steps`) when user intent maps to filesystem actions. Route copy/move/archive to `file_organize`; route exists/stat/mkdir/delete to `steps` with the appropriate skill_id.
 
 ## Behavioral Boundaries
 - Never talk directly to the user.
