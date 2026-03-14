@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from voxera.core.file_intent import classify_bounded_file_intent
+from voxera.core.file_intent import classify_bounded_file_intent, detect_blocked_file_intent
 from voxera.vera.handoff import maybe_draft_job_payload, normalize_preview_payload
 
 # ---------------------------------------------------------------------------
@@ -268,6 +268,55 @@ def test_outside_notes_scope_returns_none():
     # This test verifies the workspace-relative interpretation holds.
     assert result is not None
     assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/etc/passwd"
+
+
+# ---------------------------------------------------------------------------
+# detect_blocked_file_intent: refusal for blocked paths
+# ---------------------------------------------------------------------------
+
+
+def test_blocked_queue_exists_returns_refusal():
+    """The exact STV regression: 'check if /queue/health.json exists'."""
+    refusal = detect_blocked_file_intent("check if /queue/health.json exists")
+    assert refusal is not None
+    assert "blocked" in refusal.lower()
+    assert "queue" in refusal.lower() or "control-plane" in refusal.lower()
+
+
+def test_blocked_queue_read_returns_refusal():
+    refusal = detect_blocked_file_intent("read /queue/inbox.json")
+    assert refusal is not None
+    assert "blocked" in refusal.lower()
+
+
+def test_blocked_queue_stat_returns_refusal():
+    refusal = detect_blocked_file_intent("show me info about /queue/jobs.json")
+    assert refusal is not None
+    assert "blocked" in refusal.lower()
+
+
+def test_blocked_queue_explicit_path_returns_refusal():
+    refusal = detect_blocked_file_intent("check if ~/VoxeraOS/notes/queue/inbox.json exists")
+    assert refusal is not None
+    assert "blocked" in refusal.lower()
+
+
+def test_blocked_returns_none_for_safe_path():
+    """Safe paths should not trigger blocked refusal."""
+    refusal = detect_blocked_file_intent("check if /skillpack-wave2/a.txt exists")
+    assert refusal is None
+
+
+def test_blocked_returns_none_for_no_intent():
+    """Non-file intents should not trigger blocked refusal."""
+    refusal = detect_blocked_file_intent("hello world")
+    assert refusal is None
+
+
+def test_blocked_parent_traversal_returns_refusal():
+    refusal = detect_blocked_file_intent("check if ../../../etc/passwd exists")
+    assert refusal is not None
+    assert "blocked" in refusal.lower()
 
 
 # ---------------------------------------------------------------------------

@@ -546,6 +546,30 @@ def test_note_write_and_file_read_requests_render_preview_pane_without_voxera_js
     assert preview["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/ideas.txt"
 
 
+def test_blocked_queue_path_returns_clean_refusal_no_preview(tmp_path, monkeypatch):
+    """Queue control-plane paths via shorthand must fail closed with a clear refusal."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "check if /queue/health.json exists"},
+    )
+    # Must NOT contain pseudo action JSON or preview panel
+    assert "voxera_control" not in res.text
+    assert '"action"' not in res.text
+    assert "```json" not in res.text
+    # Must contain a clear refusal explanation
+    assert "blocked" in res.text.lower()
+    # Must NOT create a preview
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is None
+
+
 def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission(
     tmp_path, monkeypatch
 ):

@@ -462,6 +462,67 @@ def _classify_archive_organize(text: str) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 
+def detect_blocked_file_intent(message: str) -> str | None:
+    """Detect when a file intent pattern matches but the path is blocked.
+
+    Returns a human-readable refusal message when:
+    - An intent pattern (exists/stat/read/mkdir/delete/copy/move/archive) matches
+    - A path token can be extracted
+    - The normalized path fails safety (queue control-plane, parent traversal, scope)
+
+    Returns ``None`` when no intent pattern matches, or when the path is safe
+    (i.e. ``classify_bounded_file_intent`` would handle it).
+    """
+    text = message.strip()
+    if not text:
+        return None
+
+    # Check each intent pattern — if one matches and path is blocked, return refusal
+    intent_patterns = [
+        (_RE_EXISTS, "existence check"),
+        (_RE_STAT, "file info"),
+        (_RE_READ, "file read"),
+        (_RE_MKDIR, "directory creation"),
+        (_RE_DELETE, "file deletion"),
+        (_RE_COPY, "file copy"),
+        (_RE_MOVE, "file move"),
+        (_RE_ARCHIVE_ORGANIZE, "file archive"),
+    ]
+    for pattern, label in intent_patterns:
+        if not pattern.search(text):
+            continue
+        # Intent pattern matched — check for parent traversal in the raw text
+        # even if path extraction fails (the traversal guard may suppress extraction).
+        if _contains_parent_traversal(text):
+            return (
+                f"I can't perform a {label} on that path — "
+                f"it's blocked by the bounded filesystem safety boundary (parent traversal (..)). "
+                f"All file operations are confined to the ~/VoxeraOS/notes/ workspace, "
+                f"excluding the queue control-plane directory."
+            )
+        # Check if a path can be extracted
+        path_token = _extract_path_from_text(text)
+        if not path_token:
+            continue
+        full_path = _normalize_notes_path(path_token)
+        if _is_safe_notes_path(full_path):
+            # Path is safe — classify_bounded_file_intent handles this
+            return None
+        # Path is blocked — produce refusal
+        if _QUEUE_SEGMENT in full_path.split("/"):
+            reason = "queue/control-plane scope"
+        else:
+            reason = "outside bounded workspace scope"
+        return (
+            f"I can't perform a {label} on that path — "
+            f"it's blocked by the bounded filesystem safety boundary ({reason}). "
+            f"All file operations are confined to the ~/VoxeraOS/notes/ workspace, "
+            f"excluding the queue control-plane directory."
+        )
+
+    return None
+
+
 def classify_bounded_file_intent(message: str) -> dict[str, Any] | None:
     """Classify a user message into a bounded file intent if clear.
 

@@ -4,8 +4,10 @@
 - Added `files.read_text` bounded intent classifier (`_classify_read`) for "read", "cat", "display", "print", "output" verbs.
 - Reordered handoff routing: bounded file intent now runs before generic file-read goal so stat/info/read intents map to bounded skills instead of falling through to generic planner.
 - Added `_WORKSPACE_RELATIVE_PATH_RE` for extracting `/path` tokens from text.
-- Parent traversal and queue control-plane rejection remain fail-closed.
-- Added 14 new focused tests covering workspace-relative shorthand, read intent, queue shorthand rejection, and end-to-end preview normalization.
+- Added `detect_blocked_file_intent()` that returns a human-readable refusal when an intent pattern matches but path safety blocks it (queue control-plane, parent traversal).
+- Wired `detect_blocked_file_intent` into `vera_web/app.py` chat handler: blocked paths now short-circuit before reaching the LLM, preventing pseudo action JSON blobs in chat. No preview is created.
+- Parent traversal and queue control-plane rejection remain fail-closed with clear explanations.
+- Added 22 new focused tests covering workspace-relative shorthand, read intent, queue shorthand rejection, blocked path refusal (unit + web-level), and end-to-end preview normalization.
 - Updated hidden-compiler payload guidance and preview payload schema docs.
 
 ## 2026-03-14 — GitHub PR #TBD — feat(vera/planner): bounded filesystem intent-to-workflow routing
