@@ -521,6 +521,31 @@ def build_vera_messages(*, turns: list[dict[str, str]], user_message: str) -> li
     return messages
 
 
+def _recent_assistant_authored_content(turns: list[dict[str, str]]) -> list[str]:
+    non_authored_markers = (
+        "i submitted the job to voxeraos",
+        "job id:",
+        "the request is now in the queue",
+        "execution has not completed yet",
+        "check status and evidence",
+        "approval status",
+        "expected artifacts",
+        "queue state",
+    )
+    authored: list[str] = []
+    for turn in turns[-MAX_SESSION_TURNS:]:
+        if str(turn.get("role") or "").strip().lower() != "assistant":
+            continue
+        text = str(turn.get("text") or "").strip()
+        lowered = text.lower()
+        if not text:
+            continue
+        if any(marker in lowered for marker in non_authored_markers):
+            continue
+        authored.append(text)
+    return authored[-4:]
+
+
 def _build_preview_builder_messages(
     *,
     turns: list[dict[str, str]],
@@ -533,6 +558,7 @@ def _build_preview_builder_messages(
         "active_preview": active_preview,
         "latest_user_message": user_message.strip(),
         "recent_turns": turns[-MAX_SESSION_TURNS:],
+        "recent_assistant_authored_content": _recent_assistant_authored_content(turns),
         "decision_contract": {
             "action": ["replace_preview", "patch_preview", "no_change"],
             "intent_type": ["new_intent", "refinement", "unclear"],
@@ -628,12 +654,18 @@ async def generate_preview_builder_update(
         for turn in turns[-MAX_SESSION_TURNS:]
         if str(turn.get("role") or "").strip().lower() == "user"
     ]
+    recent_assistant_messages = [
+        str(turn.get("text") or "")
+        for turn in turns[-MAX_SESSION_TURNS:]
+        if str(turn.get("role") or "").strip().lower() == "assistant"
+    ]
 
     deterministic_preview = maybe_draft_job_payload(
         user_message,
         active_preview=active_preview,
         recent_user_messages=recent_user_messages,
         enrichment_context=enrichment_context,
+        recent_assistant_messages=recent_assistant_messages,
     )
 
     if not attempts:

@@ -113,6 +113,68 @@ def _extract_quoted_content(text: str) -> str | None:
     return None
 
 
+def _message_requests_referenced_content(message: str) -> bool:
+    lowered = message.lower()
+    if not re.search(r"\b(that|this|previous|last|your)\b", lowered):
+        return False
+    return bool(
+        re.search(
+            r"\b(that\s+(?:joke|summary|text|answer|response)|that\s+into\s+(?:a\s+)?file|"
+            r"use\s+your\s+previous\s+response|previous\s+(?:response|answer)|last\s+(?:response|answer)|"
+            r"put\s+that\s+into\s+(?:a\s+)?file|use\s+that\s+as\s+(?:the\s+)?content)\b",
+            lowered,
+        )
+    )
+
+
+def _looks_like_ambiguous_reference_only(message: str) -> bool:
+    lowered = message.lower()
+    if not re.search(r"\b(that|this|it|previous|last)\b", lowered):
+        return False
+    if re.search(r"\b(joke|summary|text|answer|response|script|paragraph|note|content)\b", lowered):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:save|put|write|add|use|make|create)\b.*\b(?:that|this|it|previous\s+(?:one|thing)|last\s+(?:one|thing))\b",
+            lowered,
+        )
+        and not _message_requests_referenced_content(message)
+    )
+
+
+def _looks_like_non_authored_assistant_message(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return True
+    non_authored_patterns = (
+        r"\bi submitted the job to voxeraos\b",
+        r"\bjob id:\b",
+        r"\bthe request is now in the queue\b",
+        r"\bexecution has not completed yet\b",
+        r"\bcheck status and evidence\b",
+        r"\bapproval status\b",
+        r"\bexpected artifacts\b",
+        r"\bqueue\s+state\b",
+        r"\bmode status\b",
+    )
+    return any(re.search(pattern, lowered) for pattern in non_authored_patterns)
+
+
+def _select_recent_assistant_content(
+    *, message: str, assistant_content_candidates: list[str] | None
+) -> str | None:
+    if not assistant_content_candidates:
+        return None
+    if not _message_requests_referenced_content(message):
+        return None
+    for raw in reversed(assistant_content_candidates[-4:]):
+        candidate = raw.strip()
+        if not candidate or _looks_like_non_authored_assistant_message(candidate):
+            continue
+        return candidate
+    return None
+
+
 def _infer_content_from_message(text: str) -> str | None:
     lowered = text.lower()
     if re.search(r"\b(joke|funny|humorous)\b", lowered):
@@ -131,7 +193,11 @@ def _generated_note_path() -> str:
     return f"~/VoxeraOS/notes/note-{int(time.time())}.txt"
 
 
-def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | None:
+def _normalize_structured_file_write_payload(
+    message: str,
+    *,
+    assistant_content_candidates: list[str] | None = None,
+) -> dict[str, Any] | None:
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
     append_mode = bool(re.search(r"\b(append|add\s+to)\b", lowered))
@@ -186,10 +252,19 @@ def _normalize_structured_file_write_payload(message: str) -> dict[str, Any] | N
             match = re.search(pattern, text, re.IGNORECASE)
             if not match:
                 continue
-            candidate = match.group(1).strip(" \"'`:")
+            candidate = _normalize_refinement_content_candidate(match.group(1))
             if candidate:
                 content = candidate
                 break
+    reference_requested = _message_requests_referenced_content(text)
+    ambiguous_reference = _looks_like_ambiguous_reference_only(text)
+    if content is None:
+        content = _select_recent_assistant_content(
+            message=text,
+            assistant_content_candidates=assistant_content_candidates,
+        )
+    if content is None and (reference_requested or ambiguous_reference):
+        return None
     if content is None:
         content = _infer_content_from_message(text) or ""
 
@@ -337,6 +412,10 @@ def _normalize_refinement_content_candidate(candidate: str) -> str | None:
         return None
     if re.fullmatch(r"(that|this|it|same|same thing)", value, re.IGNORECASE):
         return None
+    if re.search(r"\bfile\s+called\b", value, re.IGNORECASE):
+        return None
+    if _message_requests_referenced_content(value) or _looks_like_ambiguous_reference_only(value):
+        return None
     return value
 
 
@@ -400,6 +479,7 @@ def _draft_revision_from_active_preview(
     active_preview: dict[str, Any] | None,
     *,
     enrichment_context: dict[str, Any] | None = None,
+    assistant_content_candidates: list[str] | None = None,
 ) -> dict[str, Any] | None:
     if not isinstance(active_preview, dict):
         return None
@@ -484,6 +564,11 @@ def _draft_revision_from_active_preview(
                 lowered,
             ):
                 refined_content = enrich_summary
+        if not refined_content:
+            refined_content = _select_recent_assistant_content(
+                message=text,
+                assistant_content_candidates=assistant_content_candidates,
+            )
         if refined_content:
             return {
                 "goal": f"write a file called {filename} with provided content",
@@ -552,9 +637,13 @@ def _draft_from_candidate_message(
     *,
     active_preview: dict[str, Any] | None,
     enrichment_context: dict[str, Any] | None = None,
+    assistant_content_candidates: list[str] | None = None,
 ) -> dict[str, Any] | None:
     revision = _draft_revision_from_active_preview(
-        candidate, active_preview, enrichment_context=enrichment_context
+        candidate,
+        active_preview,
+        enrichment_context=enrichment_context,
+        assistant_content_candidates=assistant_content_candidates,
     )
     if revision is not None:
         return revision
@@ -567,7 +656,9 @@ def _draft_from_candidate_message(
     if normalized_read:
         return {"goal": normalized_read}
 
-    structured_write = _normalize_structured_file_write_payload(candidate)
+    structured_write = _normalize_structured_file_write_payload(
+        candidate, assistant_content_candidates=assistant_content_candidates
+    )
     if structured_write:
         return structured_write
 
@@ -588,13 +679,17 @@ def maybe_draft_job_payload(
     active_preview: dict[str, Any] | None = None,
     recent_user_messages: list[str] | None = None,
     enrichment_context: dict[str, Any] | None = None,
+    recent_assistant_messages: list[str] | None = None,
 ) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
         return None
 
     primary = _draft_from_candidate_message(
-        normalized, active_preview=active_preview, enrichment_context=enrichment_context
+        normalized,
+        active_preview=active_preview,
+        enrichment_context=enrichment_context,
+        assistant_content_candidates=recent_assistant_messages,
     )
     if primary is not None:
         return primary
@@ -611,6 +706,7 @@ def maybe_draft_job_payload(
             contextual_candidate,
             active_preview=active_preview,
             enrichment_context=enrichment_context,
+            assistant_content_candidates=recent_assistant_messages,
         )
         if contextual is not None:
             return contextual
