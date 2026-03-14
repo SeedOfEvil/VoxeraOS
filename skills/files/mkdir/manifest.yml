@@ -1,0 +1,26 @@
+id: files.mkdir
+name: Make Directory
+description: Create a directory within allowlisted notes paths.
+entrypoint: voxera_builtin_skills.files_mkdir:run
+capabilities: ["files.write"]
+risk: medium
+exec_mode: local
+needs_network: false
+fs_scope: workspace_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  path:
+    type: string
+    required: true
+    description: Directory path under ~/VoxeraOS/notes.
+  parents:
+    type: boolean
+    required: false
+    default: true
+    description: Create missing parent directories when true.
+  exist_ok:
+    type: boolean
+    required: false
+    default: true
+    description: Succeed if the directory already exists.

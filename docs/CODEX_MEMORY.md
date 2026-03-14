@@ -1,8 +1,18 @@
 ## 2026-03-14 — GitHub PR #TBD — fix(skills/files): block queue control-plane paths from file skills
 
-- Tightened confined path normalization to reject access to `~/VoxeraOS/notes/queue/**` for all notes-root file skills (`files.read_text`, `files.write_text`, `files.list_dir`, `files.copy_file`, `files.move_file`).
+- Tightened confined path normalization to reject access to `~/VoxeraOS/notes/queue/**` for all notes-root file skills (`files.read_text`, `files.write_text`, `files.list_dir`, `files.copy_file`, `files.move_file`, `files.mkdir`, `files.exists`, `files.stat`, `files.delete_file`).
 - Added deterministic `path_blocked_scope` error classification for control-plane trust-zone violations.
 - Added focused regression tests to prove both source and destination denial for copy/move and direct denial for read/write/list against queue paths.
+
+## 2026-03-14 — GitHub PR #TBD — feat(skills/files): bounded filesystem productivity wave 2
+
+- Added bounded filesystem wave-2 skills with deterministic `skill_result` contracts:
+  - `files.mkdir` (confined directory creation in notes scope)
+  - `files.exists` (confined path existence checks)
+  - `files.stat` (confined path metadata inspection)
+  - `files.delete_file` (confined regular-file deletion with explicit `file.delete` capability)
+- Preserved centralized path-boundary enforcement and fail-closed control-plane blocking for `~/VoxeraOS/notes/queue/**`.
+- Added focused tests for happy paths, control-plane rejections, and manifest governance alignment for wave-2 skills.
 
 ## 2026-03-14 — GitHub PR #TBD — feat(skills/files): bounded filesystem productivity wave 1
 

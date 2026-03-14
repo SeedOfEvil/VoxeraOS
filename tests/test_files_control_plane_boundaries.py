@@ -1,9 +1,13 @@
 from voxera.skills.result_contract import SKILL_RESULT_KEY
 from voxera_builtin_skills import (
     files_copy_file,
+    files_delete_file,
+    files_exists,
     files_list_dir,
+    files_mkdir,
     files_move_file,
     files_read_text,
+    files_stat,
     files_write_text,
 )
 
@@ -89,3 +93,28 @@ def test_move_file_rejects_control_plane_source_and_destination(tmp_path, monkey
     assert _error_class(rr_source) == "path_blocked_scope"
     assert rr_destination.ok is False
     assert _error_class(rr_destination) == "path_blocked_scope"
+
+
+def test_wave2_file_skills_reject_queue_control_plane_path(tmp_path, monkeypatch):
+    allowed_root = tmp_path / "notes"
+    queue_dir = allowed_root / "queue"
+    queue_dir.mkdir(parents=True)
+    queue_file = queue_dir / "job.json"
+    queue_file.write_text("{}", encoding="utf-8")
+
+    for module in (files_exists, files_stat, files_mkdir, files_delete_file):
+        monkeypatch.setattr(module, "ALLOWED_ROOT", allowed_root)
+
+    rr_exists = files_exists.run("queue/job.json")
+    rr_stat = files_stat.run("queue/job.json")
+    rr_mkdir = files_mkdir.run("queue/new")
+    rr_delete = files_delete_file.run("queue/job.json")
+
+    assert rr_exists.ok is False
+    assert _error_class(rr_exists) == "path_blocked_scope"
+    assert rr_stat.ok is False
+    assert _error_class(rr_stat) == "path_blocked_scope"
+    assert rr_mkdir.ok is False
+    assert _error_class(rr_mkdir) == "path_blocked_scope"
+    assert rr_delete.ok is False
+    assert _error_class(rr_delete) == "path_blocked_scope"
