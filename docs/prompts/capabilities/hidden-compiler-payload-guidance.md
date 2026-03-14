@@ -100,7 +100,19 @@ When `enrichment_context` is provided (query, summary, retrieved_at_ms), pronoun
 - `put that into the file`, `use that as the content`, `use those results` -> `write_file.content = enrichment_context.summary`
 - Only apply enrichment resolution when the pronoun clearly refers to the web result and `write_file` exists in the active preview.
 
-If grounding is still unsafe/ambiguous after checking both active_preview and enrichment_context, fail closed with:
+When available, `recent_assistant_authored_content` provides a bounded list of recent assistant-authored outputs (excluding queue/status/system-like assistant messages).
+Use that context only for clear references such as:
+- `that joke`
+- `that summary`
+- `that text`
+- `your previous response`
+
+Resolution order for reference content:
+1. Active preview fields when locally clear.
+2. Enrichment summary when explicitly referring to retrieved web results.
+3. Recent assistant-authored content when user clearly refers to previous generated content.
+
+If grounding is still unsafe/ambiguous after these checks, fail closed with:
 - `{"action":"no_change","intent_type":"unclear","updated_preview":null,"patch":null}`
 
 Do not emit conversational filler; output only the strict decision object.
