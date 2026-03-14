@@ -27,6 +27,7 @@ from .queue_contracts import (
     build_execution_envelope,
     detect_request_kind,
     extract_enqueue_child_request,
+    extract_file_organize_request,
     extract_lineage_metadata,
     extract_write_file_request,
 )
@@ -69,6 +70,10 @@ class QueueExecutionMixin:
         write_file = extract_write_file_request(payload)
         if write_file is not None:
             normalized["write_file"] = write_file
+
+        file_organize = extract_file_organize_request(payload)
+        if file_organize is not None:
+            normalized["file_organize"] = file_organize
 
         if "approval_required" in payload:
             normalized["approval_required"] = payload.get("approval_required") is True
@@ -150,6 +155,73 @@ class QueueExecutionMixin:
             mission = self._build_inline_mission(normalized, job_ref=job_ref)
             validate_mission_steps_against_snapshot(mission, snapshot)
             return mission
+        if "file_organize" in normalized:
+            file_organize = normalized["file_organize"]
+            source_path = str(file_organize.get("source_path") or "").strip()
+            destination_dir = str(file_organize.get("destination_dir") or "").strip()
+            mode = str(file_organize.get("mode") or "copy").strip().lower()
+            if mode not in {"copy", "move"}:
+                raise ValueError("file_organize.mode must be copy or move")
+
+            overwrite = file_organize.get("overwrite", False)
+            delete_original = file_organize.get("delete_original", False)
+            if not isinstance(overwrite, bool):
+                raise ValueError("file_organize.overwrite must be a boolean when provided")
+            if not isinstance(delete_original, bool):
+                raise ValueError("file_organize.delete_original must be a boolean when provided")
+
+            source_name = Path(source_path).name
+            destination_path = str(Path(destination_dir) / source_name)
+            title = str(payload.get("title") or f"Queued File Organize {Path(job_ref).stem}")
+            goal = str(
+                payload.get("goal")
+                or f"Organize {source_path} into {destination_dir} using mode={mode}"
+            )
+
+            steps = [
+                MissionStep(skill_id="files.exists", args={"path": source_path}),
+                MissionStep(skill_id="files.stat", args={"path": source_path}),
+                MissionStep(
+                    skill_id="files.mkdir", args={"path": destination_dir, "parents": True}
+                ),
+            ]
+            if mode == "copy":
+                steps.append(
+                    MissionStep(
+                        skill_id="files.copy_file",
+                        args={
+                            "source_path": source_path,
+                            "destination_path": destination_path,
+                            "overwrite": overwrite,
+                        },
+                    )
+                )
+                if delete_original:
+                    steps.append(
+                        MissionStep(skill_id="files.delete_file", args={"path": source_path})
+                    )
+            else:
+                steps.append(
+                    MissionStep(
+                        skill_id="files.move_file",
+                        args={
+                            "source_path": source_path,
+                            "destination_path": destination_path,
+                            "overwrite": overwrite,
+                        },
+                    )
+                )
+
+            mission = MissionTemplate(
+                id=Path(job_ref).stem,
+                title=title,
+                goal=goal,
+                notes="structured_file_organize_queue_job",
+                steps=steps,
+            )
+            validate_mission_steps_against_snapshot(mission, snapshot)
+            return mission
+
         if "write_file" in normalized:
             write_file = normalized["write_file"]
             write_path = str(write_file.get("path") or "").strip()
@@ -195,7 +267,7 @@ class QueueExecutionMixin:
             except MissionPlannerError as exc:
                 raise RuntimeError(str(exc)) from exc
         raise ValueError(
-            "job must contain mission_id (or mission), goal (or plan_goal), or inline steps"
+            "job must contain mission_id (or mission), file_organize, write_file, goal (or plan_goal), or inline steps"
         )
 
     def _is_ready_job_file(self: Any, path: Path) -> bool:

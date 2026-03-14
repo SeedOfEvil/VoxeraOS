@@ -18,6 +18,7 @@ def test_list_missions_contains_daily_cards_and_system_check():
         "incident_mode",
         "wrap_up",
         "system_check",
+        "notes_archive_flow",
     }.issubset(mission_ids)
 
 

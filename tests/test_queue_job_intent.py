@@ -71,3 +71,31 @@ def test_build_queue_job_intent_sets_expected_artifact_defaults_for_assistant_jo
         "execution_result.json",
         "step_results.json",
     ]
+
+
+def test_build_queue_job_intent_sets_expected_artifact_defaults_for_file_organize_jobs() -> None:
+    intent = build_queue_job_intent(
+        {
+            "file_organize": {
+                "source_path": "~/VoxeraOS/notes/inbox/a.txt",
+                "destination_dir": "~/VoxeraOS/notes/archive",
+                "mode": "copy",
+            }
+        },
+        source_lane="inbox_cli",
+    )
+
+    assert intent["request_kind"] == "file_organize"
+    assert intent["expected_artifacts"] == [
+        "plan.json",
+        "execution_envelope.json",
+        "execution_result.json",
+        "step_results.json",
+    ]
+    assert intent["file_organize"] == {
+        "source_path": "~/VoxeraOS/notes/inbox/a.txt",
+        "destination_dir": "~/VoxeraOS/notes/archive",
+        "mode": "copy",
+        "overwrite": None,
+        "delete_original": None,
+    }
