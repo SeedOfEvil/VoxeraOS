@@ -1171,6 +1171,7 @@ Vera v0 now includes a narrow job-outcome review capability in chat while preser
 - Review path resolves either an explicit job id or the session's latest submitted `handoff_job_id`.
 - Outcome summaries are built from canonical queue evidence via shared helpers (`lookup_job` + `resolve_structured_execution`), not ad-hoc parsing.
 - Reported fields include state classification (`submitted|queued|planning|running|awaiting_approval|resumed|pending|succeeded|failed|canceled`), lifecycle state, terminal outcome, approval status, latest summary, failure summary, and child summary (if already exposed).
+- Structured execution consumption also exposes `normalized_outcome_class` for deterministic non-success taxonomy without overriding canonical queue truth (`approval_blocked`, `policy_denied`, `capability_boundary_mismatch`, `path_blocked_scope`, `runtime_dependency_missing`, `runtime_execution_failed`, `canceled`, `partial_artifact_gap`, `incomplete_evidence`).
 - Review shaping is deterministic and lifecycle-aware: when available it prefers normalized `execution_result.review_summary.latest_summary` and `execution_result.evidence_bundle.trace` over ad-hoc prose fallback.
 - Review output also surfaces normalized execution capability declaration context (`side_effect_class`, network/fs scope, sandbox profile) and expected-vs-observed artifact status (`observed|partial|missing`) when declared.
 - State-aware next-step guidance remains fail-closed and must not claim terminal success without queue + artifact/evidence support.

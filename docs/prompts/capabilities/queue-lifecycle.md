@@ -32,3 +32,4 @@ Assistant/recovery variants may appear, but queue state sidecars and terminal bu
 - Keep canceled distinct from failed.
 
 - Expected-artifact interpretation must follow lifecycle truth: `awaiting_approval` means execution is paused, `canceled` means output absence may be normal, `failed` means inspect failure evidence first, and `succeeded` with partial outputs should be treated as an evidence-gap check rather than automatic failure.
+- For non-success explanation quality, consume normalized outcome classes from structured evidence (`approval_blocked`, `policy_denied`, `capability_boundary_mismatch`, `path_blocked_scope`, `runtime_dependency_missing`, `runtime_execution_failed`, `canceled`, `partial_artifact_gap`, `incomplete_evidence`) while still treating queue lifecycle as canonical truth.

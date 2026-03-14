@@ -20,6 +20,7 @@ Post-v0.1.6 hardening and observability work is complete (PRs #145–#149). Curr
 - **Artifact/evidence contract hardening**: keep execution outputs review/verifier-friendly via additive normalized `execution_result.json` contract fields (`artifact_families`, `artifact_refs`, `review_summary`, `evidence_bundle.trace`).
 - **Verifier review hardening**: keep "what happened?" review deterministic and lifecycle-aware by grounding summary/next-step shaping on canonical queue state + normalized review/evidence contract fields (including explicit `queued` vs `submitted` handling).
 - **State-aware expected-artifact review**: keep reviewer guidance explicit for fully observed/partial/missing/none-declared outputs without conflating approval-blocked/canceled states with runtime failure.
+- **Normalized non-success taxonomy**: keep reviewer/operator explanations explicit via additive `normalized_outcome_class` shaping (`approval_blocked`, `policy_denied`, `capability_boundary_mismatch`, `path_blocked_scope`, `runtime_dependency_missing`, `runtime_execution_failed`, `canceled`, `partial_artifact_gap`, `incomplete_evidence`) while preserving canonical queue truth.
 
 ## Hardening already shipped (do not re-implement)
 

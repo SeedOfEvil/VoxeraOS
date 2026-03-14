@@ -249,7 +249,87 @@ def test_resolve_structured_execution_denied_approval_is_not_pending(tmp_path):
     assert payload["terminal_outcome"] == "failed"
     assert payload["lifecycle_state"] == "failed"
     assert payload["approval_status"] == "denied"
+    assert payload["normalized_outcome_class"] == "policy_denied"
     assert payload["latest_summary"] == "Step blocked because operator denied approval"
+
+
+def test_resolve_structured_execution_classifies_capability_boundary_mismatch(tmp_path):
+    art = tmp_path / "artifacts" / "job-cap-boundary"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "terminal_outcome": "failed",
+                "lifecycle_state": "failed",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "status": "failed",
+                        "error_class": "capability_boundary_mismatch",
+                    }
+                ],
+                "review_summary": {
+                    "capability_boundary_violation": {
+                        "boundary": "network",
+                        "declared_network_scope": "none",
+                        "requested_network": True,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=art)
+    assert payload["normalized_outcome_class"] == "capability_boundary_mismatch"
+
+
+def test_resolve_structured_execution_classifies_runtime_dependency_missing(tmp_path):
+    art = tmp_path / "artifacts" / "job-missing-dep"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "terminal_outcome": "failed",
+                "lifecycle_state": "failed",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "status": "failed",
+                        "error_class": "missing_executable",
+                        "error": "executable not found",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=art)
+    assert payload["normalized_outcome_class"] == "runtime_dependency_missing"
+
+
+def test_resolve_structured_execution_classifies_partial_artifact_gap(tmp_path):
+    art = tmp_path / "artifacts" / "job-partial"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "terminal_outcome": "succeeded",
+                "lifecycle_state": "done",
+                "review_summary": {
+                    "expected_artifact_status": "partial",
+                    "expected_artifacts": ["execution_result", "stdout"],
+                    "observed_expected_artifacts": ["execution_result"],
+                    "missing_expected_artifacts": ["stdout"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(artifacts_dir=art)
+    assert payload["normalized_outcome_class"] == "partial_artifact_gap"
 
 
 def test_resolve_structured_execution_exposes_normalized_artifact_contract_fields(tmp_path):
