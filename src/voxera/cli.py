@@ -260,6 +260,13 @@ def run(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Simulate execution without running the skill."
     ),
+    allow_direct_mutation: bool = typer.Option(
+        False,
+        "--allow-direct-mutation",
+        help=(
+            "DEV ONLY: allow direct CLI execution of mutating skills (requires VOXERA_DEV_MODE=1)."
+        ),
+    ),
 ):
     """Run a skill by ID (MVP)."""
     run_impl(
@@ -270,6 +277,7 @@ def run(
         skill_id=skill_id,
         arg=arg,
         dry_run=dry_run,
+        allow_direct_mutation=allow_direct_mutation,
     )
 
 

@@ -27,6 +27,7 @@ Post-v0.1.6 hardening and observability work is complete (PRs #145–#149). Curr
 
 These are done. Do not list them as open work:
 
+- Queue-first direct CLI mutation gate: mutating `voxera run` blocked by default; read-only direct CLI preserved; explicit dev-mode override via `VOXERA_DEV_MODE=1` + `--allow-direct-mutation`
 - Simple-intent routing + fail-closed mismatch detection (PR #144–#145)
 - Live job/assistant progress endpoints + stale-failure fix (PR #146)
 - Red-team regression suite + multi-boundary traversal hardening (PR #147)

@@ -14,6 +14,21 @@ from .result_contract import SKILL_RESULT_KEY, build_skill_result
 _PolicyDecisionLiteral = Literal["allow", "ask", "deny"]
 
 
+def is_skill_read_only(manifest: SkillManifest) -> bool:
+    """Return True when every declared capability has a read-only effect class.
+
+    Skills with no declared capabilities are treated as non-read-only (fail-closed).
+    """
+    caps = manifest.capabilities
+    if not caps:
+        return False
+    for cap in caps:
+        effect = CAPABILITY_EFFECT_CLASS.get(cap)
+        if effect is None or effect != "read":
+            return False
+    return True
+
+
 class CapabilityEnforcementResult:
     def __init__(
         self,

@@ -1,3 +1,15 @@
+## 2026-03-14 — GitHub PR #TBD — hardening(cli): queue-first direct CLI mutation gate
+
+- Added queue-first mutation gate to `voxera run`: mutating skills (effect class `write` or `execute`) are blocked from direct CLI execution by default.
+- Read-only skills (all capabilities map to `read` effect class) continue to execute directly.
+- Added explicit dev-mode override requiring both `VOXERA_DEV_MODE=1` env var and `--allow-direct-mutation` CLI flag — intentionally loud and double-gated.
+- Added `is_skill_read_only()` helper in `skills/runner.py` for deterministic mutability classification based on `CAPABILITY_EFFECT_CLASS`.
+- Blocked runs print actionable messaging: skill ID, effect classes, queue-first explanation, queue submission command, and dev-mode override syntax.
+- Dry-run (`--dry-run`) bypasses the gate since it does not execute.
+- Added 35 focused tests covering: `is_skill_read_only` unit tests, `_is_dev_mode` env parsing, run_impl integration (read-only allowed, mutating blocked, flag-without-dev-mode blocked, dev-mode override allowed, dry-run unaffected), all built-in skill classification, and effect-class helper coverage.
+- Updated `docs/EXECUTION_SECURITY_MODEL.md` section 9 documenting the gate, dev-mode override, and classification model.
+- Updated `CODEX.md` shipped-hardening list.
+
 ## 2026-03-14 — GitHub PR #TBD — fix(vera/planner): workspace-relative path shorthand and read intent routing
 
 - Fixed path normalization gap: leading-`/` paths (e.g. `/skillpack-wave2/a.txt`) are now interpreted as workspace-root-relative shorthand → `~/VoxeraOS/notes/skillpack-wave2/a.txt`, not host absolute paths.
