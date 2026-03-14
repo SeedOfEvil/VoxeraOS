@@ -1,3 +1,9 @@
+## 2026-03-14 — GitHub PR #TBD — fix(skills/files): block queue control-plane paths from file skills
+
+- Tightened confined path normalization to reject access to `~/VoxeraOS/notes/queue/**` for all notes-root file skills (`files.read_text`, `files.write_text`, `files.list_dir`, `files.copy_file`, `files.move_file`).
+- Added deterministic `path_blocked_scope` error classification for control-plane trust-zone violations.
+- Added focused regression tests to prove both source and destination denial for copy/move and direct denial for read/write/list against queue paths.
+
 ## 2026-03-14 — GitHub PR #TBD — feat(skills/files): bounded filesystem productivity wave 1
 
 - Added three additive filesystem skills with normalized manifest governance fields:
