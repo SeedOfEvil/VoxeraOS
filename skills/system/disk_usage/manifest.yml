@@ -1,0 +1,11 @@
+id: system.disk_usage
+name: Disk Usage
+description: Show disk usage snapshot for the home partition.
+entrypoint: voxera_builtin_skills.disk_usage:run
+capabilities: ["state.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []

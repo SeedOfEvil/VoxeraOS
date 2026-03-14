@@ -142,6 +142,23 @@ MISSION_TEMPLATES: dict[str, MissionTemplate] = {
         ],
         notes="Low-risk health check mission.",
     ),
+    "system_inspect": MissionTemplate(
+        id="system_inspect",
+        title="System Inspection",
+        goal="Collect a bounded read-only snapshot of local workstation state for audit evidence",
+        steps=[
+            MissionStep(skill_id="system.status"),
+            MissionStep(skill_id="system.disk_usage"),
+            MissionStep(skill_id="system.process_list"),
+            MissionStep(skill_id="system.window_list"),
+        ],
+        notes=(
+            "Read-only local health inspection workflow. Composes system status, disk usage, "
+            "process listing, and open windows into a single bounded diagnostic snapshot. "
+            "All skills are state.read / window.read only — no mutations, no network, no approval required. "
+            "Executes through the queue for canonical audit trail and evidence production."
+        ),
+    ),
 }
 
 

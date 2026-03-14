@@ -1,3 +1,14 @@
+## 2026-03-14 — GitHub PR #TBD — feat(queue/missions): add bounded read-only system inspection workflow
+
+- Added two new read-only system inspection skills: `system.disk_usage` (home partition usage via `shutil.disk_usage`) and `system.process_list` (process snapshot via `ps`, truncated to 50 entries).
+- Both skills declare `state.read` capability, `risk=low`, `fs_scope=read_only`, `needs_network=false`, `exec_mode=local`, and emit canonical `skill_result.v1` payloads.
+- Added `system_inspect` mission composing `system.status`, `system.disk_usage`, `system.process_list`, and `system.window_list` into one coherent bounded diagnostic snapshot.
+- The workflow executes through the queue for canonical record keeping and audit evidence, despite being read-only and low-risk.
+- No approvals required — all skills map to `read` effect class.
+- Added focused tests covering: skill structured payloads, mission composition, read-only classification, simulation (zero approvals, not blocked), queue contract/intent propagation, lifecycle/evidence fields.
+- Updated `docs/EXECUTION_SECURITY_MODEL.md` with system inspection skills boundary section.
+- Updated `docs/ARCHITECTURE.md` mission list.
+
 ## 2026-03-14 — GitHub PR #TBD — hardening(cli): queue-first direct CLI mutation gate
 
 - Added queue-first mutation gate to `voxera run`: mutating skills (effect class `write` or `execute`) are blocked from direct CLI execution by default.

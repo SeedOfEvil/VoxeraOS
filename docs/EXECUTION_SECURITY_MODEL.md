@@ -181,3 +181,10 @@ Skill mutability is determined by the canonical `CAPABILITY_EFFECT_CLASS` mappin
 - `files.list_dir`, `files.exists`, and `files.stat` are read-only inspection skills (`fs_scope=read_only`, local-only, no network).
 - `files.copy_file`, `files.move_file`, `files.mkdir`, and `files.delete_file` are confined mutation skills (`fs_scope=workspace_only`, local-only, no network).
 - All file skills remain constrained to allowlisted notes-root path normalization and fail closed on boundary violations.
+
+## System inspection skills boundary
+
+- `system.status`, `system.disk_usage`, `system.process_list`, and `system.window_list` are read-only system inspection skills (`fs_scope=read_only`, `state.read` / `window.read` capability, local-only, no network).
+- `system.disk_usage` reads disk usage for the home partition via `shutil.disk_usage` (no shell commands).
+- `system.process_list` reads process state via `ps -eo pid,user,%cpu,%mem,comm` (bounded, read-only, output truncated to 50 entries).
+- The `system_inspect` mission composes all four into a single bounded queue-backed diagnostic workflow that produces canonical evidence without mutations or approval requirements.
