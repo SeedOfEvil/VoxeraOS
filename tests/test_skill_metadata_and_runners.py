@@ -62,3 +62,33 @@ def test_job_paths_creation(monkeypatch, tmp_path: Path):
     assert paths.workspace_dir.exists()
     assert paths.artifacts_dir.exists()
     assert (tmp_path / ".voxera" / "cache").exists()
+
+
+def test_builtin_skill_metadata_has_foundational_governance_fields():
+    reg = SkillRegistry()
+    manifests = reg.discover()
+
+    for manifest in manifests.values():
+        assert manifest.output_schema == "skill_result.v1"
+
+        if manifest.id == "sandbox.exec":
+            assert manifest.fs_scope == "workspace_only"
+            assert manifest.output_artifacts == [
+                "stdout.txt",
+                "stderr.txt",
+                "runner.json",
+                "command.txt",
+            ]
+            continue
+
+        assert manifest.exec_mode == "local"
+        if manifest.id.startswith("files."):
+            assert manifest.fs_scope == "workspace_only"
+        elif manifest.id == "system.open_url":
+            assert manifest.fs_scope == "broader"
+            assert manifest.needs_network is True
+        else:
+            assert manifest.fs_scope == "read_only"
+            assert manifest.needs_network is False
+
+        assert manifest.output_artifacts == []

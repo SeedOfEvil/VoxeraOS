@@ -4,6 +4,11 @@ description: Write or append UTF-8 text to allowlisted notes paths.
 entrypoint: voxera_builtin_skills.files_write_text:run
 capabilities: ["files.write"]
 risk: medium
+exec_mode: local
+needs_network: false
+fs_scope: workspace_only
+output_schema: skill_result.v1
+output_artifacts: []
 args:
   path:
     type: string

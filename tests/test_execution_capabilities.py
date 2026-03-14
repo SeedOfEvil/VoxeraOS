@@ -47,3 +47,17 @@ def test_normalize_manifest_capabilities_high_risk_broader_network_and_sandbox()
     assert declaration.fs_scope == FilesystemScope.BROADER
     assert declaration.sandbox_profile == SandboxProfile.SANDBOX_NETWORK_SCOPED
     assert declaration.expected_artifacts == ("execution_result", "step_results")
+
+
+def test_normalize_manifest_capabilities_maps_read_only_scope_to_none():
+    declaration = normalize_manifest_capabilities(
+        _manifest(
+            id="test.read-only",
+            capabilities=["state.read"],
+            fs_scope="read_only",
+            risk="low",
+        )
+    )
+
+    assert declaration.fs_scope == FilesystemScope.NONE
+    assert declaration.allowed_paths == ()

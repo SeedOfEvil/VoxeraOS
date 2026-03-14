@@ -4,3 +4,8 @@ description: Set system volume percentage (Linux 'pactl' if available).
 entrypoint: voxera_builtin_skills.set_volume:run
 capabilities: ["system.settings"]
 risk: medium
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []

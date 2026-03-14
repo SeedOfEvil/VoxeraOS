@@ -1038,6 +1038,11 @@ Use full `voxera doctor` when you want provider capability tests; use `--quick` 
 
 When `invalid`/`incomplete` is non-zero, review the reason codes and apply the hinted action (`fix_manifest`, `add_capabilities`) before relying on the skill in production workflows.
 
+Built-in skills should also follow a consistent manifest governance baseline so approval/review output stays comparable:
+- always declare `exec_mode`, `needs_network`, `fs_scope`, `output_schema`, and `output_artifacts`
+- use `fs_scope=read_only` for local read-mostly skills with no filesystem artifact expectations
+- keep deterministic `output_artifacts` empty (`[]`) when no file artifacts are predictably produced
+
 ## Brain fallback reason observability
 
 When the planner falls back between brain tiers, each transition is classified into a stable reason enum:
