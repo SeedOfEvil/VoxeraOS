@@ -166,24 +166,48 @@ def _truncate(text: str, max_chars: int = _MAX_TEXT_EXCERPT_CHARS) -> str:
 
 
 def _extract_file_read(*, structured: dict[str, Any], mission_id: str) -> str | None:
-    """files.read_text -> file content or bounded excerpt."""
+    """files.read_text -> file content or bounded excerpt.
+
+    Answer-first: surface actual file content when available in machine_payload,
+    falling back to latest_summary or path+size metadata.
+    """
     payload = _step_payload_for_skill(structured, "files.read_text")
     if not payload:
         return None
+
+    # Failed file reads should not produce success-sounding text.
+    step_status = _step_status_for_skill(structured, "files.read_text")
+    if step_status != "succeeded":
+        return None
+
     path = str(payload.get("path") or "").strip()
     byte_count = payload.get("bytes")
+    line_count = payload.get("line_count")
+    content = payload.get("content")
+    content_truncated = payload.get("content_truncated", False)
 
-    # The actual file content is in the step summary (output field) or
-    # we surface the path + size as useful context.
+    # Strategy 1: content is directly in machine_payload (preferred, most reliable).
+    if isinstance(content, str) and content:
+        excerpt = _truncate(content)
+        meta_parts: list[str] = []
+        if isinstance(byte_count, int):
+            meta_parts.append(f"{byte_count} bytes")
+        if isinstance(line_count, int):
+            meta_parts.append(f"{line_count} lines")
+        meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
+        trunc_note = (
+            " [truncated]" if content_truncated or len(content) > _MAX_TEXT_EXCERPT_CHARS else ""
+        )
+        header = (
+            f"Contents of {path}{meta}{trunc_note}:"
+            if path
+            else f"File contents{meta}{trunc_note}:"
+        )
+        return f"{header}\n{excerpt}"
+
+    # Strategy 2: latest_summary has richer content than the skill summary.
     summary = _step_summary_for_skill(structured, "files.read_text")
-    # The summary from the skill is "Read text from <path>" — not the content.
-    # The output field with actual content is captured in stdout.txt but may
-    # also appear in latest_summary if the step is the last one.
     latest_summary = str(structured.get("latest_summary") or "").strip()
-
-    # If latest_summary contains actual content (more than the skill summary),
-    # surface a bounded excerpt — but only when the read step is the last step,
-    # otherwise latest_summary may describe unrelated subsequent work.
     last_skill = _last_step_skill_id(structured)
     if (
         last_skill == "files.read_text"
@@ -193,17 +217,12 @@ def _extract_file_read(*, structured: dict[str, Any], mission_id: str) -> str | 
     ):
         excerpt = _truncate(latest_summary)
         if path:
-            return f"File content from {path}: {excerpt}"
-        return f"File content: {excerpt}"
+            return f"Contents of {path}:\n{excerpt}"
+        return f"File contents:\n{excerpt}"
 
-    # Fallback: surface path + size, but only for succeeded steps —
-    # failed file reads also carry a path in their payload, and emitting
-    # success-sounding text for them would be misleading.
-    step_status = _step_status_for_skill(structured, "files.read_text")
-    if step_status != "succeeded":
-        return None
+    # Fallback: surface path + size as operator-grade metadata.
     if path and isinstance(byte_count, int):
-        return f"Read {byte_count} bytes from {path}."
+        return f"File {path} ({byte_count} bytes). Content not available in evidence."
     if path:
         return f"Read file: {path}."
     return None
@@ -272,21 +291,31 @@ def _extract_list_dir(*, structured: dict[str, Any], mission_id: str) -> str | N
 
 
 def _extract_service_status(*, structured: dict[str, Any], mission_id: str) -> str | None:
-    """system.service_status -> actual service state."""
+    """system.service_status -> actual service state with scope context."""
     payload = _step_payload_for_skill(structured, "system.service_status")
     if not payload:
         return None
     service = str(payload.get("service") or payload.get("Id") or "service").strip()
     active = str(payload.get("ActiveState") or "").strip()
     sub = str(payload.get("SubState") or "").strip()
+    scope = str(payload.get("scope") or "").strip()
     if not active:
         return None
     state = f"{active}/{sub}" if sub else active
-    return f"Service {service} is {state}."
+    scope_label = f" ({scope} service)" if scope else ""
+
+    # If both scopes were checked and differ, surface the other scope too.
+    other_scope = str(payload.get("other_scope") or "").strip()
+    other_active = str(payload.get("other_ActiveState") or "").strip()
+    other_sub = str(payload.get("other_SubState") or "").strip()
+    if other_scope and other_active:
+        other_state = f"{other_active}/{other_sub}" if other_sub else other_active
+        return f"Service {service} is {state}{scope_label}. In {other_scope} scope: {other_state}."
+    return f"Service {service} is {state}{scope_label}."
 
 
 def _extract_recent_logs(*, structured: dict[str, Any], mission_id: str) -> str | None:
-    """system.recent_service_logs -> bounded log excerpt."""
+    """system.recent_service_logs -> bounded log excerpt or clear no-entries statement."""
     payload = _step_payload_for_skill(structured, "system.recent_service_logs")
     if not payload:
         return None
@@ -295,29 +324,38 @@ def _extract_recent_logs(*, structured: dict[str, Any], mission_id: str) -> str 
     since_minutes = payload.get("since_minutes")
     logs = payload.get("logs")
     truncated = payload.get("truncated")
+    scope = str(payload.get("scope") or "").strip()
 
     if not isinstance(line_count, int):
         return None
 
+    time_ctx = f" in the last {since_minutes}m" if isinstance(since_minutes, int) else ""
+    scope_ctx = f" ({scope} scope)" if scope else ""
+    has_log_lines = isinstance(logs, list) and bool(logs)
+
+    # No entries: clear operator-grade statement.
+    if line_count == 0 and not has_log_lines:
+        return f"No recent logs for {service}{time_ctx}{scope_ctx}."
+
     parts: list[str] = []
 
     # Context line
-    ctx = f"Recent logs for {service}: {line_count} line{'s' if line_count != 1 else ''}"
-    if isinstance(since_minutes, int):
-        ctx += f" (last {since_minutes}m)"
+    ctx = f"Recent logs for {service}{scope_ctx}: {line_count} line{'s' if line_count != 1 else ''}{time_ctx}"
     if truncated:
         ctx += " [truncated]"
     ctx += "."
     parts.append(ctx)
 
     # Bounded excerpt of actual log lines
-    if isinstance(logs, list) and logs:
-        shown = [str(line).strip() for line in logs[-_MAX_LOG_LINES_SHOWN:] if str(line).strip()]
-        if shown:
-            excerpt = "\n".join(shown)
-            if len(excerpt) > _MAX_TEXT_EXCERPT_CHARS:
-                excerpt = _truncate(excerpt)
-            parts.append(excerpt)
+    if not has_log_lines:
+        return "\n".join(parts) if parts else None
+    assert isinstance(logs, list)
+    shown = [str(line).strip() for line in logs[-_MAX_LOG_LINES_SHOWN:] if str(line).strip()]
+    if shown:
+        excerpt = "\n".join(shown)
+        if len(excerpt) > _MAX_TEXT_EXCERPT_CHARS:
+            excerpt = _truncate(excerpt)
+        parts.append(excerpt)
 
     return "\n".join(parts) if parts else None
 

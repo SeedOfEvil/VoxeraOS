@@ -8,6 +8,9 @@ from voxera.skills.result_contract import SKILL_RESULT_KEY, build_skill_result
 
 ALLOWED_ROOT = Path.home() / "VoxeraOS" / "notes"
 
+# Boundedness: max characters of file content stored in machine_payload.
+_MAX_CONTENT_CHARS = 2048
+
 
 def _resolve_safe_path(path: str) -> Path:
     return normalize_confined_path(path=path, allowed_root=ALLOWED_ROOT, must_exist=True)
@@ -55,14 +58,28 @@ def run(path: str) -> RunResult:
 
     try:
         text = target.read_text(encoding="utf-8")
+        byte_count = len(text.encode("utf-8"))
+        line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+
+        # Include bounded content in machine_payload for answer-first surfacing.
+        content_excerpt = text[:_MAX_CONTENT_CHARS]
+        content_truncated = len(text) > _MAX_CONTENT_CHARS
+
+        payload: dict[str, object] = {
+            "path": str(target),
+            "bytes": byte_count,
+            "line_count": line_count,
+            "content": content_excerpt,
+            "content_truncated": content_truncated,
+        }
         return RunResult(
             ok=True,
             output=text,
             data={
                 SKILL_RESULT_KEY: build_skill_result(
                     summary=f"Read text from {target}",
-                    machine_payload={"path": str(target), "bytes": len(text.encode("utf-8"))},
-                    operator_note="File content returned in output field.",
+                    machine_payload=payload,
+                    operator_note="File content returned in output field and bounded in machine_payload.content.",
                     next_action_hint="continue",
                     retryable=False,
                     blocked=False,

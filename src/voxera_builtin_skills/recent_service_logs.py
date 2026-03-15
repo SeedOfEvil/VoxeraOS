@@ -92,26 +92,11 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
             ),
         )
 
-    try:
-        completed = subprocess.run(
-            [
-                "journalctl",
-                "--no-pager",
-                "--output=short-iso",
-                "-u",
-                normalized,
-                "--since",
-                f"-{normalized_since_minutes} min",
-                "-n",
-                str(normalized_lines),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=True,
-        )
-    except FileNotFoundError:
-        error = "journalctl command not found"
+    log_lines, scope = _query_journal(
+        normalized, lines=normalized_lines, since_minutes=normalized_since_minutes
+    )
+    if log_lines is None:
+        error = "journalctl command not found or both scopes failed"
         return RunResult(
             ok=False,
             error=error,
@@ -129,46 +114,7 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
                 )
             },
         )
-    except subprocess.CalledProcessError as exc:
-        error = (exc.stderr or exc.stdout or str(exc)).strip() or "service logs query failed"
-        return RunResult(
-            ok=False,
-            error=error,
-            data={
-                SKILL_RESULT_KEY: build_skill_result(
-                    summary=f"Recent logs query failed for {normalized}",
-                    machine_payload={"service": normalized, "stderr": (exc.stderr or "").strip()},
-                    operator_note="Service may not exist or logs are unavailable in this runtime.",
-                    next_action_hint="verify_service_and_retry",
-                    retryable=False,
-                    blocked=False,
-                    approval_status="none",
-                    error=error,
-                    error_class="service_log_query_failed",
-                )
-            },
-        )
-    except subprocess.TimeoutExpired:
-        error = "recent logs query timed out"
-        return RunResult(
-            ok=False,
-            error=error,
-            data={
-                SKILL_RESULT_KEY: build_skill_result(
-                    summary=f"Recent logs query timed out for {normalized}",
-                    machine_payload={"service": normalized, "tool": "journalctl"},
-                    operator_note="Log inspection exceeded the bounded timeout.",
-                    next_action_hint="retry_recent_logs",
-                    retryable=True,
-                    blocked=False,
-                    approval_status="none",
-                    error=error,
-                    error_class="timeout",
-                )
-            },
-        )
 
-    log_lines = [line for line in completed.stdout.splitlines() if line.strip()]
     payload = {
         "service": normalized,
         "lines_requested": normalized_lines,
@@ -176,14 +122,21 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
         "line_count": len(log_lines),
         "logs": log_lines,
         "truncated": len(log_lines) >= normalized_lines,
+        "scope": scope,
     }
+
+    if log_lines:
+        summary = f"Collected {len(log_lines)} recent log lines for {normalized} ({scope} scope)"
+    else:
+        summary = f"No recent logs for {normalized} in the last {normalized_since_minutes}m ({scope} scope)"
+
     return RunResult(
         ok=True,
-        output=f"Collected {len(log_lines)} recent log lines for {normalized}",
+        output=summary,
         data={
             **payload,
             SKILL_RESULT_KEY: build_skill_result(
-                summary=f"Collected {len(log_lines)} recent logs for {normalized}",
+                summary=summary,
                 machine_payload=payload,
                 operator_note="Bounded read-only journal slice for named service.",
                 next_action_hint="continue",
@@ -193,3 +146,57 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
             ),
         },
     )
+
+
+def _run_journalctl(
+    service: str, *, lines: int, since_minutes: int, user: bool
+) -> list[str] | None:
+    """Run journalctl for one scope. Returns parsed log lines, or None on failure."""
+    cmd = [
+        "journalctl",
+        "--no-pager",
+        "--output=short-iso",
+    ]
+    if user:
+        cmd += ["--user-unit", service]
+    else:
+        cmd += ["-u", service]
+    cmd += ["--since", f"-{since_minutes} min", "-n", str(lines)]
+
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+
+    # Filter out empty lines and journalctl "-- No entries --" markers.
+    return [
+        line
+        for line in completed.stdout.splitlines()
+        if line.strip() and "-- No entries --" not in line
+    ]
+
+
+def _query_journal(service: str, *, lines: int, since_minutes: int) -> tuple[list[str] | None, str]:
+    """Try user-unit scope first, fall back to system scope.
+
+    Returns (log_lines, scope).  log_lines is None when both scopes fail entirely.
+    """
+    user_lines = _run_journalctl(service, lines=lines, since_minutes=since_minutes, user=True)
+    system_lines = _run_journalctl(service, lines=lines, since_minutes=since_minutes, user=False)
+
+    if user_lines is None and system_lines is None:
+        return None, "unknown"
+
+    # Prefer whichever scope actually has content; if both have content, prefer user scope.
+    user_count = len(user_lines) if user_lines is not None else -1
+    system_count = len(system_lines) if system_lines is not None else -1
+
+    if user_count > 0:
+        return user_lines, "user"
+    if system_count > 0:
+        return system_lines, "system"
+    # Both succeeded but returned no entries — prefer user scope.
+    if user_lines is not None:
+        return user_lines, "user"
+    assert system_lines is not None
+    return system_lines, "system"

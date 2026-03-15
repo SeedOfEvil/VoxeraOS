@@ -5,12 +5,16 @@ Covers:
 2. File exists completion surfaces exists/missing clearly
 3. File stat completion surfaces key metadata
 4. List dir completion surfaces bounded directory listing
-5. Service status completion surfaces actual state
-6. Recent logs completion surfaces bounded useful log information
+5. Service status completion surfaces actual state (with scope awareness)
+6. Recent logs completion surfaces bounded useful log information (with scope)
 7. Diagnostics mission completion surfaces a compact multi-value snapshot
 8. Process list surfaces count and top processes
 9. Fallback returns None when only thin status is available
 10. Boundedness: large outputs are truncated
+11. File read surfaces actual content from machine_payload
+12. Service status surfaces scope context and cross-scope differences
+13. Recent logs says no entries only when truly empty
+14. Recent logs surfaces scope context
 """
 
 from __future__ import annotations
@@ -51,7 +55,8 @@ def _structured_with_step(skill_id: str, machine_payload: dict, summary: str = "
 # ---------------------------------------------------------------------------
 
 
-def test_file_read_surfaces_path_and_size():
+def test_file_read_surfaces_path_and_size_without_content():
+    """When machine_payload has no content field, falls back to path+size metadata."""
     structured = _structured_with_step(
         "files.read_text",
         {"path": "/home/user/VoxeraOS/notes/todo.txt", "bytes": 42},
@@ -238,12 +243,13 @@ def test_recent_logs_surfaces_bounded_excerpt():
     assert "Ready." in result
 
 
-def test_recent_logs_surfaces_count_only_without_log_lines():
+def test_recent_logs_no_entries_clear_statement():
+    """When logs list is empty, say 'No recent logs' clearly."""
     structured = _structured_with_step(
         "system.recent_service_logs",
         {
             "service": "voxera-daemon.service",
-            "line_count": 5,
+            "line_count": 0,
             "since_minutes": 30,
             "logs": [],
             "truncated": False,
@@ -251,8 +257,9 @@ def test_recent_logs_surfaces_count_only_without_log_lines():
     )
     result = extract_value_forward_text(structured=structured)
     assert result is not None
-    assert "5 lines" in result
-    assert "last 30m" in result
+    assert "No recent logs" in result
+    assert "voxera-daemon.service" in result
+    assert "30m" in result
 
 
 def test_recent_logs_truncation_flag_shown():
@@ -570,3 +577,228 @@ def test_list_dir_bounded_to_max_entries():
     assert result is not None
     assert "20 entries" in result
     assert "+8 more" in result  # 20 - 12 shown = 8 more
+
+
+# ---------------------------------------------------------------------------
+# File read: answer-first with content in machine_payload
+# ---------------------------------------------------------------------------
+
+
+def test_file_read_surfaces_actual_content_from_payload():
+    """When machine_payload includes content, surface it answer-first."""
+    structured = _structured_with_step(
+        "files.read_text",
+        {
+            "path": "/home/user/VoxeraOS/notes/a.txt",
+            "bytes": 5,
+            "line_count": 1,
+            "content": "hello",
+            "content_truncated": False,
+        },
+        summary="Read text from /home/user/VoxeraOS/notes/a.txt",
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "hello" in result
+    assert "a.txt" in result
+    assert "5 bytes" in result
+    assert "Contents of" in result
+
+
+def test_file_read_small_file_surfaces_full_content():
+    """A small text file read surfaces its actual contents cleanly."""
+    structured = _structured_with_step(
+        "files.read_text",
+        {
+            "path": "/notes/greeting.txt",
+            "bytes": 13,
+            "line_count": 1,
+            "content": "hello, world!",
+            "content_truncated": False,
+        },
+        summary="Read text from /notes/greeting.txt",
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "hello, world!" in result
+    assert "[truncated]" not in result
+
+
+def test_file_read_large_content_shows_truncated_flag():
+    """Large file content is truncated and flagged."""
+    big_content = "x" * 600
+    structured = _structured_with_step(
+        "files.read_text",
+        {
+            "path": "/notes/big.txt",
+            "bytes": 600,
+            "line_count": 1,
+            "content": big_content,
+            "content_truncated": True,
+        },
+        summary="Read text from /notes/big.txt",
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "[truncated]" in result
+    assert "big.txt" in result
+
+
+# ---------------------------------------------------------------------------
+# Service status: scope awareness
+# ---------------------------------------------------------------------------
+
+
+def test_service_status_surfaces_scope():
+    """Service status includes scope label when available."""
+    structured = _structured_with_step(
+        "system.service_status",
+        {
+            "service": "voxera-vera.service",
+            "ActiveState": "active",
+            "SubState": "running",
+            "scope": "user",
+        },
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "active/running" in result
+    assert "user service" in result
+
+
+def test_service_status_surfaces_cross_scope_difference():
+    """When user and system scopes differ, both are shown."""
+    structured = _structured_with_step(
+        "system.service_status",
+        {
+            "service": "voxera-vera.service",
+            "ActiveState": "active",
+            "SubState": "running",
+            "scope": "user",
+            "other_scope": "system",
+            "other_ActiveState": "inactive",
+            "other_SubState": "dead",
+        },
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "active/running" in result
+    assert "user service" in result
+    assert "system scope" in result
+    assert "inactive/dead" in result
+
+
+def test_service_status_no_scope_still_works():
+    """Legacy payloads without scope field still surface correctly."""
+    structured = _structured_with_step(
+        "system.service_status",
+        {
+            "service": "voxera-vera.service",
+            "ActiveState": "inactive",
+            "SubState": "dead",
+        },
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "voxera-vera.service" in result
+    assert "inactive/dead" in result
+
+
+# ---------------------------------------------------------------------------
+# Recent logs: scope and no-entries
+# ---------------------------------------------------------------------------
+
+
+def test_recent_logs_surfaces_scope():
+    """Recent logs include scope context when available."""
+    log_lines = ["2025-01-15T10:30:00 daemon[1]: Ready."]
+    structured = _structured_with_step(
+        "system.recent_service_logs",
+        {
+            "service": "voxera-daemon.service",
+            "line_count": 1,
+            "since_minutes": 15,
+            "logs": log_lines,
+            "truncated": False,
+            "scope": "user",
+        },
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "user scope" in result
+    assert "Ready." in result
+
+
+def test_recent_logs_count_without_log_lines_shows_context():
+    """If line_count > 0 but logs list is empty, still show count context (evidence may be partial)."""
+    structured = _structured_with_step(
+        "system.recent_service_logs",
+        {
+            "service": "voxera-daemon.service",
+            "line_count": 5,
+            "since_minutes": 30,
+            "logs": [],
+            "truncated": False,
+        },
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "5 lines" in result
+    assert "30m" in result
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics snapshot: still works
+# ---------------------------------------------------------------------------
+
+
+def test_diagnostics_snapshot_still_works_with_partial_data():
+    """Diagnostics snapshot works even with partial step data."""
+    structured = {
+        "step_summaries": [
+            {
+                "step_index": 1,
+                "skill_id": "system.host_info",
+                "status": "succeeded",
+                "summary": "",
+                "machine_payload": {"hostname": "testbox"},
+            },
+        ],
+        "terminal_outcome": "succeeded",
+    }
+    result = extract_value_forward_text(structured=structured, mission_id="system_diagnostics")
+    assert result is not None
+    assert "Diagnostics snapshot:" in result
+    assert "host=testbox" in result
+
+
+# ---------------------------------------------------------------------------
+# Exists checks: still work
+# ---------------------------------------------------------------------------
+
+
+def test_file_exists_still_works_for_directory():
+    structured = _structured_with_step(
+        "files.exists",
+        {"path": "/home/user/VoxeraOS/notes", "exists": True, "kind": "directory"},
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "exists" in result
+    assert "(directory)" in result
+
+
+# ---------------------------------------------------------------------------
+# Fallback: thin status when no better value
+# ---------------------------------------------------------------------------
+
+
+def test_fallback_thin_status_for_unknown_skill():
+    """Unknown skill with no extractor returns None."""
+    structured = _structured_with_step(
+        "custom.unknown_skill",
+        {"some_key": "some_value"},
+        summary="Did something",
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is None

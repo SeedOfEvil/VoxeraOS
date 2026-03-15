@@ -3950,7 +3950,7 @@ def test_diagnostics_recent_logs_completion_surfaces_line_count(tmp_path, monkey
 
     response = client.post("/chat", data={"session_id": sid, "message": "thanks"})
     assert response.status_code == 200
-    assert "Recent logs for voxera-daemon.service: 18 lines (last 15m)." in response.text
+    assert "Recent logs for voxera-daemon.service: 18 lines in the last 15m." in response.text
 
 
 def test_diagnostics_refusal_does_not_override_non_service_job_status_queries():
