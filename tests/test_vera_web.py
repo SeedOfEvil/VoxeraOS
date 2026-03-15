@@ -2117,6 +2117,92 @@ def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch)
     assert "formal" in preview["write_file"]["content"].lower()
 
 
+def test_active_preview_content_becomes_multiline_replaces_body_exactly(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": """Write overwrite-test-3.txt in my notes with this content:\n\nOriginal content\nVersion 1\n""",
+        },
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": """Change it so the content becomes:\n\nOriginal content\nVersion 2\nUpdated by Vera\n""",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/overwrite-test-3.txt"
+    assert preview["write_file"]["mode"] == "overwrite"
+    assert preview["write_file"]["content"] == "Original content\nVersion 2\nUpdated by Vera"
+
+
+def test_active_preview_replace_content_with_multiline_replaces_body_exactly(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called overwrite-test-4.txt with content "Original content\\nVersion 1"',
+        },
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": """Replace the content with:\n\nVersion 2\nUpdated by Vera\n""",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/overwrite-test-4.txt"
+    assert preview["write_file"]["content"] == "Version 2\nUpdated by Vera"
+
+
+def test_active_preview_explicit_multiline_replacement_drops_stale_lines(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": """Write overwrite-test-5.txt in my notes with this content:\n\nOriginal content\nVersion 1\nOld line\n""",
+        },
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": """Update it so the content becomes:\n\nReplacement line A\nReplacement line B\n""",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["content"] == "Replacement line A\nReplacement line B"
+    assert "Old line" not in preview["write_file"]["content"]
+    assert "(updated)" not in preview["write_file"]["content"]
+
+
 def test_latest_preview_wins_across_multiple_natural_content_refinements(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

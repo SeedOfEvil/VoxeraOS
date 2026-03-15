@@ -422,6 +422,8 @@ def _extract_content_refinement(
     block_content = _extract_content_after_markers(
         text,
         (
+            r"\b(?:change|update|replace)\s+(?:it|this|that)\s+(?:so\s+)?(?:the\s+)?(?:content|text)\s+becomes\s*:\s*(.+)$",
+            r"\b(?:change|update|replace)\s+(?:so\s+)?(?:the\s+)?(?:content|text)\s+becomes\s*:\s*(.+)$",
             r"\b(?:change|update|replace|make)\s+(?:the\s+)?(?:content|text)\s*(?:to|with)?\s*:\s*(.+)$",
             r"\b(?:content|text)\s*:\s*(.+)$",
             r"\buse\s+this\s+as\s+(?:the\s+)?content\s*:\s*(.+)$",
