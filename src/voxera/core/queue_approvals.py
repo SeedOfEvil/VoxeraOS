@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -672,6 +673,10 @@ class QueueApprovalMixin:
                 str(moved), "queue_job_failed", error="Denied in approval inbox"
             )
             self.prune_failed_artifacts()
+            maybe_live_deliver = getattr(self, "_maybe_live_deliver_linked_completion", None)
+            if callable(maybe_live_deliver):
+                with suppress(Exception):
+                    maybe_live_deliver(job_ref=str(moved))
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
             return True
@@ -792,6 +797,10 @@ class QueueApprovalMixin:
                 self._write_run_streams(str(moved), rr.data)
                 self._write_action_event(str(moved), "queue_job_failed", error=error_text)
                 self.prune_failed_artifacts()
+                maybe_live_deliver = getattr(self, "_maybe_live_deliver_linked_completion", None)
+                if callable(maybe_live_deliver):
+                    with suppress(Exception):
+                        maybe_live_deliver(job_ref=str(moved))
                 meta_path.unlink(missing_ok=True)
                 artifact_path.unlink(missing_ok=True)
                 return False
@@ -814,6 +823,10 @@ class QueueApprovalMixin:
             )
             self._write_action_event(str(moved), "queue_job_done", via="approval_inbox")
             _log({"event": "queue_job_done", "job": str(moved), "via": "approval_inbox"})
+            maybe_live_deliver = getattr(self, "_maybe_live_deliver_linked_completion", None)
+            if callable(maybe_live_deliver):
+                with suppress(Exception):
+                    maybe_live_deliver(job_ref=str(moved))
             record_mission_success(self.queue_root)
             meta_path.unlink(missing_ok=True)
             artifact_path.unlink(missing_ok=True)
