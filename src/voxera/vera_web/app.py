@@ -590,7 +590,11 @@ async def chat(request: Request):
         )
 
     is_info_query = _is_informational_web_query(message)
-    informational_web_turn = is_info_query and pending_preview is None
+    informational_web_turn = (
+        is_info_query
+        and pending_preview is None
+        and not diagnostics_service_or_logs_intent(message)
+    )
 
     # When an active preview exists and the user makes an informational query,
     # run read-only enrichment and store it for follow-up pronoun resolution.
