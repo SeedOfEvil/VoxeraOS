@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -503,6 +503,33 @@ async def chat(request: Request):
         turns=read_session_turns(root, active_session),
         status=status,
     )
+
+
+@app.get("/chat/updates")
+def chat_updates(request: Request):
+    session_id = str(request.query_params.get("session_id") or "").strip()
+    active_session = session_id or (request.cookies.get("vera_session_id") or "").strip()
+    active_session = active_session or new_session_id()
+
+    try:
+        since_count = int(str(request.query_params.get("since_count") or "0"))
+    except ValueError:
+        since_count = 0
+    since_count = max(0, since_count)
+
+    root = _active_queue_root()
+    turns = read_session_turns(root, active_session)
+    turn_count = len(turns)
+    changed = turn_count > since_count
+
+    payload: dict[str, object] = {
+        "session_id": active_session,
+        "turn_count": turn_count,
+        "changed": changed,
+    }
+    if changed:
+        payload["turns"] = turns
+    return JSONResponse(payload)
 
 
 @app.post("/handoff", response_class=HTMLResponse)

@@ -2945,3 +2945,44 @@ def test_non_linked_terminal_jobs_do_not_attach_to_session(tmp_path, monkeypatch
     client.post("/chat", data={"session_id": sid, "message": "hello"})
 
     assert vera_service.read_linked_job_completions(queue, sid) == []
+
+
+def test_chat_updates_endpoint_reports_changes_for_active_session(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    baseline = client.get("/chat/updates", params={"session_id": sid, "since_count": 0})
+    assert baseline.status_code == 200
+    baseline_payload = baseline.json()
+    assert baseline_payload["changed"] is False
+    assert baseline_payload["turn_count"] == 0
+    assert "turns" not in baseline_payload
+
+    vera_service.append_session_turn(queue, sid, role="assistant", text="live completion")
+
+    updated = client.get("/chat/updates", params={"session_id": sid, "since_count": 0})
+    assert updated.status_code == 200
+    updated_payload = updated.json()
+    assert updated_payload["changed"] is True
+    assert updated_payload["turn_count"] == 1
+    assert isinstance(updated_payload.get("turns"), list)
+    assert updated_payload["turns"][0]["text"] == "live completion"
+
+    up_to_date = client.get("/chat/updates", params={"session_id": sid, "since_count": 1})
+    assert up_to_date.status_code == 200
+    assert up_to_date.json()["changed"] is False
+
+
+def test_index_includes_active_chat_polling_hook(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+
+    res = client.get("/")
+    assert res.status_code == 200
+    assert 'data-turn-count="0"' in res.text
+    assert "/chat/updates?" in res.text
+    assert "window.setInterval(pollForTurnUpdates, 2000);" in res.text
