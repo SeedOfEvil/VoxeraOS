@@ -8,6 +8,7 @@ from typing import Any
 
 from ..core.queue_inspect import lookup_job
 from ..core.queue_result_consumers import resolve_structured_execution
+from .result_surfacing import extract_value_forward_text
 
 _REVIEW_HINTS = (
     "what happened",
@@ -53,6 +54,7 @@ class ReviewedJobEvidence:
     missing_expected_artifacts: tuple[str, ...]
     expected_artifact_status: str
     normalized_outcome_class: str
+    value_forward_text: str
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:
@@ -283,6 +285,12 @@ def review_job_outcome(
     artifact_refs = _normalize_artifact_refs(
         structured.get("artifact_refs") or evidence_bundle.get("artifact_refs") or []
     )
+    job_payload = _read_json_dict(found.primary_path)
+    raw_job_intent = job_payload.get("job_intent")
+    job_intent: dict[str, Any] = raw_job_intent if isinstance(raw_job_intent, dict) else {}
+    mission_id = str(job_intent.get("mission_id") or job_payload.get("mission_id") or "").strip()
+    vf_text = extract_value_forward_text(structured=structured, mission_id=mission_id)
+
     review_summary = structured.get("review_summary")
     review_summary_dict = review_summary if isinstance(review_summary, dict) else {}
     execution_capabilities = review_summary_dict.get("execution_capabilities")
@@ -321,6 +329,7 @@ def review_job_outcome(
         ),
         expected_artifact_status=str(review_summary_dict.get("expected_artifact_status") or ""),
         normalized_outcome_class=str(structured.get("normalized_outcome_class") or ""),
+        value_forward_text=vf_text or "",
     )
 
 
@@ -369,6 +378,8 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
         f"- Normalized outcome class: `{evidence.normalized_outcome_class or 'unknown'}`",
         f"- Latest summary: {evidence.latest_summary or 'No summary is available yet.'}",
     ]
+    if evidence.value_forward_text:
+        lines.append(f"- Result: {evidence.value_forward_text}")
     if evidence.failure_summary:
         lines.append(f"- Failure summary: {evidence.failure_summary}")
     if evidence.child_summary:

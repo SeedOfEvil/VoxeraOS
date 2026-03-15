@@ -15,10 +15,12 @@ def _write_job(
     state_sidecar: dict | None = None,
     approval: dict | None = None,
     failed_sidecar: dict | None = None,
+    job_payload: dict | None = None,
 ) -> None:
     stem = Path(job_id).stem
     (queue_root / bucket).mkdir(parents=True, exist_ok=True)
-    (queue_root / bucket / job_id).write_text(json.dumps({"goal": "test"}), encoding="utf-8")
+    payload = job_payload if job_payload is not None else {"goal": "test"}
+    (queue_root / bucket / job_id).write_text(json.dumps(payload), encoding="utf-8")
 
     art = queue_root / "artifacts" / stem
     art.mkdir(parents=True, exist_ok=True)
@@ -425,3 +427,244 @@ def test_review_outcome_surfaces_runtime_dependency_missing_guidance(tmp_path: P
     message = review_message(evidence)
     assert "Normalized outcome class: `runtime_dependency_missing`" in message
     assert "required runtime dependency/tool is missing" in message
+
+
+# ---------------------------------------------------------------------------
+# Value-forward result surfacing in review messages
+# ---------------------------------------------------------------------------
+
+
+def test_review_message_surfaces_file_read_result(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-read.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "files.read_text",
+                    "status": "succeeded",
+                    "summary": "Read text from /notes/todo.txt",
+                    "machine_payload": {
+                        "path": "/notes/todo.txt",
+                        "bytes": 42,
+                    },
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-read.json")
+    assert evidence is not None
+    assert evidence.value_forward_text
+    assert "todo.txt" in evidence.value_forward_text
+    message = review_message(evidence)
+    assert "- Result:" in message
+    assert "todo.txt" in message
+
+
+def test_review_message_surfaces_file_exists_result(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-exists.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "files.exists",
+                    "status": "succeeded",
+                    "summary": "Checked path existence",
+                    "machine_payload": {
+                        "path": "/notes/config.yaml",
+                        "exists": False,
+                        "kind": "file",
+                    },
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-exists.json")
+    assert evidence is not None
+    assert "does not exist" in evidence.value_forward_text
+    message = review_message(evidence)
+    assert "does not exist" in message
+
+
+def test_review_message_surfaces_service_status_result(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-svc.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "system.service_status",
+                    "status": "succeeded",
+                    "summary": "Service voxera-vera.service: inactive/dead",
+                    "machine_payload": {
+                        "service": "voxera-vera.service",
+                        "ActiveState": "inactive",
+                        "SubState": "dead",
+                    },
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-svc.json")
+    assert evidence is not None
+    assert "inactive/dead" in evidence.value_forward_text
+    message = review_message(evidence)
+    assert "inactive/dead" in message
+
+
+def test_review_message_surfaces_recent_logs_result(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-logs.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "system.recent_service_logs",
+                    "status": "succeeded",
+                    "summary": "Collected 3 recent logs",
+                    "machine_payload": {
+                        "service": "voxera-daemon.service",
+                        "line_count": 3,
+                        "since_minutes": 15,
+                        "logs": [
+                            "2025-01-15T10:00 Started.",
+                            "2025-01-15T10:01 Running.",
+                            "2025-01-15T10:02 Stopped.",
+                        ],
+                        "truncated": False,
+                    },
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-logs.json")
+    assert evidence is not None
+    assert "3 line" in evidence.value_forward_text
+    assert "Started." in evidence.value_forward_text
+    message = review_message(evidence)
+    assert "- Result:" in message
+
+
+def test_review_message_surfaces_diagnostics_snapshot(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-diag.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "system.host_info",
+                    "status": "succeeded",
+                    "summary": "",
+                    "machine_payload": {"hostname": "myhost", "uptime_seconds": 3600},
+                },
+                {
+                    "step_index": 2,
+                    "skill_id": "system.memory_usage",
+                    "status": "succeeded",
+                    "summary": "",
+                    "machine_payload": {
+                        "used_gib": 8.0,
+                        "total_gib": 32.0,
+                        "used_percent": 25.0,
+                    },
+                },
+            ],
+        },
+        job_payload={"goal": "diagnostics", "mission_id": "system_diagnostics"},
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-diag.json")
+    assert evidence is not None
+    assert "Diagnostics snapshot:" in evidence.value_forward_text
+    assert "host=myhost" in evidence.value_forward_text
+    assert "memory=8.0/32.0GiB" in evidence.value_forward_text
+
+
+def test_review_message_no_value_forward_for_thin_status(tmp_path: Path):
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-write.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "files.write_text",
+                    "status": "succeeded",
+                    "summary": "Wrote file",
+                    "machine_payload": {"path": "/notes/x.txt"},
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-write.json")
+    assert evidence is not None
+    assert evidence.value_forward_text == ""
+    message = review_message(evidence)
+    assert "- Result:" not in message
+
+
+def test_existing_review_behavior_preserved(tmp_path: Path):
+    """Ensure existing review fields are not broken by the addition of value_forward_text."""
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-1.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "review_summary": {
+                "latest_summary": "review summary wins",
+            },
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "status": "succeeded",
+                    "summary": "step summary loses",
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-1.json")
+    assert evidence is not None
+    assert evidence.latest_summary == "review summary wins"
+    message = review_message(evidence)
+    assert "review summary wins" in message
+    # value_forward_text should be empty since no read-style skill
+    assert evidence.value_forward_text == ""

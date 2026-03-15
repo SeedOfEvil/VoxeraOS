@@ -1,3 +1,16 @@
+## 2026-03-15 — GitHub PR #TBD — feat(vera/review): surface evidence-grounded result values across linked completions and review outputs
+
+- Added `vera/result_surfacing.py`: a reusable, deterministic, evidence-grounded value extraction and formatting layer that inspects `step_summaries`/`machine_payload` from canonical execution evidence and produces concise, bounded result text for read/inspection-style operations.
+- Supported result families: file read (content excerpt or path+size), file exists (exists/missing), file stat (key metadata), list_dir (bounded entry listing), service status (actual ActiveState/SubState), recent service logs (bounded log excerpt with line count), diagnostics snapshot (compact host/memory/load/disk summary), and process list (top processes with count).
+- Integrated into `_format_completion_autosurface_message` in `vera/service.py`: linked completion messages now prefer value-forward text when available, falling back to existing status-oriented messaging when no structured value is present.
+- Integrated into `review_message` in `vera/evidence_review.py`: review output includes `- Result:` line with the evidence-grounded result when available.
+- Added `value_forward_text` field to `ReviewedJobEvidence` dataclass and `_build_completion_payload`.
+- Boundedness enforced: text excerpts capped at 480 chars, log lines limited to last 8, directory entries limited to 12.
+- Updated 2 existing test assertions in `test_vera_web.py` to match new value-forward output format.
+- Added 24 new tests in `test_result_surfacing.py` covering all result families, fallback behavior, and boundedness.
+- Added 7 new tests in `test_evidence_review.py` for value-forward review message surfacing across file read, exists, service status, recent logs, diagnostics, and fallback.
+- All existing tests pass; no regressions to queue truth, live delivery, duplicate suppression, or investigation flows.
+
 ## 2026-03-14 — GitHub PR #TBD — feat(queue/missions): add bounded read-only system inspection workflow
 
 - Added two new read-only system inspection skills: `system.disk_usage` (home partition usage via `shutil.disk_usage`) and `system.process_list` (process snapshot via `ps`, truncated to 50 entries).

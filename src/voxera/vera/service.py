@@ -19,6 +19,7 @@ from ..core.queue_result_consumers import resolve_structured_execution
 from .brave_search import BraveSearchClient, WebSearchResult
 from .handoff import drafting_guidance, maybe_draft_job_payload, normalize_preview_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
+from .result_surfacing import extract_value_forward_text
 
 MAX_SESSION_TURNS = 8
 _SESSION_ID_LENGTH = 24
@@ -1029,6 +1030,10 @@ def _build_completion_payload(
         "completion_detected_at_ms": int(time.time() * 1000),
         "surfaced_in_chat": False,
         "surfaced_at_ms": None,
+        "value_forward_text": extract_value_forward_text(
+            structured=structured,
+            mission_id=mission_id,
+        ),
     }
     payload["surfacing_policy"] = _classify_surfacing_policy(payload)
     return payload
@@ -1147,6 +1152,12 @@ def _format_completion_autosurface_message(completion: dict[str, Any]) -> str:
         if hint and len(hint) <= 220:
             message = f"{message} Next action: {hint}"
         return message.strip()
+
+    # Evidence-grounded value-forward surfacing: prefer concise result text
+    # extracted from canonical step evidence over generic status messaging.
+    value_forward = str(completion.get("value_forward_text") or "").strip()
+    if value_forward:
+        return value_forward
 
     diagnostics_values = completion.get("diagnostics_values")
     diagnostics_text = ""
