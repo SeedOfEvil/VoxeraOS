@@ -45,6 +45,7 @@ from ..vera.service import (
     read_session_investigation,
     read_session_preview,
     read_session_turns,
+    read_session_updated_at_ms,
     register_session_linked_job,
     run_web_enrichment,
     session_debug_info,
@@ -568,11 +569,23 @@ def chat_updates(request: Request):
     root = _active_queue_root()
     turns = read_session_turns(root, active_session)
     turn_count = len(turns)
+    updated_at_ms = read_session_updated_at_ms(root, active_session)
+    raw_since_updated = request.query_params.get("since_updated_at_ms")
+    has_since_updated = raw_since_updated is not None
+    try:
+        since_updated_at_ms = int(str(raw_since_updated or "0"))
+    except ValueError:
+        since_updated_at_ms = 0
+    since_updated_at_ms = max(0, since_updated_at_ms)
+
     changed = turn_count > since_count
+    if has_since_updated:
+        changed = changed or updated_at_ms > since_updated_at_ms
 
     payload: dict[str, object] = {
         "session_id": active_session,
         "turn_count": turn_count,
+        "updated_at_ms": updated_at_ms,
         "changed": changed,
     }
     if changed:

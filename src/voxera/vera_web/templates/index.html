@@ -168,6 +168,7 @@
     if (!Number.isFinite(knownTurnCount) || knownTurnCount < 0) {
       knownTurnCount = 0;
     }
+    let knownUpdatedAtMs = 0;
 
     const manualScrollKey = 'vera_thread_manual_scroll_up';
     const distanceFromBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight;
@@ -231,6 +232,7 @@
         const params = new URLSearchParams({
           session_id: sessionId,
           since_count: String(knownTurnCount),
+          since_updated_at_ms: String(knownUpdatedAtMs),
         });
         const response = await fetch(`/chat/updates?${params.toString()}`, {
           method: 'GET',
@@ -239,6 +241,10 @@
         });
         if (!response.ok) return;
         const payload = await response.json();
+        const updatedAtMs = Number.parseInt(String(payload.updated_at_ms || 0), 10);
+        if (Number.isFinite(updatedAtMs) && updatedAtMs >= 0) {
+          knownUpdatedAtMs = updatedAtMs;
+        }
         const count = Number.parseInt(String(payload.turn_count || 0), 10);
         if (Number.isFinite(count) && count >= 0) {
           knownTurnCount = count;

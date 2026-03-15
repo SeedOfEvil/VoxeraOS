@@ -411,6 +411,21 @@ def read_session_turns(queue_root: Path, session_id: str) -> list[dict[str, str]
     return normalized[-MAX_SESSION_TURNS:]
 
 
+def read_session_updated_at_ms(queue_root: Path, session_id: str) -> int:
+    payload = _read_session_payload(queue_root, session_id)
+    raw = payload.get("updated_at_ms")
+    if isinstance(raw, bool):
+        return 0
+    if isinstance(raw, int):
+        return max(0, raw)
+    if isinstance(raw, str):
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return 0
+    return 0
+
+
 def append_session_turn(
     queue_root: Path, session_id: str, *, role: str, text: str
 ) -> list[dict[str, str]]:
