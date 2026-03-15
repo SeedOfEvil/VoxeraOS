@@ -519,4 +519,4 @@ Vera can now review real VoxeraOS job outcomes from canonical queue evidence (no
 - Can draft a follow-up preview when explicitly asked, but never auto-submits it.
 
 - Vera deterministic linked queue-ingestion foundation: Vera sessions record explicit linked queue jobs on handoff, detect canonical terminal completion for those linked jobs, and persist normalized completion payloads + surfacing-policy classification.
-- Vera auto-surfaces exactly one unsurfaced linked `read_only_success` completion per chat cycle using deterministic template text grounded in canonical evidence; other completion classes remain unsurfaced in this slice.
+- Vera auto-surfaces exactly one unsurfaced linked completion per chat cycle using deterministic template text grounded in canonical evidence for policies `read_only_success`, `approval_blocked`, and `failed`; other completion classes remain unsurfaced in this slice.

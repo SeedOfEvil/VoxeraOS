@@ -782,6 +782,29 @@ def read_linked_job_completions(queue_root: Path, session_id: str) -> list[dict[
 def _format_completion_autosurface_message(completion: dict[str, Any]) -> str:
     request_kind = str(completion.get("request_kind") or "request").strip().replace("_", " ")
     latest_summary = str(completion.get("latest_summary") or "").strip()
+    failure_summary = str(completion.get("failure_summary") or "").strip()
+    operator_note = str(completion.get("operator_note") or "").strip()
+    next_action_hint = str(completion.get("next_action_hint") or "").strip()
+    policy = str(completion.get("surfacing_policy") or "").strip().lower()
+
+    if policy == "approval_blocked":
+        message = "Your linked request is paused pending approval in VoxeraOS."
+        if latest_summary:
+            return f"{message} Latest summary: {latest_summary}".strip()
+        if next_action_hint:
+            return f"{message} Next action: {next_action_hint}".strip()
+        return f"{message} Approve or reject it in VoxeraOS to continue.".strip()
+
+    if policy == "failed":
+        summary = failure_summary or latest_summary
+        message = f"Your linked {request_kind} job failed."
+        if summary:
+            message = f"{message} Failure summary: {summary}"
+        hint = next_action_hint or operator_note
+        if hint and len(hint) <= 220:
+            message = f"{message} Next action: {hint}"
+        return message.strip()
+
     highlights = completion.get("result_highlights")
     highlight_text = ""
     if isinstance(highlights, list):
@@ -804,14 +827,22 @@ def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> s
     completions_raw = registry.get("completions")
     completions = completions_raw if isinstance(completions_raw, list) else []
 
+    supported_policies = {"read_only_success", "approval_blocked", "failed"}
+
     for completion in completions:
         if not isinstance(completion, dict):
             continue
         if completion.get("surfaced_in_chat") is True:
             continue
-        if str(completion.get("terminal_outcome") or "").strip().lower() != "succeeded":
+        policy = str(completion.get("surfacing_policy") or "").strip().lower()
+        if policy not in supported_policies:
             continue
-        if str(completion.get("surfacing_policy") or "").strip().lower() != "read_only_success":
+        terminal_outcome = str(completion.get("terminal_outcome") or "").strip().lower()
+        if policy == "read_only_success" and terminal_outcome != "succeeded":
+            continue
+        if policy == "approval_blocked" and terminal_outcome not in {"blocked", "failed"}:
+            continue
+        if policy == "failed" and terminal_outcome != "failed":
             continue
 
         completion["surfaced_in_chat"] = True

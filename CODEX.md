@@ -52,4 +52,4 @@ These are done. Do not list them as open work:
 
 - Queue job intent normalization should preserve explicit, forward-looking expected-artifact declarations for canonical lanes so runtime/review can compare expected vs observed artifacts deterministically.
 
-- Linked Vera completion ingestion + first chat surfacing slice: deterministic session-linked tracking, terminal completion payload extraction, and one-per-chat-cycle auto-surface for unsurfaced linked `read_only_success` completions only (others remain manual), grounded in queue/artifact truth.
+- Linked Vera completion ingestion + deterministic chat surfacing slice: deterministic session-linked tracking, terminal completion payload extraction, and one-per-chat-cycle auto-surface for unsurfaced linked `read_only_success`, `approval_blocked`, and `failed` completions only (others remain manual), grounded in queue/artifact truth.

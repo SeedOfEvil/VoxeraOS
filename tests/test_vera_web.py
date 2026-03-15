@@ -58,7 +58,6 @@ def _write_job_artifacts(
 def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     res = client.get("/")
 
@@ -78,7 +77,6 @@ def test_vera_web_chat_returns_assistant_response(tmp_path, monkeypatch):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     home = client.get("/")
     assert home.status_code == 200
@@ -97,7 +95,6 @@ def test_vera_web_context_is_preserved_and_capped(tmp_path, monkeypatch):
         return {"answer": f"turns={len(turns)} latest={user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -118,7 +115,6 @@ def test_vera_clear_chat_and_context(tmp_path, monkeypatch):
         return {"answer": "ok", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -152,7 +148,6 @@ def test_vera_chat_does_not_enqueue_jobs(tmp_path, monkeypatch):
         return {"answer": "proposal only", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -170,7 +165,6 @@ def test_informational_web_query_does_not_auto_prepare_voxera_preview(tmp_path, 
         return {"answer": "Read-only findings from Brave", "status": "ok:web_investigation"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -193,7 +187,6 @@ def test_finance_informational_query_does_not_auto_prepare_voxera_preview(tmp_pa
         return {"answer": "Read-only market findings", "status": "ok:web_investigation"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -220,7 +213,6 @@ def test_news_query_skips_preview_builder_and_stays_informational(tmp_path, monk
 
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _builder_should_not_run)
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -239,7 +231,6 @@ def test_news_query_skips_preview_builder_and_stays_informational(tmp_path, monk
 def test_mode_refinement_append_instead_updates_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -275,7 +266,6 @@ def test_put_that_into_file_after_informational_turn_does_not_claim_phantom_prev
         return {"answer": "Top headlines summary.", "status": "ok:web_investigation"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -300,7 +290,6 @@ def test_informational_query_then_send_it_does_not_enqueue(tmp_path, monkeypatch
         return {"answer": "Top headlines summary", "status": "ok:web_investigation"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -335,7 +324,6 @@ def test_missing_key_informational_query_is_honest_and_no_preview(tmp_path, monk
 
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _builder_should_not_run)
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -366,7 +354,6 @@ def test_explicit_internal_search_request_stays_no_preview(tmp_path, monkeypatch
 
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _builder_should_not_run)
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -385,7 +372,6 @@ def test_explicit_internal_search_request_stays_no_preview(tmp_path, monkeypatch
 def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -400,7 +386,6 @@ def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, mo
 def test_explicit_submit_phrase_without_preview_is_honest_non_submission(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -413,7 +398,6 @@ def test_explicit_submit_phrase_without_preview_is_honest_non_submission(tmp_pat
 def test_prepare_preview_sets_preview_available_true_for_natural_open_phrase(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -431,7 +415,6 @@ def test_open_up_domain_phrase_prepares_preview_and_renders_authoritative_pane(
 ):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -459,7 +442,6 @@ def test_yes_please_with_active_preview_submits_only_on_real_ack(tmp_path, monke
         return original_submit(queue_root=queue_root, payload=payload)
 
     monkeypatch.setattr(vera_app_module, "submit_preview", _capture_submit)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -477,7 +459,6 @@ def test_file_write_question_uses_authoritative_preview_pane_not_visible_json(
 ):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -499,7 +480,6 @@ def test_file_write_question_uses_authoritative_preview_pane_not_visible_json(
 def test_yes_please_submits_file_write_preview_when_present(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -522,7 +502,6 @@ def test_note_write_and_file_read_requests_render_preview_pane_without_voxera_js
 ):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -551,7 +530,6 @@ def test_blocked_queue_path_returns_clean_refusal_no_preview(tmp_path, monkeypat
     """Queue control-plane paths via shorthand must fail closed with a clear refusal."""
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -582,7 +560,6 @@ def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission
         return {"answer": "I submitted the request to VoxeraOS.", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -605,7 +582,6 @@ def test_submit_now_uses_persisted_structured_preview_state(tmp_path, monkeypatc
         return original_submit(queue_root=queue_root, payload=payload)
 
     monkeypatch.setattr(vera_app_module, "submit_preview", _capture_submit)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -621,7 +597,6 @@ def test_submit_now_uses_persisted_structured_preview_state(tmp_path, monkeypatc
 def test_explicit_handoff_creates_real_queue_job_and_ack(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -650,7 +625,6 @@ def test_submit_success_wording_requires_real_job_creation(tmp_path, monkeypatch
         return {"ack": "I submitted the job to VoxeraOS.", "job_id": ""}
 
     monkeypatch.setattr(vera_app_module, "submit_preview", _fake_submit)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -670,7 +644,6 @@ def test_handoff_failure_reports_honestly(tmp_path, monkeypatch):
         raise RuntimeError("disk full")
 
     monkeypatch.setattr(vera_app_module, "submit_preview", _boom)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -684,7 +657,6 @@ def test_handoff_failure_reports_honestly(tmp_path, monkeypatch):
 def test_contentful_natural_file_creation_phrase_produces_canonical_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -709,7 +681,6 @@ def test_contentful_natural_file_creation_phrase_produces_canonical_preview(tmp_
 def test_content_refinement_phrase_add_content_updates_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -732,7 +703,6 @@ def test_content_refinement_phrase_add_content_updates_active_preview(tmp_path, 
 def test_content_refinement_phrase_script_text_updates_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -753,7 +723,6 @@ def test_content_refinement_phrase_script_text_updates_active_preview(tmp_path, 
 def test_latest_content_refinement_wins_for_handoff_payload(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -783,7 +752,6 @@ def test_backend_builder_updates_active_preview_without_json_dumping_in_chat(tmp
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -811,7 +779,6 @@ def test_submit_after_model_preview_replacement_uses_latest_payload(tmp_path, mo
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -839,7 +806,6 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -858,7 +824,6 @@ def test_clear_resets_preview_and_new_preview_reinitializes_authoritative_state(
 ):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -879,7 +844,6 @@ def test_clear_resets_preview_and_new_preview_reinitializes_authoritative_state(
 def test_structured_write_file_preview_submits_exact_payload(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -918,7 +882,6 @@ def test_builder_drops_extra_keys_and_keeps_supported_preview_shape(tmp_path, mo
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -950,7 +913,6 @@ def test_builder_multiple_preview_replacements_latest_wins_in_pane(tmp_path, mon
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -980,7 +942,6 @@ def test_builder_can_set_preview_without_changing_vera_voice(tmp_path, monkeypat
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1000,7 +961,6 @@ def test_chat_model_cannot_bypass_handoff_with_fake_submission_language(tmp_path
         return {"answer": "I submitted the job to VoxeraOS and it is queued.", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1018,7 +978,6 @@ def test_context_intact_across_preview_to_submit_flow(tmp_path, monkeypatch):
         return {"answer": f"ack {len(turns)}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1035,7 +994,6 @@ def test_context_intact_across_preview_to_submit_flow(tmp_path, monkeypatch):
 def test_preview_survives_into_handoff_submit_action(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1056,7 +1014,6 @@ def test_dev_diagnostics_expose_safe_handoff_state(tmp_path, monkeypatch):
     monkeypatch.setattr(
         vera_app_module, "load_runtime_config", lambda: SimpleNamespace(queue_root=queue)
     )
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1072,7 +1029,6 @@ def test_active_queue_root_uses_runtime_config(tmp_path, monkeypatch):
     monkeypatch.setattr(
         vera_app_module, "load_runtime_config", lambda: SimpleNamespace(queue_root=queue)
     )
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1091,7 +1047,6 @@ def test_rolling_turn_cap_does_not_drop_pending_preview(tmp_path, monkeypatch):
         return {"answer": f"ok {len(turns)} {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1130,7 +1085,6 @@ def test_structured_job_drafting_helper_examples_are_valid():
 def test_web_navigation_phrases_prepare_preview(tmp_path, monkeypatch, message, expected_goal):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1156,7 +1110,6 @@ def test_informational_domain_phrases_do_not_auto_prepare_preview(tmp_path, monk
         return {"answer": "info mode", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1177,7 +1130,6 @@ def test_informational_domain_phrases_do_not_auto_prepare_preview(tmp_path, monk
 def test_file_read_variants_prepare_preview(tmp_path, monkeypatch, message, expected_goal):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1215,7 +1167,6 @@ def test_note_write_variants_prepare_preview(
 ):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1233,7 +1184,6 @@ def test_note_write_variants_prepare_preview(
 def test_contentful_file_write_phrase_prepares_structured_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1257,7 +1207,6 @@ def test_contentful_file_write_phrase_prepares_structured_preview(tmp_path, monk
 def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1280,7 +1229,6 @@ def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monk
 def test_filename_refinement_replaces_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1304,7 +1252,6 @@ def test_filename_refinement_replaces_active_preview(tmp_path, monkeypatch):
 def test_content_refinement_replaces_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1335,7 +1282,6 @@ def test_content_refinement_replaces_active_preview(tmp_path, monkeypatch):
 def test_submit_clears_preview_only_after_confirmed_success(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1356,7 +1302,6 @@ def test_failed_submit_keeps_active_preview(tmp_path, monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(vera_app_module, "submit_preview", _boom)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1373,7 +1318,6 @@ def test_failed_submit_keeps_active_preview(tmp_path, monkeypatch):
 def test_preview_replacement_uses_latest_payload_for_submit(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1396,7 +1340,6 @@ def test_preview_persists_across_followup_turn_before_submit(tmp_path, monkeypat
         return {"answer": "sounds good", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1412,7 +1355,6 @@ def test_preview_persists_across_followup_turn_before_submit(tmp_path, monkeypat
 def test_preview_pane_submit_button_submits_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1432,7 +1374,6 @@ def test_preview_pane_submit_button_submits_active_preview(tmp_path, monkeypatch
 def test_natural_preview_submit_phrase_uses_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1453,7 +1394,6 @@ def test_natural_preview_submit_phrase_without_preview_fails_closed(tmp_path, mo
         return {"answer": "ordinary reply", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1466,7 +1406,6 @@ def test_natural_preview_submit_phrase_without_preview_fails_closed(tmp_path, mo
 def test_preview_replacement_updates_authoritative_pane_payload(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1483,7 +1422,6 @@ def test_preview_replacement_updates_authoritative_pane_payload(tmp_path, monkey
 def test_handoff_submit_clears_authoritative_preview_pane(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1518,7 +1456,6 @@ def test_review_latest_submitted_job_succeeded(tmp_path, monkeypatch):
         status="submitted",
         job_id=job_id,
     )
-
     client = TestClient(vera_app_module.app)
     client.cookies.set("vera_session_id", "sid")
     res = client.post("/chat", data={"session_id": "sid", "message": "what happened to that job?"})
@@ -1561,7 +1498,6 @@ def test_review_latest_submitted_job_short_handoff_id_resolves_inbox_filename(
         status="submitted",
         job_id=short_job_id,
     )
-
     client = TestClient(vera_app_module.app)
     client.cookies.set("vera_session_id", "sid-short")
     res = client.post(
@@ -1591,7 +1527,6 @@ def test_review_explicit_short_handoff_job_id_works(tmp_path, monkeypatch):
         },
         approval={"job": f"inbox-{short_job_id}.json", "status": "pending"},
     )
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1621,7 +1556,6 @@ def test_review_explicit_full_queue_filename_works(tmp_path, monkeypatch):
         },
         approval={"job": full_job_filename, "status": "pending"},
     )
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1649,7 +1583,6 @@ def test_review_specific_job_id_failed(tmp_path, monkeypatch):
         },
         failed_sidecar={"error": "invalid request shape"},
     )
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1677,7 +1610,6 @@ def test_review_awaiting_approval_job(tmp_path, monkeypatch):
         },
         approval={"job": "job-await-1.json", "status": "pending"},
     )
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1692,7 +1624,6 @@ def test_review_awaiting_approval_job(tmp_path, monkeypatch):
 def test_review_missing_job_is_honest(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1710,7 +1641,6 @@ def test_review_missing_job_followups_stay_evidence_aware(tmp_path, monkeypatch)
         return {"answer": "generic model fallback", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _generic_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1747,7 +1677,6 @@ def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypa
         status="submitted",
         job_id=job_id,
     )
-
     client = TestClient(vera_app_module.app)
     client.cookies.set("vera_session_id", "sid-follow")
     res = client.post(
@@ -1777,7 +1706,6 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1807,7 +1735,6 @@ def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, 
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1837,7 +1764,6 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1866,7 +1792,6 @@ def test_non_voxera_user_requested_json_content_is_still_allowed(tmp_path, monke
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1884,7 +1809,6 @@ def test_non_voxera_user_requested_json_content_is_still_allowed(tmp_path, monke
 def test_append_file_intent_compiles_structured_append_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1904,7 +1828,6 @@ def test_append_file_intent_compiles_structured_append_preview(tmp_path, monkeyp
 def test_open_target_without_tld_is_naturally_inferred_as_web_intent(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1933,7 +1856,6 @@ def test_contextual_refinement_can_build_preview_from_recent_user_messages():
 def test_natural_append_mode_refinement_updates_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1960,7 +1882,6 @@ def test_natural_append_mode_refinement_updates_active_preview(tmp_path, monkeyp
 def test_natural_file_drafting_with_joke_infers_structured_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -1982,7 +1903,6 @@ def test_natural_file_drafting_with_joke_infers_structured_preview(tmp_path, mon
 def test_file_drafting_with_called_typo_still_builds_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2001,7 +1921,6 @@ def test_file_drafting_with_called_typo_still_builds_preview(tmp_path, monkeypat
 def test_minimal_file_drafting_defaults_to_empty_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2021,7 +1940,6 @@ def test_minimal_file_drafting_defaults_to_empty_content(tmp_path, monkeypatch):
 def test_filename_refinement_call_it_updates_path(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2048,7 +1966,6 @@ def test_filename_refinement_call_it_updates_path(tmp_path, monkeypatch):
 def test_content_style_refinement_dad_joke_updates_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2074,7 +1991,6 @@ def test_content_style_refinement_dad_joke_updates_content(tmp_path, monkeypatch
 def test_note_for_later_creates_structured_note_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2098,7 +2014,6 @@ def test_active_preview_natural_content_refinement_updates_write_file_content(
 ):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2127,7 +2042,6 @@ def test_active_preview_natural_content_refinement_updates_write_file_content(
 def test_active_preview_news_summary_refinement_updates_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2156,7 +2070,6 @@ def test_active_preview_put_that_into_file_is_fail_closed_without_grounded_conte
 ):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2183,7 +2096,6 @@ def test_active_preview_put_that_into_file_is_fail_closed_without_grounded_conte
 def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2208,7 +2120,6 @@ def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch)
 def test_latest_preview_wins_across_multiple_natural_content_refinements(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2237,7 +2148,6 @@ def test_latest_preview_wins_across_multiple_natural_content_refinements(tmp_pat
 def test_update_content_refinement_and_submit_uses_latest_mutated_payload(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2294,7 +2204,6 @@ def test_enrichment_stored_for_info_query_with_active_preview(tmp_path, monkeypa
         }
 
     monkeypatch.setattr(vera_app_module, "run_web_enrichment", _fake_enrichment)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2330,7 +2239,6 @@ def test_enrichment_backed_put_that_into_file_updates_preview_content(tmp_path, 
         }
 
     monkeypatch.setattr(vera_app_module, "run_web_enrichment", _fake_enrichment)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2371,7 +2279,6 @@ def test_standalone_info_query_does_not_store_enrichment(tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr(vera_app_module, "run_web_enrichment", _fake_enrichment)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2389,7 +2296,6 @@ def test_put_that_into_file_without_enrichment_no_active_preview_fails_closed(
     """'put that into the file' with no preview and no enrichment must not create a phantom preview."""
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2403,7 +2309,6 @@ def test_put_that_into_file_without_enrichment_no_active_preview_fails_closed(
 def test_handoff_registers_linked_job_tracking(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2423,7 +2328,6 @@ def test_handoff_registers_linked_job_tracking(tmp_path, monkeypatch):
 def test_linked_job_terminal_completion_is_ingested_with_policy(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2479,7 +2383,6 @@ def test_linked_read_only_success_auto_surfaces_once_per_completion(tmp_path, mo
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -2536,7 +2439,165 @@ def test_linked_read_only_success_auto_surfaces_once_per_completion(tmp_path, mo
     assert len(surfaced_messages) == 1
 
 
-def test_non_read_only_or_non_success_completions_do_not_auto_surface(tmp_path, monkeypatch):
+def test_linked_approval_blocked_auto_surfaces_once(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
+    client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    inbox_job = next((queue / "inbox").glob("inbox-*.json"))
+    failed_dir = queue / "failed"
+    failed_dir.mkdir(parents=True, exist_ok=True)
+    failed_job = failed_dir / inbox_job.name
+    shutil.move(str(inbox_job), str(failed_job))
+
+    stem = failed_job.stem
+    (failed_dir / f"{stem}.state.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "blocked",
+                "approval_status": "pending",
+            }
+        ),
+        encoding="utf-8",
+    )
+    approvals = queue / "pending" / "approvals"
+    approvals.mkdir(parents=True, exist_ok=True)
+    (approvals / f"{stem}.approval.json").write_text(
+        json.dumps({"status": "pending", "reason": "operator approval required"}),
+        encoding="utf-8",
+    )
+    art = queue / "artifacts" / stem
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "awaiting_approval",
+                "terminal_outcome": "blocked",
+                "approval_status": "pending",
+                "latest_summary": "Step blocked pending operator approval.",
+                "normalized_outcome_class": "approval_blocked",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    first = client.post("/chat", data={"session_id": sid, "message": "any updates?"})
+    assert first.status_code == 200
+
+    turns = vera_service.read_session_turns(queue, sid)
+    approval_messages = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant"
+        and turn["text"].startswith("Your linked request is paused pending approval in VoxeraOS.")
+    ]
+    assert len(approval_messages) == 1
+    assert "pending approval" in approval_messages[0]
+
+    completions = vera_service.read_linked_job_completions(queue, sid)
+    assert len(completions) == 1
+    assert completions[0]["surfacing_policy"] == "approval_blocked"
+    assert completions[0]["surfaced_in_chat"] is True
+
+    second = client.post("/chat", data={"session_id": sid, "message": "hello again"})
+    assert second.status_code == 200
+    turns = vera_service.read_session_turns(queue, sid)
+    surfaced_messages = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant"
+        and turn["text"].startswith("Your linked request is paused pending approval in VoxeraOS.")
+    ]
+    assert len(surfaced_messages) == 1
+
+
+def test_linked_failed_auto_surfaces_once(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
+    client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    inbox_job = next((queue / "inbox").glob("inbox-*.json"))
+    failed_dir = queue / "failed"
+    failed_dir.mkdir(parents=True, exist_ok=True)
+    failed_job = failed_dir / inbox_job.name
+    shutil.move(str(inbox_job), str(failed_job))
+
+    stem = failed_job.stem
+    (failed_dir / f"{stem}.state.json").write_text(
+        json.dumps(
+            {"lifecycle_state": "failed", "terminal_outcome": "failed", "approval_status": "none"}
+        ),
+        encoding="utf-8",
+    )
+    (failed_dir / f"{stem}.error.json").write_text(
+        json.dumps({"error": "Path not found: ~/VoxeraOS/notes/report.txt"}),
+        encoding="utf-8",
+    )
+    art = queue / "artifacts" / stem
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "failed",
+                "approval_status": "none",
+                "latest_summary": "Mission failed at step 2 (files.stat)",
+                "error": "Path not found: ~/VoxeraOS/notes/report.txt",
+                "next_action_hint": "Check the target path and rerun.",
+                "normalized_outcome_class": "runtime_execution_failed",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    first = client.post("/chat", data={"session_id": sid, "message": "status?"})
+    assert first.status_code == 200
+
+    turns = vera_service.read_session_turns(queue, sid)
+    failed_messages = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant" and turn["text"].startswith("Your linked goal job failed.")
+    ]
+    assert len(failed_messages) == 1
+    assert "Failure summary: Path not found: ~/VoxeraOS/notes/report.txt" in failed_messages[0]
+
+    completions = vera_service.read_linked_job_completions(queue, sid)
+    assert len(completions) == 1
+    assert completions[0]["surfacing_policy"] == "failed"
+    assert completions[0]["surfaced_in_chat"] is True
+
+    second = client.post("/chat", data={"session_id": sid, "message": "status again?"})
+    assert second.status_code == 200
+    turns = vera_service.read_session_turns(queue, sid)
+    surfaced_messages = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant" and turn["text"].startswith("Your linked goal job failed.")
+    ]
+    assert len(surfaced_messages) == 1
+
+
+def test_unsupported_policy_completions_do_not_auto_surface(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -2548,7 +2609,6 @@ def test_non_read_only_or_non_success_completions_do_not_auto_surface(tmp_path, 
     sid = "vera-test"
     vera_service.append_session_turn(queue, sid, role="user", text="seed")
     vera_service.register_session_linked_job(queue, sid, job_ref="inbox-a.json")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-b.json")
 
     _write_job_artifacts(
         queue,
@@ -2573,36 +2633,17 @@ def test_non_read_only_or_non_success_completions_do_not_auto_surface(tmp_path, 
     done_payload["job_intent"] = {"request_kind": "write_file"}
     done_job.write_text(json.dumps(done_payload), encoding="utf-8")
 
-    _write_job_artifacts(
-        queue,
-        "inbox-b.json",
-        bucket="failed",
-        execution_result={
-            "lifecycle_state": "failed",
-            "terminal_outcome": "failed",
-            "approval_status": "none",
-            "latest_summary": "Read-only check failed",
-            "normalized_outcome_class": "runtime_execution_failed",
-        },
-        state={
-            "lifecycle_state": "failed",
-            "terminal_outcome": "failed",
-            "approval_status": "none",
-        },
-    )
-
     client = TestClient(vera_app_module.app)
     client.post("/chat", data={"session_id": sid, "message": "any update?"})
 
     completions = vera_service.read_linked_job_completions(queue, sid)
-    assert len(completions) == 2
+    assert len(completions) == 1
     assert all(item["surfaced_in_chat"] is False for item in completions)
 
 
 def test_non_linked_terminal_jobs_do_not_attach_to_session(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
