@@ -363,6 +363,14 @@ class QueueExecutionMixin:
         except Exception:
             return 1
 
+    def _maybe_live_deliver_linked_completion(self: Any, *, job_ref: str) -> None:
+        try:
+            from ..vera.service import maybe_deliver_linked_completion_live_for_job
+
+            maybe_deliver_linked_completion_live_for_job(self.queue_root, job_ref=job_ref)
+        except Exception:
+            return
+
     def _plan_delta(
         self: Any, previous: MissionTemplate, current: MissionTemplate
     ) -> dict[str, Any]:
@@ -603,6 +611,7 @@ class QueueExecutionMixin:
                     {"event": "queue_job_failed", "job": str(moved), "error": repr(exc)}
                 )
                 self.prune_failed_artifacts()
+                self._maybe_live_deliver_linked_completion(job_ref=str(moved))
                 return False
 
             kind = self._request_kind(payload)
@@ -737,6 +746,7 @@ class QueueExecutionMixin:
                         {"event": "queue_job_failed", "job": str(moved), "error": error_text}
                     )
                     self.prune_failed_artifacts()
+                    self._maybe_live_deliver_linked_completion(job_ref=str(moved))
                     return False
 
                 # --- Simple intent mismatch detection --------------------------------
@@ -836,6 +846,7 @@ class QueueExecutionMixin:
                             }
                         )
                         self.prune_failed_artifacts()
+                        self._maybe_live_deliver_linked_completion(job_ref=str(moved))
                         return False
                 # --- End simple intent mismatch detection ----------------------------
 
@@ -1020,6 +1031,7 @@ class QueueExecutionMixin:
                     )
                     self._write_action_event(str(moved), "queue_job_failed", error=error_text)
                     self.prune_failed_artifacts()
+                    self._maybe_live_deliver_linked_completion(job_ref=str(moved))
                     return False
 
                 rr.data.setdefault("stop_reason", "succeeded")
@@ -1051,6 +1063,7 @@ class QueueExecutionMixin:
                     self._write_job_state(str(moved), state)
                 self._write_action_event(str(moved), "queue_job_done")
                 _queue_daemon_module().log({"event": "queue_job_done", "job": str(moved)})
+                self._maybe_live_deliver_linked_completion(job_ref=str(moved))
                 record_mission_success(self.queue_root)
                 return True
         finally:

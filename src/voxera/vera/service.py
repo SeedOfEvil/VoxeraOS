@@ -23,6 +23,7 @@ MAX_SESSION_TURNS = 8
 _SESSION_ID_LENGTH = 24
 _MAX_LINKED_JOB_TRACK = 64
 _MAX_LINKED_COMPLETIONS = 64
+_MAX_LINKED_NOTIFICATIONS = 128
 
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
@@ -539,7 +540,11 @@ def session_debug_info(
 def _read_linked_job_registry(queue_root: Path, session_id: str) -> dict[str, Any]:
     payload = _read_session_payload(queue_root, session_id)
     raw = payload.get("linked_queue_jobs")
-    return raw if isinstance(raw, dict) else {"tracked": [], "completions": []}
+    return (
+        raw
+        if isinstance(raw, dict)
+        else {"tracked": [], "completions": [], "notification_outbox": []}
+    )
 
 
 def _write_linked_job_registry(queue_root: Path, session_id: str, registry: dict[str, Any]) -> None:
@@ -587,7 +592,112 @@ def register_session_linked_job(queue_root: Path, session_id: str, *, job_ref: s
     completions_raw = registry.get("completions")
     if not isinstance(completions_raw, list):
         registry["completions"] = []
+    outbox_raw = registry.get("notification_outbox")
+    if not isinstance(outbox_raw, list):
+        registry["notification_outbox"] = []
     _write_linked_job_registry(queue_root, session_id, registry)
+
+
+def _completion_delivery_eligible(completion: dict[str, Any]) -> bool:
+    supported_policies = {"read_only_success", "mutating_success", "approval_blocked", "failed"}
+    policy = str(completion.get("surfacing_policy") or "").strip().lower()
+    if policy not in supported_policies:
+        return False
+
+    terminal_outcome = str(completion.get("terminal_outcome") or "").strip().lower()
+    if policy == "read_only_success":
+        return terminal_outcome == "succeeded"
+    if policy == "approval_blocked":
+        return terminal_outcome in {"blocked", "failed"}
+    if policy == "failed":
+        return terminal_outcome == "failed"
+    if policy == "mutating_success":
+        return terminal_outcome == "succeeded" and _is_true_terminal_completion(completion)
+    return False
+
+
+def _build_completion_notification(*, session_id: str, completion: dict[str, Any]) -> dict[str, Any]:
+    created_at_ms = int(completion.get("completion_detected_at_ms") or int(time.time() * 1000))
+    lineage = completion.get("lineage")
+    root_job_id = None
+    if isinstance(lineage, dict):
+        root_job_id = str(lineage.get("root_job_id") or "").strip() or None
+    return {
+        "notification_id": f"{session_id}:{completion.get('job_ref')}:{created_at_ms}",
+        "job_id": str(completion.get("job_ref") or ""),
+        "session_id": session_id,
+        "root_job_id": root_job_id,
+        "outcome_class": str(completion.get("normalized_outcome_class") or "").strip() or None,
+        "is_user_terminal": _completion_delivery_eligible(completion),
+        "message": _format_completion_autosurface_message(completion),
+        "created_at_ms": created_at_ms,
+        "delivery_status": "pending",
+        "surfaced_in_chat": completion.get("surfaced_in_chat") is True,
+        "surfaced_at_ms": completion.get("surfaced_at_ms"),
+        "fallback_pending": completion.get("surfaced_in_chat") is not True,
+    }
+
+
+def _upsert_completion_notification(
+    *, session_id: str, registry: dict[str, Any], completion: dict[str, Any]
+) -> dict[str, Any]:
+    outbox_raw = registry.get("notification_outbox")
+    outbox = outbox_raw if isinstance(outbox_raw, list) else []
+    job_ref = str(completion.get("job_ref") or "")
+    existing: dict[str, Any] | None = None
+    for item in outbox:
+        if isinstance(item, dict) and str(item.get("job_id") or "") == job_ref:
+            existing = item
+            break
+    if existing is None:
+        existing = _build_completion_notification(session_id=session_id, completion=completion)
+        outbox.append(existing)
+    else:
+        existing["is_user_terminal"] = _completion_delivery_eligible(completion)
+        existing["message"] = _format_completion_autosurface_message(completion)
+        existing["surfaced_in_chat"] = completion.get("surfaced_in_chat") is True
+        existing["surfaced_at_ms"] = completion.get("surfaced_at_ms")
+        if completion.get("surfaced_in_chat") is True:
+            existing["fallback_pending"] = False
+            if str(existing.get("delivery_status") or "").strip().lower() == "pending":
+                existing["delivery_status"] = "delivered"
+        else:
+            existing["fallback_pending"] = True
+    registry["notification_outbox"] = outbox[-_MAX_LINKED_NOTIFICATIONS:]
+    return existing
+
+
+def _attempt_live_delivery(
+    *, queue_root: Path, session_id: str, completion: dict[str, Any], notification: dict[str, Any]
+) -> bool:
+    if completion.get("surfaced_in_chat") is True:
+        notification["delivery_status"] = "delivered"
+        notification["fallback_pending"] = False
+        return True
+    if not _completion_delivery_eligible(completion):
+        notification["delivery_status"] = "pending"
+        notification["fallback_pending"] = True
+        return False
+    if not _session_path(queue_root, session_id).exists():
+        notification["delivery_status"] = "unavailable"
+        notification["fallback_pending"] = True
+        return False
+
+    message = _format_completion_autosurface_message(completion)
+    try:
+        append_session_turn(queue_root, session_id, role="assistant", text=message)
+    except Exception:
+        notification["delivery_status"] = "unavailable"
+        notification["fallback_pending"] = True
+        return False
+    now_ms = int(time.time() * 1000)
+    completion["surfaced_in_chat"] = True
+    completion["surfaced_at_ms"] = now_ms
+    notification["delivery_status"] = "delivered"
+    notification["fallback_pending"] = False
+    notification["surfaced_in_chat"] = True
+    notification["surfaced_at_ms"] = now_ms
+    return True
 
 
 def _is_terminal_queue_state(*, lifecycle_state: str, terminal_outcome: str, bucket: str) -> bool:
@@ -724,7 +834,12 @@ def _build_completion_payload(
     return payload
 
 
-def ingest_linked_job_completions(queue_root: Path, session_id: str) -> list[dict[str, Any]]:
+def ingest_linked_job_completions(
+    queue_root: Path,
+    session_id: str,
+    *,
+    only_job_ref: str | None = None,
+) -> list[dict[str, Any]]:
     registry = _read_linked_job_registry(queue_root, session_id)
     tracked_raw = registry.get("tracked")
     tracked = tracked_raw if isinstance(tracked_raw, list) else []
@@ -738,10 +853,13 @@ def ingest_linked_job_completions(queue_root: Path, session_id: str) -> list[dic
 
     created: list[dict[str, Any]] = []
     changed = False
+    only_ref = Path(only_job_ref).name.strip() if only_job_ref else None
     for item in tracked:
         if not isinstance(item, dict):
             continue
         job_ref = str(item.get("job_ref") or "").strip()
+        if only_ref and job_ref != only_ref:
+            continue
         if not job_ref or job_ref in completion_job_refs:
             continue
         found = lookup_job(queue_root, job_ref)
@@ -872,36 +990,94 @@ def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> s
     completions_raw = registry.get("completions")
     completions = completions_raw if isinstance(completions_raw, list) else []
 
-    supported_policies = {"read_only_success", "mutating_success", "approval_blocked", "failed"}
-
+    outbox_raw = registry.get("notification_outbox")
+    outbox = outbox_raw if isinstance(outbox_raw, list) else []
     for completion in completions:
         if not isinstance(completion, dict):
             continue
+        notification = _upsert_completion_notification(
+            session_id=session_id,
+            registry=registry,
+            completion=completion,
+        )
         if completion.get("surfaced_in_chat") is True:
             continue
-        policy = str(completion.get("surfacing_policy") or "").strip().lower()
-        if policy not in supported_policies:
+        if not _completion_delivery_eligible(completion):
             continue
-        terminal_outcome = str(completion.get("terminal_outcome") or "").strip().lower()
-        if policy == "read_only_success" and terminal_outcome != "succeeded":
-            continue
-        if policy == "approval_blocked" and terminal_outcome not in {"blocked", "failed"}:
-            continue
-        if policy == "failed" and terminal_outcome != "failed":
-            continue
-        if policy == "mutating_success":
-            if terminal_outcome != "succeeded":
-                continue
-            if not _is_true_terminal_completion(completion):
-                continue
 
         completion["surfaced_in_chat"] = True
         completion["surfaced_at_ms"] = int(time.time() * 1000)
+        notification["delivery_status"] = "fallback_delivered"
+        notification["fallback_pending"] = False
+        notification["surfaced_in_chat"] = True
+        notification["surfaced_at_ms"] = completion["surfaced_at_ms"]
         registry["completions"] = completions[-_MAX_LINKED_COMPLETIONS:]
+        registry["notification_outbox"] = outbox[-_MAX_LINKED_NOTIFICATIONS:]
         _write_linked_job_registry(queue_root, session_id, registry)
         return _format_completion_autosurface_message(completion)
 
     return None
+
+
+def maybe_deliver_linked_completion_live(queue_root: Path, session_id: str, *, job_ref: str) -> bool:
+    ingest_linked_job_completions(queue_root, session_id, only_job_ref=job_ref)
+    registry = _read_linked_job_registry(queue_root, session_id)
+    completions_raw = registry.get("completions")
+    completions = completions_raw if isinstance(completions_raw, list) else []
+    changed = False
+    delivered = False
+    for completion in completions:
+        if not isinstance(completion, dict):
+            continue
+        if str(completion.get("job_ref") or "") != Path(job_ref).name:
+            continue
+        notification = _upsert_completion_notification(
+            session_id=session_id,
+            registry=registry,
+            completion=completion,
+        )
+        if _attempt_live_delivery(
+            queue_root=queue_root,
+            session_id=session_id,
+            completion=completion,
+            notification=notification,
+        ):
+            delivered = True
+            changed = True
+        else:
+            changed = True
+    if changed:
+        registry["completions"] = completions[-_MAX_LINKED_COMPLETIONS:]
+        outbox_raw = registry.get("notification_outbox")
+        outbox = outbox_raw if isinstance(outbox_raw, list) else []
+        registry["notification_outbox"] = outbox[-_MAX_LINKED_NOTIFICATIONS:]
+        _write_linked_job_registry(queue_root, session_id, registry)
+    return delivered
+
+
+def maybe_deliver_linked_completion_live_for_job(queue_root: Path, *, job_ref: str) -> int:
+    normalized = Path(job_ref).name.strip()
+    if not normalized:
+        return 0
+    sessions_dir = queue_root / "artifacts" / "vera_sessions"
+    if not sessions_dir.exists():
+        return 0
+    delivered_count = 0
+    for session_file in sorted(sessions_dir.glob("*.json")):
+        session_id = session_file.stem.strip()
+        if not session_id:
+            continue
+        registry = _read_linked_job_registry(queue_root, session_id)
+        tracked = registry.get("tracked")
+        tracked_list = tracked if isinstance(tracked, list) else []
+        if not any(
+            isinstance(item, dict) and str(item.get("job_ref") or "") == normalized
+            for item in tracked_list
+        ):
+            continue
+        if maybe_deliver_linked_completion_live(queue_root, session_id, job_ref=normalized):
+            delivered_count += 1
+    return delivered_count
 
 
 def build_vera_messages(*, turns: list[dict[str, str]], user_message: str) -> list[dict[str, str]]:

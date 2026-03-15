@@ -2434,7 +2434,8 @@ def test_linked_read_only_success_auto_surfaces_once_per_completion(tmp_path, mo
         turn["text"]
         for turn in turns
         if turn["role"] == "assistant"
-        and turn["text"].startswith("Your linked goal job completed successfully.")
+        and turn["text"].startswith("Your linked ")
+        and "completed successfully." in turn["text"]
     ]
     assert len(surfaced_messages) == 1
 
@@ -2731,6 +2732,191 @@ def test_linked_mutating_success_intermediate_orchestration_is_suppressed(tmp_pa
     assert completions[0]["surfacing_policy"] == "mutating_success"
     assert completions[0]["surfaced_in_chat"] is False
 
+
+
+
+def test_linked_terminal_completion_live_delivery_posts_immediately(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    sid = "vera-live-delivery"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-live.json")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-live.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Read-only linked completion arrived.",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    delivered = vera_service.maybe_deliver_linked_completion_live_for_job(
+        queue, job_ref="inbox-live.json"
+    )
+    assert delivered == 1
+
+    turns = vera_service.read_session_turns(queue, sid)
+    messages = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant"
+        and turn["text"].startswith("Your linked ")
+        and "completed successfully." in turn["text"]
+    ]
+    assert len(messages) == 1
+
+    payload = json.loads((queue / "artifacts" / "vera_sessions" / f"{sid}.json").read_text())
+    linked = payload["linked_queue_jobs"]
+    outbox = linked.get("notification_outbox")
+    assert isinstance(outbox, list) and len(outbox) == 1
+    assert outbox[0]["delivery_status"] == "delivered"
+    assert outbox[0]["fallback_pending"] is False
+
+
+def test_linked_live_delivery_unavailable_persists_pending_for_fallback(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    sid = "vera-live-unavailable"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-fallback.json")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-fallback.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Fallback should surface this once.",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    def _raise_append(*args, **kwargs):
+        raise RuntimeError("transport unavailable")
+
+    original_append = vera_service.append_session_turn
+    monkeypatch.setattr(vera_service, "append_session_turn", _raise_append)
+    delivered = vera_service.maybe_deliver_linked_completion_live_for_job(
+        queue, job_ref="inbox-fallback.json"
+    )
+    assert delivered == 0
+
+    payload = json.loads((queue / "artifacts" / "vera_sessions" / f"{sid}.json").read_text())
+    outbox = payload["linked_queue_jobs"].get("notification_outbox")
+    assert isinstance(outbox, list) and len(outbox) == 1
+    assert outbox[0]["delivery_status"] == "unavailable"
+    assert outbox[0]["fallback_pending"] is True
+
+    monkeypatch.setattr(vera_service, "append_session_turn", original_append)
+    msg = vera_service.maybe_auto_surface_linked_completion(queue, sid)
+    assert msg is not None
+    assert msg.startswith("Your linked ")
+    assert "completed successfully." in msg
+    assert vera_service.maybe_auto_surface_linked_completion(queue, sid) is None
+
+
+def test_live_delivered_linked_completion_not_reposted_by_fallback(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    sid = "vera-live-dedupe"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-dedupe.json")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-dedupe.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "One-time live delivery only.",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    assert vera_service.maybe_deliver_linked_completion_live_for_job(
+        queue, job_ref="inbox-dedupe.json"
+    ) == 1
+    assert vera_service.maybe_auto_surface_linked_completion(queue, sid) is None
+
+
+def test_uncertain_mutating_completion_is_not_live_delivered_as_final(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    sid = "vera-live-conservative"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-parent-live.json")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-parent-live.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Parent delegated child work.",
+            "normalized_outcome_class": "succeeded",
+            "stop_reason": "enqueue_child",
+            "child_refs": [{"child_job_id": "inbox-child.json"}],
+            "child_summary": {
+                "total": 1,
+                "done": 0,
+                "awaiting_approval": 0,
+                "pending": 1,
+                "failed": 0,
+                "canceled": 0,
+                "unknown": 0,
+            },
+            "review_summary": {
+                "execution_capabilities": {"side_effect_class": "execute"}
+            },
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+    parent_job = queue / "done" / "inbox-parent-live.json"
+    parent_payload = json.loads(parent_job.read_text(encoding="utf-8"))
+    parent_payload["job_intent"] = {"request_kind": "run_command"}
+    parent_job.write_text(json.dumps(parent_payload), encoding="utf-8")
+
+    delivered = vera_service.maybe_deliver_linked_completion_live_for_job(
+        queue, job_ref="inbox-parent-live.json"
+    )
+    assert delivered == 0
+
+    turns = vera_service.read_session_turns(queue, sid)
+    assert not any("Parent delegated child work" in turn["text"] for turn in turns)
 
 def test_non_linked_terminal_jobs_do_not_attach_to_session(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
