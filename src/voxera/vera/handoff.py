@@ -116,6 +116,37 @@ def _extract_quoted_content(text: str) -> str | None:
     return None
 
 
+def _normalize_extracted_content_block(candidate: str) -> str | None:
+    value = candidate.replace("\r\n", "\n")
+    value = value.lstrip(" \t")
+    if value.startswith(":"):
+        value = value[1:]
+    value = value.lstrip(" \t")
+    if value.startswith("\n"):
+        value = value[1:]
+    value = value.rstrip()
+    if not value:
+        return None
+    if re.fullmatch(r"(that|this|it|same|same thing)", value, re.IGNORECASE):
+        return None
+    if re.search(r"\bfile\s+called\b", value, re.IGNORECASE):
+        return None
+    if _message_requests_referenced_content(value) or _looks_like_ambiguous_reference_only(value):
+        return None
+    return value
+
+
+def _extract_content_after_markers(text: str, markers: tuple[str, ...]) -> str | None:
+    for marker in markers:
+        match = re.search(marker, text, re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        candidate = _normalize_extracted_content_block(match.group(1))
+        if candidate:
+            return candidate
+    return None
+
+
 def _message_requests_referenced_content(message: str) -> bool:
     lowered = message.lower()
     if not re.search(r"\b(that|this|previous|last|your)\b", lowered):
@@ -243,6 +274,15 @@ def _normalize_structured_file_write_payload(
         return None
 
     content = _extract_quoted_content(text)
+    if content is None:
+        content = _extract_content_after_markers(
+            text,
+            (
+                r"\bwith\s+(?:exactly\s+)?this\s+(?:content|text)\s*:\s*(.+)$",
+                r"\bwith\s+(?:the\s+)?(?:content|text)\s*:\s*(.+)$",
+                r"\b(?:content|text)\s*:\s*(.+)$",
+            ),
+        )
     if content is None:
         patterns = (
             r"\b(?:with\s+(?:the\s+)?)?(?:content|text)\s+(.+)$",
@@ -378,6 +418,17 @@ def _extract_content_refinement(
     content = _extract_quoted_content(text)
     if content:
         return content
+
+    block_content = _extract_content_after_markers(
+        text,
+        (
+            r"\b(?:change|update|replace|make)\s+(?:the\s+)?(?:content|text)\s*(?:to|with)?\s*:\s*(.+)$",
+            r"\b(?:content|text)\s*:\s*(.+)$",
+            r"\buse\s+this\s+as\s+(?:the\s+)?content\s*:\s*(.+)$",
+        ),
+    )
+    if block_content:
+        return block_content
 
     patterns = [
         r"\bput\s+(.+?)\s+(?:inside|in|into)\s+(?:the\s+)?file\b",

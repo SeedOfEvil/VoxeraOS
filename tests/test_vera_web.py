@@ -2986,3 +2986,80 @@ def test_index_includes_active_chat_polling_hook(tmp_path, monkeypatch):
     assert 'data-turn-count="0"' in res.text
     assert "/chat/updates?" in res.text
     assert "window.setInterval(pollForTurnUpdates, 2000);" in res.text
+
+
+def test_single_line_write_content_preserved_in_preview():
+    preview = maybe_draft_job_payload("write single-line.txt with content: Hello world")
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/single-line.txt"
+    assert preview["write_file"]["content"] == "Hello world"
+    assert preview["write_file"]["mode"] == "overwrite"
+
+
+def test_multiline_write_content_preserved_in_preview():
+    preview = maybe_draft_job_payload(
+        """Create a file called multiline-test.txt in my notes with exactly this content:
+
+Line A
+Line B
+Line C
+"""
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/multiline-test.txt"
+    assert preview["write_file"]["content"] == "Line A\nLine B\nLine C"
+
+
+def test_multiline_content_keeps_first_line():
+    preview = maybe_draft_job_payload(
+        """Write first-line.txt with content:
+
+First line
+Second line
+"""
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["content"].splitlines()[0] == "First line"
+
+
+def test_overwrite_update_phrasing_preserves_multiline_content():
+    initial = maybe_draft_job_payload('write overwrite-test-2.txt with content "Original content"')
+
+    assert initial is not None
+    updated = maybe_draft_job_payload(
+        """Update overwrite-test-2.txt with this content:
+
+Original content
+Version 1
+""",
+        active_preview=initial,
+    )
+
+    assert updated is not None
+    assert updated["write_file"]["content"] == "Original content\nVersion 1"
+
+
+def test_preview_remains_submit_ready_when_multiline_content_present():
+    preview = maybe_draft_job_payload(
+        """Create submit-ready.txt with content:
+
+Line A
+Line B
+"""
+    )
+
+    assert preview is not None
+    normalized = normalize_preview_payload(preview)
+    assert normalized["write_file"]["content"] == "Line A\nLine B"
+
+
+def test_existing_quoted_write_behavior_unchanged():
+    preview = maybe_draft_job_payload('write a file called hello.txt with content "hello"')
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/hello.txt"
+    assert preview["write_file"]["content"] == "hello"
+    assert preview["write_file"]["mode"] == "overwrite"
