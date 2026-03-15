@@ -2642,8 +2642,16 @@ def test_linked_mutating_success_auto_surfaces_once(tmp_path, monkeypatch):
 
     first = client.post("/chat", data={"session_id": sid, "message": "any update?"})
     assert first.status_code == 200
-    assert "Your linked write file job completed successfully." in first.text
-    assert "Destination created at ~/VoxeraOS/notes/testdir." in first.text
+
+    turns = vera_service.read_session_turns(queue, sid)
+    surfaced_first = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant"
+        and turn["text"].startswith("Your linked write file job completed successfully.")
+    ]
+    assert len(surfaced_first) == 1
+    assert "Destination created at ~/VoxeraOS/notes/testdir." in surfaced_first[0]
 
     completions = vera_service.read_linked_job_completions(queue, sid)
     assert len(completions) == 1
