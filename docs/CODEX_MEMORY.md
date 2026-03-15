@@ -1688,7 +1688,7 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 
 ## Vera linked completion auto-surfacing slice (PR #TBD)
 
-- Extended the linked completion ingestion foundation with deterministic chat auto-surfacing for linked `read_only_success`, `approval_blocked`, and `failed` completions.
-- On each Vera chat cycle, completion ingestion runs first; then at most one unsurfaced eligible completion (policy in `read_only_success|approval_blocked|failed`) is formatted with deterministic evidence-grounded text and appended as an assistant turn.
+- Extended the linked completion ingestion foundation with deterministic chat auto-surfacing for linked `read_only_success`, `mutating_success`, `approval_blocked`, and `failed` completions.
+- On each Vera chat cycle, completion ingestion runs first; then at most one unsurfaced eligible completion (policy in `read_only_success|mutating_success|approval_blocked|failed`) is formatted with deterministic evidence-grounded text and appended as an assistant turn.
 - Surfaced completions are marked in session artifact state via `surfaced_in_chat=true` and `surfaced_at_ms`, preventing repost spam on later turns.
-- Mutating success, canceled, noisy, and manual-only classes remain intentionally unsurfaced in this PR; manual evidence review flow remains the path for those classes.
+- Mutating success is now auto-surfaced only when canonical metadata indicates true terminal completion (no pending/delegated downstream child work). Canceled, noisy, and manual-only classes remain intentionally unsurfaced; manual evidence review flow remains the path for those classes.

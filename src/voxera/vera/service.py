@@ -605,6 +605,8 @@ def _classify_surfacing_policy(payload: dict[str, Any]) -> str:
     approval_status = str(payload.get("approval_status") or "").strip().lower()
     outcome_class = str(payload.get("normalized_outcome_class") or "").strip().lower()
     request_kind = str(payload.get("request_kind") or "").strip().lower()
+    side_effect_class = str(payload.get("side_effect_class") or "").strip().lower()
+    read_only_requested = payload.get("read_only_requested") is True
     latest_summary = str(payload.get("latest_summary") or "")
     highlights = payload.get("result_highlights")
     result_highlight_count = len(highlights) if isinstance(highlights, list) else 0
@@ -620,7 +622,11 @@ def _classify_surfacing_policy(payload: dict[str, Any]) -> str:
     if len(latest_summary) > 480 or result_highlight_count >= 6:
         return "noisy_large_result"
     if terminal_outcome == "succeeded":
-        if request_kind in {"write_file", "file_organize"}:
+        if read_only_requested:
+            return "read_only_success"
+        if side_effect_class in {"write", "execute", "mutating"}:
+            return "mutating_success"
+        if request_kind in {"write_file", "file_organize", "open_url", "open_app", "run_command"}:
             return "mutating_success"
         return "read_only_success"
     return "manual_only"
@@ -674,6 +680,18 @@ def _build_completion_payload(
     approval_status = str(
         structured.get("approval_status") or state_payload.get("approval_status") or "none"
     ).strip()
+    execution_capabilities_raw = structured.get("execution_capabilities")
+    execution_capabilities: dict[str, Any] = (
+        execution_capabilities_raw if isinstance(execution_capabilities_raw, dict) else {}
+    )
+    lineage_raw = structured.get("lineage")
+    lineage: dict[str, Any] | None = lineage_raw if isinstance(lineage_raw, dict) else None
+    child_refs_raw = structured.get("child_refs")
+    child_refs: list[Any] = child_refs_raw if isinstance(child_refs_raw, list) else []
+    child_summary_raw = structured.get("child_summary")
+    child_summary: dict[str, Any] | None = (
+        child_summary_raw if isinstance(child_summary_raw, dict) else None
+    )
 
     payload = {
         "job_ref": job_ref,
@@ -684,12 +702,19 @@ def _build_completion_payload(
         "approval_status": approval_status,
         "normalized_outcome_class": str(structured.get("normalized_outcome_class") or "").strip(),
         "request_kind": request_kind,
+        "read_only_requested": job_payload.get("read_only") is True
+        or job_intent.get("read_only") is True,
         "mission_id": mission_id or None,
         "latest_summary": str(structured.get("latest_summary") or "").strip(),
         "failure_summary": str(structured.get("error") or "").strip(),
         "operator_note": str(structured.get("operator_note") or "").strip(),
         "next_action_hint": str(structured.get("next_action_hint") or "").strip(),
         "result_highlights": _normalize_result_highlights(structured),
+        "side_effect_class": str(execution_capabilities.get("side_effect_class") or "").strip(),
+        "lineage": lineage,
+        "child_refs_count": len(child_refs),
+        "child_summary": child_summary,
+        "stop_reason": str(structured.get("stop_reason") or "").strip(),
         "queue_bucket": bucket,
         "completion_detected_at_ms": int(time.time() * 1000),
         "surfaced_in_chat": False,
@@ -822,12 +847,32 @@ def _format_completion_autosurface_message(completion: dict[str, Any]) -> str:
     return message.strip()
 
 
+def _is_true_terminal_completion(completion: dict[str, Any]) -> bool:
+    child_summary = completion.get("child_summary")
+    child_refs_count = int(completion.get("child_refs_count") or 0)
+    stop_reason = str(completion.get("stop_reason") or "").strip().lower()
+
+    if isinstance(child_summary, dict):
+        pending_like = sum(
+            int(child_summary.get(key) or 0) for key in ("pending", "awaiting_approval", "unknown")
+        )
+        if pending_like > 0:
+            return False
+        total = int(child_summary.get("total") or 0)
+        if child_refs_count > 0 and total <= 0:
+            return False
+    elif child_refs_count > 0:
+        return False
+
+    return not any(token in stop_reason for token in ("enqueue_child", "delegat", "handoff_child"))
+
+
 def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> str | None:
     registry = _read_linked_job_registry(queue_root, session_id)
     completions_raw = registry.get("completions")
     completions = completions_raw if isinstance(completions_raw, list) else []
 
-    supported_policies = {"read_only_success", "approval_blocked", "failed"}
+    supported_policies = {"read_only_success", "mutating_success", "approval_blocked", "failed"}
 
     for completion in completions:
         if not isinstance(completion, dict):
@@ -844,6 +889,11 @@ def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> s
             continue
         if policy == "failed" and terminal_outcome != "failed":
             continue
+        if policy == "mutating_success":
+            if terminal_outcome != "succeeded":
+                continue
+            if not _is_true_terminal_completion(completion):
+                continue
 
         completion["surfaced_in_chat"] = True
         completion["surfaced_at_ms"] = int(time.time() * 1000)
