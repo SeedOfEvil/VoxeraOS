@@ -11,6 +11,22 @@ _MAX_LINES = 200
 _MAX_SINCE_MINUTES = 180
 
 
+def _coerce_bounded_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return int(stripped)
+        except ValueError:
+            return None
+    return None
+
+
 def _reject(reason: str, *, service: str, lines: int, since_minutes: int) -> RunResult:
     return RunResult(
         ok=False,
@@ -37,30 +53,43 @@ def _reject(reason: str, *, service: str, lines: int, since_minutes: int) -> Run
 
 def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
     normalized = str(service or "").strip()
+    normalized_lines = _coerce_bounded_int(lines)
+    normalized_since_minutes = _coerce_bounded_int(since_minutes)
+
     if not _SERVICE_PATTERN.fullmatch(normalized):
         return _reject(
             "service must match ^[A-Za-z0-9_.@-]{1,120}\\.service$",
             service=normalized,
-            lines=lines,
-            since_minutes=since_minutes,
+            lines=normalized_lines if isinstance(normalized_lines, int) else -1,
+            since_minutes=(
+                normalized_since_minutes if isinstance(normalized_since_minutes, int) else -1
+            ),
         )
-    if not isinstance(lines, int) or lines < 1 or lines > _MAX_LINES:
+    if (
+        not isinstance(normalized_lines, int)
+        or normalized_lines < 1
+        or normalized_lines > _MAX_LINES
+    ):
         return _reject(
             f"lines must be an integer between 1 and {_MAX_LINES}",
             service=normalized,
-            lines=lines,
-            since_minutes=since_minutes,
+            lines=normalized_lines if isinstance(normalized_lines, int) else -1,
+            since_minutes=(
+                normalized_since_minutes if isinstance(normalized_since_minutes, int) else -1
+            ),
         )
     if (
-        not isinstance(since_minutes, int)
-        or since_minutes < 1
-        or since_minutes > _MAX_SINCE_MINUTES
+        not isinstance(normalized_since_minutes, int)
+        or normalized_since_minutes < 1
+        or normalized_since_minutes > _MAX_SINCE_MINUTES
     ):
         return _reject(
             f"since_minutes must be an integer between 1 and {_MAX_SINCE_MINUTES}",
             service=normalized,
-            lines=lines,
-            since_minutes=since_minutes,
+            lines=normalized_lines if isinstance(normalized_lines, int) else -1,
+            since_minutes=(
+                normalized_since_minutes if isinstance(normalized_since_minutes, int) else -1
+            ),
         )
 
     try:
@@ -72,9 +101,9 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
                 "-u",
                 normalized,
                 "--since",
-                f"-{since_minutes} min",
+                f"-{normalized_since_minutes} min",
                 "-n",
-                str(lines),
+                str(normalized_lines),
             ],
             capture_output=True,
             text=True,
@@ -142,11 +171,11 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
     log_lines = [line for line in completed.stdout.splitlines() if line.strip()]
     payload = {
         "service": normalized,
-        "lines_requested": lines,
-        "since_minutes": since_minutes,
+        "lines_requested": normalized_lines,
+        "since_minutes": normalized_since_minutes,
         "line_count": len(log_lines),
         "logs": log_lines,
-        "truncated": len(log_lines) >= lines,
+        "truncated": len(log_lines) >= normalized_lines,
     }
     return RunResult(
         ok=True,

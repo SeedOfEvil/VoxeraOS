@@ -69,6 +69,29 @@ def test_service_status_happy_path_with_mocked_systemctl(monkeypatch):
     assert payload["machine_payload"]["ActiveState"] == "active"
 
 
+def test_recent_service_logs_default_args(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _fake_run(cmd, **_kwargs):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=0,
+            stdout="2026-01-01T00:00:01Z line one\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = recent_service_logs.run("voxera-daemon.service")
+    assert rr.ok is True
+    payload = rr.data[SKILL_RESULT_KEY]["machine_payload"]
+    assert payload["lines_requested"] == 50
+    assert payload["since_minutes"] == 15
+    cmd = captured["cmd"]
+    assert isinstance(cmd, list)
+    assert "-n" in cmd and "50" in cmd
+
+
 def test_recent_service_logs_happy_path_with_mocked_journalctl(monkeypatch):
     def _fake_run(*_args, **_kwargs):
         return subprocess.CompletedProcess(
@@ -84,6 +107,47 @@ def test_recent_service_logs_happy_path_with_mocked_journalctl(monkeypatch):
     payload = rr.data[SKILL_RESULT_KEY]["machine_payload"]
     assert payload["line_count"] == 2
     assert payload["service"] == "voxera-daemon.service"
+
+
+def test_recent_service_logs_accepts_string_numeric_args(monkeypatch):
+    def _fake_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=0,
+            stdout="2026-01-01T00:00:01Z line one\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = recent_service_logs.run("voxera-daemon.service", lines="20", since_minutes="30")
+    assert rr.ok is True
+    payload = rr.data[SKILL_RESULT_KEY]["machine_payload"]
+    assert payload["lines_requested"] == 20
+    assert payload["since_minutes"] == 30
+
+
+def test_recent_service_logs_rejects_invalid_numeric_strings(monkeypatch):
+    def _should_not_run(*_args, **_kwargs):
+        raise AssertionError("journalctl should not be invoked for invalid numeric strings")
+
+    monkeypatch.setattr(subprocess, "run", _should_not_run)
+    rr = recent_service_logs.run("voxera-daemon.service", lines="abc", since_minutes="1")
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["blocked"] is True
+    assert payload["error_class"] == "invalid_input"
+
+
+def test_recent_service_logs_rejects_invalid_service_name(monkeypatch):
+    def _should_not_run(*_args, **_kwargs):
+        raise AssertionError("journalctl should not be invoked for invalid service name")
+
+    monkeypatch.setattr(subprocess, "run", _should_not_run)
+    rr = recent_service_logs.run("../../etc/passwd", lines="20", since_minutes="30")
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["blocked"] is True
+    assert payload["error_class"] == "invalid_input"
 
 
 def test_diagnostics_mission_executes_through_queue_and_writes_evidence(tmp_path):
