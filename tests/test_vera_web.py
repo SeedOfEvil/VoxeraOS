@@ -260,6 +260,15 @@ def _sample_investigation_payload() -> dict[str, object]:
                 "why_it_matched": "matched three",
                 "rank": 3,
             },
+            {
+                "result_id": 4,
+                "title": "Result Four",
+                "url": "https://another.example.org/4",
+                "source": "another.example.org",
+                "snippet": "snippet four",
+                "why_it_matched": "matched four",
+                "rank": 4,
+            },
         ],
     }
 
@@ -285,7 +294,7 @@ def test_structured_investigation_is_stored_and_numbered(tmp_path, monkeypatch):
 
     stored = vera_service.read_session_investigation(queue, sid)
     assert stored is not None
-    assert [row["result_id"] for row in stored["results"]] == [1, 2, 3]
+    assert [row["result_id"] for row in stored["results"]] == [1, 2, 3, 4]
 
 
 def test_save_single_investigation_result_creates_governed_preview(tmp_path, monkeypatch):
@@ -351,6 +360,7 @@ def test_save_all_investigation_results_to_markdown_file(tmp_path, monkeypatch):
     assert "## Result 1" in content
     assert "## Result 2" in content
     assert "## Result 3" in content
+    assert "## Result 4" in content
 
 
 def test_invalid_investigation_reference_fails_closed_with_clear_message(tmp_path, monkeypatch):
@@ -386,6 +396,129 @@ def test_save_investigation_without_active_result_set_fails_closed(tmp_path, mon
 
     assert "run a fresh read-only investigation first" in res.text.lower()
     assert vera_service.read_session_preview(queue, sid) is None
+
+
+def test_compare_selected_investigation_results_stores_derived_output(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "compare results 1 and 3"},
+    )
+
+    assert res.status_code == 200
+    turns = vera_service.read_session_turns(queue, sid)
+    assert "compared results: 1, 3" in turns[-1]["text"].lower()
+    derived = vera_service.read_session_derived_investigation_output(queue, sid)
+    assert derived is not None
+    assert derived["derivation_type"] == "comparison"
+    assert derived["selected_result_ids"] == [1, 3]
+
+
+def test_summarize_selected_investigation_results_stores_derived_output(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "summarize results 2 and 4"},
+    )
+
+    assert res.status_code == 200
+    turns = vera_service.read_session_turns(queue, sid)
+    assert "selected results: 2, 4" in turns[-1]["text"].lower()
+    derived = vera_service.read_session_derived_investigation_output(queue, sid)
+    assert derived is not None
+    assert derived["derivation_type"] == "summary"
+    assert derived["selected_result_ids"] == [2, 4]
+
+
+def test_summarize_all_findings_uses_all_results(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "summarize all findings"},
+    )
+
+    derived = vera_service.read_session_derived_investigation_output(queue, sid)
+    assert derived is not None
+    assert derived["selected_result_ids"] == [1, 2, 3, 4]
+
+
+def test_save_derived_summary_creates_governed_preview_only(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "summarize results 1 and 2"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that summary to investigation-summary.md"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/investigation-summary.md"
+    assert "# Investigation Summary" in preview["write_file"]["content"]
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
+def test_save_derived_output_without_existing_derivation_fails_closed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that summary to a note"},
+    )
+
+    turns = vera_service.read_session_turns(queue, sid)
+    assert (
+        "couldn't find a current investigation comparison or summary" in turns[-1]["text"].lower()
+    )
+    assert vera_service.read_session_preview(queue, sid) is None
+
+
+def test_invalid_reference_for_summary_fails_closed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "summarize results 2 and 9"},
+    )
+
+    turns = vera_service.read_session_turns(queue, sid)
+    assert "couldn't resolve those result references for summary" in turns[-1]["text"].lower()
+    assert vera_service.read_session_derived_investigation_output(queue, sid) is None
 
 
 def test_mode_refinement_append_instead_updates_active_preview(tmp_path, monkeypatch):

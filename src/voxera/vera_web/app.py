@@ -21,11 +21,17 @@ from ..vera.evidence_review import (
     review_message,
 )
 from ..vera.handoff import (
+    derive_investigation_comparison,
+    derive_investigation_summary,
+    draft_investigation_derived_save_preview,
     draft_investigation_save_preview,
     drafting_guidance,
     is_active_preview_submit_request,
     is_explicit_handoff_request,
+    is_investigation_compare_request,
+    is_investigation_derived_save_request,
     is_investigation_save_request,
+    is_investigation_summary_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
     submit_preview,
@@ -40,6 +46,7 @@ from ..vera.service import (
     ingest_linked_job_completions,
     maybe_auto_surface_linked_completion,
     new_session_id,
+    read_session_derived_investigation_output,
     read_session_enrichment,
     read_session_handoff_state,
     read_session_investigation,
@@ -49,6 +56,7 @@ from ..vera.service import (
     register_session_linked_job,
     run_web_enrichment,
     session_debug_info,
+    write_session_derived_investigation_output,
     write_session_enrichment,
     write_session_handoff_state,
     write_session_investigation,
@@ -392,6 +400,99 @@ async def chat(request: Request):
         )
 
     session_investigation = read_session_investigation(root, active_session)
+    session_derived_output = read_session_derived_investigation_output(root, active_session)
+
+    if is_investigation_derived_save_request(message):
+        derived_preview = draft_investigation_derived_save_preview(
+            message,
+            derived_output=session_derived_output,
+        )
+        if derived_preview is None:
+            assistant_text = (
+                "I couldn't find a current investigation comparison or summary to save in this session. "
+                "Ask me to compare or summarize findings first, then ask to save that output to a note."
+            )
+            append_session_turn(root, active_session, role="assistant", text=assistant_text)
+            return _render_page(
+                session_id=active_session,
+                turns=read_session_turns(root, active_session),
+                status="investigation_derived_missing",
+            )
+        write_session_preview(root, active_session, derived_preview)
+        write_session_handoff_state(
+            root,
+            active_session,
+            attempted=False,
+            queue_path=str(root),
+            status="preview_ready",
+            error=None,
+            job_id=None,
+        )
+        assistant_text = (
+            "I prepared a governed save-to-note preview from the latest investigation comparison/summary. "
+            "Nothing has been submitted yet."
+        )
+        append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="prepared_preview",
+        )
+
+    if is_investigation_compare_request(message):
+        comparison = derive_investigation_comparison(
+            message,
+            investigation_context=session_investigation,
+        )
+        if comparison is None:
+            assistant_text = (
+                "I couldn't resolve those result references for comparison in this session. "
+                "Run a fresh read-only investigation first, then compare valid result numbers "
+                "(for example: 'compare results 1 and 3' or 'compare all findings')."
+            )
+            append_session_turn(root, active_session, role="assistant", text=assistant_text)
+            return _render_page(
+                session_id=active_session,
+                turns=read_session_turns(root, active_session),
+                status="investigation_reference_invalid",
+            )
+        write_session_derived_investigation_output(root, active_session, comparison)
+        append_session_turn(
+            root, active_session, role="assistant", text=str(comparison.get("answer") or "")
+        )
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="ok:investigation_comparison",
+        )
+
+    if is_investigation_summary_request(message):
+        summary = derive_investigation_summary(
+            message,
+            investigation_context=session_investigation,
+        )
+        if summary is None:
+            assistant_text = (
+                "I couldn't resolve those result references for summary in this session. "
+                "Run a fresh read-only investigation first, then summarize valid result numbers "
+                "(for example: 'summarize result 2' or 'summarize all findings')."
+            )
+            append_session_turn(root, active_session, role="assistant", text=assistant_text)
+            return _render_page(
+                session_id=active_session,
+                turns=read_session_turns(root, active_session),
+                status="investigation_reference_invalid",
+            )
+        write_session_derived_investigation_output(root, active_session, summary)
+        append_session_turn(
+            root, active_session, role="assistant", text=str(summary.get("answer") or "")
+        )
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="ok:investigation_summary",
+        )
+
     if is_investigation_save_request(message):
         investigation_preview = draft_investigation_save_preview(
             message,
@@ -519,6 +620,7 @@ async def chat(request: Request):
     investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
     if isinstance(investigation_payload, dict):
         write_session_investigation(root, active_session, investigation_payload)
+        write_session_derived_investigation_output(root, active_session, None)
     guarded_answer = _guardrail_submission_claim(
         root=root,
         session_id=active_session,
