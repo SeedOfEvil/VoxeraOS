@@ -443,6 +443,7 @@ def append_session_turn(
         "handoff",
         "last_enrichment",
         "last_investigation",
+        "last_derived_investigation_output",
         "linked_queue_jobs",
     ):
         preserved = previous.get(preserved_key)

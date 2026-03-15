@@ -236,23 +236,39 @@ def is_investigation_save_request(message: str) -> bool:
     return save_action and findings_target
 
 
-def is_investigation_compare_request(message: str) -> bool:
+def _mentions_investigation_results_or_findings(message: str) -> bool:
     lowered = message.strip().lower()
     if not lowered:
         return False
     return bool(
         re.search(
+            r"\b(result\s*\d+|results?|findings?|these\s+(?:results?|findings?)|all\s+(?:results?|findings?))\b",
+            lowered,
+        )
+    )
+
+
+def is_investigation_compare_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    has_compare_signal = bool(
+        re.search(
             r"\b(compare|different|difference|in\s+common|commonalities|commonality)\b",
             lowered,
         )
     )
+    return has_compare_signal and _mentions_investigation_results_or_findings(lowered)
 
 
 def is_investigation_summary_request(message: str) -> bool:
     lowered = message.strip().lower()
     if not lowered:
         return False
-    return bool(re.search(r"\b(summarize|summarise|summary|synthesis|common\s+thread)\b", lowered))
+    has_summary_signal = bool(
+        re.search(r"\b(summarize|summarise|summary|synthesis|common\s+thread)\b", lowered)
+    )
+    return has_summary_signal and _mentions_investigation_results_or_findings(lowered)
 
 
 def is_investigation_derived_save_request(message: str) -> bool:
