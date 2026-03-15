@@ -159,6 +159,49 @@ def test_service_status_system_failed_preferred_over_user_inactive(monkeypatch):
     assert payload.get("other_ActiveState") == "inactive"
 
 
+def test_service_status_timeout_error_class(monkeypatch):
+    """When both systemctl scopes time out, error_class is timeout, not missing_dependency."""
+
+    def _fake_run(cmd, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = service_status.run("voxera-daemon.service")
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["error_class"] == "timeout"
+    assert payload["retryable"] is True
+
+
+def test_service_status_query_failed_error_class(monkeypatch):
+    """When both systemctl scopes fail with CalledProcessError, error_class is service_query_failed."""
+
+    def _fake_run(cmd, **_kwargs):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd=cmd, output="", stderr="Failed to connect to bus"
+        )
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = service_status.run("voxera-daemon.service")
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["error_class"] == "service_query_failed"
+    assert payload["retryable"] is False
+
+
+def test_service_status_missing_dependency_only_for_file_not_found(monkeypatch):
+    """missing_dependency error_class only when systemctl binary is truly absent."""
+
+    def _fake_run(cmd, **_kwargs):
+        raise FileNotFoundError("systemctl not found")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = service_status.run("voxera-daemon.service")
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["error_class"] == "missing_dependency"
+
+
 def test_recent_service_logs_timeout_error_class(monkeypatch):
     """When both journalctl scopes time out, error_class is timeout, not missing_dependency."""
 

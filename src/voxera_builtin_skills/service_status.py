@@ -31,23 +31,37 @@ def _invalid_input_result(service: str, reason: str) -> RunResult:
     )
 
 
-def _query_scope(service: str, *, user: bool) -> dict[str, str] | None:
-    """Query systemctl for a single scope. Returns parsed properties or None on failure."""
+class _ScopeResult:
+    """Outcome of querying a single systemctl scope."""
+
+    __slots__ = ("props", "error_kind")
+
+    def __init__(self, *, props: dict[str, str] | None, error_kind: str = ""):
+        self.props = props
+        self.error_kind = error_kind  # "", "not_found", "query_failed", "timeout"
+
+
+def _query_scope(service: str, *, user: bool) -> _ScopeResult:
+    """Query systemctl for a single scope. Distinguishes tool-missing from runtime errors."""
     cmd = ["systemctl"]
     if user:
         cmd.append("--user")
     cmd += ["show", service, f"--property={_SYSTEMCTL_PROPS}", "--no-pager"]
     try:
         completed = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return None
+    except FileNotFoundError:
+        return _ScopeResult(props=None, error_kind="not_found")
+    except subprocess.CalledProcessError:
+        return _ScopeResult(props=None, error_kind="query_failed")
+    except subprocess.TimeoutExpired:
+        return _ScopeResult(props=None, error_kind="timeout")
     props: dict[str, str] = {}
     for line in completed.stdout.splitlines():
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
         props[key] = value
-    return props
+    return _ScopeResult(props=props)
 
 
 def _is_active(props: dict[str, str] | None) -> bool:
@@ -75,28 +89,49 @@ def run(service: str) -> RunResult:
     # Query both system and user scopes to surface the correct state.
     # Voxera services typically run in user scope; querying only system scope
     # would misleadingly report inactive/dead for running user services.
-    system_props = _query_scope(normalized, user=False)
-    user_props = _query_scope(normalized, user=True)
+    system_result = _query_scope(normalized, user=False)
+    user_result = _query_scope(normalized, user=True)
 
+    system_props = system_result.props
+    user_props = user_result.props
     system_ok = system_props is not None
     user_ok = user_props is not None
 
     if not system_ok and not user_ok:
-        error = "systemctl command not found or both scopes failed"
+        # Both failed — classify by the most informative error kind.
+        error_kinds = {system_result.error_kind, user_result.error_kind}
+        if error_kinds == {"not_found"}:
+            error = "systemctl command not found"
+            error_class = "missing_dependency"
+            operator_note = "Install systemd tooling to inspect service state."
+            next_action_hint = "install_systemd_tools"
+            retryable = False
+        elif "timeout" in error_kinds:
+            error = "service status query timed out"
+            error_class = "timeout"
+            operator_note = "Service inspection exceeded the bounded timeout."
+            next_action_hint = "retry_service_status"
+            retryable = True
+        else:
+            error = "service status query failed in both scopes"
+            error_class = "service_query_failed"
+            operator_note = "Service may not exist or cannot be inspected in this runtime."
+            next_action_hint = "verify_service_name"
+            retryable = False
         return RunResult(
             ok=False,
             error=error,
             data={
                 SKILL_RESULT_KEY: build_skill_result(
-                    summary="Service status tool unavailable",
+                    summary=f"Service status query failed for {normalized}",
                     machine_payload={"service": normalized, "tool": "systemctl"},
-                    operator_note="Install systemd tooling to inspect service state.",
-                    next_action_hint="install_systemd_tools",
-                    retryable=False,
+                    operator_note=operator_note,
+                    next_action_hint=next_action_hint,
+                    retryable=retryable,
                     blocked=False,
                     approval_status="none",
                     error=error,
-                    error_class="missing_dependency",
+                    error_class=error_class,
                 )
             },
         )
