@@ -1680,3 +1680,8 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - Kept explicit optional finish choices (open Voxera panel, Vera panel, both, none), but now skip panel auto-open when corresponding service failed to start.
   - Corrected Vera panel launch URL to match runtime default (`http://127.0.0.1:8790`).
   - Added focused tests for service-start helper behavior, failure handling, and setup finish ordering (ensure services before launch).
+
+## 2026-03-15 — GitHub PR #TBD — feat(vera): deterministic linked queue completion ingestion foundation
+
+- Added session-linked queue job registry for Vera handoffs, terminal completion ingestion using canonical queue truth, normalized completion payload extraction, and deterministic surfacing policy classification for later conversational behaviors.
+- Explicitly deferred broad proactive auto-chat behavior; this PR is additive mechanical groundwork only.

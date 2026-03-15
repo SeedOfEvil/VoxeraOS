@@ -153,3 +153,5 @@ User intent
 This object model formalizes existing semantics and is intended to be stable as capabilities grow.
 
 Changes to queue bucket semantics, approval gates, or terminal meaning should be treated as explicit architecture changes, not incidental implementation details.
+
+- Vera session linkage (additive): Vera may maintain a session-local linked-job registry keyed by queue job ref. Registry consumption never overrides queue truth; it only ingests terminal lifecycle + evidence-derived normalized completion payloads for linked jobs.

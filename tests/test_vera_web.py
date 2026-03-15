@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -2397,3 +2398,104 @@ def test_put_that_into_file_without_enrichment_no_active_preview_fails_closed(
 
     assert vera_service.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
+def test_handoff_registers_linked_job_tracking(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
+    client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    payload = json.loads((queue / "artifacts" / "vera_sessions" / f"{sid}.json").read_text())
+    linked = payload.get("linked_queue_jobs")
+    assert isinstance(linked, dict)
+    tracked = linked.get("tracked")
+    assert isinstance(tracked, list)
+    assert len(tracked) == 1
+    assert tracked[0]["job_ref"]
+    assert tracked[0]["linked_session_id"] == sid
+
+
+def test_linked_job_terminal_completion_is_ingested_with_policy(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
+    client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    inbox_job = next((queue / "inbox").glob("inbox-*.json"))
+    done_dir = queue / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    done_job = done_dir / inbox_job.name
+    shutil.move(str(inbox_job), str(done_job))
+
+    stem = done_job.stem
+    (done_dir / f"{stem}.state.json").write_text(
+        json.dumps(
+            {"lifecycle_state": "done", "terminal_outcome": "succeeded", "approval_status": "none"}
+        ),
+        encoding="utf-8",
+    )
+    art = queue / "artifacts" / stem
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "approval_status": "none",
+                "latest_summary": "Opened example.com successfully",
+                "normalized_outcome_class": "succeeded",
+                "artifact_families": ["browser_trace"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    created = vera_service.ingest_linked_job_completions(queue, sid)
+    assert len(created) == 1
+
+    completions = vera_service.read_linked_job_completions(queue, sid)
+    assert len(completions) == 1
+    completion = completions[0]
+    assert completion["lifecycle_state"] == "done"
+    assert completion["terminal_outcome"] == "succeeded"
+    assert completion["request_kind"] == "goal"
+    assert completion["surfacing_policy"] == "read_only_success"
+
+
+def test_non_linked_terminal_jobs_do_not_attach_to_session(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    _write_job_artifacts(
+        queue,
+        "inbox-unlinked.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "unlinked completed",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    client.post("/chat", data={"session_id": sid, "message": "hello"})
+
+    assert vera_service.read_linked_job_completions(queue, sid) == []
