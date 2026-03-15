@@ -3048,6 +3048,134 @@ def test_linked_terminal_completion_live_delivery_posts_immediately(tmp_path, mo
     assert outbox[0]["fallback_pending"] is False
 
 
+def test_linked_live_delivery_surfaces_subsequent_completions_in_same_session(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    sid = "vera-live-multi"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-live-1.json")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-live-2.json")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-live-1.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "First completion arrived.",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+    _write_job_artifacts(
+        queue,
+        "inbox-live-2.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Second completion arrived.",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    assert (
+        vera_service.maybe_deliver_linked_completion_live_for_job(
+            queue, job_ref="inbox-live-1.json"
+        )
+        == 1
+    )
+    assert (
+        vera_service.maybe_deliver_linked_completion_live_for_job(
+            queue, job_ref="inbox-live-2.json"
+        )
+        == 1
+    )
+
+    turns = vera_service.read_session_turns(queue, sid)
+    surfaced = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant"
+        and turn["text"].startswith("Your linked ")
+        and "completed successfully." in turn["text"]
+    ]
+    assert len(surfaced) == 2
+    assert any("First completion arrived." in message for message in surfaced)
+    assert any("Second completion arrived." in message for message in surfaced)
+
+
+def test_linked_live_delivery_not_duplicated_after_refresh_or_later_chat(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    sid = "vera-live-no-duplicate"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-live-once.json")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-live-once.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Delivered once.",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    assert (
+        vera_service.maybe_deliver_linked_completion_live_for_job(
+            queue, job_ref="inbox-live-once.json"
+        )
+        == 1
+    )
+
+    client = TestClient(vera_app_module.app)
+    refreshed = client.get("/", params={"session_id": sid})
+    assert refreshed.status_code == 200
+
+    follow_up = client.post("/chat", data={"session_id": sid, "message": "ok"})
+    assert follow_up.status_code == 200
+
+    turns = vera_service.read_session_turns(queue, sid)
+    surfaced = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant"
+        and turn["text"].startswith("Your linked ")
+        and "Delivered once." in turn["text"]
+    ]
+    assert len(surfaced) == 1
+
+
 def test_linked_live_delivery_unavailable_persists_pending_for_fallback(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -3225,6 +3353,7 @@ def test_chat_updates_endpoint_reports_changes_for_active_session(tmp_path, monk
     baseline_payload = baseline.json()
     assert baseline_payload["changed"] is False
     assert baseline_payload["turn_count"] == 0
+    assert isinstance(baseline_payload.get("updated_at_ms"), int)
     assert "turns" not in baseline_payload
 
     vera_service.append_session_turn(queue, sid, role="assistant", text="live completion")
@@ -3240,6 +3369,45 @@ def test_chat_updates_endpoint_reports_changes_for_active_session(tmp_path, monk
     up_to_date = client.get("/chat/updates", params={"session_id": sid, "since_count": 1})
     assert up_to_date.status_code == 200
     assert up_to_date.json()["changed"] is False
+
+
+def test_chat_updates_detects_new_turn_when_session_window_is_full(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    for idx in range(vera_service.MAX_SESSION_TURNS):
+        role = "user" if idx % 2 == 0 else "assistant"
+        vera_service.append_session_turn(queue, sid, role=role, text=f"seed-{idx}")
+
+    baseline = client.get(
+        "/chat/updates", params={"session_id": sid, "since_count": vera_service.MAX_SESSION_TURNS}
+    )
+    assert baseline.status_code == 200
+    baseline_payload = baseline.json()
+    assert baseline_payload["changed"] is False
+    updated_at_ms = int(baseline_payload["updated_at_ms"])
+
+    vera_service.append_session_turn(
+        queue, sid, role="assistant", text="live completion second wave"
+    )
+
+    refreshed = client.get(
+        "/chat/updates",
+        params={
+            "session_id": sid,
+            "since_count": vera_service.MAX_SESSION_TURNS,
+            "since_updated_at_ms": updated_at_ms,
+        },
+    )
+    assert refreshed.status_code == 200
+    refreshed_payload = refreshed.json()
+    assert refreshed_payload["changed"] is True
+    assert refreshed_payload["turn_count"] == vera_service.MAX_SESSION_TURNS
+    assert isinstance(refreshed_payload.get("turns"), list)
+    assert refreshed_payload["turns"][-1]["text"] == "live completion second wave"
 
 
 def test_index_includes_active_chat_polling_hook(tmp_path, monkeypatch):
