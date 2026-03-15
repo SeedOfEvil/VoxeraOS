@@ -37,11 +37,11 @@ _TARGETED_DIAGNOSTICS_PATTERNS = (
     r"\b(show|check)\s+system\s+load\b",
 )
 _SERVICE_STATUS_PATTERNS = (
-    r"\b(?:check|show|get|inspect)\s+(?:the\s+)?status\s+(?:of|for)\s+([A-Za-z0-9_.@\-/]+)",
+    r"\b(?:check|show|get|inspect)(?:\s+me)?\s+(?:the\s+)?status\s+(?:of|for)\s+([A-Za-z0-9_.@\-/]+)",
     r"\bstatus\s+(?:of|for)\s+([A-Za-z0-9_.@\-/]+)",
 )
 _SERVICE_LOG_PATTERNS = (
-    r"\b(?:show|fetch|get|summari[sz]e)\s+(?:the\s+)?(?:recent\s+)?logs\s+(?:for|of)\s+([A-Za-z0-9_.@\-/]+)",
+    r"\b(?:show|fetch|get|summari[sz]e)(?:\s+me)?\s+(?:the\s+)?(?:recent\s+)?logs\s+(?:for|of)\s+([A-Za-z0-9_.@\-/]+)",
     r"\brecent\s+logs\s+(?:for|of)\s+([A-Za-z0-9_.@\-/]+)",
 )
 
@@ -126,6 +126,13 @@ def _normalize_file_read_goal(message: str) -> str | None:
     if re.search(r"\b(this\s+file|the\s+file)\b", text, re.IGNORECASE):
         return "read this file"
     return None
+
+
+def diagnostics_service_or_logs_intent(message: str) -> bool:
+    return _extract_safe_service(message, _SERVICE_STATUS_PATTERNS) not in {
+        None,
+        "",
+    } or _extract_safe_service(message, _SERVICE_LOG_PATTERNS) not in {None, ""}
 
 
 def diagnostics_request_refusal(message: str) -> str | None:

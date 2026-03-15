@@ -3697,3 +3697,256 @@ def test_unrelated_write_preview_flow_remains_unchanged():
     assert preview is not None
     normalized = normalize_preview_payload(preview)
     assert normalized["write_file"]["path"] == "~/VoxeraOS/notes/hello.txt"
+
+
+def test_service_status_request_prefers_diagnostics_preview_over_review(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "check status of voxera-vera.service"},
+    )
+
+    assert res.status_code == 200
+    assert "could not resolve a VoxeraOS job" not in res.text
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["steps"][0]["skill_id"] == "system.service_status"
+
+
+def test_job_review_query_still_uses_review_path(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "check the last job status"},
+    )
+
+    assert res.status_code == 200
+    assert "could not resolve a VoxeraOS job" in res.text
+
+
+def test_diagnostics_system_mission_completion_surfaces_useful_values(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "inspect system health"})
+    client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    inbox_job = next((queue / "inbox").glob("inbox-*.json"))
+    done_dir = queue / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    done_job = done_dir / inbox_job.name
+    shutil.move(str(inbox_job), str(done_job))
+
+    stem = done_job.stem
+    (done_dir / f"{stem}.state.json").write_text(
+        json.dumps(
+            {"lifecycle_state": "done", "terminal_outcome": "succeeded", "approval_status": "none"}
+        ),
+        encoding="utf-8",
+    )
+    art = queue / "artifacts" / stem
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "approval_status": "none",
+                "latest_summary": "Listed 332 running processes",
+                "normalized_outcome_class": "succeeded",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.host_info",
+                        "status": "succeeded",
+                        "machine_payload": {"hostname": "voxera-box", "uptime_seconds": 7200},
+                    },
+                    {
+                        "step_index": 2,
+                        "skill_id": "system.memory_usage",
+                        "status": "succeeded",
+                        "machine_payload": {
+                            "used_gib": 3.2,
+                            "total_gib": 15.6,
+                            "used_percent": 20.5,
+                        },
+                    },
+                    {
+                        "step_index": 3,
+                        "skill_id": "system.load_snapshot",
+                        "status": "succeeded",
+                        "machine_payload": {"load_1m": 0.4, "load_5m": 0.5, "load_15m": 0.6},
+                    },
+                    {
+                        "step_index": 4,
+                        "skill_id": "system.disk_usage",
+                        "status": "succeeded",
+                        "machine_payload": {"used_percent": 52.1, "free_gb": 120.0},
+                    },
+                    {
+                        "step_index": 5,
+                        "skill_id": "system.process_list",
+                        "status": "succeeded",
+                        "machine_payload": {"count": 332},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.post("/chat", data={"session_id": sid, "message": "thanks"})
+    assert response.status_code == 200
+    assert "Diagnostics snapshot:" in response.text
+    assert "host=voxera-box" in response.text
+    assert "memory=3.2/15.6GiB" in response.text
+
+
+def test_diagnostics_service_status_completion_surfaces_state(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "check status of voxera-vera.service"})
+    client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    inbox_job = next((queue / "inbox").glob("inbox-*.json"))
+    done_dir = queue / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    done_job = done_dir / inbox_job.name
+    shutil.move(str(inbox_job), str(done_job))
+
+    stem = done_job.stem
+    (done_dir / f"{stem}.state.json").write_text(
+        json.dumps(
+            {"lifecycle_state": "done", "terminal_outcome": "succeeded", "approval_status": "none"}
+        ),
+        encoding="utf-8",
+    )
+    art = queue / "artifacts" / stem
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "approval_status": "none",
+                "latest_summary": "Service voxera-vera.service: active/running",
+                "normalized_outcome_class": "succeeded",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.service_status",
+                        "status": "succeeded",
+                        "machine_payload": {
+                            "service": "voxera-vera.service",
+                            "ActiveState": "active",
+                            "SubState": "running",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.post("/chat", data={"session_id": sid, "message": "thanks"})
+    assert response.status_code == 200
+    assert "service_state=voxera-vera.service:active/running" in response.text
+
+
+def test_diagnostics_recent_logs_completion_surfaces_line_count(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat", data={"session_id": sid, "message": "show recent logs for voxera-daemon.service"}
+    )
+    client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    inbox_job = next((queue / "inbox").glob("inbox-*.json"))
+    done_dir = queue / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    done_job = done_dir / inbox_job.name
+    shutil.move(str(inbox_job), str(done_job))
+
+    stem = done_job.stem
+    (done_dir / f"{stem}.state.json").write_text(
+        json.dumps(
+            {"lifecycle_state": "done", "terminal_outcome": "succeeded", "approval_status": "none"}
+        ),
+        encoding="utf-8",
+    )
+    art = queue / "artifacts" / stem
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "approval_status": "none",
+                "latest_summary": "Collected 18 recent logs for voxera-daemon.service",
+                "normalized_outcome_class": "succeeded",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "system.recent_service_logs",
+                        "status": "succeeded",
+                        "machine_payload": {
+                            "service": "voxera-daemon.service",
+                            "line_count": 18,
+                            "since_minutes": 15,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.post("/chat", data={"session_id": sid, "message": "thanks"})
+    assert response.status_code == 200
+    assert "recent_logs=voxera-daemon.service:18 lines (last 15m)" in response.text

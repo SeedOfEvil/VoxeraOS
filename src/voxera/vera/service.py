@@ -883,6 +883,82 @@ def _normalize_result_highlights(structured: dict[str, Any]) -> list[str]:
     return highlights[:6]
 
 
+def _extract_step_machine_payload(structured: dict[str, Any], *, skill_id: str) -> dict[str, Any]:
+    step_summaries = structured.get("step_summaries")
+    if not isinstance(step_summaries, list):
+        return {}
+    for item in step_summaries:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("skill_id") or "").strip() != skill_id:
+            continue
+        payload = item.get("machine_payload")
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _format_diagnostics_values(*, structured: dict[str, Any], mission_id: str) -> list[str]:
+    values: list[str] = []
+
+    if mission_id == "system_diagnostics":
+        host = _extract_step_machine_payload(structured, skill_id="system.host_info")
+        hostname = str(host.get("hostname") or "").strip()
+        uptime_seconds = host.get("uptime_seconds")
+        if hostname and isinstance(uptime_seconds, (int, float)):
+            uptime_hours = round(float(uptime_seconds) / 3600, 1)
+            values.append(f"host={hostname}, uptime≈{uptime_hours}h")
+        elif hostname:
+            values.append(f"host={hostname}")
+
+        memory = _extract_step_machine_payload(structured, skill_id="system.memory_usage")
+        used_gib = memory.get("used_gib")
+        total_gib = memory.get("total_gib")
+        used_percent = memory.get("used_percent")
+        if isinstance(used_gib, (int, float)) and isinstance(total_gib, (int, float)):
+            mem_line = f"memory={used_gib}/{total_gib}GiB"
+            if isinstance(used_percent, (int, float)):
+                mem_line = f"{mem_line} ({used_percent}% used)"
+            values.append(mem_line)
+
+        load = _extract_step_machine_payload(structured, skill_id="system.load_snapshot")
+        load_1m = load.get("load_1m")
+        load_5m = load.get("load_5m")
+        load_15m = load.get("load_15m")
+        if all(isinstance(item, (int, float)) for item in (load_1m, load_5m, load_15m)):
+            values.append(f"load(1/5/15m)={load_1m}/{load_5m}/{load_15m}")
+
+        disk = _extract_step_machine_payload(structured, skill_id="system.disk_usage")
+        used_pct = disk.get("used_percent")
+        free_gb = disk.get("free_gb")
+        if isinstance(used_pct, (int, float)):
+            if isinstance(free_gb, (int, float)):
+                values.append(f"disk={used_pct}% used, {free_gb}GB free")
+            else:
+                values.append(f"disk={used_pct}% used")
+
+    service_status = _extract_step_machine_payload(structured, skill_id="system.service_status")
+    if service_status:
+        service = str(
+            service_status.get("service") or service_status.get("Id") or "service"
+        ).strip()
+        active = str(service_status.get("ActiveState") or "unknown").strip()
+        sub = str(service_status.get("SubState") or "unknown").strip()
+        values.append(f"service_state={service}:{active}/{sub}")
+
+    recent_logs = _extract_step_machine_payload(structured, skill_id="system.recent_service_logs")
+    if recent_logs:
+        service = str(recent_logs.get("service") or "service").strip()
+        line_count = recent_logs.get("line_count")
+        since_minutes = recent_logs.get("since_minutes")
+        if isinstance(line_count, int) and isinstance(since_minutes, int):
+            values.append(f"recent_logs={service}:{line_count} lines (last {since_minutes}m)")
+        elif isinstance(line_count, int):
+            values.append(f"recent_logs={service}:{line_count} lines")
+
+    return values[:4]
+
+
 def _build_completion_payload(
     *,
     session_id: str,
@@ -940,6 +1016,10 @@ def _build_completion_payload(
         "operator_note": str(structured.get("operator_note") or "").strip(),
         "next_action_hint": str(structured.get("next_action_hint") or "").strip(),
         "result_highlights": _normalize_result_highlights(structured),
+        "diagnostics_values": _format_diagnostics_values(
+            structured=structured,
+            mission_id=mission_id,
+        ),
         "side_effect_class": str(execution_capabilities.get("side_effect_class") or "").strip(),
         "lineage": lineage,
         "child_refs_count": len(child_refs),
@@ -1068,6 +1148,13 @@ def _format_completion_autosurface_message(completion: dict[str, Any]) -> str:
             message = f"{message} Next action: {hint}"
         return message.strip()
 
+    diagnostics_values = completion.get("diagnostics_values")
+    diagnostics_text = ""
+    if isinstance(diagnostics_values, list):
+        compact_values = [str(item).strip() for item in diagnostics_values[:4] if str(item).strip()]
+        if compact_values:
+            diagnostics_text = "; ".join(compact_values)
+
     highlights = completion.get("result_highlights")
     highlight_text = ""
     if isinstance(highlights, list):
@@ -1076,7 +1163,9 @@ def _format_completion_autosurface_message(completion: dict[str, Any]) -> str:
             highlight_text = compact
 
     message = f"Your linked {request_kind} job completed successfully."
-    if latest_summary:
+    if diagnostics_text:
+        message = f"{message} Diagnostics snapshot: {diagnostics_text}."
+    elif latest_summary:
         message = f"{message} {latest_summary}"
     elif highlight_text:
         message = f"{message} Canonical evidence highlights: {highlight_text}."

@@ -24,6 +24,7 @@ from ..vera.handoff import (
     derive_investigation_comparison,
     derive_investigation_summary,
     diagnostics_request_refusal,
+    diagnostics_service_or_logs_intent,
     draft_investigation_derived_save_preview,
     draft_investigation_save_preview,
     drafting_guidance,
@@ -338,7 +339,20 @@ async def chat(request: Request):
 
     pending_preview = read_session_preview(root, active_session)
     requested_job_id = maybe_extract_job_id(message)
-    if is_review_request(message) or requested_job_id is not None:
+    diagnostics_service_turn = diagnostics_service_or_logs_intent(message)
+
+    diagnostics_refusal = diagnostics_request_refusal(message)
+    if diagnostics_refusal is not None:
+        append_session_turn(root, active_session, role="assistant", text=diagnostics_refusal)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="blocked_diagnostics",
+        )
+
+    if (
+        is_review_request(message) and not diagnostics_service_turn
+    ) or requested_job_id is not None:
         target_job_id = requested_job_id
         if not target_job_id:
             handoff = read_session_handoff_state(root, active_session) or {}
@@ -561,15 +575,6 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status=status,
-        )
-
-    diagnostics_refusal = diagnostics_request_refusal(message)
-    if diagnostics_refusal is not None:
-        append_session_turn(root, active_session, role="assistant", text=diagnostics_refusal)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="blocked_diagnostics",
         )
 
     # Blocked bounded file intent: fail closed with a clear refusal before
