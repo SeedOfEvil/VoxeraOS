@@ -78,11 +78,15 @@ def classify_result_family(
 
 
 def _step_payload_for_skill(structured: dict[str, Any], skill_id: str) -> dict[str, Any]:
-    """Extract machine_payload from the step matching *skill_id*."""
+    """Extract machine_payload from the *last* step matching *skill_id*.
+
+    Iterates from the end so that workflows invoking the same skill
+    multiple times surface terminal evidence rather than stale state.
+    """
     step_summaries = structured.get("step_summaries")
     if not isinstance(step_summaries, list):
         return {}
-    for item in step_summaries:
+    for item in reversed(step_summaries):
         if not isinstance(item, dict):
             continue
         if str(item.get("skill_id") or "").strip() == skill_id:
@@ -93,15 +97,28 @@ def _step_payload_for_skill(structured: dict[str, Any], skill_id: str) -> dict[s
 
 
 def _step_summary_for_skill(structured: dict[str, Any], skill_id: str) -> str:
-    """Extract summary string from the step matching *skill_id*."""
+    """Extract summary string from the *last* step matching *skill_id*."""
     step_summaries = structured.get("step_summaries")
     if not isinstance(step_summaries, list):
         return ""
-    for item in step_summaries:
+    for item in reversed(step_summaries):
         if not isinstance(item, dict):
             continue
         if str(item.get("skill_id") or "").strip() == skill_id:
             return str(item.get("summary") or "")
+    return ""
+
+
+def _step_status_for_skill(structured: dict[str, Any], skill_id: str) -> str:
+    """Return the status of the *last* step matching *skill_id*, or empty string."""
+    step_summaries = structured.get("step_summaries")
+    if not isinstance(step_summaries, list):
+        return ""
+    for item in reversed(step_summaries):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("skill_id") or "").strip() == skill_id:
+            return str(item.get("status") or "").strip()
     return ""
 
 
@@ -165,14 +182,26 @@ def _extract_file_read(*, structured: dict[str, Any], mission_id: str) -> str | 
     latest_summary = str(structured.get("latest_summary") or "").strip()
 
     # If latest_summary contains actual content (more than the skill summary),
-    # surface a bounded excerpt.
-    if latest_summary and latest_summary != summary and len(latest_summary) > len(summary):
+    # surface a bounded excerpt — but only when the read step is the last step,
+    # otherwise latest_summary may describe unrelated subsequent work.
+    last_skill = _last_step_skill_id(structured)
+    if (
+        last_skill == "files.read_text"
+        and latest_summary
+        and latest_summary != summary
+        and len(latest_summary) > len(summary)
+    ):
         excerpt = _truncate(latest_summary)
         if path:
             return f"File content from {path}: {excerpt}"
         return f"File content: {excerpt}"
 
-    # Fallback: surface path + size
+    # Fallback: surface path + size, but only for succeeded steps —
+    # failed file reads also carry a path in their payload, and emitting
+    # success-sounding text for them would be misleading.
+    step_status = _step_status_for_skill(structured, "files.read_text")
+    if step_status != "succeeded":
+        return None
     if path and isinstance(byte_count, int):
         return f"Read {byte_count} bytes from {path}."
     if path:
@@ -353,7 +382,10 @@ def _extract_process_list(*, structured: dict[str, Any], mission_id: str) -> str
         if isinstance(count, int):
             return f"Listed {count} running processes."
         return None
-    count = len(processes)
+    # Prefer the payload's count field — the processes list may be truncated
+    # to a subset while count reflects the true total.
+    payload_count = payload.get("count")
+    count = payload_count if isinstance(payload_count, int) else len(processes)
     top = processes[:6]
     names = [
         str(p.get("name") or p.get("command") or "?").strip() for p in top if isinstance(p, dict)

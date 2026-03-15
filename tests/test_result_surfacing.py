@@ -436,6 +436,127 @@ def test_log_excerpt_bounded_to_max_lines():
     assert "log line 0\n" not in result
 
 
+# ---------------------------------------------------------------------------
+# Regression: last-match semantics for repeated skills
+# ---------------------------------------------------------------------------
+
+
+def test_step_payload_returns_last_match_for_repeated_skill():
+    """When the same skill runs twice, surfaced evidence reflects the final run."""
+    structured = {
+        "step_summaries": [
+            {
+                "step_index": 1,
+                "skill_id": "system.service_status",
+                "status": "succeeded",
+                "summary": "",
+                "machine_payload": {
+                    "service": "voxera.service",
+                    "ActiveState": "inactive",
+                    "SubState": "dead",
+                },
+            },
+            {
+                "step_index": 2,
+                "skill_id": "system.service_status",
+                "status": "succeeded",
+                "summary": "",
+                "machine_payload": {
+                    "service": "voxera.service",
+                    "ActiveState": "active",
+                    "SubState": "running",
+                },
+            },
+        ],
+        "terminal_outcome": "succeeded",
+    }
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "active/running" in result
+    # Must NOT surface stale first-step state
+    assert "inactive/dead" not in result
+
+
+# ---------------------------------------------------------------------------
+# Regression: file-content excerpt gated on last step
+# ---------------------------------------------------------------------------
+
+
+def test_file_read_no_content_excerpt_when_read_is_not_last_step():
+    """latest_summary should not be used as file content when last step is not the read."""
+    structured = {
+        "step_summaries": [
+            {
+                "step_index": 1,
+                "skill_id": "files.read_text",
+                "status": "succeeded",
+                "summary": "Read text from /notes/a.txt",
+                "machine_payload": {"path": "/notes/a.txt", "bytes": 50},
+            },
+            {
+                "step_index": 2,
+                "skill_id": "system.process_list",
+                "status": "succeeded",
+                "summary": "Listed 312 running processes",
+                "machine_payload": {"processes": [], "count": 312},
+            },
+        ],
+        "latest_summary": "Listed 312 running processes",
+        "terminal_outcome": "succeeded",
+    }
+    result = extract_value_forward_text(structured=structured)
+    # Should NOT emit "File content from /notes/a.txt: Listed 312 running processes"
+    assert result is None or "File content" not in result
+
+
+# ---------------------------------------------------------------------------
+# Regression: failed file reads should not surface success text
+# ---------------------------------------------------------------------------
+
+
+def test_file_read_no_success_text_when_step_failed():
+    """A failed files.read_text step should not produce 'Read file: ...' output."""
+    structured = {
+        "step_summaries": [
+            {
+                "step_index": 1,
+                "skill_id": "files.read_text",
+                "status": "failed",
+                "summary": "Permission denied",
+                "machine_payload": {"path": "/notes/secret.txt"},
+            }
+        ],
+        "latest_summary": "Permission denied",
+        "terminal_outcome": "failed",
+    }
+    result = extract_value_forward_text(structured=structured)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Regression: process count from payload.count, not len(processes)
+# ---------------------------------------------------------------------------
+
+
+def test_process_list_uses_payload_count_over_len():
+    """Payload count field should be used when processes list is truncated."""
+    # Only 3 processes in the list, but payload says 120 total
+    processes = [
+        {"name": "systemd", "pid": 1},
+        {"name": "kworker", "pid": 2},
+        {"name": "python3", "pid": 3},
+    ]
+    structured = _structured_with_step(
+        "system.process_list",
+        {"processes": processes, "count": 120},
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "120 running processes" in result
+    # Must NOT say "3 running processes"
+    assert "3 running processes" not in result
+
+
 def test_list_dir_bounded_to_max_entries():
     entries = [
         {"name": f"file{i}.txt", "path": f"file{i}.txt", "is_dir": False, "size_bytes": i}
