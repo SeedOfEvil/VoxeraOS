@@ -1193,4 +1193,6 @@ Vera v0 now includes a narrow job-outcome review capability in chat while preser
 
 - Canonical queue/assistant lanes now use forward-looking expected-artifact defaults so new jobs carry explicit artifact intent from job creation through runtime/review (without historical backfill).
 
-- Vera linked-job completion foundation: for Vera-originated handoffs, session state now tracks linked job refs and deterministically ingests completion when canonical queue lifecycle reaches terminal states. Ingestion stores a compact normalized completion payload plus deterministic surfacing-policy class for later PRs.
+- Vera linked-job completion foundation: for Vera-originated handoffs, session state tracks linked job refs and deterministically ingests completion when canonical queue lifecycle reaches terminal states.
+- Current auto-surfacing slice: on chat cycles, Vera surfaces at most one unsurfaced linked completion only when canonical outcome is terminal success and surfacing policy is `read_only_success`, then marks `surfaced_in_chat=true` with `surfaced_at_ms`.
+- Other classes (`mutating_success`, `failed`, `approval_blocked`, `canceled`, `manual_only`, `noisy_large_result`) intentionally remain unsurfaced for later additive PRs.

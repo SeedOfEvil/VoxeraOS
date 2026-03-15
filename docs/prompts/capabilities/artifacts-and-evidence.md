@@ -15,6 +15,7 @@ Artifacts and evidence are authoritative for what actually happened after execut
 - Artifacts are not drafts.
 - Artifacts are not speculative.
 - Artifacts are runtime outputs or canonical reviews derived from runtime outputs.
+- Completion follow-up text must be deterministic and evidence-grounded: use normalized completion payload fields (e.g., `latest_summary`, compact highlights) and avoid speculative details or raw JSON dumps.
 
 Execution review consumers should prefer normalized contract fields in
 `execution_result.json` when present:

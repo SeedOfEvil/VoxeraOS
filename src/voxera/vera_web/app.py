@@ -36,6 +36,7 @@ from ..vera.service import (
     generate_preview_builder_update,
     generate_vera_reply,
     ingest_linked_job_completions,
+    maybe_auto_surface_linked_completion,
     new_session_id,
     read_session_enrichment,
     read_session_handoff_state,
@@ -314,7 +315,11 @@ async def chat(request: Request):
 
     root = _active_queue_root()
     ingest_linked_job_completions(root, active_session)
+    auto_completion_note = maybe_auto_surface_linked_completion(root, active_session)
+
     append_session_turn(root, active_session, role="user", text=message)
+    if auto_completion_note is not None:
+        append_session_turn(root, active_session, role="assistant", text=auto_completion_note)
     turns = read_session_turns(root, active_session)
 
     pending_preview = read_session_preview(root, active_session)

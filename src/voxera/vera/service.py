@@ -779,6 +779,50 @@ def read_linked_job_completions(queue_root: Path, session_id: str) -> list[dict[
     return [item for item in completions if isinstance(item, dict)]
 
 
+def _format_completion_autosurface_message(completion: dict[str, Any]) -> str:
+    request_kind = str(completion.get("request_kind") or "request").strip().replace("_", " ")
+    latest_summary = str(completion.get("latest_summary") or "").strip()
+    highlights = completion.get("result_highlights")
+    highlight_text = ""
+    if isinstance(highlights, list):
+        compact = "; ".join(str(item).strip() for item in highlights[:2] if str(item).strip())
+        if compact:
+            highlight_text = compact
+
+    message = f"Your linked {request_kind} job completed successfully."
+    if latest_summary:
+        message = f"{message} {latest_summary}"
+    elif highlight_text:
+        message = f"{message} Canonical evidence highlights: {highlight_text}."
+    else:
+        message = f"{message} I have the canonical result available for follow-up."
+    return message.strip()
+
+
+def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> str | None:
+    registry = _read_linked_job_registry(queue_root, session_id)
+    completions_raw = registry.get("completions")
+    completions = completions_raw if isinstance(completions_raw, list) else []
+
+    for completion in completions:
+        if not isinstance(completion, dict):
+            continue
+        if completion.get("surfaced_in_chat") is True:
+            continue
+        if str(completion.get("terminal_outcome") or "").strip().lower() != "succeeded":
+            continue
+        if str(completion.get("surfacing_policy") or "").strip().lower() != "read_only_success":
+            continue
+
+        completion["surfaced_in_chat"] = True
+        completion["surfaced_at_ms"] = int(time.time() * 1000)
+        registry["completions"] = completions[-_MAX_LINKED_COMPLETIONS:]
+        _write_linked_job_registry(queue_root, session_id, registry)
+        return _format_completion_autosurface_message(completion)
+
+    return None
+
+
 def build_vera_messages(*, turns: list[dict[str, str]], user_message: str) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = [{"role": "system", "content": VERA_SYSTEM_PROMPT}]
     for turn in turns[-MAX_SESSION_TURNS:]:
