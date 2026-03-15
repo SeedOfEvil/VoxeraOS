@@ -1685,3 +1685,10 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 
 - Added session-linked queue job registry for Vera handoffs, terminal completion ingestion using canonical queue truth, normalized completion payload extraction, and deterministic surfacing policy classification for later conversational behaviors.
 - Explicitly deferred broad proactive auto-chat behavior; this PR is additive mechanical groundwork only.
+
+## Vera linked completion auto-surfacing slice (PR #TBD)
+
+- Extended the linked completion ingestion foundation with deterministic chat auto-surfacing for linked read-only successful completions only.
+- On each Vera chat cycle, completion ingestion runs first; then at most one unsurfaced eligible completion (`terminal_outcome=succeeded`, `surfacing_policy=read_only_success`) is formatted with deterministic evidence-grounded text and appended as an assistant turn.
+- Surfaced completions are marked in session artifact state via `surfaced_in_chat=true` and `surfaced_at_ms`, preventing repost spam on later turns.
+- Mutating success, failed, approval-blocked, canceled, noisy, and manual-only classes remain intentionally unsurfaced in this PR; manual evidence review flow remains the path for those classes.

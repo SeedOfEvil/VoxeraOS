@@ -2471,6 +2471,134 @@ def test_linked_job_terminal_completion_is_ingested_with_policy(tmp_path, monkey
     assert completion["surfacing_policy"] == "read_only_success"
 
 
+def test_linked_read_only_success_auto_surfaces_once_per_completion(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
+    client.post("/chat", data={"session_id": sid, "message": "submit now"})
+
+    inbox_job = next((queue / "inbox").glob("inbox-*.json"))
+    done_dir = queue / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    done_job = done_dir / inbox_job.name
+    shutil.move(str(inbox_job), str(done_job))
+
+    stem = done_job.stem
+    (done_dir / f"{stem}.state.json").write_text(
+        json.dumps(
+            {"lifecycle_state": "done", "terminal_outcome": "succeeded", "approval_status": "none"}
+        ),
+        encoding="utf-8",
+    )
+    art = queue / "artifacts" / stem
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "approval_status": "none",
+                "latest_summary": "Disk usage check completed from canonical evidence.",
+                "normalized_outcome_class": "succeeded",
+                "artifact_families": ["system_status"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    first = client.post("/chat", data={"session_id": sid, "message": "thanks"})
+    assert first.status_code == 200
+    assert "Your linked goal job completed successfully." in first.text
+
+    completions = vera_service.read_linked_job_completions(queue, sid)
+    assert len(completions) == 1
+    assert completions[0]["surfaced_in_chat"] is True
+    assert isinstance(completions[0]["surfaced_at_ms"], int)
+
+    second = client.post("/chat", data={"session_id": sid, "message": "hello again"})
+    assert second.status_code == 200
+    turns = vera_service.read_session_turns(queue, sid)
+    surfaced_messages = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant"
+        and turn["text"].startswith("Your linked goal job completed successfully.")
+    ]
+    assert len(surfaced_messages) == 1
+
+
+def test_non_read_only_or_non_success_completions_do_not_auto_surface(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    sid = "vera-test"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-a.json")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-b.json")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-a.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Mutating write completed",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+    # mutate request kind => mutating_success policy
+    done_job = queue / "done" / "inbox-a.json"
+    done_payload = json.loads(done_job.read_text(encoding="utf-8"))
+    done_payload["job_intent"] = {"request_kind": "write_file"}
+    done_job.write_text(json.dumps(done_payload), encoding="utf-8")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-b.json",
+        bucket="failed",
+        execution_result={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "approval_status": "none",
+            "latest_summary": "Read-only check failed",
+            "normalized_outcome_class": "runtime_execution_failed",
+        },
+        state={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "approval_status": "none",
+        },
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.post("/chat", data={"session_id": sid, "message": "any update?"})
+
+    completions = vera_service.read_linked_job_completions(queue, sid)
+    assert len(completions) == 2
+    assert all(item["surfaced_in_chat"] is False for item in completions)
+
+
 def test_non_linked_terminal_jobs_do_not_attach_to_session(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
