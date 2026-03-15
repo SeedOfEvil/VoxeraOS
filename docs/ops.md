@@ -1414,5 +1414,5 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 - Operator note: `expected_artifact_status=none_declared` is expected on historical jobs; focus on forward-created jobs to validate new deterministic expected-artifact declarations.
 
 - Operational note: linked Vera completions are ingested from canonical queue state/evidence only, without LLM monitoring.
-- Current auto-surfacing behavior is intentionally narrow: on each chat cycle Vera may emit one deterministic follow-up only for unsurfaced linked `read_only_success` completions, then marks that completion surfaced.
+- Current auto-surfacing behavior is intentionally narrow: on each chat cycle Vera may emit one deterministic follow-up for at most one unsurfaced linked completion with policy `read_only_success`, `approval_blocked`, or `failed`, then marks that completion surfaced.
 - All other completion classes remain manual-review only in this phase.
