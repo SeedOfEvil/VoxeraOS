@@ -277,7 +277,10 @@ def is_investigation_derived_save_request(message: str) -> bool:
         return False
     save_action = bool(re.search(r"\b(save|write|export)\b", lowered))
     derived_target = bool(re.search(r"\b(that|comparison|summary)\b", lowered))
-    note_target = bool(re.search(r"\b(note|notes|markdown|file)\b", lowered))
+    note_target = bool(
+        re.search(r"\b(note|notes|markdown|file)\b", lowered)
+        or re.search(r"\b[~\/a-z0-9_.-]+\.md\b", lowered)
+    )
     return save_action and derived_target and note_target
 
 
