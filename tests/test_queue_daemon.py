@@ -1960,6 +1960,53 @@ def test_pending_approvals_snapshot_scope_fallback_to_nested(tmp_path, monkeypat
     assert snapshot[0]["scope"] == {"fs_scope": "broader", "needs_network": True}
 
 
+def test_resolve_approval_terminal_paths_trigger_live_delivery_attempt(tmp_path, monkeypatch):
+    _force_policy_ask(monkeypatch)
+    queue_dir = tmp_path / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True)
+
+    job = queue_dir / "pending" / "open-url.json"
+    job.write_text(json.dumps({"goal": "open cnn.com"}), encoding="utf-8")
+    (queue_dir / "pending" / "open-url.pending.json").write_text(
+        json.dumps(
+            {
+                "payload": {
+                    "goal": "open cnn.com",
+                    "job_intent": {"request_kind": "open_url"},
+                },
+                "resume_step": 1,
+                "mission": {
+                    "id": "goal_url",
+                    "title": "Goal URL",
+                    "goal": "Open URL",
+                    "steps": [{"skill_id": "system.open_url", "args": {"url": "https://cnn.com"}}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "pending" / "approvals" / "open-url.approval.json").write_text(
+        json.dumps({"job": "open-url.json"}), encoding="utf-8"
+    )
+
+    daemon = MissionQueueDaemon(queue_root=queue_dir, mission_log_path=tmp_path / "mission-log.md")
+    monkeypatch.setattr(
+        daemon.mission_runner,
+        "run",
+        lambda *_args, **_kwargs: RunResult(ok=True, data={"results": [], "total_steps": 1}),
+    )
+
+    delivered_refs: list[str] = []
+
+    def _capture_live_delivery(*, job_ref: str) -> None:
+        delivered_refs.append(Path(job_ref).name)
+
+    monkeypatch.setattr(daemon, "_maybe_live_deliver_linked_completion", _capture_live_delivery)
+
+    assert daemon.resolve_approval("open-url", approve=True) is True
+    assert delivered_refs == ["open-url.json"]
+
+
 def test_queue_autorelocates_legacy_root_job(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     _stub_planner(monkeypatch)
