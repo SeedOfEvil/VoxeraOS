@@ -616,7 +616,9 @@ def _completion_delivery_eligible(completion: dict[str, Any]) -> bool:
     return False
 
 
-def _build_completion_notification(*, session_id: str, completion: dict[str, Any]) -> dict[str, Any]:
+def _build_completion_notification(
+    *, session_id: str, completion: dict[str, Any]
+) -> dict[str, Any]:
     created_at_ms = int(completion.get("completion_detected_at_ms") or int(time.time() * 1000))
     lineage = completion.get("lineage")
     root_job_id = None
@@ -1019,7 +1021,9 @@ def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> s
     return None
 
 
-def maybe_deliver_linked_completion_live(queue_root: Path, session_id: str, *, job_ref: str) -> bool:
+def maybe_deliver_linked_completion_live(
+    queue_root: Path, session_id: str, *, job_ref: str
+) -> bool:
     ingest_linked_job_completions(queue_root, session_id, only_job_ref=job_ref)
     registry = _read_linked_job_registry(queue_root, session_id)
     completions_raw = registry.get("completions")

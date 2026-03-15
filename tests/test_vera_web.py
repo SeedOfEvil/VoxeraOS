@@ -2733,8 +2733,6 @@ def test_linked_mutating_success_intermediate_orchestration_is_suppressed(tmp_pa
     assert completions[0]["surfaced_in_chat"] is False
 
 
-
-
 def test_linked_terminal_completion_live_delivery_posts_immediately(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -2860,9 +2858,12 @@ def test_live_delivered_linked_completion_not_reposted_by_fallback(tmp_path, mon
         },
     )
 
-    assert vera_service.maybe_deliver_linked_completion_live_for_job(
-        queue, job_ref="inbox-dedupe.json"
-    ) == 1
+    assert (
+        vera_service.maybe_deliver_linked_completion_live_for_job(
+            queue, job_ref="inbox-dedupe.json"
+        )
+        == 1
+    )
     assert vera_service.maybe_auto_surface_linked_completion(queue, sid) is None
 
 
@@ -2895,9 +2896,7 @@ def test_uncertain_mutating_completion_is_not_live_delivered_as_final(tmp_path, 
                 "canceled": 0,
                 "unknown": 0,
             },
-            "review_summary": {
-                "execution_capabilities": {"side_effect_class": "execute"}
-            },
+            "review_summary": {"execution_capabilities": {"side_effect_class": "execute"}},
         },
         state={
             "lifecycle_state": "done",
@@ -2917,6 +2916,7 @@ def test_uncertain_mutating_completion_is_not_live_delivered_as_final(tmp_path, 
 
     turns = vera_service.read_session_turns(queue, sid)
     assert not any("Parent delegated child work" in turn["text"] for turn in turns)
+
 
 def test_non_linked_terminal_jobs_do_not_attach_to_session(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
