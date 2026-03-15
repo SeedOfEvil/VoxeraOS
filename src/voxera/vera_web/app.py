@@ -21,9 +21,11 @@ from ..vera.evidence_review import (
     review_message,
 )
 from ..vera.handoff import (
+    draft_investigation_save_preview,
     drafting_guidance,
     is_active_preview_submit_request,
     is_explicit_handoff_request,
+    is_investigation_save_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
     submit_preview,
@@ -40,6 +42,7 @@ from ..vera.service import (
     new_session_id,
     read_session_enrichment,
     read_session_handoff_state,
+    read_session_investigation,
     read_session_preview,
     read_session_turns,
     register_session_linked_job,
@@ -47,6 +50,7 @@ from ..vera.service import (
     session_debug_info,
     write_session_enrichment,
     write_session_handoff_state,
+    write_session_investigation,
     write_session_preview,
 )
 
@@ -386,6 +390,46 @@ async def chat(request: Request):
             status="followup_preview_ready",
         )
 
+    session_investigation = read_session_investigation(root, active_session)
+    if is_investigation_save_request(message):
+        investigation_preview = draft_investigation_save_preview(
+            message,
+            investigation_context=session_investigation,
+        )
+        if investigation_preview is None:
+            assistant_text = (
+                "I couldn't resolve those investigation result references in this session. "
+                "Run a fresh read-only investigation first, then refer to valid result numbers "
+                "(for example: 'save result 2 to a note' or 'save all findings')."
+            )
+            append_session_turn(root, active_session, role="assistant", text=assistant_text)
+            return _render_page(
+                session_id=active_session,
+                turns=read_session_turns(root, active_session),
+                status="investigation_reference_invalid",
+            )
+
+        write_session_preview(root, active_session, investigation_preview)
+        write_session_handoff_state(
+            root,
+            active_session,
+            attempted=False,
+            queue_path=str(root),
+            status="preview_ready",
+            error=None,
+            job_id=None,
+        )
+        assistant_text = (
+            "I prepared a governed save-to-note preview from your selected investigation findings. "
+            "Nothing has been submitted yet."
+        )
+        append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="prepared_preview",
+        )
+
     if (
         _is_natural_confirmation_phrase(message)
         or is_explicit_handoff_request(message)
@@ -450,6 +494,7 @@ async def chat(request: Request):
             user_message=message,
             active_preview=pending_preview,
             enrichment_context=enrichment_context,
+            investigation_context=session_investigation,
         )
     builder_payload: dict[str, object] | None = None
     if builder_preview is not None:
@@ -470,6 +515,9 @@ async def chat(request: Request):
             )
 
     reply = await generate_vera_reply(turns=turns, user_message=message)
+    investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
+    if isinstance(investigation_payload, dict):
+        write_session_investigation(root, active_session, investigation_payload)
     guarded_answer = _guardrail_submission_claim(
         root=root,
         session_id=active_session,

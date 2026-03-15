@@ -7,6 +7,7 @@ import secrets
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from ..brain.fallback import classify_fallback_reason
 from ..brain.gemini import GeminiBrain
@@ -240,24 +241,75 @@ def _is_informational_web_query(message: str) -> bool:
 
 
 def _format_web_investigation_answer(query: str, results: list[WebSearchResult]) -> str:
-    if not results:
+    normalized = _build_structured_investigation_results(query=query, results=results)
+    findings = normalized.get("results") if isinstance(normalized, dict) else None
+    if not isinstance(findings, list) or not findings:
         return (
             f"I ran a read-only web investigation for '{query}' but didn't find usable results. "
             "Try refining the query or asking for a narrower topic."
         )
 
     bullets = []
-    for idx, result in enumerate(results[:5], start=1):
-        detail = result.description or "No snippet available."
-        age = f" ({result.age})" if result.age else ""
-        bullets.append(f"{idx}. {result.title}{age}\n   Source: {result.url}\n   Snippet: {detail}")
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        result_id = int(finding.get("result_id") or 0)
+        title = str(finding.get("title") or "Untitled").strip()
+        source = str(finding.get("source") or "unknown").strip()
+        url = str(finding.get("url") or "").strip()
+        snippet = str(finding.get("snippet") or "No snippet available.").strip()
+        relevance = str(finding.get("why_it_matched") or "").strip()
+        bullets.append(
+            "\n".join(
+                [
+                    f"Result {result_id}: {title}",
+                    f"- Source: {source}",
+                    f"- URL: {url}",
+                    f"- Snippet: {snippet}",
+                    f"- Why it matched: {relevance}",
+                ]
+            )
+        )
 
     joined = "\n".join(bullets)
     return (
         "Here are the top findings I found via read-only Brave web investigation:\n\n"
         f"{joined}\n\n"
-        "If you want, I can compare these sources or summarize a specific angle."
+        "You can reference them by number (for example: 'save result 2 to a note')."
     )
+
+
+def _source_from_url(url: str) -> str:
+    host = urlparse(url).netloc.strip().lower()
+    return host[4:] if host.startswith("www.") else (host or "unknown")
+
+
+def _build_structured_investigation_results(
+    *, query: str, results: list[WebSearchResult]
+) -> dict[str, Any]:
+    findings: list[dict[str, Any]] = []
+    for idx, result in enumerate(results[:5], start=1):
+        snippet = str(result.description or "").strip() or "No snippet available."
+        age = str(result.age or "").strip()
+        relevance = f"Matched read-only web query '{query}'."
+        if age:
+            relevance = f"Matched read-only web query '{query}' ({age})."
+        findings.append(
+            {
+                "result_id": idx,
+                "rank": idx,
+                "title": result.title,
+                "url": result.url,
+                "source": _source_from_url(result.url),
+                "snippet": snippet,
+                "why_it_matched": relevance,
+            }
+        )
+    return {
+        "query": query,
+        "retrieved_at_ms": int(time.time() * 1000),
+        "results": findings,
+    }
 
 
 def _normalize_web_query(user_message: str) -> str:
@@ -375,6 +427,7 @@ def append_session_turn(
         "pending_job_preview",
         "handoff",
         "last_enrichment",
+        "last_investigation",
         "linked_queue_jobs",
     ):
         preserved = previous.get(preserved_key)
@@ -463,6 +516,26 @@ def write_session_enrichment(
     _write_session_payload(queue_root, session_id, payload)
 
 
+def read_session_investigation(queue_root: Path, session_id: str) -> dict[str, Any] | None:
+    payload = _read_session_payload(queue_root, session_id)
+    investigation = payload.get("last_investigation")
+    return investigation if isinstance(investigation, dict) else None
+
+
+def write_session_investigation(
+    queue_root: Path, session_id: str, investigation: dict[str, Any] | None
+) -> None:
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    if investigation is None:
+        payload.pop("last_investigation", None)
+    else:
+        payload["last_investigation"] = investigation
+    _write_session_payload(queue_root, session_id, payload)
+
+
 async def run_web_enrichment(*, user_message: str) -> dict[str, Any] | None:
     """Perform a read-only web search and return structured enrichment suitable for preview authoring.
 
@@ -513,6 +586,7 @@ def session_debug_info(
     turns = read_session_turns(queue_root, session_id)
     preview = read_session_preview(queue_root, session_id)
     enrichment = read_session_enrichment(queue_root, session_id)
+    investigation = read_session_investigation(queue_root, session_id)
     handoff = read_session_handoff_state(queue_root, session_id) or {}
     return {
         "dev_mode": True,
@@ -525,6 +599,10 @@ def session_debug_info(
         "system_prompt_sha256": hashlib.sha256(VERA_SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
         "preview_available": isinstance(preview, dict),
         "enrichment_available": isinstance(enrichment, dict),
+        "investigation_available": isinstance(investigation, dict),
+        "investigation_result_count": len(investigation.get("results", []))
+        if isinstance(investigation, dict)
+        else 0,
         "handoff_attempted": handoff.get("attempted") is True,
         "handoff_status": str(handoff.get("status") or "none"),
         "handoff_queue_path": str(handoff.get("queue_path") or str(queue_root)),
@@ -1210,6 +1288,7 @@ async def generate_preview_builder_update(
     user_message: str,
     active_preview: dict[str, Any] | None,
     enrichment_context: dict[str, Any] | None = None,
+    investigation_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     cfg = load_app_config()
     api_key_ref = None
@@ -1244,6 +1323,7 @@ async def generate_preview_builder_update(
         active_preview=active_preview,
         recent_user_messages=recent_user_messages,
         enrichment_context=enrichment_context,
+        investigation_context=investigation_context,
         recent_assistant_messages=recent_assistant_messages,
     )
 
@@ -1322,7 +1402,7 @@ def _create_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:
     raise ValueError(f"unsupported provider type: {provider.type}")
 
 
-async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str) -> dict[str, str]:
+async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str) -> dict[str, Any]:
     cfg = load_app_config()
 
     web_cfg = cfg.web_investigation
@@ -1359,9 +1439,14 @@ async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str)
                 "status": "web_investigation_error",
             }
 
+        structured_results = _build_structured_investigation_results(
+            query=normalized_query,
+            results=results,
+        )
         return {
             "answer": _format_web_investigation_answer(normalized_query, results),
             "status": "ok:web_investigation",
+            "investigation": structured_results,
         }
 
     attempts: list[tuple[str, Any]] = []

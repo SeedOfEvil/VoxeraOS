@@ -228,6 +228,164 @@ def test_news_query_skips_preview_builder_and_stays_informational(tmp_path, monk
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
+def _sample_investigation_payload() -> dict[str, object]:
+    return {
+        "query": "ai incident response",
+        "retrieved_at_ms": 123,
+        "results": [
+            {
+                "result_id": 1,
+                "title": "Result One",
+                "url": "https://example.com/1",
+                "source": "example.com",
+                "snippet": "snippet one",
+                "why_it_matched": "matched one",
+                "rank": 1,
+            },
+            {
+                "result_id": 2,
+                "title": "Result Two",
+                "url": "https://example.com/2",
+                "source": "example.com",
+                "snippet": "snippet two",
+                "why_it_matched": "matched two",
+                "rank": 2,
+            },
+            {
+                "result_id": 3,
+                "title": "Result Three",
+                "url": "https://example.com/3",
+                "source": "example.com",
+                "snippet": "snippet three",
+                "why_it_matched": "matched three",
+                "rank": 3,
+            },
+        ],
+    }
+
+
+def test_structured_investigation_is_stored_and_numbered(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": "Result 1: Result One\nResult 2: Result Two",
+            "status": "ok:web_investigation",
+            "investigation": _sample_investigation_payload(),
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "investigate this"})
+
+    stored = vera_service.read_session_investigation(queue, sid)
+    assert stored is not None
+    assert [row["result_id"] for row in stored["results"]] == [1, 2, 3]
+
+
+def test_save_single_investigation_result_creates_governed_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save result 2 to a note"},
+    )
+
+    assert res.status_code == 200
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert "investigation findings (2)" in preview["goal"]
+    assert "## Result 2" in preview["write_file"]["content"]
+    assert "## Result 1" not in preview["write_file"]["content"]
+    assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
+def test_save_multiple_investigation_results_creates_expected_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save results 1 and 3 to note"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    content = preview["write_file"]["content"]
+    assert "## Result 1" in content
+    assert "## Result 3" in content
+    assert "## Result 2" not in content
+
+
+def test_save_all_investigation_results_to_markdown_file(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save all findings to research.md"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/research.md"
+    content = preview["write_file"]["content"]
+    assert "## Result 1" in content
+    assert "## Result 2" in content
+    assert "## Result 3" in content
+
+
+def test_invalid_investigation_reference_fails_closed_with_clear_message(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save result 9 to a note"},
+    )
+
+    assert "couldn't resolve" in res.text.lower()
+    assert vera_service.read_session_preview(queue, sid) is None
+
+
+def test_save_investigation_without_active_result_set_fails_closed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save result 1 to a note"},
+    )
+
+    assert "run a fresh read-only investigation first" in res.text.lower()
+    assert vera_service.read_session_preview(queue, sid) is None
+
+
 def test_mode_refinement_append_instead_updates_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -746,7 +904,9 @@ def test_backend_builder_updates_active_preview_without_json_dumping_in_chat(tmp
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
 
@@ -771,7 +931,9 @@ def test_submit_after_model_preview_replacement_uses_latest_payload(tmp_path, mo
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = turns
         if "update" in user_message:
             return {"goal": "open https://openai.com"}
@@ -800,7 +962,9 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
         _ = (turns, user_message)
         return {"answer": "Got it, I kept this conversational.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, user_message, active_preview)
         return {"goal": "", "write_file": "bad-shape"}
 
@@ -876,7 +1040,9 @@ def test_builder_drops_extra_keys_and_keeps_supported_preview_shape(tmp_path, mo
         _ = (turns, user_message)
         return {"answer": "I left the preview as-is.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, user_message, active_preview)
         return {"goal": "write a note called skibbidy.txt", "content": "hello"}
 
@@ -903,7 +1069,9 @@ def test_builder_multiple_preview_replacements_latest_wins_in_pane(tmp_path, mon
         _ = (turns, user_message)
         return {"answer": "plain reply", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, active_preview)
         if "to b" in user_message:
             return {"goal": "open https://openai.com"}
@@ -936,7 +1104,9 @@ def test_builder_can_set_preview_without_changing_vera_voice(tmp_path, monkeypat
         _ = (turns, user_message)
         return {"answer": "I updated the target in the preview.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
 
@@ -1700,7 +1870,9 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
             "status": "ok:test",
         }
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
 
@@ -1729,7 +1901,9 @@ def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, 
             "status": "ok:test",
         }
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://example.com"}
 
@@ -1758,7 +1932,9 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com", "write_file": "bad-shape"}
 
@@ -1786,7 +1962,9 @@ def test_non_voxera_user_requested_json_content_is_still_allowed(tmp_path, monke
             "status": "ok:test",
         }
 
-    async def _fake_builder(*, turns, user_message, active_preview, enrichment_context=None):
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
         _ = (turns, user_message, active_preview)
         return None
 
