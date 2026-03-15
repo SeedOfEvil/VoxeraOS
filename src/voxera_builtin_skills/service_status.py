@@ -181,6 +181,17 @@ def run(service: str) -> RunResult:
             status["other_ActiveState"] = other_active_state
             status["other_SubState"] = other_sub_state
 
+    # When one scope failed, warn the operator so they know the result is partial.
+    failed_result = None
+    if system_ok and not user_ok:
+        failed_result = user_result
+        failed_scope = "user"
+    elif user_ok and not system_ok:
+        failed_result = system_result
+        failed_scope = "system"
+    if failed_result is not None:
+        status["scope_warning"] = f"{failed_scope} scope query failed ({failed_result.error_kind})"
+
     summary = f"Service {normalized}: {active_state}/{sub_state} ({scope} service)"
     return RunResult(
         ok=True,

@@ -704,6 +704,25 @@ def test_service_status_no_scope_still_works():
     assert "inactive/dead" in result
 
 
+def test_service_status_surfaces_scope_warning():
+    """When one scope query failed, scope_warning is surfaced."""
+    structured = _structured_with_step(
+        "system.service_status",
+        {
+            "service": "voxera-daemon.service",
+            "ActiveState": "inactive",
+            "SubState": "dead",
+            "scope": "user",
+            "scope_warning": "system scope query failed (timeout)",
+        },
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "inactive/dead" in result
+    assert "Warning:" in result
+    assert "system scope query failed" in result
+
+
 # ---------------------------------------------------------------------------
 # Recent logs: scope and no-entries
 # ---------------------------------------------------------------------------
@@ -727,6 +746,27 @@ def test_recent_logs_surfaces_scope():
     assert result is not None
     assert "user scope" in result
     assert "Ready." in result
+
+
+def test_recent_logs_surfaces_scope_warning():
+    """When one scope query failed, scope_warning is surfaced in log output."""
+    structured = _structured_with_step(
+        "system.recent_service_logs",
+        {
+            "service": "voxera-daemon.service",
+            "line_count": 0,
+            "since_minutes": 15,
+            "logs": [],
+            "truncated": False,
+            "scope": "user",
+            "scope_warning": "system scope query failed (timeout)",
+        },
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "No recent logs" in result
+    assert "Warning:" in result
+    assert "system scope query failed" in result
 
 
 def test_recent_logs_count_without_log_lines_shows_context():

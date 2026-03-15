@@ -116,7 +116,7 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
     log_lines = result.lines
     scope = result.scope
 
-    payload = {
+    payload: dict[str, object] = {
         "service": normalized,
         "lines_requested": normalized_lines,
         "since_minutes": normalized_since_minutes,
@@ -125,6 +125,8 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
         "truncated": len(log_lines) >= normalized_lines,
         "scope": scope,
     }
+    if result.scope_warning:
+        payload["scope_warning"] = result.scope_warning
 
     if log_lines:
         summary = f"Collected {len(log_lines)} recent log lines for {normalized} ({scope} scope)"
@@ -165,6 +167,7 @@ class _JournalResult:
     __slots__ = (
         "lines",
         "scope",
+        "scope_warning",
         "error",
         "summary",
         "operator_note",
@@ -178,6 +181,7 @@ class _JournalResult:
         *,
         lines: list[str] | None = None,
         scope: str = "unknown",
+        scope_warning: str = "",
         error: str | None = None,
         summary: str = "",
         operator_note: str = "",
@@ -187,6 +191,7 @@ class _JournalResult:
     ):
         self.lines = lines
         self.scope = scope
+        self.scope_warning = scope_warning
         self.error = error
         self.summary = summary
         self.operator_note = operator_note
@@ -270,15 +275,25 @@ def _query_journal(service: str, *, lines: int, since_minutes: int) -> _JournalR
         )
 
     # At least one scope succeeded.  Prefer whichever has content; user scope first.
+    # When one scope failed, warn the operator so results aren't mistaken for
+    # a complete query.
+    scope_warning = ""
+    if user_ok and not system_ok:
+        scope_warning = f"system scope query failed ({system_result.error_kind})"
+    elif system_ok and not user_ok:
+        scope_warning = f"user scope query failed ({user_result.error_kind})"
+
     user_count = len(user_result.lines) if user_ok else -1
     system_count = len(system_result.lines) if system_ok else -1
 
     if user_count > 0:
-        return _JournalResult(lines=user_result.lines, scope="user")
+        return _JournalResult(lines=user_result.lines, scope="user", scope_warning=scope_warning)
     if system_count > 0:
-        return _JournalResult(lines=system_result.lines, scope="system")
+        return _JournalResult(
+            lines=system_result.lines, scope="system", scope_warning=scope_warning
+        )
     # Both succeeded but returned no entries — prefer user scope.
     if user_ok:
-        return _JournalResult(lines=user_result.lines, scope="user")
+        return _JournalResult(lines=user_result.lines, scope="user", scope_warning=scope_warning)
     assert system_result.lines is not None
-    return _JournalResult(lines=system_result.lines, scope="system")
+    return _JournalResult(lines=system_result.lines, scope="system", scope_warning=scope_warning)

@@ -202,6 +202,81 @@ def test_service_status_missing_dependency_only_for_file_not_found(monkeypatch):
     assert payload["error_class"] == "missing_dependency"
 
 
+def test_service_status_scope_warning_when_one_scope_fails(monkeypatch):
+    """When system scope times out but user scope succeeds, scope_warning is surfaced."""
+
+    def _fake_run(cmd, **_kwargs):
+        is_user = "--user" in cmd
+        if is_user:
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout=(
+                    "Id=voxera-daemon.service\n"
+                    "LoadState=not-found\n"
+                    "ActiveState=inactive\n"
+                    "SubState=dead\n"
+                    "UnitFileState=\n"
+                ),
+                stderr="",
+            )
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = service_status.run("voxera-daemon.service")
+    assert rr.ok is True
+    payload = rr.data[SKILL_RESULT_KEY]["machine_payload"]
+    assert payload["scope"] == "user"
+    assert "scope_warning" in payload
+    assert "system" in payload["scope_warning"]
+    assert "timeout" in payload["scope_warning"]
+
+
+def test_recent_service_logs_scope_warning_when_system_fails(monkeypatch):
+    """When system scope fails but user scope has content, scope_warning is surfaced."""
+
+    def _fake_run(cmd, **_kwargs):
+        is_user = "--user-unit" in cmd
+        if is_user:
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout="2026-01-01T00:00:01Z user log line\n",
+                stderr="",
+            )
+        raise subprocess.CalledProcessError(returncode=1, cmd=cmd, stderr="Permission denied")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = recent_service_logs.run("voxera-daemon.service", lines=10, since_minutes=5)
+    assert rr.ok is True
+    payload = rr.data[SKILL_RESULT_KEY]["machine_payload"]
+    assert payload["scope"] == "user"
+    assert "scope_warning" in payload
+    assert "system" in payload["scope_warning"]
+    assert "query_failed" in payload["scope_warning"]
+
+
+def test_recent_service_logs_empty_user_warns_about_failed_system(monkeypatch):
+    """When user scope returns empty and system scope times out, scope_warning is present."""
+
+    def _fake_run(cmd, **_kwargs):
+        is_user = "--user-unit" in cmd
+        if is_user:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="-- No entries --\n", stderr=""
+            )
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = recent_service_logs.run("voxera-daemon.service", lines=10, since_minutes=5)
+    assert rr.ok is True
+    payload = rr.data[SKILL_RESULT_KEY]["machine_payload"]
+    assert payload["line_count"] == 0
+    assert "scope_warning" in payload
+    assert "system" in payload["scope_warning"]
+    assert "timeout" in payload["scope_warning"]
+
+
 def test_recent_service_logs_timeout_error_class(monkeypatch):
     """When both journalctl scopes time out, error_class is timeout, not missing_dependency."""
 

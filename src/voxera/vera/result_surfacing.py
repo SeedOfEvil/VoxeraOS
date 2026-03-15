@@ -308,10 +308,15 @@ def _extract_service_status(*, structured: dict[str, Any], mission_id: str) -> s
     other_scope = str(payload.get("other_scope") or "").strip()
     other_active = str(payload.get("other_ActiveState") or "").strip()
     other_sub = str(payload.get("other_SubState") or "").strip()
+    scope_warning = str(payload.get("scope_warning") or "").strip()
+    parts: list[str] = []
+    parts.append(f"Service {service} is {state}{scope_label}.")
     if other_scope and other_active:
         other_state = f"{other_active}/{other_sub}" if other_sub else other_active
-        return f"Service {service} is {state}{scope_label}. In {other_scope} scope: {other_state}."
-    return f"Service {service} is {state}{scope_label}."
+        parts.append(f"In {other_scope} scope: {other_state}.")
+    if scope_warning:
+        parts.append(f"Warning: {scope_warning}.")
+    return " ".join(parts)
 
 
 def _extract_recent_logs(*, structured: dict[str, Any], mission_id: str) -> str | None:
@@ -325,17 +330,19 @@ def _extract_recent_logs(*, structured: dict[str, Any], mission_id: str) -> str 
     logs = payload.get("logs")
     truncated = payload.get("truncated")
     scope = str(payload.get("scope") or "").strip()
+    scope_warning = str(payload.get("scope_warning") or "").strip()
 
     if not isinstance(line_count, int):
         return None
 
     time_ctx = f" in the last {since_minutes}m" if isinstance(since_minutes, int) else ""
     scope_ctx = f" ({scope} scope)" if scope else ""
+    warning_suffix = f" Warning: {scope_warning}." if scope_warning else ""
     has_log_lines = isinstance(logs, list) and bool(logs)
 
     # No entries: clear operator-grade statement.
     if line_count == 0 and not has_log_lines:
-        return f"No recent logs for {service}{time_ctx}{scope_ctx}."
+        return f"No recent logs for {service}{time_ctx}{scope_ctx}.{warning_suffix}"
 
     parts: list[str] = []
 
@@ -344,6 +351,8 @@ def _extract_recent_logs(*, structured: dict[str, Any], mission_id: str) -> str 
     if truncated:
         ctx += " [truncated]"
     ctx += "."
+    if warning_suffix:
+        ctx += warning_suffix
     parts.append(ctx)
 
     # Bounded excerpt of actual log lines
