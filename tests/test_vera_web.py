@@ -3955,6 +3955,8 @@ def test_diagnostics_recent_logs_completion_surfaces_line_count(tmp_path, monkey
 
 def test_diagnostics_refusal_does_not_override_non_service_job_status_queries():
     assert diagnostics_request_refusal("what's the status of job-await-1?") is None
+    assert diagnostics_request_refusal("status of my job") is None
+    assert diagnostics_request_refusal("what is the status of the last job") is None
     assert (
         diagnostics_request_refusal("what's the status of inbox-1773082365485-1336541d.json?")
         is None
@@ -3965,3 +3967,45 @@ def test_diagnostics_refusal_still_blocks_path_like_service_targets():
     refusal = diagnostics_request_refusal("show recent logs for ../../etc/passwd")
     assert isinstance(refusal, str)
     assert "unsafe or invalid" in refusal
+
+
+def test_job_review_query_status_of_my_job_stays_on_review_path(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "status of my job"},
+    )
+
+    assert res.status_code == 200
+    assert "could not resolve a VoxeraOS job" in res.text
+
+
+def test_job_review_query_status_of_last_job_stays_on_review_path(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "what is the status of the last job"},
+    )
+
+    assert res.status_code == 200
+    assert "could not resolve a VoxeraOS job" in res.text
