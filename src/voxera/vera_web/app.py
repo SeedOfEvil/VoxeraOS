@@ -23,6 +23,7 @@ from ..vera.evidence_review import (
 from ..vera.handoff import (
     derive_investigation_comparison,
     derive_investigation_summary,
+    diagnostics_request_refusal,
     draft_investigation_derived_save_preview,
     draft_investigation_save_preview,
     drafting_guidance,
@@ -560,6 +561,15 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status=status,
+        )
+
+    diagnostics_refusal = diagnostics_request_refusal(message)
+    if diagnostics_refusal is not None:
+        append_session_turn(root, active_session, role="assistant", text=diagnostics_refusal)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="blocked_diagnostics",
         )
 
     # Blocked bounded file intent: fail closed with a clear refusal before

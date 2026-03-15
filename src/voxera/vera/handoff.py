@@ -12,6 +12,7 @@ from ..core.inbox import add_inbox_payload
 _ALLOWED_TOP_LEVEL_KEYS = {
     "goal",
     "title",
+    "mission_id",
     "parent_job_id",
     "root_job_id",
     "orchestration_depth",
@@ -22,6 +23,27 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "file_organize",
     "steps",
 }
+
+_SAFE_SERVICE_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,120}\.service$", re.IGNORECASE)
+_BROAD_DIAGNOSTICS_PATTERNS = (
+    r"\binspect\s+system\s+health\b",
+    r"\brun\s+diagnostics\b",
+    r"\bshow\s+host\s+diagnostics\b",
+    r"\bcollect\s+system\s+diagnostics\b",
+)
+_TARGETED_DIAGNOSTICS_PATTERNS = (
+    r"\b(check|show)\s+disk\s+usage\b",
+    r"\b(show|check)\s+memory\s+usage\b",
+    r"\b(show|check)\s+system\s+load\b",
+)
+_SERVICE_STATUS_PATTERNS = (
+    r"\b(?:check|show|get|inspect)\s+(?:the\s+)?status\s+(?:of|for)\s+([A-Za-z0-9_.@\-/]+)",
+    r"\bstatus\s+(?:of|for)\s+([A-Za-z0-9_.@\-/]+)",
+)
+_SERVICE_LOG_PATTERNS = (
+    r"\b(?:show|fetch|get|summari[sz]e)\s+(?:the\s+)?(?:recent\s+)?logs\s+(?:for|of)\s+([A-Za-z0-9_.@\-/]+)",
+    r"\brecent\s+logs\s+(?:for|of)\s+([A-Za-z0-9_.@\-/]+)",
+)
 
 _HANDOFF_PATTERNS = (
     r"\bhand\s+it\s+off\b",
@@ -103,6 +125,91 @@ def _normalize_file_read_goal(message: str) -> str | None:
         return f"read the file {path_match.group(0)}"
     if re.search(r"\b(this\s+file|the\s+file)\b", text, re.IGNORECASE):
         return "read this file"
+    return None
+
+
+def diagnostics_request_refusal(message: str) -> str | None:
+    lowered = message.strip().lower()
+    if not lowered:
+        return None
+
+    candidate: str | None = None
+    for pattern in (*_SERVICE_STATUS_PATTERNS, *_SERVICE_LOG_PATTERNS):
+        match = re.search(pattern, lowered, re.IGNORECASE)
+        if match:
+            candidate = (match.group(1) or "").strip(" .,!?;:'\"`")
+            break
+
+    if candidate is None:
+        return None
+
+    if _SAFE_SERVICE_RE.fullmatch(candidate):
+        return None
+
+    return (
+        "I refused that diagnostics request because the service target is unsafe or invalid. "
+        "Use an explicit bounded unit name like voxera-daemon.service."
+    )
+
+
+def _extract_safe_service(message: str, patterns: tuple[str, ...]) -> str | None:
+    text = message.strip().lower()
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        raw = (match.group(1) or "").strip(" .,!?;:'\"`")
+        if _SAFE_SERVICE_RE.fullmatch(raw):
+            return raw
+        return ""
+    return None
+
+
+def _normalize_diagnostics_preview(message: str) -> dict[str, Any] | None:
+    text = message.strip().lower()
+    if not text:
+        return None
+
+    if any(re.search(p, text, re.IGNORECASE) for p in _BROAD_DIAGNOSTICS_PATTERNS):
+        return {
+            "goal": "run bounded host diagnostics via the diagnostics mission",
+            "mission_id": "system_diagnostics",
+        }
+
+    if any(re.search(p, text, re.IGNORECASE) for p in _TARGETED_DIAGNOSTICS_PATTERNS):
+        return {
+            "goal": "run bounded host diagnostics for requested system metrics",
+            "mission_id": "system_diagnostics",
+        }
+
+    status_service = _extract_safe_service(message, _SERVICE_STATUS_PATTERNS)
+    if status_service == "":
+        return None
+    if isinstance(status_service, str):
+        return {
+            "goal": f"check status of {status_service} using bounded diagnostics",
+            "steps": [
+                {
+                    "skill_id": "system.service_status",
+                    "args": {"service": status_service},
+                }
+            ],
+        }
+
+    log_service = _extract_safe_service(message, _SERVICE_LOG_PATTERNS)
+    if log_service == "":
+        return None
+    if isinstance(log_service, str):
+        return {
+            "goal": f"inspect recent logs for {log_service} using bounded diagnostics",
+            "steps": [
+                {
+                    "skill_id": "system.recent_service_logs",
+                    "args": {"service": log_service, "lines": 50, "since_minutes": 15},
+                }
+            ],
+        }
+
     return None
 
 
@@ -1096,6 +1203,10 @@ def _draft_from_candidate_message(
     if revision is not None:
         return revision
 
+    diagnostics_preview = _normalize_diagnostics_preview(candidate)
+    if diagnostics_preview is not None:
+        return diagnostics_preview
+
     normalized_open = _normalize_open_goal(candidate)
     if normalized_open:
         return {"goal": normalized_open}
@@ -1187,6 +1298,13 @@ def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not goal:
         raise ValueError("goal is required")
     cleaned = {"goal": goal, **{k: v for k, v in cleaned.items() if k != "goal"}}
+
+    if "mission_id" in cleaned:
+        mission_id = str(cleaned["mission_id"]).strip()
+        if mission_id:
+            cleaned["mission_id"] = mission_id
+        else:
+            cleaned.pop("mission_id", None)
 
     if "title" in cleaned:
         title = str(cleaned["title"]).strip()

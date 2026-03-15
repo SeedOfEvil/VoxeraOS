@@ -3630,3 +3630,70 @@ def test_existing_quoted_write_behavior_unchanged():
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/hello.txt"
     assert preview["write_file"]["content"] == "hello"
     assert preview["write_file"]["mode"] == "overwrite"
+
+
+def test_diagnostics_broad_health_routes_to_system_diagnostics_preview():
+    preview = maybe_draft_job_payload("inspect system health")
+
+    assert preview is not None
+    assert preview["mission_id"] == "system_diagnostics"
+    assert "steps" not in preview
+    normalized = normalize_preview_payload(preview)
+    assert normalized["mission_id"] == "system_diagnostics"
+
+
+def test_diagnostics_disk_usage_routes_to_system_diagnostics_preview():
+    preview = maybe_draft_job_payload("check disk usage")
+
+    assert preview is not None
+    assert preview["mission_id"] == "system_diagnostics"
+
+
+def test_diagnostics_service_status_routes_to_bounded_skill_preview():
+    preview = maybe_draft_job_payload("check status of voxera-vera.service")
+
+    assert preview is not None
+    assert preview["steps"][0]["skill_id"] == "system.service_status"
+    assert preview["steps"][0]["args"] == {"service": "voxera-vera.service"}
+
+
+def test_diagnostics_recent_logs_routes_to_bounded_skill_preview():
+    preview = maybe_draft_job_payload("show recent logs for voxera-daemon.service")
+
+    assert preview is not None
+    assert preview["steps"][0]["skill_id"] == "system.recent_service_logs"
+    assert preview["steps"][0]["args"] == {
+        "service": "voxera-daemon.service",
+        "lines": 50,
+        "since_minutes": 15,
+    }
+
+
+def test_diagnostics_invalid_service_target_fails_closed_in_web_chat(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "show recent logs for ../../etc/passwd"},
+    )
+
+    assert res.status_code == 200
+    assert "unsafe or invalid" in res.text
+    assert vera_service.read_session_preview(queue, sid) is None
+
+
+def test_unrelated_write_preview_flow_remains_unchanged():
+    preview = maybe_draft_job_payload('write a file called hello.txt with content "hello"')
+
+    assert preview is not None
+    normalized = normalize_preview_payload(preview)
+    assert normalized["write_file"]["path"] == "~/VoxeraOS/notes/hello.txt"
