@@ -263,8 +263,8 @@ def _format_web_investigation_answer(query: str, results: list[WebSearchResult])
             "\n".join(
                 [
                     f"Result {result_id}: {title}",
-                    f"- Source: {source}",
-                    f"- URL: {url}",
+                    f"- Source: {url}",
+                    f"- Source domain: {source}",
                     f"- Snippet: {snippet}",
                     f"- Why it matched: {relevance}",
                 ]

@@ -361,12 +361,14 @@ def test_invalid_investigation_reference_fails_closed_with_clear_message(tmp_pat
     sid = client.cookies.get("vera_session_id") or ""
     vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
 
-    res = client.post(
+    client.post(
         "/chat",
         data={"session_id": sid, "message": "save result 9 to a note"},
     )
 
-    assert "couldn't resolve" in res.text.lower()
+    turns = vera_service.read_session_turns(queue, sid)
+    assert turns[-1]["role"] == "assistant"
+    assert "couldn't resolve" in turns[-1]["text"].lower()
     assert vera_service.read_session_preview(queue, sid) is None
 
 
