@@ -26,6 +26,9 @@ That architecture matters because it keeps behavior observable and recoverable e
   - Explicit handoff/confirmation submits only from active preview and only claims success on real queue acknowledgment.
   - Honest lifecycle language: proposal/prepared/submitted/queued are distinct from executed/verified evidence states.
   - DEV-friendly diagnostics panel exposes prompt + session metadata for development, and includes an explicit "Clear chat + context" action.
+  - Deterministic bounded diagnostics routing currently supports: `inspect system health`/`run diagnostics`/`show host diagnostics` -> `system_diagnostics`; `check status of <service>.service` -> `system.service_status`; `show recent logs for <service>.service` (or summarize) -> `system.recent_service_logs` with bounded args.
+  - Safe `.service` diagnostics routing takes precedence over generic review/status phrasing only when bounded diagnostics service/log intent is confirmed; non-diagnostics prompts like `status of job-123.json`, `status of my job`, or `status of the last job` stay on the review/evidence path. Invalid service targets fail closed with a clear refusal.
+  - Linked completion auto-surfacing for these diagnostics routes now prefers concise evidence-grounded values (for example host/memory/load/disk snapshot, service state, or bounded log line count) rather than thin last-step-only success text.
 
 - **Queue-driven mission execution**
   - Daemon reads `notes/queue/inbox/*.json`, enforces queue contracts, and drives deterministic lifecycle transitions.
