@@ -1,0 +1,11 @@
+id: system.host_info
+name: Host Info
+description: Collect bounded host identity, kernel, and uptime metadata.
+entrypoint: voxera_builtin_skills.host_info:run
+capabilities: ["state.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []

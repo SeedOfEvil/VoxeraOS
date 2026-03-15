@@ -1,0 +1,16 @@
+id: system.service_status
+name: Service Status
+description: Read systemd service status for a named .service unit.
+entrypoint: voxera_builtin_skills.service_status:run
+capabilities: ["state.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  service:
+    type: string
+    required: true
+    description: Explicit service name ending in .service
