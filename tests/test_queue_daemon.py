@@ -2,7 +2,6 @@ import fcntl
 import json
 import os
 import sys
-import threading
 import time
 import types
 from pathlib import Path
@@ -1137,7 +1136,7 @@ def test_queue_daemon_retries_partial_json_and_stabilizes(tmp_path, monkeypatch)
     queue_dir.mkdir(parents=True, exist_ok=True)
     (queue_dir / "inbox").mkdir(parents=True, exist_ok=True)
     job = queue_dir / "inbox" / "partial.json"
-    job.write_text("", encoding="utf-8")
+    job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
 
     events = []
     monkeypatch.setattr("voxera.core.queue_daemon.log", lambda event: events.append(event))
@@ -1147,14 +1146,18 @@ def test_queue_daemon_retries_partial_json_and_stabilizes(tmp_path, monkeypatch)
         queue_root=queue_dir, poll_interval=0.1, mission_log_path=tmp_path / "mission-log.md"
     )
 
-    def _finish_write():
-        time.sleep(0.08)
-        job.write_text(json.dumps({"goal": "check machine"}), encoding="utf-8")
+    original_read_text = Path.read_text
+    read_attempts = {"count": 0}
 
-    writer = threading.Thread(target=_finish_write)
-    writer.start()
+    def _flaky_first_read(path: Path, *args, **kwargs):
+        if path == job and read_attempts["count"] == 0:
+            read_attempts["count"] += 1
+            return ""
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _flaky_first_read)
+
     daemon.process_pending_once()
-    writer.join(timeout=1)
 
     _assert_job_moved(queue_dir / "done", "partial.json")
     assert not any((queue_dir / "failed").glob("partial*.json"))
