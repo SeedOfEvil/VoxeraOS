@@ -551,6 +551,28 @@ def write_session_investigation(
     _write_session_payload(queue_root, session_id, payload)
 
 
+def read_session_derived_investigation_output(
+    queue_root: Path, session_id: str
+) -> dict[str, Any] | None:
+    payload = _read_session_payload(queue_root, session_id)
+    derived = payload.get("last_derived_investigation_output")
+    return derived if isinstance(derived, dict) else None
+
+
+def write_session_derived_investigation_output(
+    queue_root: Path, session_id: str, derived_output: dict[str, Any] | None
+) -> None:
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    if derived_output is None:
+        payload.pop("last_derived_investigation_output", None)
+    else:
+        payload["last_derived_investigation_output"] = derived_output
+    _write_session_payload(queue_root, session_id, payload)
+
+
 async def run_web_enrichment(*, user_message: str) -> dict[str, Any] | None:
     """Perform a read-only web search and return structured enrichment suitable for preview authoring.
 
@@ -602,6 +624,7 @@ def session_debug_info(
     preview = read_session_preview(queue_root, session_id)
     enrichment = read_session_enrichment(queue_root, session_id)
     investigation = read_session_investigation(queue_root, session_id)
+    derived_output = read_session_derived_investigation_output(queue_root, session_id)
     handoff = read_session_handoff_state(queue_root, session_id) or {}
     return {
         "dev_mode": True,
@@ -618,6 +641,7 @@ def session_debug_info(
         "investigation_result_count": len(investigation.get("results", []))
         if isinstance(investigation, dict)
         else 0,
+        "derived_investigation_output_available": isinstance(derived_output, dict),
         "handoff_attempted": handoff.get("attempted") is True,
         "handoff_status": str(handoff.get("status") or "none"),
         "handoff_queue_path": str(handoff.get("queue_path") or str(queue_root)),
