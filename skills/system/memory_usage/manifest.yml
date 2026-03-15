@@ -1,0 +1,11 @@
+id: system.memory_usage
+name: Memory Usage
+description: Capture a bounded snapshot of host memory usage.
+entrypoint: voxera_builtin_skills.memory_usage:run
+capabilities: ["state.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []

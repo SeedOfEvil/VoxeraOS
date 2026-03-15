@@ -20,6 +20,7 @@ def test_list_missions_contains_daily_cards_and_system_check():
         "system_check",
         "notes_archive_flow",
         "system_inspect",
+        "system_diagnostics",
     }.issubset(mission_ids)
 
 

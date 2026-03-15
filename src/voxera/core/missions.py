@@ -159,6 +159,25 @@ MISSION_TEMPLATES: dict[str, MissionTemplate] = {
             "Executes through the queue for canonical audit trail and evidence production."
         ),
     ),
+    "system_diagnostics": MissionTemplate(
+        id="system_diagnostics",
+        title="System Diagnostics",
+        goal="Collect bounded read-only host diagnostics for queue-backed triage evidence",
+        steps=[
+            MissionStep(skill_id="system.host_info"),
+            MissionStep(skill_id="system.memory_usage"),
+            MissionStep(skill_id="system.load_snapshot"),
+            MissionStep(skill_id="system.disk_usage"),
+            MissionStep(skill_id="system.process_list"),
+        ],
+        notes=(
+            "First bounded diagnostics pack for operator triage. Read-only only: host info, memory, "
+            "CPU/load, disk usage, and process snapshot. Designed for deterministic queue execution "
+            "with canonical artifacts/evidence (execution_result + step_results). Service-specific "
+            "inspection is supported through system.service_status and system.recent_service_logs "
+            "skills using explicit args and bounded limits."
+        ),
+    ),
 }
 
 

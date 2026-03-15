@@ -1,0 +1,28 @@
+id: system.recent_service_logs
+name: Recent Service Logs
+description: Read bounded recent journal lines for a named .service unit.
+entrypoint: voxera_builtin_skills.recent_service_logs:run
+capabilities: ["state.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  service:
+    type: string
+    required: true
+    description: Explicit service name ending in .service
+  lines:
+    type: integer
+    required: false
+    default: 50
+    minimum: 1
+    maximum: 200
+  since_minutes:
+    type: integer
+    required: false
+    default: 15
+    minimum: 1
+    maximum: 180
