@@ -92,28 +92,29 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
             ),
         )
 
-    log_lines, scope = _query_journal(
+    result = _query_journal(
         normalized, lines=normalized_lines, since_minutes=normalized_since_minutes
     )
-    if log_lines is None:
-        error = "journalctl command not found or both scopes failed"
+    if result.error is not None:
         return RunResult(
             ok=False,
-            error=error,
+            error=result.error,
             data={
                 SKILL_RESULT_KEY: build_skill_result(
-                    summary="Service log tool unavailable",
+                    summary=result.summary,
                     machine_payload={"service": normalized, "tool": "journalctl"},
-                    operator_note="Install journald tooling to inspect recent service logs.",
-                    next_action_hint="install_journald_tools",
-                    retryable=False,
+                    operator_note=result.operator_note,
+                    next_action_hint=result.next_action_hint,
+                    retryable=result.retryable,
                     blocked=False,
                     approval_status="none",
-                    error=error,
-                    error_class="missing_dependency",
+                    error=result.error,
+                    error_class=result.error_class,
                 )
             },
         )
+    log_lines = result.lines
+    scope = result.scope
 
     payload = {
         "service": normalized,
@@ -148,10 +149,54 @@ def run(service: str, lines: int = 50, since_minutes: int = 15) -> RunResult:
     )
 
 
-def _run_journalctl(
-    service: str, *, lines: int, since_minutes: int, user: bool
-) -> list[str] | None:
-    """Run journalctl for one scope. Returns parsed log lines, or None on failure."""
+class _ScopeResult:
+    """Outcome of querying a single journalctl scope."""
+
+    __slots__ = ("lines", "error_kind")
+
+    def __init__(self, *, lines: list[str] | None, error_kind: str = ""):
+        self.lines = lines
+        self.error_kind = error_kind  # "", "not_found", "query_failed", "timeout"
+
+
+class _JournalResult:
+    """Aggregated outcome from querying both scopes."""
+
+    __slots__ = (
+        "lines",
+        "scope",
+        "error",
+        "summary",
+        "operator_note",
+        "next_action_hint",
+        "retryable",
+        "error_class",
+    )
+
+    def __init__(
+        self,
+        *,
+        lines: list[str] | None = None,
+        scope: str = "unknown",
+        error: str | None = None,
+        summary: str = "",
+        operator_note: str = "",
+        next_action_hint: str = "",
+        retryable: bool = False,
+        error_class: str = "",
+    ):
+        self.lines = lines
+        self.scope = scope
+        self.error = error
+        self.summary = summary
+        self.operator_note = operator_note
+        self.next_action_hint = next_action_hint
+        self.retryable = retryable
+        self.error_class = error_class
+
+
+def _run_journalctl(service: str, *, lines: int, since_minutes: int, user: bool) -> _ScopeResult:
+    """Run journalctl for one scope. Distinguishes tool-missing from runtime errors."""
     cmd = [
         "journalctl",
         "--no-pager",
@@ -165,38 +210,75 @@ def _run_journalctl(
 
     try:
         completed = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return None
+    except FileNotFoundError:
+        return _ScopeResult(lines=None, error_kind="not_found")
+    except subprocess.CalledProcessError as exc:
+        _ = (exc.stderr or exc.stdout or "").strip()
+        return _ScopeResult(lines=None, error_kind="query_failed")
+    except subprocess.TimeoutExpired:
+        return _ScopeResult(lines=None, error_kind="timeout")
 
     # Filter out empty lines and journalctl "-- No entries --" markers.
-    return [
+    parsed = [
         line
         for line in completed.stdout.splitlines()
         if line.strip() and "-- No entries --" not in line
     ]
+    return _ScopeResult(lines=parsed)
 
 
-def _query_journal(service: str, *, lines: int, since_minutes: int) -> tuple[list[str] | None, str]:
+def _query_journal(service: str, *, lines: int, since_minutes: int) -> _JournalResult:
     """Try user-unit scope first, fall back to system scope.
 
-    Returns (log_lines, scope).  log_lines is None when both scopes fail entirely.
+    Returns a _JournalResult with either lines+scope or error details.
     """
-    user_lines = _run_journalctl(service, lines=lines, since_minutes=since_minutes, user=True)
-    system_lines = _run_journalctl(service, lines=lines, since_minutes=since_minutes, user=False)
+    user_result = _run_journalctl(service, lines=lines, since_minutes=since_minutes, user=True)
+    system_result = _run_journalctl(service, lines=lines, since_minutes=since_minutes, user=False)
 
-    if user_lines is None and system_lines is None:
-        return None, "unknown"
+    user_ok = user_result.lines is not None
+    system_ok = system_result.lines is not None
 
-    # Prefer whichever scope actually has content; if both have content, prefer user scope.
-    user_count = len(user_lines) if user_lines is not None else -1
-    system_count = len(system_lines) if system_lines is not None else -1
+    if not user_ok and not system_ok:
+        # Both failed — classify by the most informative error kind.
+        # Prefer tool-missing only when both scopes report it.
+        error_kinds = {user_result.error_kind, system_result.error_kind}
+        if error_kinds == {"not_found"}:
+            return _JournalResult(
+                error="journalctl command not found",
+                summary="Service log tool unavailable",
+                operator_note="Install journald tooling to inspect recent service logs.",
+                next_action_hint="install_journald_tools",
+                retryable=False,
+                error_class="missing_dependency",
+            )
+        if "timeout" in error_kinds:
+            return _JournalResult(
+                error="recent logs query timed out",
+                summary=f"Recent logs query timed out for {service}",
+                operator_note="Log inspection exceeded the bounded timeout.",
+                next_action_hint="retry_recent_logs",
+                retryable=True,
+                error_class="timeout",
+            )
+        return _JournalResult(
+            error="service logs query failed in both scopes",
+            summary=f"Recent logs query failed for {service}",
+            operator_note="Service may not exist or logs are unavailable in this runtime.",
+            next_action_hint="verify_service_and_retry",
+            retryable=False,
+            error_class="service_log_query_failed",
+        )
+
+    # At least one scope succeeded.  Prefer whichever has content; user scope first.
+    user_count = len(user_result.lines) if user_ok else -1
+    system_count = len(system_result.lines) if system_ok else -1
 
     if user_count > 0:
-        return user_lines, "user"
+        return _JournalResult(lines=user_result.lines, scope="user")
     if system_count > 0:
-        return system_lines, "system"
+        return _JournalResult(lines=system_result.lines, scope="system")
     # Both succeeded but returned no entries — prefer user scope.
-    if user_lines is not None:
-        return user_lines, "user"
-    assert system_lines is not None
-    return system_lines, "system"
+    if user_ok:
+        return _JournalResult(lines=user_result.lines, scope="user")
+    assert system_result.lines is not None
+    return _JournalResult(lines=system_result.lines, scope="system")

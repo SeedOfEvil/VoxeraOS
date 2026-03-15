@@ -116,6 +116,79 @@ def test_service_status_user_scope_preferred_when_active(monkeypatch):
     assert payload.get("other_ActiveState") == "inactive"
 
 
+def test_service_status_system_failed_preferred_over_user_inactive(monkeypatch):
+    """When system scope reports failed and user scope is inactive, system scope is primary."""
+
+    def _fake_run(cmd, **_kwargs):
+        is_user = "--user" in cmd
+        if is_user:
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout=(
+                    "Id=my.service\n"
+                    "LoadState=not-found\n"
+                    "ActiveState=inactive\n"
+                    "SubState=dead\n"
+                    "UnitFileState=\n"
+                ),
+                stderr="",
+            )
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=0,
+            stdout=(
+                "Id=my.service\n"
+                "LoadState=loaded\n"
+                "ActiveState=failed\n"
+                "SubState=failed\n"
+                "UnitFileState=enabled\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = service_status.run("my.service")
+    assert rr.ok is True
+    payload = rr.data[SKILL_RESULT_KEY]["machine_payload"]
+    # System scope should be primary because failed is noteworthy
+    assert payload["scope"] == "system"
+    assert payload["ActiveState"] == "failed"
+    # Cross-scope context should be surfaced
+    assert payload.get("other_scope") == "user"
+    assert payload.get("other_ActiveState") == "inactive"
+
+
+def test_recent_service_logs_timeout_error_class(monkeypatch):
+    """When both journalctl scopes time out, error_class is timeout, not missing_dependency."""
+
+    def _fake_run(cmd, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = recent_service_logs.run("voxera-daemon.service", lines=10, since_minutes=5)
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["error_class"] == "timeout"
+    assert payload["retryable"] is True
+
+
+def test_recent_service_logs_query_failed_error_class(monkeypatch):
+    """When both journalctl scopes fail with CalledProcessError, error_class is service_log_query_failed."""
+
+    def _fake_run(cmd, **_kwargs):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd=cmd, output="", stderr="Permission denied"
+        )
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    rr = recent_service_logs.run("voxera-daemon.service", lines=10, since_minutes=5)
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["error_class"] == "service_log_query_failed"
+    assert payload["retryable"] is False
+
+
 def test_recent_service_logs_default_args(monkeypatch):
     captured_cmds: list[list[str]] = []
 

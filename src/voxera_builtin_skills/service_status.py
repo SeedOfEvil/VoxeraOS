@@ -56,6 +56,14 @@ def _is_active(props: dict[str, str] | None) -> bool:
     return props.get("ActiveState", "").strip().lower() in {"active", "activating", "reloading"}
 
 
+def _is_noteworthy(props: dict[str, str] | None) -> bool:
+    """Return True if the state carries actionable information beyond inactive/dead."""
+    if not props:
+        return False
+    state = props.get("ActiveState", "").strip().lower()
+    return state not in {"", "inactive"}
+
+
 def run(service: str) -> RunResult:
     normalized = str(service or "").strip()
     if not _SERVICE_PATTERN.fullmatch(normalized):
@@ -96,20 +104,26 @@ def run(service: str) -> RunResult:
     system_active = _is_active(system_props)
     user_active = _is_active(user_props)
 
-    # Choose the primary scope: prefer user scope when active, else system scope.
-    # This ensures Voxera user services are correctly reported as running.
+    # Choose the primary scope:
+    # 1. Prefer whichever scope is active (user scope first).
+    # 2. When neither is active, prefer the scope with a noteworthy state
+    #    (e.g. failed > inactive) so operators see real failures.
+    # 3. Fall back to system scope (the broader default).
     if user_active:
         primary_props = user_props
         scope = "user"
-    elif system_active:
+    elif system_active or (system_ok and _is_noteworthy(system_props)):
         primary_props = system_props
         scope = "system"
-    elif user_ok:
+    elif user_ok and _is_noteworthy(user_props):
         primary_props = user_props
         scope = "user"
-    else:
+    elif system_ok:
         primary_props = system_props
         scope = "system"
+    else:
+        primary_props = user_props
+        scope = "user"
 
     assert primary_props is not None  # guaranteed by earlier checks
 
@@ -119,16 +133,18 @@ def run(service: str) -> RunResult:
     status: dict[str, str] = {"service": normalized, "scope": scope}
     status.update(primary_props)
 
-    # If scopes differ, note the other scope's state for operator awareness.
-    if system_ok and user_ok and system_active != user_active:
+    # Surface cross-scope context whenever both scopes responded and differ,
+    # so operators see e.g. "failed in system scope" even when neither is active.
+    if system_ok and user_ok:
         other_scope = "system" if scope == "user" else "user"
         other_props = system_props if scope == "user" else user_props
         assert other_props is not None
-        other_active = other_props.get("ActiveState", "unknown")
-        other_sub = other_props.get("SubState", "unknown")
-        status["other_scope"] = other_scope
-        status["other_ActiveState"] = other_active
-        status["other_SubState"] = other_sub
+        other_active_state = other_props.get("ActiveState", "unknown")
+        other_sub_state = other_props.get("SubState", "unknown")
+        if other_active_state != active_state or other_sub_state != sub_state:
+            status["other_scope"] = other_scope
+            status["other_ActiveState"] = other_active_state
+            status["other_SubState"] = other_sub_state
 
     summary = f"Service {normalized}: {active_state}/{sub_state} ({scope} service)"
     return RunResult(
