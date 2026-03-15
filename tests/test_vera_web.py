@@ -13,6 +13,7 @@ from voxera.models import AppConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
 from voxera.vera.handoff import (
+    diagnostics_request_refusal,
     drafting_guidance,
     maybe_draft_job_payload,
     normalize_preview_payload,
@@ -3950,3 +3951,17 @@ def test_diagnostics_recent_logs_completion_surfaces_line_count(tmp_path, monkey
     response = client.post("/chat", data={"session_id": sid, "message": "thanks"})
     assert response.status_code == 200
     assert "recent_logs=voxera-daemon.service:18 lines (last 15m)" in response.text
+
+
+def test_diagnostics_refusal_does_not_override_non_service_job_status_queries():
+    assert diagnostics_request_refusal("what's the status of job-await-1?") is None
+    assert (
+        diagnostics_request_refusal("what's the status of inbox-1773082365485-1336541d.json?")
+        is None
+    )
+
+
+def test_diagnostics_refusal_still_blocks_path_like_service_targets():
+    refusal = diagnostics_request_refusal("show recent logs for ../../etc/passwd")
+    assert isinstance(refusal, str)
+    assert "unsafe or invalid" in refusal

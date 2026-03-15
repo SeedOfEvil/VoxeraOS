@@ -153,6 +153,11 @@ def diagnostics_request_refusal(message: str) -> str | None:
     if _SAFE_SERVICE_RE.fullmatch(candidate):
         return None
 
+    looks_like_service_target = ".service" in candidate
+    looks_path_like_or_unsafe = "/" in candidate or "\\" in candidate or ".." in candidate
+    if not (looks_like_service_target or looks_path_like_or_unsafe):
+        return None
+
     return (
         "I refused that diagnostics request because the service target is unsafe or invalid. "
         "Use an explicit bounded unit name like voxera-daemon.service."
