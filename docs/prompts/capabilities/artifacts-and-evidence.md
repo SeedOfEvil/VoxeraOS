@@ -16,6 +16,7 @@ Artifacts and evidence are authoritative for what actually happened after execut
 - Artifacts are not speculative.
 - Artifacts are runtime outputs or canonical reviews derived from runtime outputs.
 - Completion follow-up text must be deterministic and evidence-grounded: use normalized completion payload fields (for example `latest_summary`, `failure_summary`, `next_action_hint`, compact highlights) and avoid speculative details or raw JSON dumps.
+- Treat completion announcements as terminal-only claims: suppress proactive “completed successfully/failed” follow-ups when canonical lineage/child metadata indicates intermediate orchestration with downstream queued work still pending.
 
 Execution review consumers should prefer normalized contract fields in
 `execution_result.json` when present:

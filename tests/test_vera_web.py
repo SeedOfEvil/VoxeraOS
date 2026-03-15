@@ -2597,7 +2597,7 @@ def test_linked_failed_auto_surfaces_once(tmp_path, monkeypatch):
     assert len(surfaced_messages) == 1
 
 
-def test_unsupported_policy_completions_do_not_auto_surface(tmp_path, monkeypatch):
+def test_linked_mutating_success_auto_surfaces_once(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -2606,7 +2606,7 @@ def test_unsupported_policy_completions_do_not_auto_surface(tmp_path, monkeypatc
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
-    sid = "vera-test"
+    sid = "vera-test-mutate"
     vera_service.append_session_turn(queue, sid, role="user", text="seed")
     vera_service.register_session_linked_job(queue, sid, job_ref="inbox-a.json")
 
@@ -2618,8 +2618,13 @@ def test_unsupported_policy_completions_do_not_auto_surface(tmp_path, monkeypatc
             "lifecycle_state": "done",
             "terminal_outcome": "succeeded",
             "approval_status": "none",
-            "latest_summary": "Mutating write completed",
+            "latest_summary": "Destination created at ~/VoxeraOS/notes/testdir.",
             "normalized_outcome_class": "succeeded",
+            "review_summary": {
+                "execution_capabilities": {
+                    "side_effect_class": "write",
+                }
+            },
         },
         state={
             "lifecycle_state": "done",
@@ -2634,11 +2639,89 @@ def test_unsupported_policy_completions_do_not_auto_surface(tmp_path, monkeypatc
     done_job.write_text(json.dumps(done_payload), encoding="utf-8")
 
     client = TestClient(vera_app_module.app)
-    client.post("/chat", data={"session_id": sid, "message": "any update?"})
+
+    first = client.post("/chat", data={"session_id": sid, "message": "any update?"})
+    assert first.status_code == 200
+    assert "Your linked write file job completed successfully." in first.text
+    assert "Destination created at ~/VoxeraOS/notes/testdir." in first.text
 
     completions = vera_service.read_linked_job_completions(queue, sid)
     assert len(completions) == 1
-    assert all(item["surfaced_in_chat"] is False for item in completions)
+    assert completions[0]["surfacing_policy"] == "mutating_success"
+    assert completions[0]["surfaced_in_chat"] is True
+
+    second = client.post("/chat", data={"session_id": sid, "message": "any update now?"})
+    assert second.status_code == 200
+    turns = vera_service.read_session_turns(queue, sid)
+    surfaced_messages = [
+        turn["text"]
+        for turn in turns
+        if turn["role"] == "assistant"
+        and turn["text"].startswith("Your linked write file job completed successfully.")
+    ]
+    assert len(surfaced_messages) == 1
+
+
+def test_linked_mutating_success_intermediate_orchestration_is_suppressed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    sid = "vera-test-intermediate"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-parent.json")
+
+    _write_job_artifacts(
+        queue,
+        "inbox-parent.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Parent step succeeded and delegated child work.",
+            "normalized_outcome_class": "succeeded",
+            "stop_reason": "enqueue_child",
+            "child_refs": [{"child_job_id": "inbox-child.json"}],
+            "child_summary": {
+                "total": 1,
+                "done": 0,
+                "awaiting_approval": 0,
+                "pending": 1,
+                "failed": 0,
+                "canceled": 0,
+                "unknown": 0,
+            },
+            "review_summary": {
+                "execution_capabilities": {
+                    "side_effect_class": "execute",
+                }
+            },
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+    parent_job = queue / "done" / "inbox-parent.json"
+    parent_payload = json.loads(parent_job.read_text(encoding="utf-8"))
+    parent_payload["job_intent"] = {"request_kind": "run_command"}
+    parent_job.write_text(json.dumps(parent_payload), encoding="utf-8")
+
+    client = TestClient(vera_app_module.app)
+    res = client.post("/chat", data={"session_id": sid, "message": "any update?"})
+    assert res.status_code == 200
+    assert "Parent step succeeded and delegated child work" not in res.text
+
+    completions = vera_service.read_linked_job_completions(queue, sid)
+    assert len(completions) == 1
+    assert completions[0]["surfacing_policy"] == "mutating_success"
+    assert completions[0]["surfaced_in_chat"] is False
 
 
 def test_non_linked_terminal_jobs_do_not_attach_to_session(tmp_path, monkeypatch):
