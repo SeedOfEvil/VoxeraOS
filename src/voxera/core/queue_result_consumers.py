@@ -318,6 +318,7 @@ def resolve_structured_execution(
         latest_step.get("summary")
         or latest_step.get("operator_note")
         or execution_result.get("review_summary", {}).get("latest_summary")
+        or execution_result.get("latest_summary")
         or execution_result.get("error")
         or state_payload.get("failure_summary")
         or failed_payload.get("error")
