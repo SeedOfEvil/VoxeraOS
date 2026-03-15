@@ -51,3 +51,5 @@ These are done. Do not list them as open work:
 - Merge gate: `make merge-readiness-check` includes `security-check` — all 17 red-team tests must pass.
 
 - Queue job intent normalization should preserve explicit, forward-looking expected-artifact declarations for canonical lanes so runtime/review can compare expected vs observed artifacts deterministically.
+
+- Linked Vera completion ingestion foundation: deterministic session-linked job tracking + terminal completion payload extraction + surfacing-policy classification, grounded in queue/artifact truth and scoped to linked jobs only.

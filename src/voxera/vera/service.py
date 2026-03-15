@@ -13,12 +13,16 @@ from ..brain.gemini import GeminiBrain
 from ..brain.json_recovery import recover_json_object
 from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config
+from ..core.queue_inspect import lookup_job
+from ..core.queue_result_consumers import resolve_structured_execution
 from .brave_search import BraveSearchClient, WebSearchResult
 from .handoff import drafting_guidance, maybe_draft_job_payload, normalize_preview_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 
 MAX_SESSION_TURNS = 8
 _SESSION_ID_LENGTH = 24
+_MAX_LINKED_JOB_TRACK = 64
+_MAX_LINKED_COMPLETIONS = 64
 
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
@@ -328,6 +332,16 @@ def _write_session_payload(queue_root: Path, session_id: str, payload: dict[str,
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def _read_json_dict(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def read_session_turns(queue_root: Path, session_id: str) -> list[dict[str, str]]:
     payload = _read_session_payload(queue_root, session_id)
     turns = payload.get("turns")
@@ -356,7 +370,12 @@ def append_session_turn(
         "updated_at_ms": int(time.time() * 1000),
         "turns": turns,
     }
-    for preserved_key in ("pending_job_preview", "handoff", "last_enrichment"):
+    for preserved_key in (
+        "pending_job_preview",
+        "handoff",
+        "last_enrichment",
+        "linked_queue_jobs",
+    ):
         preserved = previous.get(preserved_key)
         if isinstance(preserved, dict):
             payload[preserved_key] = preserved
@@ -510,7 +529,254 @@ def session_debug_info(
         "handoff_queue_path": str(handoff.get("queue_path") or str(queue_root)),
         "handoff_job_id": str(handoff.get("job_id") or "") or None,
         "handoff_error": str(handoff.get("error") or "") or None,
+        "linked_jobs": len(_read_linked_job_registry(queue_root, session_id).get("tracked", [])),
+        "linked_completions": len(
+            _read_linked_job_registry(queue_root, session_id).get("completions", [])
+        ),
     }
+
+
+def _read_linked_job_registry(queue_root: Path, session_id: str) -> dict[str, Any]:
+    payload = _read_session_payload(queue_root, session_id)
+    raw = payload.get("linked_queue_jobs")
+    return raw if isinstance(raw, dict) else {"tracked": [], "completions": []}
+
+
+def _write_linked_job_registry(queue_root: Path, session_id: str, registry: dict[str, Any]) -> None:
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    payload["linked_queue_jobs"] = registry
+    _write_session_payload(queue_root, session_id, payload)
+
+
+def register_session_linked_job(queue_root: Path, session_id: str, *, job_ref: str) -> None:
+    normalized_job_ref = Path(job_ref).name.strip()
+    if not normalized_job_ref:
+        return
+    registry = _read_linked_job_registry(queue_root, session_id)
+    tracked_raw = registry.get("tracked")
+    tracked = tracked_raw if isinstance(tracked_raw, list) else []
+    now_ms = int(time.time() * 1000)
+
+    existing: dict[str, Any] | None = None
+    for item in tracked:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("job_ref") or "") == normalized_job_ref:
+            existing = item
+            break
+    if existing is None:
+        tracked.append(
+            {
+                "job_ref": normalized_job_ref,
+                "linked_session_id": session_id,
+                "linked_thread_id": session_id,
+                "linked_at_ms": now_ms,
+                "completion_ingested": False,
+            }
+        )
+    else:
+        existing["linked_session_id"] = session_id
+        existing["linked_thread_id"] = session_id
+        existing["updated_at_ms"] = now_ms
+
+    tracked = tracked[-_MAX_LINKED_JOB_TRACK:]
+    registry["tracked"] = tracked
+    completions_raw = registry.get("completions")
+    if not isinstance(completions_raw, list):
+        registry["completions"] = []
+    _write_linked_job_registry(queue_root, session_id, registry)
+
+
+def _is_terminal_queue_state(*, lifecycle_state: str, terminal_outcome: str, bucket: str) -> bool:
+    lifecycle = lifecycle_state.strip().lower()
+    outcome = terminal_outcome.strip().lower()
+    return (
+        bucket in {"done", "failed", "canceled"}
+        or lifecycle in {"done", "failed", "canceled"}
+        or outcome in {"succeeded", "failed", "blocked", "canceled"}
+    )
+
+
+def _classify_surfacing_policy(payload: dict[str, Any]) -> str:
+    terminal_outcome = str(payload.get("terminal_outcome") or "").strip().lower()
+    approval_status = str(payload.get("approval_status") or "").strip().lower()
+    outcome_class = str(payload.get("normalized_outcome_class") or "").strip().lower()
+    request_kind = str(payload.get("request_kind") or "").strip().lower()
+    latest_summary = str(payload.get("latest_summary") or "")
+    highlights = payload.get("result_highlights")
+    result_highlight_count = len(highlights) if isinstance(highlights, list) else 0
+
+    if approval_status == "pending" or outcome_class == "approval_blocked":
+        return "approval_blocked"
+    if terminal_outcome == "canceled":
+        return "canceled"
+    if terminal_outcome in {"failed", "blocked"}:
+        if outcome_class in {"policy_denied", "capability_boundary_mismatch", "path_blocked_scope"}:
+            return "manual_only"
+        return "failed"
+    if len(latest_summary) > 480 or result_highlight_count >= 6:
+        return "noisy_large_result"
+    if terminal_outcome == "succeeded":
+        if request_kind in {"write_file", "file_organize"}:
+            return "mutating_success"
+        return "read_only_success"
+    return "manual_only"
+
+
+def _normalize_result_highlights(structured: dict[str, Any]) -> list[str]:
+    highlights: list[str] = []
+    artifact_families = structured.get("artifact_families")
+    if isinstance(artifact_families, list) and artifact_families:
+        compact = ", ".join(
+            str(item).strip() for item in artifact_families[:4] if str(item).strip()
+        )
+        if compact:
+            highlights.append(f"artifact_families={compact}")
+    child_summary = structured.get("child_summary")
+    if isinstance(child_summary, dict) and child_summary:
+        summary_parts = [
+            f"{key}:{int(value)}"
+            for key, value in child_summary.items()
+            if isinstance(value, int) and key in {"done", "failed", "pending", "canceled"}
+        ]
+        if summary_parts:
+            highlights.append("child_summary=" + ", ".join(summary_parts))
+    return highlights[:6]
+
+
+def _build_completion_payload(
+    *,
+    session_id: str,
+    job_ref: str,
+    bucket: str,
+    structured: dict[str, Any],
+    state_payload: dict[str, Any],
+    job_payload: dict[str, Any],
+) -> dict[str, Any]:
+    raw_job_intent = job_payload.get("job_intent")
+    job_intent: dict[str, Any] = raw_job_intent if isinstance(raw_job_intent, dict) else {}
+    request_kind = str(
+        job_intent.get("request_kind")
+        or job_payload.get("request_kind")
+        or job_payload.get("kind")
+        or "unknown"
+    )
+    mission_id = str(job_intent.get("mission_id") or job_payload.get("mission_id") or "").strip()
+    lifecycle_state = str(
+        structured.get("lifecycle_state") or state_payload.get("lifecycle_state") or ""
+    ).strip()
+    terminal_outcome = str(
+        structured.get("terminal_outcome") or state_payload.get("terminal_outcome") or ""
+    ).strip()
+    approval_status = str(
+        structured.get("approval_status") or state_payload.get("approval_status") or "none"
+    ).strip()
+
+    payload = {
+        "job_ref": job_ref,
+        "linked_session_id": session_id,
+        "linked_thread_id": session_id,
+        "lifecycle_state": lifecycle_state,
+        "terminal_outcome": terminal_outcome,
+        "approval_status": approval_status,
+        "normalized_outcome_class": str(structured.get("normalized_outcome_class") or "").strip(),
+        "request_kind": request_kind,
+        "mission_id": mission_id or None,
+        "latest_summary": str(structured.get("latest_summary") or "").strip(),
+        "failure_summary": str(structured.get("error") or "").strip(),
+        "operator_note": str(structured.get("operator_note") or "").strip(),
+        "next_action_hint": str(structured.get("next_action_hint") or "").strip(),
+        "result_highlights": _normalize_result_highlights(structured),
+        "queue_bucket": bucket,
+        "completion_detected_at_ms": int(time.time() * 1000),
+        "surfaced_in_chat": False,
+        "surfaced_at_ms": None,
+    }
+    payload["surfacing_policy"] = _classify_surfacing_policy(payload)
+    return payload
+
+
+def ingest_linked_job_completions(queue_root: Path, session_id: str) -> list[dict[str, Any]]:
+    registry = _read_linked_job_registry(queue_root, session_id)
+    tracked_raw = registry.get("tracked")
+    tracked = tracked_raw if isinstance(tracked_raw, list) else []
+    completions_raw = registry.get("completions")
+    completions = completions_raw if isinstance(completions_raw, list) else []
+    completion_job_refs = {
+        str(item.get("job_ref") or "")
+        for item in completions
+        if isinstance(item, dict) and str(item.get("job_ref") or "")
+    }
+
+    created: list[dict[str, Any]] = []
+    changed = False
+    for item in tracked:
+        if not isinstance(item, dict):
+            continue
+        job_ref = str(item.get("job_ref") or "").strip()
+        if not job_ref or job_ref in completion_job_refs:
+            continue
+        found = lookup_job(queue_root, job_ref)
+        if found is None:
+            continue
+        state_payload = _read_json_dict(
+            found.primary_path.with_name(f"{found.primary_path.stem}.state.json")
+        )
+        approval_payload = _read_json_dict(found.approval_path) if found.approval_path else {}
+        failed_payload = (
+            _read_json_dict(found.failed_sidecar_path) if found.failed_sidecar_path else {}
+        )
+        structured = resolve_structured_execution(
+            artifacts_dir=found.artifacts_dir,
+            state_sidecar=state_payload,
+            approval=approval_payload,
+            failed_sidecar=failed_payload,
+        )
+        lifecycle_state = str(
+            structured.get("lifecycle_state") or state_payload.get("lifecycle_state") or ""
+        )
+        terminal_outcome = str(
+            structured.get("terminal_outcome") or state_payload.get("terminal_outcome") or ""
+        )
+        if not _is_terminal_queue_state(
+            lifecycle_state=lifecycle_state,
+            terminal_outcome=terminal_outcome,
+            bucket=found.bucket,
+        ):
+            continue
+        job_payload = _read_json_dict(found.primary_path)
+        completion = _build_completion_payload(
+            session_id=session_id,
+            job_ref=job_ref,
+            bucket=found.bucket,
+            structured=structured,
+            state_payload=state_payload,
+            job_payload=job_payload,
+        )
+        completions.append(completion)
+        completion_job_refs.add(job_ref)
+        item["completion_ingested"] = True
+        item["completion_detected_at_ms"] = int(completion.get("completion_detected_at_ms") or 0)
+        created.append(completion)
+        changed = True
+
+    if changed:
+        registry["tracked"] = tracked[-_MAX_LINKED_JOB_TRACK:]
+        registry["completions"] = completions[-_MAX_LINKED_COMPLETIONS:]
+        _write_linked_job_registry(queue_root, session_id, registry)
+
+    return created
+
+
+def read_linked_job_completions(queue_root: Path, session_id: str) -> list[dict[str, Any]]:
+    registry = _read_linked_job_registry(queue_root, session_id)
+    completions = registry.get("completions")
+    if not isinstance(completions, list):
+        return []
+    return [item for item in completions if isinstance(item, dict)]
 
 
 def build_vera_messages(*, turns: list[dict[str, str]], user_message: str) -> list[dict[str, str]]:

@@ -517,3 +517,5 @@ Vera can now review real VoxeraOS job outcomes from canonical queue evidence (no
 - Summarizes lifecycle state, terminal outcome, approval status, latest summary, failure summary, and child summary (when already available).
 - Proposes evidence-grounded next steps without bypassing VoxeraOS controls.
 - Can draft a follow-up preview when explicitly asked, but never auto-submits it.
+
+- Vera deterministic linked queue-ingestion foundation: Vera sessions now record explicit linked queue jobs on handoff, detect canonical terminal completion for those linked jobs, and persist normalized completion payloads + surfacing-policy classification for later conversational use (no broad auto-posting yet).

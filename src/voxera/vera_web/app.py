@@ -35,11 +35,13 @@ from ..vera.service import (
     clear_session_turns,
     generate_preview_builder_update,
     generate_vera_reply,
+    ingest_linked_job_completions,
     new_session_id,
     read_session_enrichment,
     read_session_handoff_state,
     read_session_preview,
     read_session_turns,
+    register_session_linked_job,
     run_web_enrichment,
     session_debug_info,
     write_session_enrichment,
@@ -97,6 +99,7 @@ def _submit_handoff(
             status="submitted",
             job_id=job_id,
         )
+        register_session_linked_job(root, session_id, job_ref=f"inbox-{job_id}.json")
         write_session_preview(root, session_id, None)
         return str(ack["ack"]), "handoff_submitted"
     except Exception as exc:
@@ -310,6 +313,7 @@ async def chat(request: Request):
         )
 
     root = _active_queue_root()
+    ingest_linked_job_completions(root, active_session)
     append_session_turn(root, active_session, role="user", text=message)
     turns = read_session_turns(root, active_session)
 
