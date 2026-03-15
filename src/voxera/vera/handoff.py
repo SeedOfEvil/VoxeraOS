@@ -227,6 +227,111 @@ def _generated_note_path() -> str:
     return f"~/VoxeraOS/notes/note-{int(time.time())}.txt"
 
 
+def is_investigation_save_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    save_action = bool(re.search(r"\b(save|write|export)\b", lowered))
+    findings_target = bool(re.search(r"\b(results?|findings?)\b", lowered))
+    return save_action and findings_target
+
+
+def _extract_result_selection(message: str) -> list[int] | str | None:
+    lowered = message.strip().lower()
+    if re.search(r"\b(all|everything)\b", lowered) and re.search(
+        r"\b(results?|findings?)\b", lowered
+    ):
+        return "all"
+
+    explicit: set[int] = set()
+    for match in re.finditer(r"\bresults?\s*(\d+(?:\s*(?:,|and)\s*\d+)*)", lowered):
+        nums = re.findall(r"\d+", match.group(1))
+        explicit.update(int(num) for num in nums)
+    for match in re.finditer(r"\bresult\s*(\d+)\b", lowered):
+        explicit.add(int(match.group(1)))
+
+    if explicit:
+        return sorted(explicit)
+    return None
+
+
+def _investigation_note_content(*, query: str, selected: list[dict[str, Any]]) -> str:
+    lines = ["# Investigation Results", "", "## Query", query, ""]
+    for result in selected:
+        rid = int(result.get("result_id") or 0)
+        lines.extend(
+            [
+                f"## Result {rid}",
+                f"- Title: {str(result.get('title') or '').strip()}",
+                f"- Source: {str(result.get('source') or '').strip()}",
+                f"- URL: {str(result.get('url') or '').strip()}",
+                f"- Snippet: {str(result.get('snippet') or '').strip()}",
+                f"- Why it matched: {str(result.get('why_it_matched') or '').strip()}",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def draft_investigation_save_preview(
+    message: str,
+    *,
+    investigation_context: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not is_investigation_save_request(message):
+        return None
+    if not isinstance(investigation_context, dict):
+        return None
+    results_raw = investigation_context.get("results")
+    if not isinstance(results_raw, list) or not results_raw:
+        return None
+
+    results: list[dict[str, Any]] = []
+    by_id: dict[int, dict[str, Any]] = {}
+    for row in results_raw:
+        if not isinstance(row, dict):
+            continue
+        result_id = int(row.get("result_id") or 0)
+        if result_id <= 0:
+            continue
+        by_id[result_id] = row
+        results.append(row)
+    if not results:
+        return None
+
+    selection = _extract_result_selection(message)
+    if selection == "all":
+        selected = sorted(results, key=lambda r: int(r.get("result_id") or 0))
+    elif isinstance(selection, list) and selection:
+        if any(idx not in by_id for idx in selection):
+            return None
+        selected = [by_id[idx] for idx in selection]
+    else:
+        return None
+
+    query = str(investigation_context.get("query") or "(unspecified query)").strip()
+    target_match = re.search(
+        r"\b(?:to|into|as)\s+([~\/a-zA-Z0-9_.-]+\.md)\b", message, re.IGNORECASE
+    )
+    output_path = (
+        target_match.group(1).strip()
+        if target_match
+        else _generated_note_path().replace(".txt", ".md")
+    )
+    if not output_path.startswith("~") and not output_path.startswith("/"):
+        output_path = f"~/VoxeraOS/notes/{output_path}"
+
+    selected_ids = ", ".join(str(int(item.get("result_id") or 0)) for item in selected)
+    return {
+        "goal": f"write investigation findings ({selected_ids}) to markdown note",
+        "write_file": {
+            "path": output_path,
+            "content": _investigation_note_content(query=query, selected=selected),
+            "mode": "overwrite",
+        },
+    }
+
+
 def _normalize_structured_file_write_payload(
     message: str,
     *,
@@ -774,11 +879,19 @@ def maybe_draft_job_payload(
     active_preview: dict[str, Any] | None = None,
     recent_user_messages: list[str] | None = None,
     enrichment_context: dict[str, Any] | None = None,
+    investigation_context: dict[str, Any] | None = None,
     recent_assistant_messages: list[str] | None = None,
 ) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
         return None
+
+    investigation_draft = draft_investigation_save_preview(
+        normalized,
+        investigation_context=investigation_context,
+    )
+    if investigation_draft is not None:
+        return investigation_draft
 
     primary = _draft_from_candidate_message(
         normalized,
