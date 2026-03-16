@@ -196,6 +196,30 @@ def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] |
     return maybe_draft_job_payload(message, active_preview=None) is not None
 
 
+def _prefer_derived_followup_save(
+    *,
+    message: str,
+    session_derived_output: dict[str, object] | None,
+    turns: list[dict[str, str]],
+) -> bool:
+    if not isinstance(session_derived_output, dict):
+        return False
+    if not is_investigation_derived_followup_save_request(message):
+        return False
+
+    expected_answer = str(session_derived_output.get("answer") or "").strip()
+    if not expected_answer:
+        return False
+
+    for turn in reversed(turns):
+        role = str(turn.get("role") or "").strip().lower()
+        if role != "assistant":
+            continue
+        latest_assistant = str(turn.get("text") or "").strip()
+        return latest_assistant == expected_answer
+    return False
+
+
 def _looks_like_voxera_preview_dump(text: str) -> bool:
     lowered = text.strip().lower()
     if not lowered:
@@ -433,8 +457,11 @@ async def chat(request: Request):
     session_derived_output = read_session_derived_investigation_output(root, active_session)
 
     should_attempt_derived_save = is_investigation_derived_save_request(message) or (
-        isinstance(session_derived_output, dict)
-        and is_investigation_derived_followup_save_request(message)
+        _prefer_derived_followup_save(
+            message=message,
+            session_derived_output=session_derived_output,
+            turns=turns,
+        )
     )
     if should_attempt_derived_save:
         derived_preview = draft_investigation_derived_save_preview(

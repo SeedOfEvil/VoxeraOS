@@ -531,6 +531,55 @@ def test_summarize_then_save_that_to_markdown_uses_derived_output_precedence(tmp
     assert "# Investigation Summary" in preview["write_file"]["content"]
 
 
+def test_derived_output_does_not_override_newer_conversational_answer_for_save_that(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "dark matter" in user_message.lower():
+            return {
+                "answer": "Dark matter is unseen matter inferred from gravitational effects.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "compare results 1 and 3"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note"},
+    )
+    vera_service.write_session_preview(queue, sid, None)
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Explain dark matter simply."},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note called darkmatter.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/darkmatter.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Dark matter is unseen matter inferred from gravitational effects."
+    )
+
+
 def test_save_derived_output_without_existing_derivation_fails_closed(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

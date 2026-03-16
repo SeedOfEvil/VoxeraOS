@@ -424,6 +424,7 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - In the active session, save-by-reference phrasing (for example `put that previous summary in sessionstart.txt`, `write your previous answer to a file`) resolves recent assistant-authored content into the governed `write_file` preview path.
 - Singular save-by-reference phrasing like `save that` defaults to the most recent substantial assistant-authored message in the active session.
 - When a current investigation-derived comparison/summary output exists, follow-up `save that ...` requests prefer that derived output save path first.
+- This derived-output preference is recency-aware: if a newer normal conversational assistant answer appears later in the same session, a subsequent singular `save that ...` follows that newer answer instead of older derived investigation output.
 - This save-by-reference resolution is intentionally bounded to recent assistant content in the current session only; ambiguous/no-content references fail closed with a clear message.
 - Conversational explanatory prompts (for example `Explain entropy simply`, `What is quantum field theory?`, `The higgs field`) stay in normal Vera answer mode by default.
 - Read-only web investigation is reserved for explicit investigation/search/current-info asks (for example `search the web for ...`, `find the latest ...`, `latest official documentation for ...`).
