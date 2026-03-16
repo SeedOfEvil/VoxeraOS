@@ -1,3 +1,16 @@
+## 2026-03-15 — GitHub PR #TBD — feat(vera/diagnostics): fix diagnostics truth and surface operator-grade answer-first outputs across read and inspection flows
+
+- **Service status correctness**: `service_status.py` now queries both system and user scopes via `systemctl` / `systemctl --user`. Voxera services running as user services are no longer incorrectly reported as inactive/dead. The primary scope is chosen by preferring whichever is active (user scope preferred when both are active). When scopes differ, both states are surfaced in the machine_payload (`other_scope`, `other_ActiveState`, `other_SubState`) and in operator output.
+- **Recent logs correctness**: `recent_service_logs.py` now queries both `journalctl -u` (system) and `journalctl --user-unit` (user) scopes and prefers whichever has actual log content. The `"-- No entries --"` journalctl marker is filtered out. Scope is included in the machine_payload. Summary now says "No recent logs" when truly empty instead of misleading count-only output.
+- **File read answer-first output**: `files_read_text.py` now includes bounded `content` (up to 2048 chars), `line_count`, and `content_truncated` in machine_payload. The result surfacing layer uses this to show actual file contents answer-first, e.g. `"Contents of a.txt (5 bytes, 1 lines):\nhello"`.
+- **Result surfacing layer improvements** (`result_surfacing.py`):
+  - File read extractor now prefers `content` from machine_payload (reliable), falls back to `latest_summary`, then to path+size metadata. Includes line count and truncation flag.
+  - Service status extractor now surfaces scope label and cross-scope differences.
+  - Recent logs extractor now surfaces scope context and says "No recent logs" only when line_count is 0 and log list is empty. Uses `"in the last Nm"` format.
+- **Tests**: Added 11 new tests covering: file content from machine_payload, small file full content, large file truncation, service scope awareness, cross-scope differences, legacy no-scope payloads, log scope context, no-entries correctness, diagnostics partial data, directory exists, thin status fallback. Updated 4 existing tests to match new output formats. Added 3 new diagnostics pack tests for user-scope preference, user-scope log preference, and no-entries message.
+- All existing tests pass; no regressions to queue delivery, live refresh, duplicate suppression, or review behavior.
+- Intentional remaining limitations: content excerpt in machine_payload is capped at 2048 chars; binary files are not supported by the read_text skill; service scope check makes two subprocess calls instead of one.
+
 ## 2026-03-15 — GitHub PR #TBD — feat(vera/review): surface evidence-grounded result values across linked completions and review outputs
 
 - Added `vera/result_surfacing.py`: a reusable, deterministic, evidence-grounded value extraction and formatting layer that inspects `step_summaries`/`machine_payload` from canonical execution evidence and produces concise, bounded result text for read/inspection-style operations.
