@@ -1208,3 +1208,21 @@ Vera v0 now includes a narrow job-outcome review capability in chat while preser
 - Other classes (`canceled`, `manual_only`, `noisy_large_result`) intentionally remain unsurfaced for later additive PRs.
 
 - Evidence-grounded value-forward surfacing layer (`vera/result_surfacing.py`): linked completion messages and review outputs now prefer concise, evidence-grounded result text over generic status-only messaging for read/inspection operations. The layer inspects `step_summaries`/`machine_payload` evidence and deterministically formats bounded results for supported skill families (file read/exists/stat, directory listing, service status, recent logs, diagnostics snapshot, process list). When no useful structured value is available, falls back to current status-oriented completion text. Large outputs (file content, log excerpts) are bounded via truncation/excerpt limits.
+
+## Governed code/script draft lane (PR #TBD)
+
+Vera now has a deterministic code/script/config draft lane that creates real `write_file` preview state backed by LLM-generated code, enabling the `save it` → governed submit flow.
+
+**Classifier (`src/voxera/core/code_draft_intent.py`):**
+- `is_code_draft_request(message)`: requires a creation verb + (language keyword + subject noun) OR explicit filename with code extension. Excludes save-by-reference phrases.
+- `classify_code_draft_intent(message)`: returns a `write_file` preview payload with an empty content placeholder. Actual code is injected by the caller post-LLM-reply.
+- `extract_code_from_reply(text)`: extracts the first fenced code block from the LLM reply for content injection.
+- Supports 30+ languages/file types. Single-letter ambiguous tokens (`c`, `r`) excluded from keyword matching; caught via explicit filenames (`.c`, `.r`).
+
+**App-layer integration (`vera_web/app.py`):**
+- After `generate_vera_reply()`, if `is_code_draft_request(message)` is True, the reply is scanned for a fenced code block; if found, it is injected into the preview and the session state is updated.
+- Code draft replies are excluded from the conversational-control reply suppressor so code-containing answers are always shown in chat.
+- The hidden preview builder can also produce a code draft payload; the post-reply step merges the LLM-extracted code into whichever payload is active.
+
+**Submit patterns (`vera/handoff.py`):**
+- Added `save it`, `save this`, `let's save it/this`, and `write it/this to file` to `_ACTIVE_PREVIEW_SUBMIT_PATTERNS`. These only fire when a preview exists (fail-closed).

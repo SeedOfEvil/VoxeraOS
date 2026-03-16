@@ -10,6 +10,11 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import load_config as load_runtime_config
+from ..core.code_draft_intent import (
+    classify_code_draft_intent,
+    extract_code_from_reply,
+    is_code_draft_request,
+)
 from ..core.file_intent import detect_blocked_file_intent
 from ..paths import queue_root as default_queue_root
 from ..vera.evidence_review import (
@@ -687,6 +692,43 @@ async def chat(request: Request):
     if isinstance(investigation_payload, dict):
         write_session_investigation(root, active_session, investigation_payload)
         write_session_derived_investigation_output(root, active_session, None)
+
+    # Code draft post-processing: after the LLM reply we know the actual code
+    # content.  Extract it from any fenced block and inject it into the preview
+    # so the preview is authoritative and submit-ready — not just a placeholder.
+    is_code_draft_turn = is_code_draft_request(message) and not informational_web_turn
+    if is_code_draft_turn:
+        code_content = extract_code_from_reply(reply["answer"])
+        if code_content is not None:
+            # Use existing builder payload if the hidden compiler built one;
+            # otherwise create a fresh code draft preview now.
+            target_draft: dict[str, object] | None = builder_payload
+            if target_draft is None:
+                raw_draft = classify_code_draft_intent(message)
+                if raw_draft is not None:
+                    try:
+                        target_draft = normalize_preview_payload(raw_draft)
+                    except Exception:
+                        target_draft = None
+            if isinstance(target_draft, dict):
+                wf = target_draft.get("write_file")
+                if isinstance(wf, dict):
+                    updated_draft: dict[str, object] = {
+                        **target_draft,
+                        "write_file": {**wf, "content": code_content},
+                    }
+                    builder_payload = updated_draft
+                    write_session_preview(root, active_session, builder_payload)
+                    write_session_handoff_state(
+                        root,
+                        active_session,
+                        attempted=False,
+                        queue_path=str(root),
+                        status="preview_ready",
+                        error=None,
+                        job_id=None,
+                    )
+
     guarded_answer = _guardrail_submission_claim(
         root=root,
         session_id=active_session,
@@ -700,10 +742,17 @@ async def chat(request: Request):
     ) and not is_json_content_request
 
     assistant_text = guarded_answer
-    should_use_conversational_control_reply = not is_enrichment_turn and (
-        (is_voxera_control_turn and not is_json_content_request)
-        or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
-        or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
+    # Code draft replies must NOT be suppressed — they contain the actual code
+    # that the user needs to see in a proper fenced block.  All other preview
+    # control-turn suppression logic still applies.
+    should_use_conversational_control_reply = (
+        not is_enrichment_turn
+        and not is_code_draft_turn
+        and (
+            (is_voxera_control_turn and not is_json_content_request)
+            or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
+            or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
+        )
     )
     if should_use_conversational_control_reply:
         assistant_text = _conversational_preview_update_message(

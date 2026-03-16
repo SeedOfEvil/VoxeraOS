@@ -1727,3 +1727,30 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 - On each Vera chat cycle, completion ingestion runs first; then at most one unsurfaced eligible completion (policy in `read_only_success|mutating_success|approval_blocked|failed`) is formatted with deterministic evidence-grounded text and appended as an assistant turn.
 - Surfaced completions are marked in session artifact state via `surfaced_in_chat=true` and `surfaced_at_ms`, preventing repost spam on later turns.
 - Mutating success is now auto-surfaced only when canonical metadata indicates true terminal completion (no pending/delegated downstream child work). Canceled, noisy, and manual-only classes remain intentionally unsurfaced; manual evidence review flow remains the path for those classes.
+
+## 2026-03-16 — PR #TBD — feat(vera): add governed code/script draft lane with authoritative preview support
+
+- Summary:
+  - Added `src/voxera/core/code_draft_intent.py`: bounded deterministic classifier for code/script/config draft requests. Supports 30+ file types via `_LANGUAGE_REGISTRY`. Detects intent via verb + language keyword + subject noun OR explicit filename with code extension. Excludes save-by-reference requests. Produces a `write_file` payload with an empty content placeholder.
+  - Extended `src/voxera/vera_web/app.py`: after `generate_vera_reply()`, code is extracted from the LLM reply (via `extract_code_from_reply`) and injected into the preview. This creates a real authoritative `write_file` preview backed by LLM-generated content, enabling "save it" → governed submit flow without any new LLM call.
+  - Code draft replies are explicitly excluded from the conversational-control reply suppressor so code-containing answers are shown in chat (not replaced with "Understood").
+  - Extended `src/voxera/vera/handoff.py` `_ACTIVE_PREVIEW_SUBMIT_PATTERNS` with 4 new patterns: `save it`, `save this`, `let's save it/this`, and `write it/this to file`. These only fire when `preview_available=True` (fail-closed).
+  - Added `tests/test_code_draft_intent.py` with 63 unit tests covering all public functions.
+  - Added 14 integration tests to `tests/test_vera_web.py` for the code draft lane (preview creation, code injection, fenced code in reply, "save it" submit flow, no-preview fallback).
+  - Updated existing test `test_non_voxera_user_requested_json_content_is_still_allowed` → `test_json_config_request_creates_preview_and_shows_fenced_code` to reflect intentional new behavior.
+
+- Design decisions:
+  - Code draft classifier intentionally NOT wired into `_draft_from_candidate_message` / `maybe_draft_job_payload` to avoid routing conflicts with save-by-reference and structured note paths. Only runs post-LLM-reply in `app.py`.
+  - Single-letter language tokens `c` and `r` excluded from `_LANGUAGE_RE` (too ambiguous); caught via explicit filenames (`main.c`, `analysis.r`). `md` bare token excluded for same reason; `markdown` keyword or `.md` filename works.
+  - `go` included in `_LANGUAGE_RE` but requires a subject noun (script/program/config etc.) to prevent "go ahead" false positives.
+  - Empty content placeholder in classifier output; actual code injected post-reply for authoritative, LLM-generated content.
+
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`

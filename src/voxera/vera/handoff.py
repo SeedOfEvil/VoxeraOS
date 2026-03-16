@@ -71,6 +71,11 @@ _ACTIVE_PREVIEW_SUBMIT_PATTERNS = (
     r"\bsend\s+this\s+version\b",
     r"\bsubmit\s+this\s+one\b",
     r"\bgo\s+with\s+this\b",
+    # Code/file draft save patterns: pronoun-only references when a preview exists
+    r"\bsave\s+it\b",
+    r"\bsave\s+this\b",
+    r"\blets?\s+save\s+(?:it|this)\b",
+    r"\bwrite\s+(?:it|this)\s+to\s+(?:a\s+)?(?:file|disk)\b",
 )
 
 _DOMAIN_RE = re.compile(r"\b([a-z0-9-]+(?:\.[a-z0-9-]+)+)(/[^\s]*)?\b", re.IGNORECASE)
