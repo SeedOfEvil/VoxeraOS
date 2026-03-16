@@ -2490,6 +2490,80 @@ def test_save_previous_answer_to_markdown_creates_preview(tmp_path, monkeypatch)
     )
 
 
+def test_black_hole_explanation_then_save_previous_answer_creates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "black hole" in user_message.lower():
+            return {
+                "answer": "A black hole is a region of spacetime where gravity is so strong that even light cannot escape.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Explain what a black hole is in a few paragraphs."},
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "write your previous answer to a file called blackhole.md",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/blackhole.md"
+    assert (
+        preview["write_file"]["content"]
+        == "A black hole is a region of spacetime where gravity is so strong that even light cannot escape."
+    )
+
+
+def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "entropy" in user_message.lower():
+            return {
+                "answer": "Entropy is a measure of how spread out energy is, often described as disorder.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "Explain entropy simply."})
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note called entropy.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/entropy.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Entropy is a measure of how spread out energy is, often described as disorder."
+    )
+
+
 def test_recent_assistant_reference_failure_is_clear_when_no_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

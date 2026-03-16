@@ -160,23 +160,36 @@ def _is_informational_web_query(message: str) -> bool:
     if _is_operational_side_effect_request(lowered):
         return False
 
-    informational_terms = (
+    explicit_search_terms = (
         "what's on",
         "what is on",
         "look up",
         "look into",
         "search for",
         "search ",
+        "search the web",
+        "search online",
         "find out",
+        "find the latest",
+        "find current",
         "find information",
         "give me information",
+        "find sources",
+        "investigate",
+        "investigation",
+        "web investigation",
         "stock information",
         "information about",
-        "tell me about",
         "latest",
         "latest news",
         "latest stories",
         "latest updates",
+        "latest official",
+        "latest documentation",
+        "latest docs",
+        "current documentation",
+        "official documentation",
+        "official docs",
         "recent",
         "news",
         "world news",
@@ -188,13 +201,8 @@ def _is_informational_web_query(message: str) -> bool:
         "market news",
         "market updates",
         "release notes",
-        "summarize",
-        "summary",
         "compare",
         "research",
-        "explain",
-        "what is",
-        "what does",
         "what changed",
         "what happened",
         "what's happening",
@@ -231,12 +239,20 @@ def _is_informational_web_query(message: str) -> bool:
     )
     web_hints = ("http://", "https://", ".com", ".io", "website", "web")
 
-    contains_info_signal = any(term in lowered for term in informational_terms)
+    contains_explicit_search_signal = any(term in lowered for term in explicit_search_terms)
     looks_like_question = lowered.endswith("?") or any(
         lowered.startswith(starter) for starter in question_starters
     )
 
-    return contains_info_signal or (
+    current_info_query = bool(
+        re.search(r"\b(latest|current|recent|today|right\s+now|as\s+of\s+today)\b", lowered)
+    )
+    explicit_docs_query = bool(re.search(r"\b(official\s+)?(docs|documentation)\b", lowered))
+
+    if explicit_docs_query and current_info_query:
+        return True
+
+    return contains_explicit_search_signal or (
         looks_like_question and any(hint in lowered for hint in web_hints)
     )
 
