@@ -211,9 +211,15 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
         ("whats the latest world wide news?", True),
         ("what are the latest global headlines?", True),
         ("look up cnn for me", True),
-        ("explain what VMware Horizon does", True),
+        ("explain what VMware Horizon does", False),
+        ("explain entropy simply", False),
+        ("explain what a black hole is in a few paragraphs", False),
+        ("the higgs field", False),
+        ("what is quantum field theory?", False),
+        ("tell me about atoms", False),
         ("find information about VMware Horizon 8", True),
         ("look into the latest Brave Search API docs", True),
+        ("search the web for the latest official Brave Search API documentation", True),
         ("research Nvidia earnings", True),
         ("open cnn.com", False),
         ("open cnn for me", False),
@@ -224,6 +230,46 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
 )
 def test_informational_query_classifier(message: str, expected: bool) -> None:
     assert vera_service._is_informational_web_query(message) is expected
+
+
+def test_conversational_explanation_prompt_stays_out_of_web_investigation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = AppConfig(
+        web_investigation=WebInvestigationConfig(
+            api_key_ref="BRAVE_API_KEY", env_api_key_var="BRAVE_API_KEY"
+        )
+    )
+    cfg.brain = {"primary": type("P", (), {"type": "gemini", "model": "x", "api_key_ref": "k"})()}
+    monkeypatch.setattr(vera_service, "load_app_config", lambda: cfg)
+
+    class _FakeBrain:
+        async def generate(self, messages, tools):
+            _ = (messages, tools)
+
+            class _Resp:
+                text = "Entropy is a measure of disorder in a system."
+
+            return _Resp()
+
+    monkeypatch.setattr(vera_service, "_create_brain", lambda provider: _FakeBrain())
+
+    called = {"search": False}
+
+    async def _fake_search(self, *, query: str, count: int = 5):
+        _ = (query, count)
+        called["search"] = True
+        return []
+
+    monkeypatch.setattr(BraveSearchClient, "search", _fake_search)
+
+    result = asyncio.run(
+        vera_service.generate_vera_reply(turns=[], user_message="Explain entropy simply.")
+    )
+
+    assert called["search"] is False
+    assert result["status"] == "ok:primary"
+    assert "Entropy is" in result["answer"]
 
 
 def test_vera_finance_query_routes_to_brave(monkeypatch: pytest.MonkeyPatch) -> None:

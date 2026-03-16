@@ -272,12 +272,35 @@ def _message_requests_referenced_content(message: str) -> bool:
         return False
     return bool(
         re.search(
-            r"\b(that\s+(?:joke|summary|text|answer|response)|that\s+into\s+(?:a\s+)?file|"
-            r"use\s+your\s+previous\s+response|previous\s+(?:response|answer)|last\s+(?:response|answer)|"
-            r"put\s+that\s+into\s+(?:a\s+)?file|use\s+that\s+as\s+(?:the\s+)?content)\b",
+            r"\b("
+            r"that\s+(?:joke|summary|text|answer|response|previous\s+summary|previous\s+answer|previous\s+response)|"
+            r"(?:the\s+)?previous\s+(?:summary|response|answer)|"
+            r"(?:the\s+)?last\s+(?:summary|response|answer)|"
+            r"your\s+previous\s+(?:summary|response|answer)|"
+            r"that\s+into\s+(?:a\s+)?(?:file|note)|"
+            r"save\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"save\s+that\s+to\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"put\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"write\s+your\s+previous\s+(?:answer|response|summary)\s+to\s+(?:a\s+)?file|"
+            r"use\s+your\s+previous\s+response|"
+            r"put\s+that\s+into\s+(?:a\s+)?file|"
+            r"use\s+that\s+as\s+(?:the\s+)?content"
+            r")\b",
             lowered,
         )
     )
+
+
+def is_recent_assistant_content_save_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    save_signal = bool(re.search(r"\b(save|write|put|create|make)\b", lowered))
+    target_signal = bool(re.search(r"\b(file|note|notes|markdown|\.md\b|\.txt\b)\b", lowered))
+    reference_signal = _message_requests_referenced_content(
+        lowered
+    ) or _looks_like_plural_reference_request(lowered)
+    return save_signal and target_signal and reference_signal
 
 
 def _looks_like_ambiguous_reference_only(message: str) -> bool:
@@ -292,6 +315,18 @@ def _looks_like_ambiguous_reference_only(message: str) -> bool:
             lowered,
         )
         and not _message_requests_referenced_content(message)
+    )
+
+
+def _looks_like_plural_reference_request(message: str) -> bool:
+    lowered = message.lower()
+    if not re.search(r"\b(those|these|both|all)\b", lowered):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:save|put|write|add|use|make|create)\b.*\b(?:those|these|both|all)\b",
+            lowered,
+        )
     )
 
 
@@ -320,12 +355,45 @@ def _select_recent_assistant_content(
         return None
     if not _message_requests_referenced_content(message):
         return None
-    for raw in reversed(assistant_content_candidates[-4:]):
+
+    preferred_summary = bool(
+        re.search(r"\b(summary|summari[sz]e|synthesis|overview|recap|explain(?:ation)?)\b", message)
+    )
+    vague_reference_only = bool(
+        re.search(r"\b(save|write|put)\b", message)
+        and re.search(r"\b(that|this|it)\b", message)
+        and not re.search(r"\b(summary|answer|response|text|content)\b", message)
+    )
+    plural_or_explicitly_ambiguous_reference = bool(
+        _looks_like_plural_reference_request(message)
+        or re.search(r"\b(previous|last)\s+(two|2|few|several|multiple)\b", message)
+        or re.search(r"\b(earlier\s+one|older\s+one|prior\s+one)\b", message)
+    )
+
+    viable: list[str] = []
+    for raw in reversed(assistant_content_candidates[-6:]):
         candidate = raw.strip()
         if not candidate or _looks_like_non_authored_assistant_message(candidate):
             continue
-        return candidate
-    return None
+        if len(candidate) < 24 and len(candidate.split()) < 4:
+            continue
+        viable.append(candidate)
+
+    if not viable:
+        return None
+    if plural_or_explicitly_ambiguous_reference:
+        return None
+    if preferred_summary:
+        for candidate in viable:
+            lowered = candidate.lower()
+            if any(
+                token in lowered
+                for token in ("summary", "overview", "recap", "key points", "in short")
+            ):
+                return candidate
+    if vague_reference_only:
+        return viable[0]
+    return viable[0]
 
 
 def _infer_content_from_message(text: str) -> str | None:
@@ -395,12 +463,25 @@ def is_investigation_derived_save_request(message: str) -> bool:
     if not lowered:
         return False
     save_action = bool(re.search(r"\b(save|write|export)\b", lowered))
-    derived_target = bool(re.search(r"\b(that|comparison|summary)\b", lowered))
+    derived_target = bool(re.search(r"\b(comparison|summary)\b", lowered))
     note_target = bool(
         re.search(r"\b(note|notes|markdown|file)\b", lowered)
         or re.search(r"\b[~\/a-z0-9_.-]+\.md\b", lowered)
     )
     return save_action and derived_target and note_target
+
+
+def is_investigation_derived_followup_save_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    save_action = bool(re.search(r"\b(save|write|export|put)\b", lowered))
+    pronoun_target = bool(re.search(r"\b(that|this|it)\b", lowered))
+    note_target = bool(
+        re.search(r"\b(note|notes|markdown|file)\b", lowered)
+        or re.search(r"\b[~\/a-z0-9_.-]+\.md\b", lowered)
+    )
+    return save_action and pronoun_target and note_target
 
 
 def _extract_result_selection(message: str) -> list[int] | str | None:
@@ -518,7 +599,10 @@ def draft_investigation_derived_save_preview(
     *,
     derived_output: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    if not is_investigation_derived_save_request(message):
+    if not (
+        is_investigation_derived_save_request(message)
+        or is_investigation_derived_followup_save_request(message)
+    ):
         return None
     if not isinstance(derived_output, dict):
         return None
@@ -780,12 +864,13 @@ def _normalize_structured_file_write_payload(
                 break
     reference_requested = _message_requests_referenced_content(text)
     ambiguous_reference = _looks_like_ambiguous_reference_only(text)
+    plural_reference = _looks_like_plural_reference_request(text)
     if content is None:
         content = _select_recent_assistant_content(
             message=text,
             assistant_content_candidates=assistant_content_candidates,
         )
-    if content is None and (reference_requested or ambiguous_reference):
+    if content is None and (reference_requested or ambiguous_reference or plural_reference):
         return None
     if content is None:
         content = _infer_content_from_message(text) or ""

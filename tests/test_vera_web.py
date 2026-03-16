@@ -485,6 +485,101 @@ def test_save_derived_summary_creates_governed_preview_only(tmp_path, monkeypatc
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
+def test_compare_then_save_that_to_note_uses_derived_output_precedence(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "compare results 1 and 3"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"] == "write investigation comparison to markdown note"
+    assert "# Investigation Comparison" in preview["write_file"]["content"]
+
+
+def test_summarize_then_save_that_to_markdown_uses_derived_output_precedence(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "summarize results 2 and 4"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a markdown file"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"] == "write investigation summary to markdown note"
+    assert "# Investigation Summary" in preview["write_file"]["content"]
+
+
+def test_derived_output_does_not_override_newer_conversational_answer_for_save_that(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "dark matter" in user_message.lower():
+            return {
+                "answer": "Dark matter is unseen matter inferred from gravitational effects.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "compare results 1 and 3"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note"},
+    )
+    vera_service.write_session_preview(queue, sid, None)
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Explain dark matter simply."},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note called darkmatter.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/darkmatter.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Dark matter is unseen matter inferred from gravitational effects."
+    )
+
+
 def test_save_derived_output_without_existing_derivation_fails_closed(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -2405,6 +2500,271 @@ def test_active_preview_put_that_into_file_is_fail_closed_without_grounded_conte
 
     after = vera_service.read_session_preview(queue, sid)
     assert after == before
+
+
+def test_save_previous_summary_creates_governed_write_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "summarize" in user_message.lower():
+            return {
+                "answer": "Summary:\n- Item A\n- Item B\nOverall: stable outlook.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "please summarize what we just discussed"},
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "ok take that previous summary and put it in a note called sessionstart.txt",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    turns = vera_service.read_session_turns(queue, sid)
+    assert preview is not None
+    assert turns[-1]["role"] == "assistant"
+    assert "nothing has been submitted" in turns[-1]["text"].lower()
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/sessionstart.txt"
+    assert preview["write_file"]["mode"] == "overwrite"
+    assert (
+        preview["write_file"]["content"] == "Summary:\n- Item A\n- Item B\nOverall: stable outlook."
+    )
+
+
+def test_save_previous_answer_to_markdown_creates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "explain" in user_message.lower():
+            return {
+                "answer": "This is the previous answer with explanation details.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "explain the architecture briefly"},
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "write your previous answer to a file called sessionstart.md",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/sessionstart.md"
+    assert preview["write_file"]["mode"] == "overwrite"
+    assert (
+        preview["write_file"]["content"] == "This is the previous answer with explanation details."
+    )
+
+
+def test_black_hole_explanation_then_save_previous_answer_creates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "black hole" in user_message.lower():
+            return {
+                "answer": "A black hole is a region of spacetime where gravity is so strong that even light cannot escape.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Explain what a black hole is in a few paragraphs."},
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "write your previous answer to a file called blackhole.md",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/blackhole.md"
+    assert (
+        preview["write_file"]["content"]
+        == "A black hole is a region of spacetime where gravity is so strong that even light cannot escape."
+    )
+
+
+def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "entropy" in user_message.lower():
+            return {
+                "answer": "Entropy is a measure of how spread out energy is, often described as disorder.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "Explain entropy simply."})
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note called entropy.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/entropy.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Entropy is a measure of how spread out energy is, often described as disorder."
+    )
+
+
+def test_two_recent_assistant_answers_save_that_prefers_latest(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "gravity" in lowered:
+            return {"answer": "Gravity is the attraction between masses.", "status": "ok:test"}
+        if "dark matter" in lowered:
+            return {
+                "answer": "Dark matter is inferred from gravity effects and does not emit light.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "Explain gravity simply."})
+    client.post("/chat", data={"session_id": sid, "message": "Explain dark matter simply."})
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note called ambiguous.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/ambiguous.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Dark matter is inferred from gravity effects and does not emit light."
+    )
+
+
+def test_plural_save_reference_fails_closed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "gravity" in lowered:
+            return {"answer": "Gravity is the attraction between masses.", "status": "ok:test"}
+        if "dark matter" in lowered:
+            return {
+                "answer": "Dark matter is inferred from gravity effects and does not emit light.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "Explain gravity simply."})
+    client.post("/chat", data={"session_id": sid, "message": "Explain dark matter simply."})
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save both to a note called ambiguous.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    turns = vera_service.read_session_turns(queue, sid)
+    assert preview is None
+    assert (
+        "couldn't resolve a suitable recent assistant-authored summary/answer"
+        in turns[-1]["text"].lower()
+    )
+
+
+def test_recent_assistant_reference_failure_is_clear_when_no_content(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "save your previous answer to a note called missing.txt",
+        },
+    )
+
+    assert vera_service.read_session_preview(queue, sid) is None
+    turns = vera_service.read_session_turns(queue, sid)
+    assert turns[-1]["role"] == "assistant"
+    assert (
+        "couldn't resolve a suitable recent assistant-authored summary/answer"
+        in turns[-1]["text"].lower()
+    )
+    assert res.status_code == 200
 
 
 def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch):

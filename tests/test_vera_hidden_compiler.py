@@ -418,7 +418,9 @@ def test_generate_preview_builder_update_resolves_that_summary_to_recent_assista
     assert preview["write_file"]["content"] == summary
 
 
-def test_generate_preview_builder_update_ambiguous_reference_fails_closed(monkeypatch):
+def test_generate_preview_builder_update_vague_that_reference_uses_single_recent_assistant_text(
+    monkeypatch,
+):
     _mock_config_with_brain(monkeypatch)
 
     class _FakeBrain:
@@ -439,6 +441,68 @@ def test_generate_preview_builder_update_ambiguous_reference_fails_closed(monkey
                 {"role": "assistant", "text": "Here is a draft paragraph about cats."},
             ],
             user_message="save that in a file called ambiguous.txt",
+            active_preview=None,
+        )
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/ambiguous.txt"
+    assert preview["write_file"]["content"] == "Here is a draft paragraph about cats."
+
+
+def test_generate_preview_builder_update_vague_that_prefers_latest_assistant_content(monkeypatch):
+    _mock_config_with_brain(monkeypatch)
+
+    class _FakeBrain:
+        def __init__(self, model, api_key_ref):
+            _ = (model, api_key_ref)
+
+        async def generate(self, messages, tools):
+            _ = (messages, tools)
+            return _FakeResponse(
+                '{"action":"no_change","intent_type":"unclear","updated_preview":null,"patch":null}'
+            )
+
+    monkeypatch.setattr(vera_service, "GeminiBrain", _FakeBrain)
+
+    preview = asyncio.run(
+        vera_service.generate_preview_builder_update(
+            turns=[
+                {"role": "assistant", "text": "First paragraph about cats."},
+                {"role": "assistant", "text": "Second paragraph about dogs."},
+            ],
+            user_message="save that in a file called ambiguous.txt",
+            active_preview=None,
+        )
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/ambiguous.txt"
+    assert preview["write_file"]["content"] == "Second paragraph about dogs."
+
+
+def test_generate_preview_builder_update_plural_reference_fails_closed(monkeypatch):
+    _mock_config_with_brain(monkeypatch)
+
+    class _FakeBrain:
+        def __init__(self, model, api_key_ref):
+            _ = (model, api_key_ref)
+
+        async def generate(self, messages, tools):
+            _ = (messages, tools)
+            return _FakeResponse(
+                '{"action":"no_change","intent_type":"unclear","updated_preview":null,"patch":null}'
+            )
+
+    monkeypatch.setattr(vera_service, "GeminiBrain", _FakeBrain)
+
+    preview = asyncio.run(
+        vera_service.generate_preview_builder_update(
+            turns=[
+                {"role": "assistant", "text": "First paragraph about cats."},
+                {"role": "assistant", "text": "Second paragraph about dogs."},
+            ],
+            user_message="save both to a file called ambiguous.txt",
             active_preview=None,
         )
     )

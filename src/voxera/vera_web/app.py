@@ -31,9 +31,11 @@ from ..vera.handoff import (
     is_active_preview_submit_request,
     is_explicit_handoff_request,
     is_investigation_compare_request,
+    is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
     is_investigation_save_request,
     is_investigation_summary_request,
+    is_recent_assistant_content_save_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
     submit_preview,
@@ -185,11 +187,37 @@ def _is_natural_confirmation_phrase(message: str) -> bool:
 def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] | None) -> bool:
     if active_preview is not None:
         return True
+    if is_recent_assistant_content_save_request(message):
+        return True
     if _is_natural_confirmation_phrase(message):
         return True
     if is_explicit_handoff_request(message) or is_active_preview_submit_request(message):
         return True
     return maybe_draft_job_payload(message, active_preview=None) is not None
+
+
+def _prefer_derived_followup_save(
+    *,
+    message: str,
+    session_derived_output: dict[str, object] | None,
+    turns: list[dict[str, str]],
+) -> bool:
+    if not isinstance(session_derived_output, dict):
+        return False
+    if not is_investigation_derived_followup_save_request(message):
+        return False
+
+    expected_answer = str(session_derived_output.get("answer") or "").strip()
+    if not expected_answer:
+        return False
+
+    for turn in reversed(turns):
+        role = str(turn.get("role") or "").strip().lower()
+        if role != "assistant":
+            continue
+        latest_assistant = str(turn.get("text") or "").strip()
+        return latest_assistant == expected_answer
+    return False
 
 
 def _looks_like_voxera_preview_dump(text: str) -> bool:
@@ -265,11 +293,22 @@ def _is_explicit_json_content_request(message: str) -> bool:
     )
 
 
-def _conversational_preview_update_message(*, updated: bool, has_active_preview: bool) -> str:
+def _conversational_preview_update_message(
+    *,
+    updated: bool,
+    has_active_preview: bool,
+    user_message: str,
+) -> str:
     if updated:
         return "Understood. Nothing has been submitted or executed yet. I can send it whenever you’re ready."
     if has_active_preview:
         return "Understood. I still have the current request ready whenever you want to send it."
+    if is_recent_assistant_content_save_request(user_message):
+        return (
+            "I couldn't resolve a suitable recent assistant-authored summary/answer in this active session, "
+            "so I didn't prepare a write preview. Please point to a specific recent response or ask me to "
+            "generate one first."
+        )
     return "I couldn’t safely prepare a request yet. If you share clearer target details, I can continue."
 
 
@@ -417,7 +456,14 @@ async def chat(request: Request):
     session_investigation = read_session_investigation(root, active_session)
     session_derived_output = read_session_derived_investigation_output(root, active_session)
 
-    if is_investigation_derived_save_request(message):
+    should_attempt_derived_save = is_investigation_derived_save_request(message) or (
+        _prefer_derived_followup_save(
+            message=message,
+            session_derived_output=session_derived_output,
+            turns=turns,
+        )
+    )
+    if should_attempt_derived_save:
         derived_preview = draft_investigation_derived_save_preview(
             message,
             derived_output=session_derived_output,
@@ -594,6 +640,7 @@ async def chat(request: Request):
         is_info_query
         and pending_preview is None
         and not diagnostics_service_or_logs_intent(message)
+        and not is_recent_assistant_content_save_request(message)
     )
 
     # When an active preview exists and the user makes an informational query,
@@ -662,6 +709,7 @@ async def chat(request: Request):
         assistant_text = _conversational_preview_update_message(
             updated=builder_payload is not None,
             has_active_preview=pending_preview is not None,
+            user_message=message,
         )
 
     status = "prepared_preview" if builder_payload is not None else reply["status"]

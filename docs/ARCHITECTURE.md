@@ -1152,6 +1152,15 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 
 - Vera uses a lightweight deterministic phrase-normalization layer (`src/voxera/vera/handoff.py`) to map common conversational action requests into the smallest supported queue preview payload.
 - Supported intent families in this layer are intentionally narrow: web navigation URL opens, explicit file reads, and basic note/file write intents.
+- Save-by-reference write intents now include bounded current-session assistant-content resolution for phrases like `that summary`, `your previous answer`, and `the previous response`, routed into the same governed `write_file` preview contract.
+- Precedence rule: when a current investigation-derived comparison/summary exists in session, follow-up `save that ...` routes to the derived investigation save path first; generic recent-assistant-content save resolution is fallback-only.
+- Recency refinement: derived save-that precedence applies only while the derived comparison/summary remains the latest relevant assistant output; if a newer conversational assistant answer appears, singular `save that ...` resolves to that newer answer.
+- Singular vague references (for example `save that`) deterministically resolve to the most recent substantial assistant-authored message in the active session.
+- Resolver scope is intentionally limited to recent assistant-authored content in the active session transcript only (no cross-session recall, no broad history search).
+- Plural/explicitly ambiguous or unavailable assistant-content references fail conservatively with a clear user-facing refusal rather than guessing.
+- Conversational explanatory/teaching prompts remain in the normal Vera answer lane by default; they are not automatically treated as web investigation requests.
+- Read-only Brave investigation routing is reserved for explicit search/investigation/current-information intent (for example `search the web`, `look up`, `find the latest`, `latest official docs`).
+- Because save-by-reference uses session transcript content, this path depends on a real assistant-authored answer existing in the active session first.
 - Preview state is persisted per session (`pending_job_preview`) and is independent from rolling chat turn limits.
 - The session keeps exactly one active preview draft; follow-up revisions replace that draft, while lightweight acknowledgements leave it unchanged.
 - Hidden compiler/deterministic fallback prioritize semantic active-preview refinement interpretation (content/path/mode, pronouns) while preserving strict preview-only JSON mutation contracts and fail-closed behavior.
