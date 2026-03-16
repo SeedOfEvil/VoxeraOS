@@ -644,6 +644,26 @@ def test_file_read_large_content_shows_truncated_flag():
     assert "big.txt" in result
 
 
+def test_file_read_empty_file_surfaces_correctly():
+    """An empty file (content='') should surface as empty, not fall through to fallback."""
+    structured = _structured_with_step(
+        "files.read_text",
+        {
+            "path": "/config/empty.txt",
+            "bytes": 0,
+            "line_count": 0,
+            "content": "",
+            "content_truncated": False,
+        },
+        summary="Read text from /config/empty.txt",
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "empty.txt" in result
+    assert "(empty file)" in result
+    assert "Content not available" not in result
+
+
 # ---------------------------------------------------------------------------
 # Service status: scope awareness
 # ---------------------------------------------------------------------------

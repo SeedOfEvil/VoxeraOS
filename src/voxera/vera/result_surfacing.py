@@ -187,23 +187,34 @@ def _extract_file_read(*, structured: dict[str, Any], mission_id: str) -> str | 
     content_truncated = payload.get("content_truncated", False)
 
     # Strategy 1: content is directly in machine_payload (preferred, most reliable).
-    if isinstance(content, str) and content:
-        excerpt = _truncate(content)
-        meta_parts: list[str] = []
+    if isinstance(content, str):
+        if content:
+            excerpt = _truncate(content)
+            meta_parts: list[str] = []
+            if isinstance(byte_count, int):
+                meta_parts.append(f"{byte_count} bytes")
+            if isinstance(line_count, int):
+                meta_parts.append(f"{line_count} lines")
+            meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
+            trunc_note = (
+                " [truncated]" if content_truncated or len(content) > _MAX_TEXT_EXCERPT_CHARS else ""
+            )
+            header = (
+                f"Contents of {path}{meta}{trunc_note}:"
+                if path
+                else f"File contents{meta}{trunc_note}:"
+            )
+            return f"{header}\n{excerpt}"
+        # Empty string is valid content from a 0-byte file.
+        meta_parts_empty: list[str] = []
         if isinstance(byte_count, int):
-            meta_parts.append(f"{byte_count} bytes")
+            meta_parts_empty.append(f"{byte_count} bytes")
         if isinstance(line_count, int):
-            meta_parts.append(f"{line_count} lines")
-        meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
-        trunc_note = (
-            " [truncated]" if content_truncated or len(content) > _MAX_TEXT_EXCERPT_CHARS else ""
-        )
-        header = (
-            f"Contents of {path}{meta}{trunc_note}:"
-            if path
-            else f"File contents{meta}{trunc_note}:"
-        )
-        return f"{header}\n{excerpt}"
+            meta_parts_empty.append(f"{line_count} lines")
+        meta = f" ({', '.join(meta_parts_empty)})" if meta_parts_empty else ""
+        if path:
+            return f"Contents of {path}{meta}: (empty file)"
+        return f"File contents{meta}: (empty file)"
 
     # Strategy 2: latest_summary has richer content than the skill summary.
     summary = _step_summary_for_skill(structured, "files.read_text")
