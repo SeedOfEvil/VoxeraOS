@@ -197,7 +197,9 @@ def _extract_file_read(*, structured: dict[str, Any], mission_id: str) -> str | 
                 meta_parts.append(f"{line_count} lines")
             meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
             trunc_note = (
-                " [truncated]" if content_truncated or len(content) > _MAX_TEXT_EXCERPT_CHARS else ""
+                " [truncated]"
+                if content_truncated or len(content) > _MAX_TEXT_EXCERPT_CHARS
+                else ""
             )
             header = (
                 f"Contents of {path}{meta}{trunc_note}:"
