@@ -227,7 +227,7 @@ def _run_journalctl(service: str, *, lines: int, since_minutes: int, user: bool)
     parsed = [
         line
         for line in completed.stdout.splitlines()
-        if line.strip() and "-- No entries --" not in line
+        if line.strip() and line.strip() != "-- No entries --"
     ]
     return _ScopeResult(lines=parsed)
 
