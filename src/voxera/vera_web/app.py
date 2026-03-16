@@ -34,6 +34,7 @@ from ..vera.handoff import (
     is_investigation_derived_save_request,
     is_investigation_save_request,
     is_investigation_summary_request,
+    is_recent_assistant_content_save_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
     submit_preview,
@@ -185,6 +186,8 @@ def _is_natural_confirmation_phrase(message: str) -> bool:
 def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] | None) -> bool:
     if active_preview is not None:
         return True
+    if is_recent_assistant_content_save_request(message):
+        return True
     if _is_natural_confirmation_phrase(message):
         return True
     if is_explicit_handoff_request(message) or is_active_preview_submit_request(message):
@@ -265,11 +268,22 @@ def _is_explicit_json_content_request(message: str) -> bool:
     )
 
 
-def _conversational_preview_update_message(*, updated: bool, has_active_preview: bool) -> str:
+def _conversational_preview_update_message(
+    *,
+    updated: bool,
+    has_active_preview: bool,
+    user_message: str,
+) -> str:
     if updated:
         return "Understood. Nothing has been submitted or executed yet. I can send it whenever you’re ready."
     if has_active_preview:
         return "Understood. I still have the current request ready whenever you want to send it."
+    if is_recent_assistant_content_save_request(user_message):
+        return (
+            "I couldn't resolve a suitable recent assistant-authored summary/answer in this active session, "
+            "so I didn't prepare a write preview. Please point to a specific recent response or ask me to "
+            "generate one first."
+        )
     return "I couldn’t safely prepare a request yet. If you share clearer target details, I can continue."
 
 
@@ -594,6 +608,7 @@ async def chat(request: Request):
         is_info_query
         and pending_preview is None
         and not diagnostics_service_or_logs_intent(message)
+        and not is_recent_assistant_content_save_request(message)
     )
 
     # When an active preview exists and the user makes an informational query,
@@ -662,6 +677,7 @@ async def chat(request: Request):
         assistant_text = _conversational_preview_update_message(
             updated=builder_payload is not None,
             has_active_preview=pending_preview is not None,
+            user_message=message,
         )
 
     status = "prepared_preview" if builder_payload is not None else reply["status"]

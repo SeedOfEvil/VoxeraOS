@@ -272,12 +272,32 @@ def _message_requests_referenced_content(message: str) -> bool:
         return False
     return bool(
         re.search(
-            r"\b(that\s+(?:joke|summary|text|answer|response)|that\s+into\s+(?:a\s+)?file|"
-            r"use\s+your\s+previous\s+response|previous\s+(?:response|answer)|last\s+(?:response|answer)|"
-            r"put\s+that\s+into\s+(?:a\s+)?file|use\s+that\s+as\s+(?:the\s+)?content)\b",
+            r"\b("
+            r"that\s+(?:joke|summary|text|answer|response|previous\s+summary|previous\s+answer|previous\s+response)|"
+            r"(?:the\s+)?previous\s+(?:summary|response|answer)|"
+            r"(?:the\s+)?last\s+(?:summary|response|answer)|"
+            r"your\s+previous\s+(?:summary|response|answer)|"
+            r"that\s+into\s+(?:a\s+)?(?:file|note)|"
+            r"save\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"save\s+that\s+to\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"put\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"write\s+your\s+previous\s+(?:answer|response|summary)\s+to\s+(?:a\s+)?file|"
+            r"use\s+your\s+previous\s+response|"
+            r"put\s+that\s+into\s+(?:a\s+)?file|"
+            r"use\s+that\s+as\s+(?:the\s+)?content"
+            r")\b",
             lowered,
         )
     )
+
+
+def is_recent_assistant_content_save_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    save_signal = bool(re.search(r"\b(save|write|put|create|make)\b", lowered))
+    target_signal = bool(re.search(r"\b(file|note|notes|markdown|\.md\b|\.txt\b)\b", lowered))
+    return save_signal and target_signal and _message_requests_referenced_content(lowered)
 
 
 def _looks_like_ambiguous_reference_only(message: str) -> bool:
@@ -320,12 +340,38 @@ def _select_recent_assistant_content(
         return None
     if not _message_requests_referenced_content(message):
         return None
-    for raw in reversed(assistant_content_candidates[-4:]):
+
+    preferred_summary = bool(
+        re.search(r"\b(summary|summari[sz]e|synthesis|overview|recap|explain(?:ation)?)\b", message)
+    )
+    vague_reference_only = bool(
+        re.search(r"\b(save|write|put)\b", message)
+        and re.search(r"\b(that|this|it)\b", message)
+        and not re.search(r"\b(summary|answer|response|text|content)\b", message)
+    )
+
+    viable: list[str] = []
+    for raw in reversed(assistant_content_candidates[-6:]):
         candidate = raw.strip()
         if not candidate or _looks_like_non_authored_assistant_message(candidate):
             continue
-        return candidate
-    return None
+        if len(candidate) < 24 and len(candidate.split()) < 4:
+            continue
+        viable.append(candidate)
+
+    if not viable:
+        return None
+    if vague_reference_only and len(viable) > 1:
+        return None
+    if preferred_summary:
+        for candidate in viable:
+            lowered = candidate.lower()
+            if any(
+                token in lowered
+                for token in ("summary", "overview", "recap", "key points", "in short")
+            ):
+                return candidate
+    return viable[0]
 
 
 def _infer_content_from_message(text: str) -> str | None:

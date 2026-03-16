@@ -421,6 +421,8 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - Web nav phrasing like "open/go to/visit/take me to/bring up example.com" prepares the same minimal preview (`{"goal": "open https://example.com"}`).
 - Explicit file-inspection asks (for example `read/open/inspect/show me ~/path`) prepare a file-read preview when the target is explicit.
 - Common note/file-write asks (for example `make/create/write a note/file called hello.txt`) prepare the smallest supported write preview.
+- In the active session, save-by-reference phrasing (for example `put that previous summary in sessionstart.txt`, `write your previous answer to a file`) resolves recent assistant-authored content into the governed `write_file` preview path.
+- This save-by-reference resolution is intentionally bounded to recent assistant content in the current session only; ambiguous/no-content references fail closed with a clear message.
 - Submit phrasing (`submit it`, `queue it`, `send it to VoxeraOS`, etc.) only hands off when a preview exists.
 - Vera remains preview-first and truthful: prepared is not submitted, submitted is not executed, and execution truth comes from VoxeraOS evidence.
 
