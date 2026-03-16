@@ -422,6 +422,7 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - Explicit file-inspection asks (for example `read/open/inspect/show me ~/path`) prepare a file-read preview when the target is explicit.
 - Common note/file-write asks (for example `make/create/write a note/file called hello.txt`) prepare the smallest supported write preview.
 - In the active session, save-by-reference phrasing (for example `put that previous summary in sessionstart.txt`, `write your previous answer to a file`) resolves recent assistant-authored content into the governed `write_file` preview path.
+- Singular save-by-reference phrasing like `save that` defaults to the most recent substantial assistant-authored message in the active session.
 - This save-by-reference resolution is intentionally bounded to recent assistant content in the current session only; ambiguous/no-content references fail closed with a clear message.
 - Conversational explanatory prompts (for example `Explain entropy simply`, `What is quantum field theory?`, `The higgs field`) stay in normal Vera answer mode by default.
 - Read-only web investigation is reserved for explicit investigation/search/current-info asks (for example `search the web for ...`, `find the latest ...`, `latest official documentation for ...`).

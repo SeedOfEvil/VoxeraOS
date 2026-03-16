@@ -2564,6 +2564,82 @@ def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, mo
     )
 
 
+def test_two_recent_assistant_answers_save_that_prefers_latest(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "gravity" in lowered:
+            return {"answer": "Gravity is the attraction between masses.", "status": "ok:test"}
+        if "dark matter" in lowered:
+            return {
+                "answer": "Dark matter is inferred from gravity effects and does not emit light.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "Explain gravity simply."})
+    client.post("/chat", data={"session_id": sid, "message": "Explain dark matter simply."})
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note called ambiguous.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/ambiguous.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Dark matter is inferred from gravity effects and does not emit light."
+    )
+
+
+def test_plural_save_reference_fails_closed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "gravity" in lowered:
+            return {"answer": "Gravity is the attraction between masses.", "status": "ok:test"}
+        if "dark matter" in lowered:
+            return {
+                "answer": "Dark matter is inferred from gravity effects and does not emit light.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "Explain gravity simply."})
+    client.post("/chat", data={"session_id": sid, "message": "Explain dark matter simply."})
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save both to a note called ambiguous.txt"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    turns = vera_service.read_session_turns(queue, sid)
+    assert preview is None
+    assert (
+        "couldn't resolve a suitable recent assistant-authored summary/answer"
+        in turns[-1]["text"].lower()
+    )
+
+
 def test_recent_assistant_reference_failure_is_clear_when_no_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

@@ -1153,8 +1153,9 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Vera uses a lightweight deterministic phrase-normalization layer (`src/voxera/vera/handoff.py`) to map common conversational action requests into the smallest supported queue preview payload.
 - Supported intent families in this layer are intentionally narrow: web navigation URL opens, explicit file reads, and basic note/file write intents.
 - Save-by-reference write intents now include bounded current-session assistant-content resolution for phrases like `that summary`, `your previous answer`, and `the previous response`, routed into the same governed `write_file` preview contract.
+- Singular vague references (for example `save that`) deterministically resolve to the most recent substantial assistant-authored message in the active session.
 - Resolver scope is intentionally limited to recent assistant-authored content in the active session transcript only (no cross-session recall, no broad history search).
-- Ambiguous or unavailable assistant-content references fail conservatively with a clear user-facing refusal rather than guessing.
+- Plural/explicitly ambiguous or unavailable assistant-content references fail conservatively with a clear user-facing refusal rather than guessing.
 - Conversational explanatory/teaching prompts remain in the normal Vera answer lane by default; they are not automatically treated as web investigation requests.
 - Read-only Brave investigation routing is reserved for explicit search/investigation/current-information intent (for example `search the web`, `look up`, `find the latest`, `latest official docs`).
 - Because save-by-reference uses session transcript content, this path depends on a real assistant-authored answer existing in the active session first.

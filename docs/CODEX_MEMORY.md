@@ -1,3 +1,10 @@
+## 2026-03-16 — GitHub PR #TBD — fix(vera): singular save-by-reference defaults to latest assistant content
+
+- Resolver behavior tightened for session-content save references: singular vague phrasing (for example `save that`, `put that in a file`) now deterministically resolves to the most recent substantial assistant-authored message in the active session.
+- Conservative fail-closed behavior remains for plural/explicitly ambiguous references (for example `save both`, `save those`, `save previous two`).
+- Investigation-derived save routing remains explicit (`comparison`/`summary` wording required), avoiding accidental capture of generic conversational `save that` requests.
+- Added coverage in hidden-compiler and Vera web tests for latest-message preference and plural ambiguity refusal.
+
 ## 2026-03-15 — GitHub PR #TBD — feat(vera/diagnostics): fix diagnostics truth and surface operator-grade answer-first outputs across read and inspection flows
 
 - **Service status correctness**: `service_status.py` now queries both system and user scopes via `systemctl` / `systemctl --user`. Voxera services running as user services are no longer incorrectly reported as inactive/dead. The primary scope is chosen by preferring whichever is active (user scope preferred when both are active). When scopes differ, both states are surfaced in the machine_payload (`other_scope`, `other_ActiveState`, `other_SubState`) and in operator output.
