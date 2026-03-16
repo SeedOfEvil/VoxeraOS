@@ -471,6 +471,19 @@ def is_investigation_derived_save_request(message: str) -> bool:
     return save_action and derived_target and note_target
 
 
+def is_investigation_derived_followup_save_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    save_action = bool(re.search(r"\b(save|write|export|put)\b", lowered))
+    pronoun_target = bool(re.search(r"\b(that|this|it)\b", lowered))
+    note_target = bool(
+        re.search(r"\b(note|notes|markdown|file)\b", lowered)
+        or re.search(r"\b[~\/a-z0-9_.-]+\.md\b", lowered)
+    )
+    return save_action and pronoun_target and note_target
+
+
 def _extract_result_selection(message: str) -> list[int] | str | None:
     lowered = message.strip().lower()
     if re.search(r"\b(all|everything)\b", lowered) and re.search(
@@ -586,7 +599,10 @@ def draft_investigation_derived_save_preview(
     *,
     derived_output: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    if not is_investigation_derived_save_request(message):
+    if not (
+        is_investigation_derived_save_request(message)
+        or is_investigation_derived_followup_save_request(message)
+    ):
         return None
     if not isinstance(derived_output, dict):
         return None

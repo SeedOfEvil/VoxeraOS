@@ -4,6 +4,7 @@
 - Conservative fail-closed behavior remains for plural/explicitly ambiguous references (for example `save both`, `save those`, `save previous two`).
 - Investigation-derived save routing remains explicit (`comparison`/`summary` wording required), avoiding accidental capture of generic conversational `save that` requests.
 - Added coverage in hidden-compiler and Vera web tests for latest-message preference and plural ambiguity refusal.
+- Follow-up precedence refined: if a current derived investigation output is active, `save that ...` now resolves through investigation-derived save first; generic recent-assistant fallback applies only when no derived output is present.
 
 ## 2026-03-15 — GitHub PR #TBD — feat(vera/diagnostics): fix diagnostics truth and surface operator-grade answer-first outputs across read and inspection flows
 

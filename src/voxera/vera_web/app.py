@@ -31,6 +31,7 @@ from ..vera.handoff import (
     is_active_preview_submit_request,
     is_explicit_handoff_request,
     is_investigation_compare_request,
+    is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
     is_investigation_save_request,
     is_investigation_summary_request,
@@ -431,7 +432,11 @@ async def chat(request: Request):
     session_investigation = read_session_investigation(root, active_session)
     session_derived_output = read_session_derived_investigation_output(root, active_session)
 
-    if is_investigation_derived_save_request(message):
+    should_attempt_derived_save = is_investigation_derived_save_request(message) or (
+        isinstance(session_derived_output, dict)
+        and is_investigation_derived_followup_save_request(message)
+    )
+    if should_attempt_derived_save:
         derived_preview = draft_investigation_derived_save_preview(
             message,
             derived_output=session_derived_output,

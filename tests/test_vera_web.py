@@ -485,6 +485,52 @@ def test_save_derived_summary_creates_governed_preview_only(tmp_path, monkeypatc
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
+def test_compare_then_save_that_to_note_uses_derived_output_precedence(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "compare results 1 and 3"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"] == "write investigation comparison to markdown note"
+    assert "# Investigation Comparison" in preview["write_file"]["content"]
+
+
+def test_summarize_then_save_that_to_markdown_uses_derived_output_precedence(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "summarize results 2 and 4"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a markdown file"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"] == "write investigation summary to markdown note"
+    assert "# Investigation Summary" in preview["write_file"]["content"]
+
+
 def test_save_derived_output_without_existing_derivation_fails_closed(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
