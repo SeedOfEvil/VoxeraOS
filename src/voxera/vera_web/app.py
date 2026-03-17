@@ -13,6 +13,7 @@ from ..config import load_config as load_runtime_config
 from ..core.code_draft_intent import (
     classify_code_draft_intent,
     extract_code_from_reply,
+    has_code_file_extension,
     is_code_draft_request,
 )
 from ..core.file_intent import detect_blocked_file_intent
@@ -696,38 +697,60 @@ async def chat(request: Request):
     # Code draft post-processing: after the LLM reply we know the actual code
     # content.  Extract it from any fenced block and inject it into the preview
     # so the preview is authoritative and submit-ready — not just a placeholder.
+    reply_code_content = extract_code_from_reply(reply["answer"])
+
     is_code_draft_turn = is_code_draft_request(message) and not informational_web_turn
-    if is_code_draft_turn:
-        code_content = extract_code_from_reply(reply["answer"])
-        if code_content is not None:
-            # Use existing builder payload if the hidden compiler built one;
-            # otherwise create a fresh code draft preview now.
-            target_draft: dict[str, object] | None = builder_payload
-            if target_draft is None:
-                raw_draft = classify_code_draft_intent(message)
-                if raw_draft is not None:
-                    try:
-                        target_draft = normalize_preview_payload(raw_draft)
-                    except Exception:
-                        target_draft = None
-            if isinstance(target_draft, dict):
-                wf = target_draft.get("write_file")
-                if isinstance(wf, dict):
-                    updated_draft: dict[str, object] = {
-                        **target_draft,
-                        "write_file": {**wf, "content": code_content},
-                    }
-                    builder_payload = updated_draft
-                    write_session_preview(root, active_session, builder_payload)
-                    write_session_handoff_state(
-                        root,
-                        active_session,
-                        attempted=False,
-                        queue_path=str(root),
-                        status="preview_ready",
-                        error=None,
-                        job_id=None,
-                    )
+
+    # Code draft refinement: when an active preview has a code-type file
+    # extension and the LLM reply contains a fenced code block, treat this
+    # turn as a code draft update so the reply is shown (not suppressed) and
+    # the preview content is refreshed with the updated code.
+    if (
+        not is_code_draft_turn
+        and not informational_web_turn
+        and not is_enrichment_turn
+        and isinstance(pending_preview, dict)
+        and reply_code_content is not None
+    ):
+        existing_wf = pending_preview.get("write_file")
+        if isinstance(existing_wf, dict) and has_code_file_extension(
+            str(existing_wf.get("path") or "")
+        ):
+            is_code_draft_turn = True
+
+    if is_code_draft_turn and reply_code_content is not None:
+        # Use existing builder payload if the hidden compiler built one;
+        # otherwise create a fresh code draft preview now.
+        target_draft: dict[str, object] | None = builder_payload
+        if target_draft is None:
+            raw_draft = classify_code_draft_intent(message)
+            if raw_draft is not None:
+                try:
+                    target_draft = normalize_preview_payload(raw_draft)
+                except Exception:
+                    target_draft = None
+        # Fall back to the existing pending preview for refinement turns
+        # where the classifier doesn't match but a code preview already exists.
+        if target_draft is None and isinstance(pending_preview, dict):
+            target_draft = dict(pending_preview)
+        if isinstance(target_draft, dict):
+            wf = target_draft.get("write_file")
+            if isinstance(wf, dict):
+                updated_draft: dict[str, object] = {
+                    **target_draft,
+                    "write_file": {**wf, "content": reply_code_content},
+                }
+                builder_payload = updated_draft
+                write_session_preview(root, active_session, builder_payload)
+                write_session_handoff_state(
+                    root,
+                    active_session,
+                    attempted=False,
+                    queue_path=str(root),
+                    status="preview_ready",
+                    error=None,
+                    job_id=None,
+                )
 
     guarded_answer = _guardrail_submission_claim(
         root=root,

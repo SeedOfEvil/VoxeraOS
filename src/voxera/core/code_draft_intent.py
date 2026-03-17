@@ -220,6 +220,24 @@ def extract_code_from_reply(text: str) -> str | None:
     return None
 
 
+def has_code_file_extension(path: str) -> bool:
+    """Return True if path ends with a known code/script/config file extension.
+
+    Used to detect whether an existing write_file preview is a code-type file,
+    which enables refinement detection (updating code content on follow-up turns).
+    """
+    if not path:
+        return False
+    # Collect unique extensions from the language registry
+    _code_exts = {cfg["extension"] for cfg in _LANGUAGE_REGISTRY.values() if cfg["extension"]}
+    for ext in _code_exts:
+        if path.endswith(ext):
+            return True
+    # Dockerfile has no extension
+    stripped = path.rstrip("/")
+    return stripped.endswith("/Dockerfile") or stripped == "Dockerfile"
+
+
 def code_fence_language(message: str) -> str | None:
     """Return the fence language tag for the language detected in message.
 

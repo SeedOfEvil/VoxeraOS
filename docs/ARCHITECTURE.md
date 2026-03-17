@@ -1223,6 +1223,7 @@ Vera now has a deterministic code/script/config draft lane that creates real `wr
 - After `generate_vera_reply()`, if `is_code_draft_request(message)` is True, the reply is scanned for a fenced code block; if found, it is injected into the preview and the session state is updated.
 - Code draft replies are excluded from the conversational-control reply suppressor so code-containing answers are always shown in chat.
 - The hidden preview builder can also produce a code draft payload; the post-reply step merges the LLM-extracted code into whichever payload is active.
+- **Refinement detection:** when an active preview has a code-type file extension and the LLM reply contains a fenced code block, the turn is treated as a code draft update even if `is_code_draft_request()` is False. This lets users refine drafts naturally ("actually use requests library") without triggering a fresh code draft classifier match. The reply is shown, the preview content is updated, and submit remains governed.
 
 **Submit patterns (`vera/handoff.py`):**
-- Added `save it`, `save this`, `let's save it/this`, and `write it/this to file` to `_ACTIVE_PREVIEW_SUBMIT_PATTERNS`. These only fire when a preview exists (fail-closed).
+- Added `save it`, `save this`, `let's save it/this/that`, and `write it/this/that to file` to `_ACTIVE_PREVIEW_SUBMIT_PATTERNS`. These only fire when a preview exists (fail-closed).

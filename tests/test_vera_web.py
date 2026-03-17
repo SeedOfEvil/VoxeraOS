@@ -4759,3 +4759,145 @@ def test_code_draft_does_not_enqueue_without_explicit_submit(tmp_path, monkeypat
     assert not inbox.exists() or not list(inbox.glob("*.json")), (
         "No job should be enqueued before explicit submit"
     )
+
+
+def test_code_draft_refinement_updates_preview_and_shows_reply(tmp_path, monkeypatch):
+    """Refining a code draft updates the preview content and shows the updated code."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    original_code = "import os\n\ndef main():\n    print('hello')\n\nmain()"
+    updated_code = "import requests\n\ndef main():\n    r = requests.get('https://example.com')\n    print(r.text)\n\nmain()"
+
+    call_count = 0
+
+    async def _fake_reply(*, turns, user_message):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return {
+                "answer": f"Here's a Python script:\n\n```python\n{original_code}\n```",
+                "status": "ok:code_draft",
+            }
+        return {
+            "answer": f"Here's the updated script using requests:\n\n```python\n{updated_code}\n```",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    # Turn 1: initial code draft
+    client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["content"] == original_code
+
+    # Turn 2: refinement — not a fresh code draft request, but the reply has code
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "actually use the requests library instead"},
+    )
+    assert res.status_code == 200
+
+    # Preview must be updated with the new code
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["content"] == updated_code
+
+    # The updated code must appear in the response (not suppressed)
+    assert "requests" in res.text
+    # Must NOT see the generic suppression message
+    assert "Nothing has been submitted or executed yet. I can send it whenever" not in res.text
+
+
+def test_code_draft_refinement_then_save_it_submits(tmp_path, monkeypatch):
+    """Full flow: draft → refine → save it → job enqueued."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    original_code = "print('hello')"
+    updated_code = "print('hello world')"
+
+    call_count = 0
+
+    async def _fake_reply(*, turns, user_message):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return {
+                "answer": f"```python\n{original_code}\n```",
+                "status": "ok:code_draft",
+            }
+        return {
+            "answer": f"```python\n{updated_code}\n```",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    # Draft
+    client.post("/chat", data={"session_id": sid, "message": "create a python script"})
+    # Refine
+    client.post("/chat", data={"session_id": sid, "message": "change it to say hello world"})
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["content"] == updated_code
+
+    # Save
+    client.post("/chat", data={"session_id": sid, "message": "save it"})
+    inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
+    assert inbox_files, "Expected a job after draft → refine → save it"
+
+
+def test_lets_save_it_with_apostrophe_submits(tmp_path, monkeypatch):
+    """\"let's save it\" (with apostrophe) correctly submits when a preview exists."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {
+            "answer": "```python\nprint('done')\n```",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
+    assert vera_service.read_session_preview(queue, sid) is not None
+
+    client.post("/chat", data={"session_id": sid, "message": "let's save it"})
+    inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
+    assert inbox_files, 'Expected a job after "let\'s save it"'
+
+
+def test_write_that_to_a_file_submits_when_preview_exists(tmp_path, monkeypatch):
+    """\"write that to a file\" submits when a preview exists."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {
+            "answer": "```bash\necho hello\n```",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "make a bash script"})
+    assert vera_service.read_session_preview(queue, sid) is not None
+
+    client.post("/chat", data={"session_id": sid, "message": "write that to a file"})
+    inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
+    assert inbox_files, 'Expected a job after "write that to a file"'

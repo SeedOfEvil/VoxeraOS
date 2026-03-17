@@ -6,6 +6,7 @@ from voxera.core.code_draft_intent import (
     classify_code_draft_intent,
     code_fence_language,
     extract_code_from_reply,
+    has_code_file_extension,
     is_code_draft_request,
 )
 
@@ -280,3 +281,46 @@ class TestCodeFenceLanguage:
 
     def test_empty_returns_none(self):
         assert code_fence_language("") is None
+
+
+# ---------------------------------------------------------------------------
+# has_code_file_extension
+# ---------------------------------------------------------------------------
+
+
+class TestHasCodeFileExtension:
+    def test_python(self):
+        assert has_code_file_extension("~/VoxeraOS/notes/script.py") is True
+
+    def test_bash(self):
+        assert has_code_file_extension("~/VoxeraOS/notes/backup.sh") is True
+
+    def test_yaml(self):
+        assert has_code_file_extension("config.yaml") is True
+
+    def test_json(self):
+        assert has_code_file_extension("data.json") is True
+
+    def test_markdown(self):
+        assert has_code_file_extension("readme.md") is True
+
+    def test_dockerfile(self):
+        assert has_code_file_extension("~/VoxeraOS/notes/Dockerfile") is True
+
+    def test_dockerfile_with_path(self):
+        assert has_code_file_extension("/some/path/Dockerfile") is True
+
+    def test_txt_is_not_code(self):
+        assert has_code_file_extension("notes.txt") is False
+
+    def test_empty(self):
+        assert has_code_file_extension("") is False
+
+    def test_no_extension(self):
+        assert has_code_file_extension("somefile") is False
+
+    def test_javascript(self):
+        assert has_code_file_extension("app.js") is True
+
+    def test_typescript(self):
+        assert has_code_file_extension("app.ts") is True

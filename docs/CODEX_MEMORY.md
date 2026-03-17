@@ -1754,3 +1754,23 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make golden-check`
   - `make validation-check`
   - `make merge-readiness-check`
+
+## 2026-03-17 — PR #TBD (cont.) — fix(vera): code draft lane product-correctness and UX hardening
+
+- Summary (second-pass review):
+  - **Code draft refinement gap fixed:** When a user refines an existing code draft ("actually use requests library"), the turn is now detected as a code draft update even though `is_code_draft_request()` does not match. Detection: active `write_file` preview with a code-type extension + fenced code block in the LLM reply. The reply is shown in chat (not suppressed) and the preview content is refreshed with the updated code.
+  - **Pending preview fallback:** On refinement turns where neither the hidden compiler nor `classify_code_draft_intent` produce a target draft, the code injection block now falls back to the existing `pending_preview` as the target for content injection.
+  - **Apostrophe fix:** `_ACTIVE_PREVIEW_SUBMIT_PATTERNS` pattern `\blets?\s+save` did not match "let's save it" (apostrophe). Changed to `\blet'?s\s+save`.
+  - **"write that to file":** Added "that" as a pronoun alongside "it"/"this" in both `let's save` and `write X to file` patterns.
+  - Added `has_code_file_extension(path)` to `code_draft_intent.py` for refinement detection.
+  - Added 4 integration tests: refinement updates preview, refinement→save flow, "let's save it" with apostrophe, "write that to a file" submit.
+  - Added 13 unit tests for `has_code_file_extension`.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
