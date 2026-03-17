@@ -4982,8 +4982,11 @@ def test_no_false_preview_claim_when_builder_creates_empty_preview(tmp_path, mon
     )
 
     assert res.status_code == 200
-    # The empty-content preview placeholder may persist (for refinement flows),
-    # but the false claim about it being ready must be stripped.
+    # False claim stripped AND empty placeholder shell cleared (all-or-nothing).
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is None, (
+        "Empty-content placeholder must be cleared when a false preview claim is stripped"
+    )
     turns = vera_service.read_session_turns(queue, sid)
     assistant_turns = [t for t in turns if t["role"] == "assistant"]
     assert assistant_turns
@@ -5184,3 +5187,196 @@ def test_existing_explicit_write_file_flow_not_regressed(tmp_path, monkeypatch):
     client.post("/chat", data={"session_id": sid, "message": "submit it"})
     inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
     assert inbox_files, "Explicit write_file submit must still work"
+
+
+# ---------------------------------------------------------------------------
+# Code draft all-or-nothing correctness tests (fourth-pass patch)
+# ---------------------------------------------------------------------------
+
+
+def test_explicit_filename_code_draft_populates_preview_content(tmp_path, monkeypatch):
+    """'Create a Python script called scraper.py ...' must populate real code content."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    expected_code = (
+        "import requests\nfrom bs4 import BeautifulSoup\n\n"
+        "resp = requests.get('https://example.com')\n"
+        "soup = BeautifulSoup(resp.text, 'html.parser')\n"
+        "print(soup.find('h1').text)"
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        return {
+            "answer": (
+                f"Here is scraper.py:\n\n```python\n{expected_code}\n```\n\n"
+                "The preview is ready in the Preview Pane."
+            ),
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": (
+                "Create a Python script called scraper.py that downloads a page "
+                "and prints the first h1 text."
+            ),
+        },
+    )
+
+    assert res.status_code == 200
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None, "Preview must exist after successful code draft"
+    assert "write_file" in preview
+    assert "scraper.py" in preview["write_file"]["path"]
+    assert preview["write_file"]["content"] == expected_code, (
+        "Preview content must contain the actual generated code, not an empty string"
+    )
+    assert preview["write_file"]["content"] != "", "Preview content must not be empty"
+
+
+def test_failed_code_draft_clears_empty_preview_shell(tmp_path, monkeypatch):
+    """When LLM makes false preview claim but produces no code, empty shell is cleared."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
+        # Simulates the real hidden compiler creating a placeholder with the right path
+        return {
+            "goal": "draft a python scraper as scraper.py",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/scraper.py",
+                "content": "",
+                "mode": "overwrite",
+            },
+        }
+
+    async def _fake_reply(*, turns, user_message):
+        # LLM claims preview is ready but produces no fenced code block
+        return {
+            "answer": (
+                "I've created scraper.py for you. "
+                "You can review it in the Preview Pane and submit when ready."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": (
+                "Create a Python script called scraper.py that downloads a page "
+                "and prints the first h1 text."
+            ),
+        },
+    )
+
+    assert res.status_code == 200
+    # All-or-nothing: empty shell must be cleared when false claim is stripped
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is None, "Empty placeholder shell must be cleared when no code was generated"
+    # Chat wording must be truthful (not "check the preview pane")
+    turns = vera_service.read_session_turns(queue, sid)
+    assistant_turns = [t for t in turns if t["role"] == "assistant"]
+    assert assistant_turns
+    last = assistant_turns[-1]["text"].lower()
+    assert "preview pane" not in last, "False preview-pane claim must be stripped"
+    assert "review it in the preview" not in last, "False review claim must be stripped"
+
+
+def test_code_draft_placeholder_survives_when_llm_makes_no_preview_claim(tmp_path, monkeypatch):
+    """Placeholder preview survives when the LLM does not claim a preview exists.
+
+    This preserves the normal write-file refinement flow where users provide
+    content in a follow-up message.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_builder(
+        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+    ):
+        return {
+            "goal": "create script.ps1",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/script.ps1",
+                "content": "",
+                "mode": "overwrite",
+            },
+        }
+
+    async def _fake_reply(*, turns, user_message):
+        # LLM acknowledges the request without claiming preview is visible
+        return {
+            "answer": "I'll create script.ps1. What content would you like inside it?",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write a file called script.ps1"},
+    )
+
+    assert res.status_code == 200
+    # Placeholder must survive — no false claim, no clearing
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None, (
+        "Placeholder preview must survive when LLM makes no false preview claim"
+    )
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
+
+
+def test_code_draft_with_trailing_space_on_fence_line_extracts_code(tmp_path, monkeypatch):
+    """Code extraction must succeed even when LLM adds trailing space after language tag."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    code = "print('scraped!')"
+
+    async def _fake_reply(*, turns, user_message):
+        # LLM emits ```python<space> — trailing space after the language tag
+        return {
+            "answer": f"Here it is:\n\n```python \n{code}\n```\n\nDone.",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write me a python script"},
+    )
+
+    assert res.status_code == 200
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None, (
+        "Code extraction must succeed for fence lines with trailing whitespace"
+    )
+    assert preview["write_file"]["content"] == code, (
+        "Extracted code must match even when fence line has trailing space"
+    )

@@ -251,6 +251,23 @@ class TestExtractCodeFromReply:
     def test_returns_none_for_none_input(self):
         assert extract_code_from_reply(None) is None  # type: ignore[arg-type]
 
+    def test_extracts_fence_with_trailing_space_after_language(self):
+        # LLMs sometimes emit ```python<space> before the newline.
+        reply = "```python \nprint('hello')\n```"
+        result = extract_code_from_reply(reply)
+        assert result == "print('hello')"
+
+    def test_extracts_fence_with_multiple_trailing_spaces(self):
+        reply = "```python   \nresult = 42\n```"
+        result = extract_code_from_reply(reply)
+        assert result == "result = 42"
+
+    def test_extracts_fence_with_version_in_language_tag(self):
+        # e.g. ```python3 or ```bash5
+        reply = "```python3\nimport sys\n```"
+        result = extract_code_from_reply(reply)
+        assert result == "import sys"
+
 
 # ---------------------------------------------------------------------------
 # code_fence_language

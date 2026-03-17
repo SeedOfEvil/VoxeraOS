@@ -207,12 +207,16 @@ def extract_code_from_reply(text: str) -> str | None:
     """Extract the first substantial fenced code block from an LLM reply.
 
     Matches ``` fenced blocks with or without a language specifier.
+    Uses ``[^\n]*`` on the fence line to tolerate trailing spaces or other
+    characters that LLMs sometimes include after the language tag
+    (e.g. "```python " with a trailing space).
     Returns the code content (stripped) or None when no block is found.
     """
     if not text:
         return None
-    # Match fenced code blocks: ```lang\ncode\n``` or ```\ncode\n```
-    matches = re.findall(r"```(?:[a-zA-Z0-9_+\-.]*)?\n(.*?)```", text, re.DOTALL)
+    # Match fenced code blocks: ```[anything on this line]\n<code>```
+    # [^\n]* accepts language tags, trailing spaces, version strings, etc.
+    matches = re.findall(r"```[^\n]*\n(.*?)```", text, re.DOTALL)
     for match in matches:
         content = match.strip()
         if content:

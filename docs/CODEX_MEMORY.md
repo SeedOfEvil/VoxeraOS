@@ -1794,3 +1794,24 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make golden-check`
   - `make validation-check`
   - `make merge-readiness-check`
+
+## 2026-03-17 — PR #TBD (cont.) — fix(vera/code-lane): all-or-nothing preview population for code/script draft requests
+
+- Summary (fourth-pass — authoritative preview population):
+  - **Root cause (primary):** `extract_code_from_reply()` used `r"```(?:[a-zA-Z0-9_+\-.]*)?\n"` which required `\n` immediately after the language specifier. LLMs frequently emit a trailing space (e.g. ` ```python `) causing the extraction to silently return `None`, so the preview content was never injected.
+  - **Root cause (secondary):** When code extraction failed, the empty `write_file` placeholder created by the hidden compiler was left behind. Guardrails caught false chat claims but the orphaned shell persisted in session state, creating a half-state visible as an empty Preview Pane.
+  - **`extract_code_from_reply` regex hardened:** changed from `r"```(?:[a-zA-Z0-9_+\-.]*)?\n(.*?)```"` to `r"```[^\n]*\n(.*?)```"`. `[^\n]*` matches any content on the fence line (language tag, trailing spaces, version strings, etc.). Same pattern adopted in `_text_outside_code_blocks` and `_guardrail_false_preview_claim` code-block extraction for consistency.
+  - **All-or-nothing cleanup:** after `_guardrail_false_preview_claim` runs, the code checks whether the guardrail modified the text. If it did (a false claim was stripped) and the current preview has empty `write_file.content`, the empty shell is cleared immediately. This makes failed code-draft attempts truly atomic — no orphaned previews.
+  - **Refinement flow preserved:** placeholder previews created silently (LLM acknowledges without claiming preview is visible) are NOT cleared. Only previews where a false claim was caught get cleared. `test_content_refinement_phrase_script_text_updates_active_preview` continues to pass.
+  - Added 3 new unit tests to `test_code_draft_intent.py`: fence with trailing space, multiple trailing spaces, version tag in language (e.g. `python3`).
+  - Added 4 new integration tests to `test_vera_web.py`: explicit-filename code draft populates preview content, failed draft clears empty shell, placeholder survives when no false claim, trailing-space fence line extracts code.
+  - Updated `test_no_false_preview_claim_when_builder_creates_empty_preview` to also assert `preview is None` (empty shell now cleared).
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`

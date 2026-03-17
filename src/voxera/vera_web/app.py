@@ -287,7 +287,7 @@ def _looks_like_preview_update_claim(text: str) -> bool:
 
 def _text_outside_code_blocks(text: str) -> str:
     """Return text with fenced code blocks removed."""
-    return re.sub(r"```[a-zA-Z0-9_+\-.]* *\n.*?```", "", text, flags=re.DOTALL).strip()
+    return re.sub(r"```[^\n]*\n.*?```", "", text, flags=re.DOTALL).strip()
 
 
 def _looks_like_preview_pane_claim(text: str) -> bool:
@@ -332,7 +332,7 @@ def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
         return text
 
     # Preserve any fenced code blocks
-    code_blocks = re.findall(r"```[a-zA-Z0-9_+\-.]* *\n.*?```", text, flags=re.DOTALL)
+    code_blocks = re.findall(r"```[^\n]*\n.*?```", text, flags=re.DOTALL)
     if code_blocks:
         preserved = "\n\n".join(code_blocks)
         return (
@@ -830,10 +830,22 @@ async def chat(request: Request):
         _preview_has_content = (
             isinstance(_epwf, dict) and bool(str(_epwf.get("content") or "").strip())
         ) or "write_file" not in effective_preview
+    _answer_before_preview_guardrail = guarded_answer
     guarded_answer = _guardrail_false_preview_claim(
         text=guarded_answer,
         preview_exists=effective_preview is not None and _preview_has_content,
     )
+    # All-or-nothing cleanup: when _guardrail_false_preview_claim stripped a false
+    # preview-existence claim, it means the LLM claimed a preview was ready but no
+    # authoritative code content was actually committed.  Clear any empty write_file
+    # placeholder so the session is in a clean state — no orphaned shell, no
+    # accidental empty submission.  Only clears empty-content previews; any
+    # preview that already had content was not touched by the guardrail above.
+    if guarded_answer != _answer_before_preview_guardrail and isinstance(effective_preview, dict):
+        _stale_wf = effective_preview.get("write_file")
+        if isinstance(_stale_wf, dict) and not str(_stale_wf.get("content") or "").strip():
+            write_session_preview(root, active_session, None)
+            builder_payload = None
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
     is_json_content_request = _is_explicit_json_content_request(message)
     is_voxera_control_turn = _is_voxera_control_turn(message, active_preview=pending_preview)
