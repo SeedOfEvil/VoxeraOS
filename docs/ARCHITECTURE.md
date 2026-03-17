@@ -1227,3 +1227,9 @@ Vera now has a deterministic code/script/config draft lane that creates real `wr
 
 **Submit patterns (`vera/handoff.py`):**
 - Added `save it`, `save this`, `let's save it/this/that`, and `write it/this/that to file` to `_ACTIVE_PREVIEW_SUBMIT_PATTERNS`. These only fire when a preview exists (fail-closed).
+
+**Truthfulness guardrails (`vera_web/app.py`):**
+- `_text_outside_code_blocks(text)`: strips fenced code blocks from text before phrase-matching, preventing false positives when code content mentions "preview".
+- `_looks_like_preview_pane_claim(text)`: detects phrases like "preview pane", "check the preview", "in your preview", "visible in preview", etc. in non-code text. Delegates to `_looks_like_preview_update_claim` for update-style claims.
+- `_guardrail_false_preview_claim(text, preview_exists)`: applied after `_guardrail_submission_claim`; when `preview_exists=False`, strips false preview-existence claims from the LLM reply — preserving any embedded code blocks with a truthful note, or replacing the whole reply with a plain "could not prepare preview" message.
+- A `write_file` preview with empty `content` is treated as "no real preview" for claim-checking purposes; placeholder previews survive for refinement flows but claims about them are corrected.

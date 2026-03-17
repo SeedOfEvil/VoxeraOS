@@ -285,6 +285,69 @@ def _looks_like_preview_update_claim(text: str) -> bool:
     )
 
 
+def _text_outside_code_blocks(text: str) -> str:
+    """Return text with fenced code blocks removed."""
+    return re.sub(r"```[a-zA-Z0-9_+\-.]* *\n.*?```", "", text, flags=re.DOTALL).strip()
+
+
+def _looks_like_preview_pane_claim(text: str) -> bool:
+    """Detect claims that a preview/draft currently exists or is available.
+
+    Only inspects text outside of fenced code blocks to avoid false
+    positives from code content that mentions "preview" as a variable name
+    or string literal.
+    """
+    outside = _text_outside_code_blocks(text)
+    lowered = outside.lower()
+    if not lowered:
+        return False
+    # Direct claims of preview/draft availability in a pane/panel
+    claim_phrases = (
+        "preview pane",
+        "preview panel",
+        "in the preview",
+        "in your preview",
+        "review it in",
+        "check the preview",
+        "available in preview",
+        "visible in preview",
+        "find it in the preview",
+        "see it in the preview",
+    )
+    if any(p in lowered for p in claim_phrases):
+        return True
+    return _looks_like_preview_update_claim(text)
+
+
+def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
+    """Replace false preview-existence claims with truthful language.
+
+    When the LLM claims a preview/draft was created or is available but no
+    authoritative preview state exists, replace the claim.  Fenced code
+    blocks are preserved so users can still see generated code.
+    """
+    if preview_exists:
+        return text
+    if not _looks_like_preview_pane_claim(text):
+        return text
+
+    # Preserve any fenced code blocks
+    code_blocks = re.findall(r"```[a-zA-Z0-9_+\-.]* *\n.*?```", text, flags=re.DOTALL)
+    if code_blocks:
+        preserved = "\n\n".join(code_blocks)
+        return (
+            preserved
+            + "\n\n"
+            + "Note: I was not able to create a governed preview for this code. "
+            + "The code above is shown for reference only — "
+            + "no preview is active in this session."
+        )
+    return (
+        "I was not able to prepare a governed preview for this request. "
+        "If you share clearer details, I can try again."
+    )
+
+
 def _is_explicit_json_content_request(message: str) -> bool:
     lowered = message.strip().lower()
     if not lowered:
@@ -756,6 +819,20 @@ async def chat(request: Request):
         root=root,
         session_id=active_session,
         text=reply["answer"],
+    )
+    # Gate preview-existence claims on actual preview state.
+    # An empty-content write_file preview is a placeholder, not authoritative
+    # code — treat it as "no real preview" for claim-checking purposes.
+    effective_preview = read_session_preview(root, active_session)
+    _preview_has_content = False
+    if isinstance(effective_preview, dict):
+        _epwf = effective_preview.get("write_file")
+        _preview_has_content = (
+            isinstance(_epwf, dict) and bool(str(_epwf.get("content") or "").strip())
+        ) or "write_file" not in effective_preview
+    guarded_answer = _guardrail_false_preview_claim(
+        text=guarded_answer,
+        preview_exists=effective_preview is not None and _preview_has_content,
     )
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
     is_json_content_request = _is_explicit_json_content_request(message)

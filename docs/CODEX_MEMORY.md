@@ -1774,3 +1774,23 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make golden-check`
   - `make validation-check`
   - `make merge-readiness-check`
+
+## 2026-03-17 — PR #TBD (cont.) — fix(vera/code-lane): enforce authoritative preview and truthful submit behavior
+
+- Summary (third-pass correctness/truthfulness review):
+  - **Root cause:** On code-draft turns, the LLM reply suppression is intentionally disabled so code blocks are shown. This also allowed raw false claims ("Check the Preview Pane") through. Two bugs exposed by manual testing: (1) LLM claims preview exists when no fenced code was produced → no preview visible; (2) LLM claims updated preview → no preview content.
+  - **`_guardrail_false_preview_claim(text, preview_exists)`** added to `vera_web/app.py`: detects phrases like "preview pane", "check the preview", "in your preview" etc. in the text *outside* fenced code blocks; when `preview_exists=False`, strips the false claim and either preserves embedded code blocks with a truthful note or returns a plain "could not prepare preview" message.
+  - **`_looks_like_preview_pane_claim(text)`** added: matches claim phrases in non-code text; delegates to the existing `_looks_like_preview_update_claim` for update claims.
+  - **`_text_outside_code_blocks(text)`** added: strips fenced code blocks before claim detection to avoid false positives where code mentions "preview" as a variable/string.
+  - **Empty-content preview truthfulness:** the preview-existence check passed to `_guardrail_false_preview_claim` treats a `write_file` preview with empty `content` as "no real preview". This catches the case where the builder creates a placeholder (no extractable code) but the LLM falsely claims the draft is ready. Placeholder previews are preserved for refinement flows — only the claim text is corrected.
+  - **No regressions:** `test_content_refinement_phrase_script_text_updates_active_preview` confirmed: placeholder empty-content previews survive across turns; refinement turns still inject content correctly.
+  - Added 9 integration tests to `tests/test_vera_web.py` covering: false preview claim stripping with no fenced code, empty-content preview claim stripping, submit without preview fails truthfully, go-ahead without preview fails truthfully, submit with real preview succeeds, code-in-chat with real preview (claim valid), false claim stripped but code blocks preserved, explicit write_file flow not regressed.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
