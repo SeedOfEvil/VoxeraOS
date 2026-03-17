@@ -48,6 +48,7 @@ from ..vera.handoff import (
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.service import (
+    _CODE_DRAFT_HINT,
     _is_informational_web_query,
     append_session_turn,
     clear_session_turns,
@@ -711,6 +712,10 @@ async def chat(request: Request):
         and not diagnostics_service_or_logs_intent(message)
         and not is_recent_assistant_content_save_request(message)
     )
+    # Pre-compute code-draft intent so the LLM call can be given the code-generation
+    # hint before the reply is generated.  This flag is reused below where
+    # is_code_draft_turn would have been computed from the same expression.
+    is_code_draft_turn = is_code_draft_request(message) and not informational_web_turn
 
     # When an active preview exists and the user makes an informational query,
     # run read-only enrichment and store it for follow-up pronoun resolution.
@@ -751,7 +756,12 @@ async def chat(request: Request):
                 job_id=None,
             )
 
-    reply = await generate_vera_reply(turns=turns, user_message=message)
+    # On code-draft turns, append the code-generation hint to the user message
+    # passed to the LLM.  This overrides Vera's default "not the payload drafter"
+    # stance so the model actually writes code in a fenced block.  The original
+    # message (without the hint) is what was already stored in session turns.
+    _vera_user_message = message + _CODE_DRAFT_HINT if is_code_draft_turn else message
+    reply = await generate_vera_reply(turns=turns, user_message=_vera_user_message)
     investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
     if isinstance(investigation_payload, dict):
         write_session_investigation(root, active_session, investigation_payload)
@@ -760,9 +770,9 @@ async def chat(request: Request):
     # Code draft post-processing: after the LLM reply we know the actual code
     # content.  Extract it from any fenced block and inject it into the preview
     # so the preview is authoritative and submit-ready — not just a placeholder.
+    # is_code_draft_turn was pre-computed above (before the LLM call) so the
+    # code-draft hint could be passed to generate_vera_reply.
     reply_code_content = extract_code_from_reply(reply["answer"])
-
-    is_code_draft_turn = is_code_draft_request(message) and not informational_web_turn
 
     # Code draft refinement: when an active preview has a code-type file
     # extension and the LLM reply contains a fenced code block, treat this

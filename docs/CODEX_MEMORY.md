@@ -1,3 +1,14 @@
+## 2026-03-17 — GitHub PR #TBD — fix(vera/code-lane): fix governed code-draft lane LLM persona override and all-or-nothing preview truthfulness
+
+- **Root cause**: Vera's system prompt says "Not the payload drafter." The LLM never outputs code in fenced blocks; `extract_code_from_reply` always returned `None`; previews stayed permanently empty.
+- **Fix — LLM persona override**: Added `_CODE_DRAFT_HINT` constant to `service.py`. When `is_code_draft_turn=True`, `app.py` appends the hint to the user message before calling `generate_vera_reply`. The hint tells the model to write the complete code in a fenced block for governed extraction. Session history stores the original un-augmented message. `generate_vera_reply` signature unchanged to avoid breaking test infrastructure.
+- **Fix — all-or-nothing preview truthfulness (fourth-pass)**: When `_guardrail_false_preview_claim` strips a false claim AND the current preview has empty `write_file.content`, the empty placeholder shell is cleared. No orphaned empty previews. Placeholder previews without a false claim are preserved for refinement flows.
+- **Fix — robust fenced-block regex**: `extract_code_from_reply` and related regex patterns updated from `r"```(?:[a-zA-Z0-9_+\-.]*)?\n"` to `r"```[^\n]*\n(.*?)```"` — tolerates trailing spaces, version strings, or other characters LLMs emit after language tags.
+- **Files changed**: `src/voxera/vera/service.py` (hint constant + `build_vera_messages` flag), `src/voxera/vera_web/app.py` (pre-computed `is_code_draft_turn`, message augmentation, all-or-nothing clearing, regex hardening), `src/voxera/core/code_draft_intent.py` (regex hardening).
+- **Tests added**: 11 new tests in `test_vera_web.py` covering hint injection, hint absence, real-world prompt flows (Python URL fetch, web scraper, bash disk/memory), `build_vera_messages` unit tests; 3 new tests in `test_code_draft_intent.py` for fence-line trailing space/version tolerance.
+- All tests pass; all checks (`ruff format`, `ruff check`, `mypy`, `make merge-readiness-check`) pass.
+- Remaining limitation: the hint adds ~60 tokens to the user message on every code-draft turn; this is intentional and bounded.
+
 ## 2026-03-16 — GitHub PR #TBD — fix(vera): singular save-by-reference defaults to latest assistant content
 
 - Resolver behavior tightened for session-content save references: singular vague phrasing (for example `save that`, `put that in a file`) now deterministically resolves to the most recent substantial assistant-authored message in the active session.

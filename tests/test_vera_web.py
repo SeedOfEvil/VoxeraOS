@@ -5380,3 +5380,229 @@ def test_code_draft_with_trailing_space_on_fence_line_extracts_code(tmp_path, mo
     assert preview["write_file"]["content"] == code, (
         "Extracted code must match even when fence line has trailing space"
     )
+
+
+# ---------------------------------------------------------------------------
+# Code draft lane bring-up tests (fifth-pass — LLM code-generation hint)
+# These tests cover the real-world product flows that were failing end-to-end.
+# ---------------------------------------------------------------------------
+
+
+def test_code_draft_hint_injected_into_user_message_for_code_draft(tmp_path, monkeypatch):
+    """The code-generation hint must be appended to user_message for code-draft requests.
+
+    This verifies the LLM receives an explicit instruction to output code in a
+    fenced block, overriding Vera's default "not the payload drafter" stance.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    captured: dict = {}
+
+    async def _capture_reply(*, turns, user_message):
+        captured["user_message"] = user_message
+        return {
+            "answer": "```python\nprint('hi')\n```",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _capture_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write me a python script"},
+    )
+
+    assert "user_message" in captured, "generate_vera_reply must have been called"
+    assert "fenced code block" in captured["user_message"], (
+        "Code-draft hint must instruct LLM to use a fenced code block"
+    )
+    assert "write me a python script" in captured["user_message"], (
+        "Original user message must be preserved in the augmented message"
+    )
+
+
+def test_code_draft_hint_not_injected_for_non_code_draft(tmp_path, monkeypatch):
+    """The code-generation hint must NOT be in user_message for non-code-draft requests."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    captured: dict = {}
+
+    async def _capture_reply(*, turns, user_message):
+        captured["user_message"] = user_message
+        return {"answer": "Here is the status.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _capture_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    # Use a plainly conversational message that cannot match any early-return path
+    client.post("/chat", data={"session_id": sid, "message": "tell me about yourself"})
+
+    assert "user_message" in captured, "generate_vera_reply must have been called"
+    assert "fenced code block" not in captured["user_message"], (
+        "Code-draft hint must NOT be added to non-code-draft requests"
+    )
+    assert captured["user_message"] == "tell me about yourself"
+
+
+def test_real_world_python_url_fetch_script_creates_preview(tmp_path, monkeypatch):
+    """'I need you to code a python script that fetches a URL and prints the page title.'
+
+    This was a real-world failing prompt.  Simulates the LLM responding
+    correctly (code in fenced block) and verifies the preview is populated.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    code = (
+        "import urllib.request\nfrom html.parser import HTMLParser\n\n"
+        "class TitleParser(HTMLParser):\n"
+        "    def __init__(self):\n        super().__init__()\n        self.title = ''\n        self._in_title = False\n"
+        "    def handle_starttag(self, tag, attrs):\n        if tag == 'title': self._in_title = True\n"
+        "    def handle_endtag(self, tag):\n        if tag == 'title': self._in_title = False\n"
+        "    def handle_data(self, data):\n        if self._in_title: self.title += data\n\n"
+        "url = input('Enter URL: ')\n"
+        "with urllib.request.urlopen(url) as r:\n    html = r.read().decode()\n"
+        "p = TitleParser()\np.parse(html)\nprint(p.title)"
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        return {
+            "answer": f"Here is the Python script:\n\n```python\n{code}\n```",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": (
+                "I need you to code a python script that fetches a URL and prints the page title."
+            ),
+        },
+    )
+
+    assert res.status_code == 200
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None, "Preview must exist for real-world code-draft prompt"
+    assert "write_file" in preview
+    assert preview["write_file"]["content"] == code, (
+        "Preview content must be real code, not empty string"
+    )
+    assert preview["write_file"]["content"] != ""
+
+
+def test_real_world_scrape_any_website_creates_preview(tmp_path, monkeypatch):
+    """'write me a python script that will scrape any website'
+
+    This was a real-world failing prompt.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    code = "import requests\nfrom bs4 import BeautifulSoup\n\nurl = input('URL: ')\nresp = requests.get(url)\nprint(BeautifulSoup(resp.text, 'html.parser').get_text())"
+
+    async def _fake_reply(*, turns, user_message):
+        return {
+            "answer": f"```python\n{code}\n```",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "write me a python script that will scrape any website",
+        },
+    )
+
+    assert res.status_code == 200
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None, "Preview must exist after code-draft request"
+    assert preview["write_file"]["content"] == code
+    assert preview["write_file"]["content"] != ""
+
+
+def test_real_world_bash_disk_memory_creates_preview_and_submit_works(tmp_path, monkeypatch):
+    """'Write me a bash script that prints disk usage and memory usage.'
+
+    This was a real-world failing prompt.  Also verifies submit works.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    code = "#!/bin/bash\necho '=== Disk Usage ==='\ndf -h\necho '=== Memory Usage ==='\nfree -h"
+
+    async def _fake_reply(*, turns, user_message):
+        return {
+            "answer": f"Here is the bash script:\n\n```bash\n{code}\n```\n\nReady to submit.",
+            "status": "ok:code_draft",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    # Create the preview
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Write me a bash script that prints disk usage and memory usage.",
+        },
+    )
+    assert res.status_code == 200
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None, "Preview must exist"
+    assert preview["write_file"]["content"] == code, "Content must be real bash code"
+    assert ".sh" in preview["write_file"]["path"], "Path must have .sh extension"
+
+    # Submit it
+    client.post("/chat", data={"session_id": sid, "message": "save it"})
+    inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
+    assert inbox_files, "Job must be enqueued after 'save it' with real preview"
+
+
+def test_build_vera_messages_includes_code_draft_hint_when_flag_set():
+    """build_vera_messages must append code-generation hint when code_draft=True."""
+    messages = vera_service.build_vera_messages(
+        turns=[],
+        user_message="write me a python script",
+        code_draft=True,
+    )
+    user_msg = next(m for m in messages if m["role"] == "user")
+    assert "fenced code block" in user_msg["content"], (
+        "Code-draft hint must instruct LLM to use a fenced code block"
+    )
+    assert "write me a python script" in user_msg["content"], (
+        "Original user message must be preserved"
+    )
+
+
+def test_build_vera_messages_no_hint_when_flag_not_set():
+    """build_vera_messages must NOT add the code-draft hint for normal requests."""
+    messages = vera_service.build_vera_messages(
+        turns=[],
+        user_message="what is in the queue?",
+        code_draft=False,
+    )
+    user_msg = next(m for m in messages if m["role"] == "user")
+    assert user_msg["content"] == "what is in the queue?"
