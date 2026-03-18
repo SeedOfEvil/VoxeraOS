@@ -293,6 +293,27 @@ def _looks_like_preview_update_claim(text: str) -> bool:
     )
 
 
+def _strip_internal_control_blocks(text: str) -> str:
+    """Remove internal Voxera control markup from user-visible assistant text."""
+    if not text:
+        return ""
+
+    cleaned = re.sub(
+        r"```[^\n]*\n\s*<voxera_control\b.*?</voxera_control>\s*```",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    cleaned = re.sub(
+        r"<voxera_control\b[^>]*>.*?</voxera_control>",
+        "",
+        cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def _text_outside_code_blocks(text: str) -> str:
     """Return text with fenced code blocks removed."""
     return re.sub(r"```[^\n]*\n.*?```", "", text, flags=re.DOTALL).strip()
@@ -787,7 +808,8 @@ async def chat(request: Request):
     # is_code_draft_turn was pre-computed above (before the LLM call) so the
     # code-draft hint could be passed to generate_vera_reply.
     reply_code_content = extract_code_from_reply(reply["answer"])
-    reply_text_draft = extract_text_draft_from_reply(reply["answer"])
+    sanitized_answer = _strip_internal_control_blocks(reply["answer"])
+    reply_text_draft = extract_text_draft_from_reply(sanitized_answer)
 
     # Code draft refinement: when an active preview has a code-type file
     # extension and the LLM reply contains a fenced code block, treat this
@@ -894,7 +916,7 @@ async def chat(request: Request):
     guarded_answer = _guardrail_submission_claim(
         root=root,
         session_id=active_session,
-        text=reply["answer"],
+        text=sanitized_answer,
     )
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative
@@ -943,7 +965,7 @@ async def chat(request: Request):
             or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
         )
     )
-    if should_use_conversational_control_reply:
+    if should_use_conversational_control_reply or not assistant_text.strip():
         assistant_text = _conversational_preview_update_message(
             updated=builder_payload is not None,
             has_active_preview=pending_preview is not None,

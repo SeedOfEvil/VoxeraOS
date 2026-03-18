@@ -549,6 +549,7 @@ Vera can now review real VoxeraOS job outcomes from canonical queue evidence (no
 
 - Vera now has a bounded prose lane for essays, articles, writeups, and explanation-style text drafts.
 - Writing requests create real authoritative `write_file` previews; the preview body is populated from the assistant's actual prose reply after generation, not from pseudo preview JSON.
+- Internal preview/control transport markup is stripped from user-facing chat; only normal conversational drafting text is shown while the authoritative preview updates underneath.
 - Transform follow-ups like `rewrite that as a short high school essay`, `make it more formal`, `write a 2 page essay about that`, and `now write a short article based on that summary` update the same governed preview state.
 - Plain-English explanations generated after code drafts are treated as saveable text artifacts, so `explain how this script works in plain English` followed by `save that explanation ...` stays on the authoritative preview path.
 - Current limitation: this lane is intentionally bounded to single-document text drafts. It does not add docx/pdf export, multi-file writing projects, or publishing workflows.

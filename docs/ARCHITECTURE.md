@@ -1260,6 +1260,7 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 **App-layer integration (`vera_web/app.py`):**
 - Writing turns are pre-classified before the LLM call so prose-draft requests do not accidentally inherit the code-lane persona override just because a `.md` filename appears.
 - After `generate_vera_reply()`, substantial prose replies are injected into the active `write_file.content`, creating a real authoritative preview from the actual assistant response.
+- Internal `<voxera_control>` transport blocks are stripped before user-visible rendering and before prose preview-body extraction, so hidden control payloads stay internal even when a model leaks them into the raw reply.
 - Writing replies are excluded from conversational-control suppression, so the user sees the generated prose in chat while the same content becomes the preview body.
 - When an active prose preview exists, follow-up refinements like `make it more formal` or `rewrite that as ...` refresh the preview content with the new prose reply rather than leaving stale draft content behind.
 

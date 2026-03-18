@@ -2817,6 +2817,121 @@ def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
     assert "Great Pyramids of Giza" in preview["write_file"]["content"]
 
 
+def test_writing_draft_hides_internal_control_block_but_keeps_authoritative_preview(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    leaked = (
+        "# Draft Essay\n\n"
+        "Black holes are among the most extreme objects in the universe.\n\n"
+        "<voxera_control>\n"
+        "interpreter: hidden\n"
+        "action: update_preview\n"
+        "payload:\n"
+        "  write_file:\n"
+        "    path: ~/VoxeraOS/notes/essay.md\n"
+        "</voxera_control>"
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": leaked, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Write me a 2 page essay about black holes."},
+    )
+
+    turns = vera_service.read_session_turns(queue, sid)
+    preview = vera_service.read_session_preview(queue, sid)
+    assert res.status_code == 200
+    assert "<voxera_control>" not in res.text
+    assert "action: update_preview" not in res.text
+    assert "<voxera_control>" not in turns[-1]["text"]
+    assert "action: update_preview" not in turns[-1]["text"]
+    assert preview is not None
+    assert "<voxera_control>" not in preview["write_file"]["content"]
+    assert "Black holes are among the most extreme objects" in preview["write_file"]["content"]
+
+
+def test_writing_draft_submit_after_control_block_strip_uses_clean_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": (
+                "# Draft Essay\n\n"
+                "The Great Pyramid of Giza was built as a royal tomb.\n\n"
+                "<voxera_control>\n"
+                "action: update_preview\n"
+                "work_units:\n"
+                "  - write_file\n"
+                "</voxera_control>"
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Write me a short essay about the Great Pyramid."},
+    )
+    res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert res.status_code == 200
+    assert "I submitted the job to VoxeraOS" in res.text
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    content = payload["write_file"]["content"]
+    assert "<voxera_control>" not in content
+    assert "action: update_preview" not in content
+    assert "royal tomb" in content
+
+
+def test_code_draft_rendering_still_shows_fenced_code_with_control_sanitizer_present(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": "```python\nprint('still visible')\n```",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write me a python script that prints still visible"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert res.status_code == 200
+    assert "```python" in res.text
+    assert "still visible" in res.text
+    assert preview is not None
+    assert "print('still visible')" in preview["write_file"]["content"]
+
+
 def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
