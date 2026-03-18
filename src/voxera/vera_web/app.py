@@ -10,6 +10,12 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import load_config as load_runtime_config
+from ..core.code_draft_intent import (
+    classify_code_draft_intent,
+    extract_code_from_reply,
+    has_code_file_extension,
+    is_code_draft_request,
+)
 from ..core.file_intent import detect_blocked_file_intent
 from ..paths import queue_root as default_queue_root
 from ..vera.evidence_review import (
@@ -42,6 +48,7 @@ from ..vera.handoff import (
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.service import (
+    _CODE_DRAFT_HINT,
     _is_informational_web_query,
     append_session_turn,
     clear_session_turns,
@@ -276,6 +283,69 @@ def _looks_like_preview_update_claim(text: str) -> bool:
             "proposal in the preview",
             "refined the proposal in the preview",
         )
+    )
+
+
+def _text_outside_code_blocks(text: str) -> str:
+    """Return text with fenced code blocks removed."""
+    return re.sub(r"```[^\n]*\n.*?```", "", text, flags=re.DOTALL).strip()
+
+
+def _looks_like_preview_pane_claim(text: str) -> bool:
+    """Detect claims that a preview/draft currently exists or is available.
+
+    Only inspects text outside of fenced code blocks to avoid false
+    positives from code content that mentions "preview" as a variable name
+    or string literal.
+    """
+    outside = _text_outside_code_blocks(text)
+    lowered = outside.lower()
+    if not lowered:
+        return False
+    # Direct claims of preview/draft availability in a pane/panel
+    claim_phrases = (
+        "preview pane",
+        "preview panel",
+        "in the preview",
+        "in your preview",
+        "review it in",
+        "check the preview",
+        "available in preview",
+        "visible in preview",
+        "find it in the preview",
+        "see it in the preview",
+    )
+    if any(p in lowered for p in claim_phrases):
+        return True
+    return _looks_like_preview_update_claim(text)
+
+
+def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
+    """Replace false preview-existence claims with truthful language.
+
+    When the LLM claims a preview/draft was created or is available but no
+    authoritative preview state exists, replace the claim.  Fenced code
+    blocks are preserved so users can still see generated code.
+    """
+    if preview_exists:
+        return text
+    if not _looks_like_preview_pane_claim(text):
+        return text
+
+    # Preserve any fenced code blocks
+    code_blocks = re.findall(r"```[^\n]*\n.*?```", text, flags=re.DOTALL)
+    if code_blocks:
+        preserved = "\n\n".join(code_blocks)
+        return (
+            preserved
+            + "\n\n"
+            + "Note: I was not able to create a governed preview for this code. "
+            + "The code above is shown for reference only — "
+            + "no preview is active in this session."
+        )
+    return (
+        "I was not able to prepare a governed preview for this request. "
+        "If you share clearer details, I can try again."
     )
 
 
@@ -642,6 +712,10 @@ async def chat(request: Request):
         and not diagnostics_service_or_logs_intent(message)
         and not is_recent_assistant_content_save_request(message)
     )
+    # Pre-compute code-draft intent so the LLM call can be given the code-generation
+    # hint before the reply is generated.  This flag is reused below where
+    # is_code_draft_turn would have been computed from the same expression.
+    is_code_draft_turn = is_code_draft_request(message) and not informational_web_turn
 
     # When an active preview exists and the user makes an informational query,
     # run read-only enrichment and store it for follow-up pronoun resolution.
@@ -682,16 +756,106 @@ async def chat(request: Request):
                 job_id=None,
             )
 
-    reply = await generate_vera_reply(turns=turns, user_message=message)
+    # On code-draft turns, append the code-generation hint to the user message
+    # passed to the LLM.  This overrides Vera's default "not the payload drafter"
+    # stance so the model actually writes code in a fenced block.  The original
+    # message (without the hint) is what was already stored in session turns.
+    _vera_user_message = message + _CODE_DRAFT_HINT if is_code_draft_turn else message
+    reply = await generate_vera_reply(turns=turns, user_message=_vera_user_message)
     investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
     if isinstance(investigation_payload, dict):
         write_session_investigation(root, active_session, investigation_payload)
         write_session_derived_investigation_output(root, active_session, None)
+
+    # Code draft post-processing: after the LLM reply we know the actual code
+    # content.  Extract it from any fenced block and inject it into the preview
+    # so the preview is authoritative and submit-ready — not just a placeholder.
+    # is_code_draft_turn was pre-computed above (before the LLM call) so the
+    # code-draft hint could be passed to generate_vera_reply.
+    reply_code_content = extract_code_from_reply(reply["answer"])
+
+    # Code draft refinement: when an active preview has a code-type file
+    # extension and the LLM reply contains a fenced code block, treat this
+    # turn as a code draft update so the reply is shown (not suppressed) and
+    # the preview content is refreshed with the updated code.
+    if (
+        not is_code_draft_turn
+        and not informational_web_turn
+        and not is_enrichment_turn
+        and isinstance(pending_preview, dict)
+        and reply_code_content is not None
+    ):
+        existing_wf = pending_preview.get("write_file")
+        if isinstance(existing_wf, dict) and has_code_file_extension(
+            str(existing_wf.get("path") or "")
+        ):
+            is_code_draft_turn = True
+
+    if is_code_draft_turn and reply_code_content is not None:
+        # Use existing builder payload if the hidden compiler built one;
+        # otherwise create a fresh code draft preview now.
+        target_draft: dict[str, object] | None = builder_payload
+        if target_draft is None:
+            raw_draft = classify_code_draft_intent(message)
+            if raw_draft is not None:
+                try:
+                    target_draft = normalize_preview_payload(raw_draft)
+                except Exception:
+                    target_draft = None
+        # Fall back to the existing pending preview for refinement turns
+        # where the classifier doesn't match but a code preview already exists.
+        if target_draft is None and isinstance(pending_preview, dict):
+            target_draft = dict(pending_preview)
+        if isinstance(target_draft, dict):
+            wf = target_draft.get("write_file")
+            if isinstance(wf, dict):
+                updated_draft: dict[str, object] = {
+                    **target_draft,
+                    "write_file": {**wf, "content": reply_code_content},
+                }
+                builder_payload = updated_draft
+                write_session_preview(root, active_session, builder_payload)
+                write_session_handoff_state(
+                    root,
+                    active_session,
+                    attempted=False,
+                    queue_path=str(root),
+                    status="preview_ready",
+                    error=None,
+                    job_id=None,
+                )
+
     guarded_answer = _guardrail_submission_claim(
         root=root,
         session_id=active_session,
         text=reply["answer"],
     )
+    # Gate preview-existence claims on actual preview state.
+    # An empty-content write_file preview is a placeholder, not authoritative
+    # code — treat it as "no real preview" for claim-checking purposes.
+    effective_preview = read_session_preview(root, active_session)
+    _preview_has_content = False
+    if isinstance(effective_preview, dict):
+        _epwf = effective_preview.get("write_file")
+        _preview_has_content = (
+            isinstance(_epwf, dict) and bool(str(_epwf.get("content") or "").strip())
+        ) or "write_file" not in effective_preview
+    _answer_before_preview_guardrail = guarded_answer
+    guarded_answer = _guardrail_false_preview_claim(
+        text=guarded_answer,
+        preview_exists=effective_preview is not None and _preview_has_content,
+    )
+    # All-or-nothing cleanup: when _guardrail_false_preview_claim stripped a false
+    # preview-existence claim, it means the LLM claimed a preview was ready but no
+    # authoritative code content was actually committed.  Clear any empty write_file
+    # placeholder so the session is in a clean state — no orphaned shell, no
+    # accidental empty submission.  Only clears empty-content previews; any
+    # preview that already had content was not touched by the guardrail above.
+    if guarded_answer != _answer_before_preview_guardrail and isinstance(effective_preview, dict):
+        _stale_wf = effective_preview.get("write_file")
+        if isinstance(_stale_wf, dict) and not str(_stale_wf.get("content") or "").strip():
+            write_session_preview(root, active_session, None)
+            builder_payload = None
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
     is_json_content_request = _is_explicit_json_content_request(message)
     is_voxera_control_turn = _is_voxera_control_turn(message, active_preview=pending_preview)
@@ -700,10 +864,17 @@ async def chat(request: Request):
     ) and not is_json_content_request
 
     assistant_text = guarded_answer
-    should_use_conversational_control_reply = not is_enrichment_turn and (
-        (is_voxera_control_turn and not is_json_content_request)
-        or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
-        or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
+    # Code draft replies must NOT be suppressed — they contain the actual code
+    # that the user needs to see in a proper fenced block.  All other preview
+    # control-turn suppression logic still applies.
+    should_use_conversational_control_reply = (
+        not is_enrichment_turn
+        and not is_code_draft_turn
+        and (
+            (is_voxera_control_turn and not is_json_content_request)
+            or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
+            or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
+        )
     )
     if should_use_conversational_control_reply:
         assistant_text = _conversational_preview_update_message(

@@ -1208,3 +1208,38 @@ Vera v0 now includes a narrow job-outcome review capability in chat while preser
 - Other classes (`canceled`, `manual_only`, `noisy_large_result`) intentionally remain unsurfaced for later additive PRs.
 
 - Evidence-grounded value-forward surfacing layer (`vera/result_surfacing.py`): linked completion messages and review outputs now prefer concise, evidence-grounded result text over generic status-only messaging for read/inspection operations. The layer inspects `step_summaries`/`machine_payload` evidence and deterministically formats bounded results for supported skill families (file read/exists/stat, directory listing, service status, recent logs, diagnostics snapshot, process list). When no useful structured value is available, falls back to current status-oriented completion text. Large outputs (file content, log excerpts) are bounded via truncation/excerpt limits.
+
+## Governed code/script draft lane (PR #TBD)
+
+Vera now has a deterministic code/script/config draft lane that creates real `write_file` preview state backed by LLM-generated code, enabling the `save it` → governed submit flow.
+
+**Classifier (`src/voxera/core/code_draft_intent.py`):**
+- `is_code_draft_request(message)`: requires a creation verb + (language keyword + subject noun) OR explicit filename with code extension. Excludes save-by-reference phrases.
+- `classify_code_draft_intent(message)`: returns a `write_file` preview payload with an empty content placeholder. Actual code is injected by the caller post-LLM-reply.
+- `extract_code_from_reply(text)`: extracts the first fenced code block from the LLM reply for content injection.
+- Supports 30+ languages/file types. Single-letter ambiguous tokens (`c`, `r`) excluded from keyword matching; caught via explicit filenames (`.c`, `.r`).
+
+**App-layer integration (`vera_web/app.py`):**
+- After `generate_vera_reply()`, if `is_code_draft_request(message)` is True, the reply is scanned for a fenced code block; if found, it is injected into the preview and the session state is updated.
+- Code draft replies are excluded from the conversational-control reply suppressor so code-containing answers are always shown in chat.
+- The hidden preview builder can also produce a code draft payload; the post-reply step merges the LLM-extracted code into whichever payload is active.
+- **Refinement detection:** when an active preview has a code-type file extension and the LLM reply contains a fenced code block, the turn is treated as a code draft update even if `is_code_draft_request()` is False. This lets users refine drafts naturally ("actually use requests library") without triggering a fresh code draft classifier match. The reply is shown, the preview content is updated, and submit remains governed.
+
+**Submit patterns (`vera/handoff.py`):**
+- Added `save it`, `save this`, `let's save it/this/that`, and `write it/this/that to file` to `_ACTIVE_PREVIEW_SUBMIT_PATTERNS`. These only fire when a preview exists (fail-closed).
+
+**Code extraction (`core/code_draft_intent.py`):**
+- `extract_code_from_reply(text)` uses `r"```[^\n]*\n(.*?)```"` (DOTALL) to match fenced blocks. The `[^\n]*` on the fence line tolerates trailing spaces, version strings, or other characters LLMs sometimes emit after the language tag (e.g. ` ```python ` with a trailing space). Code is stripped before returning.
+
+**Truthfulness guardrails (`vera_web/app.py`):**
+- `_text_outside_code_blocks(text)`: strips fenced code blocks from text before phrase-matching, preventing false positives when code content mentions "preview". Uses the same `[^\n]*` fence-line pattern.
+- `_looks_like_preview_pane_claim(text)`: detects phrases like "preview pane", "check the preview", "in your preview", "visible in preview", etc. in non-code text. Delegates to `_looks_like_preview_update_claim` for update-style claims.
+- `_guardrail_false_preview_claim(text, preview_exists)`: applied after `_guardrail_submission_claim`; when `preview_exists=False`, strips false preview-existence claims from the LLM reply — preserving any embedded code blocks with a truthful note, or replacing the whole reply with a plain "could not prepare preview" message.
+- A `write_file` preview with empty `content` is treated as "no real preview" for claim-checking purposes.
+- **All-or-nothing enforcement:** when `_guardrail_false_preview_claim` strips a false claim, any empty-content `write_file` placeholder shell is immediately cleared. Failed code-draft attempts leave no orphaned empty preview. Placeholder previews created without a false claim (e.g. "write a file called script.ps1" where the LLM asks what content to add) are intentionally preserved for refinement flows.
+
+**LLM persona override for code-draft turns (`vera/service.py`, `vera_web/app.py`):**
+- Vera's default system prompt declares "Not the payload drafter" and "Do not narrate hidden drafting mechanics." Without intervention the LLM never outputs code in fenced blocks; `extract_code_from_reply` always returns `None` and previews stay empty.
+- `_CODE_DRAFT_HINT` constant (in `service.py`): a bracketed system note appended to the user message on code-draft turns, explicitly instructing the LLM to write the complete, working code in a properly-fenced block for extraction and governed storage.
+- `build_vera_messages` accepts a `code_draft: bool = False` parameter; when `True`, the hint is appended to the user content in the messages list.
+- `app.py` pre-computes `is_code_draft_turn` before the LLM call and builds `_vera_user_message = message + _CODE_DRAFT_HINT if is_code_draft_turn else message`. The hint travels inside the user message so `generate_vera_reply`'s signature is unchanged (avoids breaking test infrastructure). Session history stores the original un-augmented message.

@@ -533,3 +533,11 @@ Vera can now review real VoxeraOS job outcomes from canonical queue evidence (no
 - Live-delivered linked completions are still persisted in canonical session state first, and the open Vera chat page now performs bounded active-tab polling of that same session transcript (`/chat/updates`) so already-persisted assistant turns become visible without manual refresh.
 - Browser freshness is view-only convenience (not a truth source): queue/evidence/session artifacts remain canonical, and next-turn fallback still avoids duplicate reposting once a completion is already visible/surfaced.
 - Evidence-grounded value-forward surfacing: linked completion messages and review outputs now prefer concise result text extracted from canonical `machine_payload` evidence over generic status-only messaging for read/inspection operations (file read/exists/stat, directory listing, service status, recent logs, diagnostics snapshot, process list). Large outputs are bounded via truncation/excerpt limits. Falls back to status-oriented text when no useful structured value is present in evidence.
+
+### Vera governed code/script draft lane
+
+- When a user asks Vera to write code, a script, or a config file (e.g. "write me a python script", "create a bash script called backup.sh"), Vera generates the code in a proper fenced code block in chat AND creates a real authoritative `write_file` preview backed by that code.
+- Supports 30+ languages/file types. Code content is extracted from the LLM reply and injected into the preview after reply generation.
+- Natural follow-ups like "save it", "save this", "let's save it", "write that to a file" submit the preview through the governed queue handoff path.
+- Refinement is supported: follow-up requests like "actually use requests library" update the preview content with the new code without requiring a fresh code draft classifier match. The updated code is shown in chat.
+- Save-by-reference requests ("write your previous answer to a file") are explicitly excluded from the code draft classifier and continue to use the existing save-by-reference path.

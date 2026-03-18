@@ -1,3 +1,14 @@
+## 2026-03-17 — GitHub PR #TBD — fix(vera/code-lane): fix governed code-draft lane LLM persona override and all-or-nothing preview truthfulness
+
+- **Root cause**: Vera's system prompt says "Not the payload drafter." The LLM never outputs code in fenced blocks; `extract_code_from_reply` always returned `None`; previews stayed permanently empty.
+- **Fix — LLM persona override**: Added `_CODE_DRAFT_HINT` constant to `service.py`. When `is_code_draft_turn=True`, `app.py` appends the hint to the user message before calling `generate_vera_reply`. The hint tells the model to write the complete code in a fenced block for governed extraction. Session history stores the original un-augmented message. `generate_vera_reply` signature unchanged to avoid breaking test infrastructure.
+- **Fix — all-or-nothing preview truthfulness (fourth-pass)**: When `_guardrail_false_preview_claim` strips a false claim AND the current preview has empty `write_file.content`, the empty placeholder shell is cleared. No orphaned empty previews. Placeholder previews without a false claim are preserved for refinement flows.
+- **Fix — robust fenced-block regex**: `extract_code_from_reply` and related regex patterns updated from `r"```(?:[a-zA-Z0-9_+\-.]*)?\n"` to `r"```[^\n]*\n(.*?)```"` — tolerates trailing spaces, version strings, or other characters LLMs emit after language tags.
+- **Files changed**: `src/voxera/vera/service.py` (hint constant + `build_vera_messages` flag), `src/voxera/vera_web/app.py` (pre-computed `is_code_draft_turn`, message augmentation, all-or-nothing clearing, regex hardening), `src/voxera/core/code_draft_intent.py` (regex hardening).
+- **Tests added**: 11 new tests in `test_vera_web.py` covering hint injection, hint absence, real-world prompt flows (Python URL fetch, web scraper, bash disk/memory), `build_vera_messages` unit tests; 3 new tests in `test_code_draft_intent.py` for fence-line trailing space/version tolerance.
+- All tests pass; all checks (`ruff format`, `ruff check`, `mypy`, `make merge-readiness-check`) pass.
+- Remaining limitation: the hint adds ~60 tokens to the user message on every code-draft turn; this is intentional and bounded.
+
 ## 2026-03-16 — GitHub PR #TBD — fix(vera): singular save-by-reference defaults to latest assistant content
 
 - Resolver behavior tightened for session-content save references: singular vague phrasing (for example `save that`, `put that in a file`) now deterministically resolves to the most recent substantial assistant-authored message in the active session.
@@ -1727,3 +1738,91 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 - On each Vera chat cycle, completion ingestion runs first; then at most one unsurfaced eligible completion (policy in `read_only_success|mutating_success|approval_blocked|failed`) is formatted with deterministic evidence-grounded text and appended as an assistant turn.
 - Surfaced completions are marked in session artifact state via `surfaced_in_chat=true` and `surfaced_at_ms`, preventing repost spam on later turns.
 - Mutating success is now auto-surfaced only when canonical metadata indicates true terminal completion (no pending/delegated downstream child work). Canceled, noisy, and manual-only classes remain intentionally unsurfaced; manual evidence review flow remains the path for those classes.
+
+## 2026-03-16 — PR #TBD — feat(vera): add governed code/script draft lane with authoritative preview support
+
+- Summary:
+  - Added `src/voxera/core/code_draft_intent.py`: bounded deterministic classifier for code/script/config draft requests. Supports 30+ file types via `_LANGUAGE_REGISTRY`. Detects intent via verb + language keyword + subject noun OR explicit filename with code extension. Excludes save-by-reference requests. Produces a `write_file` payload with an empty content placeholder.
+  - Extended `src/voxera/vera_web/app.py`: after `generate_vera_reply()`, code is extracted from the LLM reply (via `extract_code_from_reply`) and injected into the preview. This creates a real authoritative `write_file` preview backed by LLM-generated content, enabling "save it" → governed submit flow without any new LLM call.
+  - Code draft replies are explicitly excluded from the conversational-control reply suppressor so code-containing answers are shown in chat (not replaced with "Understood").
+  - Extended `src/voxera/vera/handoff.py` `_ACTIVE_PREVIEW_SUBMIT_PATTERNS` with 4 new patterns: `save it`, `save this`, `let's save it/this`, and `write it/this to file`. These only fire when `preview_available=True` (fail-closed).
+  - Added `tests/test_code_draft_intent.py` with 63 unit tests covering all public functions.
+  - Added 14 integration tests to `tests/test_vera_web.py` for the code draft lane (preview creation, code injection, fenced code in reply, "save it" submit flow, no-preview fallback).
+  - Updated existing test `test_non_voxera_user_requested_json_content_is_still_allowed` → `test_json_config_request_creates_preview_and_shows_fenced_code` to reflect intentional new behavior.
+
+- Design decisions:
+  - Code draft classifier intentionally NOT wired into `_draft_from_candidate_message` / `maybe_draft_job_payload` to avoid routing conflicts with save-by-reference and structured note paths. Only runs post-LLM-reply in `app.py`.
+  - Single-letter language tokens `c` and `r` excluded from `_LANGUAGE_RE` (too ambiguous); caught via explicit filenames (`main.c`, `analysis.r`). `md` bare token excluded for same reason; `markdown` keyword or `.md` filename works.
+  - `go` included in `_LANGUAGE_RE` but requires a subject noun (script/program/config etc.) to prevent "go ahead" false positives.
+  - Empty content placeholder in classifier output; actual code injected post-reply for authoritative, LLM-generated content.
+
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
+
+## 2026-03-17 — PR #TBD (cont.) — fix(vera): code draft lane product-correctness and UX hardening
+
+- Summary (second-pass review):
+  - **Code draft refinement gap fixed:** When a user refines an existing code draft ("actually use requests library"), the turn is now detected as a code draft update even though `is_code_draft_request()` does not match. Detection: active `write_file` preview with a code-type extension + fenced code block in the LLM reply. The reply is shown in chat (not suppressed) and the preview content is refreshed with the updated code.
+  - **Pending preview fallback:** On refinement turns where neither the hidden compiler nor `classify_code_draft_intent` produce a target draft, the code injection block now falls back to the existing `pending_preview` as the target for content injection.
+  - **Apostrophe fix:** `_ACTIVE_PREVIEW_SUBMIT_PATTERNS` pattern `\blets?\s+save` did not match "let's save it" (apostrophe). Changed to `\blet'?s\s+save`.
+  - **"write that to file":** Added "that" as a pronoun alongside "it"/"this" in both `let's save` and `write X to file` patterns.
+  - Added `has_code_file_extension(path)` to `code_draft_intent.py` for refinement detection.
+  - Added 4 integration tests: refinement updates preview, refinement→save flow, "let's save it" with apostrophe, "write that to a file" submit.
+  - Added 13 unit tests for `has_code_file_extension`.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
+
+## 2026-03-17 — PR #TBD (cont.) — fix(vera/code-lane): enforce authoritative preview and truthful submit behavior
+
+- Summary (third-pass correctness/truthfulness review):
+  - **Root cause:** On code-draft turns, the LLM reply suppression is intentionally disabled so code blocks are shown. This also allowed raw false claims ("Check the Preview Pane") through. Two bugs exposed by manual testing: (1) LLM claims preview exists when no fenced code was produced → no preview visible; (2) LLM claims updated preview → no preview content.
+  - **`_guardrail_false_preview_claim(text, preview_exists)`** added to `vera_web/app.py`: detects phrases like "preview pane", "check the preview", "in your preview" etc. in the text *outside* fenced code blocks; when `preview_exists=False`, strips the false claim and either preserves embedded code blocks with a truthful note or returns a plain "could not prepare preview" message.
+  - **`_looks_like_preview_pane_claim(text)`** added: matches claim phrases in non-code text; delegates to the existing `_looks_like_preview_update_claim` for update claims.
+  - **`_text_outside_code_blocks(text)`** added: strips fenced code blocks before claim detection to avoid false positives where code mentions "preview" as a variable/string.
+  - **Empty-content preview truthfulness:** the preview-existence check passed to `_guardrail_false_preview_claim` treats a `write_file` preview with empty `content` as "no real preview". This catches the case where the builder creates a placeholder (no extractable code) but the LLM falsely claims the draft is ready. Placeholder previews are preserved for refinement flows — only the claim text is corrected.
+  - **No regressions:** `test_content_refinement_phrase_script_text_updates_active_preview` confirmed: placeholder empty-content previews survive across turns; refinement turns still inject content correctly.
+  - Added 9 integration tests to `tests/test_vera_web.py` covering: false preview claim stripping with no fenced code, empty-content preview claim stripping, submit without preview fails truthfully, go-ahead without preview fails truthfully, submit with real preview succeeds, code-in-chat with real preview (claim valid), false claim stripped but code blocks preserved, explicit write_file flow not regressed.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
+
+## 2026-03-17 — PR #TBD (cont.) — fix(vera/code-lane): all-or-nothing preview population for code/script draft requests
+
+- Summary (fourth-pass — authoritative preview population):
+  - **Root cause (primary):** `extract_code_from_reply()` used `r"```(?:[a-zA-Z0-9_+\-.]*)?\n"` which required `\n` immediately after the language specifier. LLMs frequently emit a trailing space (e.g. ` ```python `) causing the extraction to silently return `None`, so the preview content was never injected.
+  - **Root cause (secondary):** When code extraction failed, the empty `write_file` placeholder created by the hidden compiler was left behind. Guardrails caught false chat claims but the orphaned shell persisted in session state, creating a half-state visible as an empty Preview Pane.
+  - **`extract_code_from_reply` regex hardened:** changed from `r"```(?:[a-zA-Z0-9_+\-.]*)?\n(.*?)```"` to `r"```[^\n]*\n(.*?)```"`. `[^\n]*` matches any content on the fence line (language tag, trailing spaces, version strings, etc.). Same pattern adopted in `_text_outside_code_blocks` and `_guardrail_false_preview_claim` code-block extraction for consistency.
+  - **All-or-nothing cleanup:** after `_guardrail_false_preview_claim` runs, the code checks whether the guardrail modified the text. If it did (a false claim was stripped) and the current preview has empty `write_file.content`, the empty shell is cleared immediately. This makes failed code-draft attempts truly atomic — no orphaned previews.
+  - **Refinement flow preserved:** placeholder previews created silently (LLM acknowledges without claiming preview is visible) are NOT cleared. Only previews where a false claim was caught get cleared. `test_content_refinement_phrase_script_text_updates_active_preview` continues to pass.
+  - Added 3 new unit tests to `test_code_draft_intent.py`: fence with trailing space, multiple trailing spaces, version tag in language (e.g. `python3`).
+  - Added 4 new integration tests to `test_vera_web.py`: explicit-filename code draft populates preview content, failed draft clears empty shell, placeholder survives when no false claim, trailing-space fence line extracts code.
+  - Updated `test_no_false_preview_claim_when_builder_creates_empty_preview` to also assert `preview is None` (empty shell now cleared).
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`

@@ -1318,11 +1318,30 @@ def maybe_deliver_linked_completion_live_for_job(queue_root: Path, *, job_ref: s
     return delivered_count
 
 
-def build_vera_messages(*, turns: list[dict[str, str]], user_message: str) -> list[dict[str, str]]:
+# Injected into the user message on code/script draft turns to override
+# Vera's default "not the payload drafter" stance and actually produce code.
+_CODE_DRAFT_HINT = (
+    "\n\n[System note for this request: You are being asked to write a code or "
+    "script file. Write the complete, working code directly in your response "
+    "inside a properly-fenced code block (e.g. ```python\\n...\\n```). "
+    "The fenced block will be automatically extracted and stored as a governed "
+    "preview file for the user to review and submit.]"
+)
+
+
+def build_vera_messages(
+    *,
+    turns: list[dict[str, str]],
+    user_message: str,
+    code_draft: bool = False,
+) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = [{"role": "system", "content": VERA_SYSTEM_PROMPT}]
     for turn in turns[-MAX_SESSION_TURNS:]:
         messages.append({"role": turn["role"], "content": turn["text"]})
-    messages.append({"role": "user", "content": user_message.strip()})
+    content = user_message.strip()
+    if code_draft:
+        content = content + _CODE_DRAFT_HINT
+    messages.append({"role": "user", "content": content})
     return messages
 
 
