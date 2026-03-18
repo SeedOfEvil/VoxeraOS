@@ -8,6 +8,7 @@ from typing import Any
 
 from ..core.file_intent import classify_bounded_file_intent
 from ..core.inbox import add_inbox_payload
+from ..core.writing_draft_intent import classify_writing_draft_intent
 
 _ALLOWED_TOP_LEVEL_KEYS = {
     "goal",
@@ -278,15 +279,15 @@ def _message_requests_referenced_content(message: str) -> bool:
     return bool(
         re.search(
             r"\b("
-            r"that\s+(?:joke|summary|text|answer|response|previous\s+summary|previous\s+answer|previous\s+response)|"
-            r"(?:the\s+)?previous\s+(?:summary|response|answer)|"
-            r"(?:the\s+)?last\s+(?:summary|response|answer)|"
-            r"your\s+previous\s+(?:summary|response|answer)|"
+            r"that\s+(?:joke|summary|text|answer|response|explanation|previous\s+summary|previous\s+answer|previous\s+response|previous\s+explanation)|"
+            r"(?:the\s+)?previous\s+(?:summary|response|answer|explanation)|"
+            r"(?:the\s+)?last\s+(?:summary|response|answer|explanation)|"
+            r"your\s+previous\s+(?:summary|response|answer|explanation)|"
             r"that\s+into\s+(?:a\s+)?(?:file|note)|"
             r"save\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"save\s+that\s+to\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"put\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
-            r"write\s+your\s+previous\s+(?:answer|response|summary)\s+to\s+(?:a\s+)?file|"
+            r"write\s+your\s+previous\s+(?:answer|response|summary|explanation)\s+to\s+(?:a\s+)?file|"
             r"use\s+your\s+previous\s+response|"
             r"put\s+that\s+into\s+(?:a\s+)?file|"
             r"use\s+that\s+as\s+(?:the\s+)?content"
@@ -312,7 +313,10 @@ def _looks_like_ambiguous_reference_only(message: str) -> bool:
     lowered = message.lower()
     if not re.search(r"\b(that|this|it|previous|last)\b", lowered):
         return False
-    if re.search(r"\b(joke|summary|text|answer|response|script|paragraph|note|content)\b", lowered):
+    if re.search(
+        r"\b(joke|summary|text|answer|response|explanation|script|paragraph|note|content)\b",
+        lowered,
+    ):
         return False
     return bool(
         re.search(
@@ -353,6 +357,18 @@ def _looks_like_non_authored_assistant_message(text: str) -> bool:
     return any(re.search(pattern, lowered) for pattern in non_authored_patterns)
 
 
+def _looks_like_trivial_courtesy_assistant_message(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return True
+    return bool(
+        re.fullmatch(
+            r"(?:you(?:'| a)?re\s+welcome|no\s+problem|anytime|glad\s+to\s+help|happy\s+to\s+help)[.! ]*",
+            lowered,
+        )
+    )
+
+
 def _select_recent_assistant_content(
     *, message: str, assistant_content_candidates: list[str] | None
 ) -> str | None:
@@ -378,7 +394,11 @@ def _select_recent_assistant_content(
     viable: list[str] = []
     for raw in reversed(assistant_content_candidates[-6:]):
         candidate = raw.strip()
-        if not candidate or _looks_like_non_authored_assistant_message(candidate):
+        if (
+            not candidate
+            or _looks_like_non_authored_assistant_message(candidate)
+            or _looks_like_trivial_courtesy_assistant_message(candidate)
+        ):
             continue
         if len(candidate) < 24 and len(candidate.split()) < 4:
             continue
@@ -1123,7 +1143,7 @@ def _draft_revision_from_active_preview(
             return {"goal": normalized_open}
 
     if re.search(
-        r"\b(rename|make\s+that|call\s+(?:it|that)|change\s+(?:the\s+)?(?:name|filename|file\s+name))\b",
+        r"\b(rename|save\s+as|make\s+that|call\s+(?:it|that)|change\s+(?:the\s+)?(?:name|filename|file\s+name))\b",
         lowered,
     ):
         new_name = _extract_named_target(text)
@@ -1329,6 +1349,10 @@ def _draft_from_candidate_message(
     )
     if structured_write:
         return structured_write
+
+    writing_draft = classify_writing_draft_intent(candidate)
+    if writing_draft is not None:
+        return writing_draft
 
     structured_note = _normalize_structured_note_payload(candidate)
     if structured_note:

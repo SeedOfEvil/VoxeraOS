@@ -169,17 +169,13 @@ def _is_informational_web_query(message: str) -> bool:
         "search ",
         "search the web",
         "search online",
-        "find out",
         "find the latest",
         "find current",
-        "find information",
-        "give me information",
         "find sources",
         "investigate",
         "investigation",
         "web investigation",
         "stock information",
-        "information about",
         "latest",
         "latest news",
         "latest stories",
@@ -201,7 +197,6 @@ def _is_informational_web_query(message: str) -> bool:
         "market news",
         "market updates",
         "release notes",
-        "compare",
         "research",
         "what changed",
         "what happened",
@@ -1365,6 +1360,11 @@ def _recent_assistant_authored_content(turns: list[dict[str, str]]) -> list[str]
         if not text:
             continue
         if any(marker in lowered for marker in non_authored_markers):
+            continue
+        if re.fullmatch(
+            r"(?:you(?:'| a)?re\s+welcome|no\s+problem|anytime|glad\s+to\s+help|happy\s+to\s+help)[.! ]*",
+            lowered,
+        ):
             continue
         authored.append(text)
     return authored[-4:]

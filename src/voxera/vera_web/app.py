@@ -17,6 +17,13 @@ from ..core.code_draft_intent import (
     is_code_draft_request,
 )
 from ..core.file_intent import detect_blocked_file_intent
+from ..core.writing_draft_intent import (
+    classify_writing_draft_intent,
+    extract_text_draft_from_reply,
+    is_text_draft_preview,
+    is_writing_draft_request,
+    is_writing_refinement_request,
+)
 from ..paths import queue_root as default_queue_root
 from ..vera.evidence_review import (
     draft_followup_preview,
@@ -192,7 +199,7 @@ def _is_natural_confirmation_phrase(message: str) -> bool:
 
 
 def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] | None) -> bool:
-    if active_preview is not None:
+    if active_preview is not None and not is_text_draft_preview(active_preview):
         return True
     if is_recent_assistant_content_save_request(message):
         return True
@@ -715,7 +722,14 @@ async def chat(request: Request):
     # Pre-compute code-draft intent so the LLM call can be given the code-generation
     # hint before the reply is generated.  This flag is reused below where
     # is_code_draft_turn would have been computed from the same expression.
-    is_code_draft_turn = is_code_draft_request(message) and not informational_web_turn
+    is_code_draft_turn = (
+        is_code_draft_request(message)
+        and not informational_web_turn
+        and not is_writing_draft_request(message)
+    )
+    is_writing_draft_turn = (
+        not is_code_draft_turn and not informational_web_turn and is_writing_draft_request(message)
+    )
 
     # When an active preview exists and the user makes an informational query,
     # run read-only enrichment and store it for follow-up pronoun resolution.
@@ -773,6 +787,7 @@ async def chat(request: Request):
     # is_code_draft_turn was pre-computed above (before the LLM call) so the
     # code-draft hint could be passed to generate_vera_reply.
     reply_code_content = extract_code_from_reply(reply["answer"])
+    reply_text_draft = extract_text_draft_from_reply(reply["answer"])
 
     # Code draft refinement: when an active preview has a code-type file
     # extension and the LLM reply contains a fenced code block, treat this
@@ -814,6 +829,57 @@ async def chat(request: Request):
                     "write_file": {**wf, "content": reply_code_content},
                 }
                 builder_payload = updated_draft
+                write_session_preview(root, active_session, builder_payload)
+                write_session_handoff_state(
+                    root,
+                    active_session,
+                    attempted=False,
+                    queue_path=str(root),
+                    status="preview_ready",
+                    error=None,
+                    job_id=None,
+                )
+
+    is_existing_text_preview = isinstance(pending_preview, dict) and is_text_draft_preview(
+        pending_preview
+    )
+    if (
+        not is_writing_draft_turn
+        and not informational_web_turn
+        and not is_enrichment_turn
+        and is_existing_text_preview
+        and is_writing_refinement_request(message)
+        and reply_text_draft is not None
+    ):
+        is_writing_draft_turn = True
+
+    if (
+        is_writing_draft_turn
+        and reply_text_draft is not None
+        and not str(reply.get("status") or "").startswith("degraded")
+    ):
+        prose_target_draft: dict[str, object] | None = builder_payload
+        if prose_target_draft is None:
+            raw_draft = classify_writing_draft_intent(message)
+            if raw_draft is not None:
+                try:
+                    prose_target_draft = normalize_preview_payload(raw_draft)
+                except Exception:
+                    prose_target_draft = None
+        if (
+            prose_target_draft is None
+            and isinstance(pending_preview, dict)
+            and is_text_draft_preview(pending_preview)
+        ):
+            prose_target_draft = dict(pending_preview)
+        if isinstance(prose_target_draft, dict):
+            wf = prose_target_draft.get("write_file")
+            if isinstance(wf, dict):
+                updated_prose_draft: dict[str, object] = {
+                    **prose_target_draft,
+                    "write_file": {**wf, "content": reply_text_draft},
+                }
+                builder_payload = updated_prose_draft
                 write_session_preview(root, active_session, builder_payload)
                 write_session_handoff_state(
                     root,
@@ -870,6 +936,7 @@ async def chat(request: Request):
     should_use_conversational_control_reply = (
         not is_enrichment_turn
         and not is_code_draft_turn
+        and not is_writing_draft_turn
         and (
             (is_voxera_control_turn and not is_json_content_request)
             or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))

@@ -217,7 +217,7 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
         ("the higgs field", False),
         ("what is quantum field theory?", False),
         ("tell me about atoms", False),
-        ("find information about VMware Horizon 8", True),
+        ("find information about VMware Horizon 8", False),
         ("look into the latest Brave Search API docs", True),
         ("search the web for the latest official Brave Search API documentation", True),
         ("research Nvidia earnings", True),

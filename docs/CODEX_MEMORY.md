@@ -1,3 +1,13 @@
+## 2026-03-18 — PR #TBD — feat(vera): add governed document/article/essay draft lane with authoritative preview support
+
+- Added a bounded prose draft classifier at `src/voxera/core/writing_draft_intent.py` for essays, articles, writeups, rewrite/formalize/expand asks, and plain-English script explanations.
+- Extended `src/voxera/vera_web/app.py` to populate authoritative `write_file.content` for prose drafts from the assistant's actual reply, mirroring the governed code lane's preview-truth model.
+- Writing follow-ups now update active preview state instead of failing with "no prepared preview", including save-as filename refinements for prose drafts.
+- Save-by-reference resolution in `src/voxera/vera/handoff.py` now recognizes `explanation` references and filters out trivial courtesy assistant turns so `thanks` does not break `save your previous explanation ...`.
+- Narrowed `_is_informational_web_query()` in `src/voxera/vera/service.py` so ordinary compare/explain prompts stay conversational unless the user is explicit about web/latest/current/search intent.
+- Added focused Vera web coverage for: explanation → essay expansion, rewrite → formalize + save-as, investigation summary → article, direct essay requests, courtesy-turn save-reference continuity, code → explanation → save explanation, and conversational compare prompts.
+- Scope intentionally remains bounded: no docx/pdf export, no multi-file writing workflows, no fake preview/queue claims.
+
 ## 2026-03-17 — GitHub PR #TBD — fix(vera/code-lane): fix governed code-draft lane LLM persona override and all-or-nothing preview truthfulness
 
 - **Root cause**: Vera's system prompt says "Not the payload drafter." The LLM never outputs code in fenced blocks; `extract_code_from_reply` always returned `None`; previews stayed permanently empty.
