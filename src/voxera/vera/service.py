@@ -1323,6 +1323,14 @@ _CODE_DRAFT_HINT = (
     "preview file for the user to review and submit.]"
 )
 
+_WRITING_DRAFT_HINT = (
+    "\n\n[System note for this request: You are being asked to draft a prose document "
+    "artifact. Write the actual essay/article/writeup/explanation body directly in your "
+    "response. Avoid hidden control markup. If you include a short conversational wrapper, "
+    "place the full draft body after a blank line so it can be extracted into the governed "
+    "preview file.]"
+)
+
 
 def build_vera_messages(
     *,

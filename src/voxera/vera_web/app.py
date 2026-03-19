@@ -56,6 +56,7 @@ from ..vera.handoff import (
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.service import (
     _CODE_DRAFT_HINT,
+    _WRITING_DRAFT_HINT,
     _is_informational_web_query,
     append_session_turn,
     clear_session_turns,
@@ -795,7 +796,11 @@ async def chat(request: Request):
     # passed to the LLM.  This overrides Vera's default "not the payload drafter"
     # stance so the model actually writes code in a fenced block.  The original
     # message (without the hint) is what was already stored in session turns.
-    _vera_user_message = message + _CODE_DRAFT_HINT if is_code_draft_turn else message
+    _vera_user_message = message
+    if is_code_draft_turn:
+        _vera_user_message = message + _CODE_DRAFT_HINT
+    elif is_writing_draft_turn:
+        _vera_user_message = message + _WRITING_DRAFT_HINT
     reply = await generate_vera_reply(turns=turns, user_message=_vera_user_message)
     investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
     if isinstance(investigation_payload, dict):

@@ -2649,6 +2649,7 @@ def test_black_hole_explanation_then_essay_followup_creates_authoritative_previe
         if "2 page essay" in lowered:
             return {
                 "answer": (
+                    "I've prepared a draft below.\n\n"
                     "# Black Holes\n\n"
                     "Black holes are extreme objects formed when matter collapses into a compact region. "
                     "This essay expands on the science, the history of discovery, and the role of black holes "
@@ -2679,6 +2680,7 @@ def test_black_hole_explanation_then_essay_followup_creates_authoritative_previe
     assert res.status_code == 200
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".md")
+    assert "prepared a draft below" not in preview["write_file"]["content"].lower()
     assert "Black Holes" in preview["write_file"]["content"]
     assert "science" in preview["write_file"]["content"]
 
@@ -2693,6 +2695,8 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
         if "more formal" in lowered:
             return {
                 "answer": (
+                    "Essay overview\n\n"
+                    "A formalized short essay appears below.\n\n"
                     "# The Roman Empire\n\n"
                     "The Roman Empire was a foundational Mediterranean power whose administrative structure, "
                     "military organization, and legal traditions influenced later European states."
@@ -2702,6 +2706,7 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
         if "rewrite that as a short high school essay" in lowered:
             return {
                 "answer": (
+                    "Here's the draft essay.\n\n"
                     "# The Roman Empire\n\n"
                     "The Roman Empire grew from the city of Rome into a large empire around the Mediterranean. "
                     "It is remembered for its roads, armies, laws, and lasting cultural influence."
@@ -2736,6 +2741,7 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/roman-empire-essay.md"
+    assert "essay overview" not in preview["write_file"]["content"].lower()
     assert "foundational mediterranean power" in preview["write_file"]["content"].lower()
 
 
@@ -2747,6 +2753,8 @@ def test_investigation_summary_then_article_followup_creates_preview(tmp_path, m
         _ = turns
         return {
             "answer": (
+                "Article overview\n\n"
+                "A short technical article follows.\n\n"
                 "# Technical Article\n\n"
                 "The investigation suggests a narrow set of likely causes, highlights the highest-signal evidence, "
                 "and frames the next debugging steps for a technical teammate."
@@ -2780,6 +2788,7 @@ def test_investigation_summary_then_article_followup_creates_preview(tmp_path, m
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".md")
+    assert "article overview" not in preview["write_file"]["content"].lower()
     assert "technical teammate" in preview["write_file"]["content"].lower()
 
 
@@ -2791,6 +2800,7 @@ def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
         _ = (turns, user_message)
         return {
             "answer": (
+                "I've prepared an essay draft.\n\n"
                 "# Great Pyramids of Giza\n\n"
                 "The Great Pyramids of Giza were monumental royal tombs built during Egypt's Old Kingdom and remain "
                 "among the most studied engineering achievements of the ancient world."
@@ -2814,6 +2824,7 @@ def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert "great-pyramids-of-giza-essay.md" in preview["write_file"]["path"]
+    assert "prepared an essay draft" not in preview["write_file"]["content"].lower()
     assert "Great Pyramids of Giza" in preview["write_file"]["content"]
 
 

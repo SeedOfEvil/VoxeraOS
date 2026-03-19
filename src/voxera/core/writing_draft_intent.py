@@ -3,7 +3,7 @@
 Detects a narrow set of writing-oriented asks that should create authoritative
 preview-backed ``write_file`` drafts. The actual prose body is populated from
 the assistant reply by ``vera_web/app.py`` so the preview always reflects real
-assistant-authored content, not a pseudo draft blob.
+assistant-authored content, not a pseudo draft blob or conversational wrapper.
 """
 
 from __future__ import annotations
@@ -44,6 +44,21 @@ _SAVE_AS_RE = re.compile(
 )
 _TOPIC_RE = re.compile(r"\b(?:about|on|for|based\s+on)\s+(.+?)(?:[.?!]|$)", re.IGNORECASE)
 _SLUG_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_WRAPPER_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"i(?:'ve| have)\s+(?:prepared|drafted|written)\b|"
+    r"here(?:'s| is)\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation)\b|"
+    r"below\s+is\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation)\b|"
+    r"(?:essay|article|writeup|draft)\s+(?:overview|summary)\b|"
+    r"(?:draft|essay|article|writeup)\s+body\b"
+    r")",
+    re.IGNORECASE,
+)
+_BODY_LABEL_RE = re.compile(
+    r"^(?:essay|article|writeup|draft|body)\s*:\s*$",
+    re.IGNORECASE,
+)
+_HEADING_RE = re.compile(r"^(?:#{1,6}\s+.+|[A-Z][^\n]{0,100})$")
 
 
 def is_writing_draft_request(message: str) -> bool:
@@ -106,7 +121,10 @@ def is_text_draft_preview(preview: dict[str, Any] | None) -> bool:
 
 
 def extract_text_draft_from_reply(text: str) -> str | None:
-    content = text.replace("\r\n", "\n").strip()
+    normalized = text.replace("\r\n", "\n").strip()
+    if not normalized:
+        return None
+    content = _extract_prose_body(normalized)
     if not content:
         return None
     if len(content) < 24 and len(content.split()) < 5:
@@ -147,3 +165,62 @@ def _topic_slug(text: str) -> str | None:
     if not tokens:
         return None
     return "-".join(tokens[:8])
+
+
+def _extract_prose_body(content: str) -> str | None:
+    blocks = [block.strip() for block in re.split(r"\n{2,}", content) if block.strip()]
+    if not blocks:
+        return None
+
+    trimmed = list(blocks)
+    while trimmed and _looks_like_wrapper_block(trimmed[0]):
+        trimmed.pop(0)
+
+    if len(trimmed) >= 2 and _BODY_LABEL_RE.fullmatch(trimmed[0]):
+        trimmed = trimmed[1:]
+
+    if len(blocks) >= 3 and _looks_like_wrapper_block(blocks[0]) and _is_heading_like(blocks[2]):
+        trimmed = blocks[1:]
+        if _looks_like_wrapper_block(trimmed[0]):
+            trimmed = trimmed[1:]
+
+    if not trimmed:
+        return None
+    return "\n\n".join(trimmed).strip()
+
+
+def _looks_like_wrapper_block(block: str) -> bool:
+    lowered = block.strip().lower()
+    if not lowered:
+        return True
+    if _BODY_LABEL_RE.fullmatch(block.strip()):
+        return True
+    if _WRAPPER_PREFIX_RE.match(block.strip()):
+        return True
+    if lowered.endswith(":") and any(
+        token in lowered for token in ("overview", "summary", "draft", "body")
+    ):
+        return True
+    return len(block.split()) <= 32 and any(
+        phrase in lowered
+        for phrase in (
+            "prepared a draft",
+            "draft below",
+            "essay below",
+            "article below",
+            "writeup below",
+            "explanation below",
+            "this draft covers",
+            "this essay covers",
+            "this article covers",
+        )
+    )
+
+
+def _is_heading_like(block: str) -> bool:
+    stripped = block.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("#"):
+        return True
+    return bool(_HEADING_RE.fullmatch(stripped)) and len(stripped.split()) <= 12
