@@ -590,9 +590,11 @@ async def chat(request: Request):
 
     session_investigation = read_session_investigation(root, active_session)
     session_derived_output = read_session_derived_investigation_output(root, active_session)
+    is_explicit_writing_transform = is_writing_draft_request(message)
 
-    should_attempt_derived_save = is_investigation_derived_save_request(message) or (
-        _prefer_derived_followup_save(
+    should_attempt_derived_save = not is_explicit_writing_transform and (
+        is_investigation_derived_save_request(message)
+        or _prefer_derived_followup_save(
             message=message,
             session_derived_output=session_derived_output,
             turns=turns,
@@ -806,10 +808,10 @@ async def chat(request: Request):
     is_code_draft_turn = (
         is_code_draft_request(message)
         and not informational_web_turn
-        and not is_writing_draft_request(message)
+        and not is_explicit_writing_transform
     )
     is_writing_draft_turn = (
-        not is_code_draft_turn and not informational_web_turn and is_writing_draft_request(message)
+        not is_code_draft_turn and not informational_web_turn and is_explicit_writing_transform
     )
 
     # When an active preview exists and the user makes an informational query,

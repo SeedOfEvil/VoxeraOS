@@ -1,3 +1,10 @@
+## 2026-03-20 — PR #TBD — fix(vera): route investigation-summary transforms into governed writing lane
+
+- Tightened `src/voxera/vera/handoff.py` so derived follow-up save detection only claims true save/save-as style requests; transform prompts like `write a short article based on that summary` no longer get misclassified as derived-artifact saves.
+- Patched `src/voxera/vera_web/app.py` to prefer the governed writing lane whenever a message is an explicit writing transform, even if a derived investigation summary/comparison/expanded-result is still active in session state.
+- Added regressions in `tests/test_vera_web.py` covering the classifier boundary (`save it` still routes to derived save, transform prompts do not) plus the investigation-summary → article → `save it as brave-api-article.md` flow, verifying the saved preview contains article prose rather than the raw summary markdown.
+- Bounded limitation remains unchanged: this only disambiguates transform-vs-save routing for single-document prose previews; it does not redesign broader writing workflows or add export/multi-file behavior.
+
 ## 2026-03-20 — PR #TBD — fix(vera/writing-lane): apply combined prose refinement + save-as updates before submit
 
 - Patched `src/voxera/vera/handoff.py` so `save it as ...` / rename phrasing on an active preview is treated as a preview revision, not as an implicit submit of the stale prior preview.
