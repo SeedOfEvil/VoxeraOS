@@ -824,6 +824,8 @@ async def chat(request: Request):
         code_draft=is_code_draft_turn,
         writing_draft=is_writing_draft_turn,
     )
+    reply_answer = str(reply.get("answer") or "")
+    reply_status = str(reply.get("status") or "")
     investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
     if isinstance(investigation_payload, dict):
         write_session_investigation(root, active_session, investigation_payload)
@@ -834,8 +836,8 @@ async def chat(request: Request):
     # so the preview is authoritative and submit-ready — not just a placeholder.
     # is_code_draft_turn was pre-computed above (before the LLM call) so the
     # code-draft hint could be passed to generate_vera_reply.
-    reply_code_content = extract_code_from_reply(reply["answer"])
-    sanitized_answer = _strip_internal_control_blocks(reply["answer"])
+    reply_code_content = extract_code_from_reply(reply_answer)
+    sanitized_answer = _strip_internal_control_blocks(reply_answer)
     reply_text_draft = extract_text_draft_from_reply(sanitized_answer)
 
     # Code draft refinement: when an active preview has a code-type file
@@ -905,7 +907,7 @@ async def chat(request: Request):
     if (
         is_writing_draft_turn
         and reply_text_draft is not None
-        and not str(reply.get("status") or "").startswith("degraded")
+        and not reply_status.startswith("degraded")
     ):
         prose_target_draft: dict[str, object] | None = builder_payload
         if prose_target_draft is None:
@@ -999,7 +1001,7 @@ async def chat(request: Request):
             user_message=message,
         )
 
-    status = "prepared_preview" if builder_payload is not None else reply["status"]
+    status = "prepared_preview" if builder_payload is not None else reply_status
 
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
 
