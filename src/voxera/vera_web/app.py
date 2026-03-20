@@ -861,6 +861,26 @@ async def chat(request: Request):
         # Use existing builder payload if the hidden compiler built one;
         # otherwise create a fresh code draft preview now.
         target_draft: dict[str, object] | None = builder_payload
+        builder_has_explicit_content = False
+        explicit_literal_content_refinement = bool(
+            re.search(
+                r"\b("
+                r"add\s+content\s+to|"
+                r"use\s+this\s+as\s+(?:the\s+)?content|"
+                r"(?:content|text)\s*:|"
+                r"with\s+(?:the\s+)?(?:content|text)\b|"
+                r"as\s+content\s+add|"
+                r"put\s+.+?\s+(?:inside|in|into)\s+(?:it|the\s+file)\b"
+                r")",
+                message,
+                re.IGNORECASE,
+            )
+        )
+        if isinstance(builder_payload, dict):
+            builder_wf = builder_payload.get("write_file")
+            builder_has_explicit_content = isinstance(builder_wf, dict) and bool(
+                str(builder_wf.get("content") or "").strip()
+            )
         if target_draft is None:
             raw_draft = classify_code_draft_intent(message)
             if raw_draft is not None:
@@ -872,7 +892,13 @@ async def chat(request: Request):
         # where the classifier doesn't match but a code preview already exists.
         if target_draft is None and isinstance(pending_preview, dict):
             target_draft = dict(pending_preview)
-        if isinstance(target_draft, dict):
+        if builder_has_explicit_content and explicit_literal_content_refinement:
+            # Respect explicit structured content/refinement updates that the
+            # deterministic preview builder already resolved from the user
+            # message. Only suppress fenced-code extraction when the current
+            # turn itself already produced authoritative structured content.
+            reply_code_content = None
+        if isinstance(target_draft, dict) and reply_code_content is not None:
             wf = target_draft.get("write_file")
             if isinstance(wf, dict):
                 updated_draft: dict[str, object] = {
@@ -954,9 +980,14 @@ async def chat(request: Request):
     _preview_has_content = False
     if isinstance(effective_preview, dict):
         _epwf = effective_preview.get("write_file")
-        _preview_has_content = (
-            isinstance(_epwf, dict) and bool(str(_epwf.get("content") or "").strip())
-        ) or "write_file" not in effective_preview
+        if isinstance(_epwf, dict):
+            preview_path = str(_epwf.get("path") or "").strip()
+            preview_content = str(_epwf.get("content") or "").strip()
+            _preview_has_content = bool(preview_content) or (
+                bool(preview_path) and not has_code_file_extension(preview_path)
+            )
+        else:
+            _preview_has_content = "write_file" not in effective_preview
     _answer_before_preview_guardrail = guarded_answer
     guarded_answer = _guardrail_false_preview_claim(
         text=guarded_answer,
