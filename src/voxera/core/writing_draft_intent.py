@@ -176,15 +176,19 @@ def _extract_prose_body(content: str) -> str | None:
         return None
 
     trimmed = list(blocks)
-    while trimmed and _looks_like_wrapper_block(trimmed[0]):
+    while trimmed and _looks_like_wrapper_block(
+        trimmed[0], next_block=trimmed[1] if len(trimmed) > 1 else None
+    ):
         trimmed.pop(0)
 
     if len(trimmed) >= 2 and _BODY_LABEL_RE.fullmatch(trimmed[0]):
         trimmed = trimmed[1:]
 
-    if len(blocks) >= 3 and _looks_like_wrapper_block(blocks[0]) and _is_heading_like(blocks[2]):
+    if len(blocks) >= 3 and _looks_like_wrapper_block(blocks[0], next_block=blocks[1]):
         trimmed = blocks[1:]
-        if _looks_like_wrapper_block(trimmed[0]):
+        while trimmed and _looks_like_wrapper_block(
+            trimmed[0], next_block=trimmed[1] if len(trimmed) > 1 else None
+        ):
             trimmed = trimmed[1:]
 
     if not trimmed:
@@ -192,19 +196,20 @@ def _extract_prose_body(content: str) -> str | None:
     return "\n\n".join(trimmed).strip()
 
 
-def _looks_like_wrapper_block(block: str) -> bool:
-    lowered = block.strip().lower()
+def _looks_like_wrapper_block(block: str, *, next_block: str | None = None) -> bool:
+    stripped = block.strip()
+    lowered = stripped.lower()
     if not lowered:
         return True
-    if _BODY_LABEL_RE.fullmatch(block.strip()):
+    if _BODY_LABEL_RE.fullmatch(stripped):
         return True
-    if _WRAPPER_PREFIX_RE.match(block.strip()):
+    if _WRAPPER_PREFIX_RE.match(stripped):
         return True
     if lowered.endswith(":") and any(
         token in lowered for token in ("overview", "summary", "draft", "body")
     ):
         return True
-    return len(block.split()) <= 32 and any(
+    if len(block.split()) <= 32 and any(
         phrase in lowered
         for phrase in (
             "i can help you",
@@ -222,7 +227,51 @@ def _looks_like_wrapper_block(block: str) -> bool:
             "this essay covers",
             "this article covers",
         )
+    ):
+        return True
+    if _looks_like_preface_setup_sentence(stripped):
+        return next_block is None or _looks_like_document_body_start(next_block)
+    return False
+
+
+def _looks_like_preface_setup_sentence(block: str) -> bool:
+    lowered = block.strip().lower()
+    if len(lowered.split()) > 36:
+        return False
+    starts_with_setup = bool(
+        re.match(r"^(?:i(?:'ll| will)|here(?:'s| is)|i(?:'ve| have))\b", lowered)
     )
+    if not starts_with_setup:
+        return False
+    return any(
+        phrase in lowered
+        for phrase in (
+            "refine",
+            "rewrite",
+            "draft",
+            "prepare",
+            "formal",
+            "essay",
+            "article",
+            "writeup",
+            "explanation",
+            "save it as",
+            "saved as",
+            ".md",
+            ".txt",
+        )
+    )
+
+
+def _looks_like_document_body_start(block: str) -> bool:
+    stripped = block.strip()
+    if not stripped:
+        return False
+    if _is_heading_like(stripped):
+        return True
+    if re.fullmatch(r"\*\*[^*]{3,}\*\*", stripped):
+        return True
+    return len(stripped.split()) >= 12 and stripped[0].isupper()
 
 
 def _is_heading_like(block: str) -> bool:

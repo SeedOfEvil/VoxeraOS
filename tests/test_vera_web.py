@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from voxera.core.writing_draft_intent import extract_text_draft_from_reply
 from voxera.models import AppConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
@@ -2695,7 +2696,7 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
         if "more formal" in lowered:
             return {
                 "answer": (
-                    "I can certainly help you structure that into a high school level essay with a more formal tone.\n\n"
+                    "I will refine the essay to a more formal academic tone and prepare it to be saved as `roman-empire-essay.md`.\n\n"
                     "# The Roman Empire\n\n"
                     "The Roman Empire was a foundational Mediterranean power whose administrative structure, "
                     "military organization, and legal traditions influenced later European states."
@@ -2753,7 +2754,7 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
     assert len(jobs) == 1
     payload = json.loads(jobs[0].read_text(encoding="utf-8"))
     assert payload["write_file"]["path"] == "~/VoxeraOS/notes/roman-empire-essay.md"
-    assert "i can certainly help you structure" not in payload["write_file"]["content"].lower()
+    assert "i will refine the essay" not in payload["write_file"]["content"].lower()
 
 
 def test_investigation_summary_then_article_followup_creates_preview(tmp_path, monkeypatch):
@@ -2801,6 +2802,16 @@ def test_investigation_summary_then_article_followup_creates_preview(tmp_path, m
     assert preview["write_file"]["path"].endswith(".md")
     assert "article overview" not in preview["write_file"]["content"].lower()
     assert "technical teammate" in preview["write_file"]["content"].lower()
+
+
+def test_extract_text_draft_from_reply_keeps_heading_but_strips_preface() -> None:
+    cleaned = extract_text_draft_from_reply(
+        "I will refine the essay to a more formal academic tone and prepare it to be saved as `roman-empire-essay.md`.\n\n# The Roman Empire\n\nThe Roman Empire shaped the Mediterranean world through military expansion, administration, and law."
+    )
+
+    assert cleaned is not None
+    assert cleaned.startswith("# The Roman Empire")
+    assert "prepare it to be saved" not in cleaned.lower()
 
 
 def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
