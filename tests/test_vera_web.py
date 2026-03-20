@@ -2695,8 +2695,7 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
         if "more formal" in lowered:
             return {
                 "answer": (
-                    "Essay overview\n\n"
-                    "A formalized short essay appears below.\n\n"
+                    "I can certainly help you structure that into a high school level essay with a more formal tone.\n\n"
                     "# The Roman Empire\n\n"
                     "The Roman Empire was a foundational Mediterranean power whose administrative structure, "
                     "military organization, and legal traditions influenced later European states."
@@ -2752,6 +2751,7 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
     assert len(jobs) == 1
     payload = json.loads(jobs[0].read_text(encoding="utf-8"))
     assert payload["write_file"]["path"] == "~/VoxeraOS/notes/roman-empire-essay.md"
+    assert "i can certainly help you structure" not in payload["write_file"]["content"].lower()
 
 
 def test_investigation_summary_then_article_followup_creates_preview(tmp_path, monkeypatch):
@@ -2835,6 +2835,81 @@ def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
     assert "great-pyramids-of-giza-essay.md" in preview["write_file"]["path"]
     assert "prepared an essay draft" not in preview["write_file"]["content"].lower()
     assert "Great Pyramids of Giza" in preview["write_file"]["content"]
+
+
+def test_black_hole_essay_submit_saves_clean_body_only(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "2 page essay" in lowered:
+            return {
+                "answer": (
+                    "I can certainly help you expand that into a longer essay.\n\n"
+                    "# Black Holes\n\n"
+                    "Black holes are extreme objects formed when matter collapses into a compact region that traps light."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "Black holes form when stars collapse.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "Tell me about black holes."})
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Write a 2 page essay about that."},
+    )
+    submit_res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert submit_res.status_code == 200
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["content"].startswith("# Black Holes")
+    assert "i can certainly help you expand" not in payload["write_file"]["content"].lower()
+
+
+def test_direct_essay_submit_saves_clean_body_only(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": (
+                "I can certainly help with that request.\n\n"
+                "# Great Pyramids of Giza\n\n"
+                "The Great Pyramids of Giza were monumental royal tombs built during Egypt's Old Kingdom."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Write me a 3 page essay about the Great Pyramids of Giza.",
+        },
+    )
+    submit_res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert submit_res.status_code == 200
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["content"].startswith("# Great Pyramids of Giza")
+    assert "i can certainly help with that request" not in payload["write_file"]["content"].lower()
 
 
 def test_writing_draft_hides_internal_control_block_but_keeps_authoritative_preview(

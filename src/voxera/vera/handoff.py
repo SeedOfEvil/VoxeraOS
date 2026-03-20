@@ -1167,7 +1167,13 @@ def _draft_revision_from_active_preview(
             return {"goal": normalized_open}
 
     if re.search(
-        r"\b(rename|save\s+as|make\s+that|call\s+(?:it|that)|change\s+(?:the\s+)?(?:name|filename|file\s+name))\b",
+        r"\b("
+        r"rename|"
+        r"save\s+(?:it|this|that)?\s*as|"
+        r"make\s+that|"
+        r"call\s+(?:it|that)|"
+        r"change\s+(?:the\s+)?(?:name|filename|file\s+name)"
+        r")\b",
         lowered,
     ):
         new_name = _extract_named_target(text)

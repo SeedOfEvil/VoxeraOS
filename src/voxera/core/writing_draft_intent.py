@@ -47,7 +47,10 @@ _SLUG_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _WRAPPER_PREFIX_RE = re.compile(
     r"^(?:"
     r"i(?:'ve| have)\s+(?:prepared|drafted|written)\b|"
+    r"i\s+can(?:\s+certainly)?\s+help(?:\s+you)?\b|"
+    r"i(?:'d| would)\s+be\s+happy\s+to\b|"
     r"here(?:'s| is)\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation)\b|"
+    r"here(?:'s| is)\s+(?:a|the)\s+(?:version|rewrite)\b|"
     r"below\s+is\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation)\b|"
     r"(?:essay|article|writeup|draft)\s+(?:overview|summary)\b|"
     r"(?:draft|essay|article|writeup)\s+body\b"
@@ -204,12 +207,17 @@ def _looks_like_wrapper_block(block: str) -> bool:
     return len(block.split()) <= 32 and any(
         phrase in lowered
         for phrase in (
+            "i can help you",
+            "i can certainly help you",
+            "i'd be happy to",
+            "i would be happy to",
             "prepared a draft",
             "draft below",
             "essay below",
             "article below",
             "writeup below",
             "explanation below",
+            "formalized short essay appears below",
             "this draft covers",
             "this essay covers",
             "this article covers",
