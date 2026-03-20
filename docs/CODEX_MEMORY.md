@@ -37,6 +37,7 @@
 - Added coverage in hidden-compiler and Vera web tests for latest-message preference and plural ambiguity refusal.
 - Follow-up precedence refined: if a current derived investigation output is active, `save that ...` now resolves through investigation-derived save first; generic recent-assistant fallback applies only when no derived output is present.
 - Recency nuance added: derived save precedence is not sticky forever; when a newer conversational assistant answer appears later in-session, singular `save that ...` follows that newer answer.
+- Expanded investigation-result replies are now persisted as derived investigation text artifacts too, so `expand result N` can be followed by `save it`, `save it as <name>.md`, and then normal preview submission phrasing.
 
 ## 2026-03-15 — GitHub PR #TBD — feat(vera/diagnostics): fix diagnostics truth and surface operator-grade answer-first outputs across read and inspection flows
 

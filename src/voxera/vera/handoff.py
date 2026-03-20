@@ -72,6 +72,7 @@ _ACTIVE_PREVIEW_SUBMIT_PATTERNS = (
     r"\bsend\s+this\s+version\b",
     r"\bsubmit\s+this\s+one\b",
     r"\bgo\s+with\s+this\b",
+    r"\bcreate\s+it\b",
     # Code/file draft save patterns: pronoun-only references when a preview exists
     r"\bsave\s+it\b",
     r"\bsave\s+this\b",
@@ -508,30 +509,40 @@ def is_investigation_summary_request(message: str) -> bool:
     return has_summary_signal and _mentions_investigation_results_or_findings(lowered)
 
 
+def is_investigation_expand_request(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    has_expand_signal = bool(
+        re.search(
+            r"\b(expand|elaborate|go\s+deeper|deep\s+dive|tell\s+me\s+more|more\s+detail)\b",
+            lowered,
+        )
+    )
+    return has_expand_signal and bool(re.search(r"\bresult\s*\d+\b", lowered))
+
+
 def is_investigation_derived_save_request(message: str) -> bool:
     lowered = message.strip().lower()
     if not lowered:
         return False
-    save_action = bool(re.search(r"\b(save|write|export)\b", lowered))
-    derived_target = bool(re.search(r"\b(comparison|summary)\b", lowered))
-    note_target = bool(
-        re.search(r"\b(note|notes|markdown|file)\b", lowered)
-        or re.search(r"\b[~\/a-z0-9_.-]+\.md\b", lowered)
+    save_action = bool(re.search(r"\b(save|export)\b", lowered))
+    derived_target = bool(
+        re.search(
+            r"\b(comparison|summary|expanded?\s+result|expanded?\s+finding|expansion|investigation\s+writeup)\b",
+            lowered,
+        )
     )
-    return save_action and derived_target and note_target
+    return save_action and derived_target
 
 
 def is_investigation_derived_followup_save_request(message: str) -> bool:
     lowered = message.strip().lower()
     if not lowered:
         return False
-    save_action = bool(re.search(r"\b(save|write|export|put)\b", lowered))
+    save_action = bool(re.search(r"\b(save|write|export|put|create|make)\b", lowered))
     pronoun_target = bool(re.search(r"\b(that|this|it)\b", lowered))
-    note_target = bool(
-        re.search(r"\b(note|notes|markdown|file)\b", lowered)
-        or re.search(r"\b[~\/a-z0-9_.-]+\.md\b", lowered)
-    )
-    return save_action and pronoun_target and note_target
+    return save_action and pronoun_target
 
 
 def _extract_result_selection(message: str) -> list[int] | str | None:
@@ -658,7 +669,7 @@ def draft_investigation_derived_save_preview(
         return None
     markdown = str(derived_output.get("markdown") or "").strip()
     derivation_type = str(derived_output.get("derivation_type") or "").strip().lower()
-    if not markdown or derivation_type not in {"comparison", "summary"}:
+    if not markdown or derivation_type not in {"comparison", "summary", "expanded_result"}:
         return None
 
     target_match = re.search(
@@ -672,7 +683,11 @@ def draft_investigation_derived_save_preview(
     if not output_path.startswith("~") and not output_path.startswith("/"):
         output_path = f"~/VoxeraOS/notes/{output_path}"
 
-    label = "comparison" if derivation_type == "comparison" else "summary"
+    label = {
+        "comparison": "comparison",
+        "summary": "summary",
+        "expanded_result": "expanded result",
+    }[derivation_type]
     return {
         "goal": f"write investigation {label} to markdown note",
         "write_file": {
@@ -840,6 +855,67 @@ def derive_investigation_summary(
     }
 
 
+def derive_investigation_expansion(
+    message: str,
+    *,
+    investigation_context: dict[str, Any] | None,
+    expanded_text: str,
+) -> dict[str, Any] | None:
+    if not is_investigation_expand_request(message):
+        return None
+    selected, selected_ids = select_investigation_results(
+        message, investigation_context=investigation_context
+    )
+    if (
+        selected is None
+        or selected_ids is None
+        or len(selected_ids) != 1
+        or not isinstance(investigation_context, dict)
+    ):
+        return None
+
+    answer = expanded_text.strip()
+    if not answer:
+        return None
+
+    result = selected[0]
+    result_id = selected_ids[0]
+    query = str(investigation_context.get("query") or "(unspecified query)").strip()
+    title = str(result.get("title") or "Untitled").strip()
+    source = str(result.get("source") or "unknown").strip() or "unknown"
+    url = str(result.get("url") or "").strip()
+    snippet = str(result.get("snippet") or "").strip()
+    why_it_matched = str(result.get("why_it_matched") or "").strip()
+
+    markdown_lines = [
+        f"# Expanded Investigation Result {result_id}",
+        "",
+        "## Query",
+        query,
+        "",
+        "## Result Metadata",
+        f"- Title: {title}",
+        f"- Source: {source}",
+    ]
+    if url:
+        markdown_lines.append(f"- URL: {url}")
+    if snippet:
+        markdown_lines.append(f"- Original snippet: {snippet}")
+    if why_it_matched:
+        markdown_lines.append(f"- Why it matched: {why_it_matched}")
+    markdown_lines.extend(["", "## Expanded Writeup", answer, ""])
+
+    return {
+        "derivation_type": "expanded_result",
+        "query": query,
+        "selected_result_ids": selected_ids,
+        "result_id": result_id,
+        "result_title": title,
+        "answer": answer,
+        "markdown": "\n".join(markdown_lines).rstrip() + "\n",
+    }
+
+
 def _normalize_structured_file_write_payload(
     message: str,
     *,
@@ -996,13 +1072,16 @@ def _normalize_file_write_goal(message: str) -> str | None:
 
 
 def _extract_named_target(message: str) -> str | None:
-    named = re.search(
-        r"\b(?:called|named|as|to|call\s+(?:it|that))\s+([^\s]+)",
+    named = re.search(r"\b(?:called|named|call\s+(?:it|that))\s+([^\s]+)", message, re.IGNORECASE)
+    if named:
+        return named.group(1).strip("\"'.,!? ")
+    path_like = re.search(
+        r"\b(?:as|to)\s+([~\/a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
         message,
         re.IGNORECASE,
     )
-    if named:
-        return named.group(1).strip("\"'.,!? ")
+    if path_like:
+        return path_like.group(1).strip("\"'.,!? ")
     tail = re.search(
         r"\b(?:rename|make\s+that|change\s+(?:the\s+)?(?:name|filename|file\s+name))\s+(?:it\s+)?([^\s]+)",
         message,
@@ -1176,6 +1255,11 @@ def _draft_revision_from_active_preview(
         r"change\s+(?:the\s+)?(?:name|filename|file\s+name)"
         r")\b",
         lowered,
+    ) or (
+        re.search(r"\b(save|write|put)\b", lowered)
+        and re.search(r"\b(note|file|markdown)\b", lowered)
+        and re.search(r"\b(?:called|named)\s+[^\s]+\b", lowered)
+        and _message_requests_referenced_content(text)
     ):
         new_name = _extract_named_target(text)
         if new_name:

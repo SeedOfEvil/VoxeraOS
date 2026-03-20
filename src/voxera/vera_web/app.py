@@ -36,6 +36,7 @@ from ..vera.evidence_review import (
 )
 from ..vera.handoff import (
     derive_investigation_comparison,
+    derive_investigation_expansion,
     derive_investigation_summary,
     diagnostics_request_refusal,
     diagnostics_service_or_logs_intent,
@@ -47,11 +48,13 @@ from ..vera.handoff import (
     is_investigation_compare_request,
     is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
+    is_investigation_expand_request,
     is_investigation_save_request,
     is_investigation_summary_request,
     is_recent_assistant_content_save_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
+    select_investigation_results,
     submit_preview,
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
@@ -602,8 +605,8 @@ async def chat(request: Request):
         )
         if derived_preview is None:
             assistant_text = (
-                "I couldn't find a current investigation comparison or summary to save in this session. "
-                "Ask me to compare or summarize findings first, then ask to save that output to a note."
+                "I couldn't find a current investigation comparison, summary, or expanded result to save in this session. "
+                "Ask me to compare, summarize, or expand a finding first, then ask to save that output."
             )
             append_session_turn(root, active_session, role="assistant", text=assistant_text)
             return _render_page(
@@ -622,7 +625,7 @@ async def chat(request: Request):
             job_id=None,
         )
         assistant_text = (
-            "I prepared a governed save-to-note preview from the latest investigation comparison/summary. "
+            "I prepared a governed save-to-note preview from the latest investigation-derived text artifact. "
             "Nothing has been submitted yet."
         )
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
@@ -685,6 +688,29 @@ async def chat(request: Request):
             turns=read_session_turns(root, active_session),
             status="ok:investigation_summary",
         )
+
+    if is_investigation_expand_request(message):
+        expansion_error_text = (
+            "I couldn't resolve that investigation result for expansion in this session. "
+            "Run a fresh read-only investigation first, then expand one valid result number "
+            "(for example: 'expand result 1 please')."
+        )
+        selected_results, selected_ids = select_investigation_results(
+            message,
+            investigation_context=session_investigation,
+        )
+        if (
+            selected_results is None
+            or selected_ids is None
+            or len(selected_ids) != 1
+            or not isinstance(session_investigation, dict)
+        ):
+            append_session_turn(root, active_session, role="assistant", text=expansion_error_text)
+            return _render_page(
+                session_id=active_session,
+                turns=read_session_turns(root, active_session),
+                status="investigation_reference_invalid",
+            )
 
     if is_investigation_save_request(message):
         investigation_preview = draft_investigation_save_preview(
@@ -837,6 +863,14 @@ async def chat(request: Request):
     if isinstance(investigation_payload, dict):
         write_session_investigation(root, active_session, investigation_payload)
         write_session_derived_investigation_output(root, active_session, None)
+    elif is_investigation_expand_request(message):
+        expansion = derive_investigation_expansion(
+            message,
+            investigation_context=session_investigation,
+            expanded_text=reply_answer,
+        )
+        if expansion is not None:
+            write_session_derived_investigation_output(root, active_session, expansion)
 
     # Code draft post-processing: after the LLM reply we know the actual code
     # content.  Extract it from any fenced block and inject it into the preview
