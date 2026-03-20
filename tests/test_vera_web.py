@@ -16,6 +16,7 @@ from voxera.vera import service as vera_service
 from voxera.vera.handoff import (
     diagnostics_request_refusal,
     drafting_guidance,
+    is_investigation_derived_followup_save_request,
     maybe_draft_job_payload,
     normalize_preview_payload,
 )
@@ -568,6 +569,25 @@ def test_save_derived_summary_creates_governed_preview_only(tmp_path, monkeypatc
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/investigation-summary.md"
     assert "# Investigation Summary" in preview["write_file"]["content"]
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
+def test_investigation_transform_prompts_are_not_classified_as_derived_save_requests() -> None:
+    assert not is_investigation_derived_followup_save_request(
+        "Now write a short article based on that summary for a technical teammate."
+    )
+    assert not is_investigation_derived_followup_save_request(
+        "Turn that summary into a concise article."
+    )
+    assert not is_investigation_derived_followup_save_request(
+        "Write a short essay based on that summary."
+    )
+    assert not is_investigation_derived_followup_save_request(
+        "Rewrite that summary as a teammate-ready note."
+    )
+    assert not is_investigation_derived_followup_save_request("Expand that summary into a writeup.")
+    assert is_investigation_derived_followup_save_request("save it")
+    assert is_investigation_derived_followup_save_request("save that to a note")
+    assert is_investigation_derived_followup_save_request("save it as brave-summary.md")
 
 
 def test_compare_then_save_that_to_note_uses_derived_output_precedence(tmp_path, monkeypatch):
@@ -2976,6 +2996,66 @@ def test_investigation_summary_then_article_followup_creates_preview(tmp_path, m
     assert preview["write_file"]["path"].endswith(".md")
     assert "article overview" not in preview["write_file"]["content"].lower()
     assert "technical teammate" in preview["write_file"]["content"].lower()
+
+
+def test_investigation_summary_then_article_save_as_named_file_keeps_article_body(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "write a short article based on that summary" in lowered:
+            return {
+                "answer": (
+                    "Article overview\n\n"
+                    "Here is the teammate-ready article.\n\n"
+                    "# Brave Search API Notes\n\n"
+                    "The latest Brave Search API documentation emphasizes authenticated web and local "
+                    "search endpoints, response metadata, and predictable integration constraints for "
+                    "technical teammates evaluating adoption."
+                ),
+                "status": "ok:test",
+            }
+        return {
+            "answer": "I will keep the article body and rename the preview file.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_derived_investigation_output(
+        queue,
+        sid,
+        {
+            "derivation_type": "summary",
+            "answer": "Selected results: 1, 2\nShort takeaway: evidence points to config drift.",
+            "markdown": "# Investigation Summary\n\nEvidence points to config drift.\n",
+        },
+    )
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Now write a short article based on that summary for a technical teammate.",
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save it as brave-api-article.md"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/brave-api-article.md"
+    assert "# Brave Search API Notes" in preview["write_file"]["content"]
+    assert "# Investigation Summary" not in preview["write_file"]["content"]
 
 
 def test_extract_text_draft_from_reply_keeps_heading_but_strips_preface() -> None:

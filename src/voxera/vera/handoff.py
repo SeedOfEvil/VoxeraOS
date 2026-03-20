@@ -540,9 +540,13 @@ def is_investigation_derived_followup_save_request(message: str) -> bool:
     lowered = message.strip().lower()
     if not lowered:
         return False
-    save_action = bool(re.search(r"\b(save|write|export|put|create|make)\b", lowered))
+    save_action = bool(re.search(r"\b(save|export)\b", lowered))
+    file_target_action = bool(re.search(r"\b(write|put|create|make)\b", lowered))
+    file_target = bool(
+        re.search(r"\b(note|file|markdown|disk|\.md\b|\.txt\b|save-as|save\s+as)\b", lowered)
+    )
     pronoun_target = bool(re.search(r"\b(that|this|it)\b", lowered))
-    return save_action and pronoun_target
+    return pronoun_target and (save_action or (file_target_action and file_target))
 
 
 def _extract_result_selection(message: str) -> list[int] | str | None:
