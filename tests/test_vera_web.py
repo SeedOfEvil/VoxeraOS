@@ -6028,3 +6028,26 @@ def test_build_vera_messages_no_hint_when_flag_not_set():
     )
     user_msg = next(m for m in messages if m["role"] == "user")
     assert user_msg["content"] == "what is in the queue?"
+
+
+def test_build_vera_messages_includes_writing_draft_hint_when_flag_set():
+    """build_vera_messages must append prose-draft hint when writing_draft=True."""
+    messages = vera_service.build_vera_messages(
+        turns=[],
+        user_message="write a 2-page essay about black holes",
+        writing_draft=True,
+    )
+    user_msg = next(m for m in messages if m["role"] == "user")
+    assert "draft a prose document artifact" in user_msg["content"]
+    assert "write a 2-page essay about black holes" in user_msg["content"]
+
+
+def test_build_vera_messages_rejects_conflicting_draft_hints():
+    """build_vera_messages must fail closed if both draft hint types are requested."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        vera_service.build_vera_messages(
+            turns=[],
+            user_message="write something",
+            code_draft=True,
+            writing_draft=True,
+        )

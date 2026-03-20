@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import re
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -411,6 +412,31 @@ def _conversational_preview_update_message(
     return "I couldn’t safely prepare a request yet. If you share clearer target details, I can continue."
 
 
+async def _generate_vera_reply_with_optional_draft_hints(
+    *,
+    turns: list[dict[str, str]],
+    user_message: str,
+    code_draft: bool,
+    writing_draft: bool,
+) -> dict[str, object]:
+    signature = inspect.signature(generate_vera_reply)
+    parameters = signature.parameters
+    if "code_draft" in parameters or "writing_draft" in parameters:
+        return await generate_vera_reply(
+            turns=turns,
+            user_message=user_message,
+            code_draft=code_draft,
+            writing_draft=writing_draft,
+        )
+
+    hinted_message = user_message
+    if code_draft:
+        hinted_message = user_message + _CODE_DRAFT_HINT
+    elif writing_draft:
+        hinted_message = user_message + _WRITING_DRAFT_HINT
+    return await generate_vera_reply(turns=turns, user_message=hinted_message)
+
+
 def _render_page(
     *,
     session_id: str,
@@ -792,16 +818,12 @@ async def chat(request: Request):
                 job_id=None,
             )
 
-    # On code-draft turns, append the code-generation hint to the user message
-    # passed to the LLM.  This overrides Vera's default "not the payload drafter"
-    # stance so the model actually writes code in a fenced block.  The original
-    # message (without the hint) is what was already stored in session turns.
-    _vera_user_message = message
-    if is_code_draft_turn:
-        _vera_user_message = message + _CODE_DRAFT_HINT
-    elif is_writing_draft_turn:
-        _vera_user_message = message + _WRITING_DRAFT_HINT
-    reply = await generate_vera_reply(turns=turns, user_message=_vera_user_message)
+    reply = await _generate_vera_reply_with_optional_draft_hints(
+        turns=turns,
+        user_message=message,
+        code_draft=is_code_draft_turn,
+        writing_draft=is_writing_draft_turn,
+    )
     investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
     if isinstance(investigation_payload, dict):
         write_session_investigation(root, active_session, investigation_payload)

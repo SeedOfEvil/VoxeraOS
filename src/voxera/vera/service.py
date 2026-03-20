@@ -1337,13 +1337,18 @@ def build_vera_messages(
     turns: list[dict[str, str]],
     user_message: str,
     code_draft: bool = False,
+    writing_draft: bool = False,
 ) -> list[dict[str, str]]:
+    if code_draft and writing_draft:
+        raise ValueError("code_draft and writing_draft are mutually exclusive")
     messages: list[dict[str, str]] = [{"role": "system", "content": VERA_SYSTEM_PROMPT}]
     for turn in turns[-MAX_SESSION_TURNS:]:
         messages.append({"role": turn["role"], "content": turn["text"]})
     content = user_message.strip()
     if code_draft:
         content = content + _CODE_DRAFT_HINT
+    elif writing_draft:
+        content = content + _WRITING_DRAFT_HINT
     messages.append({"role": "user", "content": content})
     return messages
 
@@ -1585,7 +1590,13 @@ def _create_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:
     raise ValueError(f"unsupported provider type: {provider.type}")
 
 
-async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str) -> dict[str, Any]:
+async def generate_vera_reply(
+    *,
+    turns: list[dict[str, str]],
+    user_message: str,
+    code_draft: bool = False,
+    writing_draft: bool = False,
+) -> dict[str, Any]:
     cfg = load_app_config()
 
     web_cfg = cfg.web_investigation
@@ -1647,7 +1658,12 @@ async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str)
             "status": "degraded_unavailable",
         }
 
-    messages = build_vera_messages(turns=turns, user_message=user_message)
+    messages = build_vera_messages(
+        turns=turns,
+        user_message=user_message,
+        code_draft=code_draft,
+        writing_draft=writing_draft,
+    )
     last_reason = "UNKNOWN"
     for name, provider in attempts:
         try:
