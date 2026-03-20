@@ -1158,8 +1158,11 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Singular vague references (for example `save that`) deterministically resolve to the most recent substantial assistant-authored message in the active session.
 - Resolver scope is intentionally limited to recent assistant-authored content in the active session transcript only (no cross-session recall, no broad history search).
 - Plural/explicitly ambiguous or unavailable assistant-content references fail conservatively with a clear user-facing refusal rather than guessing.
+- Recent-content resolution ignores trivial courtesy assistant turns, so `thanks` / `you're welcome` exchanges do not displace the latest substantial explanation or summary.
 - Conversational explanatory/teaching prompts remain in the normal Vera answer lane by default; they are not automatically treated as web investigation requests.
+- Bounded prose-drafting prompts (essay/article/writeup/explanation/rewrite/formalize/expand) compile into governed `write_file` previews backed by assistant-authored prose.
 - Read-only Brave investigation routing is reserved for explicit search/investigation/current-information intent (for example `search the web`, `look up`, `find the latest`, `latest official docs`).
+- Ordinary compare/explain prompts stay conversational unless explicit search/latest/current/web intent is present.
 - Because save-by-reference uses session transcript content, this path depends on a real assistant-authored answer existing in the active session first.
 - Preview state is persisted per session (`pending_job_preview`) and is independent from rolling chat turn limits.
 - The session keeps exactly one active preview draft; follow-up revisions replace that draft, while lightweight acknowledgements leave it unchanged.
@@ -1243,3 +1246,37 @@ Vera now has a deterministic code/script/config draft lane that creates real `wr
 - `_CODE_DRAFT_HINT` constant (in `service.py`): a bracketed system note appended to the user message on code-draft turns, explicitly instructing the LLM to write the complete, working code in a properly-fenced block for extraction and governed storage.
 - `build_vera_messages` accepts a `code_draft: bool = False` parameter; when `True`, the hint is appended to the user content in the messages list.
 - `app.py` pre-computes `is_code_draft_turn` before the LLM call and builds `_vera_user_message = message + _CODE_DRAFT_HINT if is_code_draft_turn else message`. The hint travels inside the user message so `generate_vera_reply`'s signature is unchanged (avoids breaking test infrastructure). Session history stores the original un-augmented message.
+
+## Governed writing/document draft lane (PR #TBD)
+
+Vera now has a bounded prose-writing lane that mirrors the governed code-draft shape for single-document text artifacts.
+
+**Classifier (`src/voxera/core/writing_draft_intent.py`):**
+- `is_writing_draft_request(message)`: detects bounded essay/article/writeup/explanation requests plus transform-style phrasing such as rewrite/formalize/expand/turn-into/plain-English explanation.
+- `classify_writing_draft_intent(message)`: returns a `write_file` preview payload with a path and empty content placeholder for the prose artifact.
+- `is_text_draft_preview(preview)`: distinguishes prose previews from code previews so prose follow-ups do not trigger code-lane handling.
+- `extract_text_draft_from_reply(text)`: accepts substantial assistant-authored prose replies for authoritative preview population.
+
+**App-layer integration (`vera_web/app.py`):**
+- Writing turns are pre-classified before the LLM call so prose-draft requests do not accidentally inherit the code-lane persona override just because a `.md` filename appears.
+- After `generate_vera_reply()`, the bounded prose extractor selects the actual drafted essay/article/writeup/explanation body and injects that body into `write_file.content`, rather than storing conversational wrapper text.
+- Prose-body cleanup now also strips leading assistant setup/preface sentences before the real document start, using bounded heuristics around headings, bolded titles, and first substantial body blocks so saved artifacts begin at the document itself. The same cleanup is applied when explanation-style artifacts are later saved by reference from recent assistant content, including short conversational preambles before the real explanation body.
+- Internal `<voxera_control>` transport blocks are stripped before user-visible rendering and before prose preview-body extraction, so hidden control payloads stay internal even when a model leaks them into the raw reply.
+- Writing replies are excluded from conversational-control suppression, so the user sees the generated prose in chat while the same content becomes the preview body.
+- When an active governed writing preview exists, follow-up refinements like `make it more formal` or `rewrite that as ...` refresh the preview content with the new prose reply rather than leaving stale draft content behind.
+- Save-as / rename refinements preserve the exact requested filename in `write_file.path`; the renamed path survives through submit rather than snapping back to the default generated filename.
+- Combined prose refinement + save-as turns are resolved as preview updates, not implicit submit intents: Vera first keeps the new assistant-authored prose body authoritative in `write_file.content`, then applies the requested filename/path update before any later explicit handoff.
+
+**Recent assistant-content resolver (`vera/handoff.py`, `vera/service.py`):**
+- Save-by-reference resolution now recognizes `explanation`/`previous explanation` phrasing alongside summary/answer/response terms.
+- Recent-content selection filters out trivial courtesy assistant turns (including extended variants like `You're very welcome ... if you'd like ...`), keeping the latest substantial explanation/saveable prose artifact resolvable across lightweight conversational interruptions.
+- Explanation text produced after a code draft is treated as a saveable conversational text artifact and can be renamed/saved through the same governed preview path.
+
+**Investigation/web-routing boundary:**
+- Writing follow-ups on top of investigation-derived summaries remain in the writing lane and produce text previews.
+- `_is_informational_web_query()` is intentionally narrower: ordinary compare/explain prompts stay conversational; explicit search/latest/current/docs/web-investigation intent still routes to Brave.
+
+**Current limitations:**
+- The lane is intentionally bounded to single text documents.
+- Prose-body extraction is heuristic and intentionally bounded: wrapper/preface text is stripped only when it matches known draft-introduction patterns or is separated from the body by blank-line block structure.
+- No docx/pdf generation, multi-file writing projects, or publishing workflows are added here.

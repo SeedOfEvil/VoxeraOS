@@ -1,3 +1,23 @@
+## 2026-03-20 — PR #TBD — fix(vera/writing-lane): apply combined prose refinement + save-as updates before submit
+
+- Patched `src/voxera/vera/handoff.py` so `save it as ...` / rename phrasing on an active preview is treated as a preview revision, not as an implicit submit of the stale prior preview.
+- Verified the governed writing lane now updates both authoritative preview dimensions on combined turns: fresh assistant-authored prose replaces the previous draft body and the requested filename/path becomes the active preview path before explicit submit.
+- Tightened prose-body extraction so saved writing artifacts drop leading assistant preface/setup lines before the first real title/heading/body block, preserving the clean document body in `write_file.content`. Explanation-style save-by-reference artifacts now pass through the same cleanup path, including conversational preamble stripping before the real explanation body.
+- Added a regression in `tests/test_vera_web.py` covering the live Roman Empire flow with the exact phrase `make it more formal and save it as roman-empire-essay.md`, including the guarantee that no inbox job is enqueued until a later explicit submit.
+- Scope remains bounded: this fix only changes active-preview revision vs submit disambiguation; it does not add document export formats or multi-file writing workflows.
+
+## 2026-03-18 — PR #TBD — feat(vera): add governed document/article/essay draft lane with authoritative preview support
+
+- Added a bounded prose draft classifier at `src/voxera/core/writing_draft_intent.py` for essays, articles, writeups, rewrite/formalize/expand asks, and plain-English script explanations.
+- Extended `src/voxera/vera_web/app.py` to populate authoritative `write_file.content` for prose drafts from the assistant's actual reply, mirroring the governed code lane's preview-truth model.
+- Patched a user-facing control leak: `<voxera_control>` transport blocks are now stripped from visible chat text and from prose preview-body extraction, while the authoritative preview/update path remains intact.
+- Tightened prose-body extraction so authoritative writing previews store the actual essay/article body instead of wrapper phrases like "I've prepared a draft below" or overview summaries.
+- Writing follow-ups now update active preview state instead of failing with "no prepared preview", and save-as filename refinements now preserve the exact requested prose filename through final submit.
+- Save-by-reference resolution in `src/voxera/vera/handoff.py` now recognizes `explanation` references and filters out trivial courtesy assistant turns — including extended `You're very welcome ...` variants — so `thanks` does not break `save your previous explanation ...`.
+- Narrowed `_is_informational_web_query()` in `src/voxera/vera/service.py` so ordinary compare/explain prompts stay conversational unless the user is explicit about web/latest/current/search intent.
+- Added focused Vera web coverage for: explanation → essay expansion, rewrite → formalize + save-as, investigation summary → article, direct essay requests, courtesy-turn save-reference continuity, code → explanation → save explanation, and conversational compare prompts.
+- Scope intentionally remains bounded: no docx/pdf export, no multi-file writing workflows, no fake preview/queue claims.
+
 ## 2026-03-17 — GitHub PR #TBD — fix(vera/code-lane): fix governed code-draft lane LLM persona override and all-or-nothing preview truthfulness
 
 - **Root cause**: Vera's system prompt says "Not the payload drafter." The LLM never outputs code in fenced blocks; `extract_code_from_reply` always returned `None`; previews stayed permanently empty.

@@ -427,7 +427,10 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - This derived-output preference is recency-aware: if a newer normal conversational assistant answer appears later in the same session, a subsequent singular `save that ...` follows that newer answer instead of older derived investigation output.
 - This save-by-reference resolution is intentionally bounded to recent assistant content in the current session only; ambiguous/no-content references fail closed with a clear message.
 - Conversational explanatory prompts (for example `Explain entropy simply`, `What is quantum field theory?`, `The higgs field`) stay in normal Vera answer mode by default.
+- Bounded writing prompts (for example essays, articles, writeups, rewrite/formalize/expand asks, and plain-English script explanations) now create real authoritative text previews backed by assistant-authored prose.
+- Save-by-reference for explanations uses the most recent substantial assistant-authored content, so trivial courtesy turns like `thanks` do not break later `save your previous explanation ...` requests.
 - Read-only web investigation is reserved for explicit investigation/search/current-info asks (for example `search the web for ...`, `find the latest ...`, `latest official documentation for ...`).
+- Ordinary compare/explain prompts stay conversational unless the user is explicit about search/latest/current/web lookup intent.
 - Submit phrasing (`submit it`, `queue it`, `send it to VoxeraOS`, etc.) only hands off when a preview exists.
 - Vera remains preview-first and truthful: prepared is not submitted, submitted is not executed, and execution truth comes from VoxeraOS evidence.
 
@@ -541,3 +544,17 @@ Vera can now review real VoxeraOS job outcomes from canonical queue evidence (no
 - Natural follow-ups like "save it", "save this", "let's save it", "write that to a file" submit the preview through the governed queue handoff path.
 - Refinement is supported: follow-up requests like "actually use requests library" update the preview content with the new code without requiring a fresh code draft classifier match. The updated code is shown in chat.
 - Save-by-reference requests ("write your previous answer to a file") are explicitly excluded from the code draft classifier and continue to use the existing save-by-reference path.
+
+### Vera governed writing/document draft lane
+
+- Vera now has a bounded prose lane for essays, articles, writeups, and explanation-style text drafts.
+- Writing requests create real authoritative `write_file` previews; the preview body is populated from the extracted prose artifact body after generation, not from pseudo preview JSON or wrapper text.
+- Saved prose artifacts now strip leading assistant wrapper/setup lines and conversational preambles (for example `Here is ...`, `I've drafted ...`, `I will refine ...`, or `Certainly! Here is ...`) so `write_file.content` starts at the actual heading/title or document body. This now also applies to explanation-style note artifacts produced from code/explanation follow-ups and save-by-reference explanation flows.
+- Internal preview/control transport markup is stripped from user-facing chat; only normal conversational drafting text is shown while the authoritative preview updates underneath.
+- Transform follow-ups like `rewrite that as a short high school essay`, `make it more formal`, `write a 2 page essay about that`, and `now write a short article based on that summary` update the same governed preview state.
+- Save-as refinements preserve the exact requested filename in the active preview and final submitted `write_file.path` (for example `save it as roman-empire-essay.md` keeps that filename through submit).
+- Combined prose follow-ups that both transform content and rename the draft now update both preview dimensions before submit: the latest assistant-authored prose replaces the old draft body, then the requested save-as filename becomes the active `write_file.path`.
+- Plain-English explanations generated after code drafts are treated as saveable text artifacts, so `explain how this script works in plain English` followed by `save that explanation ...` stays on the authoritative preview path.
+- Save-by-reference for explanations prefers the latest substantial explanatory content and ignores trivial courtesy turns like `You're very welcome ...`, so `put your previous explanation in a note ...` still captures the real explanation.
+- Current extraction assumption: if Vera includes a short wrapper around a prose draft, the actual document body should appear after a blank line so the bounded extractor can separate it from the saved artifact content.
+- Current limitation: this lane is intentionally bounded to single-document text drafts. It does not add docx/pdf export, multi-file writing projects, or publishing workflows.

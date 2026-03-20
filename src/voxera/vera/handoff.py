@@ -8,6 +8,7 @@ from typing import Any
 
 from ..core.file_intent import classify_bounded_file_intent
 from ..core.inbox import add_inbox_payload
+from ..core.writing_draft_intent import classify_writing_draft_intent, extract_text_draft_from_reply
 
 _ALLOWED_TOP_LEVEL_KEYS = {
     "goal",
@@ -278,15 +279,15 @@ def _message_requests_referenced_content(message: str) -> bool:
     return bool(
         re.search(
             r"\b("
-            r"that\s+(?:joke|summary|text|answer|response|previous\s+summary|previous\s+answer|previous\s+response)|"
-            r"(?:the\s+)?previous\s+(?:summary|response|answer)|"
-            r"(?:the\s+)?last\s+(?:summary|response|answer)|"
-            r"your\s+previous\s+(?:summary|response|answer)|"
+            r"that\s+(?:joke|summary|text|answer|response|explanation|previous\s+summary|previous\s+answer|previous\s+response|previous\s+explanation)|"
+            r"(?:the\s+)?previous\s+(?:summary|response|answer|explanation)|"
+            r"(?:the\s+)?last\s+(?:summary|response|answer|explanation)|"
+            r"your\s+previous\s+(?:summary|response|answer|explanation)|"
             r"that\s+into\s+(?:a\s+)?(?:file|note)|"
             r"save\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"save\s+that\s+to\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"put\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
-            r"write\s+your\s+previous\s+(?:answer|response|summary)\s+to\s+(?:a\s+)?file|"
+            r"write\s+your\s+previous\s+(?:answer|response|summary|explanation)\s+to\s+(?:a\s+)?file|"
             r"use\s+your\s+previous\s+response|"
             r"put\s+that\s+into\s+(?:a\s+)?file|"
             r"use\s+that\s+as\s+(?:the\s+)?content"
@@ -312,7 +313,10 @@ def _looks_like_ambiguous_reference_only(message: str) -> bool:
     lowered = message.lower()
     if not re.search(r"\b(that|this|it|previous|last)\b", lowered):
         return False
-    if re.search(r"\b(joke|summary|text|answer|response|script|paragraph|note|content)\b", lowered):
+    if re.search(
+        r"\b(joke|summary|text|answer|response|explanation|script|paragraph|note|content)\b",
+        lowered,
+    ):
         return False
     return bool(
         re.search(
@@ -353,6 +357,42 @@ def _looks_like_non_authored_assistant_message(text: str) -> bool:
     return any(re.search(pattern, lowered) for pattern in non_authored_patterns)
 
 
+def _looks_like_trivial_courtesy_assistant_message(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return True
+    normalized = re.sub(r"\s+", " ", lowered.replace("—", "-")).strip()
+    courtesy_prefixes = (
+        "you're welcome",
+        "youre welcome",
+        "you're very welcome",
+        "youre very welcome",
+        "no problem",
+        "anytime",
+        "of course",
+        "sure thing",
+        "glad to help",
+        "happy to help",
+        "my pleasure",
+    )
+    if any(normalized.startswith(prefix) for prefix in courtesy_prefixes):
+        if len(normalized.split()) <= 24:
+            return True
+        if any(
+            phrase in normalized
+            for phrase in (
+                "if you'd like",
+                "if you would like",
+                "let me know",
+                "feel free",
+                "i can save that",
+                "i can also",
+            )
+        ):
+            return True
+    return False
+
+
 def _select_recent_assistant_content(
     *, message: str, assistant_content_candidates: list[str] | None
 ) -> str | None:
@@ -378,11 +418,16 @@ def _select_recent_assistant_content(
     viable: list[str] = []
     for raw in reversed(assistant_content_candidates[-6:]):
         candidate = raw.strip()
-        if not candidate or _looks_like_non_authored_assistant_message(candidate):
+        if (
+            not candidate
+            or _looks_like_non_authored_assistant_message(candidate)
+            or _looks_like_trivial_courtesy_assistant_message(candidate)
+        ):
             continue
         if len(candidate) < 24 and len(candidate.split()) < 4:
             continue
-        viable.append(candidate)
+        cleaned_candidate = extract_text_draft_from_reply(candidate) or candidate
+        viable.append(cleaned_candidate)
 
     if not viable:
         return None
@@ -1123,7 +1168,13 @@ def _draft_revision_from_active_preview(
             return {"goal": normalized_open}
 
     if re.search(
-        r"\b(rename|make\s+that|call\s+(?:it|that)|change\s+(?:the\s+)?(?:name|filename|file\s+name))\b",
+        r"\b("
+        r"rename|"
+        r"save\s+(?:it|this|that)?\s*as|"
+        r"make\s+that|"
+        r"call\s+(?:it|that)|"
+        r"change\s+(?:the\s+)?(?:name|filename|file\s+name)"
+        r")\b",
         lowered,
     ):
         new_name = _extract_named_target(text)
@@ -1135,8 +1186,12 @@ def _draft_revision_from_active_preview(
                     rewritten_path = str(Path(base_path).with_name(new_name))
                 else:
                     rewritten_path = f"~/VoxeraOS/notes/{new_name}"
+                writing_kind = _writing_kind_from_preview_goal(current_goal)
+                goal = f"write a file called {new_name} with provided content"
+                if writing_kind is not None:
+                    goal = f"draft a {writing_kind} as {new_name}"
                 return {
-                    "goal": f"write a file called {new_name} with provided content",
+                    "goal": goal,
                     "write_file": {
                         "path": rewritten_path,
                         "content": str(write_file.get("content") or ""),
@@ -1200,6 +1255,16 @@ def _draft_revision_from_active_preview(
                 "write_file": {"path": path, "content": refined_content, "mode": mode},
             }
 
+    return None
+
+
+def _writing_kind_from_preview_goal(goal: str) -> str | None:
+    match = re.match(r"\s*draft\s+a\s+([a-z]+)\s+as\s+", goal, re.IGNORECASE)
+    if not match:
+        return None
+    kind = (match.group(1) or "").strip().lower()
+    if kind in {"essay", "article", "writeup", "explanation"}:
+        return kind
     return None
 
 
@@ -1270,9 +1335,28 @@ def is_explicit_handoff_request(message: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in _HANDOFF_PATTERNS)
 
 
+def _looks_like_preview_rename_or_save_as_request(message: str) -> bool:
+    normalized = message.strip().lower()
+    if not normalized:
+        return False
+    return bool(
+        re.search(
+            r"\b("
+            r"save\s+(?:it|this|that)?\s*as|"
+            r"rename|"
+            r"call\s+(?:it|that)|"
+            r"change\s+(?:the\s+)?(?:name|filename|file\s+name)"
+            r")\b",
+            normalized,
+        )
+    )
+
+
 def is_active_preview_submit_request(message: str) -> bool:
     normalized = message.strip().lower()
     if not normalized:
+        return False
+    if _looks_like_preview_rename_or_save_as_request(normalized):
         return False
     return any(re.search(pattern, normalized) for pattern in _ACTIVE_PREVIEW_SUBMIT_PATTERNS)
 
@@ -1329,6 +1413,10 @@ def _draft_from_candidate_message(
     )
     if structured_write:
         return structured_write
+
+    writing_draft = classify_writing_draft_intent(candidate)
+    if writing_draft is not None:
+        return writing_draft
 
     structured_note = _normalize_structured_note_payload(candidate)
     if structured_note:

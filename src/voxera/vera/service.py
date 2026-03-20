@@ -169,17 +169,13 @@ def _is_informational_web_query(message: str) -> bool:
         "search ",
         "search the web",
         "search online",
-        "find out",
         "find the latest",
         "find current",
-        "find information",
-        "give me information",
         "find sources",
         "investigate",
         "investigation",
         "web investigation",
         "stock information",
-        "information about",
         "latest",
         "latest news",
         "latest stories",
@@ -201,7 +197,6 @@ def _is_informational_web_query(message: str) -> bool:
         "market news",
         "market updates",
         "release notes",
-        "compare",
         "research",
         "what changed",
         "what happened",
@@ -1328,19 +1323,32 @@ _CODE_DRAFT_HINT = (
     "preview file for the user to review and submit.]"
 )
 
+_WRITING_DRAFT_HINT = (
+    "\n\n[System note for this request: You are being asked to draft a prose document "
+    "artifact. Write the actual essay/article/writeup/explanation body directly in your "
+    "response. Avoid hidden control markup. If you include a short conversational wrapper, "
+    "place the full draft body after a blank line so it can be extracted into the governed "
+    "preview file.]"
+)
+
 
 def build_vera_messages(
     *,
     turns: list[dict[str, str]],
     user_message: str,
     code_draft: bool = False,
+    writing_draft: bool = False,
 ) -> list[dict[str, str]]:
+    if code_draft and writing_draft:
+        raise ValueError("code_draft and writing_draft are mutually exclusive")
     messages: list[dict[str, str]] = [{"role": "system", "content": VERA_SYSTEM_PROMPT}]
     for turn in turns[-MAX_SESSION_TURNS:]:
         messages.append({"role": turn["role"], "content": turn["text"]})
     content = user_message.strip()
     if code_draft:
         content = content + _CODE_DRAFT_HINT
+    elif writing_draft:
+        content = content + _WRITING_DRAFT_HINT
     messages.append({"role": "user", "content": content})
     return messages
 
@@ -1365,6 +1373,37 @@ def _recent_assistant_authored_content(turns: list[dict[str, str]]) -> list[str]
         if not text:
             continue
         if any(marker in lowered for marker in non_authored_markers):
+            continue
+        normalized = re.sub(r"\s+", " ", lowered.replace("—", "-")).strip()
+        if any(
+            normalized.startswith(prefix)
+            for prefix in (
+                "you're welcome",
+                "youre welcome",
+                "you're very welcome",
+                "youre very welcome",
+                "no problem",
+                "anytime",
+                "of course",
+                "sure thing",
+                "glad to help",
+                "happy to help",
+                "my pleasure",
+            )
+        ) and (
+            len(normalized.split()) <= 24
+            or any(
+                phrase in normalized
+                for phrase in (
+                    "if you'd like",
+                    "if you would like",
+                    "let me know",
+                    "feel free",
+                    "i can save that",
+                    "i can also",
+                )
+            )
+        ):
             continue
         authored.append(text)
     return authored[-4:]
@@ -1577,7 +1616,13 @@ def _create_brain(provider: Any) -> OpenAICompatBrain | GeminiBrain:
     raise ValueError(f"unsupported provider type: {provider.type}")
 
 
-async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str) -> dict[str, Any]:
+async def generate_vera_reply(
+    *,
+    turns: list[dict[str, str]],
+    user_message: str,
+    code_draft: bool = False,
+    writing_draft: bool = False,
+) -> dict[str, Any]:
     cfg = load_app_config()
 
     web_cfg = cfg.web_investigation
@@ -1639,7 +1684,12 @@ async def generate_vera_reply(*, turns: list[dict[str, str]], user_message: str)
             "status": "degraded_unavailable",
         }
 
-    messages = build_vera_messages(turns=turns, user_message=user_message)
+    messages = build_vera_messages(
+        turns=turns,
+        user_message=user_message,
+        code_draft=code_draft,
+        writing_draft=writing_draft,
+    )
     last_reason = "UNKNOWN"
     for name, provider in attempts:
         try:

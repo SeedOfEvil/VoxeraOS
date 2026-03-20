@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from voxera.core.writing_draft_intent import extract_text_draft_from_reply
 from voxera.models import AppConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
@@ -2637,6 +2638,429 @@ def test_black_hole_explanation_then_save_previous_answer_creates_preview(tmp_pa
     )
 
 
+def test_black_hole_explanation_then_essay_followup_creates_authoritative_preview(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "2 page essay" in lowered:
+            return {
+                "answer": (
+                    "I've prepared a draft below.\n\n"
+                    "# Black Holes\n\n"
+                    "Black holes are extreme objects formed when matter collapses into a compact region. "
+                    "This essay expands on the science, the history of discovery, and the role of black holes "
+                    "in modern astrophysics."
+                ),
+                "status": "ok:test",
+            }
+        return {
+            "answer": "Black holes form when gravity collapses enough matter into a region that traps light.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "Tell me about black holes."})
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Write a 2 page essay about that expanding on the science and the history.",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert res.status_code == 200
+    assert preview is not None
+    assert preview["write_file"]["path"].endswith(".md")
+    assert "prepared a draft below" not in preview["write_file"]["content"].lower()
+    assert "Black Holes" in preview["write_file"]["content"]
+    assert "science" in preview["write_file"]["content"]
+
+
+def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "more formal" in lowered:
+            return {
+                "answer": (
+                    "I will refine the essay to a more formal academic tone and prepare it to be saved as `roman-empire-essay.md`.\n\n"
+                    "# The Roman Empire\n\n"
+                    "The Roman Empire was a foundational Mediterranean power whose administrative structure, "
+                    "military organization, and legal traditions influenced later European states."
+                ),
+                "status": "ok:test",
+            }
+        if "rewrite that as a short high school essay" in lowered:
+            return {
+                "answer": (
+                    "Here's the draft essay.\n\n"
+                    "# The Roman Empire\n\n"
+                    "The Roman Empire grew from the city of Rome into a large empire around the Mediterranean. "
+                    "It is remembered for its roads, armies, laws, and lasting cultural influence."
+                ),
+                "status": "ok:test",
+            }
+        return {
+            "answer": "The Roman Empire expanded across Europe, North Africa, and the Near East.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post(
+        "/chat", data={"session_id": sid, "message": "Find me info about the Roman Empire."}
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Rewrite that as a short high school essay."},
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Make it more formal and save it as roman-empire-essay.md.",
+        },
+    )
+
+    assert not list((queue / "inbox").glob("inbox-*.json"))
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/roman-empire-essay.md"
+    assert "essay overview" not in preview["write_file"]["content"].lower()
+    assert "foundational mediterranean power" in preview["write_file"]["content"].lower()
+
+    submit_res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert submit_res.status_code == 200
+    assert "I submitted the job to VoxeraOS" in submit_res.text
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/roman-empire-essay.md"
+    assert "i will refine the essay" not in payload["write_file"]["content"].lower()
+
+
+def test_investigation_summary_then_article_followup_creates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        return {
+            "answer": (
+                "Article overview\n\n"
+                "A short technical article follows.\n\n"
+                "# Technical Article\n\n"
+                "The investigation suggests a narrow set of likely causes, highlights the highest-signal evidence, "
+                "and frames the next debugging steps for a technical teammate."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_derived_investigation_output(
+        queue,
+        sid,
+        {
+            "derivation_type": "summary",
+            "answer": "Selected results: 1, 2\nShort takeaway: evidence points to config drift.",
+            "markdown": "# Investigation Summary\n\nEvidence points to config drift.\n",
+        },
+    )
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Now write a short article based on that summary for a technical teammate.",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"].endswith(".md")
+    assert "article overview" not in preview["write_file"]["content"].lower()
+    assert "technical teammate" in preview["write_file"]["content"].lower()
+
+
+def test_extract_text_draft_from_reply_keeps_heading_but_strips_preface() -> None:
+    cleaned = extract_text_draft_from_reply(
+        "I will refine the essay to a more formal academic tone and prepare it to be saved as `roman-empire-essay.md`.\n\n# The Roman Empire\n\nThe Roman Empire shaped the Mediterranean world through military expansion, administration, and law."
+    )
+
+    assert cleaned is not None
+    assert cleaned.startswith("# The Roman Empire")
+    assert "prepare it to be saved" not in cleaned.lower()
+
+
+def test_extract_text_draft_from_reply_strips_explanation_preface_but_keeps_body() -> None:
+    cleaned = extract_text_draft_from_reply(
+        "Certainly! Here is a plain-English explanation of how the Python script functions:\n\n"
+        "The script first fetches the URL, parses the HTML response, and then prints the page title to standard output."
+    )
+
+    assert cleaned is not None
+    assert cleaned.startswith("The script first fetches the URL")
+    assert "certainly!" not in cleaned.lower()
+    assert "plain-english explanation" not in cleaned.lower()
+
+
+def test_extract_text_draft_from_reply_keeps_legitimate_explanation_opening_paragraph() -> None:
+    cleaned = extract_text_draft_from_reply(
+        "The script first fetches the requested URL, parses the returned HTML, and prints the page title so the operator can confirm the page responded as expected."
+    )
+
+    assert cleaned is not None
+    assert cleaned.startswith("The script first fetches the requested URL")
+
+
+def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": (
+                "I've prepared an essay draft.\n\n"
+                "# Great Pyramids of Giza\n\n"
+                "The Great Pyramids of Giza were monumental royal tombs built during Egypt's Old Kingdom and remain "
+                "among the most studied engineering achievements of the ancient world."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Write me a 3 page essay about the Great Pyramids of Giza.",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert "great-pyramids-of-giza-essay.md" in preview["write_file"]["path"]
+    assert "prepared an essay draft" not in preview["write_file"]["content"].lower()
+    assert "Great Pyramids of Giza" in preview["write_file"]["content"]
+
+
+def test_black_hole_essay_submit_saves_clean_body_only(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "2 page essay" in lowered:
+            return {
+                "answer": (
+                    "I can certainly help you expand that into a longer essay.\n\n"
+                    "# Black Holes\n\n"
+                    "Black holes are extreme objects formed when matter collapses into a compact region that traps light."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "Black holes form when stars collapse.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "Tell me about black holes."})
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Write a 2 page essay about that."},
+    )
+    submit_res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert submit_res.status_code == 200
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["content"].startswith("# Black Holes")
+    assert "i can certainly help you expand" not in payload["write_file"]["content"].lower()
+
+
+def test_direct_essay_submit_saves_clean_body_only(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": (
+                "I can certainly help with that request.\n\n"
+                "# Great Pyramids of Giza\n\n"
+                "The Great Pyramids of Giza were monumental royal tombs built during Egypt's Old Kingdom."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Write me a 3 page essay about the Great Pyramids of Giza.",
+        },
+    )
+    submit_res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert submit_res.status_code == 200
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["content"].startswith("# Great Pyramids of Giza")
+    assert "i can certainly help with that request" not in payload["write_file"]["content"].lower()
+
+
+def test_writing_draft_hides_internal_control_block_but_keeps_authoritative_preview(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    leaked = (
+        "# Draft Essay\n\n"
+        "Black holes are among the most extreme objects in the universe.\n\n"
+        "<voxera_control>\n"
+        "interpreter: hidden\n"
+        "action: update_preview\n"
+        "payload:\n"
+        "  write_file:\n"
+        "    path: ~/VoxeraOS/notes/essay.md\n"
+        "</voxera_control>"
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {"answer": leaked, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Write me a 2 page essay about black holes."},
+    )
+
+    turns = vera_service.read_session_turns(queue, sid)
+    preview = vera_service.read_session_preview(queue, sid)
+    assert res.status_code == 200
+    assert "<voxera_control>" not in res.text
+    assert "action: update_preview" not in res.text
+    assert "<voxera_control>" not in turns[-1]["text"]
+    assert "action: update_preview" not in turns[-1]["text"]
+    assert preview is not None
+    assert "<voxera_control>" not in preview["write_file"]["content"]
+    assert "Black holes are among the most extreme objects" in preview["write_file"]["content"]
+
+
+def test_writing_draft_submit_after_control_block_strip_uses_clean_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": (
+                "# Draft Essay\n\n"
+                "The Great Pyramid of Giza was built as a royal tomb.\n\n"
+                "<voxera_control>\n"
+                "action: update_preview\n"
+                "work_units:\n"
+                "  - write_file\n"
+                "</voxera_control>"
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Write me a short essay about the Great Pyramid."},
+    )
+    res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert res.status_code == 200
+    assert "I submitted the job to VoxeraOS" in res.text
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    content = payload["write_file"]["content"]
+    assert "<voxera_control>" not in content
+    assert "action: update_preview" not in content
+    assert "royal tomb" in content
+
+
+def test_code_draft_rendering_still_shows_fenced_code_with_control_sanitizer_present(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": "```python\nprint('still visible')\n```",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write me a python script that prints still visible"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert res.status_code == 200
+    assert "```python" in res.text
+    assert "still visible" in res.text
+    assert preview is not None
+    assert "print('still visible')" in preview["write_file"]["content"]
+
+
 def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -2669,6 +3093,178 @@ def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, mo
         preview["write_file"]["content"]
         == "Entropy is a measure of how spread out energy is, often described as disorder."
     )
+
+
+def test_previous_explanation_survives_trivial_thanks_turn_for_save_reference(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "photosynthesis" in lowered:
+            return {
+                "answer": (
+                    "Sure! Here is a plain-English explanation of photosynthesis: "
+                    "Photosynthesis lets plants use sunlight, water, and carbon dioxide to make sugar."
+                ),
+                "status": "ok:test",
+            }
+        return {
+            "answer": "You're very welcome — happy to help. If you'd like, I can save that explanation too.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "Explain photosynthesis simply."})
+    client.post("/chat", data={"session_id": sid, "message": "thanks"})
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "put your previous explanation in a note called photosynthesis.txt",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/photosynthesis.txt"
+    assert "sunlight" in preview["write_file"]["content"].lower()
+    assert "very welcome" not in preview["write_file"]["content"].lower()
+
+
+def test_previous_explanation_without_courtesy_turn_uses_latest_explanation(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "photosynthesis" in lowered:
+            return {
+                "answer": (
+                    "Photosynthesis is the process plants use to convert sunlight into stored chemical energy."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "Explain photosynthesis simply."})
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "put your previous explanation in a note called photosynthesis.txt",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/photosynthesis.txt"
+    assert "stored chemical energy" in preview["write_file"]["content"].lower()
+
+
+def test_code_explanation_then_save_explanation_creates_text_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "write me a python script" in lowered:
+            return {
+                "answer": "```python\nprint('hello world')\n```",
+                "status": "ok:test",
+            }
+        if "explain how this script works in plain english" in lowered:
+            return {
+                "answer": (
+                    "Certainly! Here is a plain-English explanation of how the Python script functions:\n\n"
+                    "The script runs one statement. It calls Python's print function, which sends "
+                    "the text hello world to standard output."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Write me a python script that prints hello world."},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Explain how this script works in plain English."},
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "save that explanation to a note called script-explained.txt",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script-explained.txt"
+    assert "print function" in preview["write_file"]["content"].lower()
+    assert "preview pane" not in preview["write_file"]["content"].lower()
+
+    submit_res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert submit_res.status_code == 200
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/script-explained.txt"
+    assert payload["write_file"]["content"].startswith("The script runs one statement.")
+    assert "preview pane" not in payload["write_file"]["content"].lower()
+    assert "i've drafted a clear" not in payload["write_file"]["content"].lower()
+
+
+def test_ordinary_compare_prompt_stays_conversational_not_investigation(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        return {
+            "answer": (
+                "The Great Pyramid is an ancient Egyptian tomb, while the Colosseum is a Roman amphitheater. "
+                "Both are monumental stone structures, but they served different cultures and purposes."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Compare the Great Pyramid and the Colosseum briefly."},
+    )
+
+    assert res.status_code == 200
+    assert "Roman amphitheater" in res.text
+    assert vera_service.read_session_investigation(queue, sid) is None
+    assert vera_service.read_session_preview(queue, sid) is None
 
 
 def test_two_recent_assistant_answers_save_that_prefers_latest(tmp_path, monkeypatch):
@@ -5606,3 +6202,26 @@ def test_build_vera_messages_no_hint_when_flag_not_set():
     )
     user_msg = next(m for m in messages if m["role"] == "user")
     assert user_msg["content"] == "what is in the queue?"
+
+
+def test_build_vera_messages_includes_writing_draft_hint_when_flag_set():
+    """build_vera_messages must append prose-draft hint when writing_draft=True."""
+    messages = vera_service.build_vera_messages(
+        turns=[],
+        user_message="write a 2-page essay about black holes",
+        writing_draft=True,
+    )
+    user_msg = next(m for m in messages if m["role"] == "user")
+    assert "draft a prose document artifact" in user_msg["content"]
+    assert "write a 2-page essay about black holes" in user_msg["content"]
+
+
+def test_build_vera_messages_rejects_conflicting_draft_hints():
+    """build_vera_messages must fail closed if both draft hint types are requested."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        vera_service.build_vera_messages(
+            turns=[],
+            user_message="write something",
+            code_draft=True,
+            writing_draft=True,
+        )
