@@ -1264,6 +1264,7 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 - Writing replies are excluded from conversational-control suppression, so the user sees the generated prose in chat while the same content becomes the preview body.
 - When an active governed writing preview exists, follow-up refinements like `make it more formal` or `rewrite that as ...` refresh the preview content with the new prose reply rather than leaving stale draft content behind.
 - Save-as / rename refinements preserve the exact requested filename in `write_file.path`; the renamed path survives through submit rather than snapping back to the default generated filename.
+- Combined prose refinement + save-as turns are resolved as preview updates, not implicit submit intents: Vera first keeps the new assistant-authored prose body authoritative in `write_file.content`, then applies the requested filename/path update before any later explicit handoff.
 
 **Recent assistant-content resolver (`vera/handoff.py`, `vera/service.py`):**
 - Save-by-reference resolution now recognizes `explanation`/`previous explanation` phrasing alongside summary/answer/response terms.

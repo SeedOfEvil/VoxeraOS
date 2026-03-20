@@ -2733,9 +2733,11 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
         "/chat",
         data={
             "session_id": sid,
-            "message": "Make it more formal and save as roman-empire-essay.md.",
+            "message": "Make it more formal and save it as roman-empire-essay.md.",
         },
     )
+
+    assert not list((queue / "inbox").glob("inbox-*.json"))
 
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None

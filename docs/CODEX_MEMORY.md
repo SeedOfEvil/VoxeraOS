@@ -1,3 +1,10 @@
+## 2026-03-20 — PR #TBD — fix(vera/writing-lane): apply combined prose refinement + save-as updates before submit
+
+- Patched `src/voxera/vera/handoff.py` so `save it as ...` / rename phrasing on an active preview is treated as a preview revision, not as an implicit submit of the stale prior preview.
+- Verified the governed writing lane now updates both authoritative preview dimensions on combined turns: fresh assistant-authored prose replaces the previous draft body and the requested filename/path becomes the active preview path before explicit submit.
+- Added a regression in `tests/test_vera_web.py` covering the live Roman Empire flow with the exact phrase `make it more formal and save it as roman-empire-essay.md`, including the guarantee that no inbox job is enqueued until a later explicit submit.
+- Scope remains bounded: this fix only changes active-preview revision vs submit disambiguation; it does not add document export formats or multi-file writing workflows.
+
 ## 2026-03-18 — PR #TBD — feat(vera): add governed document/article/essay draft lane with authoritative preview support
 
 - Added a bounded prose draft classifier at `src/voxera/core/writing_draft_intent.py` for essays, articles, writeups, rewrite/formalize/expand asks, and plain-English script explanations.

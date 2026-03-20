@@ -1334,9 +1334,28 @@ def is_explicit_handoff_request(message: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in _HANDOFF_PATTERNS)
 
 
+def _looks_like_preview_rename_or_save_as_request(message: str) -> bool:
+    normalized = message.strip().lower()
+    if not normalized:
+        return False
+    return bool(
+        re.search(
+            r"\b("
+            r"save\s+(?:it|this|that)?\s*as|"
+            r"rename|"
+            r"call\s+(?:it|that)|"
+            r"change\s+(?:the\s+)?(?:name|filename|file\s+name)"
+            r")\b",
+            normalized,
+        )
+    )
+
+
 def is_active_preview_submit_request(message: str) -> bool:
     normalized = message.strip().lower()
     if not normalized:
+        return False
+    if _looks_like_preview_rename_or_save_as_request(normalized):
         return False
     return any(re.search(pattern, normalized) for pattern in _ACTIVE_PREVIEW_SUBMIT_PATTERNS)
 
