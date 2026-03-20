@@ -924,9 +924,7 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
-    is_existing_writing_preview = _is_governed_writing_preview(
-        pending_preview
-    )
+    is_existing_writing_preview = _is_governed_writing_preview(pending_preview)
     if (
         not is_writing_draft_turn
         and not informational_web_turn
