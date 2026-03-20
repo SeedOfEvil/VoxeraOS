@@ -2816,12 +2816,14 @@ def test_extract_text_draft_from_reply_keeps_heading_but_strips_preface() -> Non
 
 def test_extract_text_draft_from_reply_strips_explanation_preface_but_keeps_body() -> None:
     cleaned = extract_text_draft_from_reply(
-        "I've drafted a clear, step-by-step explanation of how the Python script operates. You can see the full write-up in the preview pane. The script first fetches the URL, parses the HTML response, and then prints the page title to standard output."
+        "Certainly! Here is a plain-English explanation of how the Python script functions:\n\n"
+        "The script first fetches the URL, parses the HTML response, and then prints the page title to standard output."
     )
 
     assert cleaned is not None
     assert cleaned.startswith("The script first fetches the URL")
-    assert "preview pane" not in cleaned.lower()
+    assert "certainly!" not in cleaned.lower()
+    assert "plain-english explanation" not in cleaned.lower()
 
 
 def test_extract_text_draft_from_reply_keeps_legitimate_explanation_opening_paragraph() -> None:
@@ -3104,7 +3106,10 @@ def test_previous_explanation_survives_trivial_thanks_turn_for_save_reference(
         lowered = user_message.lower()
         if "photosynthesis" in lowered:
             return {
-                "answer": "Photosynthesis lets plants use sunlight, water, and carbon dioxide to make sugar.",
+                "answer": (
+                    "Sure! Here is a plain-English explanation of photosynthesis: "
+                    "Photosynthesis lets plants use sunlight, water, and carbon dioxide to make sugar."
+                ),
                 "status": "ok:test",
             }
         return {
@@ -3185,8 +3190,7 @@ def test_code_explanation_then_save_explanation_creates_text_preview(tmp_path, m
         if "explain how this script works in plain english" in lowered:
             return {
                 "answer": (
-                    "I've drafted a clear, step-by-step explanation of how the Python script operates. "
-                    "You can see the full write-up in the preview pane. "
+                    "Certainly! Here is a plain-English explanation of how the Python script functions:\n\n"
                     "The script runs one statement. It calls Python's print function, which sends "
                     "the text hello world to standard output."
                 ),

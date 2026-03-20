@@ -257,6 +257,11 @@ def _strip_leading_preface_sentences(block: str) -> str:
             return current
         sentence = match.group(1).strip()
         remainder = (match.group(2) or "").strip()
+        if _looks_like_conversational_preamble_sentence(sentence):
+            if not remainder:
+                return ""
+            current = remainder
+            continue
         if not _looks_like_preface_setup_sentence(sentence):
             return current
         if not remainder:
@@ -268,6 +273,11 @@ def _strip_leading_preface_sentences(block: str) -> str:
             return remainder
         return current
     return current
+
+
+def _looks_like_conversational_preamble_sentence(block: str) -> bool:
+    normalized = block.strip().lower().strip(" :;-—.!?")
+    return normalized in {"certainly", "sure", "absolutely", "of course"}
 
 
 def _looks_like_preface_setup_sentence(block: str) -> bool:
