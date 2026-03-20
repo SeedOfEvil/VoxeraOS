@@ -176,6 +176,14 @@ def _extract_prose_body(content: str) -> str | None:
         return None
 
     trimmed = list(blocks)
+    if trimmed:
+        inline_cleaned = _strip_leading_preface_sentences(trimmed[0])
+        if inline_cleaned != trimmed[0]:
+            if inline_cleaned:
+                trimmed[0] = inline_cleaned
+            else:
+                trimmed = trimmed[1:]
+
     while trimmed and _looks_like_wrapper_block(
         trimmed[0], next_block=trimmed[1] if len(trimmed) > 1 else None
     ):
@@ -189,6 +197,11 @@ def _extract_prose_body(content: str) -> str | None:
         while trimmed and _looks_like_wrapper_block(
             trimmed[0], next_block=trimmed[1] if len(trimmed) > 1 else None
         ):
+            trimmed = trimmed[1:]
+
+    if trimmed:
+        trimmed[0] = _strip_leading_preface_sentences(trimmed[0])
+        if not trimmed[0]:
             trimmed = trimmed[1:]
 
     if not trimmed:
@@ -230,8 +243,31 @@ def _looks_like_wrapper_block(block: str, *, next_block: str | None = None) -> b
     ):
         return True
     if _looks_like_preface_setup_sentence(stripped):
+        if _strip_leading_preface_sentences(stripped) != stripped:
+            return False
         return next_block is None or _looks_like_document_body_start(next_block)
     return False
+
+
+def _strip_leading_preface_sentences(block: str) -> str:
+    current = block.strip()
+    while current:
+        match = re.match(r"^(.+?[.!?])(?:\s+|$)(.*)$", current, re.DOTALL)
+        if not match:
+            return current
+        sentence = match.group(1).strip()
+        remainder = (match.group(2) or "").strip()
+        if not _looks_like_preface_setup_sentence(sentence):
+            return current
+        if not remainder:
+            return ""
+        if _looks_like_preface_setup_sentence(remainder):
+            current = remainder
+            continue
+        if _looks_like_document_body_start(remainder):
+            return remainder
+        return current
+    return current
 
 
 def _looks_like_preface_setup_sentence(block: str) -> bool:
@@ -239,7 +275,7 @@ def _looks_like_preface_setup_sentence(block: str) -> bool:
     if len(lowered.split()) > 36:
         return False
     starts_with_setup = bool(
-        re.match(r"^(?:i(?:'ll| will)|here(?:'s| is)|i(?:'ve| have))\b", lowered)
+        re.match(r"^(?:i(?:'ll| will)|here(?:'s| is)|i(?:'ve| have)|you\s+can\s+see)\b", lowered)
     )
     if not starts_with_setup:
         return False
@@ -255,6 +291,9 @@ def _looks_like_preface_setup_sentence(block: str) -> bool:
             "article",
             "writeup",
             "explanation",
+            "preview pane",
+            "write-up",
+            "step-by-step",
             "save it as",
             "saved as",
             ".md",

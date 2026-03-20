@@ -1260,7 +1260,7 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 **App-layer integration (`vera_web/app.py`):**
 - Writing turns are pre-classified before the LLM call so prose-draft requests do not accidentally inherit the code-lane persona override just because a `.md` filename appears.
 - After `generate_vera_reply()`, the bounded prose extractor selects the actual drafted essay/article/writeup/explanation body and injects that body into `write_file.content`, rather than storing conversational wrapper text.
-- Prose-body cleanup now also strips leading assistant setup/preface sentences before the real document start, using bounded heuristics around headings, bolded titles, and first substantial body blocks so saved artifacts begin at the document itself.
+- Prose-body cleanup now also strips leading assistant setup/preface sentences before the real document start, using bounded heuristics around headings, bolded titles, and first substantial body blocks so saved artifacts begin at the document itself. The same cleanup is applied when explanation-style artifacts are later saved by reference from recent assistant content.
 - Internal `<voxera_control>` transport blocks are stripped before user-visible rendering and before prose preview-body extraction, so hidden control payloads stay internal even when a model leaks them into the raw reply.
 - Writing replies are excluded from conversational-control suppression, so the user sees the generated prose in chat while the same content becomes the preview body.
 - When an active governed writing preview exists, follow-up refinements like `make it more formal` or `rewrite that as ...` refresh the preview content with the new prose reply rather than leaving stale draft content behind.

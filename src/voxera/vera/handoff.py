@@ -8,7 +8,7 @@ from typing import Any
 
 from ..core.file_intent import classify_bounded_file_intent
 from ..core.inbox import add_inbox_payload
-from ..core.writing_draft_intent import classify_writing_draft_intent
+from ..core.writing_draft_intent import classify_writing_draft_intent, extract_text_draft_from_reply
 
 _ALLOWED_TOP_LEVEL_KEYS = {
     "goal",
@@ -426,7 +426,8 @@ def _select_recent_assistant_content(
             continue
         if len(candidate) < 24 and len(candidate.split()) < 4:
             continue
-        viable.append(candidate)
+        cleaned_candidate = extract_text_draft_from_reply(candidate) or candidate
+        viable.append(cleaned_candidate)
 
     if not viable:
         return None

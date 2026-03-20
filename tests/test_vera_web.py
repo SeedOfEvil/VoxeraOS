@@ -2814,6 +2814,25 @@ def test_extract_text_draft_from_reply_keeps_heading_but_strips_preface() -> Non
     assert "prepare it to be saved" not in cleaned.lower()
 
 
+def test_extract_text_draft_from_reply_strips_explanation_preface_but_keeps_body() -> None:
+    cleaned = extract_text_draft_from_reply(
+        "I've drafted a clear, step-by-step explanation of how the Python script operates. You can see the full write-up in the preview pane. The script first fetches the URL, parses the HTML response, and then prints the page title to standard output."
+    )
+
+    assert cleaned is not None
+    assert cleaned.startswith("The script first fetches the URL")
+    assert "preview pane" not in cleaned.lower()
+
+
+def test_extract_text_draft_from_reply_keeps_legitimate_explanation_opening_paragraph() -> None:
+    cleaned = extract_text_draft_from_reply(
+        "The script first fetches the requested URL, parses the returned HTML, and prints the page title so the operator can confirm the page responded as expected."
+    )
+
+    assert cleaned is not None
+    assert cleaned.startswith("The script first fetches the requested URL")
+
+
 def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -3166,7 +3185,9 @@ def test_code_explanation_then_save_explanation_creates_text_preview(tmp_path, m
         if "explain how this script works in plain english" in lowered:
             return {
                 "answer": (
-                    "This script runs one statement. It calls Python's print function, which sends "
+                    "I've drafted a clear, step-by-step explanation of how the Python script operates. "
+                    "You can see the full write-up in the preview pane. "
+                    "The script runs one statement. It calls Python's print function, which sends "
                     "the text hello world to standard output."
                 ),
                 "status": "ok:test",
@@ -3198,6 +3219,18 @@ def test_code_explanation_then_save_explanation_creates_text_preview(tmp_path, m
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script-explained.txt"
     assert "print function" in preview["write_file"]["content"].lower()
+    assert "preview pane" not in preview["write_file"]["content"].lower()
+
+    submit_res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert submit_res.status_code == 200
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/script-explained.txt"
+    assert payload["write_file"]["content"].startswith("The script runs one statement.")
+    assert "preview pane" not in payload["write_file"]["content"].lower()
+    assert "i've drafted a clear" not in payload["write_file"]["content"].lower()
 
 
 def test_ordinary_compare_prompt_stays_conversational_not_investigation(tmp_path, monkeypatch):
