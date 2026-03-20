@@ -350,6 +350,13 @@ def _looks_like_preview_pane_claim(text: str) -> bool:
     return _looks_like_preview_update_claim(text)
 
 
+def _is_governed_writing_preview(preview: dict[str, object] | None) -> bool:
+    if not is_text_draft_preview(preview):
+        return False
+    goal = str((preview or {}).get("goal") or "").strip().lower()
+    return goal.startswith("draft a ")
+
+
 def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
     """Replace false preview-existence claims with truthful language.
 
@@ -917,14 +924,14 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
-    is_existing_text_preview = isinstance(pending_preview, dict) and is_text_draft_preview(
+    is_existing_writing_preview = _is_governed_writing_preview(
         pending_preview
     )
     if (
         not is_writing_draft_turn
         and not informational_web_turn
         and not is_enrichment_turn
-        and is_existing_text_preview
+        and is_existing_writing_preview
         and is_writing_refinement_request(message)
         and reply_text_draft is not None
     ):
@@ -946,7 +953,7 @@ async def chat(request: Request):
         if (
             prose_target_draft is None
             and isinstance(pending_preview, dict)
-            and is_text_draft_preview(pending_preview)
+            and _is_governed_writing_preview(pending_preview)
         ):
             prose_target_draft = dict(pending_preview)
         if isinstance(prose_target_draft, dict):
