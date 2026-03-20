@@ -2744,6 +2744,15 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
     assert "essay overview" not in preview["write_file"]["content"].lower()
     assert "foundational mediterranean power" in preview["write_file"]["content"].lower()
 
+    submit_res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert submit_res.status_code == 200
+    assert "I submitted the job to VoxeraOS" in submit_res.text
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/roman-empire-essay.md"
+
 
 def test_investigation_summary_then_article_followup_creates_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
@@ -2991,7 +3000,10 @@ def test_previous_explanation_survives_trivial_thanks_turn_for_save_reference(
                 "answer": "Photosynthesis lets plants use sunlight, water, and carbon dioxide to make sugar.",
                 "status": "ok:test",
             }
-        return {"answer": "You're welcome!", "status": "ok:test"}
+        return {
+            "answer": "You're very welcome — happy to help. If you'd like, I can save that explanation too.",
+            "status": "ok:test",
+        }
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
@@ -3012,6 +3024,43 @@ def test_previous_explanation_survives_trivial_thanks_turn_for_save_reference(
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/photosynthesis.txt"
     assert "sunlight" in preview["write_file"]["content"].lower()
+    assert "very welcome" not in preview["write_file"]["content"].lower()
+
+
+def test_previous_explanation_without_courtesy_turn_uses_latest_explanation(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "photosynthesis" in lowered:
+            return {
+                "answer": (
+                    "Photosynthesis is the process plants use to convert sunlight into stored chemical energy."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "Explain photosynthesis simply."})
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "put your previous explanation in a note called photosynthesis.txt",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/photosynthesis.txt"
+    assert "stored chemical energy" in preview["write_file"]["content"].lower()
 
 
 def test_code_explanation_then_save_explanation_creates_text_preview(tmp_path, monkeypatch):

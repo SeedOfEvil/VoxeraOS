@@ -4,8 +4,8 @@
 - Extended `src/voxera/vera_web/app.py` to populate authoritative `write_file.content` for prose drafts from the assistant's actual reply, mirroring the governed code lane's preview-truth model.
 - Patched a user-facing control leak: `<voxera_control>` transport blocks are now stripped from visible chat text and from prose preview-body extraction, while the authoritative preview/update path remains intact.
 - Tightened prose-body extraction so authoritative writing previews store the actual essay/article body instead of wrapper phrases like "I've prepared a draft below" or overview summaries.
-- Writing follow-ups now update active preview state instead of failing with "no prepared preview", including save-as filename refinements for prose drafts.
-- Save-by-reference resolution in `src/voxera/vera/handoff.py` now recognizes `explanation` references and filters out trivial courtesy assistant turns so `thanks` does not break `save your previous explanation ...`.
+- Writing follow-ups now update active preview state instead of failing with "no prepared preview", and save-as filename refinements now preserve the exact requested prose filename through final submit.
+- Save-by-reference resolution in `src/voxera/vera/handoff.py` now recognizes `explanation` references and filters out trivial courtesy assistant turns — including extended `You're very welcome ...` variants — so `thanks` does not break `save your previous explanation ...`.
 - Narrowed `_is_informational_web_query()` in `src/voxera/vera/service.py` so ordinary compare/explain prompts stay conversational unless the user is explicit about web/latest/current/search intent.
 - Added focused Vera web coverage for: explanation → essay expansion, rewrite → formalize + save-as, investigation summary → article, direct essay requests, courtesy-turn save-reference continuity, code → explanation → save explanation, and conversational compare prompts.
 - Scope intentionally remains bounded: no docx/pdf export, no multi-file writing workflows, no fake preview/queue claims.

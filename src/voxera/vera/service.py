@@ -1374,9 +1374,35 @@ def _recent_assistant_authored_content(turns: list[dict[str, str]]) -> list[str]
             continue
         if any(marker in lowered for marker in non_authored_markers):
             continue
-        if re.fullmatch(
-            r"(?:you(?:'| a)?re\s+welcome|no\s+problem|anytime|glad\s+to\s+help|happy\s+to\s+help)[.! ]*",
-            lowered,
+        normalized = re.sub(r"\s+", " ", lowered.replace("—", "-")).strip()
+        if any(
+            normalized.startswith(prefix)
+            for prefix in (
+                "you're welcome",
+                "youre welcome",
+                "you're very welcome",
+                "youre very welcome",
+                "no problem",
+                "anytime",
+                "of course",
+                "sure thing",
+                "glad to help",
+                "happy to help",
+                "my pleasure",
+            )
+        ) and (
+            len(normalized.split()) <= 24
+            or any(
+                phrase in normalized
+                for phrase in (
+                    "if you'd like",
+                    "if you would like",
+                    "let me know",
+                    "feel free",
+                    "i can save that",
+                    "i can also",
+                )
+            )
         ):
             continue
         authored.append(text)

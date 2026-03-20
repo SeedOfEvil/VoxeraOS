@@ -1262,11 +1262,12 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 - After `generate_vera_reply()`, the bounded prose extractor selects the actual drafted essay/article/writeup/explanation body and injects that body into `write_file.content`, rather than storing conversational wrapper text.
 - Internal `<voxera_control>` transport blocks are stripped before user-visible rendering and before prose preview-body extraction, so hidden control payloads stay internal even when a model leaks them into the raw reply.
 - Writing replies are excluded from conversational-control suppression, so the user sees the generated prose in chat while the same content becomes the preview body.
-- When an active prose preview exists, follow-up refinements like `make it more formal` or `rewrite that as ...` refresh the preview content with the new prose reply rather than leaving stale draft content behind.
+- When an active governed writing preview exists, follow-up refinements like `make it more formal` or `rewrite that as ...` refresh the preview content with the new prose reply rather than leaving stale draft content behind.
+- Save-as / rename refinements preserve the exact requested filename in `write_file.path`; the renamed path survives through submit rather than snapping back to the default generated filename.
 
 **Recent assistant-content resolver (`vera/handoff.py`, `vera/service.py`):**
 - Save-by-reference resolution now recognizes `explanation`/`previous explanation` phrasing alongside summary/answer/response terms.
-- Recent-content selection filters out trivial courtesy assistant turns, keeping the latest substantial explanation/saveable prose artifact resolvable across lightweight conversational interruptions.
+- Recent-content selection filters out trivial courtesy assistant turns (including extended variants like `You're very welcome ... if you'd like ...`), keeping the latest substantial explanation/saveable prose artifact resolvable across lightweight conversational interruptions.
 - Explanation text produced after a code draft is treated as a saveable conversational text artifact and can be renamed/saved through the same governed preview path.
 
 **Investigation/web-routing boundary:**

@@ -361,12 +361,36 @@ def _looks_like_trivial_courtesy_assistant_message(text: str) -> bool:
     lowered = text.strip().lower()
     if not lowered:
         return True
-    return bool(
-        re.fullmatch(
-            r"(?:you(?:'| a)?re\s+welcome|no\s+problem|anytime|glad\s+to\s+help|happy\s+to\s+help)[.! ]*",
-            lowered,
-        )
+    normalized = re.sub(r"\s+", " ", lowered.replace("—", "-")).strip()
+    courtesy_prefixes = (
+        "you're welcome",
+        "youre welcome",
+        "you're very welcome",
+        "youre very welcome",
+        "no problem",
+        "anytime",
+        "of course",
+        "sure thing",
+        "glad to help",
+        "happy to help",
+        "my pleasure",
     )
+    if any(normalized.startswith(prefix) for prefix in courtesy_prefixes):
+        if len(normalized.split()) <= 24:
+            return True
+        if any(
+            phrase in normalized
+            for phrase in (
+                "if you'd like",
+                "if you would like",
+                "let me know",
+                "feel free",
+                "i can save that",
+                "i can also",
+            )
+        ):
+            return True
+    return False
 
 
 def _select_recent_assistant_content(
@@ -1155,8 +1179,12 @@ def _draft_revision_from_active_preview(
                     rewritten_path = str(Path(base_path).with_name(new_name))
                 else:
                     rewritten_path = f"~/VoxeraOS/notes/{new_name}"
+                writing_kind = _writing_kind_from_preview_goal(current_goal)
+                goal = f"write a file called {new_name} with provided content"
+                if writing_kind is not None:
+                    goal = f"draft a {writing_kind} as {new_name}"
                 return {
-                    "goal": f"write a file called {new_name} with provided content",
+                    "goal": goal,
                     "write_file": {
                         "path": rewritten_path,
                         "content": str(write_file.get("content") or ""),
@@ -1220,6 +1248,16 @@ def _draft_revision_from_active_preview(
                 "write_file": {"path": path, "content": refined_content, "mode": mode},
             }
 
+    return None
+
+
+def _writing_kind_from_preview_goal(goal: str) -> str | None:
+    match = re.match(r"\s*draft\s+a\s+([a-z]+)\s+as\s+", goal, re.IGNORECASE)
+    if not match:
+        return None
+    kind = (match.group(1) or "").strip().lower()
+    if kind in {"essay", "article", "writeup", "explanation"}:
+        return kind
     return None
 
 
