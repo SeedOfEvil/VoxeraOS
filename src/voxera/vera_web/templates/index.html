@@ -47,6 +47,34 @@
 
     {% if error %}<div class="error" role="alert">{{error}}</div>{% endif %}
 
+    <template id="empty-guidance-template">
+      <div class="empty">
+        <div class="empty-eyebrow">Starter prompts</div>
+        <div class="empty-title">{{main_screen_guidance.title}}</div>
+        <p class="empty-summary">{{main_screen_guidance.summary}}</p>
+        <div class="empty-preview-note">
+          <strong>Preview → submit:</strong> {{main_screen_guidance.preview_hint}}
+        </div>
+        <div class="guidance-groups" aria-label="Vera example prompts">
+          {% for group in main_screen_guidance.groups %}
+            <section class="guidance-group" aria-labelledby="group-{{loop.index}}">
+              <h2 class="guidance-group-title" id="group-{{loop.index}}">{{group.label}}</h2>
+              <div class="guidance-chip-list">
+                {% for example in group.examples %}
+                  <button
+                    class="guidance-chip"
+                    type="button"
+                    data-prompt="{{example}}"
+                    aria-label="Use example prompt: {{example}}"
+                  >{{example}}</button>
+                {% endfor %}
+              </div>
+            </section>
+          {% endfor %}
+        </div>
+      </div>
+    </template>
+
     <!-- Conversation thread -->
     <section class="thread" id="thread" aria-label="Conversation" data-turn-count="{{ turns|length if turns else 0 }}">
       {% if turns and turns|length > 0 %}
@@ -58,8 +86,29 @@
         {% endfor %}
       {% else %}
         <div class="empty">
-          <div class="empty-title">Ask Vera anything</div>
-          <div class="empty-hint">How can I help? Ask about planning, specs, debugging, or draft a VoxeraOS request.<br/>Real execution always goes through the queue with your approval.</div>
+          <div class="empty-eyebrow">Starter prompts</div>
+          <div class="empty-title">{{main_screen_guidance.title}}</div>
+          <p class="empty-summary">{{main_screen_guidance.summary}}</p>
+          <div class="empty-preview-note">
+            <strong>Preview → submit:</strong> {{main_screen_guidance.preview_hint}}
+          </div>
+          <div class="guidance-groups" aria-label="Vera example prompts">
+            {% for group in main_screen_guidance.groups %}
+              <section class="guidance-group" aria-labelledby="inline-group-{{loop.index}}">
+                <h2 class="guidance-group-title" id="inline-group-{{loop.index}}">{{group.label}}</h2>
+                <div class="guidance-chip-list">
+                  {% for example in group.examples %}
+                    <button
+                      class="guidance-chip"
+                      type="button"
+                      data-prompt="{{example}}"
+                      aria-label="Use example prompt: {{example}}"
+                    >{{example}}</button>
+                  {% endfor %}
+                </div>
+              </section>
+            {% endfor %}
+          </div>
         </div>
       {% endif %}
     </section>
@@ -117,6 +166,27 @@
     const form = document.getElementById('chat-form');
     const sendBtn = document.getElementById('send-btn');
     const textarea = document.getElementById('message-input');
+    const emptyGuidanceTemplate = document.getElementById('empty-guidance-template');
+
+    const renderEmptyGuidance = () => {
+      if (!thread || !emptyGuidanceTemplate) return;
+      thread.innerHTML = emptyGuidanceTemplate.innerHTML;
+      bindGuidanceChips();
+    };
+
+    const bindGuidanceChips = () => {
+      const chips = document.querySelectorAll('.guidance-chip');
+      chips.forEach((chip) => {
+        chip.addEventListener('click', () => {
+          if (!textarea) return;
+          const prompt = chip.dataset.prompt || '';
+          textarea.value = prompt;
+          textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        });
+      });
+    };
 
     if (form && sendBtn && textarea) {
       let isSubmitting = false;
@@ -204,12 +274,7 @@
 
     const renderTurns = (turns) => {
       if (!Array.isArray(turns) || turns.length === 0) {
-        thread.innerHTML = `
-          <div class="empty">
-            <div class="empty-title">Ask Vera anything</div>
-            <div class="empty-hint">How can I help? Ask about planning, specs, debugging, or draft a VoxeraOS request.<br/>Real execution always goes through the queue with your approval.</div>
-          </div>
-        `;
+        renderEmptyGuidance();
         return;
       }
       const html = turns.map((turn) => {
@@ -224,6 +289,8 @@
       }).join('');
       thread.innerHTML = html;
     };
+
+    bindGuidanceChips();
 
     const pollForTurnUpdates = async () => {
       if (!sessionId) return;
