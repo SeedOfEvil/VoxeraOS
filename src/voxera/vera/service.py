@@ -17,7 +17,13 @@ from ..config import load_app_config
 from ..core.queue_inspect import lookup_job
 from ..core.queue_result_consumers import resolve_structured_execution
 from .brave_search import BraveSearchClient, WebSearchResult
-from .handoff import drafting_guidance, maybe_draft_job_payload, normalize_preview_payload
+from .handoff import (
+    build_saveable_assistant_artifact,
+    collect_recent_saveable_assistant_artifacts,
+    drafting_guidance,
+    maybe_draft_job_payload,
+    normalize_preview_payload,
+)
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 from .result_surfacing import extract_value_forward_text
 
@@ -26,6 +32,7 @@ _SESSION_ID_LENGTH = 24
 _MAX_LINKED_JOB_TRACK = 64
 _MAX_LINKED_COMPLETIONS = 64
 _MAX_LINKED_NOTIFICATIONS = 128
+_MAX_SAVEABLE_ASSISTANT_ARTIFACTS = 8
 
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
@@ -456,11 +463,28 @@ def append_session_turn(
         "last_enrichment",
         "last_investigation",
         "last_derived_investigation_output",
+        "recent_saveable_assistant_artifacts",
         "linked_queue_jobs",
     ):
         preserved = previous.get(preserved_key)
-        if isinstance(preserved, dict):
+        if isinstance(preserved, dict) or (
+            preserved_key == "recent_saveable_assistant_artifacts" and isinstance(preserved, list)
+        ):
             payload[preserved_key] = preserved
+    if role.strip().lower() == "assistant":
+        artifact = build_saveable_assistant_artifact(text)
+        if artifact is not None:
+            current_artifacts = read_session_saveable_assistant_artifacts(queue_root, session_id)
+            deduped = [
+                item
+                for item in current_artifacts
+                if item.get("content") != artifact["content"]
+                or item.get("artifact_type") != artifact["artifact_type"]
+            ]
+            deduped.append(artifact)
+            payload["recent_saveable_assistant_artifacts"] = deduped[
+                -_MAX_SAVEABLE_ASSISTANT_ARTIFACTS:
+            ]
     _write_session_payload(queue_root, session_id, payload)
     return turns
 
@@ -586,6 +610,41 @@ def write_session_derived_investigation_output(
     _write_session_payload(queue_root, session_id, payload)
 
 
+def read_session_saveable_assistant_artifacts(
+    queue_root: Path, session_id: str
+) -> list[dict[str, str]]:
+    payload = _read_session_payload(queue_root, session_id)
+    raw_artifacts = payload.get("recent_saveable_assistant_artifacts")
+    if not isinstance(raw_artifacts, list):
+        return []
+    artifacts: list[dict[str, str]] = []
+    for item in raw_artifacts:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        artifact_type = str(item.get("artifact_type") or "").strip()
+        if not content or not artifact_type:
+            continue
+        artifacts.append({"content": content, "artifact_type": artifact_type})
+    return artifacts[-_MAX_SAVEABLE_ASSISTANT_ARTIFACTS:]
+
+
+def _write_session_saveable_assistant_artifacts(
+    queue_root: Path, session_id: str, artifacts: list[dict[str, str]]
+) -> None:
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    if artifacts:
+        payload["recent_saveable_assistant_artifacts"] = artifacts[
+            -_MAX_SAVEABLE_ASSISTANT_ARTIFACTS:
+        ]
+    else:
+        payload.pop("recent_saveable_assistant_artifacts", None)
+    _write_session_payload(queue_root, session_id, payload)
+
+
 async def run_web_enrichment(*, user_message: str) -> dict[str, Any] | None:
     """Perform a read-only web search and return structured enrichment suitable for preview authoring.
 
@@ -638,6 +697,7 @@ def session_debug_info(
     enrichment = read_session_enrichment(queue_root, session_id)
     investigation = read_session_investigation(queue_root, session_id)
     derived_output = read_session_derived_investigation_output(queue_root, session_id)
+    saveable_artifacts = read_session_saveable_assistant_artifacts(queue_root, session_id)
     handoff = read_session_handoff_state(queue_root, session_id) or {}
     return {
         "dev_mode": True,
@@ -655,6 +715,7 @@ def session_debug_info(
         if isinstance(investigation, dict)
         else 0,
         "derived_investigation_output_available": isinstance(derived_output, dict),
+        "saveable_assistant_artifact_count": len(saveable_artifacts),
         "handoff_attempted": handoff.get("attempted") is True,
         "handoff_status": str(handoff.get("status") or "none"),
         "handoff_queue_path": str(handoff.get("queue_path") or str(queue_root)),
@@ -1503,6 +1564,7 @@ async def generate_preview_builder_update(
     active_preview: dict[str, Any] | None,
     enrichment_context: dict[str, Any] | None = None,
     investigation_context: dict[str, Any] | None = None,
+    recent_assistant_artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     cfg = load_app_config()
     api_key_ref = None
@@ -1539,6 +1601,11 @@ async def generate_preview_builder_update(
         enrichment_context=enrichment_context,
         investigation_context=investigation_context,
         recent_assistant_messages=recent_assistant_messages,
+        recent_assistant_artifacts=(
+            recent_assistant_artifacts
+            if recent_assistant_artifacts is not None
+            else collect_recent_saveable_assistant_artifacts(recent_assistant_messages)
+        ),
     )
 
     if not attempts:

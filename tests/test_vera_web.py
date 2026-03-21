@@ -3349,6 +3349,71 @@ def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, mo
     )
 
 
+def test_weather_answer_then_save_that_to_note_creates_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "weather" in lowered:
+            return {
+                "answer": (
+                    "The weather in Seattle today is cool and rainy, around 52°F with steady light rain."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "What's the weather in Seattle today?"},
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "save that to a note called weather.md"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/weather.md"
+    assert "seattle today" in preview["write_file"]["content"].lower()
+    assert "light rain" in preview["write_file"]["content"].lower()
+
+
+def test_concise_information_answer_then_save_it_creates_note_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "capital of france" in lowered:
+            return {"answer": "The capital of France is Paris.", "status": "ok:test"}
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "What is the capital of France?"})
+    client.post("/chat", data={"session_id": sid, "message": "save it"})
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["goal"].startswith("write a file called note-")
+    assert preview["write_file"]["path"].startswith("~/VoxeraOS/notes/note-")
+    assert preview["write_file"]["content"] == "The capital of France is Paris."
+
+
 def test_previous_explanation_survives_trivial_thanks_turn_for_save_reference(
     tmp_path, monkeypatch
 ):
