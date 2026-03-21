@@ -1,3 +1,12 @@
+## 2026-03-21 — PR #TBD — fix(vera): stop weather hallucination and add quick live weather flow
+
+- Added a dedicated Vera quick-weather lane backed by Open-Meteo geocoding + forecast data so ordinary weather/current-condition prompts no longer rely on freeform conversational generation for live facts.
+- Hardened truthfulness behavior: if a location is missing Vera asks for it, and if the live lookup fails Vera explicitly refuses to guess current temperatures, conditions, or highs/lows.
+- Added bounded weather session context so natural follow-ups like `hourly`, `7 day`, `weekly`, and `weekend` continue the same conversational weather flow instead of falling back to generic investigation result dumps.
+- Preserved explicit investigation behavior for weather only when the user explicitly asks to search/browse/investigate, keeping generic multi-result result dumps available but no longer the default weather experience.
+- Kept governed saveability intact: meaningful weather answers still flow through the recent saveable assistant artifact model, so `save that to a note` continues to produce preview-only write payloads.
+- Added focused Vera web regressions for missing-location prompting, concise live weather answers, no-guess failure behavior, natural follow-up routing, explicit weather investigation fallback, and pending weather-offer acceptance.
+
 ## 2026-03-21 — PR #TBD — fix(vera): unify saveable assistant artifact resolution for governed note creation
 
 - Added a bounded "recent saveable assistant artifact" layer in `src/voxera/vera/handoff.py` that classifies meaningful assistant-displayed content by artifact type (`info`, `explanation`, `summary`, `comparison`, `article`/`essay`/`writeup`, `code_explanation`) and filters out courtesy, queue/preview boilerplate, internal control text, and low-information replies.

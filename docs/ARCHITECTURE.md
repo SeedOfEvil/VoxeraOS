@@ -1163,10 +1163,14 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Conversational explanatory/teaching prompts remain in the normal Vera answer lane by default; they are not automatically treated as web investigation requests.
 - Bounded prose-drafting prompts (essay/article/writeup/explanation/rewrite/formalize/expand) compile into governed `write_file` previews backed by assistant-authored prose.
 - Read-only Brave investigation routing is reserved for explicit search/investigation/current-information intent (for example `search the web`, `look up`, `find the latest`, `latest official docs`).
+- Ordinary weather/current-condition questions use a dedicated live quick-weather lane first; they do not fall through to freeform conversational guessing.
+- The quick-weather lane is truthful-by-construction: if location is missing Vera asks for it, if lookup succeeds Vera returns a concise synthesized weather answer, and if lookup fails Vera refuses to invent live conditions.
+- Generic multi-result investigation dumps are not the default weather UX; explicit browse/search/investigation phrasing is required to enter the generic web-investigation lane for weather.
 - Ordinary compare/explain prompts stay conversational unless explicit search/latest/current/web intent is present.
 - Because save-by-reference uses session transcript content, this path depends on a real assistant-authored answer existing in the active session first.
 - Preview state is persisted per session (`pending_job_preview`) and is independent from rolling chat turn limits.
 - Session state also keeps a bounded recent-saveable-assistant-artifact list so meaningful assistant-displayed content can be saved naturally without introducing open-ended memory or cross-session recall.
+- Session state now also carries bounded weather context so short follow-ups like `hourly`, `7 day`, or `weekend` can continue the same weather flow naturally without opening a new generic investigation.
 - The session keeps exactly one active preview draft; follow-up revisions replace that draft, while lightweight acknowledgements leave it unchanged.
 - Hidden compiler/deterministic fallback prioritize semantic active-preview refinement interpretation (content/path/mode, pronouns) while preserving strict preview-only JSON mutation contracts and fail-closed behavior.
 - Explicit handoff submits only the latest active draft, and successful submit clears the draft after queue confirmation.

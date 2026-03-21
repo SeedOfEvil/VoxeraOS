@@ -2,6 +2,8 @@
 
 Web investigation is a read-only informational lane.
 
+Weather/current-condition questions have a separate quick live-weather path and should not default to web-investigation result dumps unless the user explicitly asks to search/browse/investigate sources or the weather lookup path fails and needs fallback handling.
+
 ## Allowed Scope
 - informational queries
 - query normalization for clearer retrieval

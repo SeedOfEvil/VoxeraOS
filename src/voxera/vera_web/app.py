@@ -62,6 +62,7 @@ from ..vera.service import (
     _CODE_DRAFT_HINT,
     _WRITING_DRAFT_HINT,
     _is_informational_web_query,
+    _weather_context_has_pending_lookup,
     append_session_turn,
     clear_session_turns,
     generate_preview_builder_update,
@@ -77,6 +78,7 @@ from ..vera.service import (
     read_session_saveable_assistant_artifacts,
     read_session_turns,
     read_session_updated_at_ms,
+    read_session_weather_context,
     register_session_linked_job,
     run_web_enrichment,
     session_debug_info,
@@ -85,6 +87,7 @@ from ..vera.service import (
     write_session_handoff_state,
     write_session_investigation,
     write_session_preview,
+    write_session_weather_context,
 )
 
 app = FastAPI(title="Vera v0", version="0")
@@ -429,10 +432,23 @@ async def _generate_vera_reply_with_optional_draft_hints(
     user_message: str,
     code_draft: bool,
     writing_draft: bool,
+    weather_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
     signature = inspect.signature(generate_vera_reply)
     parameters = signature.parameters
-    if "code_draft" in parameters or "writing_draft" in parameters:
+    if (
+        "code_draft" in parameters
+        or "writing_draft" in parameters
+        or "weather_context" in parameters
+    ):
+        if "weather_context" in parameters:
+            return await generate_vera_reply(
+                turns=turns,
+                user_message=user_message,
+                code_draft=code_draft,
+                writing_draft=writing_draft,
+                weather_context=weather_context,
+            )
         return await generate_vera_reply(
             turns=turns,
             user_message=user_message,
@@ -682,7 +698,31 @@ async def chat(request: Request):
 
     session_investigation = read_session_investigation(root, active_session)
     session_derived_output = read_session_derived_investigation_output(root, active_session)
+    session_weather_context = read_session_weather_context(root, active_session)
     is_explicit_writing_transform = is_writing_draft_request(message)
+
+    if (
+        _is_natural_confirmation_phrase(message)
+        and pending_preview is None
+        and _weather_context_has_pending_lookup(session_weather_context)
+    ):
+        reply = await _generate_vera_reply_with_optional_draft_hints(
+            turns=turns,
+            user_message=message,
+            code_draft=False,
+            writing_draft=False,
+            weather_context=session_weather_context,
+        )
+        reply_answer = str(reply.get("answer") or "")
+        weather_payload = reply.get("weather_context") if isinstance(reply, dict) else None
+        if isinstance(weather_payload, dict):
+            write_session_weather_context(root, active_session, weather_payload)
+        append_session_turn(root, active_session, role="assistant", text=reply_answer)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status=str(reply.get("status") or "ok:weather_current"),
+        )
 
     should_attempt_derived_save = not is_explicit_writing_transform and (
         is_investigation_derived_save_request(message)
@@ -956,10 +996,12 @@ async def chat(request: Request):
         user_message=message,
         code_draft=is_code_draft_turn,
         writing_draft=is_writing_draft_turn,
+        weather_context=session_weather_context,
     )
     reply_answer = str(reply.get("answer") or "")
     reply_status = str(reply.get("status") or "")
     investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
+    weather_payload = reply.get("weather_context") if isinstance(reply, dict) else None
     if isinstance(investigation_payload, dict):
         write_session_investigation(root, active_session, investigation_payload)
         write_session_derived_investigation_output(root, active_session, None)
@@ -971,6 +1013,12 @@ async def chat(request: Request):
         )
         if expansion is not None:
             write_session_derived_investigation_output(root, active_session, expansion)
+    if isinstance(weather_payload, dict):
+        write_session_weather_context(root, active_session, weather_payload)
+    elif not reply_status.startswith("ok:weather") and session_weather_context is not None:
+        write_session_weather_context(
+            root, active_session, {**session_weather_context, "followup_active": False}
+        )
 
     # Code draft post-processing: after the LLM reply we know the actual code
     # content.  Extract it from any fenced block and inject it into the preview
