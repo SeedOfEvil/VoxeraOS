@@ -1163,8 +1163,8 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Conversational explanatory/teaching prompts remain in the normal Vera answer lane by default; they are not automatically treated as web investigation requests.
 - Bounded prose-drafting prompts (essay/article/writeup/explanation/rewrite/formalize/expand) compile into governed `write_file` previews backed by assistant-authored prose.
 - Read-only Brave investigation routing is reserved for explicit search/investigation/current-information intent (for example `search the web`, `look up`, `find the latest`, `latest official docs`).
-- Ordinary weather/current-condition questions use a dedicated live quick-weather lane first; they do not fall through to freeform conversational guessing.
-- The quick-weather lane is truthful-by-construction: if location is missing Vera asks for it, if lookup succeeds Vera returns a concise synthesized weather answer, and if lookup fails Vera refuses to invent live conditions.
+- Ordinary weather/current-condition questions use a dedicated structured quick-weather lane first; they do not fall through to freeform conversational guessing.
+- The quick-weather lane is truthful-by-construction: if location is missing Vera asks for it, if a structured provider lookup succeeds Vera returns a concise synthesized weather answer, and if lookup fails or source evidence is too weak Vera refuses to invent live conditions.
 - Generic multi-result investigation dumps are not the default weather UX; explicit browse/search/investigation phrasing is required to enter the generic web-investigation lane for weather.
 - Ordinary compare/explain prompts stay conversational unless explicit search/latest/current/web intent is present.
 - Because save-by-reference uses session transcript content, this path depends on a real assistant-authored answer existing in the active session first.

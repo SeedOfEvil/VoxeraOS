@@ -7,6 +7,7 @@ import pytest
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import service as vera_service
 from voxera.vera.brave_search import BraveSearchClient, WebSearchResult, _parse_brave_web_results
+from voxera.vera.weather import FORECAST_URL, GEOCODING_URL, OpenMeteoWeatherClient
 
 
 class _DummyResponse:
@@ -192,6 +193,73 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
 
     assert result["status"] == "web_investigation_unconfigured"
     assert "not configured" in result["answer"]
+
+
+def test_open_meteo_weather_client_returns_structured_weather_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _WeatherAsyncClient:
+        def __init__(self, *, timeout: float):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url, *, params):
+            if url == GEOCODING_URL:
+                assert params["name"] == "Calgary AB"
+                return _DummyResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "Calgary",
+                                "admin1": "Alberta",
+                                "country": "Canada",
+                                "latitude": 51.0447,
+                                "longitude": -114.0719,
+                                "timezone": "America/Edmonton",
+                            }
+                        ]
+                    }
+                )
+            assert url == FORECAST_URL
+            return _DummyResponse(
+                {
+                    "current": {
+                        "temperature_2m": 3.2,
+                        "apparent_temperature": 1.1,
+                        "weather_code": 3,
+                        "wind_speed_10m": 16.0,
+                    },
+                    "hourly": {
+                        "time": ["2026-03-21T12:00", "2026-03-21T13:00"],
+                        "temperature_2m": [3.0, 4.0],
+                        "weather_code": [3, 3],
+                    },
+                    "daily": {
+                        "time": ["2026-03-21", "2026-03-22"],
+                        "temperature_2m_max": [6.1, 7.0],
+                        "temperature_2m_min": [-4.2, -2.0],
+                        "weather_code": [3, 2],
+                    },
+                }
+            )
+
+    monkeypatch.setattr("voxera.vera.weather.httpx.AsyncClient", _WeatherAsyncClient)
+
+    client = OpenMeteoWeatherClient()
+    location = asyncio.run(client.resolve_location("Calgary AB"))
+    assert location is not None
+    snapshot = asyncio.run(client.fetch_snapshot(location))
+
+    assert snapshot.current_temperature_c == pytest.approx(3.2)
+    assert snapshot.current_condition == "cloudy skies"
+    assert snapshot.today_high_c == pytest.approx(6.1)
+    assert snapshot.today_low_c == pytest.approx(-4.2)
+    assert snapshot.to_session_payload()["source"] == "Open-Meteo"
 
 
 @pytest.mark.parametrize(

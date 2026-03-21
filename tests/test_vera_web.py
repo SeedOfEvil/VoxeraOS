@@ -160,6 +160,16 @@ def _sample_weather_snapshot(*, query: str = "Calgary AB") -> WeatherSnapshot:
     )
 
 
+def _brave_enabled_config(max_results: int = 5) -> AppConfig:
+    return AppConfig(
+        web_investigation=WebInvestigationConfig(
+            api_key_ref="test-brave",
+            env_api_key_var="BRAVE_API_KEY",
+            max_results=max_results,
+        )
+    )
+
+
 def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -3595,10 +3605,35 @@ def test_weather_lookup_failure_refuses_to_guess_live_conditions(tmp_path, monke
     )
 
     assert res.status_code == 200
-    assert "I couldn’t complete a live weather lookup, so I won’t guess" in res.text
+    assert "I couldn’t complete a structured live weather lookup, so I won’t guess" in res.text
     assert "Weather service is temporarily unavailable." in res.text
     assert "It’s currently" not in res.text
     assert "Today’s high is" not in res.text
+
+
+def test_weather_lookup_still_works_without_brave_web_investigation_config(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    monkeypatch.setattr(vera_service, "load_app_config", lambda: AppConfig(web_investigation=None))
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return _sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "What's the weather in Calgary AB right now?"},
+    )
+
+    assert res.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in res.text
+    assert "Want the hourly, 7-day, or weekend outlook?" in res.text
 
 
 def test_weather_followup_hourly_routes_naturally(tmp_path, monkeypatch):
@@ -3632,9 +3667,7 @@ def test_explicit_weather_investigation_still_uses_generic_result_list_flow(tmp_
     monkeypatch.setattr(
         vera_service,
         "load_app_config",
-        lambda: AppConfig(
-            web_investigation=WebInvestigationConfig(api_key_ref="test-brave", max_results=3)
-        ),
+        lambda: _brave_enabled_config(max_results=3),
     )
 
     class _FakeBraveClient:

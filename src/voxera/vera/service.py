@@ -304,11 +304,16 @@ def _weather_context_is_waiting_for_location(weather_context: dict[str, Any] | N
     return isinstance(weather_context, dict) and weather_context.get("awaiting_location") is True
 
 
-async def _lookup_live_weather(location_query: str) -> WeatherSnapshot:
+async def _lookup_live_weather(
+    location_query: str, *, followup_kind: str | None = None
+) -> WeatherSnapshot:
+    _ = followup_kind
     client = OpenMeteoWeatherClient()
     resolved = await client.resolve_location(location_query)
     if resolved is None:
-        raise RuntimeError("I couldn’t resolve that place into a live weather location.")
+        raise RuntimeError(
+            "I couldn’t resolve that place into a structured weather location. Please give me a clearer location."
+        )
     return await client.fetch_snapshot(resolved)
 
 
@@ -1897,6 +1902,7 @@ async def generate_vera_reply(
     weather_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cfg = load_app_config()
+    web_cfg = cfg.web_investigation
 
     explicit_weather_investigation = _is_weather_investigation_request(user_message)
     weather_followup_kind = _extract_weather_followup_kind(user_message)
@@ -1932,6 +1938,34 @@ async def generate_vera_reply(
     ):
         try:
             if should_use_weather_followup and isinstance(weather_context, dict):
+                has_followup_data = (
+                    weather_followup_kind == "hourly" and bool(weather_context.get("hourly"))
+                ) or (
+                    weather_followup_kind in {"7_day", "14_day", "15_day", "weekend"}
+                    and bool(weather_context.get("daily"))
+                )
+                if not has_followup_data:
+                    location_query = str(weather_context.get("location_query") or "").strip()
+                    if not location_query:
+                        raise RuntimeError(
+                            "I lost the active weather location, so please tell me which place to check again."
+                        )
+                    snapshot = await _lookup_live_weather(
+                        location_query,
+                        followup_kind=weather_followup_kind,
+                    )
+                    refreshed_weather = snapshot.to_session_payload()
+                    refreshed_weather["awaiting_location"] = False
+                    refreshed_weather["pending_lookup"] = {"location_query": location_query}
+                    refreshed_weather["retrieved_at_ms"] = int(time.time() * 1000)
+                    return {
+                        "answer": _weather_answer_for_followup(
+                            refreshed_weather,
+                            followup_kind=weather_followup_kind or "7_day",
+                        ),
+                        "status": f"ok:weather_{weather_followup_kind}",
+                        "weather_context": refreshed_weather,
+                    }
                 return {
                     "answer": _weather_answer_for_followup(
                         weather_context,
@@ -1974,7 +2008,7 @@ async def generate_vera_reply(
         except RuntimeError as exc:
             return {
                 "answer": (
-                    "I couldn’t complete a live weather lookup, so I won’t guess at current conditions. "
+                    "I couldn’t complete a structured live weather lookup, so I won’t guess at current conditions. "
                     f"{exc}"
                 ),
                 "status": "weather_lookup_failed",
@@ -1986,7 +2020,6 @@ async def generate_vera_reply(
                 },
             }
 
-    web_cfg = cfg.web_investigation
     informational_web = _is_informational_web_query(user_message)
     if informational_web and web_cfg is None:
         return {
