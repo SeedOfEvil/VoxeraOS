@@ -7,6 +7,7 @@ import pytest
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import service as vera_service
 from voxera.vera.brave_search import BraveSearchClient, WebSearchResult, _parse_brave_web_results
+from voxera.vera.weather import BraveWeatherClient
 
 
 class _DummyResponse:
@@ -192,6 +193,48 @@ def test_vera_web_lane_without_key_is_honest(monkeypatch: pytest.MonkeyPatch) ->
 
     assert result["status"] == "web_investigation_unconfigured"
     assert "not configured" in result["answer"]
+
+
+def test_brave_weather_client_synthesizes_current_weather_from_brave_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_search(self, *, query: str, count: int = 5):
+        assert query == "current weather in Calgary AB"
+        assert count >= 3
+        return [
+            WebSearchResult(
+                title="Calgary Weather Forecasts",
+                url="https://www.theweathernetwork.com/ca/weather/alberta/calgary",
+                description=(
+                    "Current conditions in Calgary AB are 3°C and cloudy skies. "
+                    "Today high 6°C low -4°C."
+                ),
+            )
+        ]
+
+    async def _fake_fetch(self, url: str):
+        assert "calgary" in url
+        return (
+            "<html><body>Current conditions 3°C cloudy skies. Today high 6°C low -4°C.</body></html>",
+            "Current conditions 3°C cloudy skies. Today high 6°C low -4°C.",
+        )
+
+    monkeypatch.setattr(BraveSearchClient, "search", _fake_search)
+    monkeypatch.setattr(BraveWeatherClient, "_fetch_weather_page_content", _fake_fetch)
+
+    snapshot = asyncio.run(
+        BraveWeatherClient(
+            brave_client=BraveSearchClient(
+                api_key_ref="BRAVE_API_KEY", env_api_key_var="BRAVE_API_KEY"
+            )
+        ).lookup(location_query="Calgary AB")
+    )
+
+    assert snapshot.current_temperature_c == pytest.approx(3.0)
+    assert snapshot.current_condition == "cloudy skies"
+    assert snapshot.today_high_c == pytest.approx(6.0)
+    assert snapshot.today_low_c == pytest.approx(-4.0)
+    assert snapshot.source == "Brave Search API"
 
 
 @pytest.mark.parametrize(
