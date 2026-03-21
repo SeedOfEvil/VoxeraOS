@@ -1,3 +1,12 @@
+## 2026-03-21 — PR #TBD — fix(vera): route affirmative acceptance of pending investigation offers
+
+- Added bounded Vera session `pending_offer` state in `src/voxera/vera/service.py` so explicit investigation offers can be stored with expiration and reused deterministically inside the active session only.
+- Hardened live/current-info truthfulness for weather-like flows: Vera now asks for the missing location when needed and refuses to conversationally invent current conditions; with a location present it offers a real Web Investigator lookup instead of hallucinating.
+- Added pending-offer execution in `src/voxera/vera_web/app.py`: short affirmative follow-ups (`yes`, `go ahead`, `do it`, etc.) now execute the still-current pending investigation before preview/save/submit routing can claim a missing preview.
+- Refactored read-only web lookup execution behind reusable helpers so direct informational searches and accepted pending investigation offers both use the same Brave-backed investigation path and structured result storage.
+- Added focused Vera web regressions covering the weather → location → offered lookup truthfulness path plus `yes` acceptance executing the investigation without falling into the old missing-preview failure.
+- Updated README, architecture notes, and web-investigation prompt guidance to document the live-data truthfulness rule plus bounded session-scoped pending-offer acceptance behavior.
+
 ## 2026-03-21 — PR #TBD — fix(vera): unify saveable assistant artifact resolution for governed note creation
 
 - Added a bounded "recent saveable assistant artifact" layer in `src/voxera/vera/handoff.py` that classifies meaningful assistant-displayed content by artifact type (`info`, `explanation`, `summary`, `comparison`, `article`/`essay`/`writeup`, `code_explanation`) and filters out courtesy, queue/preview boilerplate, internal control text, and low-information replies.

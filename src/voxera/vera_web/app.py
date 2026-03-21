@@ -64,6 +64,7 @@ from ..vera.service import (
     _is_informational_web_query,
     append_session_turn,
     clear_session_turns,
+    execute_pending_offer,
     generate_preview_builder_update,
     generate_vera_reply,
     ingest_linked_job_completions,
@@ -73,6 +74,7 @@ from ..vera.service import (
     read_session_enrichment,
     read_session_handoff_state,
     read_session_investigation,
+    read_session_pending_offer,
     read_session_preview,
     read_session_saveable_assistant_artifacts,
     read_session_turns,
@@ -84,6 +86,7 @@ from ..vera.service import (
     write_session_enrichment,
     write_session_handoff_state,
     write_session_investigation,
+    write_session_pending_offer,
     write_session_preview,
 )
 
@@ -198,10 +201,26 @@ def _is_natural_confirmation_phrase(message: str) -> bool:
         return False
     return bool(
         re.fullmatch(
-            r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|go\s+ahead|do\s+it|send\s+it|submit\s+it|hand\s+it\s+off)[.!?]*",
+            r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|yeah|yep|sure|go\s+ahead|do\s+it|please\s+do|send\s+it|submit\s+it|hand\s+it\s+off)[.!?]*",
             normalized,
         )
     )
+
+
+def _current_pending_offer(root: Path, session_id: str) -> dict[str, object] | None:
+    offer = read_session_pending_offer(root, session_id)
+    if not isinstance(offer, dict):
+        return None
+    turns = read_session_turns(root, session_id)
+    assistant_text = str(offer.get("assistant_text") or "").strip()
+    if not assistant_text:
+        return None
+    for turn in reversed(turns):
+        role = str(turn.get("role") or "").strip().lower()
+        if role != "assistant":
+            continue
+        return offer if str(turn.get("text") or "").strip() == assistant_text else None
+    return None
 
 
 def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] | None) -> bool:
@@ -682,7 +701,24 @@ async def chat(request: Request):
 
     session_investigation = read_session_investigation(root, active_session)
     session_derived_output = read_session_derived_investigation_output(root, active_session)
+    pending_offer = _current_pending_offer(root, active_session)
     is_explicit_writing_transform = is_writing_draft_request(message)
+
+    if pending_offer is not None and _is_natural_confirmation_phrase(message):
+        offer_result = await execute_pending_offer(offer=pending_offer)
+        write_session_pending_offer(root, active_session, None)
+        investigation_payload = offer_result.get("investigation")
+        if isinstance(investigation_payload, dict):
+            write_session_investigation(root, active_session, investigation_payload)
+            write_session_derived_investigation_output(root, active_session, None)
+        assistant_text = str(offer_result.get("answer") or "")
+        status = str(offer_result.get("status") or "pending_offer_executed")
+        append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status=status,
+        )
 
     should_attempt_derived_save = not is_explicit_writing_transform and (
         is_investigation_derived_save_request(message)
@@ -971,6 +1007,7 @@ async def chat(request: Request):
         )
         if expansion is not None:
             write_session_derived_investigation_output(root, active_session, expansion)
+    reply_pending_offer = reply.get("pending_offer") if isinstance(reply, dict) else None
 
     # Code draft post-processing: after the LLM reply we know the actual code
     # content.  Extract it from any fenced block and inject it into the preview
@@ -1174,6 +1211,12 @@ async def chat(request: Request):
     status = "prepared_preview" if builder_payload is not None else reply_status
 
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
+    if isinstance(reply_pending_offer, dict):
+        stored_offer = dict(reply_pending_offer)
+        stored_offer["assistant_text"] = assistant_text
+        write_session_pending_offer(root, active_session, stored_offer)
+    else:
+        write_session_pending_offer(root, active_session, None)
 
     return _render_page(
         session_id=active_session,

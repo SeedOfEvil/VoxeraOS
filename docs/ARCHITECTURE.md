@@ -1140,6 +1140,8 @@ Operational defaults:
 - **Developer tooling:** standalone Vera UI includes developer diagnostics (prompt + session metadata), explicit preview visibility, submit control, and explicit context reset (`POST /clear`).
 - **Authoritative preview semantics (PR #159):** visible preview pane JSON is the active session draft; pane submit always submits that exact draft through the same trusted queue handoff path; successful handoff clears active preview.
 - **Natural approval phrasing:** when an active preview exists, phrases like `use this preview` and `that looks good now use it` map to real handoff of the active draft; when no preview exists they fail closed.
+- **Live-data truthfulness:** weather/current-condition requests do not fabricate live specifics in the conversational lane; Vera either asks for the missing location, performs a real read-only lookup, or explicitly offers that lookup.
+- **Bounded pending-offer state:** the session may hold one active `pending_offer` for an explicitly proposed investigation; short acceptances like `yes`, `go ahead`, or `do it` bind only while that offer is still the latest assistant turn in the active session.
 
 Queue concept (developer framing): the queue is the structured path for real side effects; jobs are submitted into VoxeraOS and moved through lifecycle states with approvals/policy checks and evidence produced in VoxeraOS artifacts. Submission is not execution, and execution is not verification.
 
@@ -1164,9 +1166,11 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Bounded prose-drafting prompts (essay/article/writeup/explanation/rewrite/formalize/expand) compile into governed `write_file` previews backed by assistant-authored prose.
 - Read-only Brave investigation routing is reserved for explicit search/investigation/current-information intent (for example `search the web`, `look up`, `find the latest`, `latest official docs`).
 - Ordinary compare/explain prompts stay conversational unless explicit search/latest/current/web intent is present.
+- Weather/current-condition flows use an additional truthfulness guardrail: if the user is asking for live conditions, Vera must not guess. It asks for the location first when needed, then offers a concrete read-only weather lookup backed by Web Investigator.
 - Because save-by-reference uses session transcript content, this path depends on a real assistant-authored answer existing in the active session first.
 - Preview state is persisted per session (`pending_job_preview`) and is independent from rolling chat turn limits.
 - Session state also keeps a bounded recent-saveable-assistant-artifact list so meaningful assistant-displayed content can be saved naturally without introducing open-ended memory or cross-session recall.
+- Session state also carries an optional bounded `pending_offer` object for explicit investigation offers; preview/save/submit handling must not steal an unambiguous acceptance of that still-current offer.
 - The session keeps exactly one active preview draft; follow-up revisions replace that draft, while lightweight acknowledgements leave it unchanged.
 - Hidden compiler/deterministic fallback prioritize semantic active-preview refinement interpretation (content/path/mode, pronouns) while preserving strict preview-only JSON mutation contracts and fail-closed behavior.
 - Explicit handoff submits only the latest active draft, and successful submit clears the draft after queue confirmation.

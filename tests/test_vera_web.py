@@ -10,9 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from voxera.core.writing_draft_intent import extract_text_draft_from_reply
-from voxera.models import AppConfig
+from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
+from voxera.vera.brave_search import WebSearchResult
 from voxera.vera.handoff import (
     diagnostics_request_refusal,
     drafting_guidance,
@@ -269,6 +270,98 @@ def test_news_query_skips_preview_builder_and_stays_informational(tmp_path, monk
     assert "Global headlines summary" in res.text
     assert vera_service.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
+
+
+def test_weather_followup_location_does_not_hallucinate_live_conditions(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    monkeypatch.setattr(
+        vera_service,
+        "load_app_config",
+        lambda: AppConfig(web_investigation=WebInvestigationConfig(api_key_ref="test-key")),
+    )
+
+    async def _no_preview_builder(**kwargs):
+        _ = kwargs
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_preview_builder)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    ask_res = client.post("/chat", data={"session_id": sid, "message": "What's the weather like?"})
+    ask_turns = vera_service.read_session_turns(queue, sid)
+    location_res = client.post("/chat", data={"session_id": sid, "message": "Calgary AB"})
+
+    assert ask_res.status_code == 200
+    assert "which location should i look up" in ask_turns[-1]["text"].lower()
+    assert location_res.status_code == 200
+    turns = vera_service.read_session_turns(queue, sid)
+    last = turns[-1]["text"].lower()
+    assert "shouldn't guess" in last
+    assert "web investigator" in last
+    assert "calgary ab" in last
+    assert "°" not in last
+    assert "sunny" not in last
+    assert vera_service.read_session_investigation(queue, sid) is None
+    pending_offer = vera_service.read_session_pending_offer(queue, sid)
+    assert pending_offer is not None
+    assert pending_offer["kind"] == "web_investigation"
+    assert pending_offer["query"] == "current weather in Calgary AB"
+
+
+def test_pending_weather_offer_yes_executes_investigation_instead_of_missing_preview(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    monkeypatch.setattr(
+        vera_service,
+        "load_app_config",
+        lambda: AppConfig(web_investigation=WebInvestigationConfig(api_key_ref="test-key")),
+    )
+
+    async def _no_preview_builder(**kwargs):
+        _ = kwargs
+        return None
+
+    async def _fake_search(self, *, query, count=5):
+        _ = (self, count)
+        assert query == "current weather in Calgary AB"
+        return [
+            WebSearchResult(
+                title="Calgary current weather",
+                url="https://weather.example.test/calgary",
+                description="Observed conditions from a real weather source.",
+            )
+        ]
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_preview_builder)
+    monkeypatch.setattr(vera_service.BraveSearchClient, "search", _fake_search)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "What's the weather like?"})
+    client.post("/chat", data={"session_id": sid, "message": "Calgary AB"})
+    yes_res = client.post("/chat", data={"session_id": sid, "message": "yes"})
+
+    assert yes_res.status_code == 200
+    turns = vera_service.read_session_turns(queue, sid)
+    last = turns[-1]["text"].lower()
+    assert "top findings" in last
+    assert "missing preview" not in last
+    assert "prepared preview" not in last
+    investigation = vera_service.read_session_investigation(queue, sid)
+    assert investigation is not None
+    assert investigation["query"] == "current weather in Calgary AB"
+    assert investigation["results"][0]["title"] == "Calgary current weather"
+    assert vera_service.read_session_pending_offer(queue, sid) is None
 
 
 def _sample_investigation_payload() -> dict[str, object]:
@@ -3389,17 +3482,17 @@ def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, mo
     )
 
 
-def test_weather_answer_then_save_that_to_note_creates_preview(tmp_path, monkeypatch):
+def test_weather_explanation_then_save_that_to_note_creates_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
     async def _fake_reply(*, turns, user_message):
         _ = turns
         lowered = user_message.lower()
-        if "weather" in lowered:
+        if "how weather works" in lowered:
             return {
                 "answer": (
-                    "The weather in Seattle today is cool and rainy, around 52°F with steady light rain."
+                    "Weather is the short-term state of the atmosphere, including temperature, wind, and precipitation."
                 ),
                 "status": "ok:test",
             }
@@ -3413,7 +3506,7 @@ def test_weather_answer_then_save_that_to_note_creates_preview(tmp_path, monkeyp
 
     client.post(
         "/chat",
-        data={"session_id": sid, "message": "What's the weather in Seattle today?"},
+        data={"session_id": sid, "message": "Explain how weather works simply."},
     )
     client.post(
         "/chat",
@@ -3423,8 +3516,8 @@ def test_weather_answer_then_save_that_to_note_creates_preview(tmp_path, monkeyp
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/weather.md"
-    assert "seattle today" in preview["write_file"]["content"].lower()
-    assert "light rain" in preview["write_file"]["content"].lower()
+    assert "short-term state of the atmosphere" in preview["write_file"]["content"].lower()
+    assert "temperature" in preview["write_file"]["content"].lower()
 
 
 def test_concise_information_answer_then_save_it_creates_note_preview(tmp_path, monkeypatch):

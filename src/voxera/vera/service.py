@@ -33,10 +33,30 @@ _MAX_LINKED_JOB_TRACK = 64
 _MAX_LINKED_COMPLETIONS = 64
 _MAX_LINKED_NOTIFICATIONS = 128
 _MAX_SAVEABLE_ASSISTANT_ARTIFACTS = 8
+_PENDING_OFFER_TTL_MS = 10 * 60 * 1000
 
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
 PREVIEW_BUILDER_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
+_WEATHER_KEYWORDS = (
+    "weather",
+    "temperature",
+    "forecast",
+    "conditions",
+    "humid",
+    "humidity",
+    "rain",
+    "snow",
+    "wind chill",
+)
+_CURRENT_INFO_HINT_RE = re.compile(
+    r"\b(now|right now|today|current|currently|live|outside)\b", re.IGNORECASE
+)
+_AFFIRMATIVE_REPLY_RE = re.compile(
+    r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|yeah|yep|sure|go\s+ahead|do\s+it|please\s+do)[.!?]*",
+    re.IGNORECASE,
+)
+_QUESTION_ONLY_RE = re.compile(r"[?!.,\s]+")
 
 
 class HiddenCompilerDecision:
@@ -377,6 +397,66 @@ def _normalize_web_query(user_message: str) -> str:
     return query or user_message.strip()
 
 
+def _is_affirmative_acceptance(message: str) -> bool:
+    normalized = message.strip().lower()
+    if not normalized:
+        return False
+    return bool(_AFFIRMATIVE_REPLY_RE.fullmatch(normalized))
+
+
+def _looks_like_weather_query(message: str) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    return any(keyword in lowered for keyword in _WEATHER_KEYWORDS)
+
+
+def _assistant_requested_weather_location(turns: list[dict[str, str]]) -> bool:
+    for turn in reversed(turns[-2:]):
+        if str(turn.get("role") or "").strip().lower() != "assistant":
+            continue
+        text = str(turn.get("text") or "").strip().lower()
+        if "weather" in text and "location" in text:
+            return True
+    return False
+
+
+def _extract_weather_location(*, message: str, turns: list[dict[str, str]]) -> str | None:
+    raw = re.sub(r"\s+", " ", message.strip())
+    if not raw:
+        return None
+
+    if _looks_like_weather_query(raw):
+        for pattern in (
+            r"\b(?:in|for|at)\s+(.+?)(?:\s+(?:today|right now|now|currently|please))?[?.!]*$",
+            r"\b(?:weather|forecast|temperature|conditions)\s+(?:for|in|at)\s+(.+?)[?.!]*$",
+        ):
+            match = re.search(pattern, raw, re.IGNORECASE)
+            if match:
+                location = re.sub(r"\s+", " ", str(match.group(1) or "").strip(" ,?.!"))
+                if location:
+                    return location
+        return None
+
+    if not _assistant_requested_weather_location(turns):
+        return None
+    if _is_affirmative_acceptance(raw):
+        return None
+    if len(raw) > 120 or len(raw.split()) > 8:
+        return None
+    if _QUESTION_ONLY_RE.fullmatch(raw):
+        return None
+    return raw.strip(" ,?.!")
+
+
+def _weather_offer_answer(location: str) -> str:
+    return (
+        "Current weather is live data, so I shouldn't guess it conversationally. "
+        f"I can use Web Investigator to look up the current weather for {location}. "
+        'Say "yes", "go ahead", or "do it" if you want me to run that lookup.'
+    )
+
+
 def new_session_id() -> str:
     return f"vera-{secrets.token_hex(_SESSION_ID_LENGTH // 2)}"
 
@@ -459,6 +539,7 @@ def append_session_turn(
     }
     for preserved_key in (
         "pending_job_preview",
+        "pending_offer",
         "handoff",
         "last_enrichment",
         "last_investigation",
@@ -645,6 +726,49 @@ def _write_session_saveable_assistant_artifacts(
     _write_session_payload(queue_root, session_id, payload)
 
 
+def _normalize_pending_offer(payload: object) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    kind = str(payload.get("kind") or "").strip()
+    query = str(payload.get("query") or "").strip()
+    if kind != "web_investigation" or not query:
+        return None
+    offered_at_ms = int(payload.get("offered_at_ms") or 0)
+    expires_at_ms = int(payload.get("expires_at_ms") or 0)
+    if expires_at_ms <= 0 or expires_at_ms <= int(time.time() * 1000):
+        return None
+    normalized = {
+        "kind": kind,
+        "query": query,
+        "source_intent": str(payload.get("source_intent") or "").strip() or None,
+        "location": str(payload.get("location") or "").strip() or None,
+        "assistant_text": str(payload.get("assistant_text") or "").strip() or None,
+        "offered_at_ms": offered_at_ms,
+        "expires_at_ms": expires_at_ms,
+    }
+    return normalized
+
+
+def read_session_pending_offer(queue_root: Path, session_id: str) -> dict[str, Any] | None:
+    payload = _read_session_payload(queue_root, session_id)
+    return _normalize_pending_offer(payload.get("pending_offer"))
+
+
+def write_session_pending_offer(
+    queue_root: Path, session_id: str, offer: dict[str, Any] | None
+) -> None:
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    normalized = _normalize_pending_offer(offer) if offer is not None else None
+    if normalized is None:
+        payload.pop("pending_offer", None)
+    else:
+        payload["pending_offer"] = normalized
+    _write_session_payload(queue_root, session_id, payload)
+
+
 async def run_web_enrichment(*, user_message: str) -> dict[str, Any] | None:
     """Perform a read-only web search and return structured enrichment suitable for preview authoring.
 
@@ -688,6 +812,57 @@ async def run_web_enrichment(*, user_message: str) -> dict[str, Any] | None:
     }
 
 
+async def _run_web_investigation_query(query: str) -> dict[str, Any]:
+    cfg = load_app_config()
+    web_cfg = cfg.web_investigation
+    if web_cfg is None:
+        return {
+            "answer": (
+                "Read-only web investigation is not configured yet (Brave API key missing). "
+                "I can still help reason from what you provide, but I cannot fetch live web results yet."
+            ),
+            "status": "web_investigation_unconfigured",
+        }
+
+    client = BraveSearchClient(
+        api_key_ref=web_cfg.api_key_ref,
+        env_api_key_var=web_cfg.env_api_key_var,
+    )
+    try:
+        results = await client.search(query=query, count=web_cfg.max_results)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "not configured" in msg:
+            return {
+                "answer": (
+                    "Brave web investigation is not configured yet (missing API key). "
+                    "I can still help reason from what you provide, but I cannot fetch live web results yet."
+                ),
+                "status": "web_investigation_unconfigured",
+            }
+        return {
+            "answer": f"I couldn't complete read-only web investigation: {msg}",
+            "status": "web_investigation_error",
+        }
+
+    structured_results = _build_structured_investigation_results(query=query, results=results)
+    return {
+        "answer": _format_web_investigation_answer(query, results),
+        "status": "ok:web_investigation",
+        "investigation": structured_results,
+    }
+
+
+async def execute_pending_offer(*, offer: dict[str, Any]) -> dict[str, Any]:
+    normalized = _normalize_pending_offer(offer)
+    if normalized is None:
+        return {
+            "answer": "That pending investigation offer is no longer active in this session.",
+            "status": "pending_offer_inactive",
+        }
+    return await _run_web_investigation_query(str(normalized.get("query") or ""))
+
+
 def session_debug_info(
     queue_root: Path, session_id: str, *, mode_status: str
 ) -> dict[str, str | int | bool | None]:
@@ -698,6 +873,7 @@ def session_debug_info(
     investigation = read_session_investigation(queue_root, session_id)
     derived_output = read_session_derived_investigation_output(queue_root, session_id)
     saveable_artifacts = read_session_saveable_assistant_artifacts(queue_root, session_id)
+    pending_offer = read_session_pending_offer(queue_root, session_id)
     handoff = read_session_handoff_state(queue_root, session_id) or {}
     return {
         "dev_mode": True,
@@ -716,6 +892,8 @@ def session_debug_info(
         else 0,
         "derived_investigation_output_available": isinstance(derived_output, dict),
         "saveable_assistant_artifact_count": len(saveable_artifacts),
+        "pending_offer_available": isinstance(pending_offer, dict),
+        "pending_offer_kind": str((pending_offer or {}).get("kind") or "") or None,
         "handoff_attempted": handoff.get("attempted") is True,
         "handoff_status": str(handoff.get("status") or "none"),
         "handoff_queue_path": str(handoff.get("queue_path") or str(queue_root)),
@@ -1691,50 +1869,46 @@ async def generate_vera_reply(
     writing_draft: bool = False,
 ) -> dict[str, Any]:
     cfg = load_app_config()
+    weather_location = _extract_weather_location(message=user_message, turns=turns)
+    if _looks_like_weather_query(user_message) or weather_location is not None:
+        if weather_location is None:
+            return {
+                "answer": (
+                    "Current weather is live data, so I shouldn't guess it conversationally. "
+                    "Which location should I look up?"
+                ),
+                "status": "needs_weather_location",
+            }
+        if cfg.web_investigation is None:
+            return {
+                "answer": (
+                    "I can help with current weather only through a real lookup source, "
+                    "but read-only web investigation is not configured yet in this session."
+                ),
+                "status": "web_investigation_unconfigured",
+            }
+        now_ms = int(time.time() * 1000)
+        query = f"current weather in {weather_location}"
+        return {
+            "answer": _weather_offer_answer(weather_location),
+            "status": "offered_weather_lookup",
+            "pending_offer": {
+                "kind": "web_investigation",
+                "query": query,
+                "source_intent": "weather_current_conditions",
+                "location": weather_location,
+                "offered_at_ms": now_ms,
+                "expires_at_ms": now_ms + _PENDING_OFFER_TTL_MS,
+            },
+        }
 
     web_cfg = cfg.web_investigation
     informational_web = _is_informational_web_query(user_message)
-    if informational_web and web_cfg is None:
-        return {
-            "answer": (
-                "Read-only web investigation is not configured yet (Brave API key missing). "
-                "I can still help reason from what you provide, but I cannot fetch live web results yet."
-            ),
-            "status": "web_investigation_unconfigured",
-        }
-
     if informational_web and web_cfg is not None:
         normalized_query = _normalize_web_query(user_message)
-        client = BraveSearchClient(
-            api_key_ref=web_cfg.api_key_ref,
-            env_api_key_var=web_cfg.env_api_key_var,
-        )
-        try:
-            results = await client.search(query=normalized_query, count=web_cfg.max_results)
-        except RuntimeError as exc:
-            msg = str(exc)
-            if "not configured" in msg:
-                return {
-                    "answer": (
-                        "Brave web investigation is not configured yet (missing API key). "
-                        "I can still help reason from what you provide, but I cannot fetch live web results yet."
-                    ),
-                    "status": "web_investigation_unconfigured",
-                }
-            return {
-                "answer": f"I couldn't complete read-only web investigation: {msg}",
-                "status": "web_investigation_error",
-            }
-
-        structured_results = _build_structured_investigation_results(
-            query=normalized_query,
-            results=results,
-        )
-        return {
-            "answer": _format_web_investigation_answer(normalized_query, results),
-            "status": "ok:web_investigation",
-            "investigation": structured_results,
-        }
+        return await _run_web_investigation_query(normalized_query)
+    if informational_web and web_cfg is None:
+        return await _run_web_investigation_query(_normalize_web_query(user_message))
 
     attempts: list[tuple[str, Any]] = []
     for key in ("primary", "fallback"):

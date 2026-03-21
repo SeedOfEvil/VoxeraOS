@@ -25,6 +25,8 @@ That architecture matters because it keeps behavior observable and recoverable e
   - Preview pane is the single authoritative draft surface; chat remains conversational and does not default to showing Voxera control JSON.
   - Explicit handoff/confirmation submits only from active preview and only claims success on real queue acknowledgment.
   - Honest lifecycle language: proposal/prepared/submitted/queued are distinct from executed/verified evidence states.
+  - Live/current facts (especially weather-like requests) must come from a real lookup source; Vera now asks for the needed location and offers a read-only investigation instead of inventing current conditions.
+  - Explicit investigation offers are session-bounded and can be accepted with short follow-ups like `yes`, `go ahead`, or `do it`; those turns now prefer the pending investigation over preview/save submit logic.
   - DEV-friendly diagnostics panel exposes prompt + session metadata for development, and includes an explicit "Clear chat + context" action.
   - Deterministic bounded diagnostics routing currently supports: `inspect system health`/`run diagnostics`/`show host diagnostics` -> `system_diagnostics`; `check status of <service>.service` -> `system.service_status`; `show recent logs for <service>.service` (or summarize) -> `system.recent_service_logs` with bounded args.
   - Safe `.service` diagnostics routing takes precedence over generic review/status phrasing only when bounded diagnostics service/log intent is confirmed; non-diagnostics prompts like `status of job-123.json`, `status of my job`, or `status of the last job` stay on the review/evidence path. Invalid service targets fail closed with a clear refusal.

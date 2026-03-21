@@ -6,12 +6,14 @@ Web investigation is a read-only informational lane.
 - informational queries
 - query normalization for clearer retrieval
 - source gathering and synthesis for conversational responses
+- truthful live/current-info recovery flows (for example current weather) that either use a real source or explicitly offer that lookup
 
 ## Disallowed Scope
 - no side effects
 - no downloads
 - no direct preview creation from a standalone informational turn
 - no queue creation for informational research
+- no conversational invention of live/current facts without an actual lookup result
 
 Operational requests still belong to the Voxera execution path.
 Informational responses should not mention Voxera planning/execution by default.
@@ -25,3 +27,8 @@ Rules:
 - Pronoun follow-ups like "put that into the file" may resolve against the enrichment summary to mutate `write_file.content` in the active preview.
 - If no enrichment is available and the pronoun reference is ungrounded, fail closed: return `no_change`.
 - Enrichment is read-only input to the compiler — it never writes files or creates queue work on its own.
+
+## Pending Investigation Offers
+- When Vera explicitly offers a concrete read-only investigation/action (for example `I can use Web Investigator to look up the current weather for Calgary AB`), the active session may store a bounded `pending_offer`.
+- Short affirmative follow-ups like `yes`, `go ahead`, or `do it` should bind to that still-current pending offer before any preview/save/submit logic.
+- Pending offers are session-bounded, expire, and should only execute when the acceptance is unambiguous and the offer is still the latest relevant assistant turn.
