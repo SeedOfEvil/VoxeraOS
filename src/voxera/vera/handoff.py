@@ -95,6 +95,10 @@ _BARE_WEB_TARGET_RE = re.compile(
     r"\b(?:open|go\s+to|visit|take\s+me\s+to|bring\s+up|load|launch|navigate\s+to)\s+([a-z0-9-]{2,})(?:\b|$)",
     re.IGNORECASE,
 )
+_LOW_INFORMATION_ASSISTANT_PATTERNS = (
+    r"^(?:ok|okay|sure|got it|understood|sounds good|will do|done)[.!]*$",
+    r"^(?:thanks|thank you|thank-you)[.!]*$",
+)
 
 
 def _normalize_open_goal(message: str) -> str | None:
@@ -275,12 +279,16 @@ def _extract_content_after_markers(text: str, markers: tuple[str, ...]) -> str |
 
 def _message_requests_referenced_content(message: str) -> bool:
     lowered = message.lower()
-    if not re.search(r"\b(that|this|previous|last|your)\b", lowered):
+    if not re.search(r"\b(that|this|it|previous|last|your)\b", lowered):
         return False
     return bool(
         re.search(
             r"\b("
             r"that\s+(?:joke|summary|text|answer|response|explanation|previous\s+summary|previous\s+answer|previous\s+response|previous\s+explanation)|"
+            r"save\s+it(?:\s+as|\s+to|\s+into|\s+in|\b)|"
+            r"put\s+it\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"create\s+(?:a\s+)?note\s+from\s+it|"
+            r"make\s+that\s+a\s+note|"
             r"(?:the\s+)?previous\s+(?:summary|response|answer|explanation)|"
             r"(?:the\s+)?last\s+(?:summary|response|answer|explanation)|"
             r"your\s+previous\s+(?:summary|response|answer|explanation)|"
@@ -303,7 +311,9 @@ def is_recent_assistant_content_save_request(message: str) -> bool:
     if not lowered:
         return False
     save_signal = bool(re.search(r"\b(save|write|put|create|make)\b", lowered))
-    target_signal = bool(re.search(r"\b(file|note|notes|markdown|\.md\b|\.txt\b)\b", lowered))
+    target_signal = bool(
+        re.search(r"\b(file|note|notes|markdown|artifact|\.md\b|\.txt\b)\b", lowered)
+    ) or bool(re.search(r"\bsave\s+(?:that|this|it)\b", lowered))
     reference_signal = _message_requests_referenced_content(
         lowered
     ) or _looks_like_plural_reference_request(lowered)
@@ -349,6 +359,11 @@ def _looks_like_non_authored_assistant_message(text: str) -> bool:
         r"\bjob id:\b",
         r"\bthe request is now in the queue\b",
         r"\bexecution has not completed yet\b",
+        r"\bnothing has been submitted\b",
+        r"\bi still have the current request ready\b",
+        r"\bi prepared a governed save-to-note preview\b",
+        r"\bpreview-only\b",
+        r"\bprepared preview\b",
         r"\bcheck status and evidence\b",
         r"\bapproval status\b",
         r"\bexpected artifacts\b",
@@ -394,54 +409,130 @@ def _looks_like_trivial_courtesy_assistant_message(text: str) -> bool:
     return False
 
 
-def _select_recent_assistant_content(
-    *, message: str, assistant_content_candidates: list[str] | None
-) -> str | None:
+def _infer_saveable_assistant_artifact_type(text: str) -> str:
+    lowered = text.strip().lower()
+    if any(token in lowered for token in ("# investigation comparison", "compared results:")):
+        return "comparison"
+    if any(
+        token in lowered
+        for token in ("# investigation summary", "selected results:", "short takeaway:")
+    ):
+        return "summary"
+    if "# expanded investigation result" in lowered:
+        return "expanded_result"
+    if any(token in lowered for token in ("# ", "essay", "article", "writeup")):
+        if "article" in lowered:
+            return "article"
+        if "essay" in lowered:
+            return "essay"
+        return "writeup"
+    if "script" in lowered and "explanation" in lowered:
+        return "code_explanation"
+    if "explanation" in lowered or lowered.startswith("because ") or lowered.startswith("a "):
+        return "explanation"
+    return "info"
+
+
+def build_saveable_assistant_artifact(text: str) -> dict[str, str] | None:
+    candidate = text.strip()
+    if not candidate:
+        return None
+    if _looks_like_non_authored_assistant_message(candidate):
+        return None
+    if _looks_like_trivial_courtesy_assistant_message(candidate):
+        return None
+    normalized = re.sub(r"\s+", " ", candidate.replace("—", "-")).strip().lower()
+    if any(re.fullmatch(pattern, normalized) for pattern in _LOW_INFORMATION_ASSISTANT_PATTERNS):
+        return None
+
+    cleaned = extract_text_draft_from_reply(candidate) or candidate
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return None
+    if _looks_like_non_authored_assistant_message(cleaned):
+        return None
+    if _looks_like_trivial_courtesy_assistant_message(cleaned):
+        return None
+
+    words = cleaned.split()
+    if len(cleaned) < 18 or len(words) < 3:
+        return None
+    if len(words) <= 5 and not re.search(r"[.!?:\n]", cleaned):
+        return None
+
+    artifact_type = _infer_saveable_assistant_artifact_type(cleaned)
+    return {"content": cleaned, "artifact_type": artifact_type}
+
+
+def collect_recent_saveable_assistant_artifacts(
+    assistant_content_candidates: list[str] | None,
+) -> list[dict[str, str]]:
     if not assistant_content_candidates:
+        return []
+    artifacts: list[dict[str, str]] = []
+    for raw in assistant_content_candidates[-8:]:
+        artifact = build_saveable_assistant_artifact(raw)
+        if artifact is None:
+            continue
+        artifacts.append(artifact)
+    return artifacts[-6:]
+
+
+def select_recent_saveable_assistant_artifact(
+    *, message: str, assistant_artifacts: list[dict[str, str]] | None
+) -> dict[str, str] | None:
+    if not assistant_artifacts:
         return None
     if not _message_requests_referenced_content(message):
         return None
 
-    preferred_summary = bool(
-        re.search(r"\b(summary|summari[sz]e|synthesis|overview|recap|explain(?:ation)?)\b", message)
-    )
+    preferred_type: str | None = None
+    if re.search(r"\b(summary|summari[sz]e|synthesis|overview|recap)\b", message, re.IGNORECASE):
+        preferred_type = "summary"
+    elif re.search(r"\bcomparison\b", message, re.IGNORECASE):
+        preferred_type = "comparison"
+    elif re.search(r"\b(article|essay|writeup)\b", message, re.IGNORECASE):
+        preferred_type = "article"
+    elif re.search(r"\bexplanation\b", message, re.IGNORECASE):
+        preferred_type = "explanation"
+
     vague_reference_only = bool(
-        re.search(r"\b(save|write|put)\b", message)
-        and re.search(r"\b(that|this|it)\b", message)
-        and not re.search(r"\b(summary|answer|response|text|content)\b", message)
+        re.search(r"\b(save|write|put|create|make)\b", message, re.IGNORECASE)
+        and re.search(r"\b(that|this|it)\b", message, re.IGNORECASE)
+        and not re.search(
+            r"\b(summary|answer|response|text|content|artifact|essay|article|explanation)\b",
+            message,
+            re.IGNORECASE,
+        )
     )
     plural_or_explicitly_ambiguous_reference = bool(
         _looks_like_plural_reference_request(message)
-        or re.search(r"\b(previous|last)\s+(two|2|few|several|multiple)\b", message)
-        or re.search(r"\b(earlier\s+one|older\s+one|prior\s+one)\b", message)
+        or re.search(r"\b(previous|last)\s+(two|2|few|several|multiple)\b", message, re.IGNORECASE)
+        or re.search(r"\b(earlier\s+one|older\s+one|prior\s+one)\b", message, re.IGNORECASE)
     )
 
-    viable: list[str] = []
-    for raw in reversed(assistant_content_candidates[-6:]):
-        candidate = raw.strip()
-        if (
-            not candidate
-            or _looks_like_non_authored_assistant_message(candidate)
-            or _looks_like_trivial_courtesy_assistant_message(candidate)
-        ):
-            continue
-        if len(candidate) < 24 and len(candidate.split()) < 4:
-            continue
-        cleaned_candidate = extract_text_draft_from_reply(candidate) or candidate
-        viable.append(cleaned_candidate)
-
+    viable = list(reversed(assistant_artifacts[-6:]))
     if not viable:
         return None
     if plural_or_explicitly_ambiguous_reference:
         return None
-    if preferred_summary:
-        for candidate in viable:
-            lowered = candidate.lower()
-            if any(
-                token in lowered
-                for token in ("summary", "overview", "recap", "key points", "in short")
-            ):
-                return candidate
+    if preferred_type is not None:
+        preferred_matches = []
+        for artifact in viable:
+            artifact_type = str(artifact.get("artifact_type") or "")
+            is_article_match = preferred_type == "article" and artifact_type in {
+                "article",
+                "essay",
+                "writeup",
+            }
+            is_explanation_match = preferred_type == "explanation" and artifact_type in {
+                "explanation",
+                "code_explanation",
+            }
+            if is_article_match or is_explanation_match or artifact_type == preferred_type:
+                preferred_matches.append(artifact)
+        if preferred_matches:
+            return preferred_matches[0]
     if vague_reference_only:
         return viable[0]
     return viable[0]
@@ -923,14 +1014,17 @@ def derive_investigation_expansion(
 def _normalize_structured_file_write_payload(
     message: str,
     *,
-    assistant_content_candidates: list[str] | None = None,
+    assistant_artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
     append_mode = bool(re.search(r"\b(append|add\s+to)\b", lowered))
     if not re.search(r"\b(write|create|save|put|make|append|add|build)\b", lowered):
         return None
-    if not re.search(r"\b(file|note|\w+\.[a-z0-9]{1,8})\b", lowered):
+    if not (
+        re.search(r"\b(file|note|\w+\.[a-z0-9]{1,8})\b", lowered)
+        or _message_requests_referenced_content(text)
+    ):
         return None
 
     if append_mode:
@@ -963,8 +1057,8 @@ def _normalize_structured_file_write_payload(
     if not target:
         named = re.search(r"\b(?:called|call\w*|named)\s+([^\s]+)", text, re.IGNORECASE)
         target = named.group(1).strip("\"'") if named else None
-    if not target:
-        return None
+    generated_target_path = _generated_note_path()
+    generated_target_name = Path(generated_target_path).name
 
     content = _extract_quoted_content(text)
     if content is None:
@@ -995,19 +1089,32 @@ def _normalize_structured_file_write_payload(
     reference_requested = _message_requests_referenced_content(text)
     ambiguous_reference = _looks_like_ambiguous_reference_only(text)
     plural_reference = _looks_like_plural_reference_request(text)
+    if not target and not (reference_requested or ambiguous_reference or plural_reference):
+        return None
     if content is None:
-        content = _select_recent_assistant_content(
+        referenced_artifact = select_recent_saveable_assistant_artifact(
             message=text,
-            assistant_content_candidates=assistant_content_candidates,
+            assistant_artifacts=assistant_artifacts,
+        )
+        content = (
+            str(referenced_artifact.get("content") or "").strip()
+            if isinstance(referenced_artifact, dict)
+            else None
         )
     if content is None and (reference_requested or ambiguous_reference or plural_reference):
         return None
     if content is None:
         content = _infer_content_from_message(text) or ""
+    if not target:
+        target = generated_target_name
 
     normalized_path = target
     if not target.startswith("~") and not target.startswith("/"):
-        normalized_path = f"~/VoxeraOS/notes/{target}"
+        normalized_path = (
+            generated_target_path
+            if target == generated_target_name
+            else f"~/VoxeraOS/notes/{target}"
+        )
 
     mode = "overwrite"
     goal_prefix = "write a file"
@@ -1232,7 +1339,7 @@ def _draft_revision_from_active_preview(
     active_preview: dict[str, Any] | None,
     *,
     enrichment_context: dict[str, Any] | None = None,
-    assistant_content_candidates: list[str] | None = None,
+    assistant_artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     if not isinstance(active_preview, dict):
         return None
@@ -1333,9 +1440,14 @@ def _draft_revision_from_active_preview(
             ):
                 refined_content = enrich_summary
         if not refined_content:
-            refined_content = _select_recent_assistant_content(
+            referenced_artifact = select_recent_saveable_assistant_artifact(
                 message=text,
-                assistant_content_candidates=assistant_content_candidates,
+                assistant_artifacts=assistant_artifacts,
+            )
+            refined_content = (
+                str(referenced_artifact.get("content") or "").strip()
+                if isinstance(referenced_artifact, dict)
+                else None
             )
         if refined_content:
             return {
@@ -1466,13 +1578,13 @@ def _draft_from_candidate_message(
     *,
     active_preview: dict[str, Any] | None,
     enrichment_context: dict[str, Any] | None = None,
-    assistant_content_candidates: list[str] | None = None,
+    assistant_artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     revision = _draft_revision_from_active_preview(
         candidate,
         active_preview,
         enrichment_context=enrichment_context,
-        assistant_content_candidates=assistant_content_candidates,
+        assistant_artifacts=assistant_artifacts,
     )
     if revision is not None:
         return revision
@@ -1497,7 +1609,7 @@ def _draft_from_candidate_message(
         return {"goal": normalized_read}
 
     structured_write = _normalize_structured_file_write_payload(
-        candidate, assistant_content_candidates=assistant_content_candidates
+        candidate, assistant_artifacts=assistant_artifacts
     )
     if structured_write:
         return structured_write
@@ -1525,10 +1637,17 @@ def maybe_draft_job_payload(
     enrichment_context: dict[str, Any] | None = None,
     investigation_context: dict[str, Any] | None = None,
     recent_assistant_messages: list[str] | None = None,
+    recent_assistant_artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
         return None
+
+    assistant_artifacts = (
+        recent_assistant_artifacts
+        if recent_assistant_artifacts is not None
+        else collect_recent_saveable_assistant_artifacts(recent_assistant_messages)
+    )
 
     investigation_draft = draft_investigation_save_preview(
         normalized,
@@ -1541,7 +1660,7 @@ def maybe_draft_job_payload(
         normalized,
         active_preview=active_preview,
         enrichment_context=enrichment_context,
-        assistant_content_candidates=recent_assistant_messages,
+        assistant_artifacts=assistant_artifacts,
     )
     if primary is not None:
         return primary
@@ -1558,7 +1677,7 @@ def maybe_draft_job_payload(
             contextual_candidate,
             active_preview=active_preview,
             enrichment_context=enrichment_context,
-            assistant_content_candidates=recent_assistant_messages,
+            assistant_artifacts=assistant_artifacts,
         )
         if contextual is not None:
             return contextual

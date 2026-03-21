@@ -1156,16 +1156,17 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Precedence rule: when a current investigation-derived comparison/summary/expanded-result exists in session, follow-up `save that` / `save it` routes to the derived investigation save path first; generic recent-assistant-content save resolution is fallback-only.
 - Routing boundary refinement: transform-style follow-ups over investigation-derived text (for example `write an article based on that summary`) are not treated as derived-save requests, even if they reference `that`/`it`; those turns hand off to the governed writing lane instead.
 - Recency refinement: derived save-that precedence applies only while the derived comparison/summary/expanded result remains the latest relevant assistant output; if a newer conversational assistant answer appears, singular `save that ...` resolves to that newer answer.
-- Singular vague references (for example `save that`) deterministically resolve to the most recent substantial assistant-authored message in the active session.
+- Singular vague references (for example `save that`, `save it`, `put that in a note`) deterministically resolve through a bounded latest-saveable-assistant-artifact layer rather than lane-specific special cases.
 - Resolver scope is intentionally limited to recent assistant-authored content in the active session transcript only (no cross-session recall, no broad history search).
 - Plural/explicitly ambiguous or unavailable assistant-content references fail conservatively with a clear user-facing refusal rather than guessing.
-- Recent-content resolution ignores trivial courtesy assistant turns, so `thanks` / `you're welcome` exchanges do not displace the latest substantial explanation or summary.
+- Recent-content resolution ignores trivial courtesy assistant turns plus queue/preview/control boilerplate, so `thanks` / `you're welcome` exchanges do not displace the latest substantial explanation, summary, weather answer, or other meaningful informational artifact.
 - Conversational explanatory/teaching prompts remain in the normal Vera answer lane by default; they are not automatically treated as web investigation requests.
 - Bounded prose-drafting prompts (essay/article/writeup/explanation/rewrite/formalize/expand) compile into governed `write_file` previews backed by assistant-authored prose.
 - Read-only Brave investigation routing is reserved for explicit search/investigation/current-information intent (for example `search the web`, `look up`, `find the latest`, `latest official docs`).
 - Ordinary compare/explain prompts stay conversational unless explicit search/latest/current/web intent is present.
 - Because save-by-reference uses session transcript content, this path depends on a real assistant-authored answer existing in the active session first.
 - Preview state is persisted per session (`pending_job_preview`) and is independent from rolling chat turn limits.
+- Session state also keeps a bounded recent-saveable-assistant-artifact list so meaningful assistant-displayed content can be saved naturally without introducing open-ended memory or cross-session recall.
 - The session keeps exactly one active preview draft; follow-up revisions replace that draft, while lightweight acknowledgements leave it unchanged.
 - Hidden compiler/deterministic fallback prioritize semantic active-preview refinement interpretation (content/path/mode, pronouns) while preserving strict preview-only JSON mutation contracts and fail-closed behavior.
 - Explicit handoff submits only the latest active draft, and successful submit clears the draft after queue confirmation.

@@ -74,6 +74,7 @@ from ..vera.service import (
     read_session_handoff_state,
     read_session_investigation,
     read_session_preview,
+    read_session_saveable_assistant_artifacts,
     read_session_turns,
     read_session_updated_at_ms,
     register_session_linked_job,
@@ -447,6 +448,34 @@ async def _generate_vera_reply_with_optional_draft_hints(
     return await generate_vera_reply(turns=turns, user_message=hinted_message)
 
 
+async def _generate_preview_builder_update_with_optional_artifacts(
+    *,
+    turns: list[dict[str, str]],
+    user_message: str,
+    active_preview: dict[str, object] | None,
+    enrichment_context: dict[str, object] | None = None,
+    investigation_context: dict[str, object] | None = None,
+    recent_assistant_artifacts: list[dict[str, str]] | None = None,
+) -> dict[str, object] | None:
+    signature = inspect.signature(generate_preview_builder_update)
+    if "recent_assistant_artifacts" in signature.parameters:
+        return await generate_preview_builder_update(
+            turns=turns,
+            user_message=user_message,
+            active_preview=active_preview,
+            enrichment_context=enrichment_context,
+            investigation_context=investigation_context,
+            recent_assistant_artifacts=recent_assistant_artifacts,
+        )
+    return await generate_preview_builder_update(
+        turns=turns,
+        user_message=user_message,
+        active_preview=active_preview,
+        enrichment_context=enrichment_context,
+        investigation_context=investigation_context,
+    )
+
+
 def _render_page(
     *,
     session_id: str,
@@ -754,10 +783,14 @@ async def chat(request: Request):
         )
 
     if (
-        _is_natural_confirmation_phrase(message)
-        or is_explicit_handoff_request(message)
-        or is_active_preview_submit_request(message)
-    ) and pending_preview is None:
+        (
+            _is_natural_confirmation_phrase(message)
+            or is_explicit_handoff_request(message)
+            or is_active_preview_submit_request(message)
+        )
+        and not is_recent_assistant_content_save_request(message)
+        and pending_preview is None
+    ):
         assistant_text, status = _submit_handoff(
             root=root,
             session_id=active_session,
@@ -825,15 +858,17 @@ async def chat(request: Request):
             session_enrichment = fresh_enrichment
 
     enrichment_context = session_enrichment if pending_preview is not None else None
+    recent_assistant_artifacts = read_session_saveable_assistant_artifacts(root, active_session)
 
     builder_preview: dict[str, object] | None = None
     if not informational_web_turn:
-        builder_preview = await generate_preview_builder_update(
+        builder_preview = await _generate_preview_builder_update_with_optional_artifacts(
             turns=turns,
             user_message=message,
             active_preview=pending_preview,
             enrichment_context=enrichment_context,
             investigation_context=session_investigation,
+            recent_assistant_artifacts=recent_assistant_artifacts,
         )
     builder_payload: dict[str, object] | None = None
     if builder_preview is not None:

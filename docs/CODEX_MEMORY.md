@@ -1,3 +1,11 @@
+## 2026-03-21 — PR #TBD — fix(vera): unify saveable assistant artifact resolution for governed note creation
+
+- Added a bounded "recent saveable assistant artifact" layer in `src/voxera/vera/handoff.py` that classifies meaningful assistant-displayed content by artifact type (`info`, `explanation`, `summary`, `comparison`, `article`/`essay`/`writeup`, `code_explanation`) and filters out courtesy, queue/preview boilerplate, internal control text, and low-information replies.
+- Extended Vera session state in `src/voxera/vera/service.py` to persist a bounded recent artifact list alongside the rolling turn transcript, keeping resolution authoritative within the active session without introducing cross-session memory.
+- Updated the deterministic preview-authoring path so `save that`, `save it`, `put that in a note`, and similar follow-ups now resolve against the latest saveable assistant artifact, while existing investigation-derived save precedence and writing/code lanes remain intact.
+- Preserved fail-closed behavior for plural/ambiguous references and preserved explicit preview-truth/handoff boundaries: the change only prepares governed previews and does not invent queue submissions.
+- Added focused Vera web regressions covering weather-answer saveability and concise factual-answer `save it` note creation.
+
 ## 2026-03-20 — PR #TBD — fix(vera): route investigation-summary transforms into governed writing lane
 
 - Tightened `src/voxera/vera/handoff.py` so derived follow-up save detection only claims true save/save-as style requests; transform prompts like `write a short article based on that summary` no longer get misclassified as derived-artifact saves.
