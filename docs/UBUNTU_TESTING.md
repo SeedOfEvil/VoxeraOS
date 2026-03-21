@@ -310,6 +310,13 @@ Use this quick manual check after starting Vera (`make vera`):
 8. Verify successful submit clears preview pane affordance.
 9. During repeated turns, verify chat view stays near latest messages automatically and conversation area has more usable space than prior layout.
 
+## Manual STV: Vera first-run guidance layer (PR #next)
+1. Launch Vera with a fresh/no-turn session and open the main screen.
+2. Verify the empty state shows **How to use Vera** plus grouped starter prompts for **Ask**, **Investigate**, **Save**, **Write**, **Code**, and **System**.
+3. Confirm the preview explanation is truthful: drafts/previews are prepared in chat, while submit is the explicit step that sends work through VoxeraOS.
+4. Click several example prompt chips and verify they populate the composer without auto-submitting.
+5. Start a chat and verify the guidance no longer occupies the main conversation area.
+
 ## Optional: Vera as a user service
 
 ```bash

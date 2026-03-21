@@ -495,10 +495,73 @@ def _render_page(
         system_prompt=VERA_SYSTEM_PROMPT,
         pending_preview=read_session_preview(root, session_id),
         drafting_examples=drafting_guidance().examples,
+        main_screen_guidance=_main_screen_guidance(),
     )
     response = HTMLResponse(content=html)
     response.set_cookie("vera_session_id", session_id, httponly=False, samesite="lax")
     return response
+
+
+def _main_screen_guidance() -> dict[str, object]:
+    return {
+        "title": "How to use Vera",
+        "summary": (
+            "Ask naturally. Vera can answer questions, investigate the web, draft notes or files, "
+            "and prepare governed previews for work you may want to save or submit."
+        ),
+        "preview_hint": (
+            "When Vera prepares a preview, you can follow up with things like "
+            "“save that to a note”, “save it as weather.md”, or “submit it”. "
+            "Chat stays conversational; submit sends the prepared preview through VoxeraOS."
+        ),
+        "groups": [
+            {
+                "label": "Ask",
+                "examples": [
+                    "What is the capital of Alberta?",
+                    "Explain photosynthesis simply.",
+                ],
+            },
+            {
+                "label": "Investigate",
+                "examples": [
+                    "Search the web for the latest Brave Search API documentation",
+                    "Compare results 1 and 3",
+                    "Expand result 1",
+                ],
+            },
+            {
+                "label": "Save",
+                "examples": [
+                    "Save that to a note",
+                    "Save it as weather.md",
+                    "Submit it",
+                ],
+            },
+            {
+                "label": "Write",
+                "examples": [
+                    "Write a 2 page essay about black holes",
+                    "Rewrite that as a short formal article",
+                ],
+            },
+            {
+                "label": "Code",
+                "examples": [
+                    "Write me a python script that fetches a URL and prints the page title",
+                    "Explain how this script works in plain English",
+                ],
+            },
+            {
+                "label": "System",
+                "examples": [
+                    "Inspect system health",
+                    "Check status of voxera-vera.service",
+                    "Show recent logs for voxera-daemon.service",
+                ],
+            },
+        ],
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -1862,3 +1862,21 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make golden-check`
   - `make validation-check`
   - `make merge-readiness-check`
+
+## 2026-03-21 — PR #TBD — feat(vera-ui): lightweight main-screen guidance for Vera
+
+- Summary:
+  - Added a dedicated empty-state guidance layer to the standalone Vera UI so first-run users immediately see what Vera can do without a blocking onboarding flow.
+  - Guidance is intentionally compact: one short "How to use Vera" explanation, one concise preview/submit truth note, and six grouped starter-prompt lanes: **Ask**, **Investigate**, **Save**, **Write**, **Code**, and **System**.
+  - Prompt examples are clickable chips that populate the composer for quick-start usage; they do not auto-submit and therefore preserve the normal conversational boundary.
+  - The guidance appears only in the no-turn empty state and disappears once a conversation begins, so normal Vera chat remains uncluttered.
+  - Updated Vera web tests to cover empty-state rendering, example-group visibility, chip wiring presence, and guidance absence once chat turns exist.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`

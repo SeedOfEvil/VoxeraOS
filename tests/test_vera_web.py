@@ -68,8 +68,13 @@ def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
     assert "Reasoning partner" in res.text
     assert "composer" in res.text
     assert "VoxeraOS queue handoff" in res.text
+    assert "How to use Vera" in res.text
+    assert "Starter prompts" in res.text
+    assert "Search the web for the latest Brave Search API documentation" in res.text
+    assert 'data-prompt="Save that to a note"' in res.text
     assert "DEV diagnostics" in res.text
     assert "vera_thread_manual_scroll_up" in res.text
+    assert "bindGuidanceChips" in res.text
 
 
 def test_vera_web_chat_returns_assistant_response(tmp_path, monkeypatch):
@@ -88,6 +93,21 @@ def test_vera_web_chat_returns_assistant_response(tmp_path, monkeypatch):
 
     assert res.status_code == 200
     assert "Echo: hello" in res.text
+
+
+def test_vera_empty_state_guidance_renders_prompt_groups(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+
+    res = client.get("/")
+
+    assert res.status_code == 200
+    for label in ("Ask", "Investigate", "Save", "Write", "Code", "System"):
+        assert f">{label}<" in res.text
+    assert "Save it as weather.md" in res.text
+    assert "Write a 2 page essay about black holes" in res.text
+    assert "Check status of voxera-vera.service" in res.text
 
 
 def test_vera_web_context_is_preserved_and_capped(tmp_path, monkeypatch):
@@ -126,8 +146,28 @@ def test_vera_clear_chat_and_context(tmp_path, monkeypatch):
 
     res = client.post("/clear", data={"session_id": sid})
     assert res.status_code == 200
-    assert "How can I help?" in res.text
+    assert "How to use Vera" in res.text
+    assert "Preview → submit:" in res.text
     assert vera_service.read_session_turns(queue, sid) == []
+
+
+def test_guidance_is_hidden_once_chat_has_turns(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post("/chat", data={"session_id": sid, "message": "hello"})
+
+    assert res.status_code == 200
+    assert 'aria-labelledby="inline-group-' not in res.text
+    assert "Echo: hello" in res.text
 
 
 def test_vera_prompt_boundary_text_present():

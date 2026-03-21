@@ -524,6 +524,15 @@ web_investigation:
 
 Brave auth uses `X-Subscription-Token` and never hardcodes API keys in source or docs examples.
 
+### Vera first-run main-screen guidance (PR #next)
+
+Vera's empty chat state now includes a lightweight, always-visible guidance layer so new users can understand the product shape immediately without a blocking tour.
+
+- The main screen shows a short "How to use Vera" explanation before any chat turns exist.
+- Starter prompts are grouped into the primary lanes users can actually use today: **Ask**, **Investigate**, **Save**, **Write**, **Code**, and **System**.
+- Guidance copy teaches the preview truth model lightly: Vera can prepare drafts/previews, chat itself does not perform side effects, and explicit submit sends the prepared preview through VoxeraOS.
+- Prompt chips are clickable and populate the composer for quick start, while disappearing from the main thread view once the conversation begins.
+
 ### Vera evidence-aware job outcome review (PR #155)
 
 Vera can now review real VoxeraOS job outcomes from canonical queue evidence (not chat assumptions):

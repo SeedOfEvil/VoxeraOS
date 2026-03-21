@@ -1172,6 +1172,16 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 - Explicit handoff submits only the latest active draft, and successful submit clears the draft after queue confirmation.
 - Submission remains a separate explicit step that writes to queue inbox; no direct execution path exists in Vera.
 
+## Vera empty-state guidance layer (PR #next)
+
+The standalone Vera UI now includes a lightweight first-run guidance layer on the main screen when no conversation turns exist.
+
+- Purpose: teach the product model quickly without a tour or blocking onboarding.
+- Placement: rendered inside the normal empty-chat/main-thread state so the composer remains primary.
+- Content: a short "How to use Vera" explanation, a concise preview/submit truth note, and grouped example prompts for **Ask**, **Investigate**, **Save**, **Write**, **Code**, and **System** lanes.
+- Interaction: prompt chips are clickable and populate the composer only; they do not auto-submit or bypass normal conversational flow.
+- Lifecycle: once chat turns exist, the guidance disappears from the main thread view and the normal conversation UI remains unchanged.
+
 
 ## Structured governed file-write content path (PR #157)
 
