@@ -1,7 +1,7 @@
 ## 2026-03-21 — PR #TBD — fix(vera): stop weather hallucination and add quick live weather flow
 
-- Added a dedicated Vera quick-weather lane backed by Brave Search API plus bounded weather-result extraction so ordinary weather/current-condition prompts no longer rely on freeform conversational generation for live facts.
-- Hardened truthfulness behavior: if a location is missing Vera asks for it, and if the Brave-backed live lookup fails or cannot extract reliable weather facts Vera explicitly refuses to guess current temperatures, conditions, or highs/lows.
+- Added a dedicated Vera quick-weather lane backed by structured Open-Meteo weather data so ordinary weather/current-condition prompts no longer rely on freeform conversational generation for live facts.
+- Hardened truthfulness behavior: if a location is missing Vera asks for it, and if the structured live lookup fails or cannot resolve the place clearly Vera explicitly refuses to guess current temperatures, conditions, or highs/lows.
 - Added bounded weather session context so natural follow-ups like `hourly`, `7 day`, `weekly`, and `weekend` continue the same conversational weather flow instead of falling back to generic investigation result dumps.
 - Preserved explicit investigation behavior for weather only when the user explicitly asks to search/browse/investigate, keeping generic multi-result result dumps available but no longer the default weather experience.
 - Kept governed saveability intact: meaningful weather answers still flow through the recent saveable assistant artifact model, so `save that to a note` continues to produce preview-only write payloads.

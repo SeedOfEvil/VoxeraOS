@@ -28,7 +28,7 @@ from .handoff import (
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 from .result_surfacing import extract_value_forward_text
 from .weather import (
-    BraveWeatherClient,
+    OpenMeteoWeatherClient,
     WeatherSnapshot,
     format_current_weather_answer,
     format_daily_weather_answer,
@@ -307,20 +307,14 @@ def _weather_context_is_waiting_for_location(weather_context: dict[str, Any] | N
 async def _lookup_live_weather(
     location_query: str, *, followup_kind: str | None = None
 ) -> WeatherSnapshot:
-    cfg = load_app_config()
-    web_cfg = cfg.web_investigation
-    if web_cfg is None:
+    _ = followup_kind
+    client = OpenMeteoWeatherClient()
+    resolved = await client.resolve_location(location_query)
+    if resolved is None:
         raise RuntimeError(
-            "Brave web investigation is not configured yet, so I can’t verify live weather."
+            "I couldn’t resolve that place into a structured weather location. Please give me a clearer location."
         )
-    client = BraveWeatherClient(
-        brave_client=BraveSearchClient(
-            api_key_ref=web_cfg.api_key_ref,
-            env_api_key_var=web_cfg.env_api_key_var,
-        ),
-        max_candidate_results=web_cfg.max_results,
-    )
-    return await client.lookup(location_query=location_query, followup_kind=followup_kind)
+    return await client.fetch_snapshot(resolved)
 
 
 def _weather_answer_for_followup(
@@ -1943,19 +1937,6 @@ async def generate_vera_reply(
         and not writing_draft
     ):
         try:
-            if web_cfg is None:
-                return {
-                    "answer": (
-                        "I can’t verify live weather right now because Brave web investigation is not "
-                        "configured yet. I won’t guess at current conditions."
-                    ),
-                    "status": "weather_lookup_unconfigured",
-                    "weather_context": {
-                        "awaiting_location": False,
-                        "followup_active": False,
-                    },
-                }
-
             if should_use_weather_followup and isinstance(weather_context, dict):
                 has_followup_data = (
                     weather_followup_kind == "hourly" and bool(weather_context.get("hourly"))
@@ -2027,7 +2008,7 @@ async def generate_vera_reply(
         except RuntimeError as exc:
             return {
                 "answer": (
-                    "I couldn’t complete a Brave-backed live weather lookup, so I won’t guess at current conditions. "
+                    "I couldn’t complete a structured live weather lookup, so I won’t guess at current conditions. "
                     f"{exc}"
                 ),
                 "status": "weather_lookup_failed",
