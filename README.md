@@ -441,6 +441,17 @@ Vera now recognizes broader conversational action phrasing while keeping the sam
 - The visible preview pane is authoritative: when JSON is shown there, that exact JSON is the active draft and direct submit target (`Submit current preview to VoxeraOS`).
 - Natural approval phrases such as `use this preview` / `that looks good now use it` submit only when an active preview exists; otherwise Vera fails closed honestly.
 
+### Vera quick live weather flow (PR #next)
+
+Vera now treats ordinary weather/current-condition questions as a dedicated truthful micro-flow instead of routing them through generic conversational generation or generic result-list investigation.
+
+- Prompts like `What's the weather like?`, `How's the weather today?`, `What's the weather in Calgary?`, and `Current weather in Calgary AB` now use a lightweight live lookup path backed by Open-Meteo.
+- If a location is missing, Vera asks for it directly (`Which location should I check?`) instead of guessing.
+- If a location is available, Vera returns a concise conversational answer with current temperature, brief conditions, and today’s high/low when available, then offers natural next-step forecast options like hourly, 7-day, or weekend.
+- Current/live weather facts must come from the live lookup path. If the lookup fails or the place cannot be resolved, Vera says so explicitly and does not invent temperatures, highs/lows, or conditions.
+- Broad `Here are the top findings...` investigation dumps are no longer the default weather UX; they are reserved for explicit browse/search/investigation requests or fallback situations.
+- Meaningful weather answers remain saveable through the governed assistant-artifact model, so follow-ups like `save that to a note` still prepare note previews rather than bypassing the trust boundary.
+
 
 ### Structured file-write content queue contract (PR #157)
 

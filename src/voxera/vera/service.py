@@ -6,6 +6,7 @@ import re
 import secrets
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -26,6 +27,14 @@ from .handoff import (
 )
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 from .result_surfacing import extract_value_forward_text
+from .weather import (
+    OpenMeteoWeatherClient,
+    WeatherSnapshot,
+    format_current_weather_answer,
+    format_daily_weather_answer,
+    format_hourly_weather_answer,
+    format_weekend_weather_answer,
+)
 
 MAX_SESSION_TURNS = 8
 _SESSION_ID_LENGTH = 24
@@ -33,6 +42,7 @@ _MAX_LINKED_JOB_TRACK = 64
 _MAX_LINKED_COMPLETIONS = 64
 _MAX_LINKED_NOTIFICATIONS = 128
 _MAX_SAVEABLE_ASSISTANT_ARTIFACTS = 8
+_WEATHER_FOLLOWUP_MAX_AGE_MS = 30 * 60 * 1000
 
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
@@ -154,6 +164,178 @@ def _is_explicit_internal_search_request(message: str) -> bool:
         "search online for me",
     )
     return any(pattern in lowered for pattern in patterns)
+
+
+def _is_weather_investigation_request(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    if not re.search(r"\b(weather|forecast|temperature|conditions?|outside)\b", lowered):
+        return False
+    explicit_terms = (
+        "search the web",
+        "search online",
+        "search for",
+        "look up",
+        "look this up",
+        "investigate",
+        "browse sources",
+        "browse results",
+        "find sources",
+        "show sources",
+        "show me sources",
+    )
+    return any(term in lowered for term in explicit_terms)
+
+
+def _is_weather_question(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered or _is_weather_investigation_request(lowered):
+        return False
+    patterns = (
+        r"\bweather\b",
+        r"\bforecast\b",
+        r"\bcurrent conditions?\b",
+        r"\btemperature\b",
+        r"\btemp\b",
+        r"\boutside\b",
+        r"\bwhat'?s it like outside\b",
+        r"\bhow'?s the weather\b",
+    )
+    return any(re.search(pattern, lowered) for pattern in patterns)
+
+
+def _normalize_weather_location_candidate(candidate: str) -> str:
+    cleaned = re.sub(r"\s+", " ", candidate.strip())
+    cleaned = cleaned.strip(" ,.?!")
+    cleaned = re.sub(r"^(in|for|at)\s+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\b(today|right now|currently|now|please)\b", " ", cleaned, flags=re.IGNORECASE
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.?!")
+    return cleaned
+
+
+def _extract_weather_location_from_message(message: str) -> str | None:
+    text = " ".join(message.strip().split())
+    if not text:
+        return None
+
+    preposition_match = re.search(r"\b(?:in|for|at)\s+(.+)$", text, re.IGNORECASE)
+    if preposition_match:
+        candidate = _normalize_weather_location_candidate(preposition_match.group(1))
+        if candidate:
+            return candidate
+
+    stripped = re.sub(
+        r"\b(what'?s|what is|how'?s|how is|show me|give me|check|tell me|current|today'?s|todays)\b",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    stripped = re.sub(
+        r"\b(weather|forecast|conditions?|temperature|temp|outside|like outside)\b",
+        " ",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+    candidate = _normalize_weather_location_candidate(stripped)
+    if candidate and not re.fullmatch(
+        r"(the|like|the like|weather|forecast|today|right now)",
+        candidate,
+        re.IGNORECASE,
+    ):
+        return candidate
+    return None
+
+
+def _extract_weather_followup_kind(message: str) -> str | None:
+    lowered = message.strip().lower()
+    if not lowered:
+        return None
+    normalized = re.sub(r"[^a-z0-9]+", " ", lowered).strip()
+    if normalized in {"hourly", "hourly outlook", "show hourly", "show me hourly"}:
+        return "hourly"
+    if normalized in {
+        "7 day",
+        "7 day outlook",
+        "7 day forecast",
+        "weekly",
+        "weekly outlook",
+        "show me the weekly",
+        "show me weekly",
+    }:
+        return "7_day"
+    if normalized in {
+        "14 day",
+        "14 day outlook",
+        "14 day forecast",
+        "15 day",
+        "15 day outlook",
+        "15 day forecast",
+    }:
+        return "14_day" if normalized.startswith("14") else "15_day"
+    if normalized in {"weekend", "weekend outlook", "show me the weekend", "show weekend"}:
+        return "weekend"
+    return None
+
+
+def _weather_followup_is_active(weather_context: dict[str, Any] | None) -> bool:
+    if not isinstance(weather_context, dict):
+        return False
+    if weather_context.get("followup_active") is not True:
+        return False
+    retrieved_at_ms = weather_context.get("retrieved_at_ms")
+    if isinstance(retrieved_at_ms, int):
+        return int(time.time() * 1000) - retrieved_at_ms <= _WEATHER_FOLLOWUP_MAX_AGE_MS
+    return True
+
+
+def _weather_context_has_pending_lookup(weather_context: dict[str, Any] | None) -> bool:
+    if not isinstance(weather_context, dict):
+        return False
+    pending_lookup = weather_context.get("pending_lookup")
+    return isinstance(pending_lookup, dict) and bool(
+        str(pending_lookup.get("location_query") or "").strip()
+    )
+
+
+def _weather_context_is_waiting_for_location(weather_context: dict[str, Any] | None) -> bool:
+    return isinstance(weather_context, dict) and weather_context.get("awaiting_location") is True
+
+
+async def _lookup_live_weather(location_query: str) -> WeatherSnapshot:
+    client = OpenMeteoWeatherClient()
+    resolved = await client.resolve_location(location_query)
+    if resolved is None:
+        raise RuntimeError("I couldn’t resolve that place into a live weather location.")
+    return await client.fetch_snapshot(resolved)
+
+
+def _weather_answer_for_followup(
+    snapshot_payload: dict[str, Any],
+    *,
+    followup_kind: str,
+) -> str:
+    hourly = snapshot_payload.get("hourly")
+    daily = snapshot_payload.get("daily")
+    resolved_location = (
+        str(snapshot_payload.get("resolved_location") or "").strip() or "that location"
+    )
+    proxy = SimpleNamespace(
+        location=SimpleNamespace(label=resolved_location),
+        hourly=hourly if isinstance(hourly, list) else [],
+        daily=daily if isinstance(daily, list) else [],
+    )
+    if followup_kind == "hourly":
+        return format_hourly_weather_answer(proxy)
+    if followup_kind == "weekend":
+        return format_weekend_weather_answer(proxy)
+    if followup_kind == "14_day":
+        return format_daily_weather_answer(proxy, days=14)
+    if followup_kind == "15_day":
+        return format_daily_weather_answer(proxy, days=15)
+    return format_daily_weather_answer(proxy, days=7)
 
 
 def _is_informational_web_query(message: str) -> bool:
@@ -463,6 +645,7 @@ def append_session_turn(
         "last_enrichment",
         "last_investigation",
         "last_derived_investigation_output",
+        "weather_context",
         "recent_saveable_assistant_artifacts",
         "linked_queue_jobs",
     ):
@@ -572,6 +755,26 @@ def read_session_investigation(queue_root: Path, session_id: str) -> dict[str, A
     payload = _read_session_payload(queue_root, session_id)
     investigation = payload.get("last_investigation")
     return investigation if isinstance(investigation, dict) else None
+
+
+def read_session_weather_context(queue_root: Path, session_id: str) -> dict[str, Any] | None:
+    payload = _read_session_payload(queue_root, session_id)
+    weather_context = payload.get("weather_context")
+    return weather_context if isinstance(weather_context, dict) else None
+
+
+def write_session_weather_context(
+    queue_root: Path, session_id: str, weather_context: dict[str, Any] | None
+) -> None:
+    payload = _read_session_payload(queue_root, session_id)
+    if not payload:
+        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    if weather_context is None:
+        payload.pop("weather_context", None)
+    else:
+        payload["weather_context"] = weather_context
+    _write_session_payload(queue_root, session_id, payload)
 
 
 def write_session_investigation(
@@ -696,6 +899,7 @@ def session_debug_info(
     preview = read_session_preview(queue_root, session_id)
     enrichment = read_session_enrichment(queue_root, session_id)
     investigation = read_session_investigation(queue_root, session_id)
+    weather_context = read_session_weather_context(queue_root, session_id)
     derived_output = read_session_derived_investigation_output(queue_root, session_id)
     saveable_artifacts = read_session_saveable_assistant_artifacts(queue_root, session_id)
     handoff = read_session_handoff_state(queue_root, session_id) or {}
@@ -711,6 +915,7 @@ def session_debug_info(
         "preview_available": isinstance(preview, dict),
         "enrichment_available": isinstance(enrichment, dict),
         "investigation_available": isinstance(investigation, dict),
+        "weather_context_available": isinstance(weather_context, dict),
         "investigation_result_count": len(investigation.get("results", []))
         if isinstance(investigation, dict)
         else 0,
@@ -1689,8 +1894,97 @@ async def generate_vera_reply(
     user_message: str,
     code_draft: bool = False,
     writing_draft: bool = False,
+    weather_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cfg = load_app_config()
+
+    explicit_weather_investigation = _is_weather_investigation_request(user_message)
+    weather_followup_kind = _extract_weather_followup_kind(user_message)
+    weather_request = _is_weather_question(user_message)
+    weather_location = (
+        _extract_weather_location_from_message(user_message) if weather_request else None
+    )
+    should_use_weather_followup = weather_followup_kind is not None and _weather_followup_is_active(
+        weather_context
+    )
+    should_accept_pending_weather_offer = _weather_context_has_pending_lookup(
+        weather_context
+    ) and bool(
+        re.fullmatch(
+            r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|go\s+ahead|do\s+it)[.!?]*",
+            user_message.strip().lower(),
+        )
+    )
+    should_treat_as_location_reply = _weather_context_is_waiting_for_location(
+        weather_context
+    ) and bool(user_message.strip())
+
+    if (
+        (
+            weather_request
+            or should_use_weather_followup
+            or should_accept_pending_weather_offer
+            or should_treat_as_location_reply
+        )
+        and not explicit_weather_investigation
+        and not code_draft
+        and not writing_draft
+    ):
+        try:
+            if should_use_weather_followup and isinstance(weather_context, dict):
+                return {
+                    "answer": _weather_answer_for_followup(
+                        weather_context,
+                        followup_kind=weather_followup_kind or "7_day",
+                    ),
+                    "status": f"ok:weather_{weather_followup_kind}",
+                    "weather_context": {**weather_context, "followup_active": True},
+                }
+
+            location_query = ""
+            if weather_request and weather_location:
+                location_query = weather_location
+            elif should_accept_pending_weather_offer and isinstance(weather_context, dict):
+                pending_lookup = weather_context.get("pending_lookup")
+                if isinstance(pending_lookup, dict):
+                    location_query = str(pending_lookup.get("location_query") or "").strip()
+            elif should_treat_as_location_reply:
+                location_query = _normalize_weather_location_candidate(user_message)
+
+            if not location_query:
+                return {
+                    "answer": "Which location should I check?",
+                    "status": "weather_missing_location",
+                    "weather_context": {
+                        "awaiting_location": True,
+                        "followup_active": False,
+                    },
+                }
+
+            snapshot = await _lookup_live_weather(location_query)
+            session_weather = snapshot.to_session_payload()
+            session_weather["awaiting_location"] = False
+            session_weather["pending_lookup"] = {"location_query": location_query}
+            session_weather["retrieved_at_ms"] = int(time.time() * 1000)
+            return {
+                "answer": format_current_weather_answer(snapshot),
+                "status": "ok:weather_current",
+                "weather_context": session_weather,
+            }
+        except RuntimeError as exc:
+            return {
+                "answer": (
+                    "I couldn’t complete a live weather lookup, so I won’t guess at current conditions. "
+                    f"{exc}"
+                ),
+                "status": "weather_lookup_failed",
+                "weather_context": {
+                    "pending_lookup": {"location_query": location_query}
+                    if "location_query" in locals() and location_query
+                    else None,
+                    "followup_active": False,
+                },
+            }
 
     web_cfg = cfg.web_investigation
     informational_web = _is_informational_web_query(user_message)

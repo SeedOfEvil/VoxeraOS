@@ -10,9 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from voxera.core.writing_draft_intent import extract_text_draft_from_reply
-from voxera.models import AppConfig
+from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
+from voxera.vera.brave_search import WebSearchResult
 from voxera.vera.handoff import (
     diagnostics_request_refusal,
     drafting_guidance,
@@ -20,6 +21,7 @@ from voxera.vera.handoff import (
     maybe_draft_job_payload,
     normalize_preview_payload,
 )
+from voxera.vera.weather import WeatherLocation, WeatherSnapshot
 from voxera.vera_web import app as vera_app_module
 
 
@@ -56,6 +58,106 @@ def _write_job_artifacts(
         approvals = queue / "pending" / "approvals"
         approvals.mkdir(parents=True, exist_ok=True)
         (approvals / f"{stem}.approval.json").write_text(json.dumps(approval), encoding="utf-8")
+
+
+def _sample_weather_snapshot(*, query: str = "Calgary AB") -> WeatherSnapshot:
+    location = WeatherLocation(
+        query=query,
+        name="Calgary",
+        admin1="Alberta",
+        country="Canada",
+        latitude=51.0447,
+        longitude=-114.0719,
+        timezone="America/Edmonton",
+    )
+    return WeatherSnapshot(
+        location=location,
+        retrieved_at_ms=1234567890,
+        current_temperature_c=3.2,
+        current_feels_like_c=1.1,
+        current_condition="cloudy skies",
+        current_wind_kph=16.0,
+        today_high_c=6.1,
+        today_low_c=-4.2,
+        hourly=[
+            {
+                "time": "2026-03-21T12:00",
+                "display_time": "Sat 12 PM",
+                "temperature_c": 3.0,
+                "condition": "cloudy skies",
+            },
+            {
+                "time": "2026-03-21T13:00",
+                "display_time": "Sat 1 PM",
+                "temperature_c": 4.0,
+                "condition": "cloudy skies",
+            },
+            {
+                "time": "2026-03-21T14:00",
+                "display_time": "Sat 2 PM",
+                "temperature_c": 5.0,
+                "condition": "cloudy skies",
+            },
+        ],
+        daily=[
+            {
+                "date": "2026-03-21",
+                "weekday": "Sat",
+                "high_c": 6.1,
+                "low_c": -4.2,
+                "condition": "cloudy skies",
+            },
+            {
+                "date": "2026-03-22",
+                "weekday": "Sun",
+                "high_c": 7.0,
+                "low_c": -2.0,
+                "condition": "partly cloudy skies",
+            },
+            {
+                "date": "2026-03-23",
+                "weekday": "Mon",
+                "high_c": 8.0,
+                "low_c": -1.0,
+                "condition": "clear skies",
+            },
+            {
+                "date": "2026-03-24",
+                "weekday": "Tue",
+                "high_c": 9.0,
+                "low_c": 0.0,
+                "condition": "rain",
+            },
+            {
+                "date": "2026-03-25",
+                "weekday": "Wed",
+                "high_c": 10.0,
+                "low_c": 1.0,
+                "condition": "cloudy skies",
+            },
+            {
+                "date": "2026-03-26",
+                "weekday": "Thu",
+                "high_c": 11.0,
+                "low_c": 2.0,
+                "condition": "cloudy skies",
+            },
+            {
+                "date": "2026-03-27",
+                "weekday": "Fri",
+                "high_c": 12.0,
+                "low_c": 3.0,
+                "condition": "clear skies",
+            },
+            {
+                "date": "2026-03-28",
+                "weekday": "Sat",
+                "high_c": 13.0,
+                "low_c": 4.0,
+                "condition": "rain showers",
+            },
+        ],
+    )
 
 
 def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
@@ -3425,6 +3527,178 @@ def test_weather_answer_then_save_that_to_note_creates_preview(tmp_path, monkeyp
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/weather.md"
     assert "seattle today" in preview["write_file"]["content"].lower()
     assert "light rain" in preview["write_file"]["content"].lower()
+
+
+def test_weather_question_without_location_prompts_for_location(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fail_if_weather_lookup(_location_query: str):
+        raise AssertionError("live weather lookup should not run when location is missing")
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fail_if_weather_lookup)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post("/chat", data={"session_id": sid, "message": "What's the weather like?"})
+
+    assert res.status_code == 200
+    assert "Which location should I check?" in res.text
+    weather_context = vera_service.read_session_weather_context(queue, sid)
+    assert weather_context is not None
+    assert weather_context["awaiting_location"] is True
+
+
+def test_weather_location_reply_returns_concise_live_answer_not_result_dump(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return _sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    first = client.post("/chat", data={"session_id": sid, "message": "What's the weather like?"})
+    second = client.post("/chat", data={"session_id": sid, "message": "Calgary AB"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in second.text
+    assert "Today’s high is 6°C and the low is -4°C." in second.text
+    assert "Want the hourly, 7-day, or weekend outlook?" in second.text
+    assert "Here are the top findings" not in second.text
+
+
+def test_weather_lookup_failure_refuses_to_guess_live_conditions(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _failing_lookup(_location_query: str):
+        raise RuntimeError("Weather service is temporarily unavailable.")
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _failing_lookup)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "What's the weather in Calgary AB right now?"},
+    )
+
+    assert res.status_code == 200
+    assert "I couldn’t complete a live weather lookup, so I won’t guess" in res.text
+    assert "Weather service is temporarily unavailable." in res.text
+    assert "It’s currently" not in res.text
+    assert "Today’s high is" not in res.text
+
+
+def test_weather_followup_hourly_routes_naturally(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_lookup(_location_query: str):
+        return _sample_weather_snapshot()
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "What's the weather in Calgary AB?"},
+    )
+    res = client.post("/chat", data={"session_id": sid, "message": "hourly"})
+
+    assert res.status_code == 200
+    assert "Here’s the next 3 hours for Calgary, Alberta:" in res.text
+    assert "Sat 12 PM: 3°C, cloudy skies." in res.text
+    assert "I can also show the 7-day or weekend outlook." in res.text
+
+
+def test_explicit_weather_investigation_still_uses_generic_result_list_flow(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    monkeypatch.setattr(
+        vera_service,
+        "load_app_config",
+        lambda: AppConfig(
+            web_investigation=WebInvestigationConfig(api_key_ref="test-brave", max_results=3)
+        ),
+    )
+
+    class _FakeBraveClient:
+        def __init__(self, **kwargs):
+            _ = kwargs
+
+        async def search(self, *, query: str, count: int = 5):
+            assert "weather in calgary" in query.lower()
+            assert count == 3
+            return [
+                WebSearchResult(
+                    title="Weather overview",
+                    url="https://example.com/weather",
+                    description="A source overview.",
+                )
+            ]
+
+    async def _fail_if_weather_lookup(_location_query: str):
+        raise AssertionError(
+            "quick weather lookup should not run for explicit investigation requests"
+        )
+
+    monkeypatch.setattr(vera_service, "BraveSearchClient", _FakeBraveClient)
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fail_if_weather_lookup)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "Search the web for weather in Calgary AB"},
+    )
+
+    assert res.status_code == 200
+    assert "Here are the top findings I found via read-only Brave web investigation" in res.text
+
+
+def test_pending_weather_offer_acceptance_executes_lookup(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return _sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_weather_context(
+        queue,
+        sid,
+        {
+            "pending_lookup": {"location_query": "Calgary AB"},
+            "followup_active": False,
+        },
+    )
+
+    res = client.post("/chat", data={"session_id": sid, "message": "go ahead"})
+
+    assert res.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in res.text
 
 
 def test_concise_information_answer_then_save_it_creates_note_preview(tmp_path, monkeypatch):
