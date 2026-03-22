@@ -38,7 +38,7 @@ def _contains_parent_traversal(path: str) -> bool:
     return ".." in path.replace("\\", "/").split("/")
 
 
-def _is_safe_notes_path(path: str) -> bool:
+def is_safe_notes_path(path: str) -> bool:
     """Return True if path is safely within ~/VoxeraOS/notes/ and not in queue."""
     if _contains_parent_traversal(path):
         return False
@@ -235,7 +235,7 @@ def _classify_exists(text: str) -> dict[str, Any] | None:
     if not path_token:
         return None
     full_path = _normalize_notes_path(path_token)
-    if not _is_safe_notes_path(full_path):
+    if not is_safe_notes_path(full_path):
         return None
     return {
         "goal": f"check if {path_token} exists in notes",
@@ -250,7 +250,7 @@ def _classify_stat(text: str) -> dict[str, Any] | None:
     if not path_token:
         return None
     full_path = _normalize_notes_path(path_token)
-    if not _is_safe_notes_path(full_path):
+    if not is_safe_notes_path(full_path):
         return None
     return {
         "goal": f"show file info for {path_token}",
@@ -272,7 +272,7 @@ def _classify_read(text: str) -> dict[str, Any] | None:
     if not path_token:
         return None
     full_path = _normalize_notes_path(path_token)
-    if not _is_safe_notes_path(full_path):
+    if not is_safe_notes_path(full_path):
         return None
     return {
         "goal": f"read {path_token} from notes",
@@ -301,7 +301,7 @@ def _classify_mkdir(text: str) -> dict[str, Any] | None:
     if not dir_name or dir_name.lower() in {"in", "to", "my", "the", "called", "named"}:
         return None
     full_path = _normalize_notes_path(dir_name)
-    if not _is_safe_notes_path(full_path):
+    if not is_safe_notes_path(full_path):
         return None
     return {
         "goal": f"create folder {dir_name} in notes",
@@ -331,7 +331,7 @@ def _classify_delete(text: str) -> dict[str, Any] | None:
     if not path_token:
         return None
     full_path = _normalize_notes_path(path_token)
-    if not _is_safe_notes_path(full_path):
+    if not is_safe_notes_path(full_path):
         return None
     return {
         "goal": f"delete {path_token} from notes",
@@ -381,7 +381,7 @@ def _classify_copy_or_move(text: str) -> dict[str, Any] | None:
 
     source_path = _normalize_notes_path(source_token)
     dest_path = _normalize_notes_path(dest_token)
-    if not _is_safe_notes_path(source_path) or not _is_safe_notes_path(dest_path):
+    if not is_safe_notes_path(source_path) or not is_safe_notes_path(dest_path):
         return None
 
     # Determine if dest looks like a directory (no extension) or a file
@@ -442,7 +442,7 @@ def _classify_archive_organize(text: str) -> dict[str, Any] | None:
 
     source_path = _normalize_notes_path(source_token)
     dest_path = _normalize_notes_path(dest_token)
-    if not _is_safe_notes_path(source_path) or not _is_safe_notes_path(dest_path):
+    if not is_safe_notes_path(source_path) or not is_safe_notes_path(dest_path):
         return None
 
     return {
@@ -505,7 +505,7 @@ def detect_blocked_file_intent(message: str) -> str | None:
         if not path_token:
             continue
         full_path = _normalize_notes_path(path_token)
-        if _is_safe_notes_path(full_path):
+        if is_safe_notes_path(full_path):
             # Path is safe — classify_bounded_file_intent handles this
             return None
         # Path is blocked — produce refusal

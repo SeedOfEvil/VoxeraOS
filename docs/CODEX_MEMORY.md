@@ -1,3 +1,21 @@
+## 2026-03-22 — PR #TBD — fix(vera): fail closed on unsafe active preview path updates and make concise answers saveable
+
+- Added path safety validation to `normalize_preview_payload()` — all preview payloads (deterministic and LLM-generated) now pass through `is_safe_notes_path` before being persisted. Unsafe paths (parent traversal, queue control-plane, outside workspace) raise ValueError and leave the existing preview unchanged.
+- Fixed response truthfulness: when the LLM produces an unsafe path patch that gets rejected by normalization, the response explicitly says the update failed instead of claiming success. Broadened "updated the draft" detection in `_looks_like_preview_update_claim` to catch LLM phrasings that previously slipped through.
+- Made concise meaningful assistant-authored answers saveable: lowered the minimum character threshold from 18 to 8 in `build_saveable_assistant_artifact()` so short factual answers like "2 + 2 is 4." are recognized as saveable content. All existing courtesy/low-information/control filters remain intact — "ok", "sure", "you're welcome" still don't win.
+- Root causes: (1) `normalize_preview_payload` validated path format but never called `is_safe_notes_path`, allowing LLM-generated unsafe paths to bypass the deterministic safety gate; (2) `build_saveable_assistant_artifact` used `len(cleaned) < 18` which rejected concise factual answers.
+- Added 12 focused tests covering path safety in normalize, concise answer saveability, courtesy exclusion, and fragment rejection.
+
+## 2026-03-22 — PR #TBD — fix(vera): allow active preview rename to user-requested filename before submit
+
+- Fixed active `write_file` preview rename: natural phrases like "call the note biggest.txt", "call this note biggest.txt", and "rename it to biggest.txt" now correctly update the authoritative preview target path.
+- Added explicit path directive support: "use path: ~/VoxeraOS/notes/biggest.txt", "change the path to ...", and "set the path to ..." now apply as first-class revisions to the active preview.
+- When the extracted target is already a full path (~/... or /home/...) it is used directly; bare filenames are placed in the current preview directory.
+- All rename/path-update operations are gated by the existing `is_safe_notes_path` check — unsafe paths (parent traversal, queue control-plane) fail closed and leave the preview unchanged.
+- Content and mode are preserved across rename/path changes; only the target path and goal text are updated.
+- Root cause: `_extract_named_target()` regex only matched `call it X` / `call that X` but not `call the note X` / `call this note X`; also no patterns existed for explicit path directives.
+- Added 8 focused tests covering: "call the note X", "save it as X", "use path: ...", "change the path to ...", content/mode preservation, unsafe path rejection, queue path rejection, and "rename it to X".
+
 ## 2026-03-21 — PR #TBD — fix(vera): stop weather hallucination and add quick live weather flow
 
 - Added a dedicated Vera quick-weather lane backed by structured Open-Meteo weather data so ordinary weather/current-condition prompts no longer rely on freeform conversational generation for live facts.

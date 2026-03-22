@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import pytest
+
 from voxera.core.file_intent import classify_bounded_file_intent, detect_blocked_file_intent
-from voxera.vera.handoff import maybe_draft_job_payload, normalize_preview_payload
+from voxera.vera.handoff import (
+    build_saveable_assistant_artifact,
+    maybe_draft_job_payload,
+    normalize_preview_payload,
+)
 
 # ---------------------------------------------------------------------------
 # classify_bounded_file_intent: existence checks
@@ -480,3 +486,301 @@ def test_end_to_end_copy_to_normalized_preview():
     normalized = normalize_preview_payload(draft)
     assert "file_organize" in normalized
     assert normalized["file_organize"]["mode"] == "copy"
+
+
+# ---------------------------------------------------------------------------
+# Active preview rename: _draft_revision_from_active_preview via
+# maybe_draft_job_payload with active_preview
+# ---------------------------------------------------------------------------
+
+_SAMPLE_PREVIEW = {
+    "goal": "write a file called note-1774131870.txt with provided content",
+    "write_file": {
+        "path": "~/VoxeraOS/notes/note-1774131870.txt",
+        "content": "The biggest object ever found is ...",
+        "mode": "overwrite",
+    },
+}
+
+
+def test_call_the_note_renames_active_preview():
+    """'call the note biggest.txt' should update the preview target."""
+    draft = maybe_draft_job_payload(
+        "call the note biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+    assert draft["write_file"]["mode"] == "overwrite"
+
+
+def test_save_it_as_renames_active_preview():
+    """'save it as biggest.txt' should update the preview target."""
+    draft = maybe_draft_job_payload(
+        "save it as biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+    assert draft["write_file"]["mode"] == "overwrite"
+
+
+def test_use_path_explicit_renames_active_preview():
+    """'use path: ~/VoxeraOS/notes/biggest.txt' should update preview path exactly."""
+    draft = maybe_draft_job_payload(
+        "use path: ~/VoxeraOS/notes/biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+    assert draft["write_file"]["mode"] == "overwrite"
+
+
+def test_change_the_path_to_renames_active_preview():
+    """'change the path to ~/VoxeraOS/notes/biggest.txt' should update preview."""
+    draft = maybe_draft_job_payload(
+        "change the path to ~/VoxeraOS/notes/biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+
+
+def test_rename_preserves_content_and_mode():
+    """Content and mode must be preserved across rename/path changes."""
+    preview = {
+        "goal": "write a file called draft.txt with provided content",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/draft.txt",
+            "content": "Some important content here.",
+            "mode": "append",
+        },
+    }
+    draft = maybe_draft_job_payload(
+        "call this note final.txt",
+        active_preview=preview,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/final.txt"
+    assert draft["write_file"]["content"] == "Some important content here."
+    assert draft["write_file"]["mode"] == "append"
+
+
+def test_unsafe_path_rename_rejected():
+    """Unsafe path traversal in rename must be rejected — preview unchanged."""
+    draft = maybe_draft_job_payload(
+        "use path: ~/VoxeraOS/notes/../../../etc/passwd",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    # Should return None (fail closed) — preview not mutated
+    assert draft is None
+
+
+def test_rename_to_queue_path_rejected():
+    """Rename targeting queue control-plane path must be rejected."""
+    draft = maybe_draft_job_payload(
+        "use path: ~/VoxeraOS/notes/queue/evil.json",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is None
+
+
+def test_rename_it_to_with_bare_filename():
+    """'rename it to biggest.txt' should update the preview target."""
+    draft = maybe_draft_job_payload(
+        "rename it to biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+
+
+def test_no_active_preview_rename_does_nothing():
+    """'call the note biggest.txt' without active_preview must not create a preview."""
+    draft = maybe_draft_job_payload(
+        "call the note biggest.txt",
+        active_preview=None,
+    )
+    assert draft is None
+
+
+def test_rename_with_no_write_file_dict_goal_only():
+    """Rename against a goal-only preview (no write_file) falls to goal update."""
+    preview = {"goal": "write a note called note-123.txt"}
+    draft = maybe_draft_job_payload(
+        "call the note biggest.txt",
+        active_preview=preview,
+    )
+    assert draft is not None
+    assert "biggest.txt" in draft["goal"]
+
+
+def test_goal_text_reflects_new_display_name():
+    """Goal field must contain the new display name after rename."""
+    draft = maybe_draft_job_payload(
+        "call the note biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert "biggest.txt" in draft["goal"]
+    assert "note-1774131870" not in draft["goal"]
+
+
+def test_idempotent_rename_same_name():
+    """Renaming to the same name the preview already has should work."""
+    draft = maybe_draft_job_payload(
+        "call the note note-1774131870.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/note-1774131870.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+
+
+def test_false_positive_call_the_plumber_does_not_rename():
+    """'call the plumber' must NOT trigger rename on an active preview."""
+    draft = maybe_draft_job_payload(
+        "call the plumber tomorrow",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    # Should NOT produce a rename — "plumber" is not a file-referencing noun
+    assert draft is None
+
+
+def test_call_this_file_renames_preview():
+    """'call this file biggest.txt' should update the preview target."""
+    draft = maybe_draft_job_payload(
+        "call this file biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+
+
+# ---------------------------------------------------------------------------
+# normalize_preview_payload: path safety gate
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_rejects_traversal_path():
+    """normalize_preview_payload must reject parent traversal in write_file.path."""
+    payload = {
+        "goal": "write a file",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/../bad.txt",
+            "content": "evil",
+            "mode": "overwrite",
+        },
+    }
+    with pytest.raises(ValueError, match="must be within"):
+        normalize_preview_payload(payload)
+
+
+def test_normalize_rejects_queue_path():
+    """normalize_preview_payload must reject queue control-plane paths."""
+    payload = {
+        "goal": "write a file",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/queue/evil.json",
+            "content": "evil",
+            "mode": "overwrite",
+        },
+    }
+    with pytest.raises(ValueError, match="must be within"):
+        normalize_preview_payload(payload)
+
+
+def test_normalize_rejects_outside_workspace_path():
+    """normalize_preview_payload must reject paths outside ~/VoxeraOS/notes/."""
+    payload = {
+        "goal": "write a file",
+        "write_file": {
+            "path": "/etc/passwd",
+            "content": "evil",
+            "mode": "overwrite",
+        },
+    }
+    with pytest.raises(ValueError, match="must be within"):
+        normalize_preview_payload(payload)
+
+
+def test_normalize_accepts_safe_path():
+    """normalize_preview_payload must accept valid notes paths."""
+    payload = {
+        "goal": "write a file",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/biggest.txt",
+            "content": "content",
+            "mode": "overwrite",
+        },
+    }
+    result = normalize_preview_payload(payload)
+    assert result["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+
+
+def test_unsafe_path_rename_preserves_prior_preview():
+    """Unsafe path in rename returns None, so caller preserves prior preview."""
+    draft = maybe_draft_job_payload(
+        "use path: ~/VoxeraOS/notes/../../../etc/passwd",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is None
+
+
+# ---------------------------------------------------------------------------
+# build_saveable_assistant_artifact: concise answer saveability
+# ---------------------------------------------------------------------------
+
+
+def test_concise_factual_answer_is_saveable():
+    """'2 + 2 is 4.' must be saveable — it is a meaningful assistant answer."""
+    artifact = build_saveable_assistant_artifact("2 + 2 is 4.")
+    assert artifact is not None
+    assert artifact["content"] == "2 + 2 is 4."
+
+
+def test_capital_answer_is_saveable():
+    """Short factual answers like 'The capital of Alberta is Edmonton.' must be saveable."""
+    artifact = build_saveable_assistant_artifact("The capital of Alberta is Edmonton.")
+    assert artifact is not None
+    assert "Edmonton" in artifact["content"]
+
+
+def test_courtesy_answer_still_not_saveable():
+    """Courtesy replies like 'You're welcome!' must not be saveable."""
+    artifact = build_saveable_assistant_artifact("You're welcome!")
+    assert artifact is None
+
+
+def test_low_info_ok_still_not_saveable():
+    """Low-info responses like 'ok' must not be saveable."""
+    artifact = build_saveable_assistant_artifact("ok")
+    assert artifact is None
+
+
+def test_longer_explanation_still_saveable():
+    """Longer explanatory answers must remain saveable."""
+    text = (
+        "Photosynthesis is the process by which green plants and some other organisms "
+        "use sunlight to synthesize foods from carbon dioxide and water."
+    )
+    artifact = build_saveable_assistant_artifact(text)
+    assert artifact is not None
+    assert "Photosynthesis" in artifact["content"]
+
+
+def test_very_short_fragment_not_saveable():
+    """Fragments under 8 chars like 'yes.' must not be saveable."""
+    artifact = build_saveable_assistant_artifact("yes.")
+    assert artifact is None
+
+
+def test_single_word_not_saveable():
+    """Single-word responses must not be saveable."""
+    artifact = build_saveable_assistant_artifact("Absolutely")
+    assert artifact is None

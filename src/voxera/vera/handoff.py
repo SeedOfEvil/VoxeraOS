@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..core.file_intent import classify_bounded_file_intent
+from ..core.file_intent import classify_bounded_file_intent, is_safe_notes_path
 from ..core.inbox import add_inbox_payload
 from ..core.writing_draft_intent import classify_writing_draft_intent, extract_text_draft_from_reply
 
@@ -455,7 +455,11 @@ def build_saveable_assistant_artifact(text: str) -> dict[str, str] | None:
         return None
 
     words = cleaned.split()
-    if len(cleaned) < 18 or len(words) < 3:
+    if len(words) < 2:
+        return None
+    # Concise factual answers (e.g. "2 + 2 is 4.") must be saveable.
+    # Reject content under 8 characters as trivially short fragments.
+    if len(cleaned) < 8:
         return None
     if len(words) <= 5 and not re.search(r"[.!?:\n]", cleaned):
         return None
@@ -1183,7 +1187,11 @@ def _normalize_file_write_goal(message: str) -> str | None:
 
 
 def _extract_named_target(message: str) -> str | None:
-    named = re.search(r"\b(?:called|named|call\s+(?:it|that))\s+([^\s]+)", message, re.IGNORECASE)
+    named = re.search(
+        r"\b(?:called|named|call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc)))\s+([^\s]+)",
+        message,
+        re.IGNORECASE,
+    )
     if named:
         return named.group(1).strip("\"'.,!? ")
     path_like = re.search(
@@ -1193,8 +1201,16 @@ def _extract_named_target(message: str) -> str | None:
     )
     if path_like:
         return path_like.group(1).strip("\"'.,!? ")
+    # Explicit path directive: "use path: ~/VoxeraOS/notes/foo.txt"
+    explicit_path = re.search(
+        r"\b(?:use\s+path|change\s+(?:the\s+)?path|set\s+(?:the\s+)?path)\s*:?\s+(?:to\s+)?([~\/][^\s]+)",
+        message,
+        re.IGNORECASE,
+    )
+    if explicit_path:
+        return explicit_path.group(1).strip("\"'.,!? ")
     tail = re.search(
-        r"\b(?:rename|make\s+that|change\s+(?:the\s+)?(?:name|filename|file\s+name))\s+(?:it\s+)?([^\s]+)",
+        r"\b(?:rename|make\s+that|change\s+(?:the\s+)?(?:name|filename|file\s+name))\s+(?:it\s+)?(?:to\s+)?([^\s]+)",
         message,
         re.IGNORECASE,
     )
@@ -1362,8 +1378,10 @@ def _draft_revision_from_active_preview(
         r"rename|"
         r"save\s+(?:it|this|that)?\s*as|"
         r"make\s+that|"
-        r"call\s+(?:it|that)|"
-        r"change\s+(?:the\s+)?(?:name|filename|file\s+name)"
+        r"call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
+        r"change\s+(?:the\s+)?(?:name|filename|file\s+name|path)|"
+        r"use\s+path|"
+        r"set\s+(?:the\s+)?path"
         r")\b",
         lowered,
     ) or (
@@ -1376,15 +1394,26 @@ def _draft_revision_from_active_preview(
         if new_name:
             write_file = active_preview.get("write_file")
             if isinstance(write_file, dict):
-                base_path = str(write_file.get("path") or "")
-                if "/" in base_path:
-                    rewritten_path = str(Path(base_path).with_name(new_name))
+                # Determine the rewritten path: if the extracted target is
+                # already an explicit path (~/... or /home/...) use it
+                # directly after safety check; otherwise treat it as a bare
+                # filename and place it in the current directory.
+                if new_name.startswith("~/") or new_name.startswith("/home/"):
+                    rewritten_path = new_name
                 else:
-                    rewritten_path = f"~/VoxeraOS/notes/{new_name}"
+                    base_path = str(write_file.get("path") or "")
+                    if "/" in base_path:
+                        rewritten_path = str(Path(base_path).with_name(new_name))
+                    else:
+                        rewritten_path = f"~/VoxeraOS/notes/{new_name}"
+                # Reject unsafe paths — fail closed
+                if not is_safe_notes_path(rewritten_path):
+                    return None
+                display_name = Path(rewritten_path).name
                 writing_kind = _writing_kind_from_preview_goal(current_goal)
-                goal = f"write a file called {new_name} with provided content"
+                goal = f"write a file called {display_name} with provided content"
                 if writing_kind is not None:
-                    goal = f"draft a {writing_kind} as {new_name}"
+                    goal = f"draft a {writing_kind} as {display_name}"
                 return {
                     "goal": goal,
                     "write_file": {
@@ -1394,6 +1423,8 @@ def _draft_revision_from_active_preview(
                     },
                 }
             if "write a note called" in current_goal:
+                if ".." in new_name or new_name.startswith("/"):
+                    return None
                 return {"goal": f"write a note called {new_name}"}
 
     if re.search(r"\bappend\b", lowered) and re.search(
@@ -1730,6 +1761,11 @@ def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
         path = str(write_file.get("path") or "").strip()
         if not path:
             raise ValueError("write_file.path is required")
+        if not is_safe_notes_path(path):
+            raise ValueError(
+                "write_file.path must be within ~/VoxeraOS/notes/ "
+                "and must not contain parent traversal or target the queue control-plane"
+            )
         content = write_file.get("content")
         if not isinstance(content, str):
             raise ValueError("write_file.content must be a string")
