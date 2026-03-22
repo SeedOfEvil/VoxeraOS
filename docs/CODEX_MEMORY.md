@@ -1915,3 +1915,21 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make golden-check`
   - `make validation-check`
   - `make merge-readiness-check`
+
+## 2026-03-22 — PR #TBD — refactor(vera): extract session-store ownership from Vera service
+
+- Summary:
+  - Added `src/voxera/vera/session_store.py` as the dedicated home for Vera session persistence/state ownership: session id/path helpers, session payload IO, turn history storage, preview/enrichment/weather/investigation/handoff helpers, saveable assistant artifact state, linked queue-job registry state, and session debug metadata.
+  - Kept behavior stable by leaving `src/voxera/vera/service.py` as a compatibility facade: existing public helpers and internal call sites continue using the same names, now delegated to `session_store.py`.
+  - Preserved the current session schema and preview/queue truth semantics; this extraction is intentionally narrow and does not redesign weather, investigation, completion surfacing, or preview lifecycle behavior.
+  - Added an operations/testing note in `docs/ops.md` so future Vera modularization work knows session persistence/state helpers now belong in `session_store.py`.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
+

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
-import secrets
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,9 +15,9 @@ from ..brain.openai_compat import OpenAICompatBrain
 from ..config import load_app_config
 from ..core.queue_inspect import lookup_job
 from ..core.queue_result_consumers import resolve_structured_execution
+from . import session_store as vera_session_store
 from .brave_search import BraveSearchClient, WebSearchResult
 from .handoff import (
-    build_saveable_assistant_artifact,
     collect_recent_saveable_assistant_artifacts,
     drafting_guidance,
     maybe_draft_job_payload,
@@ -36,13 +34,57 @@ from .weather import (
     format_weekend_weather_answer,
 )
 
-MAX_SESSION_TURNS = 8
-_SESSION_ID_LENGTH = 24
-_MAX_LINKED_JOB_TRACK = 64
-_MAX_LINKED_COMPLETIONS = 64
-_MAX_LINKED_NOTIFICATIONS = 128
-_MAX_SAVEABLE_ASSISTANT_ARTIFACTS = 8
+MAX_SESSION_TURNS = vera_session_store.MAX_SESSION_TURNS
+_MAX_LINKED_JOB_TRACK = vera_session_store._MAX_LINKED_JOB_TRACK
+_MAX_LINKED_COMPLETIONS = vera_session_store._MAX_LINKED_COMPLETIONS
+_MAX_LINKED_NOTIFICATIONS = vera_session_store._MAX_LINKED_NOTIFICATIONS
 _WEATHER_FOLLOWUP_MAX_AGE_MS = 30 * 60 * 1000
+
+new_session_id = vera_session_store.new_session_id
+_session_path = vera_session_store._session_path
+_read_session_payload = vera_session_store._read_session_payload
+_write_session_payload = vera_session_store._write_session_payload
+read_session_turns = vera_session_store.read_session_turns
+read_session_updated_at_ms = vera_session_store.read_session_updated_at_ms
+append_session_turn = vera_session_store.append_session_turn
+read_session_preview = vera_session_store.read_session_preview
+write_session_preview = vera_session_store.write_session_preview
+write_session_handoff_state = vera_session_store.write_session_handoff_state
+read_session_handoff_state = vera_session_store.read_session_handoff_state
+clear_session_turns = vera_session_store.clear_session_turns
+read_session_enrichment = vera_session_store.read_session_enrichment
+write_session_enrichment = vera_session_store.write_session_enrichment
+read_session_investigation = vera_session_store.read_session_investigation
+read_session_weather_context = vera_session_store.read_session_weather_context
+write_session_weather_context = vera_session_store.write_session_weather_context
+write_session_investigation = vera_session_store.write_session_investigation
+read_session_derived_investigation_output = (
+    vera_session_store.read_session_derived_investigation_output
+)
+write_session_derived_investigation_output = (
+    vera_session_store.write_session_derived_investigation_output
+)
+read_session_saveable_assistant_artifacts = (
+    vera_session_store.read_session_saveable_assistant_artifacts
+)
+_write_session_saveable_assistant_artifacts = (
+    vera_session_store._write_session_saveable_assistant_artifacts
+)
+session_debug_info = vera_session_store.session_debug_info
+_read_linked_job_registry = vera_session_store._read_linked_job_registry
+_write_linked_job_registry = vera_session_store._write_linked_job_registry
+register_session_linked_job = vera_session_store.register_session_linked_job
+read_linked_job_completions = vera_session_store.read_linked_job_completions
+
+
+def _read_json_dict(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
@@ -564,295 +606,6 @@ def _normalize_web_query(user_message: str) -> str:
     return query or user_message.strip()
 
 
-def new_session_id() -> str:
-    return f"vera-{secrets.token_hex(_SESSION_ID_LENGTH // 2)}"
-
-
-def _session_path(queue_root: Path, session_id: str) -> Path:
-    return queue_root / "artifacts" / "vera_sessions" / f"{Path(session_id).name}.json"
-
-
-def _read_session_payload(queue_root: Path, session_id: str) -> dict[str, Any]:
-    if not session_id:
-        return {}
-    path = _session_path(queue_root, session_id)
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _write_session_payload(queue_root: Path, session_id: str, payload: dict[str, Any]) -> None:
-    path = _session_path(queue_root, session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def _read_json_dict(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def read_session_turns(queue_root: Path, session_id: str) -> list[dict[str, str]]:
-    payload = _read_session_payload(queue_root, session_id)
-    turns = payload.get("turns")
-    if not isinstance(turns, list):
-        return []
-    normalized: list[dict[str, str]] = []
-    for turn in turns:
-        if not isinstance(turn, dict):
-            continue
-        role = str(turn.get("role") or "").strip().lower()
-        text = str(turn.get("text") or "").strip()
-        if role in {"user", "assistant"} and text:
-            normalized.append({"role": role, "text": text})
-    return normalized[-MAX_SESSION_TURNS:]
-
-
-def read_session_updated_at_ms(queue_root: Path, session_id: str) -> int:
-    payload = _read_session_payload(queue_root, session_id)
-    raw = payload.get("updated_at_ms")
-    if isinstance(raw, bool):
-        return 0
-    if isinstance(raw, int):
-        return max(0, raw)
-    if isinstance(raw, str):
-        try:
-            return max(0, int(raw))
-        except ValueError:
-            return 0
-    return 0
-
-
-def append_session_turn(
-    queue_root: Path, session_id: str, *, role: str, text: str
-) -> list[dict[str, str]]:
-    turns = read_session_turns(queue_root, session_id)
-    turns.append({"role": role, "text": text.strip()})
-    turns = turns[-MAX_SESSION_TURNS:]
-    previous = _read_session_payload(queue_root, session_id)
-    payload: dict[str, Any] = {
-        "session_id": session_id,
-        "updated_at_ms": int(time.time() * 1000),
-        "turns": turns,
-    }
-    for preserved_key in (
-        "pending_job_preview",
-        "handoff",
-        "last_enrichment",
-        "last_investigation",
-        "last_derived_investigation_output",
-        "weather_context",
-        "recent_saveable_assistant_artifacts",
-        "linked_queue_jobs",
-    ):
-        preserved = previous.get(preserved_key)
-        if isinstance(preserved, dict) or (
-            preserved_key == "recent_saveable_assistant_artifacts" and isinstance(preserved, list)
-        ):
-            payload[preserved_key] = preserved
-    if role.strip().lower() == "assistant":
-        artifact = build_saveable_assistant_artifact(text)
-        if artifact is not None:
-            current_artifacts = read_session_saveable_assistant_artifacts(queue_root, session_id)
-            deduped = [
-                item
-                for item in current_artifacts
-                if item.get("content") != artifact["content"]
-                or item.get("artifact_type") != artifact["artifact_type"]
-            ]
-            deduped.append(artifact)
-            payload["recent_saveable_assistant_artifacts"] = deduped[
-                -_MAX_SAVEABLE_ASSISTANT_ARTIFACTS:
-            ]
-    _write_session_payload(queue_root, session_id, payload)
-    return turns
-
-
-def read_session_preview(queue_root: Path, session_id: str) -> dict[str, Any] | None:
-    payload = _read_session_payload(queue_root, session_id)
-    preview = payload.get("pending_job_preview")
-    return preview if isinstance(preview, dict) else None
-
-
-def write_session_preview(
-    queue_root: Path, session_id: str, preview: dict[str, Any] | None
-) -> None:
-    payload = _read_session_payload(queue_root, session_id)
-    if not payload:
-        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
-    payload["updated_at_ms"] = int(time.time() * 1000)
-    if preview is None:
-        payload.pop("pending_job_preview", None)
-    else:
-        payload["pending_job_preview"] = preview
-    _write_session_payload(queue_root, session_id, payload)
-
-
-def write_session_handoff_state(
-    queue_root: Path,
-    session_id: str,
-    *,
-    attempted: bool,
-    queue_path: str,
-    status: str,
-    job_id: str | None = None,
-    error: str | None = None,
-) -> None:
-    payload = _read_session_payload(queue_root, session_id)
-    if not payload:
-        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
-    payload["updated_at_ms"] = int(time.time() * 1000)
-    payload["handoff"] = {
-        "attempted": attempted,
-        "queue_path": queue_path,
-        "status": status,
-        "job_id": job_id,
-        "error": error,
-        "updated_at_ms": int(time.time() * 1000),
-    }
-    _write_session_payload(queue_root, session_id, payload)
-
-
-def read_session_handoff_state(queue_root: Path, session_id: str) -> dict[str, Any] | None:
-    payload = _read_session_payload(queue_root, session_id)
-    handoff = payload.get("handoff")
-    return handoff if isinstance(handoff, dict) else None
-
-
-def clear_session_turns(queue_root: Path, session_id: str) -> None:
-    path = _session_path(queue_root, session_id)
-    if path.exists():
-        path.unlink()
-
-
-def read_session_enrichment(queue_root: Path, session_id: str) -> dict[str, Any] | None:
-    """Return the most recent read-only enrichment stored for this session, or None."""
-    payload = _read_session_payload(queue_root, session_id)
-    enrichment = payload.get("last_enrichment")
-    return enrichment if isinstance(enrichment, dict) else None
-
-
-def write_session_enrichment(
-    queue_root: Path, session_id: str, enrichment: dict[str, Any] | None
-) -> None:
-    """Persist read-only enrichment state into the session for preview-authoring use."""
-    payload = _read_session_payload(queue_root, session_id)
-    if not payload:
-        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
-    payload["updated_at_ms"] = int(time.time() * 1000)
-    if enrichment is None:
-        payload.pop("last_enrichment", None)
-    else:
-        payload["last_enrichment"] = enrichment
-    _write_session_payload(queue_root, session_id, payload)
-
-
-def read_session_investigation(queue_root: Path, session_id: str) -> dict[str, Any] | None:
-    payload = _read_session_payload(queue_root, session_id)
-    investigation = payload.get("last_investigation")
-    return investigation if isinstance(investigation, dict) else None
-
-
-def read_session_weather_context(queue_root: Path, session_id: str) -> dict[str, Any] | None:
-    payload = _read_session_payload(queue_root, session_id)
-    weather_context = payload.get("weather_context")
-    return weather_context if isinstance(weather_context, dict) else None
-
-
-def write_session_weather_context(
-    queue_root: Path, session_id: str, weather_context: dict[str, Any] | None
-) -> None:
-    payload = _read_session_payload(queue_root, session_id)
-    if not payload:
-        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
-    payload["updated_at_ms"] = int(time.time() * 1000)
-    if weather_context is None:
-        payload.pop("weather_context", None)
-    else:
-        payload["weather_context"] = weather_context
-    _write_session_payload(queue_root, session_id, payload)
-
-
-def write_session_investigation(
-    queue_root: Path, session_id: str, investigation: dict[str, Any] | None
-) -> None:
-    payload = _read_session_payload(queue_root, session_id)
-    if not payload:
-        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
-    payload["updated_at_ms"] = int(time.time() * 1000)
-    if investigation is None:
-        payload.pop("last_investigation", None)
-    else:
-        payload["last_investigation"] = investigation
-    _write_session_payload(queue_root, session_id, payload)
-
-
-def read_session_derived_investigation_output(
-    queue_root: Path, session_id: str
-) -> dict[str, Any] | None:
-    payload = _read_session_payload(queue_root, session_id)
-    derived = payload.get("last_derived_investigation_output")
-    return derived if isinstance(derived, dict) else None
-
-
-def write_session_derived_investigation_output(
-    queue_root: Path, session_id: str, derived_output: dict[str, Any] | None
-) -> None:
-    payload = _read_session_payload(queue_root, session_id)
-    if not payload:
-        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
-    payload["updated_at_ms"] = int(time.time() * 1000)
-    if derived_output is None:
-        payload.pop("last_derived_investigation_output", None)
-    else:
-        payload["last_derived_investigation_output"] = derived_output
-    _write_session_payload(queue_root, session_id, payload)
-
-
-def read_session_saveable_assistant_artifacts(
-    queue_root: Path, session_id: str
-) -> list[dict[str, str]]:
-    payload = _read_session_payload(queue_root, session_id)
-    raw_artifacts = payload.get("recent_saveable_assistant_artifacts")
-    if not isinstance(raw_artifacts, list):
-        return []
-    artifacts: list[dict[str, str]] = []
-    for item in raw_artifacts:
-        if not isinstance(item, dict):
-            continue
-        content = str(item.get("content") or "").strip()
-        artifact_type = str(item.get("artifact_type") or "").strip()
-        if not content or not artifact_type:
-            continue
-        artifacts.append({"content": content, "artifact_type": artifact_type})
-    return artifacts[-_MAX_SAVEABLE_ASSISTANT_ARTIFACTS:]
-
-
-def _write_session_saveable_assistant_artifacts(
-    queue_root: Path, session_id: str, artifacts: list[dict[str, str]]
-) -> None:
-    payload = _read_session_payload(queue_root, session_id)
-    if not payload:
-        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
-    payload["updated_at_ms"] = int(time.time() * 1000)
-    if artifacts:
-        payload["recent_saveable_assistant_artifacts"] = artifacts[
-            -_MAX_SAVEABLE_ASSISTANT_ARTIFACTS:
-        ]
-    else:
-        payload.pop("recent_saveable_assistant_artifacts", None)
-    _write_session_payload(queue_root, session_id, payload)
-
-
 async def run_web_enrichment(*, user_message: str) -> dict[str, Any] | None:
     """Perform a read-only web search and return structured enrichment suitable for preview authoring.
 
@@ -894,109 +647,6 @@ async def run_web_enrichment(*, user_message: str) -> dict[str, Any] | None:
         "summary": "\n".join(lines),
         "retrieved_at_ms": int(time.time() * 1000),
     }
-
-
-def session_debug_info(
-    queue_root: Path, session_id: str, *, mode_status: str
-) -> dict[str, str | int | bool | None]:
-    path = _session_path(queue_root, session_id)
-    turns = read_session_turns(queue_root, session_id)
-    preview = read_session_preview(queue_root, session_id)
-    enrichment = read_session_enrichment(queue_root, session_id)
-    investigation = read_session_investigation(queue_root, session_id)
-    weather_context = read_session_weather_context(queue_root, session_id)
-    derived_output = read_session_derived_investigation_output(queue_root, session_id)
-    saveable_artifacts = read_session_saveable_assistant_artifacts(queue_root, session_id)
-    handoff = read_session_handoff_state(queue_root, session_id) or {}
-    return {
-        "dev_mode": True,
-        "mode_status": mode_status,
-        "session_id": session_id,
-        "session_file": str(path),
-        "session_file_exists": path.exists(),
-        "turn_count": len(turns),
-        "max_session_turns": MAX_SESSION_TURNS,
-        "system_prompt_sha256": hashlib.sha256(VERA_SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
-        "preview_available": isinstance(preview, dict),
-        "enrichment_available": isinstance(enrichment, dict),
-        "investigation_available": isinstance(investigation, dict),
-        "weather_context_available": isinstance(weather_context, dict),
-        "investigation_result_count": len(investigation.get("results", []))
-        if isinstance(investigation, dict)
-        else 0,
-        "derived_investigation_output_available": isinstance(derived_output, dict),
-        "saveable_assistant_artifact_count": len(saveable_artifacts),
-        "handoff_attempted": handoff.get("attempted") is True,
-        "handoff_status": str(handoff.get("status") or "none"),
-        "handoff_queue_path": str(handoff.get("queue_path") or str(queue_root)),
-        "handoff_job_id": str(handoff.get("job_id") or "") or None,
-        "handoff_error": str(handoff.get("error") or "") or None,
-        "linked_jobs": len(_read_linked_job_registry(queue_root, session_id).get("tracked", [])),
-        "linked_completions": len(
-            _read_linked_job_registry(queue_root, session_id).get("completions", [])
-        ),
-    }
-
-
-def _read_linked_job_registry(queue_root: Path, session_id: str) -> dict[str, Any]:
-    payload = _read_session_payload(queue_root, session_id)
-    raw = payload.get("linked_queue_jobs")
-    return (
-        raw
-        if isinstance(raw, dict)
-        else {"tracked": [], "completions": [], "notification_outbox": []}
-    )
-
-
-def _write_linked_job_registry(queue_root: Path, session_id: str, registry: dict[str, Any]) -> None:
-    payload = _read_session_payload(queue_root, session_id)
-    if not payload:
-        payload = {"session_id": session_id, "updated_at_ms": int(time.time() * 1000), "turns": []}
-    payload["updated_at_ms"] = int(time.time() * 1000)
-    payload["linked_queue_jobs"] = registry
-    _write_session_payload(queue_root, session_id, payload)
-
-
-def register_session_linked_job(queue_root: Path, session_id: str, *, job_ref: str) -> None:
-    normalized_job_ref = Path(job_ref).name.strip()
-    if not normalized_job_ref:
-        return
-    registry = _read_linked_job_registry(queue_root, session_id)
-    tracked_raw = registry.get("tracked")
-    tracked = tracked_raw if isinstance(tracked_raw, list) else []
-    now_ms = int(time.time() * 1000)
-
-    existing: dict[str, Any] | None = None
-    for item in tracked:
-        if not isinstance(item, dict):
-            continue
-        if str(item.get("job_ref") or "") == normalized_job_ref:
-            existing = item
-            break
-    if existing is None:
-        tracked.append(
-            {
-                "job_ref": normalized_job_ref,
-                "linked_session_id": session_id,
-                "linked_thread_id": session_id,
-                "linked_at_ms": now_ms,
-                "completion_ingested": False,
-            }
-        )
-    else:
-        existing["linked_session_id"] = session_id
-        existing["linked_thread_id"] = session_id
-        existing["updated_at_ms"] = now_ms
-
-    tracked = tracked[-_MAX_LINKED_JOB_TRACK:]
-    registry["tracked"] = tracked
-    completions_raw = registry.get("completions")
-    if not isinstance(completions_raw, list):
-        registry["completions"] = []
-    outbox_raw = registry.get("notification_outbox")
-    if not isinstance(outbox_raw, list):
-        registry["notification_outbox"] = []
-    _write_linked_job_registry(queue_root, session_id, registry)
 
 
 def _completion_delivery_eligible(completion: dict[str, Any]) -> bool:
@@ -1399,14 +1049,6 @@ def ingest_linked_job_completions(
         _write_linked_job_registry(queue_root, session_id, registry)
 
     return created
-
-
-def read_linked_job_completions(queue_root: Path, session_id: str) -> list[dict[str, Any]]:
-    registry = _read_linked_job_registry(queue_root, session_id)
-    completions = registry.get("completions")
-    if not isinstance(completions, list):
-        return []
-    return [item for item in completions if isinstance(item, dict)]
 
 
 def _format_completion_autosurface_message(completion: dict[str, Any]) -> str:
