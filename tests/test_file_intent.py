@@ -480,3 +480,115 @@ def test_end_to_end_copy_to_normalized_preview():
     normalized = normalize_preview_payload(draft)
     assert "file_organize" in normalized
     assert normalized["file_organize"]["mode"] == "copy"
+
+
+# ---------------------------------------------------------------------------
+# Active preview rename: _draft_revision_from_active_preview via
+# maybe_draft_job_payload with active_preview
+# ---------------------------------------------------------------------------
+
+_SAMPLE_PREVIEW = {
+    "goal": "write a file called note-1774131870.txt with provided content",
+    "write_file": {
+        "path": "~/VoxeraOS/notes/note-1774131870.txt",
+        "content": "The biggest object ever found is ...",
+        "mode": "overwrite",
+    },
+}
+
+
+def test_call_the_note_renames_active_preview():
+    """'call the note biggest.txt' should update the preview target."""
+    draft = maybe_draft_job_payload(
+        "call the note biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+    assert draft["write_file"]["mode"] == "overwrite"
+
+
+def test_save_it_as_renames_active_preview():
+    """'save it as biggest.txt' should update the preview target."""
+    draft = maybe_draft_job_payload(
+        "save it as biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+    assert draft["write_file"]["mode"] == "overwrite"
+
+
+def test_use_path_explicit_renames_active_preview():
+    """'use path: ~/VoxeraOS/notes/biggest.txt' should update preview path exactly."""
+    draft = maybe_draft_job_payload(
+        "use path: ~/VoxeraOS/notes/biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+    assert draft["write_file"]["mode"] == "overwrite"
+
+
+def test_change_the_path_to_renames_active_preview():
+    """'change the path to ~/VoxeraOS/notes/biggest.txt' should update preview."""
+    draft = maybe_draft_job_payload(
+        "change the path to ~/VoxeraOS/notes/biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+
+
+def test_rename_preserves_content_and_mode():
+    """Content and mode must be preserved across rename/path changes."""
+    preview = {
+        "goal": "write a file called draft.txt with provided content",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/draft.txt",
+            "content": "Some important content here.",
+            "mode": "append",
+        },
+    }
+    draft = maybe_draft_job_payload(
+        "call this note final.txt",
+        active_preview=preview,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/final.txt"
+    assert draft["write_file"]["content"] == "Some important content here."
+    assert draft["write_file"]["mode"] == "append"
+
+
+def test_unsafe_path_rename_rejected():
+    """Unsafe path traversal in rename must be rejected — preview unchanged."""
+    draft = maybe_draft_job_payload(
+        "use path: ~/VoxeraOS/notes/../../../etc/passwd",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    # Should return None (fail closed) — preview not mutated
+    assert draft is None
+
+
+def test_rename_to_queue_path_rejected():
+    """Rename targeting queue control-plane path must be rejected."""
+    draft = maybe_draft_job_payload(
+        "use path: ~/VoxeraOS/notes/queue/evil.json",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is None
+
+
+def test_rename_it_to_with_bare_filename():
+    """'rename it to biggest.txt' should update the preview target."""
+    draft = maybe_draft_job_payload(
+        "rename it to biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]

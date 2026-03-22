@@ -1,3 +1,13 @@
+## 2026-03-22 — PR #TBD — fix(vera): allow active preview rename to user-requested filename before submit
+
+- Fixed active `write_file` preview rename: natural phrases like "call the note biggest.txt", "call this note biggest.txt", and "rename it to biggest.txt" now correctly update the authoritative preview target path.
+- Added explicit path directive support: "use path: ~/VoxeraOS/notes/biggest.txt", "change the path to ...", and "set the path to ..." now apply as first-class revisions to the active preview.
+- When the extracted target is already a full path (~/... or /home/...) it is used directly; bare filenames are placed in the current preview directory.
+- All rename/path-update operations are gated by the existing `_is_safe_notes_path` check — unsafe paths (parent traversal, queue control-plane) fail closed and leave the preview unchanged.
+- Content and mode are preserved across rename/path changes; only the target path and goal text are updated.
+- Root cause: `_extract_named_target()` regex only matched `call it X` / `call that X` but not `call the note X` / `call this note X`; also no patterns existed for explicit path directives.
+- Added 8 focused tests covering: "call the note X", "save it as X", "use path: ...", "change the path to ...", content/mode preservation, unsafe path rejection, queue path rejection, and "rename it to X".
+
 ## 2026-03-21 — PR #TBD — fix(vera): stop weather hallucination and add quick live weather flow
 
 - Added a dedicated Vera quick-weather lane backed by structured Open-Meteo weather data so ordinary weather/current-condition prompts no longer rely on freeform conversational generation for live facts.
