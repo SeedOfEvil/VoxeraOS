@@ -4065,6 +4065,46 @@ def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch)
     assert "formal" in preview["write_file"]["content"].lower()
 
 
+def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "draft a python script as demo.py",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/demo.py",
+                "content": 'print("hello")',
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": "Formal rewrite:\n\nThis script prints hello to standard output.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it more formal"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/demo.py"
+    assert preview["write_file"]["content"] == 'print("hello")'
+
+
 def test_active_preview_content_becomes_multiline_replaces_body_exactly(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
