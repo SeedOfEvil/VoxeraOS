@@ -1,3 +1,11 @@
+## 2026-03-22 — PR #TBD — refactor(vera): extract weather flow orchestration from service
+
+- Extracted Vera quick-weather routing and follow-up orchestration into `src/voxera/vera/weather_flow.py`, giving weather-question detection, missing-location handling, follow-up classification, fail-closed lookup behavior, and weather-lane continuity one dedicated module boundary.
+- Kept `src/voxera/vera/service.py` behavior-preserving and thin by delegating to the new weather-flow module while retaining compatibility aliases for existing call sites/tests that still patch weather helpers on `vera.service`.
+- Extended focused characterization coverage so `tests/test_vera_contextual_flows.py` now explicitly anchors `7 day` and `weekend` follow-ups in the structured weather lane in addition to the existing missing-location and `hourly` continuity checks.
+- Root cause: weather quick-flow logic had accumulated inside the general Vera reply orchestrator, making one of the most session-sensitive seams harder to reason about and riskier to extract further.
+- Queue truth, preview truth, and the user-visible weather UX contract were intentionally preserved; this PR is module-boundary cleanup only.
+
 ## 2026-03-22 — PR #TBD — chore(vera): expand characterization coverage and introduce narrower tests for session-sensitive Vera flows
 
 - Started the Vera modularization safety-net pass without changing product behavior: kept the broad `tests/test_vera_web.py` coverage intact while adding narrower session-focused characterization files for saveability/preview revisions and contextual weather/investigation flows.

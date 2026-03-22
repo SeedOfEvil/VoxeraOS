@@ -4,6 +4,7 @@ import json
 
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import service as vera_service
+from voxera.vera import weather_flow as vera_weather_flow
 from voxera.vera.brave_search import WebSearchResult
 
 from .vera_session_helpers import (
@@ -34,6 +35,128 @@ def test_weather_missing_location_then_followup_hourly_stays_in_weather_lane(tmp
     assert third.status_code == 200
     assert "Here’s the next 3 hours for Calgary, Alberta:" in third.text
     assert "Here are the top findings" not in third.text
+
+
+def test_weather_followup_7_day_and_weekend_stay_in_weather_lane(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    first = session.chat("What's the weather in Calgary AB?")
+    weekly = session.chat("7 day")
+    weekly_turn = session.turns()[-1]["text"]
+    weekend = session.chat("weekend")
+    weekend_turn = session.turns()[-1]["text"]
+
+    assert first.status_code == 200
+    assert weekly.status_code == 200
+    assert "Here’s the next 7 days for Calgary, Alberta:" in weekly_turn
+    assert "- Sat (2026-03-21): cloudy skies, high 6°C, low -4°C." in weekly_turn
+    assert "Here are the top findings" not in weekly_turn
+    assert weekend.status_code == 200
+    assert "Here’s the weekend outlook for Calgary, Alberta:" in weekend_turn
+    assert "- Sun (2026-03-22): partly cloudy skies, high 7°C, low -2°C." in weekend_turn
+    assert "Here are the top findings" not in weekend_turn
+
+
+def test_service_level_weather_followup_hook_still_controls_delegated_flow(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+    monkeypatch.setattr(
+        vera_service,
+        "_weather_answer_for_followup",
+        lambda snapshot_payload, followup_kind: f"patched followup: {followup_kind}",
+    )
+
+    first = session.chat("What's the weather in Calgary AB?")
+    followup = session.chat("hourly")
+
+    assert first.status_code == 200
+    assert followup.status_code == 200
+    assert session.turns()[-1]["text"] == "patched followup: hourly"
+
+
+def test_service_level_investigation_detector_hook_still_controls_weather_question(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+    monkeypatch.setattr(vera_service, "_is_weather_investigation_request", lambda _message: False)
+
+    res = session.chat("Look up the weather in Calgary AB")
+
+    assert res.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in session.turns()[-1]["text"]
+
+
+def test_service_level_location_normalizer_hook_still_controls_inline_weather_location(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+    monkeypatch.setattr(
+        vera_service,
+        "_normalize_weather_location_candidate",
+        lambda candidate: "Calgary AB" if "YYC" in candidate else candidate,
+    )
+
+    res = session.chat("What's the weather in YYC?")
+
+    assert res.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in session.turns()[-1]["text"]
+
+
+def test_service_level_pending_lookup_hook_still_controls_weather_confirmation_reply(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    def _fail_if_weather_flow_predicate_runs(_weather_context):
+        raise AssertionError("weather_flow pending-lookup predicate should not run directly")
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+    monkeypatch.setattr(vera_service, "_weather_context_has_pending_lookup", lambda _ctx: True)
+    monkeypatch.setattr(
+        vera_weather_flow,
+        "weather_context_has_pending_lookup",
+        _fail_if_weather_flow_predicate_runs,
+    )
+    vera_service.write_session_weather_context(
+        session.queue,
+        session.session_id,
+        {
+            "pending_lookup": {"location_query": "Calgary AB"},
+            "followup_active": False,
+        },
+    )
+
+    res = session.chat("go ahead")
+
+    assert res.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in session.turns()[-1]["text"]
 
 
 def test_invalid_weather_location_fails_closed_without_guessing(tmp_path, monkeypatch):
