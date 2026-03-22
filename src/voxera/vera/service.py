@@ -4,7 +4,6 @@ import json
 import re
 import time
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -25,20 +24,24 @@ from .handoff import (
 )
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 from .result_surfacing import extract_value_forward_text
-from .weather import (
-    OpenMeteoWeatherClient,
-    WeatherSnapshot,
-    format_current_weather_answer,
-    format_daily_weather_answer,
-    format_hourly_weather_answer,
-    format_weekend_weather_answer,
+from .weather import OpenMeteoWeatherClient, WeatherSnapshot
+from .weather_flow import (
+    extract_weather_followup_kind,
+    extract_weather_location_from_message,
+    is_weather_investigation_request,
+    is_weather_question,
+    maybe_handle_weather_turn,
+    normalize_weather_location_candidate,
+    weather_answer_for_followup,
+    weather_context_has_pending_lookup,
+    weather_context_is_waiting_for_location,
+    weather_followup_is_active,
 )
 
 MAX_SESSION_TURNS = vera_session_store.MAX_SESSION_TURNS
 _MAX_LINKED_JOB_TRACK = vera_session_store._MAX_LINKED_JOB_TRACK
 _MAX_LINKED_COMPLETIONS = vera_session_store._MAX_LINKED_COMPLETIONS
 _MAX_LINKED_NOTIFICATIONS = vera_session_store._MAX_LINKED_NOTIFICATIONS
-_WEATHER_FOLLOWUP_MAX_AGE_MS = 30 * 60 * 1000
 
 new_session_id = vera_session_store.new_session_id
 _session_path = vera_session_store._session_path
@@ -208,142 +211,17 @@ def _is_explicit_internal_search_request(message: str) -> bool:
     return any(pattern in lowered for pattern in patterns)
 
 
-def _is_weather_investigation_request(message: str) -> bool:
-    lowered = message.lower().strip()
-    if not lowered:
-        return False
-    if not re.search(r"\b(weather|forecast|temperature|conditions?|outside)\b", lowered):
-        return False
-    explicit_terms = (
-        "search the web",
-        "search online",
-        "search for",
-        "look up",
-        "look this up",
-        "investigate",
-        "browse sources",
-        "browse results",
-        "find sources",
-        "show sources",
-        "show me sources",
-    )
-    return any(term in lowered for term in explicit_terms)
-
-
-def _is_weather_question(message: str) -> bool:
-    lowered = message.lower().strip()
-    if not lowered or _is_weather_investigation_request(lowered):
-        return False
-    patterns = (
-        r"\bweather\b",
-        r"\bforecast\b",
-        r"\bcurrent conditions?\b",
-        r"\btemperature\b",
-        r"\btemp\b",
-        r"\boutside\b",
-        r"\bwhat'?s it like outside\b",
-        r"\bhow'?s the weather\b",
-    )
-    return any(re.search(pattern, lowered) for pattern in patterns)
-
-
-def _normalize_weather_location_candidate(candidate: str) -> str:
-    cleaned = re.sub(r"\s+", " ", candidate.strip())
-    cleaned = cleaned.strip(" ,.?!")
-    cleaned = re.sub(r"^(in|for|at)\s+", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(
-        r"\b(today|right now|currently|now|please)\b", " ", cleaned, flags=re.IGNORECASE
-    )
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.?!")
-    return cleaned
-
-
-def _extract_weather_location_from_message(message: str) -> str | None:
-    text = " ".join(message.strip().split())
-    if not text:
-        return None
-
-    preposition_match = re.search(r"\b(?:in|for|at)\s+(.+)$", text, re.IGNORECASE)
-    if preposition_match:
-        candidate = _normalize_weather_location_candidate(preposition_match.group(1))
-        if candidate:
-            return candidate
-
-    stripped = re.sub(
-        r"\b(what'?s|what is|how'?s|how is|show me|give me|check|tell me|current|today'?s|todays)\b",
-        " ",
-        text,
-        flags=re.IGNORECASE,
-    )
-    stripped = re.sub(
-        r"\b(weather|forecast|conditions?|temperature|temp|outside|like outside)\b",
-        " ",
-        stripped,
-        flags=re.IGNORECASE,
-    )
-    candidate = _normalize_weather_location_candidate(stripped)
-    if candidate and not re.fullmatch(
-        r"(the|like|the like|weather|forecast|today|right now)",
-        candidate,
-        re.IGNORECASE,
-    ):
-        return candidate
-    return None
-
-
-def _extract_weather_followup_kind(message: str) -> str | None:
-    lowered = message.strip().lower()
-    if not lowered:
-        return None
-    normalized = re.sub(r"[^a-z0-9]+", " ", lowered).strip()
-    if normalized in {"hourly", "hourly outlook", "show hourly", "show me hourly"}:
-        return "hourly"
-    if normalized in {
-        "7 day",
-        "7 day outlook",
-        "7 day forecast",
-        "weekly",
-        "weekly outlook",
-        "show me the weekly",
-        "show me weekly",
-    }:
-        return "7_day"
-    if normalized in {
-        "14 day",
-        "14 day outlook",
-        "14 day forecast",
-        "15 day",
-        "15 day outlook",
-        "15 day forecast",
-    }:
-        return "14_day" if normalized.startswith("14") else "15_day"
-    if normalized in {"weekend", "weekend outlook", "show me the weekend", "show weekend"}:
-        return "weekend"
-    return None
-
-
-def _weather_followup_is_active(weather_context: dict[str, Any] | None) -> bool:
-    if not isinstance(weather_context, dict):
-        return False
-    if weather_context.get("followup_active") is not True:
-        return False
-    retrieved_at_ms = weather_context.get("retrieved_at_ms")
-    if isinstance(retrieved_at_ms, int):
-        return int(time.time() * 1000) - retrieved_at_ms <= _WEATHER_FOLLOWUP_MAX_AGE_MS
-    return True
-
-
-def _weather_context_has_pending_lookup(weather_context: dict[str, Any] | None) -> bool:
-    if not isinstance(weather_context, dict):
-        return False
-    pending_lookup = weather_context.get("pending_lookup")
-    return isinstance(pending_lookup, dict) and bool(
-        str(pending_lookup.get("location_query") or "").strip()
-    )
-
-
-def _weather_context_is_waiting_for_location(weather_context: dict[str, Any] | None) -> bool:
-    return isinstance(weather_context, dict) and weather_context.get("awaiting_location") is True
+# Weather-flow compatibility aliases kept here so existing tests/call sites can
+# continue patching `vera.service` while orchestration lives in weather_flow.py.
+_is_weather_investigation_request = is_weather_investigation_request
+_is_weather_question = is_weather_question
+_normalize_weather_location_candidate = normalize_weather_location_candidate
+_extract_weather_location_from_message = extract_weather_location_from_message
+_extract_weather_followup_kind = extract_weather_followup_kind
+_weather_followup_is_active = weather_followup_is_active
+_weather_context_has_pending_lookup = weather_context_has_pending_lookup
+_weather_context_is_waiting_for_location = weather_context_is_waiting_for_location
+_weather_answer_for_followup = weather_answer_for_followup
 
 
 async def _lookup_live_weather(
@@ -357,32 +235,6 @@ async def _lookup_live_weather(
             "I couldn’t resolve that place into a structured weather location. Please give me a clearer location."
         )
     return await client.fetch_snapshot(resolved)
-
-
-def _weather_answer_for_followup(
-    snapshot_payload: dict[str, Any],
-    *,
-    followup_kind: str,
-) -> str:
-    hourly = snapshot_payload.get("hourly")
-    daily = snapshot_payload.get("daily")
-    resolved_location = (
-        str(snapshot_payload.get("resolved_location") or "").strip() or "that location"
-    )
-    proxy = SimpleNamespace(
-        location=SimpleNamespace(label=resolved_location),
-        hourly=hourly if isinstance(hourly, list) else [],
-        daily=daily if isinstance(daily, list) else [],
-    )
-    if followup_kind == "hourly":
-        return format_hourly_weather_answer(proxy)
-    if followup_kind == "weekend":
-        return format_weekend_weather_answer(proxy)
-    if followup_kind == "14_day":
-        return format_daily_weather_answer(proxy, days=14)
-    if followup_kind == "15_day":
-        return format_daily_weather_answer(proxy, days=15)
-    return format_daily_weather_answer(proxy, days=7)
 
 
 def _is_informational_web_query(message: str) -> bool:
@@ -1546,121 +1398,19 @@ async def generate_vera_reply(
     cfg = load_app_config()
     web_cfg = cfg.web_investigation
 
-    explicit_weather_investigation = _is_weather_investigation_request(user_message)
-    weather_followup_kind = _extract_weather_followup_kind(user_message)
-    weather_request = _is_weather_question(user_message)
-    weather_location = (
-        _extract_weather_location_from_message(user_message) if weather_request else None
+    weather_reply = await maybe_handle_weather_turn(
+        user_message=user_message,
+        weather_context=weather_context,
+        code_draft=code_draft,
+        writing_draft=writing_draft,
+        lookup_weather=_lookup_live_weather,
+        lookup_weather_followup=lambda location_query, followup_kind: _lookup_live_weather(
+            location_query,
+            followup_kind=followup_kind,
+        ),
     )
-    should_use_weather_followup = weather_followup_kind is not None and _weather_followup_is_active(
-        weather_context
-    )
-    should_accept_pending_weather_offer = _weather_context_has_pending_lookup(
-        weather_context
-    ) and bool(
-        re.fullmatch(
-            r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|go\s+ahead|do\s+it)[.!?]*",
-            user_message.strip().lower(),
-        )
-    )
-    should_treat_as_location_reply = _weather_context_is_waiting_for_location(
-        weather_context
-    ) and bool(user_message.strip())
-
-    if (
-        (
-            weather_request
-            or should_use_weather_followup
-            or should_accept_pending_weather_offer
-            or should_treat_as_location_reply
-        )
-        and not explicit_weather_investigation
-        and not code_draft
-        and not writing_draft
-    ):
-        try:
-            if should_use_weather_followup and isinstance(weather_context, dict):
-                has_followup_data = (
-                    weather_followup_kind == "hourly" and bool(weather_context.get("hourly"))
-                ) or (
-                    weather_followup_kind in {"7_day", "14_day", "15_day", "weekend"}
-                    and bool(weather_context.get("daily"))
-                )
-                if not has_followup_data:
-                    location_query = str(weather_context.get("location_query") or "").strip()
-                    if not location_query:
-                        raise RuntimeError(
-                            "I lost the active weather location, so please tell me which place to check again."
-                        )
-                    snapshot = await _lookup_live_weather(
-                        location_query,
-                        followup_kind=weather_followup_kind,
-                    )
-                    refreshed_weather = snapshot.to_session_payload()
-                    refreshed_weather["awaiting_location"] = False
-                    refreshed_weather["pending_lookup"] = {"location_query": location_query}
-                    refreshed_weather["retrieved_at_ms"] = int(time.time() * 1000)
-                    return {
-                        "answer": _weather_answer_for_followup(
-                            refreshed_weather,
-                            followup_kind=weather_followup_kind or "7_day",
-                        ),
-                        "status": f"ok:weather_{weather_followup_kind}",
-                        "weather_context": refreshed_weather,
-                    }
-                return {
-                    "answer": _weather_answer_for_followup(
-                        weather_context,
-                        followup_kind=weather_followup_kind or "7_day",
-                    ),
-                    "status": f"ok:weather_{weather_followup_kind}",
-                    "weather_context": {**weather_context, "followup_active": True},
-                }
-
-            location_query = ""
-            if weather_request and weather_location:
-                location_query = weather_location
-            elif should_accept_pending_weather_offer and isinstance(weather_context, dict):
-                pending_lookup = weather_context.get("pending_lookup")
-                if isinstance(pending_lookup, dict):
-                    location_query = str(pending_lookup.get("location_query") or "").strip()
-            elif should_treat_as_location_reply:
-                location_query = _normalize_weather_location_candidate(user_message)
-
-            if not location_query:
-                return {
-                    "answer": "Which location should I check?",
-                    "status": "weather_missing_location",
-                    "weather_context": {
-                        "awaiting_location": True,
-                        "followup_active": False,
-                    },
-                }
-
-            snapshot = await _lookup_live_weather(location_query)
-            session_weather = snapshot.to_session_payload()
-            session_weather["awaiting_location"] = False
-            session_weather["pending_lookup"] = {"location_query": location_query}
-            session_weather["retrieved_at_ms"] = int(time.time() * 1000)
-            return {
-                "answer": format_current_weather_answer(snapshot),
-                "status": "ok:weather_current",
-                "weather_context": session_weather,
-            }
-        except RuntimeError as exc:
-            return {
-                "answer": (
-                    "I couldn’t complete a structured live weather lookup, so I won’t guess at current conditions. "
-                    f"{exc}"
-                ),
-                "status": "weather_lookup_failed",
-                "weather_context": {
-                    "pending_lookup": {"location_query": location_query}
-                    if "location_query" in locals() and location_query
-                    else None,
-                    "followup_active": False,
-                },
-            }
+    if weather_reply is not None:
+        return weather_reply
 
     informational_web = _is_informational_web_query(user_message)
     if informational_web and web_cfg is None:

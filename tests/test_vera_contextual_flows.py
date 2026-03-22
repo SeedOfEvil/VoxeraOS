@@ -36,6 +36,32 @@ def test_weather_missing_location_then_followup_hourly_stays_in_weather_lane(tmp
     assert "Here are the top findings" not in third.text
 
 
+def test_weather_followup_7_day_and_weekend_stay_in_weather_lane(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    first = session.chat("What's the weather in Calgary AB?")
+    weekly = session.chat("7 day")
+    weekly_turn = session.turns()[-1]["text"]
+    weekend = session.chat("weekend")
+    weekend_turn = session.turns()[-1]["text"]
+
+    assert first.status_code == 200
+    assert weekly.status_code == 200
+    assert "Here’s the next 7 days for Calgary, Alberta:" in weekly_turn
+    assert "- Sat (2026-03-21): cloudy skies, high 6°C, low -4°C." in weekly_turn
+    assert "Here are the top findings" not in weekly_turn
+    assert weekend.status_code == 200
+    assert "Here’s the weekend outlook for Calgary, Alberta:" in weekend_turn
+    assert "- Sun (2026-03-22): partly cloudy skies, high 7°C, low -2°C." in weekend_turn
+    assert "Here are the top findings" not in weekend_turn
+
+
 def test_invalid_weather_location_fails_closed_without_guessing(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
