@@ -373,6 +373,38 @@ def test_vera_finance_query_routes_to_brave(monkeypatch: pytest.MonkeyPatch) -> 
     assert result["status"] == "ok:web_investigation"
 
 
+def test_service_level_investigation_hooks_still_control_delegated_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = AppConfig(
+        web_investigation=WebInvestigationConfig(
+            api_key_ref="BRAVE_API_KEY", env_api_key_var="BRAVE_API_KEY"
+        )
+    )
+    monkeypatch.setattr(vera_service, "load_app_config", lambda: cfg)
+    monkeypatch.setattr(vera_service, "_is_informational_web_query", lambda _message: True)
+    monkeypatch.setattr(vera_service, "_normalize_web_query", lambda _message: "patched query")
+
+    async def _fake_search(self, *, query: str, count: int = 5):
+        assert query == "patched query"
+        assert count == 5
+        return [
+            WebSearchResult(
+                title="Patched result",
+                url="https://example.com/patched",
+                description="Patched snippet",
+            )
+        ]
+
+    monkeypatch.setattr(BraveSearchClient, "search", _fake_search)
+
+    result = asyncio.run(vera_service.generate_vera_reply(turns=[], user_message="hello"))
+
+    assert result["status"] == "ok:web_investigation"
+    assert "Patched result" in result["answer"]
+    assert result["investigation"]["query"] == "patched query"
+
+
 @pytest.mark.parametrize(
     "message,expected",
     [
