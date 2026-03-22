@@ -84,6 +84,46 @@ def test_service_level_weather_followup_hook_still_controls_delegated_flow(tmp_p
     assert session.turns()[-1]["text"] == "patched followup: hourly"
 
 
+def test_service_level_investigation_detector_hook_still_controls_weather_question(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+    monkeypatch.setattr(vera_service, "_is_weather_investigation_request", lambda _message: False)
+
+    res = session.chat("Look up the weather in Calgary AB")
+
+    assert res.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in session.turns()[-1]["text"]
+
+
+def test_service_level_location_normalizer_hook_still_controls_inline_weather_location(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+    monkeypatch.setattr(
+        vera_service,
+        "_normalize_weather_location_candidate",
+        lambda candidate: "Calgary AB" if "YYC" in candidate else candidate,
+    )
+
+    res = session.chat("What's the weather in YYC?")
+
+    assert res.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in session.turns()[-1]["text"]
+
+
 def test_invalid_weather_location_fails_closed_without_guessing(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 

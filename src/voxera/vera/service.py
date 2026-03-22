@@ -224,6 +224,26 @@ _weather_context_is_waiting_for_location = weather_context_is_waiting_for_locati
 _weather_answer_for_followup = weather_answer_for_followup
 
 
+def _service_weather_question(message: str) -> bool:
+    try:
+        return _is_weather_question(
+            message,
+            is_weather_investigation_request_hook=_is_weather_investigation_request,
+        )
+    except TypeError:
+        return _is_weather_question(message)
+
+
+def _service_extract_weather_location_from_message(message: str) -> str | None:
+    try:
+        return _extract_weather_location_from_message(
+            message,
+            normalize_weather_location_candidate_hook=_normalize_weather_location_candidate,
+        )
+    except TypeError:
+        return _extract_weather_location_from_message(message)
+
+
 async def _lookup_live_weather(
     location_query: str, *, followup_kind: str | None = None
 ) -> WeatherSnapshot:
@@ -1410,8 +1430,8 @@ async def generate_vera_reply(
         ),
         is_weather_investigation_request_hook=_is_weather_investigation_request,
         extract_weather_followup_kind_hook=_extract_weather_followup_kind,
-        is_weather_question_hook=_is_weather_question,
-        extract_weather_location_from_message_hook=_extract_weather_location_from_message,
+        is_weather_question_hook=_service_weather_question,
+        extract_weather_location_from_message_hook=_service_extract_weather_location_from_message,
         weather_followup_is_active_hook=_weather_followup_is_active,
         weather_context_has_pending_lookup_hook=_weather_context_has_pending_lookup,
         weather_context_is_waiting_for_location_hook=_weather_context_is_waiting_for_location,

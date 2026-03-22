@@ -54,9 +54,13 @@ def is_weather_investigation_request(message: str) -> bool:
     return any(term in lowered for term in explicit_terms)
 
 
-def is_weather_question(message: str) -> bool:
+def is_weather_question(
+    message: str,
+    *,
+    is_weather_investigation_request_hook: WeatherDetector = is_weather_investigation_request,
+) -> bool:
     lowered = message.lower().strip()
-    if not lowered or is_weather_investigation_request(lowered):
+    if not lowered or is_weather_investigation_request_hook(lowered):
         return False
     patterns = (
         r"\bweather\b",
@@ -82,14 +86,18 @@ def normalize_weather_location_candidate(candidate: str) -> str:
     return cleaned
 
 
-def extract_weather_location_from_message(message: str) -> str | None:
+def extract_weather_location_from_message(
+    message: str,
+    *,
+    normalize_weather_location_candidate_hook: WeatherLocationNormalizer = normalize_weather_location_candidate,
+) -> str | None:
     text = " ".join(message.strip().split())
     if not text:
         return None
 
     preposition_match = re.search(r"\b(?:in|for|at)\s+(.+)$", text, re.IGNORECASE)
     if preposition_match:
-        candidate = normalize_weather_location_candidate(preposition_match.group(1))
+        candidate = normalize_weather_location_candidate_hook(preposition_match.group(1))
         if candidate:
             return candidate
 
@@ -105,7 +113,7 @@ def extract_weather_location_from_message(message: str) -> str | None:
         stripped,
         flags=re.IGNORECASE,
     )
-    candidate = normalize_weather_location_candidate(stripped)
+    candidate = normalize_weather_location_candidate_hook(stripped)
     if candidate and not re.fullmatch(
         r"(the|like|the like|weather|forecast|today|right now)",
         candidate,
