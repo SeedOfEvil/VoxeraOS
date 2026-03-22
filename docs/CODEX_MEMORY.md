@@ -1,3 +1,11 @@
+## 2026-03-22 — PR #TBD — chore(vera): expand characterization coverage and introduce narrower tests for session-sensitive Vera flows
+
+- Started the Vera modularization safety-net pass without changing product behavior: kept the broad `tests/test_vera_web.py` coverage intact while adding narrower session-focused characterization files for saveability/preview revisions and contextual weather/investigation flows.
+- Added `tests/vera_session_helpers.py` as a lightweight shared harness/builder layer for isolated Vera session setup, preview reads, derived-output reads, and representative weather/investigation fixtures so follow-on extraction PRs do not need to duplicate FastAPI/session boilerplate.
+- Added targeted characterization coverage for: concise answer -> save, courtesy-turn save resolution, explanation saveability, active preview rename/save-as/path revision, unsafe path fail-closed preservation, weather missing-location -> follow-up -> hourly flow, invalid weather location fail-closed behavior, investigation compare/summarize/expand -> save -> submit, and explicit weather-investigation lane preservation.
+- Root cause: high-value Vera behavior protection was becoming too concentrated inside broad mixed-flow integration coverage, which increases extraction fear and makes future modularization reviews noisier than necessary.
+- Scope intentionally stayed bounded to tests/helpers/docs; queue semantics and intended Vera production behavior remain unchanged.
+
 ## 2026-03-22 — PR #TBD — fix(vera): fail closed on unsafe active preview path updates and make concise answers saveable
 
 - Added path safety validation to `normalize_preview_payload()` — all preview payloads (deterministic and LLM-generated) now pass through `is_safe_notes_path` before being persisted. Unsafe paths (parent traversal, queue control-plane, outside workspace) raise ValueError and leave the existing preview unchanged.
