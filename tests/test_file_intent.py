@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import pytest
+
 from voxera.core.file_intent import classify_bounded_file_intent, detect_blocked_file_intent
-from voxera.vera.handoff import maybe_draft_job_payload, normalize_preview_payload
+from voxera.vera.handoff import (
+    build_saveable_assistant_artifact,
+    maybe_draft_job_payload,
+    normalize_preview_payload,
+)
 
 # ---------------------------------------------------------------------------
 # classify_bounded_file_intent: existence checks
@@ -654,3 +660,127 @@ def test_call_this_file_renames_preview():
     )
     assert draft is not None
     assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+
+
+# ---------------------------------------------------------------------------
+# normalize_preview_payload: path safety gate
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_rejects_traversal_path():
+    """normalize_preview_payload must reject parent traversal in write_file.path."""
+    payload = {
+        "goal": "write a file",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/../bad.txt",
+            "content": "evil",
+            "mode": "overwrite",
+        },
+    }
+    with pytest.raises(ValueError, match="must be within"):
+        normalize_preview_payload(payload)
+
+
+def test_normalize_rejects_queue_path():
+    """normalize_preview_payload must reject queue control-plane paths."""
+    payload = {
+        "goal": "write a file",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/queue/evil.json",
+            "content": "evil",
+            "mode": "overwrite",
+        },
+    }
+    with pytest.raises(ValueError, match="must be within"):
+        normalize_preview_payload(payload)
+
+
+def test_normalize_rejects_outside_workspace_path():
+    """normalize_preview_payload must reject paths outside ~/VoxeraOS/notes/."""
+    payload = {
+        "goal": "write a file",
+        "write_file": {
+            "path": "/etc/passwd",
+            "content": "evil",
+            "mode": "overwrite",
+        },
+    }
+    with pytest.raises(ValueError, match="must be within"):
+        normalize_preview_payload(payload)
+
+
+def test_normalize_accepts_safe_path():
+    """normalize_preview_payload must accept valid notes paths."""
+    payload = {
+        "goal": "write a file",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/biggest.txt",
+            "content": "content",
+            "mode": "overwrite",
+        },
+    }
+    result = normalize_preview_payload(payload)
+    assert result["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
+
+
+def test_unsafe_path_rename_preserves_prior_preview():
+    """Unsafe path in rename returns None, so caller preserves prior preview."""
+    draft = maybe_draft_job_payload(
+        "use path: ~/VoxeraOS/notes/../../../etc/passwd",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is None
+
+
+# ---------------------------------------------------------------------------
+# build_saveable_assistant_artifact: concise answer saveability
+# ---------------------------------------------------------------------------
+
+
+def test_concise_factual_answer_is_saveable():
+    """'2 + 2 is 4.' must be saveable — it is a meaningful assistant answer."""
+    artifact = build_saveable_assistant_artifact("2 + 2 is 4.")
+    assert artifact is not None
+    assert artifact["content"] == "2 + 2 is 4."
+
+
+def test_capital_answer_is_saveable():
+    """Short factual answers like 'The capital of Alberta is Edmonton.' must be saveable."""
+    artifact = build_saveable_assistant_artifact("The capital of Alberta is Edmonton.")
+    assert artifact is not None
+    assert "Edmonton" in artifact["content"]
+
+
+def test_courtesy_answer_still_not_saveable():
+    """Courtesy replies like 'You're welcome!' must not be saveable."""
+    artifact = build_saveable_assistant_artifact("You're welcome!")
+    assert artifact is None
+
+
+def test_low_info_ok_still_not_saveable():
+    """Low-info responses like 'ok' must not be saveable."""
+    artifact = build_saveable_assistant_artifact("ok")
+    assert artifact is None
+
+
+def test_longer_explanation_still_saveable():
+    """Longer explanatory answers must remain saveable."""
+    text = (
+        "Photosynthesis is the process by which green plants and some other organisms "
+        "use sunlight to synthesize foods from carbon dioxide and water."
+    )
+    artifact = build_saveable_assistant_artifact(text)
+    assert artifact is not None
+    assert "Photosynthesis" in artifact["content"]
+
+
+def test_very_short_fragment_not_saveable():
+    """Fragments under 8 chars like 'yes.' must not be saveable."""
+    artifact = build_saveable_assistant_artifact("yes.")
+    assert artifact is None
+
+
+def test_single_word_not_saveable():
+    """Single-word responses must not be saveable."""
+    artifact = build_saveable_assistant_artifact("Absolutely")
+    assert artifact is None

@@ -455,7 +455,12 @@ def build_saveable_assistant_artifact(text: str) -> dict[str, str] | None:
         return None
 
     words = cleaned.split()
-    if len(cleaned) < 18 or len(words) < 3:
+    if len(words) < 2:
+        return None
+    # Concise factual answers (e.g. "2 + 2 is 4.") must be saveable.
+    # Require terminal punctuation for very short content to exclude
+    # fragments while allowing complete short statements.
+    if len(cleaned) < 8:
         return None
     if len(words) <= 5 and not re.search(r"[.!?:\n]", cleaned):
         return None
@@ -1757,6 +1762,11 @@ def normalize_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
         path = str(write_file.get("path") or "").strip()
         if not path:
             raise ValueError("write_file.path is required")
+        if not is_safe_notes_path(path):
+            raise ValueError(
+                "write_file.path must be within ~/VoxeraOS/notes/ "
+                "and must not contain parent traversal or target the queue control-plane"
+            )
         content = write_file.get("content")
         if not isinstance(content, str):
             raise ValueError("write_file.content must be a string")

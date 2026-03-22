@@ -1282,11 +1282,12 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 - When an active governed writing preview exists, follow-up refinements like `make it more formal` or `rewrite that as ...` refresh the preview content with the new prose reply rather than leaving stale draft content behind.
 - Save-as / rename refinements preserve the exact requested filename in `write_file.path`; the renamed path survives through submit rather than snapping back to the default generated filename.
 - Active `write_file` previews can be renamed before submit via natural phrases ("call the note X", "call this note X", "rename it to X") and explicit path directives ("use path: ~/VoxeraOS/notes/X", "change the path to ..."). Unsafe path targets (parent traversal, queue scope) fail closed. Content and mode are preserved across rename/path changes.
+- `normalize_preview_payload()` enforces `is_safe_notes_path` on all `write_file.path` values — this is the authoritative safety gate for both deterministic and LLM-generated preview mutations. Unsafe paths raise ValueError, leaving the prior preview unchanged.
 - Combined prose refinement + save-as turns are resolved as preview updates, not implicit submit intents: Vera first keeps the new assistant-authored prose body authoritative in `write_file.content`, then applies the requested filename/path update before any later explicit handoff.
 
 **Recent assistant-content resolver (`vera/handoff.py`, `vera/service.py`):**
 - Save-by-reference resolution now recognizes `explanation`/`previous explanation` phrasing alongside summary/answer/response terms.
-- Recent-content selection filters out trivial courtesy assistant turns (including extended variants like `You're very welcome ... if you'd like ...`), keeping the latest substantial explanation/saveable prose artifact resolvable across lightweight conversational interruptions.
+- Recent-content selection filters out trivial courtesy assistant turns (including extended variants like `You're very welcome ... if you'd like ...`), keeping the latest substantial explanation/saveable prose artifact resolvable across lightweight conversational interruptions. Concise meaningful factual answers (e.g. "2 + 2 is 4.") are saveable — the minimum content threshold allows short complete statements while still excluding trivial fragments and courtesy responses.
 - Explanation text produced after a code draft is treated as a saveable conversational text artifact and can be renamed/saved through the same governed preview path.
 
 **Investigation/web-routing boundary:**

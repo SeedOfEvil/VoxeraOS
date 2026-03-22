@@ -290,7 +290,7 @@ def _looks_like_preview_update_claim(text: str) -> bool:
             "here is the json",
             "here's a draft",
             "here is a draft",
-            "updated the draft in the preview",
+            "updated the draft",
             "updated the preview",
             "preview is ready",
             "draft is ready",
@@ -412,7 +412,13 @@ def _conversational_preview_update_message(
     updated: bool,
     has_active_preview: bool,
     user_message: str,
+    rejected: bool = False,
 ) -> str:
+    if rejected:
+        return (
+            "I couldn’t apply that update — the requested path is outside the safe notes workspace "
+            "or contains an invalid traversal. The existing draft is unchanged."
+        )
     if updated:
         return "Understood. Nothing has been submitted or executed yet. I can send it whenever you’re ready."
     if has_active_preview:
@@ -974,9 +980,14 @@ async def chat(request: Request):
             recent_assistant_artifacts=recent_assistant_artifacts,
         )
     builder_payload: dict[str, object] | None = None
+    preview_update_rejected = False
     if builder_preview is not None:
         try:
             builder_payload = normalize_preview_payload(builder_preview)
+        except ValueError as exc:
+            builder_payload = None
+            if "must be within" in str(exc):
+                preview_update_rejected = True
         except Exception:
             builder_payload = None
         if builder_payload is not None:
@@ -1217,6 +1228,7 @@ async def chat(request: Request):
             updated=builder_payload is not None,
             has_active_preview=pending_preview is not None,
             user_message=message,
+            rejected=preview_update_rejected,
         )
 
     status = "prepared_preview" if builder_payload is not None else reply_status
