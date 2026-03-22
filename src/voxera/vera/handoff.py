@@ -458,8 +458,7 @@ def build_saveable_assistant_artifact(text: str) -> dict[str, str] | None:
     if len(words) < 2:
         return None
     # Concise factual answers (e.g. "2 + 2 is 4.") must be saveable.
-    # Require terminal punctuation for very short content to exclude
-    # fragments while allowing complete short statements.
+    # Reject content under 8 characters as trivially short fragments.
     if len(cleaned) < 8:
         return None
     if len(words) <= 5 and not re.search(r"[.!?:\n]", cleaned):

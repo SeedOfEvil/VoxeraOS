@@ -990,6 +990,15 @@ async def chat(request: Request):
                 preview_update_rejected = True
         except Exception:
             builder_payload = None
+        # Detect no-op: when the builder returned the unchanged active
+        # preview (e.g. after an LLM candidate was rejected internally),
+        # treat it as "not updated" so the response does not claim success.
+        if (
+            builder_payload is not None
+            and pending_preview is not None
+            and builder_payload == pending_preview
+        ):
+            builder_payload = None
         if builder_payload is not None:
             write_session_preview(root, active_session, builder_payload)
             write_session_handoff_state(
