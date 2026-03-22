@@ -1,6 +1,8 @@
-# Operations (Alpha)
+# Operations (Alpha v0.1.8)
 
 This guide covers day-2 operations for VoxeraOS in service mode.
+
+VoxeraOS is an open-source alpha project. See [README.md](../README.md) for project overview and setup instructions.
 
 ## Install services
 

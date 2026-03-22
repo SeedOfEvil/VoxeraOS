@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "voxera-os"
 version = "0.1.8"
-description = "Voxera OS Alpha v0.1.8: voice-first AI control plane on Linux."
+description = "VoxeraOS: open-source queue-driven AI control plane for Linux. Alpha v0.1.8."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
