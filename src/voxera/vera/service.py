@@ -1408,6 +1408,15 @@ async def generate_vera_reply(
             location_query,
             followup_kind=followup_kind,
         ),
+        is_weather_investigation_request_hook=_is_weather_investigation_request,
+        extract_weather_followup_kind_hook=_extract_weather_followup_kind,
+        is_weather_question_hook=_is_weather_question,
+        extract_weather_location_from_message_hook=_extract_weather_location_from_message,
+        weather_followup_is_active_hook=_weather_followup_is_active,
+        weather_context_has_pending_lookup_hook=_weather_context_has_pending_lookup,
+        weather_context_is_waiting_for_location_hook=_weather_context_is_waiting_for_location,
+        normalize_weather_location_candidate_hook=_normalize_weather_location_candidate,
+        weather_answer_for_followup_hook=_weather_answer_for_followup,
     )
     if weather_reply is not None:
         return weather_reply

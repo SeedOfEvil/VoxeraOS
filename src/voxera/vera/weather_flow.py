@@ -4,7 +4,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Protocol
 
 from .weather import (
     WeatherSnapshot,
@@ -21,6 +21,15 @@ _PENDING_WEATHER_ACCEPTANCE_RE = re.compile(
 
 WeatherLookup = Callable[[str], Awaitable[WeatherSnapshot]]
 WeatherFollowupLookup = Callable[[str, str | None], Awaitable[WeatherSnapshot]]
+WeatherDetector = Callable[[str], bool]
+WeatherLocationExtractor = Callable[[str], str | None]
+WeatherLocationNormalizer = Callable[[str], str]
+WeatherFollowupExtractor = Callable[[str], str | None]
+WeatherContextPredicate = Callable[[dict[str, Any] | None], bool]
+
+
+class WeatherFollowupAnswerBuilder(Protocol):
+    def __call__(self, snapshot_payload: dict[str, Any], *, followup_kind: str) -> str: ...
 
 
 def is_weather_investigation_request(message: str) -> bool:
@@ -203,18 +212,29 @@ async def maybe_handle_weather_turn(
     writing_draft: bool,
     lookup_weather: WeatherLookup,
     lookup_weather_followup: WeatherFollowupLookup,
+    is_weather_investigation_request_hook: WeatherDetector = is_weather_investigation_request,
+    extract_weather_followup_kind_hook: WeatherFollowupExtractor = extract_weather_followup_kind,
+    is_weather_question_hook: WeatherDetector = is_weather_question,
+    extract_weather_location_from_message_hook: WeatherLocationExtractor = extract_weather_location_from_message,
+    weather_followup_is_active_hook: WeatherContextPredicate = weather_followup_is_active,
+    weather_context_has_pending_lookup_hook: WeatherContextPredicate = weather_context_has_pending_lookup,
+    weather_context_is_waiting_for_location_hook: WeatherContextPredicate = weather_context_is_waiting_for_location,
+    normalize_weather_location_candidate_hook: WeatherLocationNormalizer = normalize_weather_location_candidate,
+    weather_answer_for_followup_hook: WeatherFollowupAnswerBuilder = weather_answer_for_followup,
 ) -> dict[str, Any] | None:
-    explicit_weather_investigation = is_weather_investigation_request(user_message)
-    weather_followup_kind = extract_weather_followup_kind(user_message)
-    weather_request = is_weather_question(user_message)
+    explicit_weather_investigation = is_weather_investigation_request_hook(user_message)
+    weather_followup_kind = extract_weather_followup_kind_hook(user_message)
+    weather_request = is_weather_question_hook(user_message)
     weather_location = (
-        extract_weather_location_from_message(user_message) if weather_request else None
+        extract_weather_location_from_message_hook(user_message) if weather_request else None
     )
-    should_use_weather_followup = weather_followup_kind is not None and weather_followup_is_active(
+    should_use_weather_followup = (
+        weather_followup_kind is not None and weather_followup_is_active_hook(weather_context)
+    )
+    should_accept_pending_offer = weather_context_has_pending_lookup_hook(
         weather_context
-    )
-    should_accept_pending_offer = should_accept_pending_weather_offer(user_message, weather_context)
-    should_treat_as_location_reply = weather_context_is_waiting_for_location(
+    ) and should_accept_pending_weather_offer(user_message, weather_context)
+    should_treat_as_location_reply = weather_context_is_waiting_for_location_hook(
         weather_context
     ) and bool(user_message.strip())
 
@@ -252,7 +272,7 @@ async def maybe_handle_weather_turn(
                 refreshed_weather["pending_lookup"] = {"location_query": location_query}
                 refreshed_weather["retrieved_at_ms"] = int(time.time() * 1000)
                 return {
-                    "answer": weather_answer_for_followup(
+                    "answer": weather_answer_for_followup_hook(
                         refreshed_weather,
                         followup_kind=weather_followup_kind or "7_day",
                     ),
@@ -260,7 +280,7 @@ async def maybe_handle_weather_turn(
                     "weather_context": refreshed_weather,
                 }
             return {
-                "answer": weather_answer_for_followup(
+                "answer": weather_answer_for_followup_hook(
                     weather_context,
                     followup_kind=weather_followup_kind or "7_day",
                 ),
@@ -275,7 +295,7 @@ async def maybe_handle_weather_turn(
             if isinstance(pending_lookup, dict):
                 location_query = str(pending_lookup.get("location_query") or "").strip()
         elif should_treat_as_location_reply:
-            location_query = normalize_weather_location_candidate(user_message)
+            location_query = normalize_weather_location_candidate_hook(user_message)
 
         if not location_query:
             return {

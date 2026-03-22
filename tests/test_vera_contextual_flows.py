@@ -62,6 +62,28 @@ def test_weather_followup_7_day_and_weekend_stay_in_weather_lane(tmp_path, monke
     assert "Here are the top findings" not in weekend_turn
 
 
+def test_service_level_weather_followup_hook_still_controls_delegated_flow(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+    monkeypatch.setattr(
+        vera_service,
+        "_weather_answer_for_followup",
+        lambda snapshot_payload, followup_kind: f"patched followup: {followup_kind}",
+    )
+
+    first = session.chat("What's the weather in Calgary AB?")
+    followup = session.chat("hourly")
+
+    assert first.status_code == 200
+    assert followup.status_code == 200
+    assert session.turns()[-1]["text"] == "patched followup: hourly"
+
+
 def test_invalid_weather_location_fails_closed_without_guessing(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
