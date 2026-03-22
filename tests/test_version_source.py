@@ -37,4 +37,4 @@ def test_project_version_truth_is_0_1_8_and_documented():
     readme = (repo_root / "README.md").read_text(encoding="utf-8")
 
     assert pyproject_payload["project"]["version"] == "0.1.8"
-    assert "Alpha (v0.1.8)" in readme
+    assert "alpha (v0.1.8)" in readme.lower()

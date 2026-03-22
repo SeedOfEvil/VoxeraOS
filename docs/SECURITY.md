@@ -1,3 +1,11 @@
+# Security Posture and Hardening Notes
+
+This document covers the VoxeraOS security model, threat analysis, and hardening details. For security vulnerability reporting, see [SECURITY.md](../SECURITY.md) in the repository root.
+
+VoxeraOS is an open-source alpha project. Security is a core design principle — the system is built around fail-closed defaults, capability-gated execution, and evidence-backed outcomes — but alpha software should not be deployed in production security-critical environments.
+
+---
+
 ## OpenRouter attribution headers
 
 When using OpenRouter via the OpenAI-compatible adapter, VoxeraOS sends `HTTP-Referer` and title headers (`X-OpenRouter-Title` plus compatibility `X-Title`) as app attribution metadata. These values are non-secret metadata and are not API credentials.

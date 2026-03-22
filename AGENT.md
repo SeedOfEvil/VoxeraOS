@@ -1,6 +1,12 @@
-# Agent Memory Notes
+# Agent Development Notes
 
 Use this file as a quick operational memory index for agent-style development in this repository.
+
+## Project overview
+
+VoxeraOS is an open-source alpha (v0.1.8) queue-driven AI control plane for Linux. Vera is the conversational intelligence layer; VoxeraOS is the trust, policy, execution, and evidence layer.
+
+**Provider support:** OpenRouter is the only officially tested and fully built provider path. Gemini 3 Flash is the current minimum supported requirement.
 
 ## Current E2E confidence baseline
 - Single skills verified: `system.open_app`, `system.set_volume`, `system.status`.
@@ -19,16 +25,6 @@ Use this file as a quick operational memory index for agent-style development in
 - Child enqueue verified: single `enqueue_child` in job payload produces one `inbox/child-*.json` with server-computed lineage; evidence in `child_job_refs.json`, `actions.jsonl`, `execution_result.json`, and panel.
 - Red-team regression suite verified: `make security-check` passes; 17 adversarial tests cover intent hijack, planner mismatch, traversal metadata, approval-state integrity, progress-evidence consistency.
 
-## Latest extension
-- **GitHub PR #149** — Controlled child enqueue primitive with deterministic lineage; single child per parent, server-side lineage computation, fail-closed validation, full approval/policy preservation.
-- **GitHub PR #148** — Additive queue lineage metadata (`parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, `lineage_role`); observational only; surfaced in artifacts/progress/panel.
-- **GitHub PR #147** — Red-team regression suite (`tests/test_security_redteam.py`) + multi-boundary traversal metadata hardening + `make security-check` merge gate.
-- **GitHub PR #146** — Live job/assistant progress endpoints + progressive-enhancement panel polling + stale failure-context fix.
-- **GitHub PR #145** — Tightened deterministic open-intent routing; removed terminal demo hijacks; restored fail-closed for all open-intent categories.
-- Added `voxera doctor` `skills.registry` row with strict manifest health summary (valid/invalid/incomplete/warning + top reason codes).
-- Health degradation tracking: `consecutive_brain_failures`, `daemon_state` (`healthy`/`degraded`), `degraded_since_ts`, `degraded_reason` in `health.json`.
-- Brain backoff ladder: `compute_brain_backoff_s()` with env knobs (`VOXERA_BRAIN_BACKOFF_BASE_S`, `VOXERA_BRAIN_BACKOFF_MAX_S`); pre-plan sleep enforced and recorded.
-
 ## Current confidence snapshot
 - Queue failure paths validated: pre-run parse/planner, runtime, approval deny, approval-resume runtime, graceful SIGTERM shutdown.
 - Startup recovery validated: pending in-flight jobs → `failed/` with sidecar, orphan approvals → `recovery/startup-<ts>/` quarantine.
@@ -40,16 +36,15 @@ Use this file as a quick operational memory index for agent-style development in
 - Child enqueue: single-child, explicit, fail-closed validation, server-side lineage, full policy/approval/fail-closed semantics.
 - Live progress: canonical artifact-only sourcing; no speculative states; progressive enhancement fallback.
 
-## What to validate next (v0.2 focus)
-- Mission catalog expansion: document 10+ production-usable missions with manifests, test data, and `--dry-run` smoke coverage.
-- `voxera skills validate` command: eager manifest validation without daemon launch; emit `skill_manifest_invalid` audit events.
-- LLM rate limiter: token-bucket around `brain.generate()`, default 30 RPM, configurable via `VOXERA_BRAIN_RATE_LIMIT_RPM`.
-- E2E test environment: Podman + Xvfb for clipboard/window skills; `make e2e-full` target.
-- Provider UX: keyring status at setup start; credential test before save; named profile presets.
-- Ollama/OpenAI-compat hardening: cold-start tolerance, model-not-found surfacing, fallback chain testing.
-- Panel mobile-responsive layout for tablet/phone approval workflows.
+## Key invariants to preserve
+
+- Fail-closed: when uncertain, Voxera fails closed. No degraded-but-executing mode.
+- Queue is the system boundary: all execution flows through the queue with lifecycle visibility.
+- Additive artifact design: new fields are additive; existing jobs remain readable.
+- Policy/approval gates are not bypassable by metadata, lineage, or child enqueue payloads.
+- Merge gate: `make merge-readiness-check` includes `security-check` — all 17 red-team tests must pass.
 
 ## Release alignment
 - Active release line: Alpha v0.1.8 (see `docs/CODEX_MEMORY.md`).
-- Next milestone: v0.2 — panel-first UX + mission catalog (see `docs/ROADMAP.md`).
+- Next milestone: v0.2 — first platform milestone (see `docs/ROADMAP.md`).
 - Previous releases: `docs/ROADMAP_0.1.6.md` (v0.1.6 shipped scope), `docs/ROADMAP_0.1.5.md` (artifacts prune), `docs/ROADMAP_0.1.4.md` (stability + UX baseline).
