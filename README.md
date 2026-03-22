@@ -113,7 +113,7 @@ voxera setup
 voxera queue init
 ```
 
-`voxera setup` in v0.1.7 now guides each brain slot sequentially (`primary`, `fast`, `reasoning`, `fallback`), uses menu-style provider selection, and for OpenRouter uses a curated vendor-grouped model catalog with strong per-slot defaults (`primary`: `google/gemini-3-flash-preview`, `fast`: `google/gemini-3.1-flash-lite-preview`, `reasoning`: `anthropic/claude-3.5-sonnet`, `fallback`: `meta-llama/llama-3.3-70b-instruct`).
+`voxera setup` in v0.1.8 now guides each brain slot sequentially (`primary`, `fast`, `reasoning`, `fallback`), uses menu-style provider selection, and for OpenRouter uses a curated vendor-grouped model catalog with strong per-slot defaults (`primary`: `google/gemini-3-flash-preview`, `fast`: `google/gemini-3.1-flash-lite-preview`, `reasoning`: `anthropic/claude-3.5-sonnet`, `fallback`: `meta-llama/llama-3.3-70b-instruct`).
 
 Cloud brain tier policy: Tier 1 recommended minimum serious cloud brain floor is Gemini 3 Flash (`google/gemini-3-flash-preview`), Tier 2 lightweight tier is Gemini 3.1 Flash Lite (`google/gemini-3.1-flash-lite-preview`), and Tier 3 premium reasoning tier is Claude 3.5 Sonnet (`anthropic/claude-3.5-sonnet`). The Voxera operator assistant defaults to the lightweight Tier 2 lane (`fast`) when configured.
 
@@ -208,7 +208,7 @@ voxera ops bundle job <job_ref>
 
 ## Project status
 
-VoxeraOS is in **Alpha (v0.1.7)** and already includes the major control-plane foundation:
+VoxeraOS is in **Alpha (v0.1.8)** and already includes the major control-plane foundation:
 
 - Queue daemon and queue lifecycle buckets are implemented and operator-visible.
 - Approval artifacts, policy ask/allow/deny gates, and CLI/panel resolution flows are implemented.
