@@ -178,12 +178,8 @@ def weather_context_is_waiting_for_location(weather_context: dict[str, Any] | No
     return isinstance(weather_context, dict) and weather_context.get("awaiting_location") is True
 
 
-def should_accept_pending_weather_offer(
-    message: str, weather_context: dict[str, Any] | None
-) -> bool:
-    return weather_context_has_pending_lookup(weather_context) and bool(
-        _PENDING_WEATHER_ACCEPTANCE_RE.fullmatch(message.strip().lower())
-    )
+def should_accept_pending_weather_offer(message: str) -> bool:
+    return bool(_PENDING_WEATHER_ACCEPTANCE_RE.fullmatch(message.strip().lower()))
 
 
 def weather_answer_for_followup(
@@ -241,7 +237,7 @@ async def maybe_handle_weather_turn(
     )
     should_accept_pending_offer = weather_context_has_pending_lookup_hook(
         weather_context
-    ) and should_accept_pending_weather_offer(user_message, weather_context)
+    ) and should_accept_pending_weather_offer(user_message)
     should_treat_as_location_reply = weather_context_is_waiting_for_location_hook(
         weather_context
     ) and bool(user_message.strip())

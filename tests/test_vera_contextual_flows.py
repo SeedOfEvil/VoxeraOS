@@ -4,6 +4,7 @@ import json
 
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import service as vera_service
+from voxera.vera import weather_flow as vera_weather_flow
 from voxera.vera.brave_search import WebSearchResult
 
 from .vera_session_helpers import (
@@ -119,6 +120,40 @@ def test_service_level_location_normalizer_hook_still_controls_inline_weather_lo
     )
 
     res = session.chat("What's the weather in YYC?")
+
+    assert res.status_code == 200
+    assert "It’s currently 3°C in Calgary, Alberta" in session.turns()[-1]["text"]
+
+
+def test_service_level_pending_lookup_hook_still_controls_weather_confirmation_reply(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary AB"
+        return sample_weather_snapshot(query=location_query)
+
+    def _fail_if_weather_flow_predicate_runs(_weather_context):
+        raise AssertionError("weather_flow pending-lookup predicate should not run directly")
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+    monkeypatch.setattr(vera_service, "_weather_context_has_pending_lookup", lambda _ctx: True)
+    monkeypatch.setattr(
+        vera_weather_flow,
+        "weather_context_has_pending_lookup",
+        _fail_if_weather_flow_predicate_runs,
+    )
+    vera_service.write_session_weather_context(
+        session.queue,
+        session.session_id,
+        {
+            "pending_lookup": {"location_query": "Calgary AB"},
+            "followup_active": False,
+        },
+    )
+
+    res = session.chat("go ahead")
 
     assert res.status_code == 200
     assert "It’s currently 3°C in Calgary, Alberta" in session.turns()[-1]["text"]
