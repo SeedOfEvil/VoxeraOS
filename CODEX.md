@@ -7,7 +7,7 @@ This `CODEX.md` file exists as a stable entry point for contributors who expect 
 
 ## Current focus (v0.2 build-out)
 
-Post-v0.1.6 hardening and observability work is complete (PRs #145–#149). Current development focus is the v0.2 milestone:
+Post-v0.1.8 hardening and observability work is complete (PRs #145–#149). Current development focus is the v0.2 milestone:
 
 - **Mission catalog expansion**: document 10+ production-usable missions in `missions/` with manifests, test data, and validated `--dry-run` smoke paths.
 - **`voxera skills validate` command**: eager manifest validation at the CLI level without daemon launch; `skill_manifest_invalid` audit events; surface in `voxera doctor` (partial: `skills.registry` row already ships in doctor).

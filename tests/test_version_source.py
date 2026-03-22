@@ -31,10 +31,10 @@ def test_pyproject_declares_tomli_for_python_lt_311():
     assert any(dep.startswith("tomli>=2.0") and "python_version < '3.11'" in dep for dep in deps)
 
 
-def test_project_version_truth_is_0_1_7_and_documented():
+def test_project_version_truth_is_0_1_8_and_documented():
     repo_root = Path(__file__).resolve().parents[1]
     pyproject_payload = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
     readme = (repo_root / "README.md").read_text(encoding="utf-8")
 
-    assert pyproject_payload["project"]["version"] == "0.1.7"
-    assert "Alpha (v0.1.7)" in readme
+    assert pyproject_payload["project"]["version"] == "0.1.8"
+    assert "Alpha (v0.1.8)" in readme

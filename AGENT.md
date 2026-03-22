@@ -50,6 +50,6 @@ Use this file as a quick operational memory index for agent-style development in
 - Panel mobile-responsive layout for tablet/phone approval workflows.
 
 ## Release alignment
-- Active release line: Alpha v0.1.6 + post-v0.1.6 PRs #145–#149 (see `docs/CODEX_MEMORY.md`).
+- Active release line: Alpha v0.1.8 (see `docs/CODEX_MEMORY.md`).
 - Next milestone: v0.2 — panel-first UX + mission catalog (see `docs/ROADMAP.md`).
 - Previous releases: `docs/ROADMAP_0.1.6.md` (v0.1.6 shipped scope), `docs/ROADMAP_0.1.5.md` (artifacts prune), `docs/ROADMAP_0.1.4.md` (stability + UX baseline).
