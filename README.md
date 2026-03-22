@@ -62,13 +62,15 @@ If you try other models or providers, please report back what works and what doe
 
 ```bash
 # Clone and set up
+cd ~
 git clone https://github.com/SeedOfEvil/VoxeraOS.git
-cd VoxeraOS
+cd ~/VoxeraOS
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -e ".[dev]"
 ```
+Current alpha note: the officially supported workspace path is ~/VoxeraOS. Some notes, queue, and workspace flows still assume that location for now.
 
 Initialize local config and queue directories (guided wizard):
 
