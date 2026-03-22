@@ -592,3 +592,65 @@ def test_rename_it_to_with_bare_filename():
     assert draft is not None
     assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"
     assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+
+
+def test_no_active_preview_rename_does_nothing():
+    """'call the note biggest.txt' without active_preview must not create a preview."""
+    draft = maybe_draft_job_payload(
+        "call the note biggest.txt",
+        active_preview=None,
+    )
+    assert draft is None
+
+
+def test_rename_with_no_write_file_dict_goal_only():
+    """Rename against a goal-only preview (no write_file) falls to goal update."""
+    preview = {"goal": "write a note called note-123.txt"}
+    draft = maybe_draft_job_payload(
+        "call the note biggest.txt",
+        active_preview=preview,
+    )
+    assert draft is not None
+    assert "biggest.txt" in draft["goal"]
+
+
+def test_goal_text_reflects_new_display_name():
+    """Goal field must contain the new display name after rename."""
+    draft = maybe_draft_job_payload(
+        "call the note biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert "biggest.txt" in draft["goal"]
+    assert "note-1774131870" not in draft["goal"]
+
+
+def test_idempotent_rename_same_name():
+    """Renaming to the same name the preview already has should work."""
+    draft = maybe_draft_job_payload(
+        "call the note note-1774131870.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/note-1774131870.txt"
+    assert draft["write_file"]["content"] == _SAMPLE_PREVIEW["write_file"]["content"]
+
+
+def test_false_positive_call_the_plumber_does_not_rename():
+    """'call the plumber' must NOT trigger rename on an active preview."""
+    draft = maybe_draft_job_payload(
+        "call the plumber tomorrow",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    # Should NOT produce a rename — "plumber" is not a file-referencing noun
+    assert draft is None
+
+
+def test_call_this_file_renames_preview():
+    """'call this file biggest.txt' should update the preview target."""
+    draft = maybe_draft_job_payload(
+        "call this file biggest.txt",
+        active_preview=_SAMPLE_PREVIEW,
+    )
+    assert draft is not None
+    assert draft["write_file"]["path"] == "~/VoxeraOS/notes/biggest.txt"

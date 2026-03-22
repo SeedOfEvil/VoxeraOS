@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..core.file_intent import _is_safe_notes_path, classify_bounded_file_intent
+from ..core.file_intent import classify_bounded_file_intent, is_safe_notes_path
 from ..core.inbox import add_inbox_payload
 from ..core.writing_draft_intent import classify_writing_draft_intent, extract_text_draft_from_reply
 
@@ -1184,7 +1184,7 @@ def _normalize_file_write_goal(message: str) -> str | None:
 
 def _extract_named_target(message: str) -> str | None:
     named = re.search(
-        r"\b(?:called|named|call\s+(?:it|that|the\s+\w+|this\s+\w+))\s+([^\s]+)",
+        r"\b(?:called|named|call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc)))\s+([^\s]+)",
         message,
         re.IGNORECASE,
     )
@@ -1374,7 +1374,7 @@ def _draft_revision_from_active_preview(
         r"rename|"
         r"save\s+(?:it|this|that)?\s*as|"
         r"make\s+that|"
-        r"call\s+(?:it|that|the\s+\w+|this\s+\w+)|"
+        r"call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
         r"change\s+(?:the\s+)?(?:name|filename|file\s+name|path)|"
         r"use\s+path|"
         r"set\s+(?:the\s+)?path"
@@ -1403,7 +1403,7 @@ def _draft_revision_from_active_preview(
                     else:
                         rewritten_path = f"~/VoxeraOS/notes/{new_name}"
                 # Reject unsafe paths — fail closed
-                if not _is_safe_notes_path(rewritten_path):
+                if not is_safe_notes_path(rewritten_path):
                     return None
                 display_name = Path(rewritten_path).name
                 writing_kind = _writing_kind_from_preview_goal(current_goal)
@@ -1419,6 +1419,8 @@ def _draft_revision_from_active_preview(
                     },
                 }
             if "write a note called" in current_goal:
+                if ".." in new_name or new_name.startswith("/"):
+                    return None
                 return {"goal": f"write a note called {new_name}"}
 
     if re.search(r"\bappend\b", lowered) and re.search(
