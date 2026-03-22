@@ -358,9 +358,15 @@ def _looks_like_preview_pane_claim(text: str) -> bool:
 
 
 def _is_governed_writing_preview(preview: dict[str, object] | None) -> bool:
-    if not is_text_draft_preview(preview):
+    if not isinstance(preview, dict):
         return False
-    goal = str((preview or {}).get("goal") or "").strip().lower()
+    write_file = preview.get("write_file")
+    if not isinstance(write_file, dict):
+        return False
+    path = str(write_file.get("path") or "").strip()
+    if not path:
+        return False
+    goal = str(preview.get("goal") or "").strip().lower()
     return goal.startswith("draft a ")
 
 
@@ -1137,10 +1143,20 @@ async def chat(request: Request):
     ):
         is_writing_draft_turn = True
 
+    should_preserve_builder_refinement_content = False
+    if isinstance(builder_payload, dict) and is_writing_refinement_request(message):
+        builder_wf = builder_payload.get("write_file")
+        should_preserve_builder_refinement_content = (
+            not is_existing_writing_preview
+            and isinstance(builder_wf, dict)
+            and bool(str(builder_wf.get("content") or "").strip())
+        )
+
     if (
         is_writing_draft_turn
         and reply_text_draft is not None
         and not reply_status.startswith("degraded")
+        and not should_preserve_builder_refinement_content
     ):
         prose_target_draft: dict[str, object] | None = builder_payload
         if prose_target_draft is None:
