@@ -4120,6 +4120,53 @@ def test_active_preview_formal_refinement_and_save_as_updates_path_and_content(
     assert preview["write_file"]["content"] == "Good afternoon.\n\nI hope you are doing well."
 
 
+def test_active_preview_shorter_refinement_uses_reply_text_over_builder_heuristic(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "make it shorter" in user_message.lower():
+            return {
+                "answer": "This shorter version keeps the key point while remaining complete.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called notes.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/notes.txt",
+                "content": "This is a longer note with extra details for shortening.",
+                "mode": "overwrite",
+            },
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it shorter"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"].endswith(".txt")
+    assert (
+        preview["write_file"]["content"]
+        == "This shorter version keeps the key point while remaining complete."
+    )
+
+
 def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

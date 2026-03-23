@@ -1172,12 +1172,13 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
+    is_existing_text_preview = is_text_draft_preview(pending_preview)
     is_existing_writing_preview = _is_governed_writing_preview(pending_preview)
     if (
         not is_writing_draft_turn
         and not informational_web_turn
         and not is_enrichment_turn
-        and is_existing_writing_preview
+        and is_existing_text_preview
         and is_writing_refinement_request(message)
         and reply_text_draft is not None
     ):
@@ -1215,10 +1216,15 @@ async def chat(request: Request):
         builder_content = (
             str(builder_wf.get("content") or "").strip() if isinstance(builder_wf, dict) else ""
         )
+        reply_text_draft_content = str(reply_text_draft or "").strip()
         should_preserve_builder_refinement_content = (
             not is_existing_writing_preview
             and bool(builder_content)
             and builder_content != pending_preview_content
+            and (
+                not reply_text_draft_content
+                or builder_content == reply_text_draft_content
+            )
             and not _looks_like_builder_refinement_placeholder(builder_content)
         )
 
