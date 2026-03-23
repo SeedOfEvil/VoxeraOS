@@ -431,17 +431,104 @@ _PREVIEW_PANE_SENTENCE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Broader set of false-claim phrases for conversational answer sanitization.
+# These cover preview-update claims, submission claims, and draft-readiness
+# language that must not appear unless a real preview/job exists.
+_FALSE_CLAIM_PHRASES = (
+    # Preview update claims (from _looks_like_preview_update_claim)
+    "prepared a proposal",
+    "prepared a preview",
+    "prepared a draft",
+    "prepared the following job",
+    "drafted a proposal",
+    "drafted a preview",
+    "i drafted",
+    "i've drafted",
+    "i have drafted",
+    "i've prepared",
+    "i have prepared",
+    "created a preview",
+    "created a draft",
+    "set up a preview",
+    "set up a draft",
+    "here is the prepared proposal",
+    "here is the json",
+    "here's a draft",
+    "here is a draft",
+    "updated the draft",
+    "updated the preview",
+    "preview is ready",
+    "draft is ready",
+    "preview ready",
+    "latest version is ready in the preview",
+    "proposal in the preview",
+    "refined the proposal in the preview",
+    # Submission claims (from _looks_like_submission_claim + broader)
+    "submitted to voxeraos",
+    "submitted the job",
+    "submitted that",
+    "submitted the checklist",
+    "submitted your",
+    "submitted it to",
+    "request is now in the queue",
+    "handed off to voxeraos",
+    "handed it off",
+    "sent it to voxeraos",
+    "sent it to the queue",
+    "sent to the queue",
+    "i sent it",
+    "i queued it",
+    "added to the queue",
+    "added it to the queue",
+    "it to the queue",
+    # Draft/submit readiness language
+    "ready to submit",
+    "submit whenever",
+    "you can submit",
+    "you can send it",
+)
+
 
 def _sanitize_false_preview_claims_from_answer(text: str) -> str:
-    """Strip false preview-pane references from conversational answers.
+    """Strip false preview/submission/draft claims from conversational answers.
 
-    Unlike ``_guardrail_false_preview_claim`` (which replaces the entire
-    answer), this only removes sentences that claim a preview/draft exists
-    in a pane or panel — preserving the actual content.
+    Unlike the heavy guardrails (which replace the entire answer), this removes
+    individual lines that contain false claims — preserving the actual content
+    like checklists, plans, and brainstorms.
+
+    Also strips fenced JSON blocks that look like VoxeraOS preview payloads.
     """
-    if not _looks_like_preview_pane_claim(text):
+    if not text.strip():
         return text
-    cleaned = _PREVIEW_PANE_SENTENCE_RE.sub("", text).strip()
+
+    # Phase 1: strip fenced JSON blocks that look like VoxeraOS preview dumps
+    cleaned = re.sub(
+        r"```json\s*\n.*?```",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # Phase 2: strip lines containing false preview/submission claims
+    lowered_full = cleaned.lower()
+    has_false_claim = (
+        _looks_like_preview_pane_claim(cleaned)
+        or _looks_like_submission_claim(cleaned)
+        or any(p in lowered_full for p in _FALSE_CLAIM_PHRASES)
+    )
+    if has_false_claim:
+        # Remove lines matching preview-pane references
+        cleaned = _PREVIEW_PANE_SENTENCE_RE.sub("", cleaned)
+        # Remove lines containing any false-claim phrase
+        out_lines: list[str] = []
+        for line in cleaned.split("\n"):
+            lowered_line = line.lower()
+            if any(phrase in lowered_line for phrase in _FALSE_CLAIM_PHRASES):
+                continue
+            out_lines.append(line)
+        cleaned = "\n".join(out_lines)
+
+    cleaned = cleaned.strip()
     # If stripping emptied the text, fall back to original (paranoia guard).
     return cleaned if cleaned else text
 
@@ -1391,11 +1478,6 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
-    guarded_answer = _guardrail_submission_claim(
-        root=root,
-        session_id=active_session,
-        text=sanitized_answer,
-    )
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative
     # code — treat it as "no real preview" for claim-checking purposes.
@@ -1411,29 +1493,34 @@ async def chat(request: Request):
             )
         else:
             _preview_has_content = "write_file" not in effective_preview
-    _answer_before_preview_guardrail = guarded_answer
+
     if conversational_answer_first_turn:
-        # Soft sanitizer: strip false preview-pane references from the
-        # conversational answer while preserving the actual content.  The
-        # heavy guardrail would replace the entire answer, destroying the
-        # checklist/planning text the user asked for.
-        guarded_answer = _sanitize_false_preview_claims_from_answer(guarded_answer)
+        # Comprehensive sanitizer for conversational answers: strip ALL false
+        # preview/submission/draft claims and JSON blobs line-by-line while
+        # preserving the actual content.  The heavy guardrails replace the
+        # *entire* answer which would destroy checklist/planning text.
+        guarded_answer = _sanitize_false_preview_claims_from_answer(sanitized_answer)
     else:
+        guarded_answer = _guardrail_submission_claim(
+            root=root,
+            session_id=active_session,
+            text=sanitized_answer,
+        )
+        _answer_before_preview_guardrail = guarded_answer
         guarded_answer = _guardrail_false_preview_claim(
             text=guarded_answer,
             preview_exists=effective_preview is not None and _preview_has_content,
         )
-    # All-or-nothing cleanup: when _guardrail_false_preview_claim stripped a false
-    # preview-existence claim, it means the LLM claimed a preview was ready but no
-    # authoritative code content was actually committed.  Clear any empty write_file
-    # placeholder so the session is in a clean state — no orphaned shell, no
-    # accidental empty submission.  Only clears empty-content previews; any
-    # preview that already had content was not touched by the guardrail above.
-    if guarded_answer != _answer_before_preview_guardrail and isinstance(effective_preview, dict):
-        _stale_wf = effective_preview.get("write_file")
-        if isinstance(_stale_wf, dict) and not str(_stale_wf.get("content") or "").strip():
-            write_session_preview(root, active_session, None)
-            builder_payload = None
+        # All-or-nothing cleanup: when _guardrail_false_preview_claim stripped a
+        # false preview-existence claim, clear any empty write_file placeholder so
+        # the session is clean — no orphaned shell, no accidental empty submission.
+        if guarded_answer != _answer_before_preview_guardrail and isinstance(
+            effective_preview, dict
+        ):
+            _stale_wf = effective_preview.get("write_file")
+            if isinstance(_stale_wf, dict) and not str(_stale_wf.get("content") or "").strip():
+                write_session_preview(root, active_session, None)
+                builder_payload = None
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
     is_json_content_request = _is_explicit_json_content_request(message)
     is_voxera_control_turn = _is_voxera_control_turn(message, active_preview=pending_preview)

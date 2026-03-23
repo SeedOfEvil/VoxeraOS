@@ -1379,15 +1379,18 @@ Non-actionable structured reasoning requests (checklists, planning, brainstormin
 - On the next turn, if the flag is set, the user has no save/write intent, and no preview is active, the turn stays in the answer-first lane. This allows multi-turn planning flows where Vera asks for details and the user provides them.
 - The flag is cleared whenever the turn is NOT answer-first (save intent, preview exists, or the user changes topics).
 
-**Preview-language sanitizer (`vera_web/app.py`):**
-- `_sanitize_false_preview_claims_from_answer(text)`: strips sentences containing false preview-pane references ("preview pane", "in the preview", etc.) from conversational answers while preserving the actual content.
-- This is applied instead of the heavy `_guardrail_false_preview_claim` (which replaces the entire answer) so checklist/planning content is preserved.
-- Preview-pane language must only appear when a real preview exists.
+**Comprehensive conversational answer sanitizer (`vera_web/app.py`):**
+- `_sanitize_false_preview_claims_from_answer(text)`: three-phase sanitizer for answer-first turns:
+  1. Strips fenced JSON blocks containing VoxeraOS-like payloads.
+  2. Strips lines containing false preview-pane references ("preview pane", "in the preview", etc.).
+  3. Strips lines containing false preview-update claims ("I've prepared a draft", "preview is ready") and submission claims ("submitted to the queue", "sent it").
+- Applied instead of both `_guardrail_submission_claim` and `_guardrail_false_preview_claim` for answer-first turns. Those heavy guardrails replace the entire answer; the sanitizer preserves checklist/planning content.
+- **Strict preview truth rule:** preview/draft/submission language must only appear in assistant text when a real preview or confirmed queue job exists.
 
 **Gating points:**
 - Builder skip (line ~1102): preview builder is not called for answer-first turns.
-- Sanitizer (line ~1416): false preview-pane claims are stripped from answer-first turns without destroying the content.
-- Control-reply suppression skip (line ~1459): full conversational answer is always shown to the user.
+- Sanitizer (line ~1490): comprehensive sanitizer replaces both heavy guardrails for answer-first turns.
+- Control-reply suppression skip (line ~1540): full conversational answer is always shown to the user.
 
 **Save-after-answer flow:**
 - Conversational answers are stored as saveable artifacts (`build_saveable_assistant_artifact`).

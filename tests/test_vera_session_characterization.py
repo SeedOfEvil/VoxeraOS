@@ -514,3 +514,160 @@ def test_planning_continuation_clears_when_save_intent_detected(tmp_path, monkey
     from voxera.vera.session_store import read_session_conversational_planning_active
 
     assert not read_session_conversational_planning_active(session.queue, session.session_id)
+
+
+# ---------------------------------------------------------------------------
+# Comprehensive preview-truth and submission-truth sanitization
+# ---------------------------------------------------------------------------
+
+
+def test_checklist_answer_with_submission_claim_is_sanitized(tmp_path, monkeypatch):
+    """If the LLM falsely claims it submitted a checklist to the queue,
+    that claim must be stripped while preserving checklist content."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer_with_submission = (
+        "Here's your checklist:\n\n"
+        "1. Find a plus-one\n"
+        "2. Get a nice suit\n\n"
+        "I've submitted that checklist to the queue for you."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer_with_submission, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a checklist for the wedding")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    # Checklist content preserved
+    assert "plus-one" in last_turn["text"].lower()
+    assert "nice suit" in last_turn["text"].lower()
+    # False submission claim removed
+    assert "submitted" not in last_turn["text"].lower()
+    assert "queue" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_answer_with_preview_update_claim_is_sanitized(tmp_path, monkeypatch):
+    """Preview-update phrases like 'I've prepared a draft' must be stripped
+    from answer-first turns."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer_with_draft_claim = (
+        "I've prepared a draft for you.\n\n"
+        "Here's your checklist:\n\n"
+        "1. Book flights\n"
+        "2. Reserve hotel\n"
+        "3. Plan activities"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer_with_draft_claim, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("help me plan for a vacation to Japan")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    # Checklist content preserved
+    assert "book flights" in last_turn["text"].lower()
+    assert "reserve hotel" in last_turn["text"].lower()
+    # False draft claim removed
+    assert "prepared a draft" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_answer_with_json_blob_is_sanitized(tmp_path, monkeypatch):
+    """JSON/VoxeraOS payload blobs must be stripped from conversational
+    checklist answers."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer_with_json = (
+        "Here's your checklist:\n\n"
+        "1. Buy tickets\n"
+        "2. Pack bags\n\n"
+        '```json\n{"goal": "create checklist", "write_file": '
+        '{"path": "~/notes/list.md"}}\n```'
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer_with_json, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a checklist for the trip")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    # Checklist content preserved
+    assert "buy tickets" in last_turn["text"].lower()
+    assert "pack bags" in last_turn["text"].lower()
+    # JSON blob removed
+    assert "```json" not in last_turn["text"].lower()
+    assert '"goal"' not in last_turn["text"]
+    assert session.preview() is None
+
+
+def test_send_it_without_preview_after_checklist_is_truthful(tmp_path, monkeypatch):
+    """'send it' after a checklist answer (no prior 'save that') must
+    truthfully report no preview exists — no fake submission."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        if "checklist" in user_message.lower():
+            return {
+                "answer": "Here's your checklist:\n\n1. Item A\n2. Item B",
+                "status": "ok:test",
+            }
+        # LLM might hallucinate a submission
+        return {
+            "answer": "I've sent it to the queue!",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("make me a checklist for work")
+    res = session.chat("send it")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    # Must NOT claim submission happened
+    assert "sent it to the queue" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_output_is_plain_text_not_json(tmp_path, monkeypatch):
+    """Checklist output must be plain text/markdown — never raw JSON."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    plain_checklist = (
+        "Here's your wedding prep checklist:\n\n"
+        "- [ ] Find a plus-one\n"
+        "- [ ] Get a nice suit\n"
+        "- [ ] Book travel\n"
+        "- [ ] Request time off"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": plain_checklist, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat(
+        "yes can you make a checklist of the following: take time off, buy the tickets, get in shape"
+    )
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    # Must be plain text checklist, not JSON
+    assert "- [ ]" in last_turn["text"] or "1." in last_turn["text"]
+    assert '"intent"' not in last_turn["text"]
+    assert '"goal"' not in last_turn["text"]
+    assert "preview pane" not in last_turn["text"].lower()
+    assert "governed preview" not in last_turn["text"].lower()
+    assert session.preview() is None
