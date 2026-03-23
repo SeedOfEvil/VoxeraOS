@@ -1487,7 +1487,7 @@ def test_literal_code_preview_refinement_does_not_force_code_draft_hint(tmp_path
     assert preview["write_file"]["content"] == script_text
 
 
-def test_code_content_refinement_preview_truth_matches_generated_script(tmp_path, monkeypatch):
+def test_literal_code_preview_refinement_ignores_generated_script_reply(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -1533,12 +1533,12 @@ def test_code_content_refinement_preview_truth_matches_generated_script(tmp_path
     assert res.status_code == 200
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
-    assert preview["write_file"]["content"] == generated_script
     assert (
-        "Active Directory script that creates a user called Skibbidy"
-        not in preview["write_file"]["content"]
+        preview["write_file"]["content"]
+        == "an Active Directory script that creates a user called Skibbidy"
     )
-    assert generated_script in turns[-1]["text"]
+    assert generated_script not in preview["write_file"]["content"]
+    assert "send it whenever" in turns[-1]["text"].lower()
 
 
 def test_latest_content_refinement_wins_for_handoff_payload(tmp_path, monkeypatch):
