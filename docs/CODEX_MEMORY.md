@@ -1949,3 +1949,20 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make validation-check`
   - `make merge-readiness-check`
 
+## 2026-03-23 — PR #TBD — refactor(vera): extract saveable assistant artifact selection from handoff
+
+- Summary:
+  - Added `src/voxera/vera/saveable_artifacts.py` as the dedicated ownership boundary for Vera saveable assistant artifact selection: meaningful assistant-content filtering, courtesy/control exclusion, saveable artifact typing, recent artifact collection, and `"save that"` / `"save it"` target selection.
+  - Kept behavior stable by leaving `src/voxera/vera/handoff.py` thinner and focused on handoff orchestration while importing the extracted saveability helpers for compatibility at existing call sites.
+  - Updated `src/voxera/vera/session_store.py` and `src/voxera/vera/service.py` to import the extracted module directly where they persist or consume recent saveable assistant artifacts.
+  - Added a focused test seam in `tests/test_file_intent.py` to keep courtesy-skipping and explanation-target selection covered alongside the existing Vera characterization anchors.
+  - Updated `docs/ops.md` so future modularization work knows saveable assistant artifact logic now belongs in `saveable_artifacts.py`.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make security-check`
+  - `make golden-check`
+  - `make validation-check`
+  - `make merge-readiness-check`

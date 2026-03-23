@@ -79,6 +79,8 @@ Vera session persistence/state ownership now lives in `src/voxera/vera/session_s
 
 Vera weather quick-flow orchestration now lives in `src/voxera/vera/weather_flow.py`, with `src/voxera/vera/service.py` delegating into that module while keeping compatibility aliases for existing patches/tests. Prefer extending `weather_flow.py` for weather-question detection, missing-location handling, follow-up continuity, and fail-closed weather-lane behavior instead of re-growing those branches inside `service.py`.
 
+Vera saveable assistant artifact selection now lives in `src/voxera/vera/saveable_artifacts.py`, with `src/voxera/vera/handoff.py` retaining compatibility imports for existing callers. Prefer extending `saveable_artifacts.py` for meaningful-content selection, courtesy/control filtering, and recent `"save that"` target resolution instead of re-growing that logic inside `handoff.py`.
+
 Path-precedence rules (applied inside `health.py`):
 - **Explicit `queue_root`**: any call that receives an explicit `queue_root: Path` always uses `queue_root/health.json` and **ignores** `VOXERA_HEALTH_PATH`.  This preserves pre-seeded test fixtures and is the common case for unit and integration tests.
 - **Default-path flows** (no explicit `queue_root`): `VOXERA_HEALTH_PATH` is honoured when set, preventing operator / panel / CLI default-path flows from writing to `notes/queue/health.json` during a test run.

@@ -15,12 +15,7 @@ from ..core.queue_inspect import lookup_job
 from ..core.queue_result_consumers import resolve_structured_execution
 from . import session_store as vera_session_store
 from .brave_search import BraveSearchClient
-from .handoff import (
-    collect_recent_saveable_assistant_artifacts,
-    drafting_guidance,
-    maybe_draft_job_payload,
-    normalize_preview_payload,
-)
+from .handoff import drafting_guidance, maybe_draft_job_payload, normalize_preview_payload
 from .investigation_flow import (
     build_structured_investigation_results,
     format_web_investigation_answer,
@@ -33,6 +28,7 @@ from .investigation_flow import (
 )
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 from .result_surfacing import extract_value_forward_text
+from .saveable_artifacts import collect_recent_saveable_assistant_artifacts
 from .weather import OpenMeteoWeatherClient, WeatherSnapshot
 from .weather_flow import (
     extract_weather_followup_kind,
