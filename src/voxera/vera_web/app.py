@@ -26,6 +26,7 @@ from ..core.writing_draft_intent import (
     is_writing_refinement_request,
 )
 from ..paths import queue_root as default_queue_root
+from ..vera.draft_revision import filename_from_preview
 from ..vera.evidence_review import (
     draft_followup_preview,
     is_followup_preview_request,
@@ -948,10 +949,20 @@ async def chat(request: Request):
     # Pre-compute code-draft intent so the LLM call can be given the code-generation
     # hint before the reply is generated.  This flag is reused below where
     # is_code_draft_turn would have been computed from the same expression.
+    pending_preview_filename = (
+        filename_from_preview(pending_preview) if isinstance(pending_preview, dict) else None
+    )
+    explicit_targeted_content_refinement = (
+        isinstance(pending_preview, dict)
+        and isinstance(pending_preview_filename, str)
+        and bool(re.search(r"\badd\s+content\s+to\b", message, re.IGNORECASE))
+        and bool(re.search(rf"\b{re.escape(pending_preview_filename)}\b", message, re.IGNORECASE))
+    )
     is_code_draft_turn = (
         is_code_draft_request(message)
         and not informational_web_turn
         and not is_explicit_writing_transform
+        and not explicit_targeted_content_refinement
     )
     active_preview_is_refinable_prose = _is_refinable_prose_preview(pending_preview)
     active_preview_blocks_relative_prose_refinement = (
@@ -1088,6 +1099,7 @@ async def chat(request: Request):
         not is_code_draft_turn
         and not informational_web_turn
         and not is_enrichment_turn
+        and not explicit_targeted_content_refinement
         and isinstance(pending_preview, dict)
         and reply_code_content is not None
     ):
@@ -1166,6 +1178,7 @@ async def chat(request: Request):
         not is_writing_draft_turn
         and not informational_web_turn
         and not is_enrichment_turn
+        and not explicit_targeted_content_refinement
         and is_existing_refinable_prose_preview
         and is_writing_refinement_request(message)
         and reply_text_draft is not None
@@ -1311,6 +1324,12 @@ async def chat(request: Request):
     ) and not is_json_content_request
 
     assistant_text = guarded_answer
+    if explicit_targeted_content_refinement and builder_payload is not None:
+        assistant_text = _conversational_preview_update_message(
+            updated=True,
+            has_active_preview=pending_preview is not None,
+            user_message=message,
+        )
     # Code draft replies must NOT be suppressed — they contain the actual code
     # that the user needs to see in a proper fenced block.  All other preview
     # control-turn suppression logic still applies.

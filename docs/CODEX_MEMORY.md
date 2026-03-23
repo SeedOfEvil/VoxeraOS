@@ -1,3 +1,11 @@
+## 2026-03-23 — PR #TBD — refactor(vera): extract investigation derivation logic from handoff
+
+- Added `src/voxera/vera/investigation_derivations.py` as the dedicated ownership boundary for Vera investigation derivation behavior: summarize/compare/expand intent detection, result subset selection, investigation-derived markdown/save-preview shaping, and preservation of the raw-investigation-vs-derived-artifact distinction.
+- Kept `src/voxera/vera/handoff.py` behavior-preserving and materially thinner by delegating investigation derivation helpers into the new module while leaving existing handoff-facing entrypoints stable for callers and tests that still import those names from `handoff.py`.
+- Added focused seam tests in `tests/test_vera_investigation_derivations.py` while preserving the broader contextual and web characterization anchors for compare/summarize/expand/save/submit flows.
+- Root cause: investigation derivation behavior had accumulated inside `handoff.py` alongside saveability, draft revision, and preview submission concerns, making one of the densest remaining handoff seams harder to review and riskier to extract further.
+- Queue truth, preview truth, investigation-derived save semantics, and the user-facing summarize/compare/expand UX contract were intentionally preserved; this PR is a narrow ownership extraction only.
+
 ## 2026-03-23 — PR #TBD — refactor(vera): extract preview submission and handoff normalization from handoff
 
 - Added `src/voxera/vera/preview_submission.py` as the dedicated ownership boundary for Vera preview submission behavior: explicit/natural submit intent detection for the active preview, authoritative preview normalization before queue handoff, real queue submission acknowledgement shaping, and truthful no-preview submit responses.
