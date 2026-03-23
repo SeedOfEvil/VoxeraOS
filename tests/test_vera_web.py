@@ -1456,6 +1456,37 @@ def test_content_refinement_phrase_script_text_updates_active_preview(tmp_path, 
     assert preview["write_file"]["content"] == script_text
 
 
+def test_literal_code_preview_refinement_does_not_force_code_draft_hint(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    observed: dict[str, bool] = {}
+
+    async def _fake_reply(*, turns, user_message, code_draft=False, writing_draft=False, **kwargs):
+        _ = (turns, writing_draft, kwargs)
+        if "add content to script.ps1" in user_message.lower():
+            observed["code_draft"] = code_draft
+            return {"answer": "I updated the draft description.", "status": "ok:test"}
+        return {"answer": "I prepared the script preview shell.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called script.ps1"})
+
+    script_text = "an Active Directory script that creates a user called Skibbidy"
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": f"add content to script.ps1 {script_text}"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert observed["code_draft"] is False
+    assert preview is not None
+    assert preview["write_file"]["content"] == script_text
+
+
 def test_code_content_refinement_preview_truth_matches_generated_script(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
