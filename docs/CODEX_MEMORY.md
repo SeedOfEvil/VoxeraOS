@@ -1,3 +1,11 @@
+## 2026-03-23 — PR #TBD — docs(architecture): update architecture and operations docs for post-refactor ownership boundaries
+
+- Updated `README.md` with a current ownership map for the refactored Vera, queue, panel, and config/path seams so contributors can see where new logic should land without reverse-engineering the latest PR series.
+- Updated `docs/ARCHITECTURE.md` to document the extracted `src/voxera/vera/*` module boundaries, the queue lifecycle module split (`queue_execution`, `queue_approvals`, `queue_recovery`, supporting queue helpers), the panel route-family split, and the distinction between runtime/operator config and app/provider config.
+- Updated `docs/ops.md` to reflect the same ownership guidance in the day-2 operator/developer runbook, including a route-module map for the panel and explicit guidance not to re-grow thin compatibility façades such as `vera/handoff.py`.
+- Updated `docs/prompts/03-runtime-technical-overview.md` so the concise runtime model seen by role/prompt docs matches the refactored queue and Vera decomposition.
+- Scope is documentation-only: no runtime semantics, queue contracts, or user-facing behavior changed in this PR.
+
 ## 2026-03-23 — PR #TBD — fix(vera): restore truthful preview drafting for targeted refinements and make weather answers saveable again
 
 - Fixed a regression from the preview-drafting extraction: targeted code-file refinement turns like `add content to script.ps1 ...` once again travel through the governed code-draft path, so Vera gets the code-draft hint, the assistant-visible reply can contain the real updated script, and the authoritative preview stores that generated script instead of the raw refinement phrase.

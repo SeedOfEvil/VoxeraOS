@@ -84,6 +84,20 @@ VoxeraOS/
 │   │   │   ├── inbox.py             — atomic job intake
 │   │   │   ├── capabilities_snapshot.py  — runtime skill/mission catalog + validation
 │   │   │   └── planner_context.py   — LLM prompt preamble assembly
+│   │   ├── vera/
+│   │   │   ├── service.py           — top-level Vera orchestration + compatibility delegation
+│   │   │   ├── session_store.py     — session turns/preview/handoff persistence
+│   │   │   ├── preview_drafting.py  — deterministic preview drafting + save-by-reference previews
+│   │   │   ├── draft_revision.py    — active preview rename/path/content refinement parsing
+│   │   │   ├── preview_submission.py — active-preview submit detection + queue handoff normalization
+│   │   │   ├── investigation_flow.py — explicit read-only web investigation orchestration
+│   │   │   ├── investigation_derivations.py — compare/summarize/expand follow-up shaping
+│   │   │   ├── weather_flow.py      — live-weather quick flow + follow-up continuity
+│   │   │   ├── saveable_artifacts.py — recent meaningful assistant-content selection
+│   │   │   ├── result_surfacing.py  — evidence-grounded value-forward result extraction
+│   │   │   ├── evidence_review.py   — queue evidence review / review-message shaping
+│   │   │   ├── handoff.py           — thin compatibility façade for extracted handoff seams
+│   │   │   └── weather.py           — weather provider client + snapshot types
 │   │   ├── skills/
 │   │   │   ├── registry.py          — manifest.yml discovery + strict health classification (valid/invalid/incomplete/warning) + entrypoint loading
 │   │   │   ├── runner.py            — policy-gated skill execution + approval callbacks
@@ -156,6 +170,55 @@ VoxeraOS/
 ├── Makefile                         — 30+ targets (dev, fmt, lint, type, test, e2e…)
 └── pyproject.toml   mypy.ini   uv.lock
 ```
+
+---
+
+## Refactor Ownership Boundaries
+
+The current codebase is intentionally more decomposed than earlier `v0.1.8` snapshots. These are the ownership boundaries to preserve when making changes.
+
+### Vera control layer
+
+- `vera/service.py` remains the **conversation orchestration root**: it builds model messages, coordinates session state, routes into the extracted weather/investigation lanes, and manages linked-job completion delivery.
+- `vera/handoff.py` is now a **compatibility façade**, not the preferred place to grow new logic.
+- Add or extend behavior in the dedicated modules first:
+  - `preview_drafting.py` for deterministic preview generation
+  - `draft_revision.py` for active-preview follow-up parsing
+  - `preview_submission.py` for submit/current-preview handoff semantics
+  - `investigation_flow.py` for read-only web investigation turns
+  - `investigation_derivations.py` for summarize/compare/expand/save-derived flows
+  - `weather_flow.py` for quick live-weather turns
+  - `saveable_artifacts.py` for recent meaningful-content save targeting
+  - `session_store.py` for persisted Vera session state
+
+### Queue orchestration
+
+`MissionQueueDaemon` is still the queue composition root, but queue behavior is intentionally split across focused lifecycle modules:
+
+- `queue_execution.py` — payload normalization, mission construction, planning handoff, execution, state transitions
+- `queue_approvals.py` — approval prompts, grants, pending artifacts, approve/deny resolution
+- `queue_recovery.py` — deterministic startup recovery, shutdown handling, quarantine/report surfaces
+- `queue_contracts.py` — canonical queue/execution envelope shaping
+- `queue_result_consumers.py` — structured execution/result normalization for operator and Vera review surfaces
+- `queue_state.py` / `queue_paths.py` — state sidecars and deterministic movement/path helpers
+
+### Panel composition
+
+The panel is now split by route family:
+
+- `panel/app.py` is the FastAPI composition/wiring root and shared helper home
+- `routes_home.py`, `routes_jobs.py`, `routes_queue_control.py`, `routes_assistant.py`, `routes_missions.py`, `routes_bundle.py`, `routes_hygiene.py`, and `routes_recovery.py` own their route surfaces
+- `panel/assistant.py` owns assistant-thread persistence helpers
+
+### Config and path layers
+
+Two related but distinct config surfaces exist:
+
+- `config.py:load_config()` loads runtime/operator settings from `config.json`, environment overrides, and defaults
+- `config.py:load_app_config()` loads stricter app/provider settings from `config.yml`
+- `paths.py` provides XDG helper paths and the default queue-root fallback used by runtime config
+
+When documenting or extending config behavior, preserve that distinction explicitly so queue-root/runtime ops settings are not confused with provider/app-model settings.
 
 ---
 

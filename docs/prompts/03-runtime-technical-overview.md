@@ -27,11 +27,30 @@ It composes focused lifecycle modules:
 - **QueueRecoveryMixin**: startup orphan recovery/quarantine, shutdown finalization records
 - **queue_assistant module**: assistant-question routing to advisory lanes with canonical artifacts
 
+Supporting queue helpers also carry stable responsibilities:
+- `queue_contracts.py` shapes canonical queue/execution objects
+- `queue_result_consumers.py` normalizes structured execution for operator/Vera review surfaces
+- `queue_state.py` owns lifecycle sidecar reads/writes
+- `queue_paths.py` owns deterministic path movement helpers
+
 ## 4) Planning and Assistant Paths
 - **Mission path**: payload -> planner -> mission runner -> policy-gated steps -> terminal state/artifacts
 - **Assistant path**: advisory question jobs may use a fast read-only lane when eligible; otherwise normal lane
 
 Both paths must emit canonical artifacts for post-run inspection.
+
+## 4a) Vera conversational decomposition
+Vera is no longer one large handoff file. Current boundaries:
+- `vera/service.py` — conversation orchestration root
+- `vera/session_store.py` — persisted session state
+- `vera/preview_drafting.py` — deterministic preview drafting
+- `vera/draft_revision.py` — active-preview follow-up interpretation
+- `vera/preview_submission.py` — active-preview submit detection and queue handoff normalization
+- `vera/investigation_flow.py` — explicit read-only web investigation lane
+- `vera/investigation_derivations.py` — compare/summarize/expand follow-up shaping
+- `vera/weather_flow.py` — quick weather lane and follow-up continuity
+- `vera/saveable_artifacts.py` — recent meaningful assistant-content save targeting
+- `vera/handoff.py` — compatibility façade across the extracted seams
 
 ## 5) Brain Layer (Reasoning Providers)
 Brain adapters provide model generation but are not execution truth:
@@ -57,6 +76,11 @@ Execution capability declarations should be explicit (side effects, filesystem/n
 - typed models
 - path resolution
 - secrets storage
+
+Runtime/operator config and app/provider config are intentionally separate:
+- `config.py:load_config()` -> runtime/operator settings (`config.json`, env, defaults)
+- `config.py:load_app_config()` -> stricter app/provider config (`config.yml`)
+- `paths.py` -> XDG helpers and default queue-root fallback
 
 These surfaces support observability, diagnosis, and operational safety.
 
