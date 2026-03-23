@@ -1191,6 +1191,11 @@ async def chat(request: Request):
         if isinstance(pending_preview_write_file, dict)
         else ""
     )
+    pending_preview_content = (
+        str(pending_preview_write_file.get("content") or "").strip()
+        if isinstance(pending_preview_write_file, dict)
+        else ""
+    )
     active_preview_is_code = (
         bool(pending_preview_path)
         and has_code_file_extension(pending_preview_path)
@@ -1213,6 +1218,7 @@ async def chat(request: Request):
         should_preserve_builder_refinement_content = (
             not is_existing_writing_preview
             and bool(builder_content)
+            and builder_content != pending_preview_content
             and not _looks_like_builder_refinement_placeholder(builder_content)
         )
 
@@ -1239,21 +1245,9 @@ async def chat(request: Request):
         if isinstance(prose_target_draft, dict):
             wf = prose_target_draft.get("write_file")
             if isinstance(wf, dict):
-                updated_prose_content = reply_text_draft
-                if (
-                    not is_existing_writing_preview
-                    and re.search(
-                        r"\b(make\s+it\s+more\s+formal|more\s+formal|formal(?:ize)?)\b",
-                        message,
-                        re.IGNORECASE,
-                    )
-                    and "formal" not in reply_text_draft.lower()
-                ):
-                    updated_prose_content = f"Formal rewrite:\n\n{reply_text_draft}"
-
                 updated_prose_draft: dict[str, object] = {
                     **prose_target_draft,
-                    "write_file": {**wf, "content": updated_prose_content},
+                    "write_file": {**wf, "content": reply_text_draft},
                 }
                 builder_payload = updated_prose_draft
                 write_session_preview(root, active_session, builder_payload)
