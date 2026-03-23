@@ -257,10 +257,9 @@ def interpret_active_preview_draft_revision(
     current_goal = str(active_preview.get("goal") or "")
 
     filename = filename_from_preview(active_preview) or "note.txt"
-    explicit_targeted_content_refinement = (
-        bool(re.search(r"\badd\s+content\s+to\b", lowered))
-        and bool(re.search(rf"\b{re.escape(filename)}\b", text, re.IGNORECASE))
-    )
+    explicit_targeted_content_refinement = bool(
+        re.search(r"\badd\s+content\s+to\b", lowered)
+    ) and bool(re.search(rf"\b{re.escape(filename)}\b", text, re.IGNORECASE))
     if explicit_targeted_content_refinement:
         write_file = active_preview.get("write_file")
         mode = "overwrite"
