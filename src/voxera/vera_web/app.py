@@ -1181,11 +1181,14 @@ async def chat(request: Request):
         # where the classifier doesn't match but a code preview already exists.
         if target_draft is None and isinstance(pending_preview, dict):
             target_draft = dict(pending_preview)
-        if builder_has_explicit_content and explicit_literal_content_refinement:
-            # Respect explicit structured content/refinement updates that the
-            # deterministic preview builder already resolved from the user
-            # message. Only suppress fenced-code extraction when the current
-            # turn itself already produced authoritative structured content.
+        if (
+            builder_has_explicit_content
+            and explicit_literal_content_refinement
+            and not isinstance(pending_preview, dict)
+        ):
+            # When no active code preview exists yet, keep an explicit
+            # structured content payload from the deterministic builder rather
+            # than replacing it with a speculative fenced-code extraction.
             reply_code_content = None
         if isinstance(target_draft, dict) and reply_code_content is not None:
             wf = target_draft.get("write_file")

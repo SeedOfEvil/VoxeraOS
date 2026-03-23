@@ -81,6 +81,8 @@ Vera weather quick-flow orchestration now lives in `src/voxera/vera/weather_flow
 
 Vera saveable assistant artifact selection now lives in `src/voxera/vera/saveable_artifacts.py`, with `src/voxera/vera/handoff.py` retaining compatibility imports for existing callers. Prefer extending `saveable_artifacts.py` for meaningful-content selection, courtesy/control filtering, and recent `"save that"` target resolution instead of re-growing that logic inside `handoff.py`.
 
+Vera active preview draft revision interpretation now lives in `src/voxera/vera/draft_revision.py`, with `src/voxera/vera/handoff.py` delegating rename/path/content refinement parsing into that module while keeping the handoff-side entrypoint stable. Prefer extending `draft_revision.py` for active preview rename/path/content follow-up behavior instead of re-growing that seam inside `handoff.py`.
+
 Path-precedence rules (applied inside `health.py`):
 - **Explicit `queue_root`**: any call that receives an explicit `queue_root: Path` always uses `queue_root/health.json` and **ignores** `VOXERA_HEALTH_PATH`.  This preserves pre-seeded test fixtures and is the common case for unit and integration tests.
 - **Default-path flows** (no explicit `queue_root`): `VOXERA_HEALTH_PATH` is honoured when set, preventing operator / panel / CLI default-path flows from writing to `notes/queue/health.json` during a test run.
