@@ -1,3 +1,11 @@
+## 2026-03-23 — PR #TBD — refactor(vera): extract active preview draft revision interpretation from handoff
+
+- Added `src/voxera/vera/draft_revision.py` as the dedicated ownership boundary for Vera active preview draft revision interpretation: rename/save-as phrasing, explicit path updates, content refinement extraction, content fallback selection, append-mode toggles, and preview mutation shaping for active draft follow-ups.
+- Kept `src/voxera/vera/handoff.py` behavior-preserving and materially thinner by delegating rename/path/content refinement handling into the new module while preserving the existing open-preview revision compatibility path and handoff-side entrypoints.
+- Added focused seam tests in `tests/test_vera_draft_revision.py` while keeping the existing characterization anchors in `tests/test_file_intent.py` for rename/path safety, content/mode preservation, and fail-closed unsafe path handling.
+- Root cause: active preview draft revision interpretation had accumulated inside `handoff.py` alongside saveability, preview drafting, and queue submission concerns, making one of Vera's most session-sensitive seams harder to review and riskier to modularize further.
+- Queue truth, preview truth, submit semantics, saveable-artifact behavior, and the user-facing rename/path/content UX contract were intentionally preserved; this PR is a narrow ownership extraction only.
+
 ## 2026-03-22 — PR #TBD — refactor(vera): extract investigation flow orchestration from service
 
 - Extracted Vera's explicit web/investigation lane orchestration into `src/voxera/vera/investigation_flow.py`, moving informational-web intent detection, query normalization, Brave result shaping, read-only investigation reply formatting, and read-only enrichment lookup ownership out of `src/voxera/vera/service.py`.
