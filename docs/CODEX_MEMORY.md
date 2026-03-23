@@ -1,3 +1,12 @@
+## 2026-03-23 — PR #TBD — refactor(vera): thin remaining handoff glue and compatibility leftovers
+
+- Added `src/voxera/vera/preview_drafting.py` as the dedicated ownership boundary for Vera's remaining deterministic preview-drafting glue: narrow action-preview normalization, diagnostics preview shaping, save-by-reference note/file drafting, contextual refinement fallback, and drafting guidance examples.
+- Reduced `src/voxera/vera/handoff.py` to an intentionally small compatibility façade that re-exports the stable handoff-facing drafting, submission, and investigation helper entrypoints without re-hiding those behavior clusters in one large file.
+- Added `tests/test_vera_handoff_compat.py` to lock the import-stable compatibility surface so future cleanups can keep thinning `handoff.py` without silently breaking callers that still patch/import through that module.
+- Updated `docs/ops.md` and `docs/ARCHITECTURE.md` to document the new ownership boundary and clarify that extending preview drafting should happen in `preview_drafting.py`, not by re-growing `handoff.py`.
+- Root cause: after the earlier seam extractions, `handoff.py` still concentrated leftover deterministic preview-drafting glue plus compatibility aliases, making ownership ambiguous even though the major behavior seams already lived elsewhere.
+- Queue truth, preview truth, investigation/saveability semantics, and Vera's user-facing handoff/submit UX contract were intentionally preserved; this PR is a conservative ownership cleanup only.
+
 ## 2026-03-23 — PR #TBD — refactor(vera): extract investigation derivation logic from handoff
 
 - Added `src/voxera/vera/investigation_derivations.py` as the dedicated ownership boundary for Vera investigation derivation behavior: summarize/compare/expand intent detection, result subset selection, investigation-derived markdown/save-preview shaping, and preservation of the raw-investigation-vs-derived-artifact distinction.
