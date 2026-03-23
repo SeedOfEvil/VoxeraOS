@@ -43,8 +43,6 @@ from ..vera.handoff import (
     draft_investigation_derived_save_preview,
     draft_investigation_save_preview,
     drafting_guidance,
-    is_active_preview_submit_request,
-    is_explicit_handoff_request,
     is_investigation_compare_request,
     is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
@@ -53,8 +51,14 @@ from ..vera.handoff import (
     is_investigation_summary_request,
     is_recent_assistant_content_save_request,
     maybe_draft_job_payload,
-    normalize_preview_payload,
     select_investigation_results,
+)
+from ..vera.preview_submission import (
+    is_natural_preview_submission_confirmation,
+    is_preview_submission_request,
+    normalize_preview_payload,
+    should_submit_active_preview,
+    submit_active_preview_for_session,
     submit_preview,
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
@@ -107,62 +111,25 @@ def _active_queue_root() -> Path:
         return default_queue_root()
 
 
+def _is_active_preview_submit_intent(message: str, *, preview_available: bool) -> bool:
+    return should_submit_active_preview(message, preview_available=preview_available)
+
+
 def _submit_handoff(
     *,
     root: Path,
     session_id: str,
     preview: dict[str, object] | None,
 ) -> tuple[str, str]:
-    if preview is None:
-        write_session_handoff_state(
-            root,
-            session_id,
-            attempted=False,
-            queue_path=str(root),
-            status="missing_preview",
-            error="No prepared preview found",
-        )
-        return (
-            "I don’t have a prepared preview in this session yet, so I did not submit anything to VoxeraOS.",
-            "handoff_missing_preview",
-        )
-
-    try:
-        ack = submit_preview(queue_root=root, payload=preview)
-        job_id = str(ack.get("job_id") or "").strip()
-        if not job_id:
-            raise RuntimeError("queue accepted payload but returned no job id")
-        write_session_handoff_state(
-            root,
-            session_id,
-            attempted=True,
-            queue_path=str(ack.get("queue_path") or root),
-            status="submitted",
-            job_id=job_id,
-        )
-        register_session_linked_job(root, session_id, job_ref=f"inbox-{job_id}.json")
-        write_session_preview(root, session_id, None)
-        return str(ack["ack"]), "handoff_submitted"
-    except Exception as exc:
-        write_session_handoff_state(
-            root,
-            session_id,
-            attempted=True,
-            queue_path=str(root),
-            status="submit_failed",
-            error=str(exc),
-        )
-        return (
-            "I could not submit that job to VoxeraOS, so nothing was queued. "
-            f"Submission failed with: {exc}",
-            "handoff_submit_failed",
-        )
-
-
-def _is_active_preview_submit_intent(message: str, *, preview_available: bool) -> bool:
-    if not preview_available:
-        return False
-    return is_explicit_handoff_request(message) or is_active_preview_submit_request(message)
+    return submit_active_preview_for_session(
+        queue_root=root,
+        session_id=session_id,
+        preview=preview,
+        register_linked_job=lambda queue_root, sid, job_ref: register_session_linked_job(
+            queue_root, sid, job_ref=job_ref
+        ),
+        submit_preview_hook=submit_preview,
+    )
 
 
 def _looks_like_submission_claim(text: str) -> bool:
@@ -195,26 +162,14 @@ def _guardrail_submission_claim(*, root: Path, session_id: str, text: str) -> st
     return text
 
 
-def _is_natural_confirmation_phrase(message: str) -> bool:
-    normalized = message.strip().lower()
-    if not normalized:
-        return False
-    return bool(
-        re.fullmatch(
-            r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|go\s+ahead|do\s+it|send\s+it|submit\s+it|hand\s+it\s+off)[.!?]*",
-            normalized,
-        )
-    )
-
-
 def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] | None) -> bool:
     if active_preview is not None and not is_text_draft_preview(active_preview):
         return True
     if is_recent_assistant_content_save_request(message):
         return True
-    if _is_natural_confirmation_phrase(message):
+    if is_natural_preview_submission_confirmation(message):
         return True
-    if is_explicit_handoff_request(message) or is_active_preview_submit_request(message):
+    if is_preview_submission_request(message):
         return True
     return maybe_draft_job_payload(message, active_preview=None) is not None
 
@@ -758,7 +713,7 @@ async def chat(request: Request):
     is_explicit_writing_transform = is_writing_draft_request(message)
 
     if (
-        _is_natural_confirmation_phrase(message)
+        is_natural_preview_submission_confirmation(message)
         and pending_preview is None
         and _weather_context_has_pending_lookup(session_weather_context)
     ):
@@ -942,11 +897,7 @@ async def chat(request: Request):
         )
 
     if (
-        (
-            _is_natural_confirmation_phrase(message)
-            or is_explicit_handoff_request(message)
-            or is_active_preview_submit_request(message)
-        )
+        (is_preview_submission_request(message))
         and not is_recent_assistant_content_save_request(message)
         and pending_preview is None
     ):

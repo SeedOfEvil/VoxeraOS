@@ -1,3 +1,10 @@
+## 2026-03-23 — PR #TBD — refactor(vera): extract preview submission and handoff normalization from handoff
+
+- Added `src/voxera/vera/preview_submission.py` as the dedicated ownership boundary for Vera preview submission behavior: explicit/natural submit intent detection for the active preview, authoritative preview normalization before queue handoff, real queue submission acknowledgement shaping, and truthful no-preview submit responses.
+- Kept `src/voxera/vera/handoff.py` behavior-preserving and materially thinner by delegating preview submission and normalization helpers into `preview_submission.py` while leaving broader handoff/saveability/investigation entry points stable for existing callers.
+- Updated `src/voxera/vera_web/app.py` to route preview submit flows through the extracted module so session handoff state, linked-job registration, preview clearing, and submit failure behavior remain unchanged while the ownership seam is explicit.
+- Added focused tests in `tests/test_vera_preview_submission.py` to anchor the extracted seam directly alongside the existing characterization/web-flow coverage.
+
 ## 2026-03-23 — PR #TBD — refactor(vera): extract active preview draft revision interpretation from handoff
 
 - Added `src/voxera/vera/draft_revision.py` as the dedicated ownership boundary for Vera active preview draft revision interpretation: rename/save-as phrasing, explicit path updates, content refinement extraction, content fallback selection, append-mode toggles, and preview mutation shaping for active draft follow-ups.
