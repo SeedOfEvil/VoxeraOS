@@ -376,6 +376,31 @@ def _is_governed_writing_preview(preview: dict[str, object] | None) -> bool:
     return bool(re.match(r"draft a (essay|article|writeup|explanation) as ", goal, re.IGNORECASE))
 
 
+def _is_refinable_prose_preview(preview: dict[str, object] | None) -> bool:
+    if _is_governed_writing_preview(preview):
+        return True
+    if not isinstance(preview, dict):
+        return False
+    write_file = preview.get("write_file")
+    if not isinstance(write_file, dict):
+        return False
+    path = str(write_file.get("path") or "").strip().lower()
+    return bool(path) and path.endswith((".md", ".txt"))
+
+
+def _is_relative_writing_refinement_request(message: str) -> bool:
+    text = message.strip()
+    if not text:
+        return False
+    return bool(
+        re.search(
+            r"\b(more\s+formal|less\s+formal|more\s+casual|shorter|longer)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _looks_like_builder_refinement_placeholder(content: str) -> bool:
     lowered = content.strip().lower()
     if not lowered:
@@ -977,8 +1002,17 @@ async def chat(request: Request):
         and not informational_web_turn
         and not is_explicit_writing_transform
     )
+    active_preview_is_refinable_prose = _is_refinable_prose_preview(pending_preview)
+    active_preview_blocks_relative_prose_refinement = (
+        isinstance(pending_preview, dict)
+        and not active_preview_is_refinable_prose
+        and _is_relative_writing_refinement_request(message)
+    )
     is_writing_draft_turn = (
-        not is_code_draft_turn and not informational_web_turn and is_explicit_writing_transform
+        not is_code_draft_turn
+        and not informational_web_turn
+        and is_explicit_writing_transform
+        and not active_preview_blocks_relative_prose_refinement
     )
 
     # When an active preview exists and the user makes an informational query,
@@ -1172,13 +1206,13 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
-    is_existing_text_preview = is_text_draft_preview(pending_preview)
+    is_existing_refinable_prose_preview = active_preview_is_refinable_prose
     is_existing_writing_preview = _is_governed_writing_preview(pending_preview)
     if (
         not is_writing_draft_turn
         and not informational_web_turn
         and not is_enrichment_turn
-        and is_existing_text_preview
+        and is_existing_refinable_prose_preview
         and is_writing_refinement_request(message)
         and reply_text_draft is not None
     ):
@@ -1257,7 +1291,7 @@ async def chat(request: Request):
         if (
             prose_target_draft is None
             and isinstance(pending_preview, dict)
-            and _is_governed_writing_preview(pending_preview)
+            and _is_refinable_prose_preview(pending_preview)
         ):
             prose_target_draft = dict(pending_preview)
         if isinstance(prose_target_draft, dict):

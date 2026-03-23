@@ -4167,6 +4167,63 @@ def test_active_preview_shorter_refinement_uses_reply_text_over_builder_heuristi
     )
 
 
+def test_active_note_refinement_reuses_existing_preview_when_builder_returns_none(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "more casual" in user_message.lower():
+            return {
+                "answer": "Hey there — here is a more casual version that still keeps the same idea.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    async def _fake_builder_update(**kwargs):
+        _ = kwargs
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    monkeypatch.setattr(
+        vera_app_module,
+        "_generate_preview_builder_update_with_optional_artifacts",
+        _fake_builder_update,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called notes.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/notes.txt",
+                "content": "This is the original note content.",
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it more casual"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/notes.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Hey there — here is a more casual version that still keeps the same idea."
+    )
+
+
 def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -4205,6 +4262,57 @@ def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/demo.py"
     assert preview["write_file"]["content"] == 'print("hello")'
+
+
+def test_non_document_preview_refinement_does_not_write_prose_back(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called report.csv with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/report.csv",
+                "content": "name,value\nalpha,1",
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "more formal" in user_message.lower():
+            return {
+                "answer": "This comma-separated report lists alpha with a value of one.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    async def _fake_builder_update(**kwargs):
+        _ = kwargs
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    monkeypatch.setattr(
+        vera_app_module,
+        "_generate_preview_builder_update_with_optional_artifacts",
+        _fake_builder_update,
+    )
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it more formal"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/report.csv"
+    assert preview["write_file"]["content"] == "name,value\nalpha,1"
 
 
 def test_code_preview_plain_english_save_as_updates_to_text_preview(tmp_path, monkeypatch):
