@@ -417,6 +417,52 @@ def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
     )
 
 
+_CONVERSATIONAL_PLANNING_RE = re.compile(
+    r"\b("
+    r"checklist|check\s*list|prep\s+list|to[- ]?do\s+list|action\s+items|"
+    r"(?:plan|steps|ideas|suggestions|tips)\s+for\b|"
+    r"steps\s+to\b|"
+    r"brainstorm|"
+    r"help\s+me\s+(?:organize|plan|prepare|think\s+through|figure\s+out|prioritize)|"
+    r"give\s+me\s+(?:a\s+)?(?:plan|list|steps|ideas|suggestions|tips)|"
+    r"make\s+(?:me\s+)?a\s+(?:plan|list|checklist)|"
+    r"create\s+a\s+(?:plan|list|checklist)|"
+    r"what\s+(?:do\s+i|should\s+i)\s+need\s+(?:to|for)|"
+    r"itinerary|"
+    r"prep(?:aration)?\s+(?:list|plan|guide)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_SAVE_WRITE_FILE_SIGNAL_RE = re.compile(
+    r"\b("
+    r"save\s+(?:that|this|it|as|to|into)|"
+    r"write\s+(?:that|this|it)\s+(?:to|into)|"
+    r"write\s+(?:to|into)\s+(?:a\s+)?(?:file|note)|"
+    r"create\s+(?:a\s+)?(?:file|note)\s+(?:called|named|with)|"
+    r"put\s+(?:that|this|it)\s+in(?:to)?\s+(?:a\s+)?(?:file|note)|"
+    r"as\s+a\s+(?:file|note|markdown)\b|"
+    r"\.(?:md|txt|json|ps1|sh|py)\b"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_conversational_answer_first_request(message: str) -> bool:
+    """Detect non-actionable structured reasoning/planning requests.
+
+    These should be answered conversationally by default — not routed through
+    preview drafting.  "save that" after the answer can still create a governed
+    preview.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    if _SAVE_WRITE_FILE_SIGNAL_RE.search(text):
+        return False
+    return bool(_CONVERSATIONAL_PLANNING_RE.search(text))
+
+
 def _is_explicit_json_content_request(message: str) -> bool:
     lowered = message.strip().lower()
     if not lowered:
@@ -964,6 +1010,15 @@ async def chat(request: Request):
         and not diagnostics_service_or_logs_intent(message)
         and not is_recent_assistant_content_save_request(message)
     )
+    # Conversational answer-first: checklist/planning/structured reasoning
+    # requests with no save/write/file intent get a normal conversational
+    # answer without attempting preview drafting.  The answer is stored as a
+    # saveable artifact so "save that" works afterward.
+    conversational_answer_first_turn = (
+        _is_conversational_answer_first_request(message)
+        and not is_recent_assistant_content_save_request(message)
+        and pending_preview is None
+    )
     # Pre-compute code-draft intent so the LLM call can be given the code-generation
     # hint before the reply is generated.  This flag is reused below where
     # is_code_draft_turn would have been computed from the same expression.
@@ -1003,7 +1058,7 @@ async def chat(request: Request):
     recent_assistant_artifacts = read_session_saveable_assistant_artifacts(root, active_session)
 
     builder_preview: dict[str, object] | None = None
-    if not informational_web_turn:
+    if not informational_web_turn and not conversational_answer_first_turn:
         builder_preview = await _generate_preview_builder_update_with_optional_artifacts(
             turns=turns,
             user_message=message,
@@ -1313,10 +1368,11 @@ async def chat(request: Request):
         else:
             _preview_has_content = "write_file" not in effective_preview
     _answer_before_preview_guardrail = guarded_answer
-    guarded_answer = _guardrail_false_preview_claim(
-        text=guarded_answer,
-        preview_exists=effective_preview is not None and _preview_has_content,
-    )
+    if not conversational_answer_first_turn:
+        guarded_answer = _guardrail_false_preview_claim(
+            text=guarded_answer,
+            preview_exists=effective_preview is not None and _preview_has_content,
+        )
     # All-or-nothing cleanup: when _guardrail_false_preview_claim stripped a false
     # preview-existence claim, it means the LLM claimed a preview was ready but no
     # authoritative code content was actually committed.  Clear any empty write_file
@@ -1354,6 +1410,7 @@ async def chat(request: Request):
         not is_enrichment_turn
         and not is_code_draft_turn
         and not is_writing_draft_turn
+        and not conversational_answer_first_turn
         and (
             (is_voxera_control_turn and not is_json_content_request)
             or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))

@@ -11,6 +11,7 @@ from voxera.vera.saveable_artifacts import (
     message_requests_referenced_content,
     select_recent_saveable_assistant_artifact,
 )
+from voxera.vera_web.app import _is_conversational_answer_first_request
 
 # ---------------------------------------------------------------------------
 # classify_bounded_file_intent: existence checks
@@ -824,3 +825,68 @@ def test_select_recent_saveable_artifact_prefers_explanation_when_requested():
 
 def test_save_that_as_a_note_counts_as_referenced_content_request():
     assert message_requests_referenced_content("save that as a note") is True
+
+
+# ---------------------------------------------------------------------------
+# Conversational answer-first classifier
+# ---------------------------------------------------------------------------
+
+
+class TestConversationalAnswerFirstClassifier:
+    """Checklist/planning/structured reasoning requests should be classified
+    as conversational answer-first — no preview drafting."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "create a checklist for my wedding prep",
+            "make me a checklist of things to bring",
+            "give me a prep list for the camping trip",
+            "help me plan for a vacation to Japan",
+            "give me steps for setting up a home lab",
+            "brainstorm what I need for the move",
+            "help me organize my taxes",
+            "what do I need to do for the marathon",
+            "draft an itinerary for Paris",
+            "make a to-do list for the renovation",
+            "help me figure out what I need for the party",
+            "give me suggestions for the presentation",
+            "help me prioritize my tasks for the week",
+            "create a checklist would surely help on the many things I need to do. "
+            "First I need to find a +1, I also need to get a nice suit",
+            "steps to prepare for a job interview",
+            "tips for preparing for a marathon",
+            "action items for the team meeting",
+        ],
+    )
+    def test_planning_requests_are_answer_first(self, message):
+        assert _is_conversational_answer_first_request(message) is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "save that to a note",
+            "write a checklist to a file called todo.txt",
+            "save a prep list as notes.md",
+            "create a file called plan.txt with my checklist",
+            "put that into a note",
+            "save it as wedding-prep.md",
+        ],
+    )
+    def test_save_write_intent_is_not_answer_first(self, message):
+        assert _is_conversational_answer_first_request(message) is False
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "what is the weather in Calgary",
+            "hello",
+            "write a python script that fetches URLs",
+            "draft a 2-page essay about climate change",
+            "check status of voxera-daemon.service",
+            "submit it",
+            "read notes.txt",
+        ],
+    )
+    def test_unrelated_requests_are_not_answer_first(self, message):
+        assert _is_conversational_answer_first_request(message) is False
