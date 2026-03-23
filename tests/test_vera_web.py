@@ -4207,6 +4207,57 @@ def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path
     assert preview["write_file"]["content"] == 'print("hello")'
 
 
+def test_code_preview_plain_english_save_as_updates_to_text_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "draft a json config as config.json",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/config.json",
+                "content": '{"debug": true, "port": 8080}',
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "plain english" in user_message.lower():
+            return {
+                "answer": (
+                    "This configuration turns on debug mode and tells the app to listen on port "
+                    "8080 so developers can inspect behavior during local testing."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Explain this in plain English and save as notes.md",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/notes.md"
+    assert (
+        preview["write_file"]["content"]
+        == "This configuration turns on debug mode and tells the app to listen on port 8080 so developers can inspect behavior during local testing."
+    )
+
+
 def test_active_preview_content_becomes_multiline_replaces_body_exactly(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

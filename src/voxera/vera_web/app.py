@@ -1203,9 +1203,24 @@ async def chat(request: Request):
         and not pending_preview_path.lower().endswith(".md")
     )
     builder_is_governed_writing_preview = _is_governed_writing_preview(builder_payload)
+    builder_preview_write_file = (
+        builder_payload.get("write_file") if isinstance(builder_payload, dict) else None
+    )
+    builder_preview_path = (
+        str(builder_preview_write_file.get("path") or "").strip()
+        if isinstance(builder_preview_write_file, dict)
+        else ""
+    )
+    builder_preview_is_code = (
+        bool(builder_preview_path)
+        and has_code_file_extension(builder_preview_path)
+        and not builder_preview_path.lower().endswith(".md")
+    )
 
     should_preserve_builder_refinement_content = (
-        active_preview_is_code and not builder_is_governed_writing_preview
+        active_preview_is_code
+        and not builder_is_governed_writing_preview
+        and (not builder_preview_path or builder_preview_is_code)
     )
     if (
         not should_preserve_builder_refinement_content
