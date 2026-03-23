@@ -73,6 +73,18 @@ For deterministic local/CI tests, Make targets run pytest with `VOXERA_LOAD_DOTE
 
 Tests isolate the operator health snapshot via the `VOXERA_HEALTH_PATH` environment variable.  The `conftest.py` `_isolate_health_snapshot` fixture sets this automatically for every test.
 
+Current refactor ownership map for contributors/operators:
+
+- `src/voxera/vera/handoff.py` is now a thin compatibility façade. Prefer extending:
+  - `src/voxera/vera/preview_drafting.py` for deterministic preview drafting
+  - `src/voxera/vera/draft_revision.py` for active-preview rename/path/content follow-ups
+  - `src/voxera/vera/preview_submission.py` for active-preview submit detection and queue handoff normalization
+  - `src/voxera/vera/investigation_derivations.py` for compare/summarize/expand/save-derived follow-ups
+- `src/voxera/vera/service.py` remains the top-level Vera orchestrator; extracted weather/investigation/session helpers should keep growing in their dedicated modules rather than re-concentrating there when possible.
+- Queue lifecycle behavior is now intentionally split across `src/voxera/core/queue_execution.py`, `queue_approvals.py`, and `queue_recovery.py`, with `queue_daemon.py` acting as the runtime composition root.
+- Panel route ownership is split across `src/voxera/panel/routes_*.py`; prefer extending the route-family module first instead of adding new route behavior directly to `panel/app.py` unless the change is cross-cutting wiring/shared helper work.
+- Runtime/operator config (`config.json`, `load_config`) and app/provider config (`config.yml`, `load_app_config`) are distinct surfaces by design; keep docs and operational guidance explicit about which layer is being changed.
+
 Vera modularization safety-net note: session-sensitive Vera characterization coverage now has narrower anchors in `tests/test_vera_session_characterization.py` and `tests/test_vera_contextual_flows.py`, backed by the shared harness/builders in `tests/vera_session_helpers.py`. Prefer extending those focused tests for session/saveability/weather/investigation regressions when the scenario does not require the full mixed-flow surface in `tests/test_vera_web.py`.
 
 Vera session persistence/state ownership now lives in `src/voxera/vera/session_store.py`, with `src/voxera/vera/service.py` retaining compatibility delegation for existing call sites. Prefer adding or updating session read/write helpers in `session_store.py` first when working on future Vera modularization PRs.
@@ -268,6 +280,15 @@ Panel operator notes:
 - Panel mutation routes (`/queue/create`, `/missions/create`, `/missions/templates/create`) accept `POST` by default.
 - `/missions/create` is the operator Create Mission intake (Easy mode: prompt-only) and writes deterministic jobs to `notes/queue/inbox/job-panel-mission-<slug>-<ts>.json`.
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
+- Shared panel wiring/security/view-model helpers still live in `src/voxera/panel/app.py`, while route-family ownership now lives in the extracted `src/voxera/panel/routes_*.py` modules:
+  - `routes_home.py` — home/dashboard + queue create
+  - `routes_jobs.py` — approvals, job list/detail/progress, cancel/retry/delete
+  - `routes_queue_control.py` — pause/resume/delete queue controls
+  - `routes_assistant.py` — operator advisory assistant UI and degraded-mode handling
+  - `routes_missions.py` — mission creation surfaces
+  - `routes_hygiene.py` — hygiene actions and health reset UI
+  - `routes_recovery.py` — recovery browsing/downloads
+  - `routes_bundle.py` — job/system bundle downloads
 - Panel `/assistant` (Operator Assistant / “Ask Voxera”) is a read-only advisory surface that now uses a queue-backed transport lane: submit creates a dedicated `assistant_question` inbox job, daemon processes it through a constrained advisory path, and panel polls/render status (`queued` / `thinking through Voxera` / `answered` / `failed`). Follow-up prompts stay in the same thread, and bounded recent turns are reused with fresh runtime context. The advisory lane assembles current queue counts, health semantic sections, pending approvals, recent failed jobs, and recent queue/mission/panel audit events and uses configured brain/provider with deterministic dual-brain sequencing (`primary` then `fallback`) to answer in grounded first-person control-plane voice. Fallback is attempted only for explicit retryable classes (timeout/auth/rate-limit/malformed/network), and assistant artifacts/panel status include compact metadata (`provider`, `model`, `fallback_used`, `fallback_reason`, `advisory_mode`, `degraded_reason`). If both advisory attempts fail, the job lands in `failed/` with a clear assistant failure artifact. If queue transport is unavailable at submit time, `/assistant` transparently labels direct recovery responses as `advisory_mode=degraded_brain_only` with `degraded_reason=queue_unavailable`. It does **not** execute tools, mutate queue state, approve actions, or bypass controls.
 
 Fast-lane behavior (read-only advisory only):

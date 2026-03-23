@@ -191,6 +191,40 @@ tests/                 — unit, contract, golden, and red-team security tests
 deploy/systemd/user/   — user service units for daemon, panel, and Vera
 ```
 
+### Refactor status: current module ownership map
+
+Recent refactors intentionally reduced the amount of Vera, queue, and panel behavior concentrated in single hotspot files. The current ownership boundaries are:
+
+- **Vera conversational orchestration**
+  - `src/voxera/vera/service.py` — top-level Vera reply orchestration, provider selection, linked-job completion delivery, and compatibility delegation
+  - `src/voxera/vera/session_store.py` — bounded session persistence and active-preview state
+  - `src/voxera/vera/preview_drafting.py` — deterministic preview drafting and save-by-reference preview shaping
+  - `src/voxera/vera/draft_revision.py` — active preview rename/path/content follow-up interpretation
+  - `src/voxera/vera/preview_submission.py` — active-preview submit detection, payload normalization, and queue handoff acknowledgement
+  - `src/voxera/vera/investigation_flow.py` — explicit read-only web investigation orchestration
+  - `src/voxera/vera/investigation_derivations.py` — compare/summarize/expand follow-up handling and derived markdown/save previews
+  - `src/voxera/vera/weather_flow.py` — quick live-weather routing and follow-up continuity
+  - `src/voxera/vera/saveable_artifacts.py` — meaningful recent assistant-content selection for governed save flows
+  - `src/voxera/vera/handoff.py` — intentionally thin compatibility façade across the extracted handoff-facing seams
+
+- **Queue orchestration**
+  - `src/voxera/core/queue_daemon.py` — daemon lifecycle, lock handling, directory contract, and composition root
+  - `src/voxera/core/queue_execution.py` — payload normalization, mission construction, planning handoff, and execution-state transitions
+  - `src/voxera/core/queue_approvals.py` — approval prompts, grants, pending artifacts, and approve/deny resolution
+  - `src/voxera/core/queue_recovery.py` — startup recovery, shutdown handling, and quarantine/report shaping
+  - `src/voxera/core/queue_contracts.py` / `queue_result_consumers.py` / `queue_state.py` / `queue_paths.py` — queue object shaping, evidence/result normalization, lifecycle state sidecars, and deterministic movement/path helpers
+
+- **Panel composition**
+  - `src/voxera/panel/app.py` — FastAPI wiring root, shared auth/security helpers, health/job view helpers, and route registration
+  - `src/voxera/panel/routes_*.py` — route-family ownership split across home, jobs, queue control, missions, hygiene, recovery, bundle, and assistant surfaces
+  - `src/voxera/panel/assistant.py` — assistant-thread persistence helpers used by the operator advisory lane
+
+- **Config and path layers**
+  - `src/voxera/config.py` — runtime/operator config loading (`config.json`), app/provider config loading (`config.yml`), config snapshots, and fingerprinting
+  - `src/voxera/paths.py` — XDG config/data path helpers plus default queue-root resolution
+
+When extending one of these areas, prefer adding code to the dedicated ownership module first instead of re-growing the legacy compatibility façades or composition roots.
+
 ## Roadmap
 
 VoxeraOS is organized around three near-term milestone themes:
