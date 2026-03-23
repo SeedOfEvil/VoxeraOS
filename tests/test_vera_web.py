@@ -1456,6 +1456,60 @@ def test_content_refinement_phrase_script_text_updates_active_preview(tmp_path, 
     assert preview["write_file"]["content"] == script_text
 
 
+def test_code_content_refinement_preview_truth_matches_generated_script(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    generated_script = "\n".join(
+        (
+            'New-ADUser -Name "Skibbidy" -SamAccountName "Skibbidy" \\',
+            '    -AccountPassword (ConvertTo-SecureString "P@ssw0rd!" -AsPlainText -Force) \\',
+            "    -Enabled $true",
+        )
+    )
+
+    async def _fake_reply(*, turns, user_message, code_draft=False, writing_draft=False, **kwargs):
+        _ = (turns, code_draft, writing_draft, kwargs)
+        if "add content to script.ps1" in user_message.lower():
+            return {
+                "answer": (
+                    "I updated the draft PowerShell script.\n\n"
+                    f"```powershell\n{generated_script}\n```"
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "I prepared the script preview shell.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called script.ps1"})
+
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": (
+                "add content to script.ps1 an Active Directory script that creates a user "
+                "called Skibbidy"
+            ),
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    turns = vera_service.read_session_turns(queue, sid)
+    assert res.status_code == 200
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
+    assert preview["write_file"]["content"] == generated_script
+    assert (
+        "Active Directory script that creates a user called Skibbidy"
+        not in preview["write_file"]["content"]
+    )
+    assert generated_script in turns[-1]["text"]
+
+
 def test_latest_content_refinement_wins_for_handoff_payload(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
