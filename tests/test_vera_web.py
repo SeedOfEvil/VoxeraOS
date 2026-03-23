@@ -4044,6 +4044,18 @@ def test_recent_assistant_reference_failure_is_clear_when_no_content(tmp_path, m
 def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "make it more formal" in user_message.lower():
+            return {
+                "answer": "Good afternoon.\n\nI hope you are doing well.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
@@ -4062,7 +4074,296 @@ def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch)
 
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
-    assert "formal" in preview["write_file"]["content"].lower()
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/notes.txt"
+    assert preview["write_file"]["content"] == "Good afternoon.\n\nI hope you are doing well."
+
+
+def test_active_preview_formal_refinement_and_save_as_updates_path_and_content(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "make it more formal and save it as polished.txt" in user_message.lower():
+            return {
+                "answer": "Good afternoon.\n\nI hope you are doing well.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called notes.txt with content "hey"',
+        },
+    )
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "make it more formal and save it as polished.txt",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/polished.txt"
+    assert preview["write_file"]["content"] == "Good afternoon.\n\nI hope you are doing well."
+
+
+def test_active_preview_shorter_refinement_uses_reply_text_over_builder_heuristic(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "make it shorter" in user_message.lower():
+            return {
+                "answer": "This shorter version keeps the key point while remaining complete.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called notes.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/notes.txt",
+                "content": "This is a longer note with extra details for shortening.",
+                "mode": "overwrite",
+            },
+        },
+    )
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it shorter"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"].endswith(".txt")
+    assert (
+        preview["write_file"]["content"]
+        == "This shorter version keeps the key point while remaining complete."
+    )
+
+
+def test_active_note_refinement_reuses_existing_preview_when_builder_returns_none(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "more casual" in user_message.lower():
+            return {
+                "answer": "Hey there — here is a more casual version that still keeps the same idea.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    async def _fake_builder_update(**kwargs):
+        _ = kwargs
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    monkeypatch.setattr(
+        vera_app_module,
+        "_generate_preview_builder_update_with_optional_artifacts",
+        _fake_builder_update,
+    )
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called notes.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/notes.txt",
+                "content": "This is the original note content.",
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it more casual"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/notes.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "Hey there — here is a more casual version that still keeps the same idea."
+    )
+
+
+def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "draft a python script as demo.py",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/demo.py",
+                "content": 'print("hello")',
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = (turns, user_message)
+        return {
+            "answer": "Formal rewrite:\n\nThis script prints hello to standard output.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it more formal"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/demo.py"
+    assert preview["write_file"]["content"] == 'print("hello")'
+
+
+def test_non_document_preview_refinement_does_not_write_prose_back(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called report.csv with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/report.csv",
+                "content": "name,value\nalpha,1",
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "more formal" in user_message.lower():
+            return {
+                "answer": "This comma-separated report lists alpha with a value of one.",
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    async def _fake_builder_update(**kwargs):
+        _ = kwargs
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    monkeypatch.setattr(
+        vera_app_module,
+        "_generate_preview_builder_update_with_optional_artifacts",
+        _fake_builder_update,
+    )
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "make it more formal"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/report.csv"
+    assert preview["write_file"]["content"] == "name,value\nalpha,1"
+
+
+def test_code_preview_plain_english_save_as_updates_to_text_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "draft a json config as config.json",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/config.json",
+                "content": '{"debug": true, "port": 8080}',
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "plain english" in user_message.lower():
+            return {
+                "answer": (
+                    "This configuration turns on debug mode and tells the app to listen on port "
+                    "8080 so developers can inspect behavior during local testing."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "Explain this in plain English and save as notes.md",
+        },
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/notes.md"
+    assert (
+        preview["write_file"]["content"]
+        == "This configuration turns on debug mode and tells the app to listen on port 8080 so developers can inspect behavior during local testing."
+    )
 
 
 def test_active_preview_content_becomes_multiline_replaces_body_exactly(tmp_path, monkeypatch):

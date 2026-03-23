@@ -1,3 +1,11 @@
+## 2026-03-22 — PR #TBD — refactor(vera): extract investigation flow orchestration from service
+
+- Extracted Vera's explicit web/investigation lane orchestration into `src/voxera/vera/investigation_flow.py`, moving informational-web intent detection, query normalization, Brave result shaping, read-only investigation reply formatting, and read-only enrichment lookup ownership out of `src/voxera/vera/service.py`.
+- Kept `src/voxera/vera/service.py` behavior-preserving and thin by delegating into the new investigation-flow module while retaining compatibility aliases for existing tests/call sites that still patch investigation helpers on `vera.service`.
+- Added focused regression coverage proving those service-level investigation compatibility hooks still control the delegated flow, so the extraction does not silently break existing characterization seams.
+- Root cause: investigation-specific routing and result-shaping logic had accumulated inside the general Vera service orchestrator, making one of Vera's highest-risk behavioral lanes harder to reason about and riskier to modularize further.
+- Queue truth, preview truth, investigation-derived save/compare/expand semantics, and the user-facing investigation UX contract were intentionally preserved; this PR is a narrow module-boundary extraction only.
+
 ## 2026-03-22 — PR #TBD — refactor(vera): extract weather flow orchestration from service
 
 - Extracted Vera quick-weather routing and follow-up orchestration into `src/voxera/vera/weather_flow.py`, giving weather-question detection, missing-location handling, follow-up classification, fail-closed lookup behavior, and weather-lane continuity one dedicated module boundary.

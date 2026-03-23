@@ -358,10 +358,60 @@ def _looks_like_preview_pane_claim(text: str) -> bool:
 
 
 def _is_governed_writing_preview(preview: dict[str, object] | None) -> bool:
-    if not is_text_draft_preview(preview):
+    if not isinstance(preview, dict):
         return False
-    goal = str((preview or {}).get("goal") or "").strip().lower()
-    return goal.startswith("draft a ")
+    if is_text_draft_preview(preview):
+        goal = str(preview.get("goal") or "").strip().lower()
+        return bool(
+            re.match(r"draft a (essay|article|writeup|explanation) as ", goal, re.IGNORECASE)
+        )
+
+    write_file = preview.get("write_file")
+    if not isinstance(write_file, dict):
+        return False
+    path = str(write_file.get("path") or "").strip().lower()
+    if not path or not path.endswith((".md", ".txt")):
+        return False
+    goal = str(preview.get("goal") or "").strip().lower()
+    return bool(re.match(r"draft a (essay|article|writeup|explanation) as ", goal, re.IGNORECASE))
+
+
+def _is_refinable_prose_preview(preview: dict[str, object] | None) -> bool:
+    if _is_governed_writing_preview(preview):
+        return True
+    if not isinstance(preview, dict):
+        return False
+    write_file = preview.get("write_file")
+    if not isinstance(write_file, dict):
+        return False
+    path = str(write_file.get("path") or "").strip().lower()
+    return bool(path) and path.endswith((".md", ".txt"))
+
+
+def _is_relative_writing_refinement_request(message: str) -> bool:
+    text = message.strip()
+    if not text:
+        return False
+    return bool(
+        re.search(
+            r"\b(more\s+formal|less\s+formal|more\s+casual|shorter|longer)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _looks_like_builder_refinement_placeholder(content: str) -> bool:
+    lowered = content.strip().lower()
+    if not lowered:
+        return False
+    placeholder_values = {
+        "formal rewrite requested for the existing file content.",
+        "summary of today's top news headlines.",
+        "short summary of today's top news headlines.",
+        "top stories:\n- headline 1\n- headline 2\n- headline 3",
+    }
+    return lowered in placeholder_values
 
 
 def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
@@ -952,8 +1002,17 @@ async def chat(request: Request):
         and not informational_web_turn
         and not is_explicit_writing_transform
     )
+    active_preview_is_refinable_prose = _is_refinable_prose_preview(pending_preview)
+    active_preview_blocks_relative_prose_refinement = (
+        isinstance(pending_preview, dict)
+        and not active_preview_is_refinable_prose
+        and _is_relative_writing_refinement_request(message)
+    )
     is_writing_draft_turn = (
-        not is_code_draft_turn and not informational_web_turn and is_explicit_writing_transform
+        not is_code_draft_turn
+        and not informational_web_turn
+        and is_explicit_writing_transform
+        and not active_preview_blocks_relative_prose_refinement
     )
 
     # When an active preview exists and the user makes an informational query,
@@ -999,6 +1058,27 @@ async def chat(request: Request):
             and builder_payload == pending_preview
         ):
             builder_payload = None
+        if builder_payload is not None and isinstance(pending_preview, dict):
+            pending_write_file = pending_preview.get("write_file")
+            pending_path = (
+                str(pending_write_file.get("path") or "").strip()
+                if isinstance(pending_write_file, dict)
+                else ""
+            )
+            builder_write_file = builder_payload.get("write_file")
+            builder_content = (
+                str(builder_write_file.get("content") or "").strip()
+                if isinstance(builder_write_file, dict)
+                else ""
+            )
+            if (
+                pending_path
+                and has_code_file_extension(pending_path)
+                and not pending_path.lower().endswith(".md")
+                and is_writing_refinement_request(message)
+                and _looks_like_builder_refinement_placeholder(builder_content)
+            ):
+                builder_payload = None
         if builder_payload is not None:
             write_session_preview(root, active_session, builder_payload)
             write_session_handoff_state(
@@ -1126,21 +1206,79 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
+    is_existing_refinable_prose_preview = active_preview_is_refinable_prose
     is_existing_writing_preview = _is_governed_writing_preview(pending_preview)
     if (
         not is_writing_draft_turn
         and not informational_web_turn
         and not is_enrichment_turn
-        and is_existing_writing_preview
+        and is_existing_refinable_prose_preview
         and is_writing_refinement_request(message)
         and reply_text_draft is not None
     ):
         is_writing_draft_turn = True
 
+    pending_preview_write_file = (
+        pending_preview.get("write_file") if isinstance(pending_preview, dict) else None
+    )
+    pending_preview_path = (
+        str(pending_preview_write_file.get("path") or "").strip()
+        if isinstance(pending_preview_write_file, dict)
+        else ""
+    )
+    pending_preview_content = (
+        str(pending_preview_write_file.get("content") or "").strip()
+        if isinstance(pending_preview_write_file, dict)
+        else ""
+    )
+    active_preview_is_code = (
+        bool(pending_preview_path)
+        and has_code_file_extension(pending_preview_path)
+        and not pending_preview_path.lower().endswith(".md")
+    )
+    builder_is_governed_writing_preview = _is_governed_writing_preview(builder_payload)
+    builder_preview_write_file = (
+        builder_payload.get("write_file") if isinstance(builder_payload, dict) else None
+    )
+    builder_preview_path = (
+        str(builder_preview_write_file.get("path") or "").strip()
+        if isinstance(builder_preview_write_file, dict)
+        else ""
+    )
+    builder_preview_is_code = (
+        bool(builder_preview_path)
+        and has_code_file_extension(builder_preview_path)
+        and not builder_preview_path.lower().endswith(".md")
+    )
+
+    should_preserve_builder_refinement_content = (
+        active_preview_is_code
+        and not builder_is_governed_writing_preview
+        and (not builder_preview_path or builder_preview_is_code)
+    )
+    if (
+        not should_preserve_builder_refinement_content
+        and isinstance(builder_payload, dict)
+        and is_writing_refinement_request(message)
+    ):
+        builder_wf = builder_payload.get("write_file")
+        builder_content = (
+            str(builder_wf.get("content") or "").strip() if isinstance(builder_wf, dict) else ""
+        )
+        reply_text_draft_content = str(reply_text_draft or "").strip()
+        should_preserve_builder_refinement_content = (
+            not is_existing_writing_preview
+            and bool(builder_content)
+            and builder_content != pending_preview_content
+            and (not reply_text_draft_content or builder_content == reply_text_draft_content)
+            and not _looks_like_builder_refinement_placeholder(builder_content)
+        )
+
     if (
         is_writing_draft_turn
         and reply_text_draft is not None
         and not reply_status.startswith("degraded")
+        and not should_preserve_builder_refinement_content
     ):
         prose_target_draft: dict[str, object] | None = builder_payload
         if prose_target_draft is None:
@@ -1153,7 +1291,7 @@ async def chat(request: Request):
         if (
             prose_target_draft is None
             and isinstance(pending_preview, dict)
-            and _is_governed_writing_preview(pending_preview)
+            and _is_refinable_prose_preview(pending_preview)
         ):
             prose_target_draft = dict(pending_preview)
         if isinstance(prose_target_draft, dict):
