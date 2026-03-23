@@ -83,6 +83,12 @@ _read_linked_job_registry = vera_session_store._read_linked_job_registry
 _write_linked_job_registry = vera_session_store._write_linked_job_registry
 register_session_linked_job = vera_session_store.register_session_linked_job
 read_linked_job_completions = vera_session_store.read_linked_job_completions
+read_session_conversational_planning_active = (
+    vera_session_store.read_session_conversational_planning_active
+)
+write_session_conversational_planning_active = (
+    vera_session_store.write_session_conversational_planning_active
+)
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:

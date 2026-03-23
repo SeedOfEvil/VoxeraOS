@@ -75,6 +75,7 @@ from ..vera.service import (
     ingest_linked_job_completions,
     maybe_auto_surface_linked_completion,
     new_session_id,
+    read_session_conversational_planning_active,
     read_session_derived_investigation_output,
     read_session_enrichment,
     read_session_handoff_state,
@@ -87,6 +88,7 @@ from ..vera.service import (
     register_session_linked_job,
     run_web_enrichment,
     session_debug_info,
+    write_session_conversational_planning_active,
     write_session_derived_investigation_output,
     write_session_enrichment,
     write_session_handoff_state,
@@ -415,6 +417,33 @@ def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
         "I was not able to prepare a governed preview for this request. "
         "If you share clearer details, I can try again."
     )
+
+
+_PREVIEW_PANE_SENTENCE_RE = re.compile(
+    r"(?:^|\n)\s*[^\n]*?\b("
+    r"preview\s+pane|preview\s+panel|"
+    r"in\s+the\s+preview|in\s+your\s+preview|"
+    r"check\s+the\s+preview|available\s+in\s+preview|"
+    r"visible\s+in\s+preview|find\s+it\s+in\s+the\s+preview|"
+    r"see\s+it\s+in\s+the\s+preview|"
+    r"review\s+it\s+in\s+the\s+preview"
+    r")\b[^\n]*",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_false_preview_claims_from_answer(text: str) -> str:
+    """Strip false preview-pane references from conversational answers.
+
+    Unlike ``_guardrail_false_preview_claim`` (which replaces the entire
+    answer), this only removes sentences that claim a preview/draft exists
+    in a pane or panel — preserving the actual content.
+    """
+    if not _looks_like_preview_pane_claim(text):
+        return text
+    cleaned = _PREVIEW_PANE_SENTENCE_RE.sub("", text).strip()
+    # If stripping emptied the text, fall back to original (paranoia guard).
+    return cleaned if cleaned else text
 
 
 _CONVERSATIONAL_PLANNING_RE = re.compile(
@@ -1016,9 +1045,16 @@ async def chat(request: Request):
     # requests with no save/write/file intent get a normal conversational
     # answer without attempting preview drafting.  The answer is stored as a
     # saveable artifact so "save that" works afterward.
+    #
+    # Multi-turn continuation: if the previous turn was answer-first (e.g.
+    # Vera asked for details) and the user is now providing those details,
+    # stay in the answer-first lane as long as there is no save/write intent
+    # and no active preview.
+    _prior_planning_active = read_session_conversational_planning_active(root, active_session)
     conversational_answer_first_turn = (
-        _is_conversational_answer_first_request(message)
+        (_is_conversational_answer_first_request(message) or _prior_planning_active)
         and not is_recent_assistant_content_save_request(message)
+        and not _SAVE_WRITE_FILE_SIGNAL_RE.search(message)
         and pending_preview is None
     )
     # Pre-compute code-draft intent so the LLM call can be given the code-generation
@@ -1058,6 +1094,12 @@ async def chat(request: Request):
 
     enrichment_context = session_enrichment if pending_preview is not None else None
     recent_assistant_artifacts = read_session_saveable_assistant_artifacts(root, active_session)
+
+    # Persist the planning continuation flag so follow-up turns stay in the
+    # answer-first lane.  Clear it when the turn is NOT answer-first.
+    write_session_conversational_planning_active(
+        root, active_session, conversational_answer_first_turn
+    )
 
     builder_preview: dict[str, object] | None = None
     if not informational_web_turn and not conversational_answer_first_turn:
@@ -1370,7 +1412,13 @@ async def chat(request: Request):
         else:
             _preview_has_content = "write_file" not in effective_preview
     _answer_before_preview_guardrail = guarded_answer
-    if not conversational_answer_first_turn:
+    if conversational_answer_first_turn:
+        # Soft sanitizer: strip false preview-pane references from the
+        # conversational answer while preserving the actual content.  The
+        # heavy guardrail would replace the entire answer, destroying the
+        # checklist/planning text the user asked for.
+        guarded_answer = _sanitize_false_preview_claims_from_answer(guarded_answer)
+    else:
         guarded_answer = _guardrail_false_preview_claim(
             text=guarded_answer,
             preview_exists=effective_preview is not None and _preview_has_content,

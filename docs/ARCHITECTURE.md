@@ -1366,3 +1366,29 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 - The lane is intentionally bounded to single text documents.
 - Prose-body extraction is heuristic and intentionally bounded: wrapper/preface text is stripped only when it matches known draft-introduction patterns or is separated from the body by blank-line block structure.
 - No docx/pdf generation, multi-file writing projects, or publishing workflows are added here.
+
+## Conversational answer-first lane (checklist / planning / structured reasoning)
+
+Non-actionable structured reasoning requests (checklists, planning, brainstorming, itineraries) are answered conversationally by default — preview drafting is not attempted. The answer is stored as a saveable artifact so `save that` creates a governed preview afterward.
+
+**Classifier (`vera_web/app.py`):**
+- `_is_conversational_answer_first_request(message)`: matches planning/checklist patterns while excluding messages with explicit save/write/file intent (`_SAVE_WRITE_FILE_SIGNAL_RE`).
+
+**Multi-turn continuation (`vera/session_store.py`, `vera_web/app.py`):**
+- A `conversational_planning_active` boolean is persisted in session state whenever an answer-first turn occurs.
+- On the next turn, if the flag is set, the user has no save/write intent, and no preview is active, the turn stays in the answer-first lane. This allows multi-turn planning flows where Vera asks for details and the user provides them.
+- The flag is cleared whenever the turn is NOT answer-first (save intent, preview exists, or the user changes topics).
+
+**Preview-language sanitizer (`vera_web/app.py`):**
+- `_sanitize_false_preview_claims_from_answer(text)`: strips sentences containing false preview-pane references ("preview pane", "in the preview", etc.) from conversational answers while preserving the actual content.
+- This is applied instead of the heavy `_guardrail_false_preview_claim` (which replaces the entire answer) so checklist/planning content is preserved.
+- Preview-pane language must only appear when a real preview exists.
+
+**Gating points:**
+- Builder skip (line ~1102): preview builder is not called for answer-first turns.
+- Sanitizer (line ~1416): false preview-pane claims are stripped from answer-first turns without destroying the content.
+- Control-reply suppression skip (line ~1459): full conversational answer is always shown to the user.
+
+**Save-after-answer flow:**
+- Conversational answers are stored as saveable artifacts (`build_saveable_assistant_artifact`).
+- `save that` / `save that to a note` resolves to the most recent substantial artifact and creates a governed preview.
