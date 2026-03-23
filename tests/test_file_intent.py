@@ -871,6 +871,10 @@ class TestConversationalAnswerFirstClassifier:
             "create a file called plan.txt with my checklist",
             "put that into a note",
             "save it as wedding-prep.md",
+            "save a checklist to a note",
+            "save a checklist to my notes",
+            "save the prep list into a note",
+            "write a checklist to a file",
         ],
     )
     def test_save_write_intent_is_not_answer_first(self, message):

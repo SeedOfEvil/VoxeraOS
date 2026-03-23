@@ -437,8 +437,10 @@ _CONVERSATIONAL_PLANNING_RE = re.compile(
 _SAVE_WRITE_FILE_SIGNAL_RE = re.compile(
     r"\b("
     r"save\s+(?:that|this|it|as|to|into)|"
+    r"save\s+\S+.*?\b(?:to|as|into)\s+(?:a\s+)?(?:my\s+)?(?:file|note|notes)\b|"
     r"write\s+(?:that|this|it)\s+(?:to|into)|"
     r"write\s+(?:to|into)\s+(?:a\s+)?(?:file|note)|"
+    r"write\s+\S+.*?\b(?:to|as|into)\s+(?:a\s+)?(?:my\s+)?(?:file|note|notes)\b|"
     r"create\s+(?:a\s+)?(?:file|note)\s+(?:called|named|with)|"
     r"put\s+(?:that|this|it)\s+in(?:to)?\s+(?:a\s+)?(?:file|note)|"
     r"as\s+a\s+(?:file|note|markdown)\b|"

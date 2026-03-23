@@ -216,8 +216,9 @@ def test_checklist_with_preview_claim_language_not_blocked(tmp_path, monkeypatch
     assert res.status_code == 200
 
     last_turn = session.turns()[-1]
-    assert "checklist" in last_turn["text"].lower() or "plus-one" in last_turn["text"].lower()
+    assert "plus-one" in last_turn["text"].lower()
     assert "governed preview" not in last_turn["text"].lower()
+    assert "couldn't safely prepare" not in last_turn["text"].lower()
 
 
 def test_brainstorm_request_returns_conversational_answer(tmp_path, monkeypatch):
@@ -257,9 +258,46 @@ def test_save_checklist_to_file_does_not_bypass_preview(tmp_path, monkeypatch):
 
     res = session.chat("save a checklist to a file called wedding.txt")
     assert res.status_code == 200
-    # This has file/save intent, so it should attempt preview drafting
-    # (not conversational answer-first).  The answer text should reflect
-    # the preview path, not a raw checklist.
+
+    last_turn = session.turns()[-1]
+    # Must NOT produce a raw conversational checklist — the save+file intent
+    # means this should go through preview drafting, not answer-first.
+    assert last_turn["role"] == "assistant"
+    assert "1." not in last_turn["text"]
+    assert "plus-one" not in last_turn["text"].lower()
+
+
+def test_checklist_request_with_active_preview_does_not_bypass(tmp_path, monkeypatch):
+    """When a governed preview is already active, a checklist-style message
+    should NOT trigger answer-first bypass — the preview context dominates."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    preview = {
+        "goal": "write a file called notes.txt with provided content",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/notes.txt",
+            "content": "existing content",
+            "mode": "overwrite",
+        },
+    }
+    vera_service.write_session_preview(session.queue, session.session_id, preview)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        _ = turns
+        return {
+            "answer": "Understood. I still have the current request ready.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("add a checklist to the file")
+    assert res.status_code == 200
+
+    # Preview must still be intact (not cleared by answer-first bypass).
+    # The builder may have updated content, but the preview itself persists.
+    assert session.preview() is not None
+    assert "write_file" in session.preview()
 
 
 def test_unsafe_path_revision_fails_closed_and_preserves_preview(tmp_path, monkeypatch):
