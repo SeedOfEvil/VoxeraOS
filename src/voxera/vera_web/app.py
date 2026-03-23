@@ -1221,10 +1221,7 @@ async def chat(request: Request):
             not is_existing_writing_preview
             and bool(builder_content)
             and builder_content != pending_preview_content
-            and (
-                not reply_text_draft_content
-                or builder_content == reply_text_draft_content
-            )
+            and (not reply_text_draft_content or builder_content == reply_text_draft_content)
             and not _looks_like_builder_refinement_placeholder(builder_content)
         )
 
