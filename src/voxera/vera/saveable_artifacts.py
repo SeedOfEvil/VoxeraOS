@@ -18,6 +18,7 @@ def message_requests_referenced_content(message: str) -> bool:
         re.search(
             r"\b("
             r"that\s+(?:joke|summary|text|answer|response|explanation|previous\s+summary|previous\s+answer|previous\s+response|previous\s+explanation)|"
+            r"save\s+(?:that|this)(?:\s+as|\s+to|\s+into|\s+in|\b)|"
             r"save\s+it(?:\s+as|\s+to|\s+into|\s+in|\b)|"
             r"put\s+it\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"create\s+(?:a\s+)?note\s+from\s+it|"

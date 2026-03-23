@@ -1439,34 +1439,26 @@ def test_content_refinement_phrase_add_content_updates_active_preview(tmp_path, 
 def test_content_refinement_phrase_script_text_updates_active_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-    client = TestClient(vera_app_module.app)
-    client.get("/")
-    sid = client.cookies.get("vera_session_id") or ""
-    client.post("/chat", data={"session_id": sid, "message": "write a file called script.ps1"})
 
-    script_text = "an Active Directory script that creates a user called Skibbidy"
-    client.post(
-        "/chat",
-        data={"session_id": sid, "message": f"add content to script.ps1 {script_text}"},
+    generated_script = "\n".join(
+        (
+            'New-ADUser -Name "Skibbidy" -SamAccountName "Skibbidy" \\',
+            '    -AccountPassword (ConvertTo-SecureString "P@ssw0rd!" -AsPlainText -Force) \\',
+            "    -Enabled $true",
+        )
     )
-
-    preview = vera_service.read_session_preview(queue, sid)
-    assert preview is not None
-    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
-    assert preview["write_file"]["content"] == script_text
-
-
-def test_literal_code_preview_refinement_does_not_force_code_draft_hint(tmp_path, monkeypatch):
-    queue = tmp_path / "queue"
-    _set_queue_root(monkeypatch, queue)
-
-    observed: dict[str, bool] = {}
 
     async def _fake_reply(*, turns, user_message, code_draft=False, writing_draft=False, **kwargs):
         _ = (turns, writing_draft, kwargs)
         if "add content to script.ps1" in user_message.lower():
-            observed["code_draft"] = code_draft
-            return {"answer": "I updated the draft description.", "status": "ok:test"}
+            assert code_draft is True
+            return {
+                "answer": (
+                    "I updated the draft PowerShell script.\n\n"
+                    f"```powershell\n{generated_script}\n```"
+                ),
+                "status": "ok:code_draft",
+            }
         return {"answer": "I prepared the script preview shell.", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -1482,12 +1474,50 @@ def test_literal_code_preview_refinement_does_not_force_code_draft_hint(tmp_path
     )
 
     preview = vera_service.read_session_preview(queue, sid)
-    assert observed["code_draft"] is False
+    turns = vera_service.read_session_turns(queue, sid)
     assert preview is not None
-    assert preview["write_file"]["content"] == script_text
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
+    assert preview["write_file"]["content"] == generated_script
+    assert "updated the draft powershell script" in turns[-1]["text"].lower()
 
 
-def test_literal_code_preview_refinement_ignores_generated_script_reply(tmp_path, monkeypatch):
+def test_targeted_code_preview_refinement_uses_code_draft_hint(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    observed: dict[str, bool] = {}
+
+    async def _fake_reply(*, turns, user_message, code_draft=False, writing_draft=False, **kwargs):
+        _ = (turns, writing_draft, kwargs)
+        if "add content to script.ps1" in user_message.lower():
+            observed["code_draft"] = code_draft
+            return {
+                "answer": "I updated the draft.\n\n```powershell\nWrite-Host 'Skibbidy'\n```",
+                "status": "ok:code_draft",
+            }
+        return {"answer": "I prepared the script preview shell.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    client.post("/chat", data={"session_id": sid, "message": "write a file called script.ps1"})
+
+    script_text = "an Active Directory script that creates a user called Skibbidy"
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": f"add content to script.ps1 {script_text}"},
+    )
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert observed["code_draft"] is True
+    assert preview is not None
+    assert preview["write_file"]["content"] == "Write-Host 'Skibbidy'"
+
+
+def test_targeted_code_preview_refinement_uses_generated_script_reply_as_preview_truth(
+    tmp_path, monkeypatch
+):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -1533,12 +1563,60 @@ def test_literal_code_preview_refinement_ignores_generated_script_reply(tmp_path
     assert res.status_code == 200
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
-    assert (
-        preview["write_file"]["content"]
-        == "an Active Directory script that creates a user called Skibbidy"
+    assert preview["write_file"]["content"] == generated_script
+    assert "updated the draft powershell script" in turns[-1]["text"].lower()
+
+
+def test_targeted_code_preview_refinement_submit_uses_authoritative_preview_truth(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    generated_script = "\n".join(
+        (
+            'New-ADGroup -Name "wowza" -GroupScope Global -GroupCategory Security',
+            "Write-Host 'Created wowza'",
+        )
     )
-    assert generated_script not in preview["write_file"]["content"]
-    assert "send it whenever" in turns[-1]["text"].lower()
+
+    async def _fake_reply(*, turns, user_message, code_draft=False, writing_draft=False, **kwargs):
+        _ = (turns, writing_draft, kwargs)
+        if "add content to script.ps1" in user_message.lower():
+            assert code_draft is True
+            return {
+                "answer": (
+                    "I updated the draft PowerShell script.\n\n"
+                    f"```powershell\n{generated_script}\n```"
+                ),
+                "status": "ok:code_draft",
+            }
+        return {"answer": "I prepared the script preview shell.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post("/chat", data={"session_id": sid, "message": "write a file called script.ps1"})
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": (
+                "add content to script.ps1 an Active Directory script that creates a group "
+                "security called wowza"
+            ),
+        },
+    )
+    submit = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+
+    assert submit.status_code == 200
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
+    assert payload["write_file"]["content"] == generated_script
 
 
 def test_latest_content_refinement_wins_for_handoff_payload(tmp_path, monkeypatch):

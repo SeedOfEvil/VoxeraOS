@@ -1,3 +1,12 @@
+## 2026-03-23 — PR #TBD — fix(vera): restore truthful preview drafting for targeted refinements and make weather answers saveable again
+
+- Fixed a regression from the preview-drafting extraction: targeted code-file refinement turns like `add content to script.ps1 ...` once again travel through the governed code-draft path, so Vera gets the code-draft hint, the assistant-visible reply can contain the real updated script, and the authoritative preview stores that generated script instead of the raw refinement phrase.
+- Fixed the paired UI-truth regression in `vera_web/app.py`: targeted refinement turns no longer force the generic preview-update acknowledgement when the turn is actually a code/writing draft update with meaningful assistant-authored content.
+- Restored save-by-reference support for `save that as a note` / `save this as a note` phrasing so meaningful recent assistant artifacts — including current weather, hourly, and weekend weather answers — resolve back into normal governed save previews again.
+- Added focused regression coverage for targeted script refinements and weather-answer saveability so future modularization changes do not silently reintroduce either regression.
+- Root cause: the previous extraction accidentally treated targeted code refinements as literal-content preview edits instead of code-draft updates, and the referenced-content matcher failed to recognize `save that as ...` phrasing even though weather answers themselves were still meaningful saveable artifacts.
+- Queue truth, preview truth, rename/path safety, and submit semantics remain unchanged; this PR only restores the broken refinement/saveability behaviors.
+
 ## 2026-03-23 — PR #TBD — refactor(vera): thin remaining handoff glue and compatibility leftovers
 
 - Added `src/voxera/vera/preview_drafting.py` as the dedicated ownership boundary for Vera's remaining deterministic preview-drafting glue: narrow action-preview normalization, diagnostics preview shaping, save-by-reference note/file drafting, contextual refinement fallback, and drafting guidance examples.

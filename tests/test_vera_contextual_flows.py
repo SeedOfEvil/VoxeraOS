@@ -37,6 +37,72 @@ def test_weather_missing_location_then_followup_hourly_stays_in_weather_lane(tmp
     assert "Here are the top findings" not in third.text
 
 
+def test_weather_current_answer_then_save_that_as_a_note_creates_preview(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    first = session.chat("whats the weather like?")
+    second = session.chat("Calgary")
+    save = session.chat("save that as a note")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert save.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"].startswith("~/VoxeraOS/notes/note-")
+    assert "currently 3°c in calgary" in preview["write_file"]["content"].lower()
+
+
+def test_weather_hourly_answer_then_save_that_as_a_note_creates_preview(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    session.chat("whats the weather like?")
+    session.chat("Calgary")
+    hourly = session.chat("hourly")
+    save = session.chat("save that as a note")
+
+    assert hourly.status_code == 200
+    assert save.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"].startswith("~/VoxeraOS/notes/note-")
+    assert "next 3 hours for calgary" in preview["write_file"]["content"].lower()
+    assert "sat 12 pm" in preview["write_file"]["content"].lower()
+
+
+def test_weather_weekend_answer_then_save_that_as_a_note_creates_preview(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_lookup(location_query: str):
+        assert location_query == "Calgary"
+        return sample_weather_snapshot(query=location_query)
+
+    monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
+
+    session.chat("whats the weather like?")
+    session.chat("Calgary")
+    weekend = session.chat("weekend")
+    save = session.chat("save that as a note")
+
+    assert weekend.status_code == 200
+    assert save.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert "weekend outlook for calgary" in preview["write_file"]["content"].lower()
+
+
 def test_weather_followup_7_day_and_weekend_stay_in_weather_lane(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 

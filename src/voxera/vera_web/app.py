@@ -370,6 +370,24 @@ def _looks_like_builder_refinement_placeholder(content: str) -> bool:
     return lowered in placeholder_values
 
 
+def _is_targeted_code_preview_refinement(
+    message: str, *, active_preview: dict[str, object] | None
+) -> bool:
+    if not isinstance(active_preview, dict):
+        return False
+    filename = filename_from_preview(active_preview)
+    if not filename:
+        return False
+    write_file = active_preview.get("write_file")
+    path = str(write_file.get("path") or "").strip() if isinstance(write_file, dict) else ""
+    if not path or not has_code_file_extension(path) or path.lower().endswith(".md"):
+        return False
+    return bool(
+        re.search(r"\badd\s+content\s+to\b", message, re.IGNORECASE)
+        and re.search(rf"\b{re.escape(filename)}\b", message, re.IGNORECASE)
+    )
+
+
 def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
     """Replace false preview-existence claims with truthful language.
 
@@ -949,20 +967,14 @@ async def chat(request: Request):
     # Pre-compute code-draft intent so the LLM call can be given the code-generation
     # hint before the reply is generated.  This flag is reused below where
     # is_code_draft_turn would have been computed from the same expression.
-    pending_preview_filename = (
-        filename_from_preview(pending_preview) if isinstance(pending_preview, dict) else None
-    )
-    explicit_targeted_content_refinement = (
-        isinstance(pending_preview, dict)
-        and isinstance(pending_preview_filename, str)
-        and bool(re.search(r"\badd\s+content\s+to\b", message, re.IGNORECASE))
-        and bool(re.search(rf"\b{re.escape(pending_preview_filename)}\b", message, re.IGNORECASE))
+    explicit_targeted_content_refinement = _is_targeted_code_preview_refinement(
+        message,
+        active_preview=pending_preview,
     )
     is_code_draft_turn = (
-        is_code_draft_request(message)
+        (is_code_draft_request(message) or explicit_targeted_content_refinement)
         and not informational_web_turn
         and not is_explicit_writing_transform
-        and not explicit_targeted_content_refinement
     )
     active_preview_is_refinable_prose = _is_refinable_prose_preview(pending_preview)
     active_preview_blocks_relative_prose_refinement = (
@@ -1324,7 +1336,12 @@ async def chat(request: Request):
     ) and not is_json_content_request
 
     assistant_text = guarded_answer
-    if explicit_targeted_content_refinement and builder_payload is not None:
+    if (
+        explicit_targeted_content_refinement
+        and builder_payload is not None
+        and not is_code_draft_turn
+        and not is_writing_draft_turn
+    ):
         assistant_text = _conversational_preview_update_message(
             updated=True,
             has_active_preview=pending_preview is not None,
