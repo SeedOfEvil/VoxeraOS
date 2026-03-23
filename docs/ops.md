@@ -85,6 +85,8 @@ Vera active preview draft revision interpretation now lives in `src/voxera/vera/
 
 Vera preview submission and handoff normalization now live in `src/voxera/vera/preview_submission.py`, with `src/voxera/vera/handoff.py` and `src/voxera/vera_web/app.py` delegating submit-intent detection, authoritative preview normalization, truthful no-preview submit handling, and queue acknowledgement shaping into that module. Prefer extending `preview_submission.py` for submit/current-preview behavior instead of re-growing that seam inside `handoff.py` or `app.py`.
 
+Vera deterministic preview drafting now lives in `src/voxera/vera/preview_drafting.py`, with `src/voxera/vera/handoff.py` intentionally reduced to an import-stable façade for existing callers. Prefer extending `preview_drafting.py` for narrow action-preview drafting, diagnostics preview shaping, note/file drafting, and contextual save-by-reference glue instead of re-growing those branches inside `handoff.py`.
+
 Path-precedence rules (applied inside `health.py`):
 - **Explicit `queue_root`**: any call that receives an explicit `queue_root: Path` always uses `queue_root/health.json` and **ignores** `VOXERA_HEALTH_PATH`.  This preserves pre-seeded test fixtures and is the common case for unit and integration tests.
 - **Default-path flows** (no explicit `queue_root`): `VOXERA_HEALTH_PATH` is honoured when set, preventing operator / panel / CLI default-path flows from writing to `notes/queue/health.json` during a test run.

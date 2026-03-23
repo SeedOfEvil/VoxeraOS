@@ -8,6 +8,7 @@ from voxera.core.file_intent import classify_bounded_file_intent, detect_blocked
 from voxera.vera.handoff import maybe_draft_job_payload, normalize_preview_payload
 from voxera.vera.saveable_artifacts import (
     build_saveable_assistant_artifact,
+    message_requests_referenced_content,
     select_recent_saveable_assistant_artifact,
 )
 
@@ -819,3 +820,7 @@ def test_select_recent_saveable_artifact_prefers_explanation_when_requested():
     )
 
     assert selected == artifacts[0]
+
+
+def test_save_that_as_a_note_counts_as_referenced_content_request():
+    assert message_requests_referenced_content("save that as a note") is True

@@ -1153,7 +1153,7 @@ truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
 
 ## Vera preview drafting boundary notes (PR #154)
 
-- Vera uses a lightweight deterministic phrase-normalization layer (`src/voxera/vera/handoff.py`) to map common conversational action requests into the smallest supported queue preview payload.
+- Vera's deterministic preview drafting now lives in `src/voxera/vera/preview_drafting.py`, while `src/voxera/vera/handoff.py` remains an intentionally small compatibility façade for existing handoff-facing imports.
 - Supported intent families in this layer are intentionally narrow: web navigation URL opens, explicit file reads, and basic note/file write intents.
 - Save-by-reference write intents now include bounded current-session assistant-content resolution for phrases like `that summary`, `your previous answer`, and `the previous response`, routed into the same governed `write_file` preview contract.
 - Precedence rule: when a current investigation-derived comparison/summary/expanded-result exists in session, follow-up `save that` / `save it` routes to the derived investigation save path first; generic recent-assistant-content save resolution is fallback-only.

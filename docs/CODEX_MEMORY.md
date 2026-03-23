@@ -1,3 +1,21 @@
+## 2026-03-23 — PR #TBD — fix(vera): restore truthful preview drafting for targeted refinements and make weather answers saveable again
+
+- Fixed a regression from the preview-drafting extraction: targeted code-file refinement turns like `add content to script.ps1 ...` once again travel through the governed code-draft path, so Vera gets the code-draft hint, the assistant-visible reply can contain the real updated script, and the authoritative preview stores that generated script instead of the raw refinement phrase.
+- Fixed the paired UI-truth regression in `vera_web/app.py`: targeted refinement turns no longer force the generic preview-update acknowledgement when the turn is actually a code/writing draft update with meaningful assistant-authored content.
+- Restored save-by-reference support for `save that as a note` / `save this as a note` phrasing so meaningful recent assistant artifacts — including current weather, hourly, and weekend weather answers — resolve back into normal governed save previews again.
+- Added focused regression coverage for targeted script refinements and weather-answer saveability so future modularization changes do not silently reintroduce either regression.
+- Root cause: the previous extraction accidentally treated targeted code refinements as literal-content preview edits instead of code-draft updates, and the referenced-content matcher failed to recognize `save that as ...` phrasing even though weather answers themselves were still meaningful saveable artifacts.
+- Queue truth, preview truth, rename/path safety, and submit semantics remain unchanged; this PR only restores the broken refinement/saveability behaviors.
+
+## 2026-03-23 — PR #TBD — refactor(vera): thin remaining handoff glue and compatibility leftovers
+
+- Added `src/voxera/vera/preview_drafting.py` as the dedicated ownership boundary for Vera's remaining deterministic preview-drafting glue: narrow action-preview normalization, diagnostics preview shaping, save-by-reference note/file drafting, contextual refinement fallback, and drafting guidance examples.
+- Reduced `src/voxera/vera/handoff.py` to an intentionally small compatibility façade that re-exports the stable handoff-facing drafting, submission, and investigation helper entrypoints without re-hiding those behavior clusters in one large file.
+- Added `tests/test_vera_handoff_compat.py` to lock the import-stable compatibility surface so future cleanups can keep thinning `handoff.py` without silently breaking callers that still patch/import through that module.
+- Updated `docs/ops.md` and `docs/ARCHITECTURE.md` to document the new ownership boundary and clarify that extending preview drafting should happen in `preview_drafting.py`, not by re-growing `handoff.py`.
+- Root cause: after the earlier seam extractions, `handoff.py` still concentrated leftover deterministic preview-drafting glue plus compatibility aliases, making ownership ambiguous even though the major behavior seams already lived elsewhere.
+- Queue truth, preview truth, investigation/saveability semantics, and Vera's user-facing handoff/submit UX contract were intentionally preserved; this PR is a conservative ownership cleanup only.
+
 ## 2026-03-23 — PR #TBD — refactor(vera): extract investigation derivation logic from handoff
 
 - Added `src/voxera/vera/investigation_derivations.py` as the dedicated ownership boundary for Vera investigation derivation behavior: summarize/compare/expand intent detection, result subset selection, investigation-derived markdown/save-preview shaping, and preservation of the raw-investigation-vs-derived-artifact distinction.
