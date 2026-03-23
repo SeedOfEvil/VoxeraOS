@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from voxera.core.file_intent import classify_bounded_file_intent, detect_blocked_file_intent
-from voxera.vera.handoff import (
+from voxera.vera.handoff import maybe_draft_job_payload, normalize_preview_payload
+from voxera.vera.saveable_artifacts import (
     build_saveable_assistant_artifact,
-    maybe_draft_job_payload,
-    normalize_preview_payload,
+    select_recent_saveable_assistant_artifact,
 )
 
 # ---------------------------------------------------------------------------
@@ -784,3 +784,38 @@ def test_single_word_not_saveable():
     """Single-word responses must not be saveable."""
     artifact = build_saveable_assistant_artifact("Absolutely")
     assert artifact is None
+
+
+def test_select_recent_saveable_artifact_skips_courtesy_turn_history():
+    """A courtesy follow-up must not steal the save target from the meaningful answer."""
+    artifacts = [
+        {"content": "2 + 2 is 4.", "artifact_type": "info"},
+    ]
+
+    selected = select_recent_saveable_assistant_artifact(
+        message="save that to a note",
+        assistant_artifacts=artifacts,
+    )
+
+    assert selected == {"content": "2 + 2 is 4.", "artifact_type": "info"}
+
+
+def test_select_recent_saveable_artifact_prefers_explanation_when_requested():
+    """Explanation-targeted save requests must keep selecting the matching artifact type."""
+    artifacts = [
+        {
+            "content": "A black hole is a region of spacetime with gravity so strong that not even light can escape.",
+            "artifact_type": "explanation",
+        },
+        {
+            "content": "# Investigation Summary\n\nShort takeaway: gravitational collapse matters.",
+            "artifact_type": "summary",
+        },
+    ]
+
+    selected = select_recent_saveable_assistant_artifact(
+        message="save that explanation to a note",
+        assistant_artifacts=artifacts,
+    )
+
+    assert selected == artifacts[0]

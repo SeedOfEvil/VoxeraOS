@@ -13,8 +13,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .handoff import build_saveable_assistant_artifact
 from .prompt import VERA_SYSTEM_PROMPT
+from .saveable_artifacts import build_saveable_assistant_artifact
 
 MAX_SESSION_TURNS = 8
 _SESSION_ID_LENGTH = 24
