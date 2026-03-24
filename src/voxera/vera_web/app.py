@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 import inspect
+import json
 import re
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -648,6 +649,77 @@ def _render_plain_checklist(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
+def _extract_json_object_items(text: str) -> list[str]:
+    """Extract checklist-like items from JSON payloads embedded in model output."""
+    if not text.strip():
+        return []
+    candidates: list[str] = []
+    fenced_blocks = re.findall(r"```json\s*\n(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
+    candidates.extend(fenced_blocks)
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        candidates.append(stripped)
+
+    items: list[str] = []
+    for raw in candidates:
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            for key in ("items", "checklist", "steps", "tasks", "todo", "to_do"):
+                value = parsed.get(key)
+                if isinstance(value, list):
+                    for entry in value:
+                        cleaned = str(entry).strip()
+                        if cleaned:
+                            items.append(cleaned)
+            if not items:
+                for value in parsed.values():
+                    if isinstance(value, str) and value.strip():
+                        items.append(value.strip())
+        elif isinstance(parsed, list):
+            for entry in parsed:
+                cleaned = str(entry).strip()
+                if cleaned:
+                    items.append(cleaned)
+    return items
+
+
+def _fallback_conversational_checklist_for_message(user_message: str) -> str:
+    """Deterministic checklist fallback when the model produced no usable artifact."""
+    lowered = user_message.lower()
+    if "wedding" in lowered:
+        return "\n".join(
+            (
+                "- Finalize guest list and plus-one confirmations",
+                "- Confirm attire, fittings, and accessories",
+                "- Book travel, lodging, and local transportation",
+                "- Verify venue timeline and vendor confirmations",
+                "- Prepare required documents and day-of essentials",
+            )
+        )
+    if any(token in lowered for token in ("grocery", "shopping list", "meal prep", "supermarket")):
+        return "\n".join(
+            (
+                "- Produce: fruit, leafy greens, onions, and tomatoes",
+                "- Protein: eggs, chicken or tofu, and yogurt",
+                "- Pantry: rice, pasta, beans, and cooking oil",
+                "- Dairy/alternatives: milk, cheese, and butter",
+                "- Household: paper goods and cleaning supplies",
+            )
+        )
+    return "\n".join(
+        (
+            "- Define the goal and outcome",
+            "- Break the work into concrete steps",
+            "- Order steps by priority and dependencies",
+            "- Add owners, dates, or needed resources",
+            "- Review and adjust after first progress check",
+        )
+    )
+
+
 def _sanitize_false_preview_claims_from_answer(text: str) -> str:
     """Strip false preview/submission/draft/workflow claims from conversational answers.
 
@@ -769,7 +841,9 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
     return text
 
 
-def _enforce_conversational_checklist_output(text: str, *, raw_answer: str) -> str:
+def _enforce_conversational_checklist_output(
+    text: str, *, raw_answer: str, user_message: str
+) -> str:
     """Final enforcement layer for conversational checklist/planning mode.
 
     Runs AFTER the six-phase sanitizer as a deterministic safety net.
@@ -780,11 +854,10 @@ def _enforce_conversational_checklist_output(text: str, *, raw_answer: str) -> s
       4. If the text is empty, attempt item extraction from raw_answer.
     """
     if not text.strip():
-        items = _extract_list_items(raw_answer)
+        items = _extract_list_items(raw_answer) or _extract_json_object_items(raw_answer)
         if items:
             return _render_plain_checklist(items)
-        # raw_answer had no items either — keep whatever text we have
-        return text if text.strip() else raw_answer
+        return _fallback_conversational_checklist_for_message(user_message)
 
     # Scan for any remaining violations in non-list-item lines
     has_violation = False
@@ -803,10 +876,21 @@ def _enforce_conversational_checklist_output(text: str, *, raw_answer: str) -> s
 
     if has_violation:
         # Nuclear fallback: extract items from whatever we have and re-render
-        items = _extract_list_items(text) or _extract_list_items(raw_answer)
+        items = (
+            _extract_list_items(text)
+            or _extract_list_items(raw_answer)
+            or _extract_json_object_items(text)
+            or _extract_json_object_items(raw_answer)
+        )
         if items:
             return _render_plain_checklist(items)
+        return _fallback_conversational_checklist_for_message(user_message)
 
+    if not _has_list_content(text):
+        items = _extract_json_object_items(text) or _extract_json_object_items(raw_answer)
+        if items:
+            return _render_plain_checklist(items)
+        return _fallback_conversational_checklist_for_message(user_message)
     return text
 
 
@@ -1851,7 +1935,7 @@ async def chat(request: Request):
         # Final enforcement: deterministic safety net catches any edge cases
         # the sanitizer missed and re-renders as a plain checklist if needed.
         guarded_answer = _enforce_conversational_checklist_output(
-            guarded_answer, raw_answer=sanitized_answer
+            guarded_answer, raw_answer=sanitized_answer, user_message=message
         )
     else:
         guarded_answer = _guardrail_submission_claim(

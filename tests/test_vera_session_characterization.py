@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from voxera.vera import service as vera_service
 from voxera.vera_web import app as vera_app_module
@@ -463,6 +464,97 @@ def test_multi_turn_planning_then_save_that_creates_preview(tmp_path, monkeypatc
     assert preview is not None
     assert "write_file" in preview
     assert "checklist" in preview["write_file"]["content"].lower()
+
+
+def _assert_conversational_checklist_contract(text: str) -> None:
+    lowered = text.lower()
+    assert re.search(r"(?m)^(?:- |\d+[.)] )", text), text
+    for banned in ("preview", "draft", "submit", "submission", "queue", "queued"):
+        assert banned not in lowered, text
+    assert "```json" not in lowered
+    assert '{"' not in text
+    meta_only_markers = (
+        "i organized",
+        "i've grouped",
+        "i organized it",
+        "does this look right",
+        "take a look",
+        "let me know when",
+    )
+    assert not any(marker in lowered for marker in meta_only_markers), text
+
+
+def test_wedding_checklist_determinism_with_meta_only_or_json_outputs(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+    responses = [
+        "I've grouped everything logically. Does this look right before we save?",
+        ('{"intent":"checklist","items":["Choose venue","Book photographer","Send invites"]}'),
+        (
+            "You can review the draft in the preview pane.\n"
+            "1. Confirm budget\n2. Build guest list\n3. Reserve venue"
+        ),
+    ]
+    call_count = {"value": 0}
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        _ = turns, user_message, kw
+        index = call_count["value"] % len(responses)
+        call_count["value"] += 1
+        return {"answer": responses[index], "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    for _ in range(9):
+        session.chat("create a checklist for my wedding prep")
+        _assert_conversational_checklist_contract(session.turns()[-1]["text"])
+        assert session.preview() is None
+
+
+def test_grocery_checklist_determinism_repeated(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+    responses = [
+        "I've put this together for you. Take a look and let me know when to save it.",
+        '```json\n{"items": ["Milk", "Eggs", "Spinach", "Rice"]}\n```',
+        "- Milk\n- Eggs\n- Spinach\n- Rice",
+    ]
+    calls = {"value": 0}
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        _ = turns, user_message, kw
+        reply = responses[calls["value"] % len(responses)]
+        calls["value"] += 1
+        return {"answer": reply, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    for _ in range(8):
+        session.chat("make me a grocery checklist for this week")
+        _assert_conversational_checklist_contract(session.turns()[-1]["text"])
+        assert session.preview() is None
+
+
+def test_two_turn_planning_determinism_blocks_preview_language_and_json(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+    responses = [
+        "Sure — what details should I include?",
+        '{"goal":"trip planning","tasks":["Book flights","Reserve hotel","Plan activities"]}',
+        "I've organized it logically and updated the draft in the preview.",
+    ]
+    calls = {"value": 0}
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        _ = turns, user_message, kw
+        reply = responses[calls["value"] % len(responses)]
+        calls["value"] += 1
+        return {"answer": reply, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("help me plan a wedding weekend checklist")
+    for _ in range(6):
+        session.chat("I need to handle travel, vendors, and a day-of timeline")
+        _assert_conversational_checklist_contract(session.turns()[-1]["text"])
+        assert session.preview() is None
 
 
 def test_checklist_answer_then_send_without_save_is_truthful(tmp_path, monkeypatch):
@@ -1279,9 +1371,9 @@ def test_checklist_without_workflow_narration_passes_through(tmp_path, monkeypat
     assert last_turn["text"] == clean_answer
 
 
-def test_meta_commentary_only_preserved_when_no_list_items(tmp_path, monkeypatch):
-    """If the LLM produces ONLY meta-commentary with no list items, the text
-    must be preserved (Phase 5 paranoia guard) — don't strip everything."""
+def test_meta_commentary_only_renders_deterministic_checklist(tmp_path, monkeypatch):
+    """If the LLM returns only narration, conversational planning still must
+    render actual checklist items deterministically."""
     session = make_vera_session(monkeypatch, tmp_path)
 
     narration_only = (
@@ -1298,8 +1390,9 @@ def test_meta_commentary_only_preserved_when_no_list_items(tmp_path, monkeypatch
     assert res.status_code == 200
 
     last_turn = session.turns()[-1]
-    # No list items → meta-commentary preserved (better than empty response)
-    assert "booking" in last_turn["text"].lower() or "organized" in last_turn["text"].lower()
+    assert re.search(r"(?m)^- ", last_turn["text"])
+    assert "preview" not in last_turn["text"].lower()
+    assert "draft" not in last_turn["text"].lower()
 
 
 def test_two_turn_checklist_produces_actual_content(tmp_path, monkeypatch):
@@ -1814,7 +1907,9 @@ def test_enforcement_layer_catches_sanitizer_edge_case(tmp_path, monkeypatch):
 
     # Simulate a sanitizer output that still has a banned token in a non-list line
     dirty = "1. Coffee\n2. Rice\nCheck the preview for more."
-    clean = _enforce_conversational_checklist_output(dirty, raw_answer=dirty)
+    clean = _enforce_conversational_checklist_output(
+        dirty, raw_answer=dirty, user_message="make a grocery checklist"
+    )
     assert "preview" not in clean.lower()
     assert "coffee" in clean.lower()
     assert "rice" in clean.lower()
@@ -1825,7 +1920,9 @@ def test_enforcement_layer_handles_empty_text(tmp_path, monkeypatch):
     from voxera.vera_web.app import _enforce_conversational_checklist_output
 
     raw = "I prepared this in the preview.\n\n- Milk\n- Eggs\n- Bread"
-    result = _enforce_conversational_checklist_output("", raw_answer=raw)
+    result = _enforce_conversational_checklist_output(
+        "", raw_answer=raw, user_message="make a grocery checklist"
+    )
     assert "milk" in result.lower()
     assert "eggs" in result.lower()
     assert "preview" not in result.lower()

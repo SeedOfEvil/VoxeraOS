@@ -1,3 +1,12 @@
+## 2026-03-24 — PR #TBD — fix(vera): hard-lock conversational checklist/planning rendering to deterministic in-chat artifacts
+
+- **Root cause:** The conversational checklist lane still allowed freeform post-classification output to pass when no list artifact was present. Sanitization removed preview/workflow/meta text, but remaining non-list output (or empty output) could still avoid deterministic checklist rendering.
+- **Fix — authoritative final renderer:** Strengthened `src/voxera/vera_web/app.py` so `CONVERSATIONAL_ARTIFACT` mode always passes through a deterministic final checklist renderer. If no list survives sanitization, Vera now deterministically re-renders from extracted list/JSON items or falls back to a domain-specific checklist template (wedding/grocery/general planning), guaranteeing actual in-chat checklist content.
+- **Fix — JSON-to-checklist normalization:** Added JSON item extraction for fenced and bare JSON payloads (`items`, `checklist`, `steps`, `tasks`, etc.) and normalized those into plain markdown checklist items so JSON never reaches user chat in conversational planning mode.
+- **Behavior contract preserved:** Explicit save/write intent still routes to governed preview flows; save-after-checklist still works via recent saveable assistant artifacts; non-checklist lanes (script flow, weather saveability, investigation summarize/compare/expand/save/submit) are preserved.
+- **Files changed:** `src/voxera/vera_web/app.py`, `tests/test_vera_session_characterization.py`, `docs/ARCHITECTURE.md`, `docs/ops.md`, `docs/CODEX_MEMORY.md`.
+- **Tests added/updated:** Added repeated deterministic wedding/grocery/two-turn planning characterization tests that assert: checklist items are always present, no preview/draft/save/submit/queue leakage, no JSON leakage, no meta-only narration, and no hidden preview creation.
+
 ## 2026-03-24 — PR #TBD — fix(vera): hard-lock conversational checklist mode to deterministic in-chat rendering and ban preview/json leakage
 
 - **Root cause:** Even with the six-phase sanitizer, the empty-text fallback (`return cleaned if cleaned else text`) silently restored the original unsanitized LLM output when sanitization stripped all content. This happened when the LLM produced ONLY preview/workflow/meta language with no list items — the sanitizer correctly stripped everything, then the fallback returned the original banned text verbatim. Additionally, no post-sanitization enforcement existed to catch edge cases where the sanitizer missed violations.
