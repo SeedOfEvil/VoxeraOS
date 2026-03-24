@@ -1,17 +1,18 @@
-## 2026-03-24 — PR #229 — fix(vera): deterministic plain-text checklist/planning artifacts with zero preview/save leakage
+## 2026-03-24 — PR #229 — fix(vera): deterministic checklist rendering with six-phase sanitizer — zero preview/JSON/meta leakage
 
-- **Root cause:** Classification was enforced for preview/draft/submit/queue tokens, but the response shape was still partly LLM-driven. The LLM could emit workflow narration ("Does this look right before we save?", "I've organized the tasks logically...", "Take a look", "Let me know when you're ready") that leaked save/workflow framing without using the hard-banned tokens.
-- **Fix — five-phase sanitizer** (upgraded from three-phase):
-  - Phase 1: strip fenced JSON blocks.
-  - Phase 2: strip lines matching 55+ known false-claim phrases (now including save-adjacent: "when you're ready", "I can save", "shall I save", "does this look right", "take a look", "let me know when/if").
-  - Phase 3 (nuclear layer): strip ANY non-list-item line containing hard-banned tokens (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`).
-  - Phase 4 (NEW): strip non-list-item lines matching workflow narration patterns (`_WORKFLOW_NARRATION_LINE_RE`) — save-adjacent language, readiness prompts, confirmation questions.
-  - Phase 5 (NEW): strip pure meta-commentary lines ("I've organized...", "I've grouped...", "I've compiled...") when actual list items are present elsewhere. Preserves narration-only responses as a paranoia guard.
-- **Conversational checklist mode must render the artifact itself, not workflow narration.** If the user asks for a checklist, Vera outputs the checklist — not "I've organized it logically, shall I save?".
-- **`ExecutionMode` enum** and `_classify_execution_mode()` decide mode early; all downstream paths enforce it.
-- **Prior fixes preserved:** Create-and-save fallback, `conversational_planning_active` continuation flag, save intent override, broader classifier.
-- **Files changed:** `src/voxera/vera_web/app.py` (expanded `_FALSE_CLAIM_PHRASES`, `_WORKFLOW_NARRATION_LINE_RE`, `_META_COMMENTARY_RE`, five-phase sanitizer), `tests/test_vera_session_characterization.py` (9 new tests), `docs/ARCHITECTURE.md`, `docs/CODEX_MEMORY.md`.
-- **Tests added (cumulative 34):** Previous 25 + (26) save-when-ready stripped, (27) does-this-look-right stripped, (28) take-a-look stripped, (29) meta-commentary stripped, (30) whenever-ready + shall-I-save stripped, (31) clean checklist passthrough, (32) narration-only preserved, (33) two-turn no workflow, (34) 10x deterministic no-workflow run.
+- **Root cause:** The final response was still too LLM-shaped. Even with five-phase sanitization, the LLM could emit: (a) unfenced JSON payloads (`{"intent": "create_checklist", ...}`) that bypassed the fenced-only Phase 1 stripping, (b) novel meta-commentary phrasings ("Here's what I came up with", "I've broken it down") not covered by the original regex, (c) workflow narration using save-adjacent language.
+- **Fix — six-phase sanitizer** (upgraded from five-phase):
+  - Phase 1a: strip fenced JSON blocks (`` ```json...``` ``).
+  - Phase 1b (NEW): strip unfenced multi-line JSON blocks (`{...\n...\n}`).
+  - Phase 2: strip lines matching 55+ known false-claim phrases.
+  - Phase 3 (nuclear): strip ANY non-list-item line with hard-banned tokens.
+  - Phase 4: strip workflow narration lines.
+  - Phase 5: strip meta-commentary lines when list items present (broadened regex — now catches "Here's what I came up with", "I've broken it down", "I've laid it out", "I've set it up", etc.).
+  - Phase 6 (NEW): strip bare JSON payload lines matching `_BARE_JSON_PAYLOAD_RE` (`{"intent":...}`, `{"goal":...}`, `{"action":...}`, `{"write_file":...}`).
+- **Core rule:** Conversational checklist mode must render the artifact itself — not workflow narration, not JSON payloads, not meta-commentary.
+- **Prior fixes preserved:** `ExecutionMode` enum, `_classify_execution_mode()`, create-and-save fallback, `conversational_planning_active` continuation flag, save intent override, broader classifier.
+- **Files changed:** `src/voxera/vera_web/app.py` (Phase 1b, Phase 6, `_BARE_JSON_PAYLOAD_RE`, `_has_list_content`, broader `_META_COMMENTARY_RE`), `tests/test_vera_session_characterization.py` (5 new tests), `docs/ARCHITECTURE.md`, `docs/CODEX_MEMORY.md`.
+- **Tests added (cumulative 39):** Previous 34 + (35) unfenced JSON payload stripped, (36) bare goal JSON stripped, (37) multi-line unfenced JSON stripped, (38) broader meta-commentary stripped, (39) 10x deterministic final-render run with adversarial variants.
 - Validation: `ruff format --check .`, `ruff check .`, `mypy src/voxera`, `pytest -q`, `make security-check`, `make golden-check`, `make validation-check`, `make merge-readiness-check` — all pass.
 
 ## 2026-03-23 — PR #TBD — fix(vera): answer checklist and structured planning requests conversationally instead of failing preview drafting

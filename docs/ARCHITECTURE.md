@@ -1389,17 +1389,18 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - On the next turn, if the flag is set, the user has no save/write intent, and no preview is active, the turn stays conversational. This allows multi-turn planning flows where Vera asks for details and the user provides them.
 - The flag is cleared whenever the turn is `GOVERNED_PREVIEW` (save intent, preview exists, or the user changes topics).
 
-### Hard conversational mode lock — zero preview/save leakage guarantee
+### Hard conversational mode lock — zero preview/JSON/meta leakage guarantee
 
-**Five-phase sanitizer (`_sanitize_false_preview_claims_from_answer`):**
-1. Strips fenced JSON blocks containing VoxeraOS-like payloads.
-2. Strips lines containing known false-claim phrases (55+ covering preview-update, submission, draft-readiness, and save-adjacent language) and broader regex references via `_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE`.
-3. **HARD MODE LOCK (Phase 3):** Strips ANY remaining non-list-item line containing a banned token (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`). List items are protected so legitimate content like "Draft the proposal" is preserved.
-4. **Workflow narration (Phase 4):** Strips non-list-item lines matching `_WORKFLOW_NARRATION_LINE_RE` — save-adjacent language ("when you're ready", "shall I save"), confirmation prompts ("does this look right"), attention-directing ("take a look", "let me know").
-5. **Meta-commentary (Phase 5):** Strips lines like "I've organized the tasks logically..." — but ONLY when actual list items are present elsewhere. Preserves narration-only responses as a paranoia guard.
+**Six-phase sanitizer (`_sanitize_false_preview_claims_from_answer`):**
+1. **JSON blocks (Phase 1a+1b):** Strips fenced (`` ```json...``` ``) AND unfenced multi-line JSON blocks.
+2. **False-claim phrases (Phase 2):** Strips lines matching 55+ known phrases and broader regex references via `_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE`.
+3. **HARD MODE LOCK (Phase 3):** Strips ANY remaining non-list-item line containing a banned token (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`). List items are protected.
+4. **Workflow narration (Phase 4):** Strips save-adjacent language, confirmation prompts, attention-directing.
+5. **Meta-commentary (Phase 5):** Strips lines like "I've organized...", "Here's what I came up with", "I've broken it down..." — but ONLY when actual list items are present.
+6. **Bare JSON payloads (Phase 6):** Strips single-line JSON objects matching `_BARE_JSON_PAYLOAD_RE` (`{"intent":...}`, `{"goal":...}`, `{"action":...}`, `{"write_file":...}`).
 
 - Applied instead of both `_guardrail_submission_claim` and `_guardrail_false_preview_claim` for `CONVERSATIONAL_ARTIFACT` turns.
-- **Core rule:** Conversational artifact mode must produce actual content (checklist items, plan steps), not workflow narration about the content.
+- **Core rule:** Conversational artifact mode must render the artifact itself (checklist items, plan steps) — not workflow narration, not JSON payloads, not meta-commentary.
 
 ### Save intent override
 - If a message contains explicit save/write/file/note intent, it is classified as `GOVERNED_PREVIEW` regardless of planning keywords.
@@ -1407,7 +1408,7 @@ Every chat turn is classified into one of two execution modes **early** — the 
 
 ### Gating points (enforced by `ExecutionMode`)
 - Builder skip: preview builder is not called for `CONVERSATIONAL_ARTIFACT` turns.
-- Sanitizer: five-phase sanitizer with hard mode lock replaces both heavy guardrails.
+- Sanitizer: six-phase sanitizer with hard mode lock replaces both heavy guardrails.
 - Create-and-save fallback: fires after LLM reply when builder failed on a save+planning hybrid.
 - Control-reply suppression skip: full conversational answer is always shown.
 

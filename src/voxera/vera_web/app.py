@@ -591,11 +591,26 @@ _WORKFLOW_NARRATION_LINE_RE = re.compile(
 # Stripped only when actual list items are present elsewhere in the response.
 _META_COMMENTARY_RE = re.compile(
     r"(?i)^(?:"
-    r"i'?ve\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled|put together)"
-    r"|i\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled)"
-    r"|here(?:'s|\s+is)\s+(?:a\s+)?(?:quick\s+)?(?:summary|overview|breakdown)"
+    r"i'?ve\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled|put together|"
+    r"broken\s+(?:it|this|them)\s+down|laid\s+(?:it|this|them)\s+out|"
+    r"set\s+(?:it|this|them)\s+up|listed|prepared|created|made|built)"
+    r"|i\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled|"
+    r"broke\s+(?:it|this|them)\s+down|laid\s+(?:it|this|them)\s+out)"
+    r"|here(?:'s|\s+is)\s+(?:a\s+)?(?:quick\s+)?(?:summary|overview|breakdown|rundown)"
+    r"|here(?:'s|\s+is)\s+what\s+i\s+(?:came\s+up\s+with|put\s+together|prepared)"
     r")\b"
 )
+
+# Regex matching bare (unfenced) JSON objects that look like VoxeraOS payloads.
+# Catches lines like: {"intent": "create_checklist", ...} or {"goal": ...}
+_BARE_JSON_PAYLOAD_RE = re.compile(
+    r'^\s*\{[^}]*"(?:intent|goal|action|write_file|enqueue_child)"',
+)
+
+
+def _has_list_content(text: str) -> bool:
+    """Return True if the text contains at least one list item line."""
+    return any(_is_list_item_line(ln) for ln in text.split("\n"))
 
 
 def _sanitize_false_preview_claims_from_answer(text: str) -> str:
@@ -605,8 +620,8 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
     individual lines that contain false claims — preserving the actual content
     like checklists, plans, and brainstorms.
 
-    Five-phase sanitizer:
-      Phase 1 — strip fenced JSON blocks (VoxeraOS preview dumps).
+    Six-phase sanitizer:
+      Phase 1 — strip fenced AND unfenced JSON blocks / payload lines.
       Phase 2 — strip lines matching known false-claim phrases and regexes.
       Phase 3 — HARD MODE LOCK: strip ANY remaining non-list-item line that
                 contains a banned token (preview/draft/submit/queue).
@@ -614,16 +629,26 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
                 (save-adjacent language, "when you're ready", "take a look").
       Phase 5 — strip pure meta-commentary lines ("I've organized the tasks
                 logically...") when actual list items are present.
+      Phase 6 — strip any remaining bare JSON-like payload lines
+                ({"intent":..}, {"goal":..}) that survived earlier phases.
     """
     if not text.strip():
         return text
 
-    # Phase 1: strip fenced JSON blocks that look like VoxeraOS preview dumps
+    # Phase 1a: strip fenced JSON blocks that look like VoxeraOS preview dumps
     cleaned = re.sub(
         r"```json\s*\n.*?```",
         "",
         text,
         flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # Phase 1b: strip unfenced JSON blocks (multi-line bare objects)
+    cleaned = re.sub(
+        r"^\s*\{[^}]*\n(?:[^}]*\n)*[^}]*\}",
+        "",
+        cleaned,
+        flags=re.MULTILINE,
     )
 
     # Phase 2: strip lines containing known false preview/submission claims
@@ -683,6 +708,15 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
                 continue
             meta_lines.append(line)
         cleaned = "\n".join(meta_lines)
+
+    # Phase 6: strip any remaining bare JSON-like payload lines that survived
+    # earlier phases — catches single-line {"intent":..} / {"goal":..} payloads.
+    json_lines: list[str] = []
+    for line in cleaned.split("\n"):
+        if _BARE_JSON_PAYLOAD_RE.match(line):
+            continue
+        json_lines.append(line)
+    cleaned = "\n".join(json_lines)
 
     cleaned = cleaned.strip()
     # If stripping emptied the text, fall back to original (paranoia guard).
@@ -1722,10 +1756,10 @@ async def chat(request: Request):
 
     if conversational_answer_first_turn:
         # HARD CONVERSATIONAL MODE LOCK (ExecutionMode.CONVERSATIONAL_ARTIFACT):
-        # Three-phase sanitizer guarantees zero preview/draft/submit/queue
-        # leakage.  Phase 3 is the nuclear layer that strips ANY non-list-item
-        # line containing a banned token — making behavior deterministic
-        # regardless of LLM output variation.
+        # Six-phase sanitizer guarantees zero preview/draft/submit/queue/
+        # workflow/JSON leakage.  Phases 3-6 are nuclear layers that strip
+        # banned tokens, workflow narration, meta-commentary, and bare JSON
+        # payloads — making behavior deterministic regardless of LLM output.
         guarded_answer = _sanitize_false_preview_claims_from_answer(sanitized_answer)
     else:
         guarded_answer = _guardrail_submission_claim(

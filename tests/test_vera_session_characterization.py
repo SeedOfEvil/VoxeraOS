@@ -1415,3 +1415,203 @@ def test_deterministic_one_turn_10_runs_no_workflow(tmp_path, monkeypatch):
             )
 
         assert session.preview() is None, f"Preview leaked on run {run_idx}"
+
+
+# ---------------------------------------------------------------------------
+# Final rendering determinism — JSON, bare payloads, meta-commentary coverage
+# ---------------------------------------------------------------------------
+
+
+def test_checklist_with_unfenced_json_payload_stripped(tmp_path, monkeypatch):
+    """Unfenced JSON payload (no ``` fencing) must be stripped from
+    conversational checklist output."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's your checklist:\n\n"
+        "1. Coffee\n"
+        "2. Rice\n"
+        "3. Apples\n\n"
+        '{"intent": "create_checklist", "items": ["coffee", "rice", "apples"]}'
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make a checklist. I need coffee, rice, apples")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="coffee")
+    assert '"intent"' not in last_turn["text"]
+    assert session.preview() is None
+
+
+def test_checklist_with_bare_goal_json_stripped(tmp_path, monkeypatch):
+    """Bare JSON with 'goal' key must be stripped."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "- Passport\n"
+        "- Clothes\n"
+        "- Charger\n\n"
+        '{"goal": "create packing list", "write_file": {"path": "~/notes/list.md"}}'
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a packing list: passport, clothes, charger")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="passport")
+    assert '"goal"' not in last_turn["text"]
+    assert '"write_file"' not in last_turn["text"]
+    assert session.preview() is None
+
+
+def test_checklist_with_multiline_unfenced_json_stripped(tmp_path, monkeypatch):
+    """Multi-line unfenced JSON block must be stripped."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's your list:\n\n"
+        "1. Milk\n"
+        "2. Eggs\n\n"
+        "{\n"
+        '  "intent": "create_checklist",\n'
+        '  "items": ["milk", "eggs"]\n'
+        "}"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a grocery list: milk, eggs")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="milk")
+    assert '"intent"' not in last_turn["text"]
+    assert session.preview() is None
+
+
+def test_broader_meta_commentary_stripped(tmp_path, monkeypatch):
+    """Broader meta-commentary phrasings must be stripped when list items
+    are present."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's what I came up with:\n\n"
+        "1. Book flights\n"
+        "2. Reserve hotel\n"
+        "3. Plan activities\n\n"
+        "I've broken it down into the key steps for your trip."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("help me plan a vacation to Japan")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="book flights")
+    assert "here's what i came up with" not in last_turn["text"].lower()
+    assert "i've broken it down" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_deterministic_final_render_10_runs(tmp_path, monkeypatch):
+    """10 runs with maximally adversarial LLM outputs — must ALWAYS produce
+    clean checklist content with no JSON, no meta-only, no workflow."""
+
+    for run_idx in range(10):
+        from tests.vera_session_helpers import make_vera_session as _make
+
+        session = _make(monkeypatch, tmp_path / f"final_run{run_idx}")
+
+        # Each variant tests a different failure mode
+        variant = run_idx % 5
+        if variant == 0:
+            # Clean output — should pass through
+            fake_answer = "- Coffee\n- Rice\n- Apples"
+        elif variant == 1:
+            # Unfenced JSON payload
+            fake_answer = (
+                "1. Coffee\n2. Rice\n3. Apples\n\n"
+                '{"intent": "create_checklist", "items": ["coffee"]}'
+            )
+        elif variant == 2:
+            # Meta-commentary + workflow narration
+            fake_answer = (
+                "I've organized everything logically for you.\n\n"
+                "- Coffee\n- Rice\n- Apples\n\n"
+                "Does this look right? Let me know when you're ready."
+            )
+        elif variant == 3:
+            # Multi-line unfenced JSON
+            fake_answer = (
+                "- Coffee\n- Rice\n- Apples\n\n"
+                "{\n"
+                '  "goal": "grocery list",\n'
+                '  "write_file": {"path": "~/notes/list.md"}\n'
+                "}"
+            )
+        else:
+            # All leakage types combined
+            fake_answer = (
+                "I've put together your list:\n\n"
+                "1. Coffee\n2. Rice\n3. Apples\n\n"
+                "Take a look at the preview pane to review.\n"
+                "I can save this whenever you're ready.\n"
+                '{"intent": "save", "items": ["coffee"]}'
+            )
+
+        async def _fake_reply(*, turns, user_message, answer=fake_answer, **kw):
+            return {"answer": answer, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("make a checklist. I need coffee, rice, apples")
+        assert res.status_code == 200
+
+        last_turn = session.turns()[-1]
+        text = last_turn["text"]
+        lowered = text.lower()
+
+        # Must contain actual checklist content
+        assert "coffee" in lowered, f"Missing content on run {run_idx}: {text!r}"
+
+        # Must NOT contain any forbidden output
+        for banned in (
+            '"intent"',
+            '"goal"',
+            '"action"',
+            '"write_file"',
+        ):
+            assert banned not in text, f"JSON key {banned} leaked on run {run_idx}: {text!r}"
+        for banned_phrase in (
+            "preview",
+            "draft",
+            "submit",
+            "queue",
+            "when you're ready",
+            "let me know",
+            "take a look",
+            "does this look right",
+        ):
+            assert banned_phrase not in lowered, (
+                f"Forbidden phrase '{banned_phrase}' leaked on run {run_idx}: {text!r}"
+            )
+
+        assert session.preview() is None, f"Preview leaked on run {run_idx}"
