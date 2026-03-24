@@ -37,6 +37,8 @@ def normalize_extracted_content_block(candidate: str) -> str | None:
         return None
     if re.search(r"\bfile\s+called\b", value, re.IGNORECASE):
         return None
+    if re.fullmatch(r"(?:to|as)\s+[~\/a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8}", value, re.IGNORECASE):
+        return None
     if message_requests_referenced_content(value) or looks_like_ambiguous_reference_only(value):
         return None
     return value
@@ -105,6 +107,8 @@ def normalize_refinement_content_candidate(candidate: str) -> str | None:
     if re.fullmatch(r"(that|this|it|same|same thing)", value, re.IGNORECASE):
         return None
     if re.search(r"\bfile\s+called\b", value, re.IGNORECASE):
+        return None
+    if re.fullmatch(r"(?:to|as)\s+[~\/a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8}", value, re.IGNORECASE):
         return None
     if message_requests_referenced_content(value) or looks_like_ambiguous_reference_only(value):
         return None
