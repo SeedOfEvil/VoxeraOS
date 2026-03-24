@@ -557,6 +557,122 @@ def test_two_turn_planning_determinism_blocks_preview_language_and_json(tmp_path
         assert session.preview() is None
 
 
+def test_wedding_checklist_preserves_user_items_over_generic_fallback(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+    noisy = (
+        "create_file wedding_prep_checklist.md\n"
+        "I've grouped this in the preview pane and draft state."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        _ = turns, user_message, kw
+        return {"answer": noisy, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    prompt = (
+        "yes can you make a checklist of the following: take time off, buy the tickets, "
+        "get in shape, buy the suit, call mom, tell my friend, "
+        "be the best man at a wedding, rent a car during the trip, pack."
+    )
+    for _ in range(5):
+        session.chat(prompt)
+        text = session.turns()[-1]["text"].lower()
+        for expected in (
+            "take time off",
+            "buy the tickets",
+            "get in shape",
+            "buy the suit",
+            "call mom",
+            "tell my friend",
+            "be the best man at a wedding",
+            "rent a car during the trip",
+            "pack",
+        ):
+            assert expected in text
+        assert "finalize guest list" not in text
+        assert "create_file" not in text
+        assert ".md" not in text
+
+
+def test_grocery_checklist_preserves_requested_items_not_generic_boilerplate(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        _ = turns, user_message, kw
+        return {"answer": "I updated the draft in preview.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    for _ in range(5):
+        session.chat(
+            "make a checklist. I need coffee, rice, apples and bannanas, bread, chess, ham and some pasta."
+        )
+        text = session.turns()[-1]["text"].lower()
+        for expected in (
+            "coffee",
+            "rice",
+            "apples",
+            "bannanas",
+            "bread",
+            "chess",
+            "ham",
+            "some pasta",
+        ):
+            assert expected in text
+        assert "define the goal and outcome" not in text
+        assert "break the work into concrete steps" not in text
+
+
+def test_two_turn_planning_preserves_second_turn_user_details(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        _ = turns, user_message, kw
+        if "checklist" in user_message.lower():
+            return {"answer": "Sure, what details should I include?", "status": "ok:test"}
+        return {"answer": "Here's a draft in preview.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    session.chat("create a checklist would surely help on the many things I need to do.")
+    session.chat(
+        "First I need to find a +1, I also need to get a nice suit, "
+        "I need to get the tickets to travel there and accommodations "
+        "and I need to take time off work!"
+    )
+    text = session.turns()[-1]["text"].lower()
+    for expected in (
+        "find a plus-one",
+        "get a nice suit",
+        "get the tickets to travel there",
+        "accommodations",
+        "take time off work",
+    ):
+        assert expected in text
+    assert "define the goal and outcome" not in text
+
+
+def test_conversational_mode_strips_file_residue_markers(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        _ = turns, user_message, kw
+        return {
+            "answer": (
+                "1. coffee\n2. rice\n3. apples\n"
+                '{"action":"create_file","goal":"save to groceries.md","write_file":{"path":"groceries.md"}}'
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    session.chat("make me a grocery checklist")
+    text = session.turns()[-1]["text"].lower()
+    assert "create_file" not in text
+    assert ".md" not in text
+    assert '"action"' not in text
+    assert '"goal"' not in text
+    assert '"write_file"' not in text
+
+
 def test_checklist_answer_then_send_without_save_is_truthful(tmp_path, monkeypatch):
     """After a conversational checklist answer with no 'save that', 'send it'
     must truthfully report that no preview exists."""

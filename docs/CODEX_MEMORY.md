@@ -1,3 +1,11 @@
+## 2026-03-24 — PR #TBD — fix(vera): preserve user-provided checklist items in deterministic conversational rendering
+
+- **Root cause:** The previous hard-lock renderer over-prioritized generic fallback templates when sanitized output had no valid list content, but did not give first-class priority to extracting checklist items directly from the user message. This caused real user-provided wedding/grocery/planning items to be replaced by generic boilerplate.
+- **Fix — source priority correction:** Updated conversational checklist rendering priority in `src/voxera/vera_web/app.py` to: (1) explicit user-message item extraction, (2) extracted model list/JSON items, (3) generic fallback only when both fail.
+- **Fix — user-message item extraction:** Added deterministic user-item extraction for `following:` lists, repeated `I need to ...` task phrasing, and comma-separated `I need ...` list phrasing; normalized/deduped items before rendering.
+- **Fix — file-residue filtering:** Added conversational-mode item normalization filters to drop file/payload/system residue (`create_file`, `write_file`, `goal`, `intent`, `action`, and `.md/.txt/.json` artifacts) from final checklist output.
+- **Tests:** Added focused characterization coverage for wedding item preservation, grocery item preservation, two-turn follow-up detail preservation, and no file-residue leakage in conversational checklist mode.
+
 ## 2026-03-24 — PR #TBD — fix(vera): hard-lock conversational checklist/planning rendering to deterministic in-chat artifacts
 
 - **Root cause:** The conversational checklist lane still allowed freeform post-classification output to pass when no list artifact was present. Sanitization removed preview/workflow/meta text, but remaining non-list output (or empty output) could still avoid deterministic checklist rendering.

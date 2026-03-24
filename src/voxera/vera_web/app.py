@@ -646,7 +646,99 @@ def _extract_list_items(text: str) -> list[str]:
 
 def _render_plain_checklist(items: list[str]) -> str:
     """Render a plain markdown checklist from extracted items."""
-    return "\n".join(f"- {item}" for item in items)
+    numbered = "\n".join(f"{idx}. {item}" for idx, item in enumerate(items, start=1))
+    return f"Here's your checklist:\n\n{numbered}"
+
+
+_FILE_RESIDUE_ITEM_RE = re.compile(
+    r"(?i)\b(?:create[_ -]?file|write_file|enqueue_child|payload|intent|goal|action)\b|"
+    r"\.(?:md|txt|json)\b"
+)
+
+
+def _normalize_extracted_item(item: str) -> str:
+    cleaned = re.sub(r"\s+", " ", item.strip(" \t-–—•*.,;:!?\"'`()[]{}")).strip()
+    cleaned = re.sub(r"^(?:and|also)\s+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+(?:and)\s*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.replace("+1", "plus-one")
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+    if lowered in {
+        "and",
+        "or",
+        "to",
+        "for",
+        "with",
+        "it",
+        "this",
+        "that",
+        "do",
+        "things",
+        "many things i need to do",
+    }:
+        return ""
+    if _FILE_RESIDUE_ITEM_RE.search(cleaned):
+        return ""
+    return cleaned[0].upper() + cleaned[1:] if cleaned else ""
+
+
+def _split_candidate_items(segment: str) -> list[str]:
+    parts: list[str] = []
+    for chunk in re.split(r"[,;\n]+", segment):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        for and_chunk in re.split(r"\s+\band\b\s+", chunk, flags=re.IGNORECASE):
+            normalized = _normalize_extracted_item(and_chunk)
+            if normalized:
+                parts.append(normalized)
+    return parts
+
+
+def _clean_item_candidates(items: list[str]) -> list[str]:
+    cleaned_items: list[str] = []
+    seen: set[str] = set()
+    for raw in items:
+        normalized = _normalize_extracted_item(raw)
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned_items.append(normalized)
+    return cleaned_items
+
+
+def _extract_items_from_user_message(user_message: str) -> list[str]:
+    """Extract explicit checklist items from the user's raw message."""
+    text = user_message.strip()
+    if not text:
+        return []
+
+    extracted: list[str] = []
+
+    explicit_following = re.search(r"(?:following|include|items?)\s*:\s*(.+)$", text, re.IGNORECASE)
+    if explicit_following:
+        extracted.extend(_split_candidate_items(explicit_following.group(1)))
+
+    if not extracted:
+        need_to_parts = re.split(
+            r"\b(?:first\s+i\s+need\s+to|i\s+also\s+need\s+to|i\s+need\s+to)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if len(need_to_parts) > 1:
+            for part in need_to_parts[1:]:
+                extracted.extend(_split_candidate_items(part))
+
+    if not extracted:
+        need_list = re.search(r"\bi\s+need\s+(.+)$", text, re.IGNORECASE)
+        if need_list and "," in need_list.group(1):
+            extracted.extend(_split_candidate_items(need_list.group(1)))
+
+    return _clean_item_candidates(extracted)
 
 
 def _extract_json_object_items(text: str) -> list[str]:
@@ -673,16 +765,21 @@ def _extract_json_object_items(text: str) -> list[str]:
                     for entry in value:
                         cleaned = str(entry).strip()
                         if cleaned:
-                            items.append(cleaned)
+                            normalized = _normalize_extracted_item(cleaned)
+                            if normalized:
+                                items.append(normalized)
             if not items:
                 for value in parsed.values():
                     if isinstance(value, str) and value.strip():
-                        items.append(value.strip())
+                        normalized = _normalize_extracted_item(value)
+                        if normalized:
+                            items.append(normalized)
         elif isinstance(parsed, list):
             for entry in parsed:
                 cleaned = str(entry).strip()
-                if cleaned:
-                    items.append(cleaned)
+                normalized = _normalize_extracted_item(cleaned)
+                if normalized:
+                    items.append(normalized)
     return items
 
 
@@ -853,8 +950,14 @@ def _enforce_conversational_checklist_output(
       3. If violations remain, re-extract items and render deterministically.
       4. If the text is empty, attempt item extraction from raw_answer.
     """
+    user_items = _extract_items_from_user_message(user_message)
+    if len(user_items) >= 2:
+        return _render_plain_checklist(user_items)
+
     if not text.strip():
-        items = _extract_list_items(raw_answer) or _extract_json_object_items(raw_answer)
+        items = _clean_item_candidates(
+            _extract_list_items(raw_answer) or _extract_json_object_items(raw_answer)
+        )
         if items:
             return _render_plain_checklist(items)
         return _fallback_conversational_checklist_for_message(user_message)
@@ -876,7 +979,7 @@ def _enforce_conversational_checklist_output(
 
     if has_violation:
         # Nuclear fallback: extract items from whatever we have and re-render
-        items = (
+        items = _clean_item_candidates(
             _extract_list_items(text)
             or _extract_list_items(raw_answer)
             or _extract_json_object_items(text)
@@ -887,7 +990,9 @@ def _enforce_conversational_checklist_output(
         return _fallback_conversational_checklist_for_message(user_message)
 
     if not _has_list_content(text):
-        items = _extract_json_object_items(text) or _extract_json_object_items(raw_answer)
+        items = _clean_item_candidates(
+            _extract_json_object_items(text) or _extract_json_object_items(raw_answer)
+        )
         if items:
             return _render_plain_checklist(items)
         return _fallback_conversational_checklist_for_message(user_message)
