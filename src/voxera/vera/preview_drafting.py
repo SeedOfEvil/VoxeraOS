@@ -280,6 +280,13 @@ def _normalize_structured_file_write_payload(
     )
     target = direct.group(1).strip("\"'") if direct else None
     if not target:
+        save_as_or_to = re.search(
+            r"\bsave\s+(?:that|this|it|(?:the\s+)?previous\s+content|previous\s+content)?\s*(?:as|to)\s+([~\/a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,8})\b",
+            text,
+            re.IGNORECASE,
+        )
+        target = save_as_or_to.group(1).strip("\"'") if save_as_or_to else None
+    if not target:
         named = re.search(r"\b(?:called|call\w*|named)\s+([^\s]+)", text, re.IGNORECASE)
         target = named.group(1).strip("\"'") if named else None
     generated_target_path = _generated_note_path()
