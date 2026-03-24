@@ -118,10 +118,16 @@ def append_session_turn(
         "weather_context",
         "recent_saveable_assistant_artifacts",
         "linked_queue_jobs",
+        "conversational_planning_active",
     ):
         preserved = previous.get(preserved_key)
-        if isinstance(preserved, dict) or (
-            preserved_key == "recent_saveable_assistant_artifacts" and isinstance(preserved, list)
+        if (
+            isinstance(preserved, dict)
+            or (
+                preserved_key == "recent_saveable_assistant_artifacts"
+                and isinstance(preserved, list)
+            )
+            or (preserved_key == "conversational_planning_active" and isinstance(preserved, bool))
         ):
             payload[preserved_key] = preserved
     if role.strip().lower() == "assistant":
@@ -414,3 +420,22 @@ def read_linked_job_completions(queue_root: Path, session_id: str) -> list[dict[
     if not isinstance(completions, list):
         return []
     return [item for item in completions if isinstance(item, dict)]
+
+
+def read_session_conversational_planning_active(queue_root: Path, session_id: str) -> bool:
+    """Return True if the previous turn was a conversational answer-first planning turn."""
+    payload = _read_session_payload(queue_root, session_id)
+    return payload.get("conversational_planning_active") is True
+
+
+def write_session_conversational_planning_active(
+    queue_root: Path, session_id: str, active: bool
+) -> None:
+    """Persist whether the most recent turn was conversational answer-first."""
+    payload = _load_or_default_session_payload(queue_root, session_id)
+    payload["updated_at_ms"] = int(time.time() * 1000)
+    if active:
+        payload["conversational_planning_active"] = True
+    else:
+        payload.pop("conversational_planning_active", None)
+    _write_session_payload(queue_root, session_id, payload)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import inspect
 import re
 from pathlib import Path
@@ -75,6 +76,7 @@ from ..vera.service import (
     ingest_linked_job_completions,
     maybe_auto_surface_linked_completion,
     new_session_id,
+    read_session_conversational_planning_active,
     read_session_derived_investigation_output,
     read_session_enrichment,
     read_session_handoff_state,
@@ -87,6 +89,7 @@ from ..vera.service import (
     register_session_linked_job,
     run_web_enrichment,
     session_debug_info,
+    write_session_conversational_planning_active,
     write_session_derived_investigation_output,
     write_session_enrichment,
     write_session_handoff_state,
@@ -94,6 +97,19 @@ from ..vera.service import (
     write_session_preview,
     write_session_weather_context,
 )
+
+
+class ExecutionMode(enum.Enum):
+    """Execution mode for a Vera chat turn.
+
+    Decided early from the user message and enforced globally — once a turn is
+    classified as CONVERSATIONAL_ARTIFACT it **must never** leak preview, draft,
+    submit, or queue language.
+    """
+
+    CONVERSATIONAL_ARTIFACT = "conversational_artifact"
+    GOVERNED_PREVIEW = "governed_preview"
+
 
 app = FastAPI(title="Vera v0", version="0")
 
@@ -414,6 +430,376 @@ def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
     return (
         "I was not able to prepare a governed preview for this request. "
         "If you share clearer details, I can try again."
+    )
+
+
+_PREVIEW_PANE_SENTENCE_RE = re.compile(
+    r"(?:^|\n)\s*[^\n]*?\b("
+    r"preview\s+pane|preview\s+panel|"
+    r"in\s+the\s+preview|in\s+your\s+preview|"
+    r"check\s+the\s+preview|available\s+in\s+preview|"
+    r"visible\s+in\s+preview|find\s+it\s+in\s+the\s+preview|"
+    r"see\s+it\s+in\s+the\s+preview|"
+    r"review\s+it\s+in\s+the\s+preview"
+    r")\b[^\n]*",
+    re.IGNORECASE,
+)
+
+# Broader set of false-claim phrases for conversational answer sanitization.
+# These cover preview-update claims, submission claims, and draft-readiness
+# language that must not appear unless a real preview/job exists.
+_FALSE_CLAIM_PHRASES = (
+    # Preview update claims (from _looks_like_preview_update_claim)
+    "prepared a proposal",
+    "prepared a preview",
+    "prepared a draft",
+    "prepared the following job",
+    "drafted a proposal",
+    "drafted a preview",
+    "i drafted",
+    "i've drafted",
+    "i have drafted",
+    "i've prepared",
+    "i have prepared",
+    "created a preview",
+    "created a draft",
+    "set up a preview",
+    "set up a draft",
+    "here is the prepared proposal",
+    "here is the json",
+    "here's a draft",
+    "here is a draft",
+    "updated the draft",
+    "updated the preview",
+    "preview is ready",
+    "draft is ready",
+    "preview ready",
+    "latest version is ready in the preview",
+    "proposal in the preview",
+    "refined the proposal in the preview",
+    # Submission claims (from _looks_like_submission_claim + broader)
+    "submitted to voxeraos",
+    "submitted the job",
+    "submitted that",
+    "submitted the checklist",
+    "submitted your",
+    "submitted it to",
+    "request is now in the queue",
+    "handed off to voxeraos",
+    "handed it off",
+    "sent it to voxeraos",
+    "sent it to the queue",
+    "sent to the queue",
+    "i sent it",
+    "i queued it",
+    "added to the queue",
+    "added it to the queue",
+    "it to the queue",
+    # Draft/submit readiness language
+    "ready to submit",
+    "submit whenever",
+    "you can submit",
+    "you can send it",
+    "i'll submit",
+    "i can submit",
+    "i will submit",
+    "i'll send it",
+    "i can send it",
+    "i will send it",
+    # Save/workflow-adjacent language (must not appear in conversational mode)
+    "save this when",
+    "save it when",
+    "i can save",
+    "i'll save",
+    "i will save",
+    "save this for",
+    "save it for",
+    "when you're ready",
+    "whenever you're ready",
+    "when you are ready",
+    "whenever you are ready",
+    "before we save",
+    "before saving",
+    "ready to save",
+    "want me to save",
+    "shall i save",
+    "would you like me to save",
+    "does this look right",
+    "does this look good",
+    "does that look right",
+    "does that look good",
+    "look right before",
+    "look good before",
+    "take a look",
+    "let me know when",
+    "let me know if you'd like",
+    "let me know if you want",
+)
+
+# Regex that matches lines referencing "the preview" or "the draft" (as a
+# governed system concept) that are NOT inside numbered/bulleted list items.
+# This catches broad phrasings like "Take a look at the preview" that the
+# phrase list above might miss.
+_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE = re.compile(
+    r"(?:^|\n)\s*(?![0-9]+[.\)]\s|-\s|\*\s|\[[ x]\])[^\n]*?"
+    r"\b(?:the\s+preview|the\s+draft|the\s+preview\s+pane|system\s+queue)\b[^\n]*",
+    re.IGNORECASE,
+)
+
+
+def _is_list_item_line(line: str) -> bool:
+    """Return True if the line is a numbered or bulleted list item."""
+    stripped = line.lstrip()
+    if not stripped:
+        return False
+    if re.match(r"[0-9]+[.\)]\s", stripped):
+        return True
+    if stripped.startswith(("- ", "* ", "• ")):
+        return True
+    if re.match(r"\[[ x]\]\s", stripped):
+        return True
+    return bool(re.match(r"-\s+\[[ x]\]\s", stripped))
+
+
+# Hard-banned words for conversational mode.  ANY non-list-item line containing
+# one of these tokens is stripped as a last-resort guarantee of zero leakage.
+_HARD_BANNED_CONVERSATIONAL_TOKENS_RE = re.compile(
+    r"\b(?:preview|draft|submit|submitted|submission|queue|queued)\b",
+    re.IGNORECASE,
+)
+
+# Workflow narration patterns that must be stripped from conversational mode.
+# These catch save-adjacent and "meta about the list" language that doesn't
+# use the hard-banned tokens above but still leaks workflow framing.
+_WORKFLOW_NARRATION_LINE_RE = re.compile(
+    r"(?i)"
+    r"(?:"
+    r"when(?:ever)?\s+you(?:'re|\s+are)\s+ready"
+    r"|before\s+(?:we\s+)?sav(?:e|ing)"
+    r"|(?:want|shall|would you like)\s+me\s+to\s+save"
+    r"|i\s+can\s+save"
+    r"|i'?ll\s+save"
+    r"|ready\s+to\s+save"
+    r"|let\s+me\s+know\s+(?:when|if)"
+    r"|does\s+(?:this|that)\s+look\s+(?:right|good|ok)"
+    r"|look\s+(?:right|good)\s+before"
+    r"|take\s+a\s+look"
+    r")",
+)
+
+# Pure meta-commentary lines that talk ABOUT the list rather than presenting it.
+# Stripped only when actual list items are present elsewhere in the response.
+_META_COMMENTARY_RE = re.compile(
+    r"(?i)^(?:"
+    r"i'?ve\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled|put together|"
+    r"broken\s+(?:it|this|them)\s+down|laid\s+(?:it|this|them)\s+out|"
+    r"set\s+(?:it|this|them)\s+up|listed|prepared|created|made|built)"
+    r"|i\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled|"
+    r"broke\s+(?:it|this|them)\s+down|laid\s+(?:it|this|them)\s+out)"
+    r"|here(?:'s|\s+is)\s+(?:a\s+)?(?:quick\s+)?(?:summary|overview|breakdown|rundown)"
+    r"|here(?:'s|\s+is)\s+what\s+i\s+(?:came\s+up\s+with|put\s+together|prepared)"
+    r")\b"
+)
+
+# Regex matching bare (unfenced) JSON objects that look like VoxeraOS payloads.
+# Catches lines like: {"intent": "create_checklist", ...} or {"goal": ...}
+_BARE_JSON_PAYLOAD_RE = re.compile(
+    r'^\s*\{[^}]*"(?:intent|goal|action|write_file|enqueue_child)"',
+)
+
+
+def _has_list_content(text: str) -> bool:
+    """Return True if the text contains at least one list item line."""
+    return any(_is_list_item_line(ln) for ln in text.split("\n"))
+
+
+def _sanitize_false_preview_claims_from_answer(text: str) -> str:
+    """Strip false preview/submission/draft/workflow claims from conversational answers.
+
+    Unlike the heavy guardrails (which replace the entire answer), this removes
+    individual lines that contain false claims — preserving the actual content
+    like checklists, plans, and brainstorms.
+
+    Six-phase sanitizer:
+      Phase 1 — strip fenced AND unfenced JSON blocks / payload lines.
+      Phase 2 — strip lines matching known false-claim phrases and regexes.
+      Phase 3 — HARD MODE LOCK: strip ANY remaining non-list-item line that
+                contains a banned token (preview/draft/submit/queue).
+      Phase 4 — strip non-list-item lines containing workflow narration
+                (save-adjacent language, "when you're ready", "take a look").
+      Phase 5 — strip pure meta-commentary lines ("I've organized the tasks
+                logically...") when actual list items are present.
+      Phase 6 — strip any remaining bare JSON-like payload lines
+                ({"intent":..}, {"goal":..}) that survived earlier phases.
+    """
+    if not text.strip():
+        return text
+
+    # Phase 1a: strip fenced JSON blocks that look like VoxeraOS preview dumps
+    cleaned = re.sub(
+        r"```json\s*\n.*?```",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # Phase 1b: strip unfenced JSON blocks (multi-line bare objects)
+    cleaned = re.sub(
+        r"^\s*\{[^}]*\n(?:[^}]*\n)*[^}]*\}",
+        "",
+        cleaned,
+        flags=re.MULTILINE,
+    )
+
+    # Phase 2: strip lines containing known false preview/submission claims
+    lowered_full = cleaned.lower()
+    has_false_claim = (
+        _looks_like_preview_pane_claim(cleaned)
+        or _looks_like_submission_claim(cleaned)
+        or any(p in lowered_full for p in _FALSE_CLAIM_PHRASES)
+        or _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE.search(cleaned) is not None
+    )
+    if has_false_claim:
+        cleaned = _PREVIEW_PANE_SENTENCE_RE.sub("", cleaned)
+        cleaned = _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE.sub("", cleaned)
+        out_lines: list[str] = []
+        for line in cleaned.split("\n"):
+            lowered_line = line.lower()
+            if any(phrase in lowered_line for phrase in _FALSE_CLAIM_PHRASES):
+                continue
+            out_lines.append(line)
+        cleaned = "\n".join(out_lines)
+
+    # Phase 3: HARD MODE LOCK — strip ANY remaining non-list-item line that
+    # still contains a banned token.  This is the nuclear guarantee that zero
+    # preview/draft/submit/queue language ever reaches the user in
+    # conversational mode, regardless of LLM phrasing creativity.
+    hard_lines: list[str] = []
+    for line in cleaned.split("\n"):
+        if _is_list_item_line(line):
+            hard_lines.append(line)
+            continue
+        if _HARD_BANNED_CONVERSATIONAL_TOKENS_RE.search(line):
+            continue
+        hard_lines.append(line)
+    cleaned = "\n".join(hard_lines)
+
+    # Phase 4: strip non-list-item lines containing workflow narration —
+    # save-adjacent language, "when you're ready", "take a look", etc.
+    workflow_lines: list[str] = []
+    for line in cleaned.split("\n"):
+        if _is_list_item_line(line):
+            workflow_lines.append(line)
+            continue
+        if _WORKFLOW_NARRATION_LINE_RE.search(line):
+            continue
+        workflow_lines.append(line)
+    cleaned = "\n".join(workflow_lines)
+
+    # Phase 5: strip pure meta-commentary lines ("I've organized...",
+    # "I've grouped...") but ONLY when the response also contains actual
+    # list items — otherwise we'd strip the only content the LLM produced.
+    has_list_items = any(_is_list_item_line(ln) for ln in cleaned.split("\n"))
+    if has_list_items:
+        meta_lines: list[str] = []
+        for line in cleaned.split("\n"):
+            stripped_line = line.strip()
+            if stripped_line and _META_COMMENTARY_RE.match(stripped_line):
+                continue
+            meta_lines.append(line)
+        cleaned = "\n".join(meta_lines)
+
+    # Phase 6: strip any remaining bare JSON-like payload lines that survived
+    # earlier phases — catches single-line {"intent":..} / {"goal":..} payloads.
+    json_lines: list[str] = []
+    for line in cleaned.split("\n"):
+        if _BARE_JSON_PAYLOAD_RE.match(line):
+            continue
+        json_lines.append(line)
+    cleaned = "\n".join(json_lines)
+
+    cleaned = cleaned.strip()
+    # If stripping emptied the text, fall back to original (paranoia guard).
+    return cleaned if cleaned else text
+
+
+_CONVERSATIONAL_PLANNING_RE = re.compile(
+    r"\b("
+    r"checklist|check\s*list|prep\s+list|to[- ]?do\s+list|action\s+items|"
+    r"grocery\s+list|packing\s+list|shopping\s+list|bucket\s+list|"
+    r"(?:plan|steps|ideas|suggestions|tips)\s+for\b|"
+    r"steps\s+to\b|"
+    r"brainstorm|"
+    r"help\s+me\s+(?:organize|plan|prepare|think\s+through|figure\s+out|prioritize)|"
+    r"give\s+me\s+(?:a\s+)?(?:plan|list|steps|ideas|suggestions|tips)|"
+    r"make\s+(?:me\s+)?a\s+(?:plan|list|checklist)|"
+    r"create\s+a\s+(?:plan|list|checklist)|"
+    r"what\s+(?:do\s+i|should\s+i)\s+need\s+(?:to|for)|"
+    r"itinerary|"
+    r"organize\s+(?:my|the|a)\b|"
+    r"prepare\s+(?:a|my)\s+(?:plan|list)|"
+    r"to\s+do(?:\s+for)?\b|"
+    r"prep(?:aration)?\s+(?:list|plan|guide)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_SAVE_WRITE_FILE_SIGNAL_RE = re.compile(
+    r"\b("
+    r"save\s+(?:that|this|it|as|to|into)|"
+    r"save\s+\S+.*?\b(?:to|as|into)\s+(?:a\s+)?(?:my\s+)?(?:file|note|notes)\b|"
+    r"write\s+(?:that|this|it)\s+(?:to|into)|"
+    r"write\s+(?:to|into)\s+(?:a\s+)?(?:file|note)|"
+    r"write\s+\S+.*?\b(?:to|as|into)\s+(?:a\s+)?(?:my\s+)?(?:file|note|notes)\b|"
+    r"create\s+(?:a\s+)?(?:file|note)\s+(?:called|named|with)|"
+    r"put\s+(?:that|this|it)\s+in(?:to)?\s+(?:a\s+)?(?:file|note)|"
+    r"as\s+a\s+(?:file|note|markdown)\b|"
+    r"\.(?:md|txt|json|ps1|sh|py)\b"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_conversational_answer_first_request(message: str) -> bool:
+    """Detect non-actionable structured reasoning/planning requests.
+
+    These should be answered conversationally by default — not routed through
+    preview drafting.  "save that" after the answer can still create a governed
+    preview.
+
+    Rule-based, not LLM-based — deterministic for the same input every time.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    if _SAVE_WRITE_FILE_SIGNAL_RE.search(text):
+        return False
+    return bool(_CONVERSATIONAL_PLANNING_RE.search(text))
+
+
+def _classify_execution_mode(
+    message: str,
+    *,
+    prior_planning_active: bool,
+    pending_preview: dict[str, object] | None,
+) -> ExecutionMode:
+    """Classify the execution mode for this turn.
+
+    This is decided EARLY and enforced GLOBALLY.  Once a turn is classified as
+    CONVERSATIONAL_ARTIFACT, every downstream path must respect it:
+    - preview builder is skipped
+    - heavy guardrails are bypassed
+    - control-reply suppression is bypassed
+    - hard sanitization strips any surviving preview language
+    """
+    is_answer_first = (
+        (_is_conversational_answer_first_request(message) or prior_planning_active)
+        and not is_recent_assistant_content_save_request(message)
+        and not _SAVE_WRITE_FILE_SIGNAL_RE.search(message)
+        and pending_preview is None
+    )
+    return (
+        ExecutionMode.CONVERSATIONAL_ARTIFACT if is_answer_first else ExecutionMode.GOVERNED_PREVIEW
     )
 
 
@@ -964,6 +1350,22 @@ async def chat(request: Request):
         and not diagnostics_service_or_logs_intent(message)
         and not is_recent_assistant_content_save_request(message)
     )
+    # ── Execution mode classification (decided EARLY, enforced GLOBALLY) ──
+    # CONVERSATIONAL_ARTIFACT: checklist/planning/structured reasoning with no
+    #     save/write/file intent → answered in chat, no preview builder, no
+    #     preview language allowed.
+    # GOVERNED_PREVIEW: everything else → normal preview/builder flow.
+    #
+    # Multi-turn continuation: if the previous turn was CONVERSATIONAL_ARTIFACT
+    # (e.g. Vera asked for details), the follow-up stays conversational unless
+    # explicit save intent appears or a preview is already active.
+    _prior_planning_active = read_session_conversational_planning_active(root, active_session)
+    execution_mode = _classify_execution_mode(
+        message,
+        prior_planning_active=_prior_planning_active,
+        pending_preview=pending_preview,
+    )
+    conversational_answer_first_turn = execution_mode is ExecutionMode.CONVERSATIONAL_ARTIFACT
     # Pre-compute code-draft intent so the LLM call can be given the code-generation
     # hint before the reply is generated.  This flag is reused below where
     # is_code_draft_turn would have been computed from the same expression.
@@ -1002,8 +1404,14 @@ async def chat(request: Request):
     enrichment_context = session_enrichment if pending_preview is not None else None
     recent_assistant_artifacts = read_session_saveable_assistant_artifacts(root, active_session)
 
+    # Persist the planning continuation flag so follow-up turns stay in the
+    # answer-first lane.  Clear it when the turn is NOT answer-first.
+    write_session_conversational_planning_active(
+        root, active_session, conversational_answer_first_turn
+    )
+
     builder_preview: dict[str, object] | None = None
-    if not informational_web_turn:
+    if not informational_web_turn and not conversational_answer_first_turn:
         builder_preview = await _generate_preview_builder_update_with_optional_artifacts(
             turns=turns,
             user_message=message,
@@ -1292,11 +1700,44 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
-    guarded_answer = _guardrail_submission_claim(
-        root=root,
-        session_id=active_session,
-        text=sanitized_answer,
+    # Create-and-save fallback: when the message has both explicit save/write
+    # intent AND planning/checklist keywords (a "create and save" hybrid like
+    # "save a checklist to a note for my wedding prep"), but the builder failed
+    # to produce a content-bearing preview, create one from the LLM reply.
+    _is_create_and_save = (
+        not conversational_answer_first_turn
+        and not is_writing_draft_turn
+        and not is_code_draft_turn
+        and builder_payload is None
+        and pending_preview is None
+        and _SAVE_WRITE_FILE_SIGNAL_RE.search(message) is not None
+        and _CONVERSATIONAL_PLANNING_RE.search(message) is not None
     )
+    if _is_create_and_save and reply_text_draft:
+        _note_suffix = active_session[-8:] if len(active_session) >= 8 else active_session
+        _create_save_payload: dict[str, object] = {
+            "goal": f"save checklist/plan to a note ({message[:60]})",
+            "write_file": {
+                "path": f"~/VoxeraOS/notes/note-{_note_suffix}.md",
+                "content": reply_text_draft,
+                "mode": "overwrite",
+            },
+        }
+        try:
+            builder_payload = normalize_preview_payload(_create_save_payload)
+            write_session_preview(root, active_session, builder_payload)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+        except Exception:
+            builder_payload = None
+
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative
     # code — treat it as "no real preview" for claim-checking purposes.
@@ -1312,22 +1753,35 @@ async def chat(request: Request):
             )
         else:
             _preview_has_content = "write_file" not in effective_preview
-    _answer_before_preview_guardrail = guarded_answer
-    guarded_answer = _guardrail_false_preview_claim(
-        text=guarded_answer,
-        preview_exists=effective_preview is not None and _preview_has_content,
-    )
-    # All-or-nothing cleanup: when _guardrail_false_preview_claim stripped a false
-    # preview-existence claim, it means the LLM claimed a preview was ready but no
-    # authoritative code content was actually committed.  Clear any empty write_file
-    # placeholder so the session is in a clean state — no orphaned shell, no
-    # accidental empty submission.  Only clears empty-content previews; any
-    # preview that already had content was not touched by the guardrail above.
-    if guarded_answer != _answer_before_preview_guardrail and isinstance(effective_preview, dict):
-        _stale_wf = effective_preview.get("write_file")
-        if isinstance(_stale_wf, dict) and not str(_stale_wf.get("content") or "").strip():
-            write_session_preview(root, active_session, None)
-            builder_payload = None
+
+    if conversational_answer_first_turn:
+        # HARD CONVERSATIONAL MODE LOCK (ExecutionMode.CONVERSATIONAL_ARTIFACT):
+        # Six-phase sanitizer guarantees zero preview/draft/submit/queue/
+        # workflow/JSON leakage.  Phases 3-6 are nuclear layers that strip
+        # banned tokens, workflow narration, meta-commentary, and bare JSON
+        # payloads — making behavior deterministic regardless of LLM output.
+        guarded_answer = _sanitize_false_preview_claims_from_answer(sanitized_answer)
+    else:
+        guarded_answer = _guardrail_submission_claim(
+            root=root,
+            session_id=active_session,
+            text=sanitized_answer,
+        )
+        _answer_before_preview_guardrail = guarded_answer
+        guarded_answer = _guardrail_false_preview_claim(
+            text=guarded_answer,
+            preview_exists=effective_preview is not None and _preview_has_content,
+        )
+        # All-or-nothing cleanup: when _guardrail_false_preview_claim stripped a
+        # false preview-existence claim, clear any empty write_file placeholder so
+        # the session is clean — no orphaned shell, no accidental empty submission.
+        if guarded_answer != _answer_before_preview_guardrail and isinstance(
+            effective_preview, dict
+        ):
+            _stale_wf = effective_preview.get("write_file")
+            if isinstance(_stale_wf, dict) and not str(_stale_wf.get("content") or "").strip():
+                write_session_preview(root, active_session, None)
+                builder_payload = None
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
     is_json_content_request = _is_explicit_json_content_request(message)
     is_voxera_control_turn = _is_voxera_control_turn(message, active_preview=pending_preview)
@@ -1354,6 +1808,7 @@ async def chat(request: Request):
         not is_enrichment_turn
         and not is_code_draft_turn
         and not is_writing_draft_turn
+        and not conversational_answer_first_turn
         and (
             (is_voxera_control_turn and not is_json_content_request)
             or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))

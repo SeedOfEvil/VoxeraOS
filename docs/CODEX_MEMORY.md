@@ -1,3 +1,35 @@
+## 2026-03-24 — PR #229 — fix(vera): deterministic checklist rendering with six-phase sanitizer — zero preview/JSON/meta leakage
+
+- **Root cause:** The final response was still too LLM-shaped. Even with five-phase sanitization, the LLM could emit: (a) unfenced JSON payloads (`{"intent": "create_checklist", ...}`) that bypassed the fenced-only Phase 1 stripping, (b) novel meta-commentary phrasings ("Here's what I came up with", "I've broken it down") not covered by the original regex, (c) workflow narration using save-adjacent language.
+- **Fix — six-phase sanitizer** (upgraded from five-phase):
+  - Phase 1a: strip fenced JSON blocks (`` ```json...``` ``).
+  - Phase 1b (NEW): strip unfenced multi-line JSON blocks (`{...\n...\n}`).
+  - Phase 2: strip lines matching 55+ known false-claim phrases.
+  - Phase 3 (nuclear): strip ANY non-list-item line with hard-banned tokens.
+  - Phase 4: strip workflow narration lines.
+  - Phase 5: strip meta-commentary lines when list items present (broadened regex — now catches "Here's what I came up with", "I've broken it down", "I've laid it out", "I've set it up", etc.).
+  - Phase 6 (NEW): strip bare JSON payload lines matching `_BARE_JSON_PAYLOAD_RE` (`{"intent":...}`, `{"goal":...}`, `{"action":...}`, `{"write_file":...}`).
+- **Core rule:** Conversational checklist mode must render the artifact itself — not workflow narration, not JSON payloads, not meta-commentary.
+- **Prior fixes preserved:** `ExecutionMode` enum, `_classify_execution_mode()`, create-and-save fallback, `conversational_planning_active` continuation flag, save intent override, broader classifier.
+- **Files changed:** `src/voxera/vera_web/app.py` (Phase 1b, Phase 6, `_BARE_JSON_PAYLOAD_RE`, `_has_list_content`, broader `_META_COMMENTARY_RE`), `tests/test_vera_session_characterization.py` (5 new tests), `docs/ARCHITECTURE.md`, `docs/CODEX_MEMORY.md`.
+- **Tests added (cumulative 39):** Previous 34 + (35) unfenced JSON payload stripped, (36) bare goal JSON stripped, (37) multi-line unfenced JSON stripped, (38) broader meta-commentary stripped, (39) 10x deterministic final-render run with adversarial variants.
+- Validation: `ruff format --check .`, `ruff check .`, `mypy src/voxera`, `pytest -q`, `make security-check`, `make golden-check`, `make validation-check`, `make merge-readiness-check` — all pass.
+
+## 2026-03-23 — PR #TBD — fix(vera): answer checklist and structured planning requests conversationally instead of failing preview drafting
+
+- **Root cause:** Checklist/planning/structured reasoning requests (e.g. "create a checklist for my wedding prep") were not classified as conversational answer-first turns. The preview builder (hidden compiler LLM) ran on every non-informational turn, and the conversational LLM naturally produced responses with phrases like "I've prepared your checklist" that triggered `_looks_like_preview_pane_claim()`. Since no actual governed preview existed, `_guardrail_false_preview_claim()` replaced the entire useful answer with "I was not able to prepare a governed preview for this request."
+- **Fix — conversational answer-first classifier:** Added `_is_conversational_answer_first_request(message)` in `vera_web/app.py` that detects non-actionable structured reasoning/planning requests: checklists, plans, step-by-step guidance, brainstorming, organizing help, itineraries, to-do lists, etc. Excludes messages with explicit save/write/file intent (detected via `_SAVE_WRITE_FILE_SIGNAL_RE`).
+- **Fix — preview builder gating:** When `conversational_answer_first_turn` is True, the preview builder (`_generate_preview_builder_update_with_optional_artifacts()`) is skipped entirely — same as for informational web turns.
+- **Fix — guardrail bypass:** `_guardrail_false_preview_claim()` is skipped for conversational-answer-first turns, so natural phrasing like "I've prepared" doesn't destroy the useful checklist answer.
+- **Fix — control reply bypass:** `should_use_conversational_control_reply` excludes conversational-answer-first turns, so the LLM's actual answer is preserved instead of being replaced by a generic "Understood" message.
+- **Save-after behavior:** The answer is stored as a saveable artifact via `append_session_turn` → `build_saveable_assistant_artifact()`, so "save that to a note" still creates a governed preview from the checklist content.
+- **Classification boundary rule:** Answer-first for non-actionable reasoning outputs; preview only when there is actual save/write/submit/action intent or an active preview refinement context. When `pending_preview is not None`, answer-first bypass is disabled so existing preview refinement flows are not disrupted.
+- **Review-pass fix — `_SAVE_WRITE_FILE_SIGNAL_RE` gap:** The initial save/write intent regex missed "save a checklist to a note" and "write a checklist to a file" (patterns where the object noun sits between the verb and the target). Added broader `save\s+\S+.*?\b(?:to|as|into)\s+(?:a\s+)?(?:my\s+)?(?:file|note|notes)\b` and matching write-form patterns to close these false-negative gaps without overmatching.
+- **Files changed:** `src/voxera/vera_web/app.py` (classifier + save-intent regex fix + 3 gating changes), `tests/test_vera_session_characterization.py` (9 session-level tests), `tests/test_file_intent.py` (3 parametrized test classes with 34+ input variants), `docs/CODEX_MEMORY.md`.
+- **Tests added:** 9 session-level characterization tests (checklist answer-first, save-after-checklist, planning variant, preview-claim-language tolerance, brainstorm, save-with-file-intent guard, active-preview-not-bypassed); 3 parametrized classifier unit test classes covering 34+ input variants including the save-to-note edge cases.
+- Validation: `ruff format --check .`, `ruff check .`, `mypy src/voxera`, `pytest -q` (1408 passed), `make security-check`, `make golden-check`, `make validation-check`, `make merge-readiness-check` — all pass.
+- **Remaining limitations:** The classifier uses keyword matching; very unusual phrasing may not be caught. "summarize this" and "explain this" are not yet classified as answer-first because they overlap with investigation derivation and writing-draft lanes — they are less likely to trigger the original bug pattern. The classifier will be expanded as new patterns emerge rather than trying to anticipate all possible structured reasoning request forms.
+
 ## 2026-03-23 — PR #TBD — docs(architecture): update architecture and operations docs for post-refactor ownership boundaries
 
 - Updated `README.md` with a current ownership map for the refactored Vera, queue, panel, and config/path seams so contributors can see where new logic should land without reverse-engineering the latest PR series.
