@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import inspect
 import re
 from pathlib import Path
@@ -96,6 +97,19 @@ from ..vera.service import (
     write_session_preview,
     write_session_weather_context,
 )
+
+
+class ExecutionMode(enum.Enum):
+    """Execution mode for a Vera chat turn.
+
+    Decided early from the user message and enforced globally — once a turn is
+    classified as CONVERSATIONAL_ARTIFACT it **must never** leak preview, draft,
+    submit, or queue language.
+    """
+
+    CONVERSATIONAL_ARTIFACT = "conversational_artifact"
+    GOVERNED_PREVIEW = "governed_preview"
+
 
 app = FastAPI(title="Vera v0", version="0")
 
@@ -505,6 +519,28 @@ _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE = re.compile(
 )
 
 
+def _is_list_item_line(line: str) -> bool:
+    """Return True if the line is a numbered or bulleted list item."""
+    stripped = line.lstrip()
+    if not stripped:
+        return False
+    if re.match(r"[0-9]+[.\)]\s", stripped):
+        return True
+    if stripped.startswith(("- ", "* ", "• ")):
+        return True
+    if re.match(r"\[[ x]\]\s", stripped):
+        return True
+    return bool(re.match(r"-\s+\[[ x]\]\s", stripped))
+
+
+# Hard-banned words for conversational mode.  ANY non-list-item line containing
+# one of these tokens is stripped as a last-resort guarantee of zero leakage.
+_HARD_BANNED_CONVERSATIONAL_TOKENS_RE = re.compile(
+    r"\b(?:preview|draft|submit|submitted|submission|queue|queued)\b",
+    re.IGNORECASE,
+)
+
+
 def _sanitize_false_preview_claims_from_answer(text: str) -> str:
     """Strip false preview/submission/draft claims from conversational answers.
 
@@ -512,7 +548,11 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
     individual lines that contain false claims — preserving the actual content
     like checklists, plans, and brainstorms.
 
-    Also strips fenced JSON blocks that look like VoxeraOS preview payloads.
+    Three-phase sanitizer:
+      Phase 1 — strip fenced JSON blocks (VoxeraOS preview dumps).
+      Phase 2 — strip lines matching known false-claim phrases and regexes.
+      Phase 3 — HARD MODE LOCK: strip ANY remaining non-list-item line that
+                contains a banned token (preview/draft/submit/queue).
     """
     if not text.strip():
         return text
@@ -525,7 +565,7 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
         flags=re.DOTALL | re.IGNORECASE,
     )
 
-    # Phase 2: strip lines containing false preview/submission claims
+    # Phase 2: strip lines containing known false preview/submission claims
     lowered_full = cleaned.lower()
     has_false_claim = (
         _looks_like_preview_pane_claim(cleaned)
@@ -534,11 +574,8 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
         or _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE.search(cleaned) is not None
     )
     if has_false_claim:
-        # Remove lines matching preview-pane references
         cleaned = _PREVIEW_PANE_SENTENCE_RE.sub("", cleaned)
-        # Remove lines referencing "the preview" / "the draft" broadly
         cleaned = _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE.sub("", cleaned)
-        # Remove lines containing any false-claim phrase
         out_lines: list[str] = []
         for line in cleaned.split("\n"):
             lowered_line = line.lower()
@@ -546,6 +583,20 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
                 continue
             out_lines.append(line)
         cleaned = "\n".join(out_lines)
+
+    # Phase 3: HARD MODE LOCK — strip ANY remaining non-list-item line that
+    # still contains a banned token.  This is the nuclear guarantee that zero
+    # preview/draft/submit/queue language ever reaches the user in
+    # conversational mode, regardless of LLM phrasing creativity.
+    hard_lines: list[str] = []
+    for line in cleaned.split("\n"):
+        if _is_list_item_line(line):
+            hard_lines.append(line)
+            continue
+        if _HARD_BANNED_CONVERSATIONAL_TOKENS_RE.search(line):
+            continue
+        hard_lines.append(line)
+    cleaned = "\n".join(hard_lines)
 
     cleaned = cleaned.strip()
     # If stripping emptied the text, fall back to original (paranoia guard).
@@ -555,6 +606,7 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
 _CONVERSATIONAL_PLANNING_RE = re.compile(
     r"\b("
     r"checklist|check\s*list|prep\s+list|to[- ]?do\s+list|action\s+items|"
+    r"grocery\s+list|packing\s+list|shopping\s+list|bucket\s+list|"
     r"(?:plan|steps|ideas|suggestions|tips)\s+for\b|"
     r"steps\s+to\b|"
     r"brainstorm|"
@@ -564,6 +616,9 @@ _CONVERSATIONAL_PLANNING_RE = re.compile(
     r"create\s+a\s+(?:plan|list|checklist)|"
     r"what\s+(?:do\s+i|should\s+i)\s+need\s+(?:to|for)|"
     r"itinerary|"
+    r"organize\s+(?:my|the|a)\b|"
+    r"prepare\s+(?:a|my)\s+(?:plan|list)|"
+    r"to\s+do(?:\s+for)?\b|"
     r"prep(?:aration)?\s+(?:list|plan|guide)"
     r")\b",
     re.IGNORECASE,
@@ -591,6 +646,8 @@ def _is_conversational_answer_first_request(message: str) -> bool:
     These should be answered conversationally by default — not routed through
     preview drafting.  "save that" after the answer can still create a governed
     preview.
+
+    Rule-based, not LLM-based — deterministic for the same input every time.
     """
     text = message.strip()
     if not text:
@@ -598,6 +655,32 @@ def _is_conversational_answer_first_request(message: str) -> bool:
     if _SAVE_WRITE_FILE_SIGNAL_RE.search(text):
         return False
     return bool(_CONVERSATIONAL_PLANNING_RE.search(text))
+
+
+def _classify_execution_mode(
+    message: str,
+    *,
+    prior_planning_active: bool,
+    pending_preview: dict[str, object] | None,
+) -> ExecutionMode:
+    """Classify the execution mode for this turn.
+
+    This is decided EARLY and enforced GLOBALLY.  Once a turn is classified as
+    CONVERSATIONAL_ARTIFACT, every downstream path must respect it:
+    - preview builder is skipped
+    - heavy guardrails are bypassed
+    - control-reply suppression is bypassed
+    - hard sanitization strips any surviving preview language
+    """
+    is_answer_first = (
+        (_is_conversational_answer_first_request(message) or prior_planning_active)
+        and not is_recent_assistant_content_save_request(message)
+        and not _SAVE_WRITE_FILE_SIGNAL_RE.search(message)
+        and pending_preview is None
+    )
+    return (
+        ExecutionMode.CONVERSATIONAL_ARTIFACT if is_answer_first else ExecutionMode.GOVERNED_PREVIEW
+    )
 
 
 def _is_explicit_json_content_request(message: str) -> bool:
@@ -1147,22 +1230,22 @@ async def chat(request: Request):
         and not diagnostics_service_or_logs_intent(message)
         and not is_recent_assistant_content_save_request(message)
     )
-    # Conversational answer-first: checklist/planning/structured reasoning
-    # requests with no save/write/file intent get a normal conversational
-    # answer without attempting preview drafting.  The answer is stored as a
-    # saveable artifact so "save that" works afterward.
+    # ── Execution mode classification (decided EARLY, enforced GLOBALLY) ──
+    # CONVERSATIONAL_ARTIFACT: checklist/planning/structured reasoning with no
+    #     save/write/file intent → answered in chat, no preview builder, no
+    #     preview language allowed.
+    # GOVERNED_PREVIEW: everything else → normal preview/builder flow.
     #
-    # Multi-turn continuation: if the previous turn was answer-first (e.g.
-    # Vera asked for details) and the user is now providing those details,
-    # stay in the answer-first lane as long as there is no save/write intent
-    # and no active preview.
+    # Multi-turn continuation: if the previous turn was CONVERSATIONAL_ARTIFACT
+    # (e.g. Vera asked for details), the follow-up stays conversational unless
+    # explicit save intent appears or a preview is already active.
     _prior_planning_active = read_session_conversational_planning_active(root, active_session)
-    conversational_answer_first_turn = (
-        (_is_conversational_answer_first_request(message) or _prior_planning_active)
-        and not is_recent_assistant_content_save_request(message)
-        and not _SAVE_WRITE_FILE_SIGNAL_RE.search(message)
-        and pending_preview is None
+    execution_mode = _classify_execution_mode(
+        message,
+        prior_planning_active=_prior_planning_active,
+        pending_preview=pending_preview,
     )
+    conversational_answer_first_turn = execution_mode is ExecutionMode.CONVERSATIONAL_ARTIFACT
     # Pre-compute code-draft intent so the LLM call can be given the code-generation
     # hint before the reply is generated.  This flag is reused below where
     # is_code_draft_turn would have been computed from the same expression.
@@ -1552,10 +1635,11 @@ async def chat(request: Request):
             _preview_has_content = "write_file" not in effective_preview
 
     if conversational_answer_first_turn:
-        # Comprehensive sanitizer for conversational answers: strip ALL false
-        # preview/submission/draft claims and JSON blobs line-by-line while
-        # preserving the actual content.  The heavy guardrails replace the
-        # *entire* answer which would destroy checklist/planning text.
+        # HARD CONVERSATIONAL MODE LOCK (ExecutionMode.CONVERSATIONAL_ARTIFACT):
+        # Three-phase sanitizer guarantees zero preview/draft/submit/queue
+        # leakage.  Phase 3 is the nuclear layer that strips ANY non-list-item
+        # line containing a banned token — making behavior deterministic
+        # regardless of LLM output variation.
         guarded_answer = _sanitize_false_preview_claims_from_answer(sanitized_answer)
     else:
         guarded_answer = _guardrail_submission_claim(

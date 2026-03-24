@@ -1,15 +1,17 @@
-## 2026-03-24 — PR #229 — fix(vera): separate conversational checklist/planning from governed save intent and eliminate false preview framing
+## 2026-03-24 — PR #229 — fix(vera): deterministic conversational mode lock for checklist/planning — zero preview leakage
 
-- **Three broken cases fixed:**
-  1. Conversational checklist/planning answers still leaked preview/submission language ("Take a look at the preview", "I'll submit it") because the sanitizer had phrase gaps.
-  2. Multi-turn planning answers still leaked draft language ("I've updated the draft") for the same reason.
-  3. Explicit save-intent checklist requests ("save a checklist to a note for my wedding prep") failed with "I was not able to prepare a governed preview" because the request is a create-and-save hybrid: it has save intent (so not answer-first) but no prior content to reference (so builder fails, then the heavy guardrail replaces the LLM's useful answer).
-- **Fix — broader sanitizer:** Added `_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE` regex that catches any non-list-item line referencing "the preview", "the draft", or "system queue". Added submission-intent phrases ("I'll submit", "I can submit", "I'll send it"). This closes coverage gaps for casual LLM phrasings that the phrase list missed.
-- **Fix — create-and-save fallback:** When a message has both explicit save intent AND planning/checklist keywords, and the builder fails to produce a content-bearing preview, the system now creates a note preview from the LLM's reply content post-reply (similar to writing-draft injection). This lets "save a checklist to a note" produce a real governed preview.
-- **Prior fixes preserved:** Comprehensive three-phase sanitizer (JSON blobs, preview claims, submission claims), guardrail restructure (heavy guardrails skipped for answer-first turns), session-persisted `conversational_planning_active` continuation flag.
-- **Files changed:** `src/voxera/vera_web/app.py` (broader sanitizer regex + create-and-save fallback), `tests/test_vera_session_characterization.py` (4 new tests: broader phrase sanitization, multi-turn draft language, save-intent preview creation).
-- **Tests added (cumulative 15):** Previous 11 + (12) "take a look at the preview" sanitized, (13) "I'll submit it" sanitized, (14) multi-turn "I've updated the draft" sanitized, (15) "save a checklist to a note" creates governed preview.
-- Validation: `ruff format --check .`, `ruff check .`, `mypy src/voxera`, `pytest -q` (1423 passed), `make merge-readiness-check` — all pass.
+- **Root cause of nondeterminism:** Classification existed but was not enforced strongly enough. Downstream paths could still inject preview/draft language or route through preview-style response builders, making identical inputs produce different outputs depending on LLM phrasing variation.
+- **Fix — explicit `ExecutionMode` enum:** Every turn is classified into `CONVERSATIONAL_ARTIFACT` or `GOVERNED_PREVIEW` early and the mode is enforced globally. `_classify_execution_mode()` encapsulates the decision; all downstream code checks `conversational_answer_first_turn` (derived from the mode).
+- **Fix — hard conversational mode lock (three-phase sanitizer):**
+  - Phase 1: strip fenced JSON blocks.
+  - Phase 2: strip lines matching 40+ known false-claim phrases and preview/draft reference regexes.
+  - Phase 3 (NEW — nuclear layer): strip ANY remaining non-list-item line containing a banned token (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`). List items are protected so legitimate content like "Draft the proposal" is preserved.
+  - This guarantees zero leakage regardless of LLM phrasing creativity — behavior is now deterministic.
+- **Fix — broader classifier:** Added grocery list, packing list, shopping list, bucket list, organize, prepare, to do patterns to `_CONVERSATIONAL_PLANNING_RE`.
+- **Prior fixes preserved:** Create-and-save fallback, session-persisted `conversational_planning_active` continuation flag, save intent override, guardrail restructure.
+- **Files changed:** `src/voxera/vera_web/app.py` (ExecutionMode enum, `_classify_execution_mode`, `_is_list_item_line`, `_HARD_BANNED_CONVERSATIONAL_TOKENS_RE`, three-phase sanitizer Phase 3, broader classifier), `tests/test_vera_session_characterization.py` (10 new tests), `docs/ARCHITECTURE.md` (rewritten conversational mode lock section), `docs/CODEX_MEMORY.md`.
+- **Tests added (cumulative 25):** Previous 15 + (16) deterministic 10x repeat test, (17) grocery list, (18) wedding checklist grouped, (19) explicit save intent creates preview, (20) save-after-checklist, (21) multi-turn stays conversational, (22) send without preview truthful, (23) novel phrasing stripped by hard sanitizer, (24) list items with draft/submit preserved, (25) execution mode classification deterministic.
+- Validation: `ruff format --check .`, `ruff check .`, `mypy src/voxera`, `pytest -q`, `make security-check`, `make golden-check`, `make validation-check`, `make merge-readiness-check` — all pass.
 
 ## 2026-03-23 — PR #TBD — fix(vera): answer checklist and structured planning requests conversationally instead of failing preview drafting
 

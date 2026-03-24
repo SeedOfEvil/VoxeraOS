@@ -800,3 +800,311 @@ def test_save_checklist_to_note_creates_preview(tmp_path, monkeypatch):
     last_turn = session.turns()[-1]
     assert "was not able to prepare" not in last_turn["text"].lower()
     assert "governed preview" not in last_turn["text"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Deterministic conversational mode lock tests
+# ---------------------------------------------------------------------------
+
+_BANNED_TOKENS = ("preview", "draft", "submit", "submitted", "submission", "queue", "queued")
+
+
+def _assert_clean_conversational(text: str, *, expect_content: str | None = None) -> None:
+    """Assert that text has zero preview/draft/submit/queue leakage."""
+    lowered = text.lower()
+    for token in _BANNED_TOKENS:
+        assert token not in lowered, f"Banned token '{token}' leaked: {text!r}"
+    assert "governed" not in lowered
+    assert "```json" not in lowered
+    assert '"goal"' not in text
+    assert '"intent"' not in text
+    assert '"action"' not in text
+    if expect_content is not None:
+        assert expect_content.lower() in lowered
+
+
+def test_deterministic_checklist_10_runs(tmp_path, monkeypatch):
+    """Run the SAME checklist input 10 times — MUST be 100% conversational,
+    0% preview leakage, every single time."""
+
+    # Each run gets its own session to avoid state bleed
+    for run_idx in range(10):
+        from tests.vera_session_helpers import make_vera_session
+
+        session = make_vera_session(monkeypatch, tmp_path / f"run{run_idx}")
+
+        # Vary the LLM reply phrasing to simulate nondeterminism
+        if run_idx % 3 == 0:
+            fake_answer = "Here's your checklist:\n\n- Coffee\n- Rice\n- Apples"
+        elif run_idx % 3 == 1:
+            fake_answer = (
+                "I've prepared a checklist in the preview pane:\n\n1. Coffee\n2. Rice\n3. Apples"
+            )
+        else:
+            fake_answer = (
+                "Here you go!\n\n"
+                "- [ ] Coffee\n- [ ] Rice\n- [ ] Apples\n\n"
+                "I'll submit this to the queue whenever you're ready."
+            )
+
+        async def _fake_reply(*, turns, user_message, answer=fake_answer, **kw):
+            return {"answer": answer, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("make a checklist. I need coffee, rice, apples")
+        assert res.status_code == 200
+
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        _assert_clean_conversational(last_turn["text"], expect_content="coffee")
+        assert session.preview() is None, f"Preview leaked on run {run_idx}"
+
+
+def test_grocery_list_conversational(tmp_path, monkeypatch):
+    """Grocery list request must be conversational — no preview language."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {
+            "answer": ("Here's your grocery list:\n\n- Milk\n- Eggs\n- Bread\n- Butter\n- Cheese"),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a grocery list: milk, eggs, bread, butter, cheese")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="milk")
+    assert session.preview() is None
+
+
+def test_wedding_checklist_grouped(tmp_path, monkeypatch):
+    """Wedding checklist must come through as grouped/bullet list."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    wedding_answer = (
+        "**Wedding Prep Checklist**\n\n"
+        "**Before the Event**\n"
+        "- Take time off work\n"
+        "- Buy plane tickets\n"
+        "- Get in shape\n\n"
+        "**At the Event**\n"
+        "- Buy a suit\n"
+        "- Call mom\n"
+        "- Be best man\n\n"
+        "**Logistics**\n"
+        "- Rent car\n"
+        "- Pack bags"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": wedding_answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat(
+        "make a checklist for me: take time off, buy tickets, get in shape, "
+        "buy suit, call mom, tell friend, be best man, rent car, pack"
+    )
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="take time off")
+    # Must have list structure
+    assert "- " in last_turn["text"] or "1." in last_turn["text"]
+    assert session.preview() is None
+
+
+def test_explicit_save_intent_creates_preview(tmp_path, monkeypatch):
+    """'save a checklist to a note' must create a governed preview."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {
+            "answer": ("Grocery Checklist\n\n1. Milk\n2. Eggs\n3. Bread"),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("save a grocery checklist to a note: milk, eggs, bread")
+    assert res.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None, "Save intent must produce a governed preview"
+    assert "write_file" in preview
+    assert "milk" in preview["write_file"]["content"].lower()
+
+
+def test_save_after_checklist_creates_preview(tmp_path, monkeypatch):
+    """checklist → 'save that' must produce a governed preview."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    checklist = "Here's your list:\n\n- Apples\n- Bananas\n- Oranges"
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        if "checklist" in user_message.lower():
+            return {"answer": checklist, "status": "ok:test"}
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("make me a checklist: apples, bananas, oranges")
+    session.chat("save that to a note")
+
+    preview = session.preview()
+    assert preview is not None
+    assert "write_file" in preview
+    assert "apples" in preview["write_file"]["content"].lower()
+
+
+def test_multi_turn_planning_stays_conversational(tmp_path, monkeypatch):
+    """Multi-turn: checklist request → details → must stay conversational."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        if "checklist" in user_message.lower():
+            return {
+                "answer": "Sure! What items do you need on the checklist?",
+                "status": "ok:test",
+            }
+        # Follow-up details — LLM might add preview language
+        return {
+            "answer": (
+                "Here's your checklist:\n\n"
+                "1. Coffee\n2. Rice\n3. Apples\n\n"
+                "Take a look at the preview to review it."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("I need a checklist")
+    res = session.chat("coffee, rice, and apples")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="coffee")
+    assert session.preview() is None
+
+
+def test_send_without_preview_is_truthful(tmp_path, monkeypatch):
+    """'send it' with no preview must be truthful — no fake submission claim."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        if "checklist" in user_message.lower():
+            return {
+                "answer": "Here's your checklist:\n\n1. Item A\n2. Item B",
+                "status": "ok:test",
+            }
+        return {
+            "answer": "Done! I've submitted it to the queue.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("make me a checklist for work")
+    res = session.chat("send it")
+    assert res.status_code == 200
+
+    # No preview exists, so no real submission happened
+    assert session.preview() is None
+
+
+def test_hard_sanitizer_strips_novel_preview_phrasing(tmp_path, monkeypatch):
+    """Even novel LLM phrasings mentioning 'preview' or 'draft' must be
+    stripped by the hard mode lock — not just known phrases."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    # Use a phrasing that is NOT in _FALSE_CLAIM_PHRASES but contains 'preview'
+    answer_with_novel_phrasing = (
+        "Here's your checklist:\n\n"
+        "1. Coffee\n"
+        "2. Rice\n"
+        "3. Apples\n\n"
+        "You can see everything in the interactive preview widget on the right."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer_with_novel_phrasing, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a checklist: coffee, rice, apples")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="coffee")
+    assert session.preview() is None
+
+
+def test_hard_sanitizer_preserves_list_items_with_draft_word(tmp_path, monkeypatch):
+    """List items that legitimately contain 'draft' (e.g. 'Draft the proposal')
+    must be preserved — only non-list-item lines are stripped."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's your checklist:\n\n"
+        "1. Draft the proposal\n"
+        "2. Submit the application\n"
+        "3. Review the draft document\n\n"
+        "I've loaded this into the preview pane for you."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a checklist for the grant application")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    # List items preserved even though they contain 'draft'/'submit'
+    assert "draft the proposal" in last_turn["text"].lower()
+    assert "submit the application" in last_turn["text"].lower()
+    assert "review the draft document" in last_turn["text"].lower()
+    # Non-list-item preview claim stripped
+    assert "preview pane" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_execution_mode_classification_is_deterministic(tmp_path, monkeypatch):
+    """_classify_execution_mode must return the same result for the same input."""
+    from voxera.vera_web.app import ExecutionMode, _classify_execution_mode
+
+    conversational_inputs = [
+        "make a checklist. I need coffee, rice, apples",
+        "help me plan a vacation to Japan",
+        "brainstorm ideas for the party",
+        "make me a grocery list: milk, eggs, bread",
+        "what do I need to prepare for the interview",
+        "create a packing list for the trip",
+        "organize my tasks for the week",
+        "to do for today",
+    ]
+    for msg in conversational_inputs:
+        for _ in range(10):
+            mode = _classify_execution_mode(msg, prior_planning_active=False, pending_preview=None)
+            assert mode is ExecutionMode.CONVERSATIONAL_ARTIFACT, (
+                f"Expected CONVERSATIONAL_ARTIFACT for {msg!r}, got {mode}"
+            )
+
+    governed_inputs = [
+        "save a checklist to a note for my wedding prep",
+        "write a checklist to a file called list.txt",
+        "save that to a note",
+        "export my list as a markdown file",
+    ]
+    for msg in governed_inputs:
+        for _ in range(10):
+            mode = _classify_execution_mode(msg, prior_planning_active=False, pending_preview=None)
+            assert mode is ExecutionMode.GOVERNED_PREVIEW, (
+                f"Expected GOVERNED_PREVIEW for {msg!r}, got {mode}"
+            )

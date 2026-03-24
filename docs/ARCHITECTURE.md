@@ -1367,37 +1367,48 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 - Prose-body extraction is heuristic and intentionally bounded: wrapper/preface text is stripped only when it matches known draft-introduction patterns or is separated from the body by blank-line block structure.
 - No docx/pdf generation, multi-file writing projects, or publishing workflows are added here.
 
-## Conversational answer-first lane (checklist / planning / structured reasoning)
+## Conversational mode lock (checklist / planning / structured reasoning)
 
 Non-actionable structured reasoning requests (checklists, planning, brainstorming, itineraries) are answered conversationally by default — preview drafting is not attempted. The answer is stored as a saveable artifact so `save that` creates a governed preview afterward.
 
-**Classifier (`vera_web/app.py`):**
-- `_is_conversational_answer_first_request(message)`: matches planning/checklist patterns while excluding messages with explicit save/write/file intent (`_SAVE_WRITE_FILE_SIGNAL_RE`).
+### Execution mode (`vera_web/app.py`)
 
-**Multi-turn continuation (`vera/session_store.py`, `vera_web/app.py`):**
-- A `conversational_planning_active` boolean is persisted in session state whenever an answer-first turn occurs.
-- On the next turn, if the flag is set, the user has no save/write intent, and no preview is active, the turn stays in the answer-first lane. This allows multi-turn planning flows where Vera asks for details and the user provides them.
-- The flag is cleared whenever the turn is NOT answer-first (save intent, preview exists, or the user changes topics).
+Every chat turn is classified into one of two execution modes **early** — the mode is then enforced **globally** at every downstream decision point:
 
-**Comprehensive conversational answer sanitizer (`vera_web/app.py`):**
-- `_sanitize_false_preview_claims_from_answer(text)`: three-phase sanitizer for answer-first turns:
-  1. Strips fenced JSON blocks containing VoxeraOS-like payloads.
-  2. Strips lines containing false preview-pane references ("preview pane", "in the preview", etc.) and broader references via `_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE` (any non-list-item line mentioning "the preview", "the draft", or "system queue").
-  3. Strips lines containing false preview-update claims (24+ phrases), submission claims (18+ phrases including "I'll submit", "I can submit"), and draft-readiness language.
-- Applied instead of both `_guardrail_submission_claim` and `_guardrail_false_preview_claim` for answer-first turns. Those heavy guardrails replace the entire answer; the sanitizer preserves checklist/planning content.
+| Mode | When | Effect |
+|------|------|--------|
+| `CONVERSATIONAL_ARTIFACT` | Planning/checklist keyword detected, no save/write intent, no active preview | Preview builder skipped, heavy guardrails bypassed, control-reply suppression bypassed, hard sanitization applied |
+| `GOVERNED_PREVIEW` | Everything else (save intent, active preview, non-planning requests) | Normal preview/builder/guardrail flow |
+
+**Classifier (`_classify_execution_mode`, `_is_conversational_answer_first_request`):**
+- Rule-based, not LLM-based — deterministic for the same input every time.
+- Matches planning/checklist patterns (checklist, list, plan, organize, prepare, grocery list, packing list, to do, brainstorm, itinerary, etc.) while excluding messages with explicit save/write/file intent (`_SAVE_WRITE_FILE_SIGNAL_RE`).
+
+### Multi-turn continuation (`vera/session_store.py`, `vera_web/app.py`)
+- A `conversational_planning_active` boolean is persisted in session state whenever a `CONVERSATIONAL_ARTIFACT` turn occurs.
+- On the next turn, if the flag is set, the user has no save/write intent, and no preview is active, the turn stays conversational. This allows multi-turn planning flows where Vera asks for details and the user provides them.
+- The flag is cleared whenever the turn is `GOVERNED_PREVIEW` (save intent, preview exists, or the user changes topics).
+
+### Hard conversational mode lock — zero preview leakage guarantee
+
+**Three-phase sanitizer (`_sanitize_false_preview_claims_from_answer`):**
+1. Strips fenced JSON blocks containing VoxeraOS-like payloads.
+2. Strips lines containing known false-claim phrases (40+ covering preview-update, submission, and draft-readiness language) and broader regex references via `_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE`.
+3. **HARD MODE LOCK (Phase 3):** Strips ANY remaining non-list-item line containing a banned token (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`). This nuclear layer guarantees zero leakage regardless of LLM phrasing creativity. List items (numbered, bulleted, checkbox) are protected so legitimate content like "Draft the proposal" is preserved.
+
+- Applied instead of both `_guardrail_submission_claim` and `_guardrail_false_preview_claim` for `CONVERSATIONAL_ARTIFACT` turns.
 - **Strict preview truth rule:** preview/draft/submission language must only appear in assistant text when a real preview or confirmed queue job exists.
 
-**Create-and-save fallback (`vera_web/app.py`):**
-- Handles hybrid requests like "save a checklist to a note for my wedding prep" that have both explicit save intent AND planning keywords but no prior content to reference.
-- When the builder fails to produce a content-bearing preview for such requests, the system creates a note preview from the LLM's reply content post-reply (similar to writing-draft injection).
-- This allows governed preview creation for explicit save-intent planning requests without routing through the answer-first lane.
+### Save intent override
+- If a message contains explicit save/write/file/note intent, it is classified as `GOVERNED_PREVIEW` regardless of planning keywords.
+- **Create-and-save fallback:** Handles hybrid requests like "save a checklist to a note for my wedding prep" that have both explicit save intent AND planning keywords but no prior content to reference. When the builder fails, the system creates a note preview from the LLM's reply content post-reply.
 
-**Gating points:**
-- Builder skip: preview builder is not called for answer-first turns.
-- Sanitizer: comprehensive sanitizer replaces both heavy guardrails for answer-first turns.
+### Gating points (enforced by `ExecutionMode`)
+- Builder skip: preview builder is not called for `CONVERSATIONAL_ARTIFACT` turns.
+- Sanitizer: three-phase sanitizer with hard mode lock replaces both heavy guardrails.
 - Create-and-save fallback: fires after LLM reply when builder failed on a save+planning hybrid.
-- Control-reply suppression skip: full conversational answer is always shown for answer-first turns.
+- Control-reply suppression skip: full conversational answer is always shown.
 
-**Save-after-answer flow:**
+### Save-after-answer flow
 - Conversational answers are stored as saveable artifacts (`build_saveable_assistant_artifact`).
 - `save that` / `save that to a note` resolves to the most recent substantial artifact and creates a governed preview.
