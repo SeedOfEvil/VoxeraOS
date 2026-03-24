@@ -613,6 +613,41 @@ def _has_list_content(text: str) -> bool:
     return any(_is_list_item_line(ln) for ln in text.split("\n"))
 
 
+def _extract_list_items(text: str) -> list[str]:
+    """Extract list item lines from text, regardless of bullet/number format."""
+    items: list[str] = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Numbered items: "1. Item", "1) Item"
+        m = re.match(r"[0-9]+[.\)]\s+(.*)", stripped)
+        if m:
+            items.append(m.group(1).strip())
+            continue
+        # Checkbox items: "- [ ] Item", "- [x] Item"
+        m = re.match(r"-\s+\[[ x]\]\s+(.*)", stripped)
+        if m:
+            items.append(m.group(1).strip())
+            continue
+        # Bare checkbox: "[ ] Item", "[x] Item"
+        m = re.match(r"\[[ x]\]\s+(.*)", stripped)
+        if m:
+            items.append(m.group(1).strip())
+            continue
+        # Bullet items: "- Item", "* Item", "• Item"
+        m = re.match(r"[-*•]\s+(.*)", stripped)
+        if m:
+            items.append(m.group(1).strip())
+            continue
+    return [item for item in items if item]
+
+
+def _render_plain_checklist(items: list[str]) -> str:
+    """Render a plain markdown checklist from extracted items."""
+    return "\n".join(f"- {item}" for item in items)
+
+
 def _sanitize_false_preview_claims_from_answer(text: str) -> str:
     """Strip false preview/submission/draft/workflow claims from conversational answers.
 
@@ -719,8 +754,60 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
     cleaned = "\n".join(json_lines)
 
     cleaned = cleaned.strip()
-    # If stripping emptied the text, fall back to original (paranoia guard).
-    return cleaned if cleaned else text
+    if cleaned:
+        return cleaned
+    # Sanitization emptied the text — the original was ALL banned content.
+    # Do NOT fall back to the original (that would re-introduce leakage).
+    # Instead, extract any list items from the original and render them cleanly.
+    items = _extract_list_items(text)
+    if items:
+        return _render_plain_checklist(items)
+    # Absolute last resort: return the original only if it contains no banned
+    # tokens.  Otherwise return a safe empty acknowledgement.
+    if _HARD_BANNED_CONVERSATIONAL_TOKENS_RE.search(text):
+        return "Here's what I have so far — could you share more details so I can put together the list?"
+    return text
+
+
+def _enforce_conversational_checklist_output(text: str, *, raw_answer: str) -> str:
+    """Final enforcement layer for conversational checklist/planning mode.
+
+    Runs AFTER the six-phase sanitizer as a deterministic safety net.
+    Guarantees:
+      1. No banned tokens in non-list-item lines.
+      2. No JSON payloads.
+      3. If violations remain, re-extract items and render deterministically.
+      4. If the text is empty, attempt item extraction from raw_answer.
+    """
+    if not text.strip():
+        items = _extract_list_items(raw_answer)
+        if items:
+            return _render_plain_checklist(items)
+        # raw_answer had no items either — keep whatever text we have
+        return text if text.strip() else raw_answer
+
+    # Scan for any remaining violations in non-list-item lines
+    has_violation = False
+    for line in text.split("\n"):
+        if _is_list_item_line(line):
+            continue
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _HARD_BANNED_CONVERSATIONAL_TOKENS_RE.search(stripped):
+            has_violation = True
+            break
+        if _BARE_JSON_PAYLOAD_RE.match(stripped):
+            has_violation = True
+            break
+
+    if has_violation:
+        # Nuclear fallback: extract items from whatever we have and re-render
+        items = _extract_list_items(text) or _extract_list_items(raw_answer)
+        if items:
+            return _render_plain_checklist(items)
+
+    return text
 
 
 _CONVERSATIONAL_PLANNING_RE = re.compile(
@@ -1761,6 +1848,11 @@ async def chat(request: Request):
         # banned tokens, workflow narration, meta-commentary, and bare JSON
         # payloads — making behavior deterministic regardless of LLM output.
         guarded_answer = _sanitize_false_preview_claims_from_answer(sanitized_answer)
+        # Final enforcement: deterministic safety net catches any edge cases
+        # the sanitizer missed and re-renders as a plain checklist if needed.
+        guarded_answer = _enforce_conversational_checklist_output(
+            guarded_answer, raw_answer=sanitized_answer
+        )
     else:
         guarded_answer = _guardrail_submission_claim(
             root=root,

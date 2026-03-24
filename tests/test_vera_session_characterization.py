@@ -1615,3 +1615,217 @@ def test_deterministic_final_render_10_runs(tmp_path, monkeypatch):
             )
 
         assert session.preview() is None, f"Preview leaked on run {run_idx}"
+
+
+# ---------------------------------------------------------------------------
+# Hard-lock deterministic rendering — empty fallback and enforcement layer
+# ---------------------------------------------------------------------------
+
+
+def test_sanitizer_empty_fallback_does_not_restore_banned_content(tmp_path, monkeypatch):
+    """When the LLM produces ONLY preview/workflow language with no list items,
+    the sanitizer must NOT fall back to the original banned text."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    # All banned content, zero list items
+    pure_leakage_answer = (
+        "I've drafted a checklist for you.\n"
+        "You can review the preview pane to see everything.\n"
+        "Once you're happy with the content, I can save this as a file.\n"
+        "I'll submit it to the queue whenever you're ready."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": pure_leakage_answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a checklist for the wedding")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"])
+    # Must NOT have fallen back to the original text
+    assert "preview pane" not in last_turn["text"].lower()
+    assert "save this as a file" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_sanitizer_empty_fallback_extracts_items_from_mixed_output(tmp_path, monkeypatch):
+    """When the sanitizer empties non-list lines, items must survive.
+    When ALL non-list content is banned, items should be re-extracted."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    # Items exist but surrounded by banned content only
+    answer = (
+        "I've prepared this in the preview pane for you:\n\n"
+        "1. Take time off\n"
+        "2. Buy the tickets\n"
+        "3. Get in shape\n\n"
+        "I've submitted the checklist to the queue for processing."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat(
+        "yes can you make a checklist of the following: take time off, "
+        "buy the tickets, get in shape"
+    )
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="take time off")
+    assert "buy the tickets" in last_turn["text"].lower()
+    assert "get in shape" in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_grocery_checklist_with_preview_language_deterministic(tmp_path, monkeypatch):
+    """Grocery checklist with preview language — matches Failure B from issue."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "I've prepared a grocery checklist for you in the preview.\n\n"
+        "- Coffee\n"
+        "- Rice\n"
+        "- Apples and bananas\n"
+        "- Bread\n"
+        "- Cheese\n"
+        "- Ham\n"
+        "- Pasta"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat(
+        "make a checklist. I need coffee, rice, apples and bannanas, "
+        "bread, chess, ham and some pasta."
+    )
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="coffee")
+    assert "rice" in last_turn["text"].lower()
+    assert "pasta" in last_turn["text"].lower()
+    assert "in the preview" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_two_turn_planning_with_json_payload_stripped(tmp_path, monkeypatch):
+    """Two-turn flow where follow-up produces JSON — matches Failure C."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        if "checklist" in user_message.lower():
+            return {
+                "answer": "Sure! Tell me what you need to get done.",
+                "status": "ok:test",
+            }
+        # Follow-up: LLM emits JSON payload
+        return {
+            "answer": (
+                "Here's your checklist:\n\n"
+                "1. Find a plus-one\n"
+                "2. Book travel\n"
+                "3. Get a suit\n\n"
+                '```json\n{"intent": "create_checklist", "items": '
+                '["find plus-one", "book travel", "get suit"]}\n```\n'
+                "I've prepared this in the preview for you."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("create a checklist would surely help on the many things I need to do.")
+    res = session.chat("First I need to find a +1, book travel, and get a suit")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="find a plus-one")
+    assert "```json" not in last_turn["text"]
+    assert '"intent"' not in last_turn["text"]
+    assert "in the preview" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_wedding_checklist_repeated_5_runs_deterministic(tmp_path, monkeypatch):
+    """Exact wedding checklist prompt from issue — 5 runs, must be 100% clean."""
+
+    for run_idx in range(5):
+        from tests.vera_session_helpers import make_vera_session as _make
+
+        session = _make(monkeypatch, tmp_path / f"wedding_run{run_idx}")
+
+        # Rotate through observed bad output patterns from the issue
+        variant = run_idx % 3
+        if variant == 0:
+            fake_answer = (
+                "I've drafted a checklist for you. Review the preview pane.\n\n"
+                "- Take time off\n- Buy the tickets\n- Get in shape\n"
+                "- Buy the suit\n- Call mom\n- Tell my friend\n"
+                "- Be the best man\n- Rent a car\n- Pack"
+            )
+        elif variant == 1:
+            fake_answer = (
+                "Here's your checklist:\n\n"
+                "1. Take time off\n2. Buy the tickets\n3. Get in shape\n"
+                "4. Buy the suit\n5. Call mom\n6. Tell my friend\n"
+                "7. Be the best man\n8. Rent a car\n9. Pack\n\n"
+                "Once you're happy with the content, I can save this as a file."
+            )
+        else:
+            fake_answer = (
+                "- Take time off\n- Buy the tickets\n- Get in shape\n"
+                "- Buy the suit\n- Call mom\n- Tell my friend\n"
+                "- Be the best man\n- Rent a car\n- Pack"
+            )
+
+        async def _fake_reply(*, turns, user_message, answer=fake_answer, **kw):
+            return {"answer": answer, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat(
+            "yes can you make a checklist of the following: take time off, "
+            "buy the tickets, get in shape, buy the suit, call mom, "
+            "tell my friend, be the best man at a wedding, rent a car "
+            "during the trip, pack."
+        )
+        assert res.status_code == 200
+
+        last_turn = session.turns()[-1]
+        _assert_clean_conversational(last_turn["text"], expect_content="take time off")
+        assert "buy the tickets" in last_turn["text"].lower()
+        assert "pack" in last_turn["text"].lower()
+        assert session.preview() is None, f"Preview leaked on wedding run {run_idx}"
+
+
+def test_enforcement_layer_catches_sanitizer_edge_case(tmp_path, monkeypatch):
+    """If the sanitizer somehow misses a violation, the enforcement layer
+    must catch it and re-render deterministically."""
+    from voxera.vera_web.app import _enforce_conversational_checklist_output
+
+    # Simulate a sanitizer output that still has a banned token in a non-list line
+    dirty = "1. Coffee\n2. Rice\nCheck the preview for more."
+    clean = _enforce_conversational_checklist_output(dirty, raw_answer=dirty)
+    assert "preview" not in clean.lower()
+    assert "coffee" in clean.lower()
+    assert "rice" in clean.lower()
+
+
+def test_enforcement_layer_handles_empty_text(tmp_path, monkeypatch):
+    """Enforcement layer must extract items from raw_answer when text is empty."""
+    from voxera.vera_web.app import _enforce_conversational_checklist_output
+
+    raw = "I prepared this in the preview.\n\n- Milk\n- Eggs\n- Bread"
+    result = _enforce_conversational_checklist_output("", raw_answer=raw)
+    assert "milk" in result.lower()
+    assert "eggs" in result.lower()
+    assert "preview" not in result.lower()
