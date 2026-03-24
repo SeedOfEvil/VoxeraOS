@@ -255,6 +255,9 @@ def interpret_active_preview_draft_revision(
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
     current_goal = str(active_preview.get("goal") or "")
+    references_prior_content = message_requests_referenced_content(text) or bool(
+        re.search(r"\b(?:save|use|restore)\s+(?:the\s+)?previous\s+content\b", lowered)
+    )
 
     filename = filename_from_preview(active_preview) or "note.txt"
     explicit_targeted_content_refinement = bool(
@@ -341,7 +344,23 @@ def interpret_active_preview_draft_revision(
                     "goal": goal,
                     "write_file": {
                         "path": rewritten_path,
-                        "content": str(write_file.get("content") or ""),
+                        "content": (
+                            str(write_file.get("content") or "").strip()
+                            or (
+                                str(
+                                    (
+                                        select_recent_saveable_assistant_artifact(
+                                            message=text,
+                                            assistant_artifacts=assistant_artifacts,
+                                        )
+                                        or {}
+                                    ).get("content")
+                                    or ""
+                                ).strip()
+                                if references_prior_content
+                                else ""
+                            )
+                        ),
                         "mode": str(write_file.get("mode") or "overwrite"),
                     },
                 }
@@ -365,7 +384,7 @@ def interpret_active_preview_draft_revision(
                 }
 
     content_refinement_intent = re.search(
-        r"\b(add|put|use|make|change|update|replace)\b", lowered
+        r"\b(add|put|use|make|change|update|replace|save|restore)\b", lowered
     ) and re.search(r"\b(file|content|text|joke|script|it|that)\b", lowered)
     if content_refinement_intent:
         write_file = active_preview.get("write_file")
