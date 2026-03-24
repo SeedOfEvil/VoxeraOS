@@ -1,16 +1,17 @@
-## 2026-03-24 — PR #229 — fix(vera): deterministic conversational mode lock for checklist/planning — zero preview leakage
+## 2026-03-24 — PR #229 — fix(vera): deterministic plain-text checklist/planning artifacts with zero preview/save leakage
 
-- **Root cause of nondeterminism:** Classification existed but was not enforced strongly enough. Downstream paths could still inject preview/draft language or route through preview-style response builders, making identical inputs produce different outputs depending on LLM phrasing variation.
-- **Fix — explicit `ExecutionMode` enum:** Every turn is classified into `CONVERSATIONAL_ARTIFACT` or `GOVERNED_PREVIEW` early and the mode is enforced globally. `_classify_execution_mode()` encapsulates the decision; all downstream code checks `conversational_answer_first_turn` (derived from the mode).
-- **Fix — hard conversational mode lock (three-phase sanitizer):**
+- **Root cause:** Classification was enforced for preview/draft/submit/queue tokens, but the response shape was still partly LLM-driven. The LLM could emit workflow narration ("Does this look right before we save?", "I've organized the tasks logically...", "Take a look", "Let me know when you're ready") that leaked save/workflow framing without using the hard-banned tokens.
+- **Fix — five-phase sanitizer** (upgraded from three-phase):
   - Phase 1: strip fenced JSON blocks.
-  - Phase 2: strip lines matching 40+ known false-claim phrases and preview/draft reference regexes.
-  - Phase 3 (NEW — nuclear layer): strip ANY remaining non-list-item line containing a banned token (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`). List items are protected so legitimate content like "Draft the proposal" is preserved.
-  - This guarantees zero leakage regardless of LLM phrasing creativity — behavior is now deterministic.
-- **Fix — broader classifier:** Added grocery list, packing list, shopping list, bucket list, organize, prepare, to do patterns to `_CONVERSATIONAL_PLANNING_RE`.
-- **Prior fixes preserved:** Create-and-save fallback, session-persisted `conversational_planning_active` continuation flag, save intent override, guardrail restructure.
-- **Files changed:** `src/voxera/vera_web/app.py` (ExecutionMode enum, `_classify_execution_mode`, `_is_list_item_line`, `_HARD_BANNED_CONVERSATIONAL_TOKENS_RE`, three-phase sanitizer Phase 3, broader classifier), `tests/test_vera_session_characterization.py` (10 new tests), `docs/ARCHITECTURE.md` (rewritten conversational mode lock section), `docs/CODEX_MEMORY.md`.
-- **Tests added (cumulative 25):** Previous 15 + (16) deterministic 10x repeat test, (17) grocery list, (18) wedding checklist grouped, (19) explicit save intent creates preview, (20) save-after-checklist, (21) multi-turn stays conversational, (22) send without preview truthful, (23) novel phrasing stripped by hard sanitizer, (24) list items with draft/submit preserved, (25) execution mode classification deterministic.
+  - Phase 2: strip lines matching 55+ known false-claim phrases (now including save-adjacent: "when you're ready", "I can save", "shall I save", "does this look right", "take a look", "let me know when/if").
+  - Phase 3 (nuclear layer): strip ANY non-list-item line containing hard-banned tokens (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`).
+  - Phase 4 (NEW): strip non-list-item lines matching workflow narration patterns (`_WORKFLOW_NARRATION_LINE_RE`) — save-adjacent language, readiness prompts, confirmation questions.
+  - Phase 5 (NEW): strip pure meta-commentary lines ("I've organized...", "I've grouped...", "I've compiled...") when actual list items are present elsewhere. Preserves narration-only responses as a paranoia guard.
+- **Conversational checklist mode must render the artifact itself, not workflow narration.** If the user asks for a checklist, Vera outputs the checklist — not "I've organized it logically, shall I save?".
+- **`ExecutionMode` enum** and `_classify_execution_mode()` decide mode early; all downstream paths enforce it.
+- **Prior fixes preserved:** Create-and-save fallback, `conversational_planning_active` continuation flag, save intent override, broader classifier.
+- **Files changed:** `src/voxera/vera_web/app.py` (expanded `_FALSE_CLAIM_PHRASES`, `_WORKFLOW_NARRATION_LINE_RE`, `_META_COMMENTARY_RE`, five-phase sanitizer), `tests/test_vera_session_characterization.py` (9 new tests), `docs/ARCHITECTURE.md`, `docs/CODEX_MEMORY.md`.
+- **Tests added (cumulative 34):** Previous 25 + (26) save-when-ready stripped, (27) does-this-look-right stripped, (28) take-a-look stripped, (29) meta-commentary stripped, (30) whenever-ready + shall-I-save stripped, (31) clean checklist passthrough, (32) narration-only preserved, (33) two-turn no workflow, (34) 10x deterministic no-workflow run.
 - Validation: `ruff format --check .`, `ruff check .`, `mypy src/voxera`, `pytest -q`, `make security-check`, `make golden-check`, `make validation-check`, `make merge-readiness-check` — all pass.
 
 ## 2026-03-23 — PR #TBD — fix(vera): answer checklist and structured planning requests conversationally instead of failing preview drafting

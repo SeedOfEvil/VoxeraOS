@@ -1389,15 +1389,17 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - On the next turn, if the flag is set, the user has no save/write intent, and no preview is active, the turn stays conversational. This allows multi-turn planning flows where Vera asks for details and the user provides them.
 - The flag is cleared whenever the turn is `GOVERNED_PREVIEW` (save intent, preview exists, or the user changes topics).
 
-### Hard conversational mode lock — zero preview leakage guarantee
+### Hard conversational mode lock — zero preview/save leakage guarantee
 
-**Three-phase sanitizer (`_sanitize_false_preview_claims_from_answer`):**
+**Five-phase sanitizer (`_sanitize_false_preview_claims_from_answer`):**
 1. Strips fenced JSON blocks containing VoxeraOS-like payloads.
-2. Strips lines containing known false-claim phrases (40+ covering preview-update, submission, and draft-readiness language) and broader regex references via `_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE`.
-3. **HARD MODE LOCK (Phase 3):** Strips ANY remaining non-list-item line containing a banned token (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`). This nuclear layer guarantees zero leakage regardless of LLM phrasing creativity. List items (numbered, bulleted, checkbox) are protected so legitimate content like "Draft the proposal" is preserved.
+2. Strips lines containing known false-claim phrases (55+ covering preview-update, submission, draft-readiness, and save-adjacent language) and broader regex references via `_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE`.
+3. **HARD MODE LOCK (Phase 3):** Strips ANY remaining non-list-item line containing a banned token (`preview`, `draft`, `submit`, `submitted`, `submission`, `queue`, `queued`). List items are protected so legitimate content like "Draft the proposal" is preserved.
+4. **Workflow narration (Phase 4):** Strips non-list-item lines matching `_WORKFLOW_NARRATION_LINE_RE` — save-adjacent language ("when you're ready", "shall I save"), confirmation prompts ("does this look right"), attention-directing ("take a look", "let me know").
+5. **Meta-commentary (Phase 5):** Strips lines like "I've organized the tasks logically..." — but ONLY when actual list items are present elsewhere. Preserves narration-only responses as a paranoia guard.
 
 - Applied instead of both `_guardrail_submission_claim` and `_guardrail_false_preview_claim` for `CONVERSATIONAL_ARTIFACT` turns.
-- **Strict preview truth rule:** preview/draft/submission language must only appear in assistant text when a real preview or confirmed queue job exists.
+- **Core rule:** Conversational artifact mode must produce actual content (checklist items, plan steps), not workflow narration about the content.
 
 ### Save intent override
 - If a message contains explicit save/write/file/note intent, it is classified as `GOVERNED_PREVIEW` regardless of planning keywords.
@@ -1405,7 +1407,7 @@ Every chat turn is classified into one of two execution modes **early** — the 
 
 ### Gating points (enforced by `ExecutionMode`)
 - Builder skip: preview builder is not called for `CONVERSATIONAL_ARTIFACT` turns.
-- Sanitizer: three-phase sanitizer with hard mode lock replaces both heavy guardrails.
+- Sanitizer: five-phase sanitizer with hard mode lock replaces both heavy guardrails.
 - Create-and-save fallback: fires after LLM reply when builder failed on a save+planning hybrid.
 - Control-reply suppression skip: full conversational answer is always shown.
 

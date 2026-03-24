@@ -1108,3 +1108,310 @@ def test_execution_mode_classification_is_deterministic(tmp_path, monkeypatch):
             assert mode is ExecutionMode.GOVERNED_PREVIEW, (
                 f"Expected GOVERNED_PREVIEW for {msg!r}, got {mode}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic plain-text artifact output — no workflow narration leakage
+# ---------------------------------------------------------------------------
+
+
+def test_checklist_with_save_when_ready_language_stripped(tmp_path, monkeypatch):
+    """'When you're ready' / 'I can save this' workflow language must be
+    stripped from conversational checklist output."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's your checklist:\n\n"
+        "1. Coffee\n"
+        "2. Rice\n"
+        "3. Apples\n\n"
+        "Let me know when you're ready and I can save this for you."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make a checklist. I need coffee, rice, apples")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="coffee")
+    assert "when you're ready" not in last_turn["text"].lower()
+    assert "i can save" not in last_turn["text"].lower()
+    assert "let me know" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_with_does_this_look_right_stripped(tmp_path, monkeypatch):
+    """'Does this look right?' meta-question must be stripped."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's your wedding checklist:\n\n"
+        "- Take time off\n"
+        "- Buy plane tickets\n"
+        "- Get a suit\n\n"
+        "Does this look right before we save it?"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a wedding checklist: time off, tickets, suit")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="take time off")
+    assert "does this look right" not in last_turn["text"].lower()
+    assert "before we save" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_with_take_a_look_stripped(tmp_path, monkeypatch):
+    """'Take a look' workflow prompt must be stripped even without 'preview'."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's what I put together:\n\n"
+        "1. Milk\n"
+        "2. Eggs\n"
+        "3. Bread\n\n"
+        "Take a look and let me know if you'd like to adjust anything."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a grocery list: milk, eggs, bread")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="milk")
+    assert "take a look" not in last_turn["text"].lower()
+    assert "let me know" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_with_meta_commentary_stripped(tmp_path, monkeypatch):
+    """Pure meta-commentary like 'I've organized the tasks logically' must be
+    stripped when actual list items are present."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "I've organized the tasks logically for your trip preparation.\n\n"
+        "1. Book flights\n"
+        "2. Reserve hotel\n"
+        "3. Plan activities\n"
+        "4. Pack bags\n\n"
+        "I've grouped the items by priority for you."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("help me plan for a vacation to Japan")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="book flights")
+    assert "i've organized" not in last_turn["text"].lower()
+    assert "i've grouped" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_with_whenever_ready_and_shall_i_save_stripped(tmp_path, monkeypatch):
+    """Multiple workflow phrases in one response must all be stripped."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's your packing list:\n\n"
+        "- Passport\n"
+        "- Clothes\n"
+        "- Charger\n"
+        "- Toiletries\n\n"
+        "Whenever you're ready, shall I save this to a note?"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a packing list: passport, clothes, charger, toiletries")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="passport")
+    assert "whenever you're ready" not in last_turn["text"].lower()
+    assert "shall i save" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_without_workflow_narration_passes_through(tmp_path, monkeypatch):
+    """A clean checklist with no workflow language must pass through unmodified."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    clean_answer = (
+        "**Wedding Prep**\n\n"
+        "1. Take time off work\n"
+        "2. Buy plane tickets\n"
+        "3. Get a nice suit\n"
+        "4. Call mom"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": clean_answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a wedding checklist")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    assert last_turn["text"] == clean_answer
+
+
+def test_meta_commentary_only_preserved_when_no_list_items(tmp_path, monkeypatch):
+    """If the LLM produces ONLY meta-commentary with no list items, the text
+    must be preserved (Phase 5 paranoia guard) — don't strip everything."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    narration_only = (
+        "I've organized your trip tasks. You'll want to focus on booking "
+        "flights first, then move on to accommodations and activities."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": narration_only, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("help me plan a trip to Japan")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    # No list items → meta-commentary preserved (better than empty response)
+    assert "booking" in last_turn["text"].lower() or "organized" in last_turn["text"].lower()
+
+
+def test_two_turn_checklist_produces_actual_content(tmp_path, monkeypatch):
+    """Two-turn flow must produce actual checklist items, not just narration."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        if "checklist" in user_message.lower():
+            return {
+                "answer": "Sure! What items should go on the checklist?",
+                "status": "ok:test",
+            }
+        return {
+            "answer": (
+                "I've compiled your list:\n\n"
+                "1. Coffee\n"
+                "2. Rice\n"
+                "3. Apples\n\n"
+                "Would you like me to save this when you're ready?"
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("I need a checklist")
+    res = session.chat("coffee, rice, apples")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    _assert_clean_conversational(last_turn["text"], expect_content="coffee")
+    # Meta-commentary stripped since list items present
+    assert "i've compiled" not in last_turn["text"].lower()
+    assert "would you like me to save" not in last_turn["text"].lower()
+    assert "when you're ready" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_deterministic_one_turn_10_runs_no_workflow(tmp_path, monkeypatch):
+    """10 runs of the same one-turn checklist — MUST be 100% consistent,
+    zero workflow/save/preview narration, actual content every time."""
+
+    for run_idx in range(10):
+        from tests.vera_session_helpers import make_vera_session as _make
+
+        session = _make(monkeypatch, tmp_path / f"wf_run{run_idx}")
+
+        # Rotate through problematic LLM phrasings
+        variant = run_idx % 5
+        if variant == 0:
+            fake_answer = "Here's your checklist:\n\n- Coffee\n- Rice\n- Apples"
+        elif variant == 1:
+            fake_answer = (
+                "I've organized everything for you:\n\n"
+                "1. Coffee\n2. Rice\n3. Apples\n\n"
+                "Take a look and let me know when you're ready to save."
+            )
+        elif variant == 2:
+            fake_answer = (
+                "Here you go!\n\n"
+                "- [ ] Coffee\n- [ ] Rice\n- [ ] Apples\n\n"
+                "Does this look right? I can save this for you whenever you're ready."
+            )
+        elif variant == 3:
+            fake_answer = (
+                "I've compiled your grocery list:\n\n"
+                "1. Coffee\n2. Rice\n3. Apples\n\n"
+                "Shall I save this to a note?"
+            )
+        else:
+            fake_answer = (
+                "- Coffee\n- Rice\n- Apples\n\n"
+                "I've grouped these items. Let me know if you'd like to adjust "
+                "or save this list."
+            )
+
+        async def _fake_reply(*, turns, user_message, answer=fake_answer, **kw):
+            return {"answer": answer, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("make a checklist. I need coffee, rice, apples")
+        assert res.status_code == 200
+
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        text = last_turn["text"]
+        lowered = text.lower()
+
+        # Must contain actual checklist content
+        assert "coffee" in lowered, f"Missing content on run {run_idx}"
+
+        # Must NOT contain any workflow narration
+        for banned in (
+            "preview",
+            "draft",
+            "submit",
+            "queue",
+            "when you're ready",
+            "whenever you're ready",
+            "shall i save",
+            "i can save",
+            "want me to save",
+            "does this look right",
+            "does this look good",
+            "take a look",
+            "let me know",
+            "before we save",
+            "before saving",
+        ):
+            assert banned not in lowered, (
+                f"Workflow narration '{banned}' leaked on run {run_idx}: {text!r}"
+            )
+
+        assert session.preview() is None, f"Preview leaked on run {run_idx}"

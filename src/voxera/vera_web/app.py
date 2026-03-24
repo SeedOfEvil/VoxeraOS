@@ -506,6 +506,34 @@ _FALSE_CLAIM_PHRASES = (
     "i'll send it",
     "i can send it",
     "i will send it",
+    # Save/workflow-adjacent language (must not appear in conversational mode)
+    "save this when",
+    "save it when",
+    "i can save",
+    "i'll save",
+    "i will save",
+    "save this for",
+    "save it for",
+    "when you're ready",
+    "whenever you're ready",
+    "when you are ready",
+    "whenever you are ready",
+    "before we save",
+    "before saving",
+    "ready to save",
+    "want me to save",
+    "shall i save",
+    "would you like me to save",
+    "does this look right",
+    "does this look good",
+    "does that look right",
+    "does that look good",
+    "look right before",
+    "look good before",
+    "take a look",
+    "let me know when",
+    "let me know if you'd like",
+    "let me know if you want",
 )
 
 # Regex that matches lines referencing "the preview" or "the draft" (as a
@@ -540,19 +568,52 @@ _HARD_BANNED_CONVERSATIONAL_TOKENS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Workflow narration patterns that must be stripped from conversational mode.
+# These catch save-adjacent and "meta about the list" language that doesn't
+# use the hard-banned tokens above but still leaks workflow framing.
+_WORKFLOW_NARRATION_LINE_RE = re.compile(
+    r"(?i)"
+    r"(?:"
+    r"when(?:ever)?\s+you(?:'re|\s+are)\s+ready"
+    r"|before\s+(?:we\s+)?sav(?:e|ing)"
+    r"|(?:want|shall|would you like)\s+me\s+to\s+save"
+    r"|i\s+can\s+save"
+    r"|i'?ll\s+save"
+    r"|ready\s+to\s+save"
+    r"|let\s+me\s+know\s+(?:when|if)"
+    r"|does\s+(?:this|that)\s+look\s+(?:right|good|ok)"
+    r"|look\s+(?:right|good)\s+before"
+    r"|take\s+a\s+look"
+    r")",
+)
+
+# Pure meta-commentary lines that talk ABOUT the list rather than presenting it.
+# Stripped only when actual list items are present elsewhere in the response.
+_META_COMMENTARY_RE = re.compile(
+    r"(?i)^(?:"
+    r"i'?ve\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled|put together)"
+    r"|i\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled)"
+    r"|here(?:'s|\s+is)\s+(?:a\s+)?(?:quick\s+)?(?:summary|overview|breakdown)"
+    r")\b"
+)
+
 
 def _sanitize_false_preview_claims_from_answer(text: str) -> str:
-    """Strip false preview/submission/draft claims from conversational answers.
+    """Strip false preview/submission/draft/workflow claims from conversational answers.
 
     Unlike the heavy guardrails (which replace the entire answer), this removes
     individual lines that contain false claims — preserving the actual content
     like checklists, plans, and brainstorms.
 
-    Three-phase sanitizer:
+    Five-phase sanitizer:
       Phase 1 — strip fenced JSON blocks (VoxeraOS preview dumps).
       Phase 2 — strip lines matching known false-claim phrases and regexes.
       Phase 3 — HARD MODE LOCK: strip ANY remaining non-list-item line that
                 contains a banned token (preview/draft/submit/queue).
+      Phase 4 — strip non-list-item lines containing workflow narration
+                (save-adjacent language, "when you're ready", "take a look").
+      Phase 5 — strip pure meta-commentary lines ("I've organized the tasks
+                logically...") when actual list items are present.
     """
     if not text.strip():
         return text
@@ -597,6 +658,31 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
             continue
         hard_lines.append(line)
     cleaned = "\n".join(hard_lines)
+
+    # Phase 4: strip non-list-item lines containing workflow narration —
+    # save-adjacent language, "when you're ready", "take a look", etc.
+    workflow_lines: list[str] = []
+    for line in cleaned.split("\n"):
+        if _is_list_item_line(line):
+            workflow_lines.append(line)
+            continue
+        if _WORKFLOW_NARRATION_LINE_RE.search(line):
+            continue
+        workflow_lines.append(line)
+    cleaned = "\n".join(workflow_lines)
+
+    # Phase 5: strip pure meta-commentary lines ("I've organized...",
+    # "I've grouped...") but ONLY when the response also contains actual
+    # list items — otherwise we'd strip the only content the LLM produced.
+    has_list_items = any(_is_list_item_line(ln) for ln in cleaned.split("\n"))
+    if has_list_items:
+        meta_lines: list[str] = []
+        for line in cleaned.split("\n"):
+            stripped_line = line.strip()
+            if stripped_line and _META_COMMENTARY_RE.match(stripped_line):
+                continue
+            meta_lines.append(line)
+        cleaned = "\n".join(meta_lines)
 
     cleaned = cleaned.strip()
     # If stripping emptied the text, fall back to original (paranoia guard).
