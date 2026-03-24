@@ -1382,15 +1382,21 @@ Non-actionable structured reasoning requests (checklists, planning, brainstormin
 **Comprehensive conversational answer sanitizer (`vera_web/app.py`):**
 - `_sanitize_false_preview_claims_from_answer(text)`: three-phase sanitizer for answer-first turns:
   1. Strips fenced JSON blocks containing VoxeraOS-like payloads.
-  2. Strips lines containing false preview-pane references ("preview pane", "in the preview", etc.).
-  3. Strips lines containing false preview-update claims ("I've prepared a draft", "preview is ready") and submission claims ("submitted to the queue", "sent it").
+  2. Strips lines containing false preview-pane references ("preview pane", "in the preview", etc.) and broader references via `_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE` (any non-list-item line mentioning "the preview", "the draft", or "system queue").
+  3. Strips lines containing false preview-update claims (24+ phrases), submission claims (18+ phrases including "I'll submit", "I can submit"), and draft-readiness language.
 - Applied instead of both `_guardrail_submission_claim` and `_guardrail_false_preview_claim` for answer-first turns. Those heavy guardrails replace the entire answer; the sanitizer preserves checklist/planning content.
 - **Strict preview truth rule:** preview/draft/submission language must only appear in assistant text when a real preview or confirmed queue job exists.
 
+**Create-and-save fallback (`vera_web/app.py`):**
+- Handles hybrid requests like "save a checklist to a note for my wedding prep" that have both explicit save intent AND planning keywords but no prior content to reference.
+- When the builder fails to produce a content-bearing preview for such requests, the system creates a note preview from the LLM's reply content post-reply (similar to writing-draft injection).
+- This allows governed preview creation for explicit save-intent planning requests without routing through the answer-first lane.
+
 **Gating points:**
-- Builder skip (line ~1102): preview builder is not called for answer-first turns.
-- Sanitizer (line ~1490): comprehensive sanitizer replaces both heavy guardrails for answer-first turns.
-- Control-reply suppression skip (line ~1540): full conversational answer is always shown to the user.
+- Builder skip: preview builder is not called for answer-first turns.
+- Sanitizer: comprehensive sanitizer replaces both heavy guardrails for answer-first turns.
+- Create-and-save fallback: fires after LLM reply when builder failed on a save+planning hybrid.
+- Control-reply suppression skip: full conversational answer is always shown for answer-first turns.
 
 **Save-after-answer flow:**
 - Conversational answers are stored as saveable artifacts (`build_saveable_assistant_artifact`).

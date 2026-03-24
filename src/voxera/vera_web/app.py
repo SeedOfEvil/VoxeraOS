@@ -486,6 +486,22 @@ _FALSE_CLAIM_PHRASES = (
     "submit whenever",
     "you can submit",
     "you can send it",
+    "i'll submit",
+    "i can submit",
+    "i will submit",
+    "i'll send it",
+    "i can send it",
+    "i will send it",
+)
+
+# Regex that matches lines referencing "the preview" or "the draft" (as a
+# governed system concept) that are NOT inside numbered/bulleted list items.
+# This catches broad phrasings like "Take a look at the preview" that the
+# phrase list above might miss.
+_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE = re.compile(
+    r"(?:^|\n)\s*(?![0-9]+[.\)]\s|-\s|\*\s|\[[ x]\])[^\n]*?"
+    r"\b(?:the\s+preview|the\s+draft|the\s+preview\s+pane|system\s+queue)\b[^\n]*",
+    re.IGNORECASE,
 )
 
 
@@ -515,10 +531,13 @@ def _sanitize_false_preview_claims_from_answer(text: str) -> str:
         _looks_like_preview_pane_claim(cleaned)
         or _looks_like_submission_claim(cleaned)
         or any(p in lowered_full for p in _FALSE_CLAIM_PHRASES)
+        or _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE.search(cleaned) is not None
     )
     if has_false_claim:
         # Remove lines matching preview-pane references
         cleaned = _PREVIEW_PANE_SENTENCE_RE.sub("", cleaned)
+        # Remove lines referencing "the preview" / "the draft" broadly
+        cleaned = _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE.sub("", cleaned)
         # Remove lines containing any false-claim phrase
         out_lines: list[str] = []
         for line in cleaned.split("\n"):
@@ -1477,6 +1496,44 @@ async def chat(request: Request):
                     error=None,
                     job_id=None,
                 )
+
+    # Create-and-save fallback: when the message has both explicit save/write
+    # intent AND planning/checklist keywords (a "create and save" hybrid like
+    # "save a checklist to a note for my wedding prep"), but the builder failed
+    # to produce a content-bearing preview, create one from the LLM reply.
+    _is_create_and_save = (
+        not conversational_answer_first_turn
+        and not is_writing_draft_turn
+        and not is_code_draft_turn
+        and builder_payload is None
+        and pending_preview is None
+        and _SAVE_WRITE_FILE_SIGNAL_RE.search(message) is not None
+        and _CONVERSATIONAL_PLANNING_RE.search(message) is not None
+    )
+    if _is_create_and_save and reply_text_draft:
+        _note_suffix = active_session[-8:] if len(active_session) >= 8 else active_session
+        _create_save_payload: dict[str, object] = {
+            "goal": f"save checklist/plan to a note ({message[:60]})",
+            "write_file": {
+                "path": f"~/VoxeraOS/notes/note-{_note_suffix}.md",
+                "content": reply_text_draft,
+                "mode": "overwrite",
+            },
+        }
+        try:
+            builder_payload = normalize_preview_payload(_create_save_payload)
+            write_session_preview(root, active_session, builder_payload)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+        except Exception:
+            builder_payload = None
 
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative

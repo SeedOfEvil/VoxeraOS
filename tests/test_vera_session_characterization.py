@@ -671,3 +671,132 @@ def test_checklist_output_is_plain_text_not_json(tmp_path, monkeypatch):
     assert "preview pane" not in last_turn["text"].lower()
     assert "governed preview" not in last_turn["text"].lower()
     assert session.preview() is None
+
+
+# ---------------------------------------------------------------------------
+# Broken case 1 & 2: broader preview/submission language sanitization
+# ---------------------------------------------------------------------------
+
+
+def test_checklist_answer_with_take_a_look_at_preview_is_sanitized(tmp_path, monkeypatch):
+    """'Take a look at the preview' must be stripped — broader than just
+    'in the preview pane'."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's your checklist:\n\n"
+        "1. Take time off\n"
+        "2. Buy the tickets\n\n"
+        "Take a look at the preview to review the structure."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a checklist: take time off, buy the tickets")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    assert "take time off" in last_turn["text"].lower()
+    assert "the preview" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_checklist_answer_with_ill_submit_is_sanitized(tmp_path, monkeypatch):
+    """'I'll submit it' and 'I can submit' must be stripped."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    answer = (
+        "Here's your checklist:\n\n"
+        "1. Find a plus-one\n"
+        "2. Get a nice suit\n\n"
+        "I'll submit it to the system queue whenever you're ready."
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": answer, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("make me a checklist for the wedding")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    assert "plus-one" in last_turn["text"].lower()
+    assert "submit" not in last_turn["text"].lower()
+    assert "system queue" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+def test_multi_turn_planning_with_draft_language_is_sanitized(tmp_path, monkeypatch):
+    """Multi-turn: Vera asks for details, user provides them, LLM answer
+    mentions 'the draft' — must be stripped, content preserved."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        if "checklist" in user_message.lower():
+            return {
+                "answer": "Sure! What things do you need to get done?",
+                "status": "ok:test",
+            }
+        return {
+            "answer": (
+                "I've updated the draft with your items.\n\n"
+                "1. Find a plus-one\n"
+                "2. Get a nice suit\n"
+                "3. Book travel"
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("create a checklist would surely help on the many things I need to do.")
+    res = session.chat("I need to find a +1, get a suit, and book travel")
+    assert res.status_code == 200
+
+    last_turn = session.turns()[-1]
+    assert "plus-one" in last_turn["text"].lower() or "find a" in last_turn["text"].lower()
+    assert "the draft" not in last_turn["text"].lower()
+    assert "governed preview" not in last_turn["text"].lower()
+    assert session.preview() is None
+
+
+# ---------------------------------------------------------------------------
+# Broken case 3: explicit save intent for checklist must create preview
+# ---------------------------------------------------------------------------
+
+
+def test_save_checklist_to_note_creates_preview(tmp_path, monkeypatch):
+    """'save a checklist to a note for my wedding prep' must produce a
+    governed preview — not fail with 'I was not able to prepare'."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    checklist_content = (
+        "Wedding Prep Checklist\n\n"
+        "1. Find a plus-one\n"
+        "2. Get a nice suit\n"
+        "3. Book travel and accommodations\n"
+        "4. Request time off work"
+    )
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        return {"answer": checklist_content, "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("save a checklist to a note for my wedding prep")
+    assert res.status_code == 200
+
+    # A governed preview must exist with the checklist content
+    preview = session.preview()
+    assert preview is not None, "Expected a governed preview for save-intent checklist"
+    assert "write_file" in preview
+    assert "checklist" in preview["write_file"]["content"].lower()
+
+    # The assistant text must NOT contain the preview failure message
+    last_turn = session.turns()[-1]
+    assert "was not able to prepare" not in last_turn["text"].lower()
+    assert "governed preview" not in last_turn["text"].lower()
