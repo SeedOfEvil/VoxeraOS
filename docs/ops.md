@@ -99,6 +99,8 @@ Vera preview submission and handoff normalization now live in `src/voxera/vera/p
 
 Vera deterministic preview drafting now lives in `src/voxera/vera/preview_drafting.py`, with `src/voxera/vera/handoff.py` intentionally reduced to an import-stable façade for existing callers. Prefer extending `preview_drafting.py` for narrow action-preview drafting, diagnostics preview shaping, note/file drafting, and contextual save-by-reference glue instead of re-growing those branches inside `handoff.py`.
 
+Checklist/planning conversational turns are intentionally deterministic in-chat artifacts: `src/voxera/vera_web/app.py` hard-locks final rendering to checklist output and strips preview/draft/save/submit/queue narration when no real preview exists. Source priority is explicit user-provided checklist items first, then usable extracted model/JSON items, then generic fallback only if extraction fails. Explicit save/write intent remains the authoritative override into governed preview behavior.
+
 Path-precedence rules (applied inside `health.py`):
 - **Explicit `queue_root`**: any call that receives an explicit `queue_root: Path` always uses `queue_root/health.json` and **ignores** `VOXERA_HEALTH_PATH`.  This preserves pre-seeded test fixtures and is the common case for unit and integration tests.
 - **Default-path flows** (no explicit `queue_root`): `VOXERA_HEALTH_PATH` is honoured when set, preventing operator / panel / CLI default-path flows from writing to `notes/queue/health.json` during a test run.
