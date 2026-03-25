@@ -75,6 +75,58 @@ def test_explanation_then_save_that_creates_preview(tmp_path, monkeypatch):
     assert "carbon dioxide" in preview["write_file"]["content"].lower()
 
 
+def test_concise_answer_then_save_that_as_named_file_preserves_content(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "What is 2 + 2?":
+            return {"answer": "2 + 2 is 4.", "status": "ok:test"}
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("What is 2 + 2?")
+    session.chat("save that as math.txt")
+
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/math.txt"
+    assert preview["write_file"]["content"] == "2 + 2 is 4."
+
+
+def test_save_previous_content_repairs_empty_preview_content(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "Give me a concise summary.":
+            return {"answer": "Concise summary with key point A and B.", "status": "ok:test"}
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("Give me a concise summary.")
+    vera_service.write_session_preview(
+        session.queue,
+        session.session_id,
+        {
+            "goal": "write a file called SA.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/SA.txt",
+                "content": "",
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    session.chat("save previous content")
+    repaired = session.preview()
+    assert repaired is not None
+    assert repaired["write_file"]["path"] == "~/VoxeraOS/notes/SA.txt"
+    assert repaired["write_file"]["content"] == "Concise summary with key point A and B."
+
+
 def test_active_preview_rename_path_revision_and_submit_remain_truthful(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 

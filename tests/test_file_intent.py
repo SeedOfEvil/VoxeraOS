@@ -827,6 +827,64 @@ def test_save_that_as_a_note_counts_as_referenced_content_request():
     assert message_requests_referenced_content("save that as a note") is True
 
 
+def test_save_previous_content_counts_as_referenced_content_request():
+    assert message_requests_referenced_content("save previous content") is True
+    assert message_requests_referenced_content("save the previous content to SA.txt") is True
+
+
+def test_save_that_to_named_file_preserves_previous_assistant_content():
+    artifacts = [
+        {
+            "content": "Expanded investigation result with concrete findings.",
+            "artifact_type": "expanded_result",
+        }
+    ]
+
+    preview = maybe_draft_job_payload(
+        "save that to a note called SA.txt",
+        recent_assistant_artifacts=artifacts,
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/SA.txt"
+    assert preview["write_file"]["content"] == artifacts[0]["content"]
+
+
+def test_save_previous_content_to_named_file_preserves_previous_assistant_content():
+    artifacts = [{"content": "2 + 2 is 4.", "artifact_type": "info"}]
+
+    preview = maybe_draft_job_payload(
+        "save previous content to math.txt",
+        recent_assistant_artifacts=artifacts,
+    )
+
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/math.txt"
+    assert preview["write_file"]["content"] == "2 + 2 is 4."
+
+
+def test_save_previous_content_repairs_empty_active_preview_content():
+    artifacts = [{"content": "Recovered assistant-authored content.", "artifact_type": "info"}]
+    active_preview = {
+        "goal": "write a file called SA.txt with provided content",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/SA.txt",
+            "content": "",
+            "mode": "overwrite",
+        },
+    }
+
+    revised = maybe_draft_job_payload(
+        "save previous content",
+        active_preview=active_preview,
+        recent_assistant_artifacts=artifacts,
+    )
+
+    assert revised is not None
+    assert revised["write_file"]["path"] == "~/VoxeraOS/notes/SA.txt"
+    assert revised["write_file"]["content"] == "Recovered assistant-authored content."
+
+
 # ---------------------------------------------------------------------------
 # Conversational answer-first classifier
 # ---------------------------------------------------------------------------
