@@ -738,6 +738,40 @@ def minimum_artifact_presence(artifact_refs: list[dict[str, Any]]) -> dict[str, 
     }
 
 
+def refresh_execution_result_artifact_contract(
+    *, execution_result: dict[str, Any], artifacts_dir: Path
+) -> dict[str, Any]:
+    refreshed = dict(execution_result)
+    artifact_families, artifact_refs = _build_artifact_contract(artifacts_dir)
+    minimum_artifacts = minimum_artifact_presence(artifact_refs)
+
+    refreshed["artifact_families"] = artifact_families
+    refreshed["artifact_refs"] = artifact_refs
+
+    review_summary_raw = refreshed.get("review_summary")
+    review_summary = dict(review_summary_raw) if isinstance(review_summary_raw, dict) else {}
+    expected_artifacts = _normalize_expected_artifacts(review_summary.get("expected_artifacts"))
+    expected_observation = _compare_expected_artifacts(
+        expected_artifacts=expected_artifacts,
+        artifact_families=artifact_families,
+        artifact_refs=artifact_refs,
+    )
+    review_summary["expected_artifact_status"] = expected_observation.get("status", "none_declared")
+    review_summary["observed_expected_artifacts"] = expected_observation.get("observed", [])
+    review_summary["missing_expected_artifacts"] = expected_observation.get("missing", [])
+    review_summary["minimum_artifacts"] = minimum_artifacts
+    refreshed["review_summary"] = review_summary
+
+    evidence_bundle_raw = refreshed.get("evidence_bundle")
+    evidence_bundle = dict(evidence_bundle_raw) if isinstance(evidence_bundle_raw, dict) else {}
+    evidence_bundle["artifact_families"] = artifact_families
+    evidence_bundle["artifact_refs"] = artifact_refs
+    evidence_bundle["expected_artifacts"] = expected_observation
+    evidence_bundle["minimum_artifacts"] = minimum_artifacts
+    refreshed["evidence_bundle"] = evidence_bundle
+    return refreshed
+
+
 def _build_review_summary(
     *,
     job_ref: str,
