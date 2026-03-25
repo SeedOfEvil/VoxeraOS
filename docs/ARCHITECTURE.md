@@ -1214,6 +1214,8 @@ Queue concept (developer framing): the queue is the structured path for real sid
 
 For an explicit, stable definition of queue jobs, lifecycle states, artifact/evidence semantics,
 truth hierarchy, and verifier grounding rules, see `docs/QUEUE_OBJECT_MODEL.md`.
+For submit payload, request-kind normalization, minimum artifact guarantees, and result-consumer
+interpretation contracts, see `docs/QUEUE_CONSTITUTION.md`.
 
 ## Vera preview drafting boundary notes (PR #154)
 

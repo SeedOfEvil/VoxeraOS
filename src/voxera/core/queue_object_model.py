@@ -42,6 +42,7 @@ QUEUE_LIFECYCLE_STATES: Final[frozenset[str]] = frozenset(
 COMPLETED_AT_LIFECYCLE_STATES: Final[frozenset[str]] = frozenset(
     {
         "done",
+        "failed",
         "step_failed",
         "blocked",
         "canceled",

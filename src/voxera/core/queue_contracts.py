@@ -13,6 +13,55 @@ EXECUTION_RESULT_SCHEMA_VERSION = 1
 EVIDENCE_BUNDLE_SCHEMA_VERSION = 1
 REVIEW_SUMMARY_SCHEMA_VERSION = 1
 _LINEAGE_ROLES = frozenset({"root", "child"})
+CANONICAL_QUEUE_PAYLOAD_FIELDS = frozenset(
+    {
+        "mission_id",
+        "goal",
+        "title",
+        "steps",
+        "enqueue_child",
+        "write_file",
+        "file_organize",
+        "approval_required",
+        "_simple_intent",
+        "lineage",
+        "job_intent",
+    }
+)
+CANONICAL_REQUEST_KINDS = frozenset(
+    {
+        "mission_id",
+        "file_organize",
+        "goal",
+        "inline_steps",
+        "unknown",
+    }
+)
+_REQUEST_KIND_ALIASES = {
+    "mission": "mission_id",
+    "mission_id": "mission_id",
+    "file_organize": "file_organize",
+    "goal": "goal",
+    "inline_steps": "inline_steps",
+    "steps": "inline_steps",
+}
+_NON_CANONICAL_REQUEST_KINDS = frozenset(
+    {
+        "assistant_question",
+        "write_file",
+        "open_url",
+        "open_app",
+        "run_command",
+    }
+)
+QUEUE_MINIMUM_ARTIFACTS = (
+    "execution_envelope.json",
+    "execution_result.json",
+    "step_results.json",
+    "job_intent.json",
+    "plan.json",
+    "actions.jsonl",
+)
 
 
 def _sanitize_lineage_string(value: Any) -> str | None:
@@ -196,12 +245,22 @@ def compute_child_lineage(
 
 
 def detect_request_kind(payload: dict[str, Any]) -> str:
+    def _normalize_kind(raw: Any) -> str:
+        value = str(raw or "").strip().lower()
+        if not value:
+            return ""
+        if value in _REQUEST_KIND_ALIASES:
+            return _REQUEST_KIND_ALIASES[value]
+        if value in _NON_CANONICAL_REQUEST_KINDS:
+            return value
+        return "unknown"
+
     intent = payload.get("job_intent")
     if isinstance(intent, dict):
-        intent_kind = str(intent.get("request_kind") or "").strip()
+        intent_kind = _normalize_kind(intent.get("request_kind"))
         if intent_kind:
             return intent_kind
-    kind = str(payload.get("kind") or "").strip()
+    kind = _normalize_kind(payload.get("kind"))
     if kind:
         return kind
     if payload.get("mission_id") or payload.get("mission"):
@@ -213,6 +272,15 @@ def detect_request_kind(payload: dict[str, Any]) -> str:
     if payload.get("steps"):
         return "inline_steps"
     return "unknown"
+
+
+def normalize_canonical_queue_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for field in CANONICAL_QUEUE_PAYLOAD_FIELDS:
+        if field not in payload:
+            continue
+        normalized[field] = payload[field]
+    return normalized
 
 
 def build_execution_envelope(
@@ -264,6 +332,7 @@ def build_execution_envelope(
             "mission_id": payload.get("mission_id"),
             "goal": payload.get("goal"),
             "title": payload.get("title"),
+            "steps": payload.get("steps") if isinstance(payload.get("steps"), list) else None,
             "approval_required": payload.get("approval_required") is True,
             "job_intent": payload.get("job_intent")
             if isinstance(payload.get("job_intent"), dict)
@@ -273,6 +342,7 @@ def build_execution_envelope(
                 if isinstance(payload.get("_simple_intent"), dict)
                 else None
             ),
+            "enqueue_child": extract_enqueue_child_request(payload),
             "write_file": extract_write_file_request(payload),
             "file_organize": extract_file_organize_request(payload),
         },
@@ -471,6 +541,7 @@ def build_execution_result(
         artifact_families=artifact_families,
         artifact_refs=artifact_refs,
     )
+    minimum_artifacts = minimum_artifact_presence(artifact_refs)
     review_summary = _build_review_summary(
         job_ref=job_ref,
         rr_data=rr_data,
@@ -480,6 +551,7 @@ def build_execution_result(
         error=error,
         execution_capabilities=execution_capabilities,
         expected_artifact_observation=expected_artifact_observation,
+        minimum_artifacts=minimum_artifacts,
     )
     evidence_bundle = _build_evidence_bundle(
         job_ref=job_ref,
@@ -489,6 +561,7 @@ def build_execution_result(
         artifact_refs=artifact_refs,
         review_summary=review_summary,
         expected_artifact_observation=expected_artifact_observation,
+        minimum_artifacts=minimum_artifacts,
     )
     return {
         "schema_version": EXECUTION_RESULT_SCHEMA_VERSION,
@@ -648,6 +721,23 @@ def _build_artifact_contract(artifacts_dir: Path | None) -> tuple[list[str], lis
     return sorted(families), refs
 
 
+def minimum_artifact_presence(artifact_refs: list[dict[str, Any]]) -> dict[str, Any]:
+    observed_paths = {
+        str(item.get("artifact_path") or "").strip()
+        for item in artifact_refs
+        if isinstance(item, dict) and str(item.get("artifact_path") or "").strip()
+    }
+    observed = [name for name in QUEUE_MINIMUM_ARTIFACTS if name in observed_paths]
+    missing = [name for name in QUEUE_MINIMUM_ARTIFACTS if name not in observed_paths]
+    status = "observed" if not missing else "missing"
+    return {
+        "status": status,
+        "required": list(QUEUE_MINIMUM_ARTIFACTS),
+        "observed": observed,
+        "missing": missing,
+    }
+
+
 def _build_review_summary(
     *,
     job_ref: str,
@@ -658,6 +748,7 @@ def _build_review_summary(
     error: str | None,
     execution_capabilities: dict[str, Any] | None,
     expected_artifact_observation: dict[str, Any],
+    minimum_artifacts: dict[str, Any],
 ) -> dict[str, Any]:
     latest_step = step_results[-1] if step_results else {}
     latest_summary = str(
@@ -690,6 +781,7 @@ def _build_review_summary(
         "expected_artifact_status": expected_artifact_observation.get("status", "none_declared"),
         "observed_expected_artifacts": expected_artifact_observation.get("observed", []),
         "missing_expected_artifacts": expected_artifact_observation.get("missing", []),
+        "minimum_artifacts": minimum_artifacts,
     }
 
 
@@ -702,6 +794,7 @@ def _build_evidence_bundle(
     artifact_refs: list[dict[str, Any]],
     review_summary: dict[str, Any],
     expected_artifact_observation: dict[str, Any],
+    minimum_artifacts: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "schema_version": EVIDENCE_BUNDLE_SCHEMA_VERSION,
@@ -721,4 +814,5 @@ def _build_evidence_bundle(
         "artifact_refs": artifact_refs,
         "review_summary": review_summary,
         "expected_artifacts": expected_artifact_observation,
+        "minimum_artifacts": minimum_artifacts,
     }

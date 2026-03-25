@@ -1395,6 +1395,10 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
 
     fast_lane_raw = execution.get("fast_lane")
     intent_route_raw = execution.get("intent_route")
+    review_summary_raw = execution.get("review_summary")
+    review_summary = review_summary_raw if isinstance(review_summary_raw, dict) else {}
+    minimum_artifacts_raw = review_summary.get("minimum_artifacts")
+    minimum_artifacts = minimum_artifacts_raw if isinstance(minimum_artifacts_raw, dict) else None
 
     return {
         "ok": True,
@@ -1456,6 +1460,7 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
             "actions": bool(payload.get("actions")),
             "stdout": bool(payload.get("stdout")),
             "stderr": bool(payload.get("stderr")),
+            "minimum_contract": minimum_artifacts,
         },
         "step_summaries": execution.get("step_summaries")
         if isinstance(execution.get("step_summaries"), list)

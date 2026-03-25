@@ -5,7 +5,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .queue_object_model import COMPLETED_AT_LIFECYCLE_STATES, QueueLifecycleState
+from .queue_object_model import (
+    COMPLETED_AT_LIFECYCLE_STATES,
+    QUEUE_LIFECYCLE_STATES,
+    TERMINAL_OUTCOMES,
+    QueueLifecycleState,
+)
 
 JOB_STATE_SCHEMA_VERSION = 1
 
@@ -99,10 +104,18 @@ def update_job_state_snapshot(
     Runtime outcome truth is later grounded by artifacts/evidence attached to
     this same job id.
     """
+    normalized_lifecycle = (
+        lifecycle_state.strip().lower()
+        if isinstance(lifecycle_state, str)
+        else str(lifecycle_state).strip().lower()
+    )
+    if normalized_lifecycle not in QUEUE_LIFECYCLE_STATES:
+        normalized_lifecycle = "blocked"
+
     started_at_ms = int(current.get("started_at_ms") or now_ms)
     raw_transitions = current.get("transitions")
     transitions: dict[str, Any] = dict(raw_transitions) if isinstance(raw_transitions, dict) else {}
-    transitions[lifecycle_state] = now_ms
+    transitions[normalized_lifecycle] = now_ms
 
     mission_payload = (
         {
@@ -135,13 +148,21 @@ def update_job_state_snapshot(
         if terminal_outcome is not None
         else rr.get("terminal_outcome") or current.get("terminal_outcome")
     )
-    if lifecycle_state == "done" and not resolved_terminal:
+    if normalized_lifecycle == "done" and not resolved_terminal:
         resolved_terminal = "succeeded"
+    if normalized_lifecycle == "awaiting_approval" and not resolved_terminal:
+        resolved_terminal = "blocked"
+    if approval_status == "denied" and not resolved_terminal:
+        resolved_terminal = "denied"
+    if isinstance(resolved_terminal, str):
+        resolved_terminal = resolved_terminal.strip().lower() or None
+    if resolved_terminal not in TERMINAL_OUTCOMES:
+        resolved_terminal = None
 
     snapshot: dict[str, Any] = {
         "schema_version": JOB_STATE_SCHEMA_VERSION,
         "job_id": f"{Path(job_ref).stem}.json",
-        "lifecycle_state": lifecycle_state,
+        "lifecycle_state": normalized_lifecycle,
         "current_step_index": current_step,
         "total_steps": total_steps,
         "last_completed_step": last_completed,
@@ -160,7 +181,9 @@ def update_job_state_snapshot(
         "step_outcomes": step_outcomes,
         "started_at_ms": started_at_ms,
         "updated_at_ms": now_ms,
-        "completed_at_ms": now_ms if lifecycle_state in COMPLETED_AT_LIFECYCLE_STATES else None,
+        "completed_at_ms": now_ms
+        if normalized_lifecycle in COMPLETED_AT_LIFECYCLE_STATES
+        else None,
         "transitions": transitions,
     }
     if payload is not None:
