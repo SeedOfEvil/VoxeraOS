@@ -13,6 +13,62 @@ EXECUTION_RESULT_SCHEMA_VERSION = 1
 EVIDENCE_BUNDLE_SCHEMA_VERSION = 1
 REVIEW_SUMMARY_SCHEMA_VERSION = 1
 _LINEAGE_ROLES = frozenset({"root", "child"})
+CANONICAL_QUEUE_PAYLOAD_FIELDS = frozenset(
+    {
+        "mission_id",
+        "goal",
+        "title",
+        "steps",
+        "enqueue_child",
+        "write_file",
+        "file_organize",
+        "approval_required",
+        "_simple_intent",
+        "lineage",
+        "job_intent",
+    }
+)
+CANONICAL_REQUEST_KINDS = frozenset(
+    {
+        "mission_id",
+        "file_organize",
+        "goal",
+        "inline_steps",
+        "unknown",
+    }
+)
+_REQUEST_KIND_ALIASES = {
+    "mission": "mission_id",
+    "mission_id": "mission_id",
+    "file_organize": "file_organize",
+    "goal": "goal",
+    "inline_steps": "inline_steps",
+    "steps": "inline_steps",
+}
+_NON_CANONICAL_REQUEST_KINDS = frozenset(
+    {
+        "assistant_question",
+        "write_file",
+        "open_url",
+        "open_app",
+        "run_command",
+    }
+)
+QUEUE_MINIMUM_ARTIFACTS = (
+    "execution_envelope.json",
+    "execution_result.json",
+    "step_results.json",
+    "job_intent.json",
+    "plan.json",
+    "actions.jsonl",
+)
+_BOUNDARY_BLOCKED_ERROR_CLASSES = frozenset(
+    {
+        "path_blocked_scope",
+        "capability_boundary_mismatch",
+        "policy_denied",
+    }
+)
 
 
 def _sanitize_lineage_string(value: Any) -> str | None:
@@ -196,12 +252,22 @@ def compute_child_lineage(
 
 
 def detect_request_kind(payload: dict[str, Any]) -> str:
+    def _normalize_kind(raw: Any) -> str:
+        value = str(raw or "").strip().lower()
+        if not value:
+            return ""
+        if value in _REQUEST_KIND_ALIASES:
+            return _REQUEST_KIND_ALIASES[value]
+        if value in _NON_CANONICAL_REQUEST_KINDS:
+            return value
+        return "unknown"
+
     intent = payload.get("job_intent")
     if isinstance(intent, dict):
-        intent_kind = str(intent.get("request_kind") or "").strip()
+        intent_kind = _normalize_kind(intent.get("request_kind"))
         if intent_kind:
             return intent_kind
-    kind = str(payload.get("kind") or "").strip()
+    kind = _normalize_kind(payload.get("kind"))
     if kind:
         return kind
     if payload.get("mission_id") or payload.get("mission"):
@@ -213,6 +279,15 @@ def detect_request_kind(payload: dict[str, Any]) -> str:
     if payload.get("steps"):
         return "inline_steps"
     return "unknown"
+
+
+def normalize_canonical_queue_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for field in CANONICAL_QUEUE_PAYLOAD_FIELDS:
+        if field not in payload:
+            continue
+        normalized[field] = payload[field]
+    return normalized
 
 
 def build_execution_envelope(
@@ -264,6 +339,7 @@ def build_execution_envelope(
             "mission_id": payload.get("mission_id"),
             "goal": payload.get("goal"),
             "title": payload.get("title"),
+            "steps": payload.get("steps") if isinstance(payload.get("steps"), list) else None,
             "approval_required": payload.get("approval_required") is True,
             "job_intent": payload.get("job_intent")
             if isinstance(payload.get("job_intent"), dict)
@@ -273,6 +349,7 @@ def build_execution_envelope(
                 if isinstance(payload.get("_simple_intent"), dict)
                 else None
             ),
+            "enqueue_child": extract_enqueue_child_request(payload),
             "write_file": extract_write_file_request(payload),
             "file_organize": extract_file_organize_request(payload),
         },
@@ -395,6 +472,19 @@ def build_structured_step_results(
             continue
         outcome = outcome_by_step.get(step_index, {})
         status = str(outcome.get("outcome") or ("succeeded" if item.get("ok") else "failed"))
+        error_class = str(item.get("error_class") or "").strip().lower()
+        blocked_by_error_class = error_class in {
+            "path_blocked_scope",
+            "capability_boundary_mismatch",
+            "policy_denied",
+        }
+        blocked_reason_class = (
+            str(item.get("blocked_reason_class") or "").strip()
+            or str(outcome.get("blocked_reason_class") or "").strip()
+            or error_class
+            if blocked_by_error_class
+            else ""
+        )
         started_at_ms = int(item.get("started_at_ms") or 0) or None
         finished_at_ms = int(item.get("finished_at_ms") or 0) or None
         duration_ms = int(item.get("duration_ms") or 0) or None
@@ -424,11 +514,14 @@ def build_structured_step_results(
                 if isinstance(item.get("retryable"), bool)
                 else None,
                 "blocked": (
-                    item.get("blocked")
+                    True
+                    if blocked_by_error_class
+                    else item.get("blocked")
                     if isinstance(item.get("blocked"), bool)
                     else status == "blocked"
                 ),
                 "approval_status": item.get("approval_status") or outcome.get("approval_status"),
+                "blocked_reason_class": blocked_reason_class or None,
                 "error": str(item.get("error") or "") or None,
                 "error_class": item.get("error_class"),
             }
@@ -471,6 +564,7 @@ def build_execution_result(
         artifact_families=artifact_families,
         artifact_refs=artifact_refs,
     )
+    minimum_artifacts = minimum_artifact_presence(artifact_refs)
     review_summary = _build_review_summary(
         job_ref=job_ref,
         rr_data=rr_data,
@@ -480,6 +574,7 @@ def build_execution_result(
         error=error,
         execution_capabilities=execution_capabilities,
         expected_artifact_observation=expected_artifact_observation,
+        minimum_artifacts=minimum_artifacts,
     )
     evidence_bundle = _build_evidence_bundle(
         job_ref=job_ref,
@@ -489,6 +584,12 @@ def build_execution_result(
         artifact_refs=artifact_refs,
         review_summary=review_summary,
         expected_artifact_observation=expected_artifact_observation,
+        minimum_artifacts=minimum_artifacts,
+    )
+    blocked, blocked_reason_class, blocked_reason = _derive_blocked_metadata(
+        rr_data=rr_data,
+        step_results=step_results,
+        fallback_error=error,
     )
     return {
         "schema_version": EXECUTION_RESULT_SCHEMA_VERSION,
@@ -529,6 +630,9 @@ def build_execution_result(
             if terminal_outcome == "succeeded"
             else None
         ),
+        "blocked": blocked,
+        "blocked_reason_class": blocked_reason_class,
+        "blocked_reason": blocked_reason,
         "artifact_families": artifact_families,
         "artifact_refs": artifact_refs,
         "evidence_bundle": evidence_bundle,
@@ -537,6 +641,43 @@ def build_execution_result(
         "error": error,
         "updated_at_ms": int(time.time() * 1000),
     }
+
+
+def _derive_blocked_metadata(
+    *,
+    rr_data: dict[str, Any],
+    step_results: list[dict[str, Any]],
+    fallback_error: str | None,
+) -> tuple[bool | None, str | None, str | None]:
+    latest_step = step_results[-1] if step_results else {}
+    latest_error_class = str(latest_step.get("error_class") or "").strip().lower()
+    latest_blocked_reason_class = str(latest_step.get("blocked_reason_class") or "").strip().lower()
+    latest_error_text = str(latest_step.get("error") or "").strip()
+
+    blocked = bool(
+        latest_step.get("blocked")
+        or latest_blocked_reason_class
+        or latest_error_class in _BOUNDARY_BLOCKED_ERROR_CLASSES
+    )
+
+    if not blocked:
+        return (None, None, None)
+
+    blocked_reason_class = (
+        latest_blocked_reason_class
+        or latest_error_class
+        or str(rr_data.get("blocked_reason_class") or "").strip().lower()
+    )
+    blocked_reason = (
+        latest_error_text
+        or str(rr_data.get("blocked_reason") or "").strip()
+        or str(fallback_error or "").strip()
+    )
+    return (
+        True,
+        blocked_reason_class or None,
+        blocked_reason or None,
+    )
 
 
 def _extract_execution_capabilities(
@@ -648,6 +789,58 @@ def _build_artifact_contract(artifacts_dir: Path | None) -> tuple[list[str], lis
     return sorted(families), refs
 
 
+def minimum_artifact_presence(artifact_refs: list[dict[str, Any]]) -> dict[str, Any]:
+    observed_paths = {
+        str(item.get("artifact_path") or "").strip()
+        for item in artifact_refs
+        if isinstance(item, dict) and str(item.get("artifact_path") or "").strip()
+    }
+    observed = [name for name in QUEUE_MINIMUM_ARTIFACTS if name in observed_paths]
+    missing = [name for name in QUEUE_MINIMUM_ARTIFACTS if name not in observed_paths]
+    status = "observed" if not missing else "missing"
+    return {
+        "status": status,
+        "required": list(QUEUE_MINIMUM_ARTIFACTS),
+        "observed": observed,
+        "missing": missing,
+    }
+
+
+def refresh_execution_result_artifact_contract(
+    *, execution_result: dict[str, Any], artifacts_dir: Path
+) -> dict[str, Any]:
+    refreshed = dict(execution_result)
+    artifact_families, artifact_refs = _build_artifact_contract(artifacts_dir)
+    minimum_artifacts = minimum_artifact_presence(artifact_refs)
+
+    refreshed["artifact_families"] = artifact_families
+    refreshed["artifact_refs"] = artifact_refs
+
+    review_summary_raw = refreshed.get("review_summary")
+    review_summary = dict(review_summary_raw) if isinstance(review_summary_raw, dict) else {}
+    expected_artifacts = _normalize_expected_artifacts(review_summary.get("expected_artifacts"))
+    expected_observation = _compare_expected_artifacts(
+        expected_artifacts=expected_artifacts,
+        artifact_families=artifact_families,
+        artifact_refs=artifact_refs,
+    )
+    review_summary["expected_artifact_status"] = expected_observation.get("status", "none_declared")
+    review_summary["observed_expected_artifacts"] = expected_observation.get("observed", [])
+    review_summary["missing_expected_artifacts"] = expected_observation.get("missing", [])
+    review_summary["minimum_artifacts"] = minimum_artifacts
+    refreshed["review_summary"] = review_summary
+
+    evidence_bundle_raw = refreshed.get("evidence_bundle")
+    evidence_bundle = dict(evidence_bundle_raw) if isinstance(evidence_bundle_raw, dict) else {}
+    evidence_bundle["artifact_families"] = artifact_families
+    evidence_bundle["artifact_refs"] = artifact_refs
+    evidence_bundle["review_summary"] = review_summary
+    evidence_bundle["expected_artifacts"] = expected_observation
+    evidence_bundle["minimum_artifacts"] = minimum_artifacts
+    refreshed["evidence_bundle"] = evidence_bundle
+    return refreshed
+
+
 def _build_review_summary(
     *,
     job_ref: str,
@@ -658,6 +851,7 @@ def _build_review_summary(
     error: str | None,
     execution_capabilities: dict[str, Any] | None,
     expected_artifact_observation: dict[str, Any],
+    minimum_artifacts: dict[str, Any],
 ) -> dict[str, Any]:
     latest_step = step_results[-1] if step_results else {}
     latest_summary = str(
@@ -690,6 +884,7 @@ def _build_review_summary(
         "expected_artifact_status": expected_artifact_observation.get("status", "none_declared"),
         "observed_expected_artifacts": expected_artifact_observation.get("observed", []),
         "missing_expected_artifacts": expected_artifact_observation.get("missing", []),
+        "minimum_artifacts": minimum_artifacts,
     }
 
 
@@ -702,6 +897,7 @@ def _build_evidence_bundle(
     artifact_refs: list[dict[str, Any]],
     review_summary: dict[str, Any],
     expected_artifact_observation: dict[str, Any],
+    minimum_artifacts: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "schema_version": EVIDENCE_BUNDLE_SCHEMA_VERSION,
@@ -721,4 +917,5 @@ def _build_evidence_bundle(
         "artifact_refs": artifact_refs,
         "review_summary": review_summary,
         "expected_artifacts": expected_artifact_observation,
+        "minimum_artifacts": minimum_artifacts,
     }

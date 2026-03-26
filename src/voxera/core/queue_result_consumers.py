@@ -13,6 +13,7 @@ _DEPENDENCY_ERROR_CLASSES = frozenset(
         "executable_not_found",
     }
 )
+_TERMINAL_OUTCOMES = frozenset({"succeeded", "failed", "blocked", "denied", "canceled"})
 
 
 def _read_json_dict(path: Path) -> dict[str, Any]:
@@ -149,6 +150,17 @@ def _terminal_outcome_from_step_status(step_status: str) -> str:
         return normalized
     if normalized in {"pending_approval", "awaiting_approval"}:
         return "blocked"
+    return ""
+
+
+def _normalize_terminal_outcome(value: Any, *, approval_status: str) -> str:
+    outcome = str(value or "").strip().lower()
+    if outcome in {"awaiting_approval", "pending_approval"}:
+        return "blocked"
+    if approval_status == "denied" and not outcome:
+        return "denied"
+    if outcome in _TERMINAL_OUTCOMES:
+        return outcome
     return ""
 
 
@@ -328,27 +340,54 @@ def resolve_structured_execution(
     latest_error_class = str(latest_step.get("error_class") or "").strip().lower()
 
     step_status = str(latest_step.get("status") or "")
-    terminal_outcome = str(
+    latest_blocked_reason_class = str(latest_step.get("blocked_reason_class") or "").strip().lower()
+    terminal_outcome = _normalize_terminal_outcome(
         execution_result.get("terminal_outcome")
         or state_payload.get("terminal_outcome")
-        or _terminal_outcome_from_step_status(step_status)
+        or _terminal_outcome_from_step_status(step_status),
+        approval_status=str(
+            execution_result.get("approval_status")
+            or latest_step.get("approval_status")
+            or state_payload.get("approval_status")
+            or ("pending" if approval_payload else "none")
+        )
+        .strip()
+        .lower(),
     )
     lifecycle_state = str(
         execution_result.get("lifecycle_state") or state_payload.get("lifecycle_state") or ""
     )
 
-    approval_status = str(
-        execution_result.get("approval_status")
-        or latest_step.get("approval_status")
-        or state_payload.get("approval_status")
-        or ("pending" if approval_payload else "none")
+    approval_status = (
+        str(
+            execution_result.get("approval_status")
+            or latest_step.get("approval_status")
+            or state_payload.get("approval_status")
+            or ("pending" if approval_payload else "none")
+        )
+        .strip()
+        .lower()
     )
+    if approval_status not in {"none", "pending", "approved", "denied"}:
+        approval_status = "none"
+    if approval_status == "denied" and not terminal_outcome:
+        terminal_outcome = "denied"
     blocked = bool(
         latest_step.get("blocked")
         or step_status == "blocked"
+        or latest_error_class
+        in {"path_blocked_scope", "capability_boundary_mismatch", "policy_denied"}
         or approval_status == "pending"
         or state_payload.get("lifecycle_state") in {"pending_approval", "blocked"}
     )
+    blocked_reason_class = ""
+    if blocked:
+        blocked_reason_class = (
+            latest_blocked_reason_class
+            or str(execution_result.get("blocked_reason_class") or "").strip().lower()
+            or str(state_payload.get("blocked_reason_class") or "").strip().lower()
+            or latest_error_class
+        )
     retryable: bool | None = (
         latest_step.get("retryable") if isinstance(latest_step.get("retryable"), bool) else None
     )
@@ -398,6 +437,10 @@ def resolve_structured_execution(
     missing_expected_artifacts_raw = review_summary.get("missing_expected_artifacts")
     if isinstance(missing_expected_artifacts_raw, list):
         missing_expected_artifacts = missing_expected_artifacts_raw
+    minimum_artifacts: dict[str, Any] | None = None
+    minimum_artifacts_raw = review_summary.get("minimum_artifacts")
+    if isinstance(minimum_artifacts_raw, dict):
+        minimum_artifacts = minimum_artifacts_raw
     capability_boundary_violation = (
         review_summary.get("capability_boundary_violation")
         if isinstance(review_summary.get("capability_boundary_violation"), dict)
@@ -412,6 +455,7 @@ def resolve_structured_execution(
         expected_artifact_status=expected_artifact_status,
         observed_expected_artifacts=observed_expected_artifacts,
         missing_expected_artifacts=missing_expected_artifacts,
+        minimum_artifacts=minimum_artifacts,
         capability_boundary_violation=capability_boundary_violation,
         has_structured_sources=bool(execution_result or normalized_steps or state_payload),
     )
@@ -435,6 +479,14 @@ def resolve_structured_execution(
         "total_steps": int(total_steps),
         "approval_status": approval_status,
         "blocked": blocked,
+        "blocked_reason_class": blocked_reason_class or None,
+        "blocked_reason": (
+            str(state_payload.get("blocked_reason") or "").strip()
+            or str(execution_result.get("blocked_reason") or "").strip()
+            or str(latest_step.get("error") or "").strip()
+            or str(execution_result.get("error") or "").strip()
+            or None
+        ),
         "retryable": retryable,
         "operator_note": str(latest_step.get("operator_note") or ""),
         "next_action_hint": str(latest_step.get("next_action_hint") or ""),
@@ -457,6 +509,7 @@ def resolve_structured_execution(
                 "next_action_hint": str(step.get("next_action_hint") or ""),
                 "approval_status": str(step.get("approval_status") or ""),
                 "blocked": bool(step.get("blocked")),
+                "blocked_reason_class": str(step.get("blocked_reason_class") or "") or None,
                 "retryable": step.get("retryable")
                 if isinstance(step.get("retryable"), bool)
                 else None,
@@ -503,6 +556,7 @@ def resolve_structured_execution(
         "expected_artifact_status": expected_artifact_status,
         "observed_expected_artifacts": observed_expected_artifacts or None,
         "missing_expected_artifacts": missing_expected_artifacts or None,
+        "minimum_artifacts": minimum_artifacts,
     }
 
 
@@ -516,6 +570,7 @@ def _classify_outcome(
     expected_artifact_status: str,
     observed_expected_artifacts: list[Any],
     missing_expected_artifacts: list[Any],
+    minimum_artifacts: dict[str, Any] | None,
     capability_boundary_violation: dict[str, Any] | None,
     has_structured_sources: bool,
 ) -> str:
@@ -537,6 +592,11 @@ def _classify_outcome(
     if terminal == "canceled" or lifecycle == "canceled":
         return "canceled"
     if terminal == "succeeded":
+        if (
+            isinstance(minimum_artifacts, dict)
+            and str(minimum_artifacts.get("status")) == "missing"
+        ):
+            return "incomplete_evidence"
         if artifact_status == "partial" or (
             observed_expected_artifacts and missing_expected_artifacts
         ):
@@ -552,7 +612,14 @@ def _classify_outcome(
         ):
             return "runtime_dependency_missing"
         return "runtime_execution_failed"
-    if artifact_status == "missing" or missing_expected_artifacts:
+    if (
+        artifact_status == "missing"
+        or missing_expected_artifacts
+        or (
+            isinstance(minimum_artifacts, dict)
+            and str(minimum_artifacts.get("status") or "").strip().lower() == "missing"
+        )
+    ):
         return "incomplete_evidence"
     if artifact_status == "partial":
         return "partial_artifact_gap"

@@ -35,6 +35,7 @@ from .queue_contracts import (
     build_structured_step_results,
     compute_child_lineage,
     extract_lineage_metadata,
+    refresh_execution_result_artifact_contract,
 )
 from .queue_execution import QueueExecutionMixin
 from .queue_paths import move_job_with_sidecar
@@ -374,10 +375,24 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
         return path
 
     def _write_action_event(self, job_ref: str, event: str, **data: Any) -> None:
-        path = self._job_artifacts_dir(job_ref) / "actions.jsonl"
+        artifacts_dir = self._job_artifacts_dir(job_ref)
+        path = artifacts_dir / "actions.jsonl"
         payload = {"event": event, "ts": time.time(), **data}
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
+        execution_result_path = artifacts_dir / "execution_result.json"
+        if execution_result_path.exists():
+            try:
+                loaded = json.loads(execution_result_path.read_text(encoding="utf-8"))
+            except Exception:
+                return
+            if not isinstance(loaded, dict):
+                return
+            refreshed = refresh_execution_result_artifact_contract(
+                execution_result=loaded,
+                artifacts_dir=artifacts_dir,
+            )
+            execution_result_path.write_text(json.dumps(refreshed, indent=2), encoding="utf-8")
 
     def _read_job_state(self, job_ref: str) -> dict[str, Any]:
         return read_job_state(
@@ -527,6 +542,10 @@ class MissionQueueDaemon(QueueApprovalMixin, QueueRecoveryMixin, QueueExecutionM
             terminal_outcome=terminal_outcome,
             ok=ok,
             error=error,
+            artifacts_dir=artifact_dir,
+        )
+        execution_result = refresh_execution_result_artifact_contract(
+            execution_result=execution_result,
             artifacts_dir=artifact_dir,
         )
         (artifact_dir / "execution_result.json").write_text(

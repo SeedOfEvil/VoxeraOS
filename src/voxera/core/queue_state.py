@@ -5,9 +5,21 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .queue_object_model import COMPLETED_AT_LIFECYCLE_STATES, QueueLifecycleState
+from .queue_object_model import (
+    COMPLETED_AT_LIFECYCLE_STATES,
+    QUEUE_LIFECYCLE_STATES,
+    TERMINAL_OUTCOMES,
+    QueueLifecycleState,
+)
 
 JOB_STATE_SCHEMA_VERSION = 1
+_BOUNDARY_BLOCKED_ERROR_CLASSES = frozenset(
+    {
+        "path_blocked_scope",
+        "capability_boundary_mismatch",
+        "policy_denied",
+    }
+)
 
 
 def job_state_sidecar_path(
@@ -91,6 +103,7 @@ def update_job_state_snapshot(
     terminal_outcome: str | None = None,
     failure_summary: str | None = None,
     blocked_reason: str | None = None,
+    blocked_reason_class: str | None = None,
     approval_status: str | None = None,
 ) -> dict[str, Any]:
     """Build a queue-owned lifecycle snapshot for a submitted job.
@@ -99,10 +112,18 @@ def update_job_state_snapshot(
     Runtime outcome truth is later grounded by artifacts/evidence attached to
     this same job id.
     """
+    normalized_lifecycle = (
+        lifecycle_state.strip().lower()
+        if isinstance(lifecycle_state, str)
+        else str(lifecycle_state).strip().lower()
+    )
+    if normalized_lifecycle not in QUEUE_LIFECYCLE_STATES:
+        normalized_lifecycle = "blocked"
+
     started_at_ms = int(current.get("started_at_ms") or now_ms)
     raw_transitions = current.get("transitions")
     transitions: dict[str, Any] = dict(raw_transitions) if isinstance(raw_transitions, dict) else {}
-    transitions[lifecycle_state] = now_ms
+    transitions[normalized_lifecycle] = now_ms
 
     mission_payload = (
         {
@@ -135,13 +156,63 @@ def update_job_state_snapshot(
         if terminal_outcome is not None
         else rr.get("terminal_outcome") or current.get("terminal_outcome")
     )
-    if lifecycle_state == "done" and not resolved_terminal:
+    if normalized_lifecycle == "done" and not resolved_terminal:
         resolved_terminal = "succeeded"
+    if normalized_lifecycle == "awaiting_approval" and not resolved_terminal:
+        resolved_terminal = "blocked"
+    if approval_status == "denied" and not resolved_terminal:
+        resolved_terminal = "denied"
+    if isinstance(resolved_terminal, str):
+        resolved_terminal = resolved_terminal.strip().lower() or None
+    if resolved_terminal not in TERMINAL_OUTCOMES:
+        resolved_terminal = None
+
+    resolved_blocked_reason_class = blocked_reason_class
+    if resolved_blocked_reason_class is None:
+        resolved_blocked_reason_class = (
+            rr.get("blocked_reason_class")
+            if isinstance(rr.get("blocked_reason_class"), str)
+            else current.get("blocked_reason_class")
+            if isinstance(current.get("blocked_reason_class"), str)
+            else None
+        )
+    if resolved_blocked_reason_class is None and isinstance(rr.get("step_outcomes"), list):
+        for outcome in reversed(rr["step_outcomes"]):
+            if not isinstance(outcome, dict):
+                continue
+            value = outcome.get("blocked_reason_class")
+            if isinstance(value, str) and value.strip():
+                resolved_blocked_reason_class = value.strip()
+                break
+    if resolved_blocked_reason_class is None and isinstance(rr.get("results"), list):
+        for result in reversed(rr["results"]):
+            if not isinstance(result, dict):
+                continue
+            error_class = str(result.get("error_class") or "").strip().lower()
+            if error_class in _BOUNDARY_BLOCKED_ERROR_CLASSES:
+                resolved_blocked_reason_class = error_class
+                break
+    resolved_blocked_reason = (
+        blocked_reason if blocked_reason is not None else current.get("blocked_reason")
+    )
+    if resolved_blocked_reason is None and resolved_blocked_reason_class:
+        resolved_blocked_reason = (
+            failure_summary
+            or str(rr.get("error") or "").strip()
+            or (
+                str(rr.get("results", [])[-1].get("error") or "").strip()
+                if isinstance(rr.get("results"), list)
+                and rr.get("results")
+                and isinstance(rr.get("results", [])[-1], dict)
+                else ""
+            )
+            or current.get("failure_summary")
+        )
 
     snapshot: dict[str, Any] = {
         "schema_version": JOB_STATE_SCHEMA_VERSION,
         "job_id": f"{Path(job_ref).stem}.json",
-        "lifecycle_state": lifecycle_state,
+        "lifecycle_state": normalized_lifecycle,
         "current_step_index": current_step,
         "total_steps": total_steps,
         "last_completed_step": last_completed,
@@ -150,9 +221,8 @@ def update_job_state_snapshot(
         "failure_summary": failure_summary
         if failure_summary is not None
         else current.get("failure_summary"),
-        "blocked_reason": blocked_reason
-        if blocked_reason is not None
-        else current.get("blocked_reason"),
+        "blocked_reason": resolved_blocked_reason,
+        "blocked_reason_class": resolved_blocked_reason_class,
         "approval_status": approval_status
         if approval_status is not None
         else current.get("approval_status"),
@@ -160,7 +230,9 @@ def update_job_state_snapshot(
         "step_outcomes": step_outcomes,
         "started_at_ms": started_at_ms,
         "updated_at_ms": now_ms,
-        "completed_at_ms": now_ms if lifecycle_state in COMPLETED_AT_LIFECYCLE_STATES else None,
+        "completed_at_ms": now_ms
+        if normalized_lifecycle in COMPLETED_AT_LIFECYCLE_STATES
+        else None,
         "transitions": transitions,
     }
     if payload is not None:

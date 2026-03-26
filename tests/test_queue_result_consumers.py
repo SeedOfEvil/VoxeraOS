@@ -332,6 +332,38 @@ def test_resolve_structured_execution_classifies_partial_artifact_gap(tmp_path):
     assert payload["normalized_outcome_class"] == "partial_artifact_gap"
 
 
+def test_resolve_structured_execution_surfaces_blocked_path_scope_metadata(tmp_path):
+    art = tmp_path / "artifacts" / "job-path-blocked"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "terminal_outcome": "failed",
+                "lifecycle_state": "step_failed",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "status": "failed",
+                        "blocked": False,
+                        "error_class": "path_blocked_scope",
+                        "error": "Blocked: path outside allowed control-plane scope",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = resolve_structured_execution(
+        artifacts_dir=art,
+        state_sidecar={"blocked_reason_class": "path_blocked_scope"},
+    )
+    assert payload["blocked"] is True
+    assert payload["blocked_reason_class"] == "path_blocked_scope"
+    assert "control-plane scope" in str(payload["blocked_reason"])
+    assert payload["step_summaries"][0]["blocked_reason_class"] is None
+
+
 def test_resolve_structured_execution_exposes_normalized_artifact_contract_fields(tmp_path):
     art = tmp_path / "artifacts" / "job-artifacts"
     art.mkdir(parents=True)
