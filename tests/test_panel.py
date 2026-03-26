@@ -666,7 +666,105 @@ def test_job_detail_artifact_inventory_optional_missing_does_not_error(tmp_path,
     assert res.status_code == 200
     assert "Artifact Inventory" in res.text
     assert "assistant_response.json" in res.text
-    assert "missing" in res.text
+    assert "not present (optional)" in res.text
+    assert "missing required" not in res.text
+
+
+def test_job_detail_operator_summary_distinguishes_approval_blocked_and_retryable_failure(
+    tmp_path, monkeypatch
+):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+
+    # Approval-paused
+    (queue_dir / "pending" / "job-approval.json").write_text('{"goal":"delete"}', encoding="utf-8")
+    (queue_dir / "pending" / "approvals" / "job-approval.approval.json").write_text(
+        json.dumps({"job": "job-approval.json", "step": 1, "reason": "needs approval"}),
+        encoding="utf-8",
+    )
+    art_approval = queue_dir / "artifacts" / "job-approval"
+    art_approval.mkdir(parents=True, exist_ok=True)
+    (art_approval / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "awaiting_approval",
+                "step_results": [
+                    {"step_index": 1, "status": "awaiting_approval", "summary": "waiting approval"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Blocked boundary
+    (queue_dir / "failed" / "job-blocked.json").write_text('{"goal":"list dir"}', encoding="utf-8")
+    art_blocked = queue_dir / "artifacts" / "job-blocked"
+    art_blocked.mkdir(parents=True, exist_ok=True)
+    (art_blocked / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "blocked",
+                "blocked_reason_class": "path_blocked_scope",
+                "blocked_reason": "path outside allowed scope",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "status": "blocked",
+                        "blocked": True,
+                        "blocked_reason_class": "path_blocked_scope",
+                        "error": "path outside allowed scope",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Retryable non-boundary failure
+    (queue_dir / "failed" / "job-retryable.json").write_text(
+        '{"goal":"organize"}', encoding="utf-8"
+    )
+    art_retryable = queue_dir / "artifacts" / "job-retryable"
+    art_retryable.mkdir(parents=True, exist_ok=True)
+    (art_retryable / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "failed",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "status": "failed",
+                        "summary": "Source path does not exist",
+                        "error": "not_found",
+                        "retryable": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    approval = client.get("/jobs/job-approval.json")
+    assert approval.status_code == 200
+    assert "Awaiting approval" in approval.text
+    assert "Waiting for operator approval." in approval.text
+
+    blocked = client.get("/jobs/job-blocked.json")
+    assert blocked.status_code == 200
+    assert "Blocked by boundary/policy" in blocked.text
+    assert "path_blocked_scope" in blocked.text
+
+    retryable = client.get("/jobs/job-retryable.json")
+    assert retryable.status_code == 200
+    assert "Failed (retryable)" in retryable.text
+    assert "Source path does not exist" in retryable.text
 
 
 def test_job_detail_renders_assistant_job_context(tmp_path, monkeypatch):
