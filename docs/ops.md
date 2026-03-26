@@ -441,17 +441,32 @@ intent classifier (`src/voxera/core/simple_intent.py`) before planning:
 
 ## Artifact bundle contract
 
-Each queue job writes/updates artifacts under `~/VoxeraOS/notes/queue/artifacts/<job_stem>/`:
-- `plan.json` — normalized payload + mission plan snapshot.
-- `actions.jsonl` — event timeline (rendered newest-first in panel detail).
-- `stdout.txt` and `stderr.txt` — aggregated step output/error streams.
-- `outputs/generated_files.json` (optional) — paths captured from `files.write_text` outputs.
+Artifacts live under `~/VoxeraOS/notes/queue/artifacts/<job_stem>/` (path resolves against `VOXERA_QUEUE_ROOT`).
+
+**Minimum required artifacts** (expected for every queue execution):
+- `execution_envelope.json` — full execution context snapshot at job-start (schema_version=1)
+- `execution_result.json` — terminal outcome, evidence summary, artifact families, intent route (schema_version=1)
+- `step_results.json` — per-step canonical skill results with status, error_class, approval_status (schema_version=1)
+- `job_intent.json` — parsed user intent and request-kind metadata
+- `plan.json` — generated/normalized mission plan snapshot
+- `actions.jsonl` — append-only lifecycle event stream (rendered newest-first in panel detail)
+
+**Conditional artifacts** (present when applicable):
+- `review_summary.json` — reviewer-facing quality/artifact assessment when materialized
+- `evidence_bundle.json` — structured execution-to-evidence link bundle when materialized
+- `stdout.txt` / `stderr.txt` — aggregated step output/error streams (present when skills produce them)
+- `approval` artifacts under `pending/approvals/<job_stem>.approval.json` during approval pause
+- `failed/<job_stem>.error.json` sidecar for failed jobs (see section below)
 
 Interpretation quick-guide:
-- `plan.json` confirms what mission/steps were executed (or queued for approval).
-- `actions.jsonl` is the lifecycle source-of-truth for queue transitions.
-- `stdout.txt`/`stderr.txt` provide operator debugging context without needing raw logs.
-- Generated files list helps locate mission side effects quickly.
+- `execution_result.json` is the primary terminal-outcome truth surface: check `terminal_outcome`, `blocked`, `blocked_reason_class`, and `artifact_families`.
+- `step_results.json` gives per-step evidence: `status`, `error_class`, `blocked_reason_class`, `approval_status`.
+- `execution_envelope.json` records the full execution context at start: job lineage, request kind, capabilities, plan steps.
+- `plan.json` confirms what mission/steps were planned (or attempted before failure).
+- `actions.jsonl` is the lifecycle audit stream for queue transitions and skill events.
+- `stdout.txt`/`stderr.txt` provide debugging context for skills that write to those streams.
+
+See [`docs/QUEUE_CONSTITUTION.md`](QUEUE_CONSTITUTION.md) for the canonical artifact minimum-guarantee contract and result interpretation rules.
 
 ## Failed artifact sidecar contract + retention
 

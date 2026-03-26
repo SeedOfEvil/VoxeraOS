@@ -98,6 +98,12 @@ VoxeraOS/
 │   │   │   ├── evidence_review.py   — queue evidence review / review-message shaping
 │   │   │   ├── handoff.py           — thin compatibility façade for extracted handoff seams
 │   │   │   └── weather.py           — weather provider client + snapshot types
+│   │   ├── vera_web/
+│   │   │   ├── app.py               — FastAPI Vera web service (port 8790); session
+│   │   │   │                          management, conversational turns, preview/submit
+│   │   │   │                          flows, investigation and weather routing
+│   │   │   ├── templates/index.html — Vera single-page HTML shell
+│   │   │   └── static/vera.css      — Vera web stylesheet
 │   │   ├── skills/
 │   │   │   ├── registry.py          — manifest.yml discovery + strict health classification (valid/invalid/incomplete/warning) + entrypoint loading
 │   │   │   ├── runner.py            — policy-gated skill execution + approval callbacks
@@ -124,24 +130,34 @@ VoxeraOS/
 │   │       │   ├── assistant.html
 │   │       │   ├── hygiene.html
 │   │       │   ├── recovery.html
+│   │       │   ├── vera.html
 │   │       │   └── _daemon_health_widget.html
 │   │       └── static/panel.css
-│   └── voxera_builtin_skills/       — 11 built-in Python skill callables
+│   └── voxera_builtin_skills/       — 26 built-in Python skill callables
 │       ├── clipboard_copy.py        clipboard_paste.py
-│       ├── files_read_text.py       files_write_text.py
-│       ├── open_app.py              open_url.py
-│       ├── sandbox_exec.py          set_volume.py
+│       ├── disk_usage.py            host_info.py
+│       ├── files_copy_file.py       files_delete_file.py
+│       ├── files_exists.py          files_list_dir.py
+│       ├── files_mkdir.py           files_move_file.py
+│       ├── files_read_text.py       files_stat.py
+│       ├── files_write_text.py      load_snapshot.py
+│       ├── memory_usage.py          open_app.py
+│       ├── open_url.py              process_list.py
+│       ├── recent_service_logs.py   sandbox_exec.py
+│       ├── service_status.py        set_volume.py
 │       ├── system_status.py         terminal_run_once.py
 │       └── window_list.py
 ├── skills/                          — skill manifest definitions (manifest.yml per skill)
 │   ├── clipboard/{copy,paste}/
-│   ├── files/{read_text,write_text}/
+│   ├── files/{copy_file,delete_file,exists,list_dir,mkdir,move_file,read_text,stat,write_text}/
 │   ├── sandbox/exec/
-│   └── system/{open_app,open_url,set_volume,status,terminal_run_once,window_list}/
+│   └── system/{disk_usage,host_info,load_snapshot,memory_usage,open_app,open_url,
+│             process_list,recent_service_logs,service_status,set_volume,
+│             status,terminal_run_once,window_list}/
 ├── missions/                        — example/repo mission JSON files
 │   ├── sandbox_smoke.json
 │   └── sandbox_net.json
-├── tests/                           — pytest suite (~60 files, ~7k lines)
+├── tests/                           — pytest suite (~89 files)
 ├── docs/
 │   ├── ARCHITECTURE.md              — this file
 │   ├── BOOTSTRAP.md                 — first-run install guide
@@ -483,6 +499,24 @@ src/voxera/
 │   ├── mission_planner.py    — LLM-based planning; fallback chains (primary→fast→fallback);
 │   │                           deterministic write/terminal-demo routes; step normalization
 │   │                           and rewriting; error classification; planner timeouts (25s)
+│   ├── simple_intent.py      — Deterministic goal-kind intent classifier; direct routing
+│   │                           for high-confidence intents (read_file, write_file,
+│   │                           open_url, open_app, open_terminal, run_command,
+│   │                           assistant_question); fail-closed mismatch detection
+│   ├── file_intent.py        — Bounded file operation intent classifier; maps to
+│   │                           preview payloads (exists/stat/mkdir/delete/copy/move/archive)
+│   ├── code_draft_intent.py  — Code draft detection and extraction from planner output
+│   ├── writing_draft_intent.py — Writing draft detection and extraction
+│   ├── queue_job_intent.py   — Job intent metadata parsing and request-kind derivation
+│   ├── queue_object_model.py — Canonical lifecycle state constants (QUEUE_LIFECYCLE_STATES,
+│   │                           TERMINAL_OUTCOMES, COMPLETED_STATES)
+│   ├── queue_result_consumers.py — Structured execution/result normalization;
+│   │                           normalized_outcome_class; evidence-grounded reviewer surfaces;
+│   │                           boundary-blocked vs retryable-failure classification
+│   ├── execution_capabilities.py — Capability boundary tracking and scope metadata
+│   ├── execution_evaluator.py    — Mission outcome evaluation helpers
+│   ├── artifacts.py          — Artifact directory pruning (max_age_s / max_count policies);
+│   │                           symlink-safe safety checks; dry-run support
 │   ├── queue_inspect.py      — Queue status snapshots; bucket filtering
 │   │                           (inbox / pending / done / failed / canceled)
 │   ├── queue_hygiene.py      — `voxera queue prune`: removes stale job files from terminal
@@ -507,6 +541,18 @@ src/voxera/
 │   ├── arg_normalizer.py     — Argument canonicalization; alias mapping
 │   └── path_boundaries.py    — Confined path normalization for file skills
 │                               (e.g., content → text, skill → skill_id)
+│
+├── vera_web/
+│   │
+│   │   ── Vera Web Service (conversational surface, port 8790) ──
+│   │
+│   ├── app.py                — FastAPI Vera web service root. Manages session lifecycle,
+│   │                           conversational turns, execution-mode routing
+│   │                           (CONVERSATIONAL_ARTIFACT vs GOVERNED_PREVIEW), preview
+│   │                           drafting/revision/submission, investigation flows,
+│   │                           weather routing, and linked-job result delivery.
+│   ├── templates/index.html  — Single-page HTML shell for the Vera conversational UI
+│   └── static/vera.css       — Vera web stylesheet
 │
 ├── audio/                    — Placeholder; STT/TTS planned for v0.3
 │
@@ -548,30 +594,37 @@ src/voxera/
     ├── templates/            — Jinja2 HTML: home.html, jobs.html, job_detail.html
     └── static/panel.css      — Panel stylesheet
 
-src/voxera_builtin_skills/    — 11 built-in skills packaged as Python callables
+src/voxera_builtin_skills/    — 26 built-in skills packaged as Python callables
+                                clipboard (copy, paste)
+                                files (copy_file, delete_file, exists, list_dir, mkdir,
+                                       move_file, read_text, stat, write_text)
+                                system (disk_usage, host_info, load_snapshot, memory_usage,
+                                        open_app, open_url, process_list, recent_service_logs,
+                                        service_status, set_volume, status, terminal_run_once,
+                                        window_list)
+                                sandbox (exec)
 
-skills/                       — Skill definitions (manifest.yml + .py per skill)
-├── clipboard/copy/
-├── clipboard/paste/
-├── files/read_text/
-├── files/write_text/         — supports mode=overwrite|append
-├── system/status/
-├── system/open_app/
-├── system/open_url/
-├── system/set_volume/
-├── system/window_list/
-└── sandbox/exec/             — Podman-based; rootless; --network=none by default
+skills/                       — Skill definitions (manifest.yml per skill)
+├── clipboard/{copy,paste}/
+├── files/{copy_file,delete_file,exists,list_dir,mkdir,move_file,read_text,stat,write_text}/
+├── sandbox/exec/             — Podman-based; rootless; --network=none by default
+└── system/{disk_usage,host_info,load_snapshot,memory_usage,open_app,open_url,
+           process_list,recent_service_logs,service_status,set_volume,
+           status,terminal_run_once,window_list}/
 
-tests/                        — ~30 test files, ~7k lines (run `cloc --vcs git` for current counts)
-├── test_mission_planner.py   — Planner fallback chains, error classification, JSON recovery (46 KB)
-├── test_cli_queue.py         — Queue lifecycle, approvals, retry/cancel/delete (15 KB)
+tests/                        — ~89 test files (run `cloc --vcs git` for current counts)
+├── test_mission_planner.py   — Planner fallback chains, error classification, JSON recovery
+├── test_cli_queue.py         — Queue lifecycle, approvals, retry/cancel/delete
 ├── test_queue_daemon.py      — Failed-sidecar schema v1, retention pruning, lifecycle smoke
-├── test_doctor.py            — Diagnostic endpoints, version alignment (14 KB)
-└── ...                       — Config, execution, inbox, capabilities, CLI version tests
+├── test_vera_web.py          — Vera web service session/flow coverage
+├── test_panel.py             — Panel route and operator-surface coverage
+├── test_doctor.py            — Diagnostic endpoints, version alignment
+└── ...                       — Config, execution, inbox, capabilities, security, contracts
 
 deploy/systemd/user/
 ├── voxera-daemon.service     — Queue processor; polls inbox/ every second
-└── voxera-panel.service      — FastAPI panel; requires VOXERA_PANEL_OPERATOR_PASSWORD
+├── voxera-panel.service      — FastAPI panel; requires VOXERA_PANEL_OPERATOR_PASSWORD
+└── voxera-vera.service       — Vera web service; port 8790
 
 docs/                         — Architecture, security, ops, roadmap, memory
 Makefile                      — 30+ targets: dev, fmt, lint, type, test, e2e,
