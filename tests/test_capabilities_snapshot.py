@@ -20,6 +20,9 @@ def test_generate_capabilities_snapshot_has_schema_and_deterministic_order(monke
     assert snapshot["allowed_apps"] == sorted(snapshot["allowed_apps"])
     skill_ids = [item["id"] for item in snapshot["skills"]]
     assert skill_ids == sorted(skill_ids)
+    first_skill = snapshot["skills"][0]
+    assert isinstance(first_skill.get("semantics"), dict)
+    assert "intent_class" in first_skill["semantics"]
 
 
 def test_ops_capabilities_command_prints_stable_json(monkeypatch):

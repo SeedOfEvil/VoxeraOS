@@ -2,6 +2,19 @@
 
 This document freezes queue contracts for submitted jobs. It is the canonical reference for queue payload shape, lifecycle semantics, artifact guarantees, and result interpretation.
 
+
+## 0) Canonical capability semantics
+
+Capability meaning is centralized in `src/voxera/core/capability_semantics.py` and projected per manifest via `manifest_capability_semantics(...)`.
+
+The normalized contract includes:
+- effect class (`read|write|execute`)
+- intent class (`read_only|mutating|destructive`)
+- resource boundaries (`filesystem|network|secrets|system`)
+- policy field mapping when capability is approval-governed
+
+Queue approval/result surfaces should derive semantics from this model, not from skill-name heuristics.
+
 ## 1) Canonical payload schema (submit-time)
 
 Queue payloads MAY contain extra additive fields, but the execution contract is grounded on these canonical fields:
