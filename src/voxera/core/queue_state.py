@@ -13,6 +13,13 @@ from .queue_object_model import (
 )
 
 JOB_STATE_SCHEMA_VERSION = 1
+_BOUNDARY_BLOCKED_ERROR_CLASSES = frozenset(
+    {
+        "path_blocked_scope",
+        "capability_boundary_mismatch",
+        "policy_denied",
+    }
+)
 
 
 def job_state_sidecar_path(
@@ -177,11 +184,30 @@ def update_job_state_snapshot(
             if isinstance(value, str) and value.strip():
                 resolved_blocked_reason_class = value.strip()
                 break
+    if resolved_blocked_reason_class is None and isinstance(rr.get("results"), list):
+        for result in reversed(rr["results"]):
+            if not isinstance(result, dict):
+                continue
+            error_class = str(result.get("error_class") or "").strip().lower()
+            if error_class in _BOUNDARY_BLOCKED_ERROR_CLASSES:
+                resolved_blocked_reason_class = error_class
+                break
     resolved_blocked_reason = (
         blocked_reason if blocked_reason is not None else current.get("blocked_reason")
     )
     if resolved_blocked_reason is None and resolved_blocked_reason_class:
-        resolved_blocked_reason = failure_summary or current.get("failure_summary")
+        resolved_blocked_reason = (
+            failure_summary
+            or str(rr.get("error") or "").strip()
+            or (
+                str(rr.get("results", [])[-1].get("error") or "").strip()
+                if isinstance(rr.get("results"), list)
+                and rr.get("results")
+                and isinstance(rr.get("results", [])[-1], dict)
+                else ""
+            )
+            or current.get("failure_summary")
+        )
 
     snapshot: dict[str, Any] = {
         "schema_version": JOB_STATE_SCHEMA_VERSION,

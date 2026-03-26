@@ -62,6 +62,13 @@ QUEUE_MINIMUM_ARTIFACTS = (
     "plan.json",
     "actions.jsonl",
 )
+_BOUNDARY_BLOCKED_ERROR_CLASSES = frozenset(
+    {
+        "path_blocked_scope",
+        "capability_boundary_mismatch",
+        "policy_denied",
+    }
+)
 
 
 def _sanitize_lineage_string(value: Any) -> str | None:
@@ -579,6 +586,11 @@ def build_execution_result(
         expected_artifact_observation=expected_artifact_observation,
         minimum_artifacts=minimum_artifacts,
     )
+    blocked, blocked_reason_class, blocked_reason = _derive_blocked_metadata(
+        rr_data=rr_data,
+        step_results=step_results,
+        fallback_error=error,
+    )
     return {
         "schema_version": EXECUTION_RESULT_SCHEMA_VERSION,
         "job": Path(job_ref).name,
@@ -618,6 +630,9 @@ def build_execution_result(
             if terminal_outcome == "succeeded"
             else None
         ),
+        "blocked": blocked,
+        "blocked_reason_class": blocked_reason_class,
+        "blocked_reason": blocked_reason,
         "artifact_families": artifact_families,
         "artifact_refs": artifact_refs,
         "evidence_bundle": evidence_bundle,
@@ -626,6 +641,43 @@ def build_execution_result(
         "error": error,
         "updated_at_ms": int(time.time() * 1000),
     }
+
+
+def _derive_blocked_metadata(
+    *,
+    rr_data: dict[str, Any],
+    step_results: list[dict[str, Any]],
+    fallback_error: str | None,
+) -> tuple[bool | None, str | None, str | None]:
+    latest_step = step_results[-1] if step_results else {}
+    latest_error_class = str(latest_step.get("error_class") or "").strip().lower()
+    latest_blocked_reason_class = str(latest_step.get("blocked_reason_class") or "").strip().lower()
+    latest_error_text = str(latest_step.get("error") or "").strip()
+
+    blocked = bool(
+        latest_step.get("blocked")
+        or latest_blocked_reason_class
+        or latest_error_class in _BOUNDARY_BLOCKED_ERROR_CLASSES
+    )
+
+    if not blocked:
+        return (None, None, None)
+
+    blocked_reason_class = (
+        latest_blocked_reason_class
+        or latest_error_class
+        or str(rr_data.get("blocked_reason_class") or "").strip().lower()
+    )
+    blocked_reason = (
+        latest_error_text
+        or str(rr_data.get("blocked_reason") or "").strip()
+        or str(fallback_error or "").strip()
+    )
+    return (
+        True,
+        blocked_reason_class or None,
+        blocked_reason or None,
+    )
 
 
 def _extract_execution_capabilities(

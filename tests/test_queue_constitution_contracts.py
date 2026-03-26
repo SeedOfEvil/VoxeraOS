@@ -38,6 +38,26 @@ def test_update_job_state_snapshot_derives_denied_terminal_outcome() -> None:
     assert snapshot["terminal_outcome"] == "denied"
 
 
+def test_update_job_state_snapshot_propagates_blocked_boundary_metadata() -> None:
+    snapshot = update_job_state_snapshot(
+        "job-3.json",
+        lifecycle_state="step_failed",
+        current={},
+        now_ms=5678,
+        rr_data={
+            "results": [
+                {
+                    "step": 1,
+                    "error_class": "path_blocked_scope",
+                    "error": "Path is within blocked control-plane scope: ~/.ssh",
+                }
+            ]
+        },
+    )
+    assert snapshot["blocked_reason_class"] == "path_blocked_scope"
+    assert "blocked control-plane scope" in str(snapshot["blocked_reason"])
+
+
 def test_minimum_artifact_presence_reports_missing_contract_artifacts() -> None:
     presence = minimum_artifact_presence(
         [
@@ -65,6 +85,33 @@ def test_build_execution_result_includes_minimum_artifacts_in_review_and_evidenc
 
     assert payload["review_summary"]["minimum_artifacts"]["status"] == "missing"
     assert payload["evidence_bundle"]["minimum_artifacts"]["status"] == "missing"
+
+
+def test_build_execution_result_propagates_blocked_boundary_metadata(tmp_path) -> None:
+    artifacts = tmp_path / "artifacts" / "job-blocked"
+    artifacts.mkdir(parents=True)
+    (artifacts / "execution_result.json").write_text("{}", encoding="utf-8")
+    payload = build_execution_result(
+        job_ref="failed/job-blocked.json",
+        rr_data={},
+        step_results=[
+            {
+                "step_index": 1,
+                "status": "failed",
+                "blocked": True,
+                "blocked_reason_class": "path_blocked_scope",
+                "error_class": "path_blocked_scope",
+                "error": "Path is within blocked control-plane scope: ~/.ssh",
+            }
+        ],
+        terminal_outcome="failed",
+        ok=False,
+        error="Path is within blocked control-plane scope: ~/.ssh",
+        artifacts_dir=artifacts,
+    )
+    assert payload["blocked"] is True
+    assert payload["blocked_reason_class"] == "path_blocked_scope"
+    assert "blocked control-plane scope" in str(payload["blocked_reason"])
 
 
 def test_refresh_execution_result_artifact_contract_uses_final_directory_listing(tmp_path) -> None:

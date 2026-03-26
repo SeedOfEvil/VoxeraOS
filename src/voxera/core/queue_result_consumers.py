@@ -384,6 +384,7 @@ def resolve_structured_execution(
     if blocked:
         blocked_reason_class = (
             latest_blocked_reason_class
+            or str(execution_result.get("blocked_reason_class") or "").strip().lower()
             or str(state_payload.get("blocked_reason_class") or "").strip().lower()
             or latest_error_class
         )
@@ -479,7 +480,13 @@ def resolve_structured_execution(
         "approval_status": approval_status,
         "blocked": blocked,
         "blocked_reason_class": blocked_reason_class or None,
-        "blocked_reason": str(state_payload.get("blocked_reason") or "") or None,
+        "blocked_reason": (
+            str(state_payload.get("blocked_reason") or "").strip()
+            or str(execution_result.get("blocked_reason") or "").strip()
+            or str(latest_step.get("error") or "").strip()
+            or str(execution_result.get("error") or "").strip()
+            or None
+        ),
         "retryable": retryable,
         "operator_note": str(latest_step.get("operator_note") or ""),
         "next_action_hint": str(latest_step.get("next_action_hint") or ""),
