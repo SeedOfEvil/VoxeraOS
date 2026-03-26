@@ -380,7 +380,8 @@ def test_regression_pack_code_save_submit_handoff_smoke(tmp_path, monkeypatch):
     inbox_files = list((session.queue / "inbox").glob("*.json"))
     assert len(inbox_files) == 1
     payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
-    assert payload["write_file"]["path"].startswith("~/VoxeraOS/notes/note-")
+    assert payload["write_file"]["path"].startswith("~/VoxeraOS/notes/")
+    assert payload["write_file"]["path"].endswith(".py")
     assert "beautifulsoup" in payload["write_file"]["content"].lower()
 
 
@@ -425,5 +426,7 @@ def test_regression_pack_no_preview_submit_fails_truthfully_without_queue_handof
     session = make_vera_session(monkeypatch, tmp_path)
     res = session.chat("submit it")
     assert res.status_code == 200
-    assert "no governed preview" in session.turns()[-1]["text"].lower()
+    no_preview_text = session.turns()[-1]["text"].lower()
+    assert "preview" in no_preview_text
+    assert "did not submit anything" in no_preview_text
     assert list((session.queue / "inbox").glob("*.json")) == []
