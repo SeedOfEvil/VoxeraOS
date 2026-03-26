@@ -13,6 +13,7 @@ from ..audit import log
 from ..models import PlanSimulation, PlanStep, RunResult
 from ..skills.registry import SkillRegistry
 from ..skills.result_contract import extract_skill_result
+from .capability_semantics import manifest_capability_semantics
 
 
 @dataclass(frozen=True)
@@ -391,9 +392,29 @@ class MissionRunner:
         # derived capabilities_used from step.capability instead.
         all_capabilities: set[str] = set()
 
+        mission_boundary_projection = {
+            "filesystem": False,
+            "network": False,
+            "secrets": False,
+            "system": False,
+        }
+        mission_intent_rank = {"read_only": 0, "mutating": 1, "destructive": 2}
+        mission_intent = "read_only"
+
         for ms in mission.steps:
             manifest = self.skill_runner.registry.get(ms.skill_id)
             all_capabilities.update(manifest.capabilities)
+            semantics = manifest_capability_semantics(manifest)
+            boundaries = semantics.get("resource_boundaries")
+            if isinstance(boundaries, dict):
+                for key in mission_boundary_projection:
+                    mission_boundary_projection[key] = mission_boundary_projection[key] or bool(
+                        boundaries.get(key)
+                    )
+            intent = str(semantics.get("intent_class") or "read_only")
+            if mission_intent_rank.get(intent, 0) > mission_intent_rank.get(mission_intent, 0):
+                mission_intent = intent
+
             sim = self.skill_runner.simulate(manifest, args=ms.args, policy=self.policy)
             plan_step = sim.steps[0]
             plan_step.action = f"Run {ms.skill_id}"
@@ -405,10 +426,16 @@ class MissionRunner:
         # All distinct capability strings across steps (sorted).
         capabilities_used = sorted(all_capabilities)
 
-        # Compact snapshot metadata: schema_version + generated_ts_ms only.
-        capabilities_snapshot: dict[str, Any] = {}
+        # Compact snapshot metadata + mission semantic projection.
+        capabilities_snapshot: dict[str, Any] = {
+            "mission_semantics": {
+                "intent_class": mission_intent,
+                "resource_boundaries": mission_boundary_projection,
+            }
+        }
         if snapshot is not None:
             capabilities_snapshot = {
+                **capabilities_snapshot,
                 "schema_version": snapshot.get("schema_version"),
                 "generated_ts_ms": snapshot.get("generated_ts_ms"),
             }

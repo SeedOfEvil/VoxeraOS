@@ -113,3 +113,27 @@ capabilities: ["unknown.cap"]
     assert sorted(report.valid.keys()) == ["demo.valid"]
     assert report.counts == {"valid": 1, "invalid": 1, "incomplete": 0, "warning": 0, "total": 2}
     assert [issue.reason_code for issue in report.issues] == ["unknown_capability_metadata"]
+
+
+def test_discover_with_report_flags_network_semantics_mismatch(tmp_path: Path):
+    skill_dir = tmp_path / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "manifest.yml").write_text(
+        """
+id: demo.network
+name: Demo Network
+description: Missing needs_network declaration
+entrypoint: voxera_builtin_skills.open_url:run
+capabilities: ["network.change"]
+needs_network: false
+output_schema: skill_result.v1
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    reg = SkillRegistry(skills_dir=tmp_path / "skills")
+    report = reg.discover_with_report()
+
+    assert report.counts["invalid"] == 1
+    assert any(issue.reason_code == "network_semantics_mismatch" for issue in report.issues)

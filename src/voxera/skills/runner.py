@@ -3,9 +3,13 @@ from __future__ import annotations
 from typing import Any, Literal, cast
 
 from ..audit import log
+from ..core.capability_semantics import (
+    CAPABILITY_EFFECT_CLASS,
+    capability_semantic,
+)
 from ..core.execution_capabilities import normalize_manifest_capabilities
 from ..models import AppConfig, PlanSimulation, PlanStep, RunResult, SkillManifest
-from ..policy import CAPABILITY_EFFECT_CLASS, decide
+from ..policy import decide
 from .arg_normalizer import canonicalize_args
 from .execution import generate_job_id, sanitize_audit_value, select_runner
 from .registry import SkillRegistry
@@ -15,16 +19,18 @@ _PolicyDecisionLiteral = Literal["allow", "ask", "deny"]
 
 
 def is_skill_read_only(manifest: SkillManifest) -> bool:
-    """Return True when every declared capability has a read-only effect class.
+    """Return True when every declared capability has a known read-only semantic.
 
-    Skills with no declared capabilities are treated as non-read-only (fail-closed).
+    Fail-closed behavior:
+    - empty capability declarations are non-read-only
+    - unknown capabilities are non-read-only
     """
-    caps = manifest.capabilities
-    if not caps:
+    if not manifest.capabilities:
         return False
-    for cap in caps:
-        effect = CAPABILITY_EFFECT_CLASS.get(cap)
-        if effect is None or effect != "read":
+
+    for capability in manifest.capabilities:
+        semantic = capability_semantic(capability)
+        if semantic is None or semantic.intent_class != "read_only":
             return False
     return True
 
@@ -145,7 +151,9 @@ def _enforce_runtime_capabilities(
             declaration=normalized_declaration,
         )
 
-    effect_classes = sorted({CAPABILITY_EFFECT_CLASS[cap] for cap in normalized_caps})
+    effect_classes = [
+        str(item) for item in sorted({CAPABILITY_EFFECT_CLASS[cap] for cap in normalized_caps})
+    ]
     network_violation = _network_boundary_violation(
         declaration=normalized_declaration,
         args=args,
@@ -174,7 +182,7 @@ def _enforce_runtime_capabilities(
 
     return CapabilityEnforcementResult(
         allowed=policy_decision == "allow",
-        needs_approval=policy_decision == "ask" or manifest.risk == "high",
+        needs_approval=policy_decision == "ask",
         denied=policy_decision == "deny",
         reason=policy_result.reason,
         reason_class="policy_decision",
@@ -193,7 +201,7 @@ class SkillRunner:
     def simulate(self, manifest: SkillManifest, args: dict[str, Any], policy) -> PlanSimulation:
         args = canonicalize_args(manifest.id, args)
         decision = decide(manifest, policy, args=args)
-        requires_approval = decision.decision == "ask" or manifest.risk == "high"
+        requires_approval = decision.decision == "ask"
         blocked = decision.decision == "deny"
 
         policy_decision = _normalize_policy_decision(decision.decision)

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from ..models import SkillManifest
-from ..policy import CAPABILITY_EFFECT_CLASS
+from .capability_semantics import manifest_capability_semantics
 
 
 class _StrEnum(str, Enum):
@@ -91,11 +91,13 @@ def normalize_manifest_capabilities(manifest: SkillManifest) -> ExecutionCapabil
             else SandboxProfile.SANDBOX_NO_NETWORK
         )
 
-    effect_classes: set[str] = set()
-    for cap in manifest.capabilities:
-        effect_class = CAPABILITY_EFFECT_CLASS.get(cap)
-        if effect_class is not None:
-            effect_classes.add(effect_class)
+    semantic_projection = manifest_capability_semantics(manifest)
+    raw_effects = semantic_projection.get("effect_classes")
+    effect_classes = (
+        {item for item in raw_effects if isinstance(item, str)}
+        if isinstance(raw_effects, list)
+        else set()
+    )
 
     side_effect_class = _derive_side_effect_class(
         risk=manifest.risk,

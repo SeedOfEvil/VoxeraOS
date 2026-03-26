@@ -9,8 +9,8 @@ from typing import Literal
 import yaml
 from pydantic import ValidationError
 
+from ..core.capability_semantics import CAPABILITY_EFFECT_CLASS, manifest_capability_semantics
 from ..models import SkillManifest
-from ..policy import CAPABILITY_EFFECT_CLASS
 
 DEFAULT_SKILLS_DIR = Path(__file__).resolve().parents[3] / "skills"
 
@@ -180,6 +180,46 @@ class SkillRegistry:
         return getattr(mod, func_name)
 
 
+def _semantic_manifest_issues(
+    *, manifest: SkillManifest, manifest_path: Path
+) -> list[SkillHealthIssue]:
+    issues: list[SkillHealthIssue] = []
+    semantics = manifest_capability_semantics(manifest)
+    boundaries = semantics.get("resource_boundaries")
+    if isinstance(boundaries, dict):
+        touches_network = bool(boundaries.get("network"))
+        touches_filesystem = bool(boundaries.get("filesystem"))
+        if touches_network and not manifest.needs_network:
+            issues.append(
+                SkillHealthIssue(
+                    skill_id=manifest.id,
+                    manifest_path=manifest_path,
+                    status="invalid",
+                    reason_code="network_semantics_mismatch",
+                    message=(
+                        "capability semantics require network boundary but needs_network=false"
+                    ),
+                    hint="set_needs_network_true_or_fix_capabilities",
+                )
+            )
+        if (
+            manifest.fs_scope == "read_only"
+            and touches_filesystem
+            and "files.write" in manifest.capabilities
+        ):
+            issues.append(
+                SkillHealthIssue(
+                    skill_id=manifest.id,
+                    manifest_path=manifest_path,
+                    status="invalid",
+                    reason_code="filesystem_semantics_mismatch",
+                    message="files.write capability cannot declare fs_scope=read_only",
+                    hint="set_fs_scope_workspace_only_or_broader",
+                )
+            )
+    return issues
+
+
 def _classify_manifest_health(
     *, manifest: SkillManifest, manifest_path: Path
 ) -> list[SkillHealthIssue]:
@@ -233,5 +273,7 @@ def _classify_manifest_health(
                 hint="fix_manifest",
             )
         )
+
+    issues.extend(_semantic_manifest_issues(manifest=manifest, manifest_path=manifest_path))
 
     return issues

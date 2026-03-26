@@ -18,13 +18,25 @@ For project overview, see [README.md](../README.md). For the product vision, see
 │  AI Control Plane                                       │
 │  Intent router · Mission planner · Queue daemon         │
 │  Skill registry · Policy engine · Approval workflow     │
-│  Audit log · Health monitor · Capabilities snapshot     │
+│  Capability semantics model · Audit/health snapshots    │
 ├─────────────────────────────────────────────────────────┤
 │  Substrate OS                                           │
 │  Linux (Ubuntu) · Audio stack · Filesystem              │
 │  Networking · Systemd user services · Podman            │
 └─────────────────────────────────────────────────────────┘
 ```
+
+
+
+## Canonical capability semantics model
+
+VoxeraOS now treats capability meaning as a centralized runtime contract (not scattered inference):
+
+- Source of truth: `src/voxera/core/capability_semantics.py`
+- Per-capability metadata: `effect_class`, `intent_class`, `policy_field`, `resource_boundaries`, and concise operator summary
+- Manifest projection: `manifest_capability_semantics(...)` produces normalized intent/boundary/policy expectations consumed by registry validation, policy decisions, mission dry-run semantics, and capability snapshots
+
+This keeps policy/approval behavior, blocked semantics, and operator-facing interpretation aligned as capability families expand.
 
 ---
 

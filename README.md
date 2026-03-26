@@ -171,6 +171,8 @@ voxera ops bundle job <job_ref>
 
 **VoxeraOS** operates in the Control Plane — every real-world side effect is capability-gated, policy-evaluated, approval-gated when needed, and evidence-backed.
 
+Capability semantics are normalized centrally in `src/voxera/core/capability_semantics.py` (effect class, intent class, resource boundaries, and policy mapping) so manifests, missions, approvals, and operator summaries derive from one contract.
+
 The queue is the system boundary. Jobs flow through deterministic lifecycle buckets (`inbox/` → `pending/` → `done/` / `failed/` / `canceled/`) with sidecars and artifacts for debugging and audit.
 
 For deeper architectural detail, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -8,6 +8,7 @@ from voxera.skills.arg_normalizer import canonicalize_args
 from voxera_builtin_skills.open_app import ALLOW as OPEN_APP_ALLOWLIST
 
 from ..skills.registry import SkillRegistry
+from .capability_semantics import manifest_capability_semantics
 from .missions import MissionTemplate, list_missions_best_effort
 
 _SCHEMA_VERSION = 1
@@ -38,6 +39,7 @@ def generate_capabilities_snapshot(registry: SkillRegistry | None = None) -> dic
             "description": manifest.description,
             "capabilities": sorted(manifest.capabilities),
             "risk": manifest.risk,
+            "semantics": manifest_capability_semantics(manifest),
         }
         for manifest in sorted(manifests.values(), key=lambda item: item.id)
     ]

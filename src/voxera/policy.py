@@ -3,34 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .core.capability_semantics import (
+    CAPABILITY_EFFECT_CLASS,
+    capability_semantic,
+    manifest_capability_semantics,
+)
 from .models import PolicyApprovals, SkillManifest
-
-CAP_TO_POLICY_FIELD = {
-    "network.change": "network_changes",
-    "install.packages": "installs",
-    "file.delete": "file_delete",
-    "apps.open": "open_apps",
-    "system.settings": "system_settings",
-}
-
-# Canonical capability catalog used by runtime enforcement.
-#
-# effect_class is intentionally coarse (read | write | execute) so operator surfaces can
-# explain impact succinctly while still routing concrete capabilities through policy fields.
-CAPABILITY_EFFECT_CLASS = {
-    "apps.open": "execute",
-    "network.change": "write",
-    "install.packages": "write",
-    "file.delete": "write",
-    "system.settings": "write",
-    "state.read": "read",
-    "files.read": "read",
-    "files.write": "write",
-    "clipboard.read": "read",
-    "clipboard.write": "write",
-    "window.read": "read",
-    "sandbox.exec": "execute",
-}
 
 
 @dataclass
@@ -44,8 +22,11 @@ def decide(
 ) -> PolicyDecision:
     decision = "allow"
     reasons = []
+    semantics = manifest_capability_semantics(skill)
+
     for cap in skill.capabilities:
-        field = CAP_TO_POLICY_FIELD.get(cap)
+        semantic = capability_semantic(cap)
+        field = semantic.policy_field if semantic is not None else None
         if field:
             cap_decision = getattr(policy, field)
         else:
@@ -56,8 +37,13 @@ def decide(
         elif cap_decision == "ask" and decision != "deny":
             decision = "ask"
 
-    if skill.needs_network:
-        reasons.append("skill metadata needs_network=true")
+    resource_boundaries = semantics.get("resource_boundaries")
+    touches_network = isinstance(resource_boundaries, dict) and bool(
+        resource_boundaries.get("network")
+    )
+
+    if touches_network:
+        reasons.append("skill semantics network boundary=true")
         if decision == "allow":
             decision = "ask"
 
