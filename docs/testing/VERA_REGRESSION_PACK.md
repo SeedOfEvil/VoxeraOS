@@ -1,0 +1,241 @@
+# Vera Regression Pack
+
+Compact, repeatable smoke/regression pack for Vera's conversational control layer.
+
+## 1) Purpose
+
+Queue/artifact/panel contracts can be green while Vera drifts in how it drafts, saves, and submits.
+
+This pack protects the high-signal Vera behaviors that operators rely on every day:
+
+- preview creation
+- saveability
+- truthful submit/no-submit behavior
+- queue handoff honesty
+- contextual save-by-reference
+- investigation-derived save flows
+
+## 2) Trust model reminder (must stay true)
+
+- **Vera drafts/reasons/previews**
+- **Queue executes**
+- **Artifacts prove**
+
+Never treat conversational text as execution truth.
+
+## 3) Service bring-up
+
+From repo root:
+
+```bash
+make daemon-restart
+make panel-restart
+make vera-restart
+make daemon-status
+make panel-status
+make vera-status
+```
+
+## 4) Baseline sanity checks
+
+```bash
+voxera doctor --quick
+voxera queue status
+voxera queue health
+voxera queue approvals list
+```
+
+Expected baseline:
+
+- services are reachable
+- queue is readable
+- no unexplained failed-job spikes
+
+## 5) Standard prompt pack (known-good smoke set)
+
+Run these in one fresh Vera session unless noted otherwise.
+
+### A) Code save + submit
+
+Prompt sequence:
+
+1. `Write me a python script that fetches a URL and prints the page title.`
+2. `save it`
+3. `submit it`
+
+Proves:
+
+- drafting works
+- saveability works
+- preview submit works
+- queue handoff occurs
+
+Expected pass:
+
+- preview exists after step 2
+- one queue inbox job appears after step 3
+- saved/submitted content is code (not wrapper chatter)
+
+### B) Explanation save + submit
+
+Prompt sequence:
+
+1. `Write me a python script that fetches a URL and prints the page title.`
+2. `Explain how this works in plain English.`
+3. `save that explanation as script-explained.txt`
+4. `submit it`
+
+Proves:
+
+- saveable assistant artifact selection
+- explicit save target naming
+- truthful submit handoff
+
+Expected pass:
+
+- preview path is `~/VoxeraOS/notes/script-explained.txt`
+- preview content is the explanation body (not preview/queue narration)
+- one queue job is created on submit
+
+### C) Writing save + submit
+
+Prompt sequence:
+
+1. `Tell me about black holes. Write a short essay.`
+2. `save it as black-holes-essay.md`
+3. `submit it`
+
+Proves:
+
+- writing flow stays saveable
+- note drafting remains stable
+
+Expected pass:
+
+- preview contains essay content
+- queue receives one governed write payload on submit
+
+### D) Courtesy-turn save previous answer
+
+Prompt sequence:
+
+1. `Explain photosynthesis simply.`
+2. `thanks`
+3. `put your previous explanation in a note called photosynthesis.txt`
+4. `submit it`
+
+Proves:
+
+- recent meaningful-answer targeting
+- courtesy turns do not hijack save targeting
+
+Expected pass:
+
+- preview/file content contains photosynthesis explanation
+- preview/file content does **not** contain courtesy filler (e.g., "you're welcome")
+
+### E) Investigation save flow
+
+Prompt sequence:
+
+1. `Search the web for the latest official Brave Search API documentation`
+2. `summarize all findings`
+3. `save that as brave-api-summary.md`
+4. `submit it`
+
+Proves:
+
+- read-only investigation lane remains distinct
+- derived investigation output is saveable
+- governed save/submit still required for side effects
+
+Expected pass:
+
+- investigation response is read-only findings
+- saved content matches derived summary, not shell/wrapper text
+- submit creates a real queue job
+
+### F) No-preview fail-safe
+
+Prompt sequence:
+
+1. Start a fresh session with no prior save/preview.
+2. `submit it`
+
+Proves:
+
+- truthful no-preview behavior
+- no invented queue submission
+
+Expected pass:
+
+- Vera clearly says no governed preview exists
+- no queue inbox job is created
+
+### G) Optional compare/expand save flow
+
+Prompt sequence:
+
+1. `Search the web for the latest official Brave Search API documentation`
+2. `compare results 1 and 3`
+3. `save that to a note`
+4. `submit it`
+
+Proves:
+
+- derived follow-up save flow stability
+
+Expected pass:
+
+- preview contains comparison content for selected results
+- queue submission occurs only after explicit submit
+
+## 6) Verification steps per scenario
+
+Use these checks after each scenario:
+
+1. **Preview truth**
+   - confirm preview appears only when save/write intent exists
+2. **Queue truth**
+   - confirm queue inbox job exists for submit scenarios
+   - confirm no job exists for no-preview submit
+3. **Artifact/content truth**
+   - inspect saved note payload/content
+   - ensure content is meaningful answer/derivation, not wrapper text
+4. **Follow-up honesty**
+   - Vera follow-up text should not claim execution success without queue/artifact evidence
+
+Helpful commands:
+
+```bash
+voxera queue status
+voxera queue health
+find "${VOXERA_QUEUE_ROOT:-$HOME/VoxeraOS/notes/queue}/inbox" -maxdepth 1 -name '*.json'
+```
+
+## 7) Pass/fail criteria
+
+Pass when all are true:
+
+- save-intent prompts create meaningful previews
+- submit uses queue handoff and clears active preview
+- save-by-reference targets meaningful prior content
+- investigation-derived outputs are saveable and clean
+- no-preview submit fails clearly/truthfully with zero handoff
+
+Regression if any occur:
+
+- fake submit success without queue handoff
+- courtesy/wrapper text saved instead of requested content
+- no-preview submit creating queue jobs
+- investigation lane causing side effects without governed save+submit
+
+## 8) Automated coverage anchors
+
+The pack is represented by focused Vera tests (not one giant mixed-flow test):
+
+- `tests/test_vera_web.py`
+- `tests/test_vera_contextual_flows.py`
+- `tests/test_vera_session_characterization.py`
+
+Prefer extending those focused files for future Vera regression additions.
