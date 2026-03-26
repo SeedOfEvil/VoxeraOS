@@ -6,6 +6,7 @@ from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import service as vera_service
 from voxera.vera import weather_flow as vera_weather_flow
 from voxera.vera.brave_search import WebSearchResult
+from voxera.vera_web import app as vera_app_module
 
 from .vera_session_helpers import (
     make_vera_session,
@@ -342,3 +343,87 @@ def test_explicit_weather_investigation_stays_in_brave_lane(tmp_path, monkeypatc
         "Here are the top findings I found via read-only Brave web investigation"
         in session.turns()[-1]["text"]
     )
+
+
+def test_regression_pack_code_save_submit_handoff_smoke(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if "write me a python script" in user_message.lower():
+            return {
+                "answer": (
+                    "```python\n"
+                    "import requests\n"
+                    "from bs4 import BeautifulSoup\n\n"
+                    "resp = requests.get('https://example.com', timeout=10)\n"
+                    "resp.raise_for_status()\n"
+                    "soup = BeautifulSoup(resp.text, 'html.parser')\n"
+                    "print(soup.title.get_text(strip=True) if soup.title else 'No title')\n"
+                    "```"
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    draft = session.chat("Write me a python script that fetches a URL and prints the page title.")
+    save = session.chat("save it")
+    submit = session.chat("submit it")
+
+    assert draft.status_code == 200
+    assert save.status_code == 200
+    assert submit.status_code == 200
+    preview = session.preview()
+    assert preview is None
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"].startswith("~/VoxeraOS/notes/note-")
+    assert "beautifulsoup" in payload["write_file"]["content"].lower()
+
+
+def test_regression_pack_courtesy_turn_previous_explanation_save_submit_smoke(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        lowered = user_message.lower()
+        if "photosynthesis" in lowered:
+            return {
+                "answer": (
+                    "Photosynthesis lets plants use sunlight, water, and carbon dioxide "
+                    "to produce sugar and oxygen."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "You're welcome!", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("Explain photosynthesis simply.")
+    session.chat("thanks")
+    save = session.chat("put your previous explanation in a note called photosynthesis.txt")
+    submit = session.chat("submit it")
+
+    assert save.status_code == 200
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/photosynthesis.txt"
+    assert "carbon dioxide" in payload["write_file"]["content"].lower()
+    assert "you're welcome" not in payload["write_file"]["content"].lower()
+
+
+def test_regression_pack_no_preview_submit_fails_truthfully_without_queue_handoff(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+    res = session.chat("submit it")
+    assert res.status_code == 200
+    assert "no governed preview" in session.turns()[-1]["text"].lower()
+    assert list((session.queue / "inbox").glob("*.json")) == []

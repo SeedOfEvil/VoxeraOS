@@ -73,6 +73,8 @@ For deterministic local/CI tests, Make targets run pytest with `VOXERA_LOAD_DOTE
 
 For repeatable end-to-end runtime validation across CLI, queue, panel, Vera, and artifact evidence, use the dedicated playbook: [`docs/testing/RUNTIME_VALIDATION_PLAYBOOK.md`](testing/RUNTIME_VALIDATION_PLAYBOOK.md).
 
+For compact conversational control-layer smoke checks focused specifically on Vera drafting/save/submit behavior, use: [`docs/testing/VERA_REGRESSION_PACK.md`](testing/VERA_REGRESSION_PACK.md).
+
 Tests isolate the operator health snapshot via the `VOXERA_HEALTH_PATH` environment variable.  The `conftest.py` `_isolate_health_snapshot` fixture sets this automatically for every test.
 
 Current refactor ownership map for contributors/operators:
