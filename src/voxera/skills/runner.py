@@ -5,7 +5,7 @@ from typing import Any, Literal, cast
 from ..audit import log
 from ..core.capability_semantics import (
     CAPABILITY_EFFECT_CLASS,
-    manifest_capability_semantics,
+    capability_semantic,
 )
 from ..core.execution_capabilities import normalize_manifest_capabilities
 from ..models import AppConfig, PlanSimulation, PlanStep, RunResult, SkillManifest
@@ -19,12 +19,20 @@ _PolicyDecisionLiteral = Literal["allow", "ask", "deny"]
 
 
 def is_skill_read_only(manifest: SkillManifest) -> bool:
-    """Return True when every declared capability has a read-only effect class.
+    """Return True when every declared capability has a known read-only semantic.
 
-    Skills with no declared capabilities are treated as non-read-only (fail-closed).
+    Fail-closed behavior:
+    - empty capability declarations are non-read-only
+    - unknown capabilities are non-read-only
     """
-    projection = manifest_capability_semantics(manifest)
-    return projection.get("intent_class") == "read_only"
+    if not manifest.capabilities:
+        return False
+
+    for capability in manifest.capabilities:
+        semantic = capability_semantic(capability)
+        if semantic is None or semantic.intent_class != "read_only":
+            return False
+    return True
 
 
 class CapabilityEnforcementResult:
