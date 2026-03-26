@@ -1,0 +1,12 @@
+{
+  "id": "rvp-delete-approval",
+  "steps": [
+    {
+      "skill_id": "files.delete_file",
+      "args": {
+        "path": "~/VoxeraOS/notes/runtime-validation/delete-me.txt"
+      }
+    }
+  ],
+  "goal": "Approval-paused check: deleting a file should require approval"
+}

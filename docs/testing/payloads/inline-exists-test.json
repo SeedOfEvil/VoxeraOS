@@ -1,0 +1,12 @@
+{
+  "id": "rvp-inline-exists",
+  "steps": [
+    {
+      "skill_id": "files.exists",
+      "args": {
+        "path": "~/VoxeraOS/notes/runtime-validation/delete-me.txt"
+      }
+    }
+  ],
+  "goal": "Inline-steps happy path check: files.exists returns deterministic result"
+}

@@ -1,0 +1,6 @@
+{
+  "id": "rvp-system-inspect",
+  "mission_id": "system_inspect",
+  "title": "Runtime validation happy path",
+  "goal": "Run system_inspect mission to verify queue and artifacts happy path"
+}
