@@ -1,0 +1,12 @@
+{
+  "id": "rvp-blocked-list-dir",
+  "steps": [
+    {
+      "skill_id": "files.list_dir",
+      "args": {
+        "path": "~/VoxeraOS/notes/queue"
+      }
+    }
+  ],
+  "goal": "Boundary hardening check: list queue root directly should fail closed"
+}

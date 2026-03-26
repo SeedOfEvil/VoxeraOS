@@ -1,0 +1,11 @@
+{
+  "id": "rvp-missing-source-copy",
+  "file_organize": {
+    "source_path": "~/VoxeraOS/notes/runtime-validation/does-not-exist.txt",
+    "destination_dir": "~/VoxeraOS/notes/runtime-validation/archive",
+    "mode": "copy",
+    "overwrite": false,
+    "delete_original": false
+  },
+  "goal": "Retryable non-boundary failure check: missing source should fail truthfully"
+}
