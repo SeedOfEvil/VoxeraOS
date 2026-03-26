@@ -172,10 +172,12 @@
   <div class="section-label">Approval Required</div>
   <section class="card mb" style="border-color:var(--warn); background:var(--warn-soft);">
     <h2 style="color:var(--warn); margin-bottom:var(--space-3);">Approval Details</h2>
+    {% set approval_target = payload.approval.target if payload.approval.target is defined and payload.approval.target else {} %}
+    {% set approval_scope = payload.approval.scope if payload.approval.scope is defined and payload.approval.scope else {} %}
     <dl class="detail-grid" style="margin-bottom:var(--space-3);">
-      <dt>Policy reason</dt><dd>{{payload.approval.policy_reason or payload.approval.reason}}</dd>
-      <dt>Target</dt><dd>{{payload.approval.target.type}}: {{payload.approval.target.value}}</dd>
-      <dt>Scope</dt><dd>fs={{payload.approval.scope.fs_scope}}, net={{payload.approval.scope.needs_network}}</dd>
+      <dt>Policy reason</dt><dd>{{payload.approval.policy_reason or payload.approval.reason or '-'}}</dd>
+      <dt>Target</dt><dd>{{approval_target.type or '-'}}: {{approval_target.value or '-'}}</dd>
+      <dt>Scope</dt><dd>fs={{approval_scope.fs_scope or '-'}}, net={{approval_scope.needs_network if approval_scope.needs_network is defined else '-'}}</dd>
     </dl>
     <div class="action-group">
       <form method="post" action="/queue/approvals/{{payload.job_id}}/approve"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-approve" type="submit">Approve</button></form>

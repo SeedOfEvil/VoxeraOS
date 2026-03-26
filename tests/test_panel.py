@@ -667,7 +667,8 @@ def test_job_detail_artifact_inventory_optional_missing_does_not_error(tmp_path,
     assert "Artifact Inventory" in res.text
     assert "assistant_response.json" in res.text
     assert "not present (optional)" in res.text
-    assert "missing required" not in res.text
+    assert "state sidecar" in res.text
+    assert "missing required" in res.text
 
 
 def test_job_detail_operator_summary_distinguishes_approval_blocked_and_retryable_failure(
