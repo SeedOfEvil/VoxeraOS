@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from voxera.core.queue_contracts import (
     build_execution_result,
+    build_structured_step_results,
     detect_request_kind,
     minimum_artifact_presence,
     refresh_execution_result_artifact_contract,
@@ -127,6 +128,30 @@ def test_refresh_execution_result_artifact_contract_uses_final_directory_listing
     assert refreshed["evidence_bundle"]["minimum_artifacts"]["status"] == "observed", (
         "evidence bundle should stay in sync with refreshed contract"
     )
+    assert (
+        refreshed["evidence_bundle"]["review_summary"]["minimum_artifacts"]["status"] == "observed"
+    ), "nested evidence review summary must match top-level review summary"
+
+
+def test_build_structured_step_results_marks_path_blocked_scope_as_blocked() -> None:
+    steps = build_structured_step_results(
+        {
+            "results": [
+                {
+                    "step": 1,
+                    "skill": "files.list_dir",
+                    "ok": False,
+                    "error": "Path is outside allowed scope",
+                    "error_class": "path_blocked_scope",
+                    "blocked": False,
+                }
+            ],
+            "step_outcomes": [{"step": 1, "outcome": "failed"}],
+        },
+        total_steps=1,
+    )
+    assert steps[0]["blocked"] is True
+    assert steps[0]["blocked_reason_class"] == "path_blocked_scope"
 
 
 def test_resolve_structured_execution_normalizes_awaiting_approval_terminal_to_blocked(

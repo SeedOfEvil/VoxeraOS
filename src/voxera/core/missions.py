@@ -546,9 +546,21 @@ class MissionRunner:
                     }
                 )
             elif not rr.ok:
-                blocked_now = str(
-                    rr.data.get("status") or ""
-                ) == "blocked" or "Denied by policy" in str(rr.error or "")
+                error_class = (
+                    str(rr.data.get("error_class") or "").strip().lower()
+                    if isinstance(rr.data, dict)
+                    else ""
+                )
+                boundary_blocked = error_class in {
+                    "path_blocked_scope",
+                    "capability_boundary_mismatch",
+                    "policy_denied",
+                }
+                blocked_now = (
+                    str(rr.data.get("status") or "") == "blocked"
+                    or "Denied by policy" in str(rr.error or "")
+                    or boundary_blocked
+                )
                 outcome = "blocked" if blocked_now else "failed"
                 step_outcomes.append(
                     {
@@ -561,6 +573,7 @@ class MissionRunner:
                         "reason": rr.data.get("reason") if isinstance(rr.data, dict) else None,
                         "blocked_reason_class": (
                             rr.data.get("blocked_reason_class")
+                            or (error_class if blocked_now else None)
                             if isinstance(rr.data, dict)
                             else None
                         ),

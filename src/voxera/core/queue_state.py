@@ -96,6 +96,7 @@ def update_job_state_snapshot(
     terminal_outcome: str | None = None,
     failure_summary: str | None = None,
     blocked_reason: str | None = None,
+    blocked_reason_class: str | None = None,
     approval_status: str | None = None,
 ) -> dict[str, Any]:
     """Build a queue-owned lifecycle snapshot for a submitted job.
@@ -159,6 +160,29 @@ def update_job_state_snapshot(
     if resolved_terminal not in TERMINAL_OUTCOMES:
         resolved_terminal = None
 
+    resolved_blocked_reason_class = blocked_reason_class
+    if resolved_blocked_reason_class is None:
+        resolved_blocked_reason_class = (
+            rr.get("blocked_reason_class")
+            if isinstance(rr.get("blocked_reason_class"), str)
+            else current.get("blocked_reason_class")
+            if isinstance(current.get("blocked_reason_class"), str)
+            else None
+        )
+    if resolved_blocked_reason_class is None and isinstance(rr.get("step_outcomes"), list):
+        for outcome in reversed(rr["step_outcomes"]):
+            if not isinstance(outcome, dict):
+                continue
+            value = outcome.get("blocked_reason_class")
+            if isinstance(value, str) and value.strip():
+                resolved_blocked_reason_class = value.strip()
+                break
+    resolved_blocked_reason = (
+        blocked_reason if blocked_reason is not None else current.get("blocked_reason")
+    )
+    if resolved_blocked_reason is None and resolved_blocked_reason_class:
+        resolved_blocked_reason = failure_summary or current.get("failure_summary")
+
     snapshot: dict[str, Any] = {
         "schema_version": JOB_STATE_SCHEMA_VERSION,
         "job_id": f"{Path(job_ref).stem}.json",
@@ -171,9 +195,8 @@ def update_job_state_snapshot(
         "failure_summary": failure_summary
         if failure_summary is not None
         else current.get("failure_summary"),
-        "blocked_reason": blocked_reason
-        if blocked_reason is not None
-        else current.get("blocked_reason"),
+        "blocked_reason": resolved_blocked_reason,
+        "blocked_reason_class": resolved_blocked_reason_class,
         "approval_status": approval_status
         if approval_status is not None
         else current.get("approval_status"),

@@ -340,6 +340,7 @@ def resolve_structured_execution(
     latest_error_class = str(latest_step.get("error_class") or "").strip().lower()
 
     step_status = str(latest_step.get("status") or "")
+    latest_blocked_reason_class = str(latest_step.get("blocked_reason_class") or "").strip().lower()
     terminal_outcome = _normalize_terminal_outcome(
         execution_result.get("terminal_outcome")
         or state_payload.get("terminal_outcome")
@@ -374,9 +375,18 @@ def resolve_structured_execution(
     blocked = bool(
         latest_step.get("blocked")
         or step_status == "blocked"
+        or latest_error_class
+        in {"path_blocked_scope", "capability_boundary_mismatch", "policy_denied"}
         or approval_status == "pending"
         or state_payload.get("lifecycle_state") in {"pending_approval", "blocked"}
     )
+    blocked_reason_class = ""
+    if blocked:
+        blocked_reason_class = (
+            latest_blocked_reason_class
+            or str(state_payload.get("blocked_reason_class") or "").strip().lower()
+            or latest_error_class
+        )
     retryable: bool | None = (
         latest_step.get("retryable") if isinstance(latest_step.get("retryable"), bool) else None
     )
@@ -468,6 +478,8 @@ def resolve_structured_execution(
         "total_steps": int(total_steps),
         "approval_status": approval_status,
         "blocked": blocked,
+        "blocked_reason_class": blocked_reason_class or None,
+        "blocked_reason": str(state_payload.get("blocked_reason") or "") or None,
         "retryable": retryable,
         "operator_note": str(latest_step.get("operator_note") or ""),
         "next_action_hint": str(latest_step.get("next_action_hint") or ""),
@@ -490,6 +502,7 @@ def resolve_structured_execution(
                 "next_action_hint": str(step.get("next_action_hint") or ""),
                 "approval_status": str(step.get("approval_status") or ""),
                 "blocked": bool(step.get("blocked")),
+                "blocked_reason_class": str(step.get("blocked_reason_class") or "") or None,
                 "retryable": step.get("retryable")
                 if isinstance(step.get("retryable"), bool)
                 else None,

@@ -465,6 +465,19 @@ def build_structured_step_results(
             continue
         outcome = outcome_by_step.get(step_index, {})
         status = str(outcome.get("outcome") or ("succeeded" if item.get("ok") else "failed"))
+        error_class = str(item.get("error_class") or "").strip().lower()
+        blocked_by_error_class = error_class in {
+            "path_blocked_scope",
+            "capability_boundary_mismatch",
+            "policy_denied",
+        }
+        blocked_reason_class = (
+            str(item.get("blocked_reason_class") or "").strip()
+            or str(outcome.get("blocked_reason_class") or "").strip()
+            or error_class
+            if blocked_by_error_class
+            else ""
+        )
         started_at_ms = int(item.get("started_at_ms") or 0) or None
         finished_at_ms = int(item.get("finished_at_ms") or 0) or None
         duration_ms = int(item.get("duration_ms") or 0) or None
@@ -494,11 +507,14 @@ def build_structured_step_results(
                 if isinstance(item.get("retryable"), bool)
                 else None,
                 "blocked": (
-                    item.get("blocked")
+                    True
+                    if blocked_by_error_class
+                    else item.get("blocked")
                     if isinstance(item.get("blocked"), bool)
                     else status == "blocked"
                 ),
                 "approval_status": item.get("approval_status") or outcome.get("approval_status"),
+                "blocked_reason_class": blocked_reason_class or None,
                 "error": str(item.get("error") or "") or None,
                 "error_class": item.get("error_class"),
             }
@@ -766,6 +782,7 @@ def refresh_execution_result_artifact_contract(
     evidence_bundle = dict(evidence_bundle_raw) if isinstance(evidence_bundle_raw, dict) else {}
     evidence_bundle["artifact_families"] = artifact_families
     evidence_bundle["artifact_refs"] = artifact_refs
+    evidence_bundle["review_summary"] = review_summary
     evidence_bundle["expected_artifacts"] = expected_observation
     evidence_bundle["minimum_artifacts"] = minimum_artifacts
     refreshed["evidence_bundle"] = evidence_bundle
