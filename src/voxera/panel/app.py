@@ -1007,6 +1007,7 @@ def _job_artifact_inventory(
                 "relative_path": path.name if path.parent == artifacts_dir else str(path),
                 "present": path.exists(),
                 "expected": expected,
+                "contract_level": "required" if expected else "optional",
                 "notes": notes,
             }
         )
@@ -1075,6 +1076,153 @@ def _job_recent_timeline(
             }
         )
     return timeline[:20]
+
+
+def _operator_outcome_summary(
+    *,
+    bucket: str,
+    execution: dict[str, Any],
+    state_sidecar: dict[str, Any],
+    job_context: dict[str, Any],
+    has_approval: bool,
+) -> dict[str, Any]:
+    lifecycle_state = str(
+        execution.get("lifecycle_state") or state_sidecar.get("lifecycle_state") or bucket
+    ).strip()
+    terminal_outcome = str(
+        execution.get("terminal_outcome") or state_sidecar.get("terminal_outcome") or ""
+    ).strip()
+    approval_status = str(
+        execution.get("approval_status") or job_context.get("approval_status") or "none"
+    ).strip()
+    blocked = bool(execution.get("blocked"))
+    blocked_reason = str(
+        execution.get("blocked_reason") or job_context.get("blocked_reason") or ""
+    ).strip()
+    blocked_reason_class = str(execution.get("blocked_reason_class") or "").strip()
+    failure_summary = str(
+        job_context.get("failure_summary") or execution.get("error") or ""
+    ).strip()
+    next_action_hint = str(execution.get("next_action_hint") or "").strip()
+    retryable = execution.get("retryable") if isinstance(execution.get("retryable"), bool) else None
+
+    key = "in_progress"
+    label = "In progress"
+    headline = "Job is still running."
+    next_action = next_action_hint or "Wait for completion."
+    severity = "info"
+
+    if approval_status == "pending" or lifecycle_state in {"awaiting_approval", "pending_approval"}:
+        key = "awaiting_approval"
+        label = "Awaiting approval"
+        headline = "Waiting for operator approval."
+        next_action = next_action_hint or "Review the approval record and approve or deny."
+        severity = "warn"
+    elif approval_status == "denied" or terminal_outcome == "denied":
+        key = "denied"
+        label = "Denied"
+        headline = "Stopped because approval was denied."
+        next_action = (
+            next_action_hint or "Adjust scope or intent, then retry with a compliant request."
+        )
+        severity = "danger"
+    elif terminal_outcome == "succeeded" or lifecycle_state == "done" or bucket == "done":
+        key = "succeeded"
+        label = "Succeeded"
+        headline = "Completed successfully."
+        next_action = next_action_hint or "No operator action required."
+        severity = "success"
+    elif terminal_outcome == "canceled" or lifecycle_state == "canceled" or bucket == "canceled":
+        key = "canceled"
+        label = "Canceled"
+        headline = "Canceled before completion."
+        next_action = next_action_hint or "Retry only if work is still needed."
+        severity = "warn"
+    elif blocked and (
+        blocked_reason_class
+        in {"path_blocked_scope", "capability_boundary_mismatch", "policy_denied"}
+        or "block" in blocked_reason.lower()
+        or "scope" in blocked_reason.lower()
+        or "policy" in blocked_reason.lower()
+        or terminal_outcome == "blocked"
+    ):
+        key = "blocked_boundary"
+        label = "Blocked by boundary/policy"
+        headline = "Stopped by a control-plane boundary or policy restriction."
+        next_action = next_action_hint or "Adjust scope/policy or run from an allowed boundary."
+        severity = "danger"
+    elif terminal_outcome == "failed" or lifecycle_state == "failed" or bucket == "failed":
+        if retryable is not False:
+            key = "retryable_failure"
+            label = "Failed (retryable)"
+            headline = "Failed with an operator-fixable/runtime cause."
+            next_action = next_action_hint or "Fix the reported cause, then retry."
+        else:
+            key = "failed"
+            label = "Failed"
+            headline = "Failed with a terminal runtime error."
+            next_action = next_action_hint or "Inspect failure details before retrying."
+        severity = "danger"
+
+    reason = blocked_reason or failure_summary or str(execution.get("latest_summary") or "").strip()
+    if key == "awaiting_approval" and has_approval:
+        reason = reason or "Approval artifact is present in pending/approvals."
+
+    return {
+        "key": key,
+        "label": label,
+        "headline": headline,
+        "reason": reason,
+        "next_action": next_action,
+        "severity": severity,
+        "lifecycle_state": lifecycle_state,
+        "terminal_outcome": terminal_outcome or None,
+        "approval_status": approval_status,
+        "blocked_reason_class": blocked_reason_class or None,
+        "retryable": retryable,
+    }
+
+
+def _why_stopped_rows(
+    *,
+    execution: dict[str, Any],
+    state_sidecar: dict[str, Any],
+    job_context: dict[str, Any],
+) -> list[dict[str, str]]:
+    candidates: list[tuple[str, str]] = [
+        (
+            "Lifecycle",
+            str(execution.get("lifecycle_state") or state_sidecar.get("lifecycle_state") or ""),
+        ),
+        (
+            "Terminal outcome",
+            str(execution.get("terminal_outcome") or state_sidecar.get("terminal_outcome") or ""),
+        ),
+        (
+            "Approval status",
+            str(execution.get("approval_status") or job_context.get("approval_status") or ""),
+        ),
+        (
+            "Blocked reason class",
+            str(
+                execution.get("blocked_reason_class")
+                or state_sidecar.get("blocked_reason_class")
+                or ""
+            ),
+        ),
+        (
+            "Blocked reason",
+            str(execution.get("blocked_reason") or job_context.get("blocked_reason") or ""),
+        ),
+        (
+            "Failure summary",
+            str(job_context.get("failure_summary") or execution.get("error") or ""),
+        ),
+        ("Latest step summary", str(execution.get("latest_summary") or "")),
+        ("Next action hint", str(execution.get("next_action_hint") or "")),
+        ("Stop reason", str(execution.get("stop_reason") or "")),
+    ]
+    return [{"label": label, "value": value} for label, value in candidates if value.strip()]
 
 
 def _trim_tail(value: str, *, max_chars: int = 2000) -> str:
@@ -1290,6 +1438,18 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         failed_sidecar=failed_sidecar,
         structured_execution=structured_execution,
     )
+    operator_summary = _operator_outcome_summary(
+        bucket=bucket,
+        execution=structured_execution,
+        state_sidecar=state_sidecar,
+        job_context=context_summary,
+        has_approval=bool(approval),
+    )
+    why_stopped = _why_stopped_rows(
+        execution=structured_execution,
+        state_sidecar=state_sidecar,
+        job_context=context_summary,
+    )
     audit_timeline = relevant_events[:40]
     lineage = (
         structured_execution.get("lineage")
@@ -1327,6 +1487,8 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         if isinstance(structured_execution.get("child_summary"), dict)
         else None,
         "execution": structured_execution,
+        "operator_summary": operator_summary,
+        "why_stopped": why_stopped,
         "recent_timeline": _job_recent_timeline(actions, audit_timeline),
         "artifacts_dir": str(artifacts_dir),
         "audit_timeline": audit_timeline,
@@ -1399,6 +1561,13 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     review_summary = review_summary_raw if isinstance(review_summary_raw, dict) else {}
     minimum_artifacts_raw = review_summary.get("minimum_artifacts")
     minimum_artifacts = minimum_artifacts_raw if isinstance(minimum_artifacts_raw, dict) else None
+    operator_summary = _operator_outcome_summary(
+        bucket=bucket,
+        execution=execution,
+        state_sidecar=state_payload,
+        job_context=job_context,
+        has_approval=bool(approval),
+    )
 
     return {
         "ok": True,
@@ -1453,6 +1622,7 @@ def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         ),
         "latest_summary": str(execution.get("latest_summary") or ""),
         "operator_note": str(execution.get("operator_note") or ""),
+        "operator_summary": operator_summary,
         "failure_summary": failure_summary,
         "stop_reason": stop_reason,
         "artifacts": {

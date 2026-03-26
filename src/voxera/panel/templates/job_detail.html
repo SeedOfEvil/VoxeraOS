@@ -29,6 +29,20 @@
     </div>
   </header>
 
+  <div class="section-label">Operator Summary</div>
+  <section class="card mb
+    {% if payload.operator_summary.severity == 'success' %}alert-success
+    {% elif payload.operator_summary.severity == 'warn' %}alert-warn
+    {% elif payload.operator_summary.severity == 'danger' %}alert-danger
+    {% else %}alert-info{% endif %}">
+    <h2 style="margin-bottom:var(--space-2);">{{payload.operator_summary.label}}</h2>
+    <p style="margin:0 0 var(--space-2);"><b>{{payload.operator_summary.headline}}</b></p>
+    {% if payload.operator_summary.reason %}
+      <p style="margin:0 0 var(--space-2);"><span class="muted">Reason:</span> {{payload.operator_summary.reason}}</p>
+    {% endif %}
+    <p style="margin:0;"><span class="muted">Next action:</span> {{payload.operator_summary.next_action}}</p>
+  </section>
+
   <div class="section-label">Lifecycle &amp; Execution State</div>
   <section class="card mb">
     <dl class="detail-grid" style="margin-bottom:var(--space-2);">
@@ -45,6 +59,17 @@
       <dt>Step progress</dt><dd id="live-progress">{{payload.execution.current_step_index or payload.state.current_step_index}} / {{payload.execution.total_steps or payload.state.total_steps}}</dd>
     </dl>
   </section>
+
+  {% if payload.why_stopped %}
+  <div class="section-label">Why Stopped</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:0;">
+      {% for item in payload.why_stopped %}
+        <dt>{{item.label}}</dt><dd>{{item.value}}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+  {% endif %}
 
 
   {% if payload.lineage %}
@@ -147,10 +172,12 @@
   <div class="section-label">Approval Required</div>
   <section class="card mb" style="border-color:var(--warn); background:var(--warn-soft);">
     <h2 style="color:var(--warn); margin-bottom:var(--space-3);">Approval Details</h2>
+    {% set approval_target = payload.approval.target if payload.approval.target is defined and payload.approval.target else {} %}
+    {% set approval_scope = payload.approval.scope if payload.approval.scope is defined and payload.approval.scope else {} %}
     <dl class="detail-grid" style="margin-bottom:var(--space-3);">
-      <dt>Policy reason</dt><dd>{{payload.approval.policy_reason or payload.approval.reason}}</dd>
-      <dt>Target</dt><dd>{{payload.approval.target.type}}: {{payload.approval.target.value}}</dd>
-      <dt>Scope</dt><dd>fs={{payload.approval.scope.fs_scope}}, net={{payload.approval.scope.needs_network}}</dd>
+      <dt>Policy reason</dt><dd>{{payload.approval.policy_reason or payload.approval.reason or '-'}}</dd>
+      <dt>Target</dt><dd>{{approval_target.type or '-'}}: {{approval_target.value or '-'}}</dd>
+      <dt>Scope</dt><dd>fs={{approval_scope.fs_scope or '-'}}, net={{approval_scope.needs_network if approval_scope.needs_network is defined else '-'}}</dd>
     </dl>
     <div class="action-group">
       <form method="post" action="/queue/approvals/{{payload.job_id}}/approve"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-approve" type="submit">Approve</button></form>
@@ -172,18 +199,36 @@
 
   <div class="section-label">Artifact Inventory</div>
   <section class="card mb">
+    {% if payload.execution.minimum_artifacts %}
+      <div class="alert {% if payload.execution.minimum_artifacts.status == 'present' %}alert-success{% else %}alert-warn{% endif %}" style="margin-bottom:var(--space-3);">
+        <b>Minimum contract:</b> {{payload.execution.minimum_artifacts.status or 'unknown'}}.
+        {% if payload.execution.minimum_artifacts.required %}
+          Required: <span class="mono">{{payload.execution.minimum_artifacts.required|join(', ')}}</span>.
+        {% endif %}
+        {% if payload.execution.minimum_artifacts.missing %}
+          Missing required: <span class="mono">{{payload.execution.minimum_artifacts.missing|join(', ')}}</span>.
+        {% endif %}
+      </div>
+    {% endif %}
+    {% if payload.execution.expected_artifacts %}
+      <p class="muted text-sm" style="margin-top:0;">Expected artifacts (job-type dependent): <span class="mono">{{payload.execution.expected_artifacts|join(', ')}}</span></p>
+    {% endif %}
     {% if payload.artifact_anomalies %}
       <div class="alert alert-info">Soft anomaly: {{payload.artifact_anomalies|join('; ')}}</div>
     {% endif %}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Artifact</th><th>Expected</th><th>Present</th><th>Notes</th></tr></thead>
+        <thead><tr><th>Artifact</th><th>Contract</th><th>Status</th><th>Notes</th></tr></thead>
         <tbody>
           {% for item in payload.artifact_inventory %}
           <tr>
             <td class="mono text-sm">{{item.label}}</td>
-            <td>{{'yes' if item.expected else 'optional'}}</td>
-            <td>{{'yes' if item.present else 'missing'}}</td>
+            <td>{{item.contract_level}}</td>
+            <td>
+              {% if item.present %}present
+              {% elif item.expected %}missing required
+              {% else %}not present (optional){% endif %}
+            </td>
             <td class="muted text-sm">{{item.notes}}</td>
           </tr>
           {% endfor %}
@@ -202,7 +247,20 @@
     {% if payload.recent_timeline|length == 0 %}
       <div class="empty-state">No recent timeline events.</div>
     {% else %}
-      <pre>{{payload.recent_timeline | tojson(indent=2)}}</pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Source</th><th>Event</th><th>Detail</th></tr></thead>
+          <tbody>
+            {% for item in payload.recent_timeline %}
+            <tr>
+              <td>{{item.source or '-'}}</td>
+              <td class="mono text-sm">{{item.event or '-'}}</td>
+              <td class="muted text-sm">{{item.detail or '-'}}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% endif %}
   </section>
 
