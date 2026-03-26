@@ -58,6 +58,7 @@ A queue job includes:
 - `running`
 - `awaiting_approval`
 - `resumed`
+- `advisory_running` (assistant advisory lane; emits canonical artifacts)
 - `done`
 - `failed` / `step_failed` / `blocked`
 - `canceled`
