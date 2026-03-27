@@ -82,6 +82,7 @@ from ..vera.service import (
     read_session_enrichment,
     read_session_handoff_state,
     read_session_investigation,
+    read_session_last_user_input_origin,
     read_session_preview,
     read_session_saveable_assistant_artifacts,
     read_session_turns,
@@ -98,6 +99,10 @@ from ..vera.service import (
     write_session_preview,
     write_session_weather_context,
 )
+from ..voice.flags import VoiceFoundationFlags, load_voice_foundation_flags
+from ..voice.input import VoiceInputDisabledError, ingest_voice_transcript
+from ..voice.models import InputOrigin, normalize_input_origin
+from ..voice.output import voice_output_status
 
 
 class ExecutionMode(enum.Enum):
@@ -1190,8 +1195,19 @@ def _render_page(
     turns: list[dict[str, str]],
     status: str,
     error: str = "",
+    voice_flags: VoiceFoundationFlags | None = None,
 ) -> HTMLResponse:
     root = _active_queue_root()
+    active_voice_flags = voice_flags or load_voice_foundation_flags()
+    voice_runtime: dict[str, object] = {
+        "voice_foundation_enabled": active_voice_flags.enable_voice_foundation,
+        "voice_input_enabled": active_voice_flags.voice_input_enabled,
+        "voice_output_enabled": active_voice_flags.voice_output_enabled,
+        "voice_stt_backend": active_voice_flags.voice_stt_backend,
+        "voice_tts_backend": active_voice_flags.voice_tts_backend,
+    }
+    for key, value in voice_output_status(active_voice_flags).items():
+        voice_runtime[key] = value
     tmpl = templates.get_template("index.html")
     html = tmpl.render(
         session_id=session_id,
@@ -1200,6 +1216,8 @@ def _render_page(
         queue_boundary=vera_queue_boundary_summary(),
         error=error,
         debug_info=session_debug_info(root, session_id, mode_status=status),
+        voice_runtime=voice_runtime,
+        last_user_input_origin=read_session_last_user_input_origin(root, session_id),
         system_prompt=VERA_SYSTEM_PROMPT,
         pending_preview=read_session_preview(root, session_id),
         drafting_examples=drafting_guidance().examples,
@@ -1288,7 +1306,37 @@ async def chat(request: Request):
     raw = (await request.body()).decode("utf-8", errors="replace")
     parsed = parse_qs(raw, keep_blank_values=True)
     message = str((parsed.get("message") or [""])[0])
+    input_origin_raw = str((parsed.get("input_origin") or ["typed"])[0])
     session_id = str((parsed.get("session_id") or [""])[0])
+    voice_flags = load_voice_foundation_flags()
+    input_origin = normalize_input_origin(input_origin_raw)
+
+    if input_origin is InputOrigin.VOICE_TRANSCRIPT:
+        try:
+            ingested = ingest_voice_transcript(
+                transcript_text=message,
+                voice_input_enabled=voice_flags.voice_input_enabled,
+            )
+        except VoiceInputDisabledError as exc:
+            root = _active_queue_root()
+            return _render_page(
+                session_id=session_id.strip() or new_session_id(),
+                turns=read_session_turns(root, session_id.strip()),
+                status="voice_input_disabled",
+                error=str(exc),
+                voice_flags=voice_flags,
+            )
+        except ValueError as exc:
+            root = _active_queue_root()
+            return _render_page(
+                session_id=session_id.strip() or new_session_id(),
+                turns=read_session_turns(root, session_id.strip()),
+                status="voice_input_invalid",
+                error=str(exc),
+                voice_flags=voice_flags,
+            )
+        message = ingested.transcript_text
+        input_origin = InputOrigin(ingested.input_origin)
 
     active_session = session_id.strip() or (request.cookies.get("vera_session_id") or "").strip()
     active_session = active_session or new_session_id()
@@ -1300,13 +1348,20 @@ async def chat(request: Request):
             turns=read_session_turns(root, active_session),
             status="conversation",
             error="Message is required.",
+            voice_flags=voice_flags,
         )
 
     root = _active_queue_root()
     ingest_linked_job_completions(root, active_session)
     auto_completion_note = maybe_auto_surface_linked_completion(root, active_session)
 
-    append_session_turn(root, active_session, role="user", text=message)
+    append_session_turn(
+        root,
+        active_session,
+        role="user",
+        text=message,
+        input_origin=input_origin.value,
+    )
     if auto_completion_note is not None:
         append_session_turn(root, active_session, role="assistant", text=auto_completion_note)
     turns = read_session_turns(root, active_session)
@@ -1322,6 +1377,7 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status="blocked_diagnostics",
+            voice_flags=voice_flags,
         )
 
     if (
@@ -1346,6 +1402,7 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status=status,
+            voice_flags=voice_flags,
         )
 
     if is_followup_preview_request(message):
@@ -1364,6 +1421,7 @@ async def chat(request: Request):
                 session_id=active_session,
                 turns=read_session_turns(root, active_session),
                 status="followup_missing_evidence",
+                voice_flags=voice_flags,
             )
 
         payload = draft_followup_preview(evidence)
@@ -1386,6 +1444,7 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status="followup_preview_ready",
+            voice_flags=voice_flags,
         )
 
     session_investigation = read_session_investigation(root, active_session)
@@ -1414,6 +1473,7 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status=str(reply.get("status") or "ok:weather_current"),
+            voice_flags=voice_flags,
         )
 
     should_attempt_derived_save = not is_explicit_writing_transform and (
@@ -1439,6 +1499,7 @@ async def chat(request: Request):
                 session_id=active_session,
                 turns=read_session_turns(root, active_session),
                 status="investigation_derived_missing",
+                voice_flags=voice_flags,
             )
         write_session_preview(root, active_session, derived_preview)
         write_session_handoff_state(
@@ -1459,6 +1520,7 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status="prepared_preview",
+            voice_flags=voice_flags,
         )
 
     if is_investigation_compare_request(message):
@@ -1477,6 +1539,7 @@ async def chat(request: Request):
                 session_id=active_session,
                 turns=read_session_turns(root, active_session),
                 status="investigation_reference_invalid",
+                voice_flags=voice_flags,
             )
         write_session_derived_investigation_output(root, active_session, comparison)
         append_session_turn(
@@ -1486,6 +1549,7 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status="ok:investigation_comparison",
+            voice_flags=voice_flags,
         )
 
     if is_investigation_summary_request(message):
@@ -1504,6 +1568,7 @@ async def chat(request: Request):
                 session_id=active_session,
                 turns=read_session_turns(root, active_session),
                 status="investigation_reference_invalid",
+                voice_flags=voice_flags,
             )
         write_session_derived_investigation_output(root, active_session, summary)
         append_session_turn(
@@ -1513,6 +1578,7 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status="ok:investigation_summary",
+            voice_flags=voice_flags,
         )
 
     if is_investigation_expand_request(message):
@@ -2112,6 +2178,7 @@ async def chat(request: Request):
         session_id=active_session,
         turns=read_session_turns(root, active_session),
         status=status,
+        voice_flags=voice_flags,
     )
 
 
@@ -2176,6 +2243,7 @@ async def handoff(request: Request):
         session_id=active_session,
         turns=read_session_turns(root, active_session),
         status=status,
+        voice_flags=load_voice_foundation_flags(),
     )
 
 
@@ -2192,4 +2260,5 @@ async def clear_chat(request: Request):
         session_id=active_session,
         turns=[],
         status="conversation",
+        voice_flags=load_voice_foundation_flags(),
     )

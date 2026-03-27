@@ -80,7 +80,15 @@
       {% if turns and turns|length > 0 %}
         {% for turn in turns %}
           <article class="bubble {{turn.role}}">
-            <div class="role">{% if turn.role == 'user' %}You{% elif turn.role == 'assistant' %}Vera{% else %}{{turn.role}}{% endif %}</div>
+            <div class="role">
+              {% if turn.role == 'user' %}
+                You{% if turn.input_origin == 'voice_transcript' %} (voice transcript){% endif %}
+              {% elif turn.role == 'assistant' %}
+                Vera
+              {% else %}
+                {{turn.role}}
+              {% endif %}
+            </div>
             <div class="text">{{turn.text}}</div>
           </article>
         {% endfor %}
@@ -125,8 +133,13 @@
           <div><b>session_file_exists</b>: {{debug_info.session_file_exists}}</div>
           <div><b>session_file</b>: <span class="mono">{{debug_info.session_file}}</span></div>
           <div><b>preview_available</b>: {{debug_info.preview_available}}</div>
+          <div><b>last_user_input_origin</b>: {{debug_info.last_user_input_origin}}</div>
           <div><b>handoff_status</b>: {{debug_info.handoff_status}}</div>
           <div><b>handoff_job_id</b>: <span class="mono">{{debug_info.handoff_job_id}}</span></div>
+          <div><b>voice_foundation_enabled</b>: {{voice_runtime.voice_foundation_enabled}}</div>
+          <div><b>voice_input_enabled</b>: {{voice_runtime.voice_input_enabled}}</div>
+          <div><b>voice_output_enabled</b>: {{voice_runtime.voice_output_enabled}}</div>
+          <div><b>voice_output_reason</b>: {{voice_runtime.voice_output_reason}}</div>
         </div>
         <p class="dev-label">Drafting examples</p>
         <pre class="prompt-box">{{drafting_examples | tojson(indent=2)}}</pre>
@@ -142,6 +155,7 @@
     <!-- Composer -->
     <form class="composer" method="post" action="/chat" id="chat-form" autocomplete="off">
       <input type="hidden" name="session_id" value="{{session_id}}" />
+      <input type="hidden" name="input_origin" value="typed" />
       <textarea
         id="message-input"
         name="message"

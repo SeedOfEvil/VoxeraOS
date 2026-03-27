@@ -78,7 +78,11 @@ def read_session_turns(queue_root: Path, session_id: str) -> list[dict[str, str]
         role = str(turn.get("role") or "").strip().lower()
         text = str(turn.get("text") or "").strip()
         if role in {"user", "assistant"} and text:
-            normalized.append({"role": role, "text": text})
+            normalized_turn: dict[str, str] = {"role": role, "text": text}
+            input_origin = str(turn.get("input_origin") or "").strip().lower()
+            if role == "user" and input_origin in {"typed", "voice_transcript"}:
+                normalized_turn["input_origin"] = input_origin
+            normalized.append(normalized_turn)
     return normalized[-MAX_SESSION_TURNS:]
 
 
@@ -98,10 +102,20 @@ def read_session_updated_at_ms(queue_root: Path, session_id: str) -> int:
 
 
 def append_session_turn(
-    queue_root: Path, session_id: str, *, role: str, text: str
+    queue_root: Path,
+    session_id: str,
+    *,
+    role: str,
+    text: str,
+    input_origin: str | None = None,
 ) -> list[dict[str, str]]:
     turns = read_session_turns(queue_root, session_id)
-    turns.append({"role": role, "text": text.strip()})
+    normalized_role = role.strip().lower()
+    normalized_origin = str(input_origin or "").strip().lower()
+    turn_payload: dict[str, str] = {"role": normalized_role, "text": text.strip()}
+    if normalized_role == "user" and normalized_origin in {"typed", "voice_transcript"}:
+        turn_payload["input_origin"] = normalized_origin
+    turns.append(turn_payload)
     turns = turns[-MAX_SESSION_TURNS:]
     previous = _read_session_payload(queue_root, session_id)
     payload: dict[str, Any] = {
@@ -119,6 +133,7 @@ def append_session_turn(
         "recent_saveable_assistant_artifacts",
         "linked_queue_jobs",
         "conversational_planning_active",
+        "last_user_input_origin",
     ):
         preserved = previous.get(preserved_key)
         if (
@@ -144,8 +159,19 @@ def append_session_turn(
             payload["recent_saveable_assistant_artifacts"] = deduped[
                 -_MAX_SAVEABLE_ASSISTANT_ARTIFACTS:
             ]
+    if normalized_role == "user" and normalized_origin in {"typed", "voice_transcript"}:
+        payload["last_user_input_origin"] = {"value": normalized_origin}
     _write_session_payload(queue_root, session_id, payload)
     return turns
+
+
+def read_session_last_user_input_origin(queue_root: Path, session_id: str) -> str:
+    payload = _read_session_payload(queue_root, session_id)
+    field = payload.get("last_user_input_origin")
+    if not isinstance(field, dict):
+        return "typed"
+    value = str(field.get("value") or "").strip().lower()
+    return value if value in {"typed", "voice_transcript"} else "typed"
 
 
 def _write_session_field(
@@ -331,6 +357,7 @@ def session_debug_info(
     saveable_artifacts = read_session_saveable_assistant_artifacts(queue_root, session_id)
     handoff = read_session_handoff_state(queue_root, session_id) or {}
     registry = _read_linked_job_registry(queue_root, session_id)
+    last_input_origin = read_session_last_user_input_origin(queue_root, session_id)
     return {
         "dev_mode": True,
         "mode_status": mode_status,
@@ -356,6 +383,7 @@ def session_debug_info(
         "handoff_error": str(handoff.get("error") or "") or None,
         "linked_jobs": len(registry.get("tracked", [])),
         "linked_completions": len(registry.get("completions", [])),
+        "last_user_input_origin": last_input_origin,
     }
 
 

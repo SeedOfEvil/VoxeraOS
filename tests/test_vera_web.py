@@ -207,6 +207,61 @@ def test_vera_web_chat_returns_assistant_response(tmp_path, monkeypatch):
     assert "Echo: hello" in res.text
 
 
+def test_vera_web_voice_transcript_fails_closed_when_disabled(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        return {"answer": f"Echo: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    monkeypatch.delenv("VOXERA_ENABLE_VOICE_FOUNDATION", raising=False)
+    monkeypatch.delenv("VOXERA_ENABLE_VOICE_INPUT", raising=False)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "hello", "input_origin": "voice_transcript"},
+    )
+
+    assert res.status_code == 200
+    assert "Voice transcript input is disabled by runtime flags." in res.text
+    turns = vera_service.read_session_turns(queue, sid)
+    assert turns == []
+
+
+def test_vera_web_voice_transcript_origin_is_persisted_and_visible(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
+    monkeypatch.setenv("VOXERA_ENABLE_VOICE_INPUT", "1")
+
+    async def _fake_reply(*, turns, user_message):
+        return {"answer": f"Echo: {user_message}", "status": "ok:test", "turn_count": len(turns)}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    res = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "  schedule   uptime    check  ",
+            "input_origin": "voice_transcript",
+        },
+    )
+
+    assert res.status_code == 200
+    assert "You (voice transcript)" in res.text
+    assert "Echo: schedule uptime check" in res.text
+    turns = vera_service.read_session_turns(queue, sid)
+    assert turns[0]["input_origin"] == "voice_transcript"
+    assert turns[0]["text"] == "schedule uptime check"
+
+
 def test_vera_empty_state_guidance_renders_prompt_groups(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

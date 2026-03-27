@@ -89,6 +89,7 @@ read_session_conversational_planning_active = (
 write_session_conversational_planning_active = (
     vera_session_store.write_session_conversational_planning_active
 )
+read_session_last_user_input_origin = vera_session_store.read_session_last_user_input_origin
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:
