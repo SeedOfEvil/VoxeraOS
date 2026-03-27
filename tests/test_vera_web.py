@@ -189,6 +189,58 @@ def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
     assert "bindGuidanceChips" in res.text
 
 
+def test_vera_web_page_renders_when_voice_runtime_flags_fail_to_load(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    monkeypatch.setattr(
+        vera_app_module,
+        "load_voice_foundation_flags",
+        lambda: (_ for _ in ()).throw(ValueError("broken voice flags")),
+    )
+
+    client = TestClient(vera_app_module.app)
+    res = client.get("/")
+
+    assert res.status_code == 200
+    assert "voice_foundation_enabled" in res.text
+    assert "voice_runtime_unavailable" not in res.text
+
+
+def test_vera_web_template_handles_missing_voice_runtime_field():
+    tmpl = vera_app_module.templates.get_template("index.html")
+    html = tmpl.render(
+        session_id="vera-test",
+        turns=[],
+        mode_status="conversation",
+        queue_boundary="queue boundary",
+        error="",
+        debug_info={
+            "dev_mode": True,
+            "mode_status": "conversation",
+            "session_id": "vera-test",
+            "turn_count": 0,
+            "max_session_turns": 8,
+            "session_file_exists": False,
+            "session_file": "/tmp/missing.json",
+            "preview_available": False,
+            "last_user_input_origin": "typed",
+            "handoff_status": "none",
+            "handoff_job_id": None,
+        },
+        system_prompt="prompt",
+        pending_preview=None,
+        drafting_examples=[],
+        main_screen_guidance={
+            "title": "Title",
+            "summary": "Summary",
+            "preview_hint": "Hint",
+            "groups": [],
+        },
+    )
+    assert "voice_foundation_enabled" in html
+    assert "voice_runtime_unavailable" in html
+
+
 def test_vera_web_chat_returns_assistant_response(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

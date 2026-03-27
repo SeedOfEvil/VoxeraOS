@@ -1198,7 +1198,18 @@ def _render_page(
     voice_flags: VoiceFoundationFlags | None = None,
 ) -> HTMLResponse:
     root = _active_queue_root()
-    active_voice_flags = voice_flags or load_voice_foundation_flags()
+    active_voice_flags = voice_flags
+    if active_voice_flags is None:
+        try:
+            active_voice_flags = load_voice_foundation_flags()
+        except Exception:
+            active_voice_flags = VoiceFoundationFlags(
+                enable_voice_foundation=False,
+                enable_voice_input=False,
+                enable_voice_output=False,
+                voice_stt_backend=None,
+                voice_tts_backend=None,
+            )
     voice_runtime: dict[str, object] = {
         "voice_foundation_enabled": active_voice_flags.enable_voice_foundation,
         "voice_input_enabled": active_voice_flags.voice_input_enabled,
@@ -1206,8 +1217,13 @@ def _render_page(
         "voice_stt_backend": active_voice_flags.voice_stt_backend,
         "voice_tts_backend": active_voice_flags.voice_tts_backend,
     }
-    for key, value in voice_output_status(active_voice_flags).items():
-        voice_runtime[key] = value
+    try:
+        for key, value in voice_output_status(active_voice_flags).items():
+            voice_runtime[key] = value
+    except Exception:
+        voice_runtime["voice_output_attempted"] = False
+        voice_runtime["voice_output_backend"] = None
+        voice_runtime["voice_output_reason"] = "voice_runtime_unavailable"
     tmpl = templates.get_template("index.html")
     html = tmpl.render(
         session_id=session_id,

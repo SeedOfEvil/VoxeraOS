@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/vera.css" />
 </head>
 <body>
+  {% set _voice_runtime = voice_runtime | default({}) %}
   <main class="shell">
 
     <!-- Topbar -->
@@ -136,10 +137,10 @@
           <div><b>last_user_input_origin</b>: {{debug_info.last_user_input_origin}}</div>
           <div><b>handoff_status</b>: {{debug_info.handoff_status}}</div>
           <div><b>handoff_job_id</b>: <span class="mono">{{debug_info.handoff_job_id}}</span></div>
-          <div><b>voice_foundation_enabled</b>: {{voice_runtime.voice_foundation_enabled}}</div>
-          <div><b>voice_input_enabled</b>: {{voice_runtime.voice_input_enabled}}</div>
-          <div><b>voice_output_enabled</b>: {{voice_runtime.voice_output_enabled}}</div>
-          <div><b>voice_output_reason</b>: {{voice_runtime.voice_output_reason}}</div>
+          <div><b>voice_foundation_enabled</b>: {{_voice_runtime.get('voice_foundation_enabled', false)}}</div>
+          <div><b>voice_input_enabled</b>: {{_voice_runtime.get('voice_input_enabled', false)}}</div>
+          <div><b>voice_output_enabled</b>: {{_voice_runtime.get('voice_output_enabled', false)}}</div>
+          <div><b>voice_output_reason</b>: {{_voice_runtime.get('voice_output_reason', 'voice_runtime_unavailable')}}</div>
         </div>
         <p class="dev-label">Drafting examples</p>
         <pre class="prompt-box">{{drafting_examples | tojson(indent=2)}}</pre>
