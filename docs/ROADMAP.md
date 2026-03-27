@@ -8,7 +8,7 @@ This roadmap communicates broad direction and major milestones. Specific PRs and
 
 ---
 
-## v0.1.8-Alpha — Vera Control Layer (current)
+## v0.1.8-Alpha — Vera Control Layer (release tag; shipped)
 
 **Theme:** Make Vera a stable, trustworthy conversational control interface for VoxeraOS.
 
@@ -32,21 +32,21 @@ Key areas:
 
 ---
 
-## v0.1.9-Alpha — Governed Capability Expansion
+## v0.1.9-Alpha — Governed Capability Expansion (theme largely shipped on current branch)
 
 **Theme:** Broaden what VoxeraOS can do safely and usefully while preserving trust boundaries.
 
-Key areas:
-- Governed read-only system inspection lanes (system info, software inventory, service status)
-- Governed read-only URL retrieval with result shaping and evidence
-- Richer governed file operations with clearer semantics
-- Internal capability registry and route metadata improvements
-- Stronger artifacts and execution evidence summaries
-- Operator console comprehension improvements
+Key areas (current implementation state):
+- ✅ Governed read-only system inspection lanes are shipped (`system_inspect`, `system_diagnostics`, and related skills)
+- ✅ Governed read-only URL retrieval/investigation lane is shipped for Vera (`Brave`-backed, read-only)
+- ✅ Richer governed file operations are shipped (queue helper CLI + bounded file skill family)
+- ✅ Capability semantics contract + snapshot surfaces are shipped and used by planning/review/policy surfaces
+- ✅ Artifact/result shaping for operator evidence is shipped (execution/result/envelope + review/evidence summaries)
+- 🔄 Ongoing: operator-console comprehension and UX polish continues toward v0.2
 
 ---
 
-## v0.2.0-Alpha — First Platform Milestone
+## v0.2.0-Alpha — First Platform Milestone (next)
 
 **Theme:** Make Vera + VoxeraOS feel like a coherent AI operating system platform, not just a prototype.
 
@@ -58,7 +58,7 @@ Key areas:
 - Operator console polish milestone
 - Polished first-run and demo experience
 - Stronger replayable evidence and result packaging
-- Voice-first architecture foundation
+- Voice foundation progression (current bounded seam exists; full voice UX remains future work)
 
 ---
 

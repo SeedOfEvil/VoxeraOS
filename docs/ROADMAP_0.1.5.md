@@ -1,5 +1,8 @@
 # Voxera OS Alpha v0.1.5 — Artifacts Hygiene + Retention CLI (SHIPPED)
 
+> **Historical snapshot:** This file captures roadmap framing at the time it was written and is not the current source of truth. For current milestone state, use `docs/ROADMAP.md`.
+
+
 **Status: complete.** This release adds operator-grade artifact hygiene on top of the v0.1.4 stability baseline.
 
 For the next phase of work, see `docs/ROADMAP.md`.

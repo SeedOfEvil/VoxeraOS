@@ -1,5 +1,8 @@
 # Voxera OS Alpha v0.1.6 — Security Hardening + Ops Visibility (SHIPPED)
 
+> **Historical snapshot:** This file captures roadmap framing at the time it was written and is not the current source of truth. For current milestone state, use `docs/ROADMAP.md`.
+
+
 **Status: shipped. See `docs/ROADMAP.md` for the v0.2 active build-out.**
 
 For active daily-goal breakdown, see `docs/ROADMAP.md`.

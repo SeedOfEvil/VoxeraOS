@@ -1,5 +1,8 @@
 # Voxera OS Alpha v0.1.4 — Stability + UX Baseline (SHIPPED)
 
+> **Historical snapshot:** This file captures roadmap framing at the time it was written and is not the current source of truth. For current milestone state, use `docs/ROADMAP.md`.
+
+
 **Status: complete.** This release locked around one goal: make daily usage predictable before expanding into voice and new capability surfaces.
 
 For the next phase of work, see `docs/ROADMAP.md`.
