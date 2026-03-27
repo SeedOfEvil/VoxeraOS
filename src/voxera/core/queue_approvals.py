@@ -156,13 +156,17 @@ class QueueApprovalMixin:
             "files.read_text",
             "files.write_text",
             "files.list_dir",
+            "files.find",
+            "files.grep_text",
+            "files.list_tree",
             "files.exists",
             "files.stat",
             "files.mkdir",
             "files.delete_file",
+            "files.rename",
         }:
             return {"type": "file", "value": str(args.get("path", ""))}
-        if skill_id in {"files.copy_file", "files.move_file"}:
+        if skill_id in {"files.copy_file", "files.move_file", "files.copy", "files.move"}:
             source = str(args.get("source_path", ""))
             destination = str(args.get("destination_path", ""))
             return {"type": "file", "value": f"{source} -> {destination}"}

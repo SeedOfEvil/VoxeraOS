@@ -1,0 +1,25 @@
+id: files.move
+name: Move Path
+description: Move or relocate a path within allowlisted notes paths.
+entrypoint: voxera_builtin_skills.files_move:run
+capabilities: ["files.write"]
+risk: medium
+exec_mode: local
+needs_network: false
+fs_scope: workspace_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  source_path:
+    type: string
+    required: true
+    description: Existing source path under ~/VoxeraOS/notes.
+  destination_path:
+    type: string
+    required: true
+    description: Destination path under ~/VoxeraOS/notes.
+  overwrite:
+    type: boolean
+    required: false
+    default: false
+    description: Replace existing destination when true.

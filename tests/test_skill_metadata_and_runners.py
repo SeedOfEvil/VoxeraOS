@@ -87,11 +87,21 @@ def test_builtin_skill_metadata_has_foundational_governance_fields():
             "files.write_text",
             "files.copy_file",
             "files.move_file",
+            "files.copy",
+            "files.move",
+            "files.rename",
             "files.mkdir",
             "files.delete_file",
         }:
             assert manifest.fs_scope == "workspace_only"
-        elif manifest.id in {"files.list_dir", "files.exists", "files.stat"}:
+        elif manifest.id in {
+            "files.list_dir",
+            "files.exists",
+            "files.stat",
+            "files.find",
+            "files.grep_text",
+            "files.list_tree",
+        }:
             assert manifest.fs_scope == "read_only"
         elif manifest.id == "system.open_url":
             assert manifest.fs_scope == "broader"

@@ -1,0 +1,31 @@
+id: files.list_tree
+name: List Tree
+description: Recursively list a bounded directory tree under allowlisted notes paths.
+entrypoint: voxera_builtin_skills.files_list_tree:run
+capabilities: ["files.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  root_path:
+    type: string
+    required: true
+    description: Root directory path under ~/VoxeraOS/notes.
+  max_depth:
+    type: integer
+    required: false
+    default: 4
+    description: Maximum recursive depth from root path.
+  include_hidden:
+    type: boolean
+    required: false
+    default: false
+    description: Include dotfiles and dot-directories when true.
+  max_entries:
+    type: integer
+    required: false
+    default: 400
+    description: Maximum entries returned in tree order.

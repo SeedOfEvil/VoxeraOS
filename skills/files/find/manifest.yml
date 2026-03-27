@@ -1,0 +1,40 @@
+id: files.find
+name: Find Files
+description: Discover files and directories recursively under allowlisted notes paths.
+entrypoint: voxera_builtin_skills.files_find:run
+capabilities: ["files.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  root_path:
+    type: string
+    required: true
+    description: Root directory path under ~/VoxeraOS/notes.
+  glob:
+    type: string
+    required: false
+    default: "*"
+    description: Glob filter applied to discovered paths.
+  name_contains:
+    type: string
+    required: false
+    description: Optional case-insensitive name substring filter.
+  max_depth:
+    type: integer
+    required: false
+    default: 8
+    description: Maximum recursive depth from root path.
+  include_hidden:
+    type: boolean
+    required: false
+    default: false
+    description: Include dotfiles and dot-directories when true.
+  max_results:
+    type: integer
+    required: false
+    default: 200
+    description: Maximum number of matching paths returned.

@@ -1,0 +1,25 @@
+id: files.rename
+name: Rename Path
+description: Rename a file or directory within its current parent directory.
+entrypoint: voxera_builtin_skills.files_rename:run
+capabilities: ["files.write"]
+risk: medium
+exec_mode: local
+needs_network: false
+fs_scope: workspace_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  path:
+    type: string
+    required: true
+    description: Existing source path under ~/VoxeraOS/notes.
+  new_name:
+    type: string
+    required: true
+    description: New basename to apply within the same parent directory.
+  overwrite:
+    type: boolean
+    required: false
+    default: false
+    description: Replace existing destination name when true.
