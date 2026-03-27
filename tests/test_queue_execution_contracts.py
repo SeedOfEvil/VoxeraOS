@@ -1274,12 +1274,12 @@ def test_file_organize_control_plane_path_fails_closed(tmp_path, monkeypatch):
             encoding="utf-8"
         )
     )
-    assert result["terminal_outcome"] == "failed"
+    assert result["terminal_outcome"] == "blocked"
 
     step_results = json.loads(
         (queue_root / "artifacts" / "job-organize-blocked" / "step_results.json").read_text(
             encoding="utf-8"
         )
     )
-    assert step_results[0]["status"] == "failed"
+    assert step_results[0]["status"] == "blocked"
     assert step_results[0]["error_class"] == "path_blocked_scope"

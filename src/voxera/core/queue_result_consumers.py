@@ -509,7 +509,16 @@ def resolve_structured_execution(
                 "next_action_hint": str(step.get("next_action_hint") or ""),
                 "approval_status": str(step.get("approval_status") or ""),
                 "blocked": bool(step.get("blocked")),
-                "blocked_reason_class": str(step.get("blocked_reason_class") or "") or None,
+                "blocked_reason_class": (
+                    str(step.get("blocked_reason_class") or "").strip()
+                    or (
+                        str(step.get("error_class") or "").strip().lower()
+                        if str(step.get("error_class") or "").strip().lower()
+                        in {"path_blocked_scope", "capability_boundary_mismatch", "policy_denied"}
+                        else ""
+                    )
+                    or None
+                ),
                 "retryable": step.get("retryable")
                 if isinstance(step.get("retryable"), bool)
                 else None,

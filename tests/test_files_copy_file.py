@@ -42,3 +42,19 @@ def test_copy_file_rejects_outside_allowlist(tmp_path, monkeypatch):
 
     assert rr.ok is False
     assert rr.data[SKILL_RESULT_KEY]["error_class"] == "path_out_of_bounds"
+
+
+def test_copy_file_flags_control_plane_scope_as_blocked(tmp_path, monkeypatch):
+    allowed_root = tmp_path / "notes"
+    source = allowed_root / "source.txt"
+    blocked_destination = allowed_root / "queue" / "blocked.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("hello", encoding="utf-8")
+    monkeypatch.setattr(files_copy_file, "ALLOWED_ROOT", allowed_root)
+
+    rr = files_copy_file.run(str(source), str(blocked_destination))
+
+    assert rr.ok is False
+    payload = rr.data[SKILL_RESULT_KEY]
+    assert payload["error_class"] == "path_blocked_scope"
+    assert payload["blocked"] is True

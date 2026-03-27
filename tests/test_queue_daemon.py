@@ -1854,6 +1854,17 @@ def test_pending_approval_payload_includes_target_scope_and_policy_reason(tmp_pa
     assert isinstance(approval["capability_boundary_notes"], list)
 
 
+def test_approval_target_for_rename_includes_source_and_new_name(tmp_path):
+    daemon = MissionQueueDaemon(queue_root=tmp_path / "queue")
+
+    target = daemon._approval_target(
+        "files.rename",
+        {"path": "~/VoxeraOS/notes/a.txt", "new_name": "b.txt"},
+    )
+
+    assert target == {"type": "file", "value": "~/VoxeraOS/notes/a.txt -> b.txt"}
+
+
 def test_approval_always_grant_allows_matching_scope_only(tmp_path, monkeypatch):
     _force_policy_ask(monkeypatch)
     queue_dir = tmp_path / "queue"

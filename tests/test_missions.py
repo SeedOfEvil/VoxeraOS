@@ -197,3 +197,40 @@ def test_mission_runner_propagates_structured_skill_result_fields():
     assert step["operator_note"] == "Use an http:// or https:// URL."
     assert step["retryable"] is False
     assert step["error_class"] == "invalid_input"
+
+
+def test_mission_runner_marks_path_scope_blocked_as_terminal_blocked(tmp_path, monkeypatch):
+    reg = SkillRegistry()
+    reg.discover()
+    runner = SkillRunner(reg)
+    mission_runner = MissionRunner(runner, policy=PolicyApprovals())
+    allowed_root = tmp_path / "notes"
+    source = allowed_root / "source.txt"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("hello", encoding="utf-8")
+
+    from voxera_builtin_skills import files_copy_file
+
+    monkeypatch.setattr(files_copy_file, "ALLOWED_ROOT", allowed_root)
+
+    mission = missions_module.MissionTemplate(
+        id="blocked_path_scope_copy",
+        title="Blocked Path Scope Copy",
+        goal="Verify control-plane scope blocking is terminally blocked.",
+        steps=[
+            missions_module.MissionStep(
+                skill_id="files.copy_file",
+                args={
+                    "source_path": str(source),
+                    "destination_path": str(allowed_root / "queue" / "blocked.txt"),
+                    "overwrite": False,
+                },
+            )
+        ],
+    )
+
+    rr = mission_runner.run(mission)
+
+    assert rr.ok is False
+    assert rr.data["terminal_outcome"] == "blocked"
+    assert rr.data["step_outcomes"][0]["outcome"] == "blocked"

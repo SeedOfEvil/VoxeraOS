@@ -58,7 +58,7 @@ def run(source_path: str, destination_path: str, overwrite: bool = False) -> Run
                     operator_note="Copy source and destination must stay within allowed notes directory.",
                     next_action_hint="provide_allowed_path",
                     retryable=False,
-                    blocked=False,
+                    blocked=exc.error_class == "path_blocked_scope",
                     approval_status="none",
                     error=str(exc),
                     error_class=exc.error_class,
