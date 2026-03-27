@@ -1285,6 +1285,53 @@ def test_blocked_queue_path_returns_clean_refusal_no_preview(tmp_path, monkeypat
     assert preview is None
 
 
+def test_filesystem_find_request_creates_governed_preview(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    res = client.post(
+        "/chat",
+        data={"session_id": sid, "message": "find txt files in my notes/runtime-validation folder"},
+    )
+    assert "Preview panel · Active VoxeraOS draft" in res.text
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["steps"][0]["skill_id"] == "files.find"
+    assert preview["steps"][0]["args"]["root_path"] == "~/VoxeraOS/notes/runtime-validation"
+    assert preview["steps"][0]["args"]["glob"] == "*.txt"
+
+
+def test_filesystem_copy_preview_then_submit_is_truthful_and_queue_backed(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    prep = client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "copy ~/VoxeraOS/notes/runtime-validation/src/a.txt to ~/VoxeraOS/notes/runtime-validation/dst/a-copy.txt",
+        },
+    )
+    assert "Nothing has been submitted or executed yet" in prep.text
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["steps"][0]["skill_id"] == "files.copy"
+
+    submit = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+    assert "I submitted the job to VoxeraOS" in submit.text
+    inbox_jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(inbox_jobs) == 1
+    payload = json.loads(inbox_jobs[0].read_text(encoding="utf-8"))
+    assert payload["steps"][0]["skill_id"] == "files.copy"
+    assert payload["steps"][0]["args"]["source_path"].endswith("/src/a.txt")
+
+
 def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission(
     tmp_path, monkeypatch
 ):

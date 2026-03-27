@@ -194,18 +194,17 @@ def test_delete_rejects_queue_path():
 def test_copy_file_to_directory():
     result = classify_bounded_file_intent("copy report.txt into receipts")
     assert result is not None
-    assert "file_organize" in result
-    assert result["file_organize"]["source_path"] == "~/VoxeraOS/notes/report.txt"
-    assert result["file_organize"]["destination_dir"] == "~/VoxeraOS/notes/receipts"
-    assert result["file_organize"]["mode"] == "copy"
+    assert result["steps"][0]["skill_id"] == "files.copy"
+    assert result["steps"][0]["args"]["source_path"] == "~/VoxeraOS/notes/report.txt"
+    assert result["steps"][0]["args"]["destination_path"] == "~/VoxeraOS/notes/receipts/report.txt"
 
 
 def test_copy_file_to_file():
     result = classify_bounded_file_intent("copy a.txt to b.txt")
     assert result is not None
-    assert "file_organize" in result
-    assert result["file_organize"]["source_path"] == "~/VoxeraOS/notes/a.txt"
-    assert result["file_organize"]["mode"] == "copy"
+    assert result["steps"][0]["skill_id"] == "files.copy"
+    assert result["steps"][0]["args"]["source_path"] == "~/VoxeraOS/notes/a.txt"
+    assert result["steps"][0]["args"]["destination_path"] == "~/VoxeraOS/notes/b.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -216,16 +215,50 @@ def test_copy_file_to_file():
 def test_move_file():
     result = classify_bounded_file_intent("move a.txt to archive.txt")
     assert result is not None
-    assert "file_organize" in result
-    assert result["file_organize"]["source_path"] == "~/VoxeraOS/notes/a.txt"
-    assert result["file_organize"]["mode"] == "move"
+    assert result["steps"][0]["skill_id"] == "files.move"
+    assert result["steps"][0]["args"]["source_path"] == "~/VoxeraOS/notes/a.txt"
+    assert result["steps"][0]["args"]["destination_path"] == "~/VoxeraOS/notes/archive.txt"
 
 
 def test_move_file_to_directory():
     result = classify_bounded_file_intent("move report.txt into archive")
     assert result is not None
-    assert result["file_organize"]["destination_dir"] == "~/VoxeraOS/notes/archive"
-    assert result["file_organize"]["mode"] == "move"
+    assert result["steps"][0]["skill_id"] == "files.move"
+    assert result["steps"][0]["args"]["destination_path"] == "~/VoxeraOS/notes/archive/report.txt"
+    assert result["steps"][0]["args"]["source_path"] == "~/VoxeraOS/notes/report.txt"
+
+
+def test_rename_file():
+    result = classify_bounded_file_intent("rename a-copy.txt to a-renamed.txt")
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.rename"
+    assert result["steps"][0]["args"]["path"] == "~/VoxeraOS/notes/a-copy.txt"
+    assert result["steps"][0]["args"]["new_name"] == "a-renamed.txt"
+
+
+def test_find_files():
+    result = classify_bounded_file_intent("find txt files in my notes/runtime-validation folder")
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.find"
+    assert result["steps"][0]["args"]["root_path"] == "~/VoxeraOS/notes/runtime-validation"
+    assert result["steps"][0]["args"]["glob"] == "*.txt"
+
+
+def test_grep_text():
+    result = classify_bounded_file_intent('search my notes/runtime-validation for "voxera"')
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.grep_text"
+    assert result["steps"][0]["args"]["root_path"] == "~/VoxeraOS/notes/runtime-validation"
+    assert result["steps"][0]["args"]["pattern"] == "voxera"
+
+
+def test_tree_listing():
+    result = classify_bounded_file_intent(
+        "show me the tree for ~/VoxeraOS/notes/runtime-validation"
+    )
+    assert result is not None
+    assert result["steps"][0]["skill_id"] == "files.list_tree"
+    assert result["steps"][0]["args"]["root_path"] == "~/VoxeraOS/notes/runtime-validation"
 
 
 # ---------------------------------------------------------------------------
@@ -261,11 +294,18 @@ def test_ambiguous_returns_none():
         "do something with the files",
         "help me organize my stuff",
         "what files do I have",
+        "find the latest news",
+        "search the web for weather in calgary",
         "",
         "hello",
     ):
         result = classify_bounded_file_intent(msg)
         assert result is None, f"should not match: {msg}"
+
+
+def test_rename_to_path_like_target_fails_closed():
+    result = classify_bounded_file_intent("rename a.txt to archive/a.txt")
+    assert result is None
 
 
 def test_outside_notes_scope_returns_none():
@@ -356,7 +396,8 @@ def test_handoff_routes_mkdir():
 def test_handoff_routes_move():
     result = maybe_draft_job_payload("move a.txt to archive.txt")
     assert result is not None
-    assert "file_organize" in result
+    assert "steps" in result
+    assert result["steps"][0]["skill_id"] == "files.move"
 
 
 def test_handoff_routes_archive():
@@ -368,7 +409,8 @@ def test_handoff_routes_archive():
 def test_handoff_routes_copy():
     result = maybe_draft_job_payload("copy report.txt into receipts")
     assert result is not None
-    assert "file_organize" in result
+    assert "steps" in result
+    assert result["steps"][0]["skill_id"] == "files.copy"
 
 
 def test_handoff_routes_delete():
@@ -486,8 +528,7 @@ def test_end_to_end_copy_to_normalized_preview():
     draft = maybe_draft_job_payload("copy report.txt into receipts")
     assert draft is not None
     normalized = normalize_preview_payload(draft)
-    assert "file_organize" in normalized
-    assert normalized["file_organize"]["mode"] == "copy"
+    assert normalized["steps"][0]["skill_id"] == "files.copy"
 
 
 # ---------------------------------------------------------------------------

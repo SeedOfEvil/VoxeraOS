@@ -430,3 +430,31 @@ def test_regression_pack_no_preview_submit_fails_truthfully_without_queue_handof
     assert "preview" in no_preview_text
     assert "did not submit anything" in no_preview_text
     assert list((session.queue / "inbox").glob("*.json")) == []
+
+
+def test_filesystem_tree_blocked_scope_fails_closed_without_preview(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+    res = session.chat("show me the tree for ~/VoxeraOS/notes/queue")
+    assert res.status_code == 200
+    text = session.turns()[-1]["text"].lower()
+    assert "blocked" in text
+    assert session.preview() is None
+
+
+def test_filesystem_rename_preview_then_submit_creates_queue_job(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+    prep = session.chat(
+        "rename ~/VoxeraOS/notes/runtime-validation/dst/a-copy.txt to a-renamed.txt"
+    )
+    assert prep.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["steps"][0]["skill_id"] == "files.rename"
+    assert preview["steps"][0]["args"]["new_name"] == "a-renamed.txt"
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    payloads = list((session.queue / "inbox").glob("*.json"))
+    assert len(payloads) == 1
+    payload = json.loads(payloads[0].read_text(encoding="utf-8"))
+    assert payload["steps"][0]["skill_id"] == "files.rename"
