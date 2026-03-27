@@ -1169,8 +1169,8 @@ a deterministic single-step plan:
 ### Filesystem productivity skill pack (bounded waves 1–2)
 
 Additive file-scope skills extend the existing read/write pair without widening trust boundaries:
-- `files.list_dir`, `files.exists`, and `files.stat` (inspection): local, `needs_network=false`, `fs_scope=read_only`, notes-root confined.
-- `files.copy_file`, `files.move_file`, `files.mkdir`, and `files.delete_file` (mutation): local, `needs_network=false`, `fs_scope=workspace_only`, notes-root confined.
+- Inspection skills: `files.list_dir`, `files.exists`, `files.stat`, `files.find`, `files.grep_text`, and `files.list_tree` are local, `needs_network=false`, `fs_scope=read_only`, and notes-root confined.
+- Mutating organization skills: `files.copy_file`, `files.move_file`, `files.copy`, `files.move`, `files.rename`, `files.mkdir`, and `files.delete_file` are local, `needs_network=false`, `fs_scope=workspace_only`, and notes-root confined.
 
 All rely on centralized confined-path normalization and fail closed on traversal/symlink escape/out-of-root paths.
 

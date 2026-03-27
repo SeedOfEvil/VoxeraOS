@@ -1,0 +1,45 @@
+id: files.grep_text
+name: Grep Text
+description: Search text content recursively under allowlisted notes paths.
+entrypoint: voxera_builtin_skills.files_grep_text:run
+capabilities: ["files.read"]
+risk: low
+exec_mode: local
+needs_network: false
+fs_scope: read_only
+output_schema: skill_result.v1
+output_artifacts: []
+args:
+  root_path:
+    type: string
+    required: true
+    description: Root directory path under ~/VoxeraOS/notes.
+  pattern:
+    type: string
+    required: true
+    description: Text pattern to search for.
+  case_sensitive:
+    type: boolean
+    required: false
+    default: false
+    description: Match with case sensitivity when true.
+  max_depth:
+    type: integer
+    required: false
+    default: 8
+    description: Maximum recursive depth from root path.
+  include_hidden:
+    type: boolean
+    required: false
+    default: false
+    description: Include dotfiles and dot-directories when true.
+  max_matches:
+    type: integer
+    required: false
+    default: 200
+    description: Maximum number of line matches returned.
+  max_file_bytes:
+    type: integer
+    required: false
+    default: 1000000
+    description: Skip files above this size limit.
