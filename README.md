@@ -119,6 +119,24 @@ voxera queue status
 voxera daemon --once
 ```
 
+### Governed filesystem queue helpers
+
+```bash
+# Read/discovery
+voxera queue files find --root-path ~/VoxeraOS/notes/runtime-validation --glob "*.md"
+voxera queue files grep --root-path ~/VoxeraOS/notes --pattern "queue"
+voxera queue files tree --root-path ~/VoxeraOS/notes/runtime-validation --max-depth 3
+
+# Mutations still go through queue truth + artifacts
+voxera queue files copy --source-path ~/VoxeraOS/notes/runtime-validation/a.txt --destination-path ~/VoxeraOS/notes/runtime-validation/b.txt
+voxera queue files move --source-path ~/VoxeraOS/notes/runtime-validation/b.txt --destination-path ~/VoxeraOS/notes/runtime-validation/c.txt
+voxera queue files rename --path ~/VoxeraOS/notes/runtime-validation/c.txt --new-name renamed.txt
+
+# Execute queued jobs
+voxera daemon --once
+voxera queue status
+```
+
 ### Approvals
 
 ```bash

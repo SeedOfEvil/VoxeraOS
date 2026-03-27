@@ -39,6 +39,7 @@ def test_cli_public_command_surface_snapshot():
         "approvals",
         "bundle",
         "cancel",
+        "files",
         "health",
         "health-reset",
         "init",
@@ -50,6 +51,14 @@ def test_cli_public_command_surface_snapshot():
         "retry",
         "status",
         "unlock",
+    ]
+    assert sorted(root.commands["queue"].commands["files"].commands.keys()) == [
+        "copy",
+        "find",
+        "grep",
+        "move",
+        "rename",
+        "tree",
     ]
 
 

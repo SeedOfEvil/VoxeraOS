@@ -139,6 +139,24 @@ cp docs/testing/payloads/missing-source-copy.json "$QUEUE_ROOT/inbox/rvp-missing
 cp docs/testing/payloads/inline-exists-test.json "$QUEUE_ROOT/inbox/rvp-inline-exists.json"
 ```
 
+## 9.1b Preferred operator path: queue filesystem helpers
+
+For filesystem runtime checks, prefer CLI helpers over manual JSON crafting:
+
+```bash
+QUEUE_ROOT="${VOXERA_QUEUE_ROOT:-$HOME/VoxeraOS/notes/queue}"
+
+voxera queue files find --root-path "$HOME/VoxeraOS/notes/runtime-validation" --glob "*.md" --id rvp-files-find --queue-dir "$QUEUE_ROOT"
+voxera queue files grep --root-path "$HOME/VoxeraOS/notes" --pattern "runtime" --id rvp-files-grep --queue-dir "$QUEUE_ROOT"
+voxera queue files tree --root-path "$HOME/VoxeraOS/notes/runtime-validation" --id rvp-files-tree --queue-dir "$QUEUE_ROOT"
+
+voxera queue files copy --source-path "$HOME/VoxeraOS/notes/runtime-validation/source.txt" --destination-path "$HOME/VoxeraOS/notes/runtime-validation/copied.txt" --id rvp-files-copy --queue-dir "$QUEUE_ROOT"
+voxera queue files move --source-path "$HOME/VoxeraOS/notes/runtime-validation/copied.txt" --destination-path "$HOME/VoxeraOS/notes/runtime-validation/moved.txt" --id rvp-files-move --queue-dir "$QUEUE_ROOT"
+voxera queue files rename --path "$HOME/VoxeraOS/notes/runtime-validation/moved.txt" --new-name renamed.txt --id rvp-files-rename --queue-dir "$QUEUE_ROOT"
+```
+
+Each command only enqueues. It does not claim execution success until daemon processing and artifact evidence confirm outcome.
+
 Process queue (daemon loop or one-shot):
 
 ```bash
@@ -233,6 +251,48 @@ Expected pass:
 
 - terminal state is success/done
 - step results include `files.exists` payload and truthful existence result
+
+## 9.7 Scenario F: filesystem helper blocked boundary (`queue files tree`)
+
+What it proves:
+
+- operator CLI helper still respects policy boundaries
+- blocked result remains blocked (not generic failure)
+
+Example:
+
+```bash
+QUEUE_ROOT="${VOXERA_QUEUE_ROOT:-$HOME/VoxeraOS/notes/queue}"
+voxera queue files tree --root-path "$QUEUE_ROOT" --id rvp-files-blocked --queue-dir "$QUEUE_ROOT"
+voxera daemon --once
+```
+
+Expected pass:
+
+- job lands in `failed/` with blocked semantics
+- `execution_result.json` indicates blocked terminal outcome
+- step result marks `blocked=true` with policy reason class
+
+## 9.8 Scenario G: filesystem helper missing source (`queue files copy`)
+
+What it proves:
+
+- missing inputs remain normal runtime failures
+- failures are not mislabeled as blocked scope
+
+Example:
+
+```bash
+QUEUE_ROOT="${VOXERA_QUEUE_ROOT:-$HOME/VoxeraOS/notes/queue}"
+voxera queue files copy --source-path "$HOME/VoxeraOS/notes/runtime-validation/missing.txt" --destination-path "$HOME/VoxeraOS/notes/runtime-validation/should-not-exist.txt" --id rvp-files-missing --queue-dir "$QUEUE_ROOT"
+voxera daemon --once
+```
+
+Expected pass:
+
+- job lands in `failed/`
+- `execution_result.json` reports terminal failure
+- step result `blocked=false` with missing-source/not-found class evidence
 
 ## 10) Raw queue JSON helpers
 

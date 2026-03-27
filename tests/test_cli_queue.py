@@ -255,6 +255,183 @@ def test_queue_status_prints_intake_and_inbox(tmp_path):
     assert "inbox/" in result.output
 
 
+def test_queue_files_find_enqueues_inline_step_job(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "files",
+            "find",
+            "--root-path",
+            "notes/runtime-validation",
+            "--glob",
+            "*.md",
+            "--name-contains",
+            "runtime",
+            "--max-depth",
+            "3",
+            "--include-hidden",
+            "--max-results",
+            "50",
+            "--id",
+            "job-find-1",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(
+        (queue_dir / "inbox" / "inbox-job-find-1.json").read_text(encoding="utf-8")
+    )
+    assert payload["goal"] == "files:find"
+    assert payload["steps"] == [
+        {
+            "skill_id": "files.find",
+            "args": {
+                "root_path": "notes/runtime-validation",
+                "glob": "*.md",
+                "name_contains": "runtime",
+                "max_depth": 3,
+                "include_hidden": True,
+                "max_results": 50,
+            },
+        }
+    ]
+    assert payload["job_intent"]["source_lane"] == "inbox_cli_files"
+    assert "Status: queued" in result.output
+
+
+def test_queue_files_copy_can_execute_via_daemon_once(tmp_path, monkeypatch):
+    runner = CliRunner()
+    home_dir = tmp_path / "home"
+    notes_root = home_dir / "VoxeraOS" / "notes"
+    queue_dir = notes_root / "queue"
+    source = notes_root / "runtime-validation" / "src.txt"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("hello", encoding="utf-8")
+    from voxera_builtin_skills import files_copy
+
+    monkeypatch.setattr(files_copy, "ALLOWED_ROOT", notes_root)
+
+    create = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "files",
+            "copy",
+            "--source-path",
+            str(source),
+            "--destination-path",
+            str(notes_root / "runtime-validation" / "dest.txt"),
+            "--id",
+            "job-copy-1",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+        env={"HOME": str(home_dir)},
+    )
+    assert create.exit_code == 0
+
+    run_once = runner.invoke(
+        cli.app,
+        ["daemon", "--once", "--queue-dir", str(queue_dir)],
+        env={"HOME": str(home_dir)},
+    )
+    assert run_once.exit_code == 0
+    assert (notes_root / "runtime-validation" / "dest.txt").read_text(encoding="utf-8") == "hello"
+    assert (queue_dir / "done" / "inbox-job-copy-1.json").exists()
+
+
+def test_queue_files_copy_missing_source_is_truthful_failure(tmp_path, monkeypatch):
+    runner = CliRunner()
+    home_dir = tmp_path / "home"
+    notes_root = home_dir / "VoxeraOS" / "notes"
+    queue_dir = notes_root / "queue"
+    from voxera_builtin_skills import files_copy
+
+    monkeypatch.setattr(files_copy, "ALLOWED_ROOT", notes_root)
+
+    create = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "files",
+            "copy",
+            "--source-path",
+            str(notes_root / "runtime-validation" / "missing.txt"),
+            "--destination-path",
+            str(notes_root / "runtime-validation" / "dest.txt"),
+            "--id",
+            "job-missing-src",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+        env={"HOME": str(home_dir)},
+    )
+    assert create.exit_code == 0
+
+    run_once = runner.invoke(
+        cli.app,
+        ["daemon", "--once", "--queue-dir", str(queue_dir)],
+        env={"HOME": str(home_dir)},
+    )
+    assert run_once.exit_code == 0
+    assert (queue_dir / "failed" / "inbox-job-missing-src.json").exists()
+    execution_result = json.loads(
+        (queue_dir / "artifacts" / "inbox-job-missing-src" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["terminal_outcome"] == "failed"
+    assert execution_result["step_results"][0]["blocked"] is False
+
+
+def test_queue_files_tree_blocked_scope_is_truthful_block(tmp_path, monkeypatch):
+    runner = CliRunner()
+    home_dir = tmp_path / "home"
+    notes_root = home_dir / "VoxeraOS" / "notes"
+    queue_dir = notes_root / "queue"
+    from voxera_builtin_skills import files_list_tree
+
+    monkeypatch.setattr(files_list_tree, "ALLOWED_ROOT", notes_root)
+
+    create = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "files",
+            "tree",
+            "--root-path",
+            str(queue_dir),
+            "--id",
+            "job-blocked-tree",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+        env={"HOME": str(home_dir)},
+    )
+    assert create.exit_code == 0
+
+    run_once = runner.invoke(
+        cli.app,
+        ["daemon", "--once", "--queue-dir", str(queue_dir)],
+        env={"HOME": str(home_dir)},
+    )
+    assert run_once.exit_code == 0
+    assert (queue_dir / "failed" / "inbox-job-blocked-tree.json").exists()
+    execution_result = json.loads(
+        (queue_dir / "artifacts" / "inbox-job-blocked-tree" / "execution_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert execution_result["terminal_outcome"] == "failed"
+    assert execution_result["step_results"][0]["blocked"] is True
+
+
 def test_queue_cancel_retry_pause_resume_cli(tmp_path):
     runner = CliRunner()
     queue_dir = tmp_path / "queue"

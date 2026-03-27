@@ -22,4 +22,5 @@
 │               made.                                                                              │
 │ approvals     Resolve pending queue approvals                                                    │
 │ lock          Queue daemon lock utilities                                                        │
+│ files         Queue-backed governed filesystem tool helpers                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

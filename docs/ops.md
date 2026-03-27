@@ -242,6 +242,12 @@ mv "$tmp_path" "$final_path"
 Operational commands:
 ```bash
 voxera inbox add "Write a daily check-in note with priorities and blockers"
+voxera queue files find --root-path ~/VoxeraOS/notes/runtime-validation --glob "*.md"
+voxera queue files grep --root-path ~/VoxeraOS/notes --pattern "TODO"
+voxera queue files tree --root-path ~/VoxeraOS/notes/runtime-validation --max-depth 3
+voxera queue files copy --source-path ~/VoxeraOS/notes/runtime-validation/a.txt --destination-path ~/VoxeraOS/notes/runtime-validation/b.txt
+voxera queue files move --source-path ~/VoxeraOS/notes/runtime-validation/b.txt --destination-path ~/VoxeraOS/notes/runtime-validation/c.txt
+voxera queue files rename --path ~/VoxeraOS/notes/runtime-validation/c.txt --new-name archived.txt
 voxera daemon --once
 voxera queue status
 voxera queue cancel <job_id_or_filename>
@@ -258,6 +264,11 @@ voxera queue health-reset --scope current_state          # reset current daemon/
 voxera queue health-reset --scope recent_history         # reset last error/fallback/shutdown context only
 voxera queue lock status      # lock table alias (same lock fields as queue health)
 ```
+
+`voxera queue files ...` commands are queue-producing helpers, not direct execution:
+- they enqueue one-step governed jobs into `inbox/`,
+- daemon execution still owns real filesystem effects,
+- outcome truth still comes from queue bucket + artifacts (`execution_result.json`, `step_results.json`).
 
 Panel home (`/`) now includes a collapsible **Daemon Health** widget sourced only from `notes/queue/health.json` (no daemon RPC calls), so it is safe/usable even when running panel-only deployments. See [Panel Daemon Health widget](#panel-daemon-health-widget) for field reference.
 Reset semantics: default resets clear only **Current State** and/or **Recent History** fields, while **Historical Counters** are preserved unless an explicit counter-group reset is requested. Use resets to clear operator noise after remediation; use investigation + audit trails for active incidents.
