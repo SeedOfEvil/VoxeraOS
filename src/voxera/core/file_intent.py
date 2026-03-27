@@ -206,10 +206,14 @@ _RE_COPY = re.compile(
     re.IGNORECASE,
 )
 
-_RE_MOVE = re.compile(
-    r"\b(?:move|rename)\s+",
+_RE_MOVE = re.compile(r"\bmove\s+", re.IGNORECASE)
+_RE_RENAME = re.compile(r"\brename\s+", re.IGNORECASE)
+_RE_FIND = re.compile(r"\bfind\b", re.IGNORECASE)
+_RE_GREP = re.compile(
+    r"\b(?:grep|search)\b.*\b(?:for|text|word|pattern)\b|\bsearch\b",
     re.IGNORECASE,
 )
+_RE_TREE = re.compile(r"\b(?:tree|list\s+tree|show\s+tree)\b", re.IGNORECASE)
 
 _RE_ARCHIVE_ORGANIZE = re.compile(
     r"\b(?:archive|organize|file\s+away|sort)\b.*\b(?:into|to|in)\b",
@@ -351,6 +355,101 @@ def _split_on_destination(text: str) -> tuple[str, str] | None:
     return None
 
 
+def _extract_scoped_root_path(text: str) -> str | None:
+    scoped = re.search(
+        r"\b(?:in|under|inside|for)\s+(?:my\s+)?((?:~|/|notes/)[^\s]+)",
+        text,
+        re.IGNORECASE,
+    )
+    if scoped:
+        return scoped.group(1).rstrip(".,;:!?\"' ")
+    notes_relative = re.search(r"\b(notes/[^\s]+)", text, re.IGNORECASE)
+    if notes_relative:
+        return notes_relative.group(1).rstrip(".,;:!?\"' ")
+    return None
+
+
+def _classify_find(text: str) -> dict[str, Any] | None:
+    if not _RE_FIND.search(text):
+        return None
+    if not re.search(r"\b(files?|folders?|directories?)\b|\.[a-z0-9]{1,8}\b", text, re.IGNORECASE):
+        return None
+    root_token = _extract_scoped_root_path(text)
+    if not root_token:
+        return None
+    if root_token.lower().startswith("notes/"):
+        root_token = f"/{root_token.removeprefix('notes/')}"
+    root_path = _normalize_notes_path(root_token)
+    if not is_safe_notes_path(root_path):
+        return None
+
+    ext_match = re.search(r"\b([a-zA-Z0-9]{1,8})\s+files?\b", text, re.IGNORECASE)
+    glob = "*"
+    if ext_match:
+        glob = f"*.{ext_match.group(1).lower()}"
+
+    return {
+        "goal": f"find files in {root_token}",
+        "steps": [{"skill_id": "files.find", "args": {"root_path": root_path, "glob": glob}}],
+    }
+
+
+def _classify_grep_text(text: str) -> dict[str, Any] | None:
+    if not _RE_GREP.search(text):
+        return None
+    if (
+        "notes/" not in text.lower()
+        and "~/voxeraos/notes" not in text.lower()
+        and "/notes/" not in text.lower()
+    ):
+        return None
+
+    pattern_match = re.search(r"[\"“'`](.+?)[\"”'`]", text)
+    pattern = pattern_match.group(1).strip() if pattern_match else ""
+    if not pattern:
+        for marker in ("for ", "word ", "pattern ", "text "):
+            idx = text.lower().find(marker)
+            if idx >= 0:
+                candidate = text[idx + len(marker) :].strip()
+                candidate = re.split(r"\b(?:in|under|inside)\b", candidate, maxsplit=1)[0].strip()
+                pattern = candidate.strip(".,;:!?\"'` ")
+                break
+    if not pattern:
+        return None
+
+    root_token = _extract_scoped_root_path(text)
+    if not root_token:
+        return None
+    if root_token.lower().startswith("notes/"):
+        root_token = f"/{root_token.removeprefix('notes/')}"
+    root_path = _normalize_notes_path(root_token)
+    if not is_safe_notes_path(root_path):
+        return None
+    return {
+        "goal": f"search for '{pattern}' in {root_token}",
+        "steps": [
+            {"skill_id": "files.grep_text", "args": {"root_path": root_path, "pattern": pattern}}
+        ],
+    }
+
+
+def _classify_list_tree(text: str) -> dict[str, Any] | None:
+    if not _RE_TREE.search(text):
+        return None
+    root_token = _extract_scoped_root_path(text)
+    if not root_token:
+        return None
+    if root_token.lower().startswith("notes/"):
+        root_token = f"/{root_token.removeprefix('notes/')}"
+    root_path = _normalize_notes_path(root_token)
+    if not is_safe_notes_path(root_path):
+        return None
+    return {
+        "goal": f"show tree for {root_token}",
+        "steps": [{"skill_id": "files.list_tree", "args": {"root_path": root_path}}],
+    }
+
+
 def _classify_copy_or_move(text: str) -> dict[str, Any] | None:
     is_copy = _RE_COPY.search(text)
     is_move = _RE_MOVE.search(text)
@@ -384,33 +483,58 @@ def _classify_copy_or_move(text: str) -> dict[str, Any] | None:
     if not is_safe_notes_path(source_path) or not is_safe_notes_path(dest_path):
         return None
 
-    # Determine if dest looks like a directory (no extension) or a file
+    destination_path = dest_path
     dest_has_extension = "." in dest_token.rsplit("/", 1)[-1]
-    if dest_has_extension:
-        # Direct file-to-file: use file_organize with dest_dir = parent
-        dest_dir = str(dest_path).rsplit("/", 1)[0] if "/" in dest_path else _NOTES_ROOT
-        return {
-            "goal": f"{verb} {source_token} to {dest_token}",
-            "file_organize": {
-                "source_path": source_path,
-                "destination_dir": dest_dir,
-                "mode": mode,
-                "overwrite": False,
-                "delete_original": False,
-            },
-        }
-    else:
-        # Destination is a directory
-        return {
-            "goal": f"{verb} {source_token} into {dest_token}",
-            "file_organize": {
-                "source_path": source_path,
-                "destination_dir": dest_path,
-                "mode": mode,
-                "overwrite": False,
-                "delete_original": False,
-            },
-        }
+    if not dest_has_extension:
+        destination_path = f"{dest_path.rstrip('/')}/{source_path.rsplit('/', 1)[-1]}"
+
+    return {
+        "goal": f"{verb} {source_token} to {dest_token}",
+        "steps": [
+            {
+                "skill_id": f"files.{mode}",
+                "args": {
+                    "source_path": source_path,
+                    "destination_path": destination_path,
+                    "overwrite": False,
+                },
+            }
+        ],
+    }
+
+
+def _classify_rename(text: str) -> dict[str, Any] | None:
+    if not _RE_RENAME.search(text):
+        return None
+    rename_match = re.search(
+        r"\brename\s+(.+?)\s+(?:to|as)\s+([^\s]+)",
+        text,
+        re.IGNORECASE,
+    )
+    if not rename_match:
+        return None
+    source_token = _extract_path_from_text(rename_match.group(1))
+    new_name = rename_match.group(2).strip("\"'`.,;:!? ")
+    if not source_token or not new_name:
+        return None
+    if "/" in new_name or "\\" in new_name:
+        return None
+    source_path = _normalize_notes_path(source_token)
+    if not is_safe_notes_path(source_path):
+        return None
+    return {
+        "goal": f"rename {source_token} to {new_name}",
+        "steps": [
+            {
+                "skill_id": "files.rename",
+                "args": {
+                    "path": source_path,
+                    "new_name": new_name,
+                    "overwrite": False,
+                },
+            }
+        ],
+    }
 
 
 def _classify_archive_organize(text: str) -> dict[str, Any] | None:
@@ -486,6 +610,10 @@ def detect_blocked_file_intent(message: str) -> str | None:
         (_RE_DELETE, "file deletion"),
         (_RE_COPY, "file copy"),
         (_RE_MOVE, "file move"),
+        (_RE_RENAME, "file rename"),
+        (_RE_FIND, "file find"),
+        (_RE_GREP, "text search"),
+        (_RE_TREE, "tree listing"),
         (_RE_ARCHIVE_ORGANIZE, "file archive"),
     ]
     for pattern, label in intent_patterns:
@@ -539,6 +667,22 @@ def classify_bounded_file_intent(message: str) -> dict[str, Any] | None:
 
     # Try classifiers in specificity order: most specific first
     result = _classify_archive_organize(text)
+    if result is not None:
+        return result
+
+    result = _classify_find(text)
+    if result is not None:
+        return result
+
+    result = _classify_grep_text(text)
+    if result is not None:
+        return result
+
+    result = _classify_list_tree(text)
+    if result is not None:
+        return result
+
+    result = _classify_rename(text)
     if result is not None:
         return result
 
