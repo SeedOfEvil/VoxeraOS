@@ -756,16 +756,78 @@ def test_job_detail_operator_summary_distinguishes_approval_blocked_and_retryabl
     assert approval.status_code == 200
     assert "Awaiting approval" in approval.text
     assert "Waiting for operator approval." in approval.text
+    assert "Policy Rationale" in approval.text
+    assert "Approval required before execution can continue." in approval.text
 
     blocked = client.get("/jobs/job-blocked.json")
     assert blocked.status_code == 200
     assert "Blocked by boundary/policy" in blocked.text
     assert "path_blocked_scope" in blocked.text
+    assert "Blocked by runtime boundary constraints." in blocked.text
 
     retryable = client.get("/jobs/job-retryable.json")
     assert retryable.status_code == 200
     assert "Failed (retryable)" in retryable.text
     assert "Source path does not exist" in retryable.text
+    assert "Policy allowed execution; runtime failed afterward." in retryable.text
+
+
+def test_job_detail_policy_rationale_handles_succeeded_and_denied(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "done").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+
+    (queue_dir / "done" / "job-success-rationale.json").write_text(
+        '{"goal":"success"}', encoding="utf-8"
+    )
+    success_art = queue_dir / "artifacts" / "job-success-rationale"
+    success_art.mkdir(parents=True, exist_ok=True)
+    (success_art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "review_summary": {
+                    "execution_capabilities": {
+                        "required_capabilities": ["files.read"],
+                        "side_effect_class": "class_a",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    (queue_dir / "failed" / "job-denied-rationale.json").write_text(
+        '{"goal":"delete"}', encoding="utf-8"
+    )
+    denied_art = queue_dir / "artifacts" / "job-denied-rationale"
+    denied_art.mkdir(parents=True, exist_ok=True)
+    (denied_art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "denied",
+                "approval_status": "denied",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+
+    success = client.get("/jobs/job-success-rationale.json")
+    assert success.status_code == 200
+    assert "Policy allowed execution and run completed." in success.text
+    assert "files.read" in success.text
+    assert "class_a" in success.text
+
+    denied = client.get("/jobs/job-denied-rationale.json")
+    assert denied.status_code == 200
+    assert "Denied by policy/approval decision." in denied.text
+    assert "Approval status" in denied.text
 
 
 def test_job_detail_renders_assistant_job_context(tmp_path, monkeypatch):
@@ -834,6 +896,9 @@ def test_job_detail_prefers_structured_execution_artifacts(tmp_path, monkeypatch
     assert "All clear" in res.text
     assert "outputs/summary.md" in res.text
     assert "Machine payload" in res.text
+    assert "Evidence Summary" in res.text
+    assert "execution_result.json" in res.text
+    assert "Proves final lifecycle/terminal outcome and structured evaluation fields." in res.text
 
 
 def test_job_progress_success_omits_stale_failure_fields_and_events(tmp_path, monkeypatch):
