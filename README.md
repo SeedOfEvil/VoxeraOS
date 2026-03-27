@@ -35,11 +35,13 @@ This is a **one-person evenings-and-weekends project**. The architecture is real
 - Intent routing with fail-closed guardrails
 - Security hardening: red-team regression suite, traversal defenses, prompt boundary controls
 - Health monitoring, doctor diagnostics, incident bundle exports
-- Governed file operations, web investigation, weather lookups, code/writing drafts
+- Governed file operations (read + mutating queue helpers), web investigation, weather lookups, code/writing drafts
+- Capability semantics + manifest-derived policy/approval interpretation surfaces
+- Built-in mission catalog (9 in-code templates) plus file-based mission loading from `missions/` and `~/.config/voxera/missions`
 
 **What is still early or evolving:**
-- Voice-first interaction (the long-term North Star, not yet built)
-- Mission catalog breadth (six built-in templates; more planned)
+- Voice-first interaction UX (full duplex voice loop is not yet built; only a bounded voice foundation seam exists today)
+- Mission/catalog breadth is growing (current in-code catalog ships 9 built-in templates; broader community catalog remains future work)
 - Provider compatibility beyond OpenRouter (see below)
 - Panel UX polish and mobile responsiveness
 - Multi-step orchestration maturity
@@ -85,10 +87,11 @@ Run the core runtime stack locally:
 
 ```bash
 voxera daemon
-voxera panel --host 127.0.0.1 --port 8787
+voxera panel --host 127.0.0.1 --port 8844
 make vera
 ```
 
+Panel runtime default is `127.0.0.1:8844` (the `make panel` dev shortcut intentionally uses `127.0.0.1:8787`).
 Vera defaults to `127.0.0.1:8790`.
 
 For systemd user-service management:
@@ -249,9 +252,9 @@ When extending one of these areas, prefer adding code to the dedicated ownership
 
 VoxeraOS is organized around three near-term milestone themes:
 
-- **v0.1.8 (current)** — Vera Control Layer: make Vera a stable, trustworthy conversational control interface for VoxeraOS
-- **v0.1.9** — Governed Capability Expansion: broaden what the system can do safely (system inspection, web retrieval, richer file operations, capability registry)
-- **v0.2.0** — First Platform Milestone: make Vera + VoxeraOS feel like a coherent AI operating platform (session context, planning maturity, operator console polish, voice foundation)
+- **v0.1.8 (current release tag)** — Vera Control Layer foundations are shipped on this branch
+- **v0.1.9 theme (largely landed on current branch)** — governed capability expansion is already present (system inspection/diagnostics, read-only investigation lanes, richer file helpers, capability semantics contracts)
+- **v0.2.0 (next milestone framing)** — platform polish and integration depth (session/planning maturity, operator-console refinement, and continued voice-foundation-to-UX progression)
 
 The long-term North Star is a **voice-first AI operating system** — an AI you can talk to that feels alive but behaves like infrastructure. Vera is the intelligence; VoxeraOS is the trust layer. See [docs/NORTH_STAR.md](docs/NORTH_STAR.md) for the full vision.
 

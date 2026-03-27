@@ -13,7 +13,7 @@ For project overview, see [README.md](../README.md). For the product vision, see
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  Experience Layer                                       │
-│  Voice shell (planned) · Web Panel · CLI (voxera)       │
+│  Voice foundation seam (bounded) · Web Panel · CLI (voxera) │
 ├─────────────────────────────────────────────────────────┤
 │  AI Control Plane                                       │
 │  Intent router · Mission planner · Queue daemon         │
@@ -122,7 +122,7 @@ VoxeraOS/
 │   │   │   ├── execution.py         — sandbox selection + audit value sanitization
 │   │   │   ├── arg_normalizer.py    — arg canonicalization + alias mapping
 │   │   │   └── path_boundaries.py   — deterministic confined-path normalization
-│   │   ├── audio/                   — placeholder (STT/TTS, v0.3+)
+│   │   ├── voice/                   — bounded voice foundation flags + input/output seams
 │   │   └── panel/
 │   │       ├── app.py               — FastAPI composition/wiring root
 │   │       ├── helpers.py           — request_value, coerce_int
@@ -145,7 +145,7 @@ VoxeraOS/
 │   │       │   ├── vera.html
 │   │       │   └── _daemon_health_widget.html
 │   │       └── static/panel.css
-│   └── voxera_builtin_skills/       — 26 built-in Python skill callables
+│   └── voxera_builtin_skills/       — 31 built-in Python skill callables
 │       ├── clipboard_copy.py        clipboard_paste.py
 │       ├── disk_usage.py            host_info.py
 │       ├── files_copy_file.py       files_delete_file.py
@@ -507,7 +507,7 @@ src/voxera/
 │   ├── missions.py           — Mission templates + runner; YAML/JSON mission loading
 │   │                           built-in mission IDs: work_mode, focus_mode,
 │   │                           daily_checkin, incident_mode, wrap_up, system_check,
-│   │                           system_inspect
+│   │                           notes_archive_flow, system_inspect, system_diagnostics
 │   ├── mission_planner.py    — LLM-based planning; fallback chains (primary→fast→fallback);
 │   │                           deterministic write/terminal-demo routes; step normalization
 │   │                           and rewriting; error classification; planner timeouts (25s)
@@ -566,7 +566,7 @@ src/voxera/
 │   ├── templates/index.html  — Single-page HTML shell for the Vera conversational UI
 │   └── static/vera.css       — Vera web stylesheet
 │
-├── audio/                    — Placeholder; STT/TTS planned for v0.3
+├── voice/                    — Bounded voice foundation seam (flag-gated transcript input + placeholder output status)
 │
 └── panel/
     │
@@ -606,7 +606,7 @@ src/voxera/
     ├── templates/            — Jinja2 HTML: home.html, jobs.html, job_detail.html
     └── static/panel.css      — Panel stylesheet
 
-src/voxera_builtin_skills/    — 26 built-in skills packaged as Python callables
+src/voxera_builtin_skills/    — 31 built-in skills packaged as Python callables
                                 clipboard (copy, paste)
                                 files (copy_file, delete_file, exists, list_dir, mkdir,
                                        move_file, read_text, stat, write_text)

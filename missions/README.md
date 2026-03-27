@@ -18,14 +18,18 @@ Missions that require approval pause at `pending/approvals/` and resume only whe
 
 ## Built-in mission templates
 
-Pre-defined multi-step missions available in `missions/`:
-- `work_mode` — prepares a focused work session (3-step example: status check + settings + app launch).
-- `focus_mode` — similar focused session template.
-- `daily_checkin` — system status and health summary.
-- `incident_mode` — escalated context for incident response.
-- `wrap_up` — end-of-session hygiene.
-- `system_check` — quick health and capability snapshot.
-- `notes_archive_flow` — bounded end-to-end notes/workspace organization flow (exists → stat → mkdir → copy → optional delete).
+Pre-defined in-code mission templates (in `src/voxera/core/missions.py`):
+- `work_mode`
+- `focus_mode`
+- `daily_checkin`
+- `incident_mode`
+- `wrap_up`
+- `system_check`
+- `notes_archive_flow`
+- `system_inspect`
+- `system_diagnostics`
+
+Additional file-based missions are also loaded from repository `missions/` and user `~/.config/voxera/missions` when valid.
 
 ## Cloud-assisted mission planning
 
@@ -81,7 +85,7 @@ voxera missions run work_mode
 
 ## Panel workflows
 
-The panel (`voxera panel --host 127.0.0.1 --port 8787`) provides:
+The panel (`voxera panel --host 127.0.0.1 --port 8844`) provides (note: `make panel` uses `127.0.0.1:8787` for local-dev convenience):
 - Job list with lifecycle buckets (inbox / pending / done / failed / canceled).
 - Per-job detail with live progress polling (`/jobs/{id}/progress`) — added in PR #146.
 - Approval/deny/retry/cancel actions.
@@ -89,14 +93,14 @@ The panel (`voxera panel --host 127.0.0.1 --port 8787`) provides:
 - Child job visibility under parent job detail (PR #149).
 - Lineage metadata display when present (PR #148).
 
-## Status as of v0.1.6 + PRs #145–#149
+## Current status (v0.1.8 branch truth-sync)
 
 - Mission execution, approval flows, and audit trail: implemented and operator-visible.
 - Intent routing guardrail (PRs #144–#145): deterministic classifier runs before planning; fail-closed on skill family mismatch.
 - Queue lineage metadata (PR #148): parent/child relationships tracked additively; observational only.
 - Controlled child enqueue (PR #149): missions can request one child job; child enters normal queue lifecycle with full policy/approval enforcement.
 - Live progress (PR #146): panel job detail pages poll for real-time lifecycle/step updates from canonical artifacts.
-- Mission catalog: six built-in templates ship with the repo; catalog expansion is a v0.2 milestone.
+- Mission catalog: nine built-in in-code templates ship today, plus file-based mission loading; broader catalog growth remains a future milestone.
 
 
 ## Structured bounded file-organize queue jobs

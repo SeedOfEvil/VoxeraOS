@@ -75,10 +75,10 @@ Restart services:
 
 ```bash
 make daemon-restart
-make panel-restart
+systemctl --user restart voxera-panel.service
 make vera-restart
 make daemon-status
-make panel-status
+systemctl --user --no-pager status voxera-panel.service
 make vera-status
 ```
 

@@ -67,9 +67,14 @@ This writes `notes/queue/_ops/config_snapshot.json` (or `<VOXERA_QUEUE_ROOT>/_op
 
 Config precedence: CLI overrides > `VOXERA_*` env > `~/.config/voxera/config.json` > built-in defaults.
 
+Panel port truth:
+- Runtime default from config/env/systemd is `127.0.0.1:8844`.
+- `make panel` is a local-dev shortcut that intentionally runs on `127.0.0.1:8787`.
+
+
 ### Experimental voice foundation flags (bounded spike)
 
-Voice in this release is an interface foundation only (transcript-origin routing + metadata seams), not full voice UX.
+Voice in this release is a bounded foundation seam only (flag-gated transcript-origin routing + output status metadata), not a full voice UX/runtime loop.
 
 Runtime config keys (`~/.config/voxera/config.json`) and equivalent env vars:
 
@@ -131,7 +136,7 @@ Key runtime env vars (defaults):
 - `VOXERA_QUEUE_ROOT` (`~/VoxeraOS/notes/queue`)
 - `VOXERA_HEALTH_PATH` (unset — override health snapshot file path; used in tests via `conftest.py`)
 - `VOXERA_PANEL_HOST` (`127.0.0.1`)
-- `VOXERA_PANEL_PORT` (`8844`, `make panel` uses `8787`)
+- `VOXERA_PANEL_PORT` (`8844` runtime default; local-dev `make panel` intentionally binds `8787`)
 - `VOXERA_PANEL_OPERATOR_USER` (`admin`)
 - `VOXERA_PANEL_CSRF_ENABLED` (`1`/true by default)
 - `VOXERA_QUEUE_LOCK_STALE_S` (`3600`)
@@ -1398,7 +1403,7 @@ Child summary is read-only operator visibility and does not change orchestration
 
 1. Start services:
    - `voxera daemon`
-   - `voxera panel --host 127.0.0.1 --port 8787`
+   - `voxera panel --host 127.0.0.1 --port 8844`
    - `make vera`
 2. Open `http://127.0.0.1:8790/`.
 3. Send a greeting and verify you receive a conversational assistant reply.
