@@ -428,7 +428,7 @@ def test_queue_files_tree_blocked_scope_is_truthful_block(tmp_path, monkeypatch)
             encoding="utf-8"
         )
     )
-    assert execution_result["terminal_outcome"] == "failed"
+    assert execution_result["terminal_outcome"] == "blocked"
     assert execution_result["step_results"][0]["blocked"] is True
 
 

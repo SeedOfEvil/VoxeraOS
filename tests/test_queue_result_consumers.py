@@ -361,7 +361,7 @@ def test_resolve_structured_execution_surfaces_blocked_path_scope_metadata(tmp_p
     assert payload["blocked"] is True
     assert payload["blocked_reason_class"] == "path_blocked_scope"
     assert "control-plane scope" in str(payload["blocked_reason"])
-    assert payload["step_summaries"][0]["blocked_reason_class"] is None
+    assert payload["step_summaries"][0]["blocked_reason_class"] == "path_blocked_scope"
 
 
 def test_resolve_structured_execution_exposes_normalized_artifact_contract_fields(tmp_path):

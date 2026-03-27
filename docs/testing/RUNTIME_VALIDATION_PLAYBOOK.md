@@ -294,6 +294,23 @@ Expected pass:
 - `execution_result.json` reports terminal failure
 - step result `blocked=false` with missing-source/not-found class evidence
 
+## 9.9 Scenario H: mutating control-plane scope is fail-closed blocked (`queue files move`)
+
+Goal:
+- verify governed mutating file actions treat queue/control-plane scope as blocked boundary
+- ensure operator surfaces show truthful blocked metadata (not generic failed)
+
+Command:
+
+```bash
+voxera queue files move --source-path "$HOME/VoxeraOS/notes/runtime-validation/source.txt" --destination-path "$HOME/VoxeraOS/notes/queue/blocked.txt" --id rvp-files-move-blocked --queue-dir "$QUEUE_ROOT"
+```
+
+Expected:
+- job lands in `failed/` with blocked boundary semantics
+- `execution_result.json` has `blocked=true` and `blocked_reason_class=path_blocked_scope`
+- `step_results.json` records the attempted step with boundary class and blocked outcome hints
+
 ## 10) Raw queue JSON helpers
 
 Create ad-hoc payload quickly:

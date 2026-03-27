@@ -89,6 +89,7 @@ Canonical terminal outcomes:
 Interpretation notes:
 - `awaiting_approval` and `pending_approval` are lifecycle states, not terminal outcomes.
 - If approval status is denied and no explicit terminal outcome is present, consumers normalize to `denied`.
+- For governed mutating filesystem actions, `path_blocked_scope` is a blocked boundary class (fail-closed) and should normalize as blocked semantics across `step_results`, `execution_result`, state sidecars, panel surfaces, and Vera linked outcome review.
 
 ## 5) Lineage semantics
 

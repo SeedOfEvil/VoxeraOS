@@ -574,9 +574,11 @@ class MissionRunner:
                 )
             elif not rr.ok:
                 error_class = (
-                    str(rr.data.get("error_class") or "").strip().lower()
+                    str(canonical.get("error_class") or rr.data.get("error_class") or "")
+                    .strip()
+                    .lower()
                     if isinstance(rr.data, dict)
-                    else ""
+                    else str(canonical.get("error_class") or "").strip().lower()
                 )
                 boundary_blocked = error_class in {
                     "path_blocked_scope",
@@ -584,7 +586,8 @@ class MissionRunner:
                     "policy_denied",
                 }
                 blocked_now = (
-                    str(rr.data.get("status") or "") == "blocked"
+                    canonical.get("blocked") is True
+                    or str(rr.data.get("status") or "") == "blocked"
                     or "Denied by policy" in str(rr.error or "")
                     or boundary_blocked
                 )
@@ -651,9 +654,18 @@ class MissionRunner:
                     }
                 )
                 self._append_mission_log(mission, outputs, status="failed")
-                blocked_terminal = str(
-                    rr.data.get("status") or ""
-                ) == "blocked" or "Denied by policy" in str(rr.error or "")
+                terminal_error_class = (
+                    str(canonical.get("error_class") or rr.data.get("error_class") or "")
+                    .strip()
+                    .lower()
+                )
+                blocked_terminal = (
+                    canonical.get("blocked") is True
+                    or str(rr.data.get("status") or "") == "blocked"
+                    or "Denied by policy" in str(rr.error or "")
+                    or terminal_error_class
+                    in {"path_blocked_scope", "capability_boundary_mismatch", "policy_denied"}
+                )
                 return RunResult(
                     ok=False,
                     error=f"Mission failed at step {idx} ({ms.skill_id}): {rr.error}",

@@ -412,6 +412,8 @@ intent classifier (`src/voxera/core/simple_intent.py`) before planning:
 - Blocked and approval-required outcomes are surfaced through canonical artifacts, not side channels:
   - `artifacts/<job>/step_results.json` includes `status`, `machine_payload.required_capabilities`, `machine_payload.required_effect_classes`, and structured `error_class`.
   - `artifacts/<job>/execution_result.json` reflects terminal outcome (`blocked` or `awaiting_approval`) with step-level context.
+  - For governed mutating filesystem steps (`files.copy*`, `files.move*`, `files.rename`, `files.delete_file`), control-plane scope violations (`error_class=path_blocked_scope`) are treated as blocked (not generic failed) and should surface consistently in `blocked`, `blocked_reason_class`, panel Why Stopped, and Vera linked completion review text.
+  - `last_attempted_step` / `last_completed_step` semantics remain authoritative for paused/blocked jobs: attempted step records the mutation request, while completed step records only successfully executed prior steps.
 - Panel approval/deny actions resolve queue approvals in a worker thread to avoid event-loop conflicts (`asyncio.run()` cannot execute inside the active FastAPI loop).
 - Artifacts and bundles are available from the Jobs console (`/jobs`, `/jobs/<job>.json`, `/jobs/<job>.json/bundle`).
 
