@@ -67,6 +67,22 @@ This writes `notes/queue/_ops/config_snapshot.json` (or `<VOXERA_QUEUE_ROOT>/_op
 
 Config precedence: CLI overrides > `VOXERA_*` env > `~/.config/voxera/config.json` > built-in defaults.
 
+### Experimental voice foundation flags (bounded spike)
+
+Voice in this release is an interface foundation only (transcript-origin routing + metadata seams), not full voice UX.
+
+Runtime config keys (`~/.config/voxera/config.json`) and equivalent env vars:
+
+- `enable_voice_foundation` / `VOXERA_ENABLE_VOICE_FOUNDATION`
+- `enable_voice_input` / `VOXERA_ENABLE_VOICE_INPUT`
+- `enable_voice_output` / `VOXERA_ENABLE_VOICE_OUTPUT`
+- `voice_stt_backend` / `VOXERA_VOICE_STT_BACKEND` (placeholder metadata only in this spike)
+- `voice_tts_backend` / `VOXERA_VOICE_TTS_BACKEND` (placeholder metadata only in this spike)
+
+Fail-closed behavior:
+- If transcript-origin input is sent while voice foundation/input flags are off, Vera web rejects the turn with a clear `voice_input_disabled` error.
+- Transcript-origin turns still route through normal Vera orchestration and queue handoff boundaries; no voice shortcut path is introduced.
+
 For deterministic local/CI tests, Make targets run pytest with `VOXERA_LOAD_DOTENV=0` and unset key `VOXERA_*` vars so shell exports and repo `.env` do not alter test outcomes.
 
 ### Testing
