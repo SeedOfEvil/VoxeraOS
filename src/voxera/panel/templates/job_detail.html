@@ -41,7 +41,40 @@
       <p style="margin:0 0 var(--space-2);"><span class="muted">Reason:</span> {{payload.operator_summary.reason}}</p>
     {% endif %}
     <p style="margin:0;"><span class="muted">Next action:</span> {{payload.operator_summary.next_action}}</p>
+    <p style="margin:var(--space-2) 0 0;" class="muted text-sm">Next-action source: {{payload.operator_summary.next_action_source}}</p>
   </section>
+
+  {% if payload.policy_rationale %}
+  <div class="section-label">Policy Rationale</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:0;">
+      {% for item in payload.policy_rationale %}
+        <dt>{{item.label}}</dt><dd>{{item.value}}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+  {% endif %}
+
+  {% if payload.evidence_summary %}
+  <div class="section-label">Evidence Summary</div>
+  <section class="card mb">
+    <p class="muted text-sm" style="margin-top:0;">Start with present artifacts first; each item states what truth it proves.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Evidence artifact</th><th>Status</th><th>Proof value</th></tr></thead>
+        <tbody>
+          {% for item in payload.evidence_summary %}
+          <tr>
+            <td class="mono text-sm">{{item.label}} <span class="muted">({{item.path}})</span></td>
+            <td>{% if item.present %}present{% else %}not present{% endif %}</td>
+            <td class="muted text-sm">{{item.proof}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
 
   <div class="section-label">Lifecycle &amp; Execution State</div>
   <section class="card mb">

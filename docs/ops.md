@@ -315,6 +315,7 @@ Fast-lane behavior (read-only advisory only):
 - Operator evidence: assistant jobs emit `execution_envelope.json`, `execution_result.json`, and `assistant_response.json` with aligned lane metadata. `execution_result.json` includes `execution_lane` (`fast_read_only` or `queue`) plus `fast_lane` metadata (`used`, `eligible`, `eligibility_reason`, `request_kind`), and envelope lane fields live at `execution.lane` / `execution.fast_lane`.
 - Optional GET mutation compatibility is disabled by default (HTTP 405) and can be enabled for test/dev only with `VOXERA_PANEL_ENABLE_GET_MUTATIONS=1`.
 - Panel home shows pause/resume + lifecycle actions (approve/deny, cancel, retry, delete) and links Done/Failed/Canceled jobs to artifact-backed detail pages.
+- Job detail pages now include operator-focused **Policy Rationale** and **Evidence Summary** sections sourced from canonical execution/approval/state artifacts, plus explicit next-action source labeling (`execution.next_action_hint` vs panel default guidance).
 
 ### Simple-intent routing (goal-kind jobs)
 
