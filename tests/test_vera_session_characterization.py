@@ -521,6 +521,67 @@ def test_single_turn_generate_save_volcano_fact_does_not_require_prior_artifact(
     assert payload["write_file"]["content"] == content
 
 
+def test_combined_generate_save_content_type_matrix_prefers_authored_body_not_control_text(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    responses = {
+        "tell me a short joke and save it as matrix-joke.txt": (
+            "I've drafted a short joke for you and prepared a preview to save it as `matrix-joke.txt`.\n\n"
+            "Why don't scientists trust atoms? Because they make up everything."
+        ),
+        "write a short poem and save it as matrix-poem.txt": (
+            "I've drafted a short poem for you and prepared a preview to save it as `matrix-poem.txt`.\n\n"
+            "Rain taps softly on the street,\n"
+            "Night and neon gently meet."
+        ),
+        "give me a short volcano fact and save it as matrix-fact.txt": (
+            "I've drafted a short fact for you and prepared a preview to save it as `matrix-fact.txt`.\n\n"
+            "Volcano fact: Most volcanoes form where tectonic plates meet."
+        ),
+        "give me a short climate summary and save it as matrix-summary.txt": (
+            "I've drafted a short summary for you and prepared a preview to save it as `matrix-summary.txt`.\n\n"
+            "Climate summary: Global temperatures are trending upward over recent decades."
+        ),
+    }
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        return {"answer": responses[user_message], "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    expectations = {
+        "matrix-joke.txt": "scientists trust atoms",
+        "matrix-poem.txt": "rain taps softly",
+        "matrix-fact.txt": "most volcanoes form",
+        "matrix-summary.txt": "global temperatures are trending upward",
+    }
+
+    for message, expected_fragment in [
+        ("tell me a short joke and save it as matrix-joke.txt", expectations["matrix-joke.txt"]),
+        ("write a short poem and save it as matrix-poem.txt", expectations["matrix-poem.txt"]),
+        (
+            "give me a short volcano fact and save it as matrix-fact.txt",
+            expectations["matrix-fact.txt"],
+        ),
+        (
+            "give me a short climate summary and save it as matrix-summary.txt",
+            expectations["matrix-summary.txt"],
+        ),
+    ]:
+        res = session.chat(message)
+        assert res.status_code == 200
+        preview = session.preview()
+        assert preview is not None
+        body = preview["write_file"]["content"].lower()
+        assert expected_fragment in body
+        assert "i've drafted a short" not in body
+        assert "prepared a preview" not in body
+        assert "ready to save" not in body
+
+
 def test_checklist_request_returns_conversational_answer_not_preview_error(tmp_path, monkeypatch):
     """Checklist/planning requests must be answered conversationally,
     not routed through preview drafting."""

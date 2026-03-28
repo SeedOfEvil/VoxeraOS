@@ -2014,6 +2014,8 @@ async def chat(request: Request):
             first_block
             and len(first_block.split()) >= 4
             and not looks_like_non_authored_assistant_message(first_block)
+            and not _looks_like_preview_update_claim(first_block)
+            and not re.search(r"\bprepared\s+(?:a|the)\s+preview\b", first_block, re.IGNORECASE)
         ):
             reply_text_draft = first_block
     generation_content_refresh_failed_closed = False
