@@ -99,6 +99,10 @@ def looks_like_non_authored_assistant_message(text: str) -> bool:
         return True
     if re.search(r"\bsend it whenever you(?:'re| are)\s+ready\b", lowered):
         return True
+    if re.search(r"\byou can see the current draft\b", lowered):
+        return True
+    if re.search(r"\blet me know if you(?:'d| would)\s+like to change\b", lowered):
+        return True
     non_authored_patterns = (
         r"\bi submitted the job to voxeraos\b",
         r"\bjob id:\b",

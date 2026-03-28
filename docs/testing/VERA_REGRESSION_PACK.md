@@ -281,7 +281,10 @@ Expected pass:
 
 - step 2 preview path is `~/VoxeraOS/notes/superfunny.txt` and content is joke text (not linked-job status text)
 - for combined generate+save prompts, preview content matches the assistant-authored answer from that same turn (not canned fallback text)
+- step 2 preview content does **not** include draft-management wrapper text such as "I added a new joke" or "You can see the current draft"
+- step 2 preview content does **not** include readiness/control narration such as "Nothing has been submitted or executed yet" or "I'm ready to submit this to the queue whenever you're set"
 - step 3 updates preview content to the new joke and keeps the same path
+- if step 3 assistant reply uses wrapper phrasing with a quoted joke, preview stores only the quoted joke body
 - step 4 response explicitly states the draft content was left unchanged due to ambiguity
 
 ## 6) Verification steps per scenario

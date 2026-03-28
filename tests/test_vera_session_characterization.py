@@ -276,6 +276,42 @@ def test_combined_generation_save_named_note_uses_actual_joke_not_control_ack(
     assert "i still have the current request ready" not in content
 
 
+def test_combined_generation_save_filters_wrapper_text_and_keeps_only_joke_content(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me a dad joke and save it as dadjoke.txt":
+            return {
+                "answer": (
+                    'I added a new joke ("I\'m afraid for the calendar. Its days are numbered.") '
+                    "to the file content.\n\n"
+                    "You can see the current draft in the preview pane; let me know if you'd like "
+                    "to change the joke or the filename before we submit it."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("tell me a dad joke and save it as dadjoke.txt")
+    assert res.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/dadjoke.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert lowered == "i'm afraid for the calendar. its days are numbered."
+    assert "i added a new joke" not in lowered
+    assert "you can see the current draft" not in lowered
+    assert "nothing has been submitted or executed yet" not in lowered
+    assert "i’m ready to submit this to the queue whenever you’re set" not in lowered
+
+
 def test_followup_tell_another_joke_and_add_as_content_refreshes_preview_content(
     tmp_path, monkeypatch
 ):
@@ -305,6 +341,53 @@ def test_followup_tell_another_joke_and_add_as_content_refreshes_preview_content
     assert updated["write_file"]["path"] == "~/VoxeraOS/notes/jokie.txt"
     assert "keyboard i needed space" in updated["write_file"]["content"].lower()
     assert "updated the draft" not in updated["write_file"]["content"].lower()
+
+
+def test_active_draft_refresh_with_wrapper_reply_replaces_body_with_pure_new_joke(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me a dad joke and save it as dadjoke.txt":
+            return {
+                "answer": "Why did the coffee file a police report? It got mugged.",
+                "status": "ok:test",
+            }
+        if user_message == "tell me a different joke and add it as content":
+            return {
+                "answer": (
+                    "I added a new joke (\"Why don't skeletons fight each other? "
+                    "They don't have the guts.\") to the file content.\n\n"
+                    "You can see the current draft in the preview pane; let me know if you'd like "
+                    "to change the joke or the filename before we submit it."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    first = session.chat("tell me a dad joke and save it as dadjoke.txt")
+    assert first.status_code == 200
+    baseline = session.preview()
+    assert baseline is not None
+    assert baseline["write_file"]["path"] == "~/VoxeraOS/notes/dadjoke.txt"
+    assert "coffee file a police report" in baseline["write_file"]["content"].lower()
+
+    second = session.chat("tell me a different joke and add it as content")
+    assert second.status_code == 200
+    updated = session.preview()
+    assert updated is not None
+    assert updated["write_file"]["path"] == "~/VoxeraOS/notes/dadjoke.txt"
+    refreshed = updated["write_file"]["content"].lower()
+    assert "don't skeletons fight each other" in refreshed
+    assert "coffee file a police report" not in refreshed
+    assert "i added a new joke" not in refreshed
+    assert "you can see the current draft" not in refreshed
+    assert "nothing has been submitted or executed yet" not in refreshed
+    assert "i’m ready to submit this to the queue whenever you’re set" not in refreshed
 
 
 def test_checklist_request_returns_conversational_answer_not_preview_error(tmp_path, monkeypatch):

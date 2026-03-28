@@ -127,6 +127,9 @@ def extract_text_draft_from_reply(text: str) -> str | None:
     normalized = text.replace("\r\n", "\n").strip()
     if not normalized:
         return None
+    wrapped_quoted_content = _extract_quoted_authored_content_from_wrapper(normalized)
+    if wrapped_quoted_content:
+        return wrapped_quoted_content
     content = _extract_prose_body(normalized)
     if not content:
         return None
@@ -330,3 +333,35 @@ def _is_heading_like(block: str) -> bool:
     if stripped.startswith("#"):
         return True
     return bool(_HEADING_RE.fullmatch(stripped)) and len(stripped.split()) <= 12
+
+
+def _extract_quoted_authored_content_from_wrapper(text: str) -> str | None:
+    lowered = text.lower()
+    wrapper_signals = (
+        "added a new joke",
+        "added this to the file content",
+        "added that to the file content",
+        "to the file content",
+        "current draft",
+        "preview pane",
+        "ready to submit",
+    )
+    if not any(signal in lowered for signal in wrapper_signals):
+        return None
+
+    quoted_candidates = [
+        match.group(1).strip() for match in re.finditer(r'"([^"\n]{4,})"', text)
+    ] + [match.group(1).strip() for match in re.finditer(r"'([^'\n]{4,})'", text)]
+    if not quoted_candidates:
+        return None
+
+    for candidate in sorted(quoted_candidates, key=len, reverse=True):
+        lowered_candidate = candidate.lower()
+        if any(
+            token in lowered_candidate
+            for token in ("current draft", "preview pane", "ready to submit", "queue")
+        ):
+            continue
+        if len(candidate.split()) >= 4 or len(candidate) >= 24:
+            return candidate
+    return None
