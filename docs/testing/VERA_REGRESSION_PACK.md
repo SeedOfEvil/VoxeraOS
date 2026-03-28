@@ -261,6 +261,28 @@ Expected pass:
 - completion text for step 4 references the newly submitted job/result (never an earlier filename)
 - submit turn does not auto-inject an older unsurfaced linked completion message
 
+### K) Active draft content integrity under prior linked completion history
+
+Prompt sequence:
+
+1. Ensure the session has at least one prior linked completion surfaced in chat.
+2. `tell me a funny joke and save it as superfunny.txt`
+3. `tell me a hilarious joke` (with the preview still active)
+4. `replace content with that`
+
+Proves:
+
+- prior linked-completion status messages are not reused as `write_file.content` by default
+- combined generate+save turns bind path and content to the same current intent
+- clear generation follow-ups can refresh active draft content while preserving destination
+- ambiguous content-replacement requests fail closed and keep draft content unchanged
+
+Expected pass:
+
+- step 2 preview path is `~/VoxeraOS/notes/superfunny.txt` and content is joke text (not linked-job status text)
+- step 3 updates preview content to the new joke and keeps the same path
+- step 4 response explicitly states the draft content was left unchanged due to ambiguity
+
 ## 6) Verification steps per scenario
 
 Use these checks after each scenario:

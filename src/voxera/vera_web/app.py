@@ -68,6 +68,7 @@ from ..vera.preview_submission import (
     submit_preview,
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
+from ..vera.saveable_artifacts import message_requests_referenced_content
 from ..vera.service import (
     _CODE_DRAFT_HINT,
     _WRITING_DRAFT_HINT,
@@ -379,6 +380,43 @@ def _is_relative_writing_refinement_request(message: str) -> bool:
             text,
             re.IGNORECASE,
         )
+    )
+
+
+def _looks_like_active_preview_content_generation_turn(message: str) -> bool:
+    text = message.strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if message_requests_referenced_content(text):
+        return False
+    if looks_like_preview_rename_or_save_as_request(text):
+        return False
+    generation_signal = re.search(
+        r"\b(tell|give|write|draft|create|generate|compose|share)\b", lowered
+    )
+    content_shape_signal = re.search(
+        r"\b(joke|poem|story|paragraph|content|text|message|bio|summary|explanation)\b",
+        lowered,
+    )
+    return bool(generation_signal and content_shape_signal)
+
+
+def _looks_like_ambiguous_active_preview_content_replacement_request(message: str) -> bool:
+    text = message.strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if not re.search(r"\b(add|use|replace|change|update|make)\b", lowered):
+        return False
+    if not re.search(r"\b(content|text|file|note)\b", lowered):
+        return False
+    if not re.search(r"\b(that|this|it|previous|last)\b", lowered):
+        return False
+    if re.search(r"\"[^\"]+\"|'[^']+'", text):
+        return False
+    return not re.search(
+        r"\b(joke|summary|answer|response|explanation|paragraph|story|poem)\b", lowered
     )
 
 
@@ -2090,6 +2128,38 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
+    if (
+        builder_payload is None
+        and isinstance(pending_preview, dict)
+        and _is_refinable_prose_preview(pending_preview)
+        and not is_code_draft_turn
+        and not is_writing_draft_turn
+        and not informational_web_turn
+        and not is_enrichment_turn
+        and _looks_like_active_preview_content_generation_turn(message)
+        and reply_text_draft is not None
+    ):
+        pending_wf = pending_preview.get("write_file")
+        if isinstance(pending_wf, dict):
+            updated_preview: dict[str, object] = {
+                **pending_preview,
+                "write_file": {
+                    **pending_wf,
+                    "content": reply_text_draft,
+                },
+            }
+            builder_payload = updated_preview
+            write_session_preview(root, active_session, builder_payload)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+
     # Create-and-save fallback: when the message has both explicit save/write
     # intent AND planning/checklist keywords (a "create and save" hybrid like
     # "save a checklist to a note for my wedding prep"), but the builder failed
@@ -2228,6 +2298,16 @@ async def chat(request: Request):
             rejected=preview_update_rejected,
             updated_preview=builder_payload,
         )
+    if (
+        builder_payload is None
+        and isinstance(pending_preview, dict)
+        and _looks_like_ambiguous_active_preview_content_replacement_request(message)
+    ):
+        assistant_text = (
+            f"{assistant_text}\n\n"
+            "I left the active draft content unchanged because the content replacement request was "
+            "ambiguous. Please specify exact content or say what prior artifact to use."
+        ).strip()
 
     status = "prepared_preview" if builder_payload is not None else reply_status
 

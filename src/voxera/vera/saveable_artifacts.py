@@ -79,6 +79,14 @@ def _looks_like_non_authored_assistant_message(text: str) -> bool:
     lowered = text.strip().lower()
     if not lowered:
         return True
+    if re.search(r"\byour linked .+ job completed successfully\b", lowered):
+        return True
+    if re.search(r"\byour linked request is paused pending approval\b", lowered):
+        return True
+    if re.search(r"\byour linked .+ job failed\b", lowered):
+        return True
+    if re.search(r"\bwrote text to\b", lowered):
+        return True
     non_authored_patterns = (
         r"\bi submitted the job to voxeraos\b",
         r"\bjob id:\b",

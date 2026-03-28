@@ -229,7 +229,7 @@ Recent refactors intentionally reduced the amount of Vera, queue, and panel beha
   - `src/voxera/vera/weather_flow.py` — quick live-weather routing and follow-up continuity
   - `src/voxera/vera/saveable_artifacts.py` — meaningful recent assistant-content selection for governed save flows
   - `src/voxera/vera/handoff.py` — intentionally thin compatibility façade across the extracted handoff-facing seams
-  - Integrity invariant: visible preview state is authoritative pre-submit and is the exact source for queued payload serialization; ambiguous preview state fails closed; accepted naming mutations explicitly confirm the new destination path; linked completion surfacing prioritizes the latest linked submit in-session.
+  - Integrity invariant: visible preview state is authoritative pre-submit and is the exact source for queued payload serialization; ambiguous preview state fails closed; accepted naming mutations explicitly confirm the new destination path; linked completion surfacing prioritizes the latest linked submit in-session; linked-completion status text is not eligible default note-body content for save-by-reference flows.
 
 - **Queue orchestration**
   - `src/voxera/core/queue_daemon.py` — daemon lifecycle, lock handling, directory contract, and composition root

@@ -160,6 +160,85 @@ def test_active_preview_rename_path_revision_and_submit_remain_truthful(tmp_path
     assert vera_service.read_session_preview(session.queue, session.session_id) is None
 
 
+def test_save_as_flow_ignores_prior_linked_completion_status_text(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        return {"answer": f"reply: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    vera_service.append_session_turn(
+        session.queue,
+        session.session_id,
+        role="assistant",
+        text=(
+            "Your linked goal job completed successfully. Wrote text to "
+            "~/VoxeraOS/notes/older-note.txt."
+        ),
+    )
+
+    res = session.chat("tell me a funny joke and save it as superfunny.txt")
+    assert res.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/superfunny.txt"
+    assert "cache" in preview["write_file"]["content"].lower()
+    assert "wrote text to" not in preview["write_file"]["content"].lower()
+
+
+def test_active_text_preview_content_updates_on_clear_generation_followup(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me a hilarious joke":
+            return {"answer": "Fresh hilarious joke body for this draft only.", "status": "ok:test"}
+        return {"answer": "Initial answer content.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("what is 2 + 2?")
+    session.chat("save that as draft.txt")
+    before = session.preview()
+    assert before is not None
+    assert before["write_file"]["content"] == "Initial answer content."
+
+    update = session.chat("tell me a hilarious joke")
+    assert update.status_code == 200
+    after = session.preview()
+    assert after is not None
+    assert after["write_file"]["path"] == "~/VoxeraOS/notes/draft.txt"
+    assert after["write_file"]["content"] == "Fresh hilarious joke body for this draft only."
+
+
+def test_ambiguous_active_preview_content_replacement_fails_closed(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "What is 2 + 2?":
+            return {"answer": "2 + 2 is 4.", "status": "ok:test"}
+        return {"answer": "I can help with that.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("What is 2 + 2?")
+    session.chat("save that as ambiguous.txt")
+    preview_before = session.preview()
+    assert preview_before is not None
+
+    response = session.chat("replace content with that")
+    assert response.status_code == 200
+    preview_after = session.preview()
+    assert preview_after == preview_before
+    last_turn = session.turns()[-1]["text"].lower()
+    assert "left the active draft content unchanged" in last_turn
+    assert "ambiguous" in last_turn
+
+
 def test_checklist_request_returns_conversational_answer_not_preview_error(tmp_path, monkeypatch):
     """Checklist/planning requests must be answered conversationally,
     not routed through preview drafting."""
