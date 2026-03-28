@@ -2196,6 +2196,42 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
+    # Single-turn generate+save guardrail: when the deterministic builder staged
+    # a text preview shell with empty content (for example "tell me a joke and
+    # save it as ..."), bind same-turn authored reply text directly so preview
+    # content never stays empty for a clear generation intent.
+    if (
+        isinstance(builder_payload, dict)
+        and _is_refinable_prose_preview(builder_payload)
+        and not is_code_draft_turn
+        and not is_writing_draft_turn
+        and not informational_web_turn
+        and not is_enrichment_turn
+        and _looks_like_active_preview_content_generation_turn(message)
+        and reply_text_draft is not None
+        and not str(reply_status).strip().lower().startswith("degraded")
+    ):
+        _shell_wf = builder_payload.get("write_file")
+        _shell_content = (
+            str(_shell_wf.get("content") or "").strip() if isinstance(_shell_wf, dict) else ""
+        )
+        if isinstance(_shell_wf, dict) and not _shell_content:
+            shell_bound_preview: dict[str, object] = {
+                **builder_payload,
+                "write_file": {**_shell_wf, "content": reply_text_draft},
+            }
+            builder_payload = shell_bound_preview
+            write_session_preview(root, active_session, builder_payload)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+
     generation_binding_intent = (
         not is_code_draft_turn
         and not is_writing_draft_turn

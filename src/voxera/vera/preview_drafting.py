@@ -341,10 +341,15 @@ def _normalize_structured_file_write_payload(
             else None
         )
     if content is None and (reference_requested or ambiguous_reference or plural_reference):
-        if clear_generation_request:
+        if clear_generation_request and target:
             # For same-turn generate+save intents, create a governed preview shell
             # and let post-reply binding inject the authoritative authored body.
             content = ""
+        elif clear_generation_request and not target:
+            # Let writing-draft classification handle targetless prose generation
+            # requests (for example article/essay follow-ups) instead of forcing
+            # a generic generated note path.
+            return None
         else:
             return None
     if content is None:
