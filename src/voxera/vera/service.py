@@ -696,11 +696,28 @@ def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> s
     registry = _read_linked_job_registry(queue_root, session_id)
     completions_raw = registry.get("completions")
     completions = completions_raw if isinstance(completions_raw, list) else []
+    tracked_raw = registry.get("tracked")
+    tracked = tracked_raw if isinstance(tracked_raw, list) else []
     handoff = read_session_handoff_state(queue_root, session_id) or {}
     latest_handoff_ref = ""
     handoff_job_id = str(handoff.get("job_id") or "").strip()
     if handoff_job_id:
         latest_handoff_ref = f"inbox-{handoff_job_id}.json"
+
+    if latest_handoff_ref:
+        latest_completion_exists = any(
+            isinstance(item, dict) and str(item.get("job_ref") or "").strip() == latest_handoff_ref
+            for item in completions
+        )
+        if not latest_completion_exists:
+            latest_tracked_pending = any(
+                isinstance(item, dict)
+                and str(item.get("job_ref") or "").strip() == latest_handoff_ref
+                and item.get("completion_ingested") is not True
+                for item in tracked
+            )
+            if latest_tracked_pending:
+                return None
 
     outbox_raw = registry.get("notification_outbox")
     outbox = outbox_raw if isinstance(outbox_raw, list) else []
@@ -713,8 +730,17 @@ def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> s
         detected_at_ms = int(item.get("completion_detected_at_ms") or 0)
         return (matches_latest_handoff, detected_at_ms)
 
+    completion_candidates = [item for item in completions if isinstance(item, dict)]
+    if latest_handoff_ref:
+        scoped = [
+            item
+            for item in completion_candidates
+            if str(item.get("job_ref") or "").strip() == latest_handoff_ref
+        ]
+        completion_candidates = scoped
+
     for completion in sorted(
-        (item for item in completions if isinstance(item, dict)),
+        completion_candidates,
         key=_completion_priority,
         reverse=True,
     ):

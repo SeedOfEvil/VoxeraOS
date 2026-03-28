@@ -160,6 +160,603 @@ def test_active_preview_rename_path_revision_and_submit_remain_truthful(tmp_path
     assert vera_service.read_session_preview(session.queue, session.session_id) is None
 
 
+def test_save_as_flow_ignores_prior_linked_completion_status_text(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        return {"answer": f"reply: {user_message}", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    vera_service.append_session_turn(
+        session.queue,
+        session.session_id,
+        role="assistant",
+        text=(
+            "Your linked goal job completed successfully. Wrote text to "
+            "~/VoxeraOS/notes/older-note.txt."
+        ),
+    )
+
+    res = session.chat("tell me a funny joke and save it as superfunny.txt")
+    assert res.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/superfunny.txt"
+    assert (
+        preview["write_file"]["content"]
+        == "reply: tell me a funny joke and save it as superfunny.txt"
+    )
+    assert "wrote text to" not in preview["write_file"]["content"].lower()
+
+
+def test_active_text_preview_content_updates_on_clear_generation_followup(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me a hilarious joke":
+            return {"answer": "Fresh hilarious joke body for this draft only.", "status": "ok:test"}
+        return {"answer": "Initial answer content.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("what is 2 + 2?")
+    session.chat("save that as draft.txt")
+    before = session.preview()
+    assert before is not None
+    assert before["write_file"]["content"] == "Initial answer content."
+
+    update = session.chat("tell me a hilarious joke")
+    assert update.status_code == 200
+    after = session.preview()
+    assert after is not None
+    assert after["write_file"]["path"] == "~/VoxeraOS/notes/draft.txt"
+    assert after["write_file"]["content"] == "Fresh hilarious joke body for this draft only."
+
+
+def test_ambiguous_active_preview_content_replacement_fails_closed(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "What is 2 + 2?":
+            return {"answer": "2 + 2 is 4.", "status": "ok:test"}
+        return {"answer": "I can help with that.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("What is 2 + 2?")
+    session.chat("save that as ambiguous.txt")
+    preview_before = session.preview()
+    assert preview_before is not None
+
+    response = session.chat("replace content with that")
+    assert response.status_code == 200
+    preview_after = session.preview()
+    assert preview_after == preview_before
+    last_turn = session.turns()[-1]["text"].lower()
+    assert "left the active draft content unchanged" in last_turn
+    assert "ambiguous" in last_turn
+
+
+def test_combined_generation_save_named_note_uses_actual_joke_not_control_ack(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me a hilarious joke and save it to a note called jokie.txt":
+            return {
+                "answer": (
+                    "Why did the scarecrow get promoted? Because he was outstanding in his field."
+                ),
+                "status": "ok:test",
+            }
+        return {
+            "answer": (
+                "Done. I've updated the draft for `jokie.txt` with a fresh joke. "
+                "Let me know when you're ready to save it."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("tell me a hilarious joke and save it to a note called jokie.txt")
+    assert res.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokie.txt"
+    content = preview["write_file"]["content"].lower()
+    assert "outstanding in his field" in content
+    assert "i've updated the draft" not in content
+    assert "nothing has been submitted" not in content
+    assert "i still have the current request ready" not in content
+
+
+def test_combined_generation_save_filters_wrapper_text_and_keeps_only_joke_content(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me a dad joke and save it as dadjoke.txt":
+            return {
+                "answer": (
+                    'I added a new joke ("I\'m afraid for the calendar. Its days are numbered.") '
+                    "to the file content.\n\n"
+                    "You can see the current draft in the preview pane; let me know if you'd like "
+                    "to change the joke or the filename before we submit it."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("tell me a dad joke and save it as dadjoke.txt")
+    assert res.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/dadjoke.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert lowered == "i'm afraid for the calendar. its days are numbered."
+    assert "i added a new joke" not in lowered
+    assert "you can see the current draft" not in lowered
+    assert "nothing has been submitted or executed yet" not in lowered
+    assert "i’m ready to submit this to the queue whenever you’re set" not in lowered
+
+
+def test_followup_tell_another_joke_and_add_as_content_refreshes_preview_content(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me another joke and add as content":
+            return {
+                "answer": "I told my keyboard I needed space; it said, 'I’m already on it.'",
+                "status": "ok:test",
+            }
+        return {"answer": "Seed joke for the first draft content.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("what is 2 + 2?")
+    session.chat("save that as jokie.txt")
+    baseline = session.preview()
+    assert baseline is not None
+    assert baseline["write_file"]["path"] == "~/VoxeraOS/notes/jokie.txt"
+
+    followup = session.chat("tell me another joke and add as content")
+    assert followup.status_code == 200
+    updated = session.preview()
+    assert updated is not None
+    assert updated["write_file"]["path"] == "~/VoxeraOS/notes/jokie.txt"
+    assert "keyboard i needed space" in updated["write_file"]["content"].lower()
+    assert "updated the draft" not in updated["write_file"]["content"].lower()
+
+
+def test_active_draft_refresh_with_wrapper_reply_replaces_body_with_pure_new_joke(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me a dad joke and save it as dadjoke.txt":
+            return {
+                "answer": "Why did the coffee file a police report? It got mugged.",
+                "status": "ok:test",
+            }
+        if user_message == "tell me a different joke and add it as content":
+            return {
+                "answer": (
+                    "I added a new joke (\"Why don't skeletons fight each other? "
+                    "They don't have the guts.\") to the file content.\n\n"
+                    "You can see the current draft in the preview pane; let me know if you'd like "
+                    "to change the joke or the filename before we submit it."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    first = session.chat("tell me a dad joke and save it as dadjoke.txt")
+    assert first.status_code == 200
+    baseline = session.preview()
+    assert baseline is not None
+    assert baseline["write_file"]["path"] == "~/VoxeraOS/notes/dadjoke.txt"
+    assert "coffee file a police report" in baseline["write_file"]["content"].lower()
+
+    second = session.chat("tell me a different joke and add it as content")
+    assert second.status_code == 200
+    updated = session.preview()
+    assert updated is not None
+    assert updated["write_file"]["path"] == "~/VoxeraOS/notes/dadjoke.txt"
+    refreshed = updated["write_file"]["content"].lower()
+    assert "don't skeletons fight each other" in refreshed
+    assert "coffee file a police report" not in refreshed
+    assert "i added a new joke" not in refreshed
+    assert "you can see the current draft" not in refreshed
+    assert "nothing has been submitted or executed yet" not in refreshed
+    assert "i’m ready to submit this to the queue whenever you’re set" not in refreshed
+
+
+def test_active_draft_refresh_unquoted_wrapper_with_contractions_keeps_full_joke(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me an astronaut joke and save it as astrojoke.txt":
+            return {
+                "answer": "Why did the astronaut break up with the moon? It needed space.",
+                "status": "ok:test",
+            }
+        if user_message == "tell me a different joke and add it as content":
+            return {
+                "answer": (
+                    "Updated the draft preview with a fresh joke.\n\n"
+                    "Why don't skeletons fight each other? They don't have the guts.\n\n"
+                    "You can review the content in the preview pane and submit it whenever you're ready."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    first = session.chat("tell me an astronaut joke and save it as astrojoke.txt")
+    assert first.status_code == 200
+
+    second = session.chat("tell me a different joke and add it as content")
+    assert second.status_code == 200
+    updated = session.preview()
+    assert updated is not None
+    assert updated["write_file"]["path"] == "~/VoxeraOS/notes/astrojoke.txt"
+    refreshed = updated["write_file"]["content"].lower()
+    assert refreshed == "why don't skeletons fight each other? they don't have the guts."
+    assert refreshed.startswith("why don't skeletons fight each other?")
+    assert refreshed.endswith("they don't have the guts.")
+    assert "updated the draft preview" not in refreshed
+    assert "you can review the content" not in refreshed
+
+
+def test_single_turn_generate_save_poem_uses_same_turn_authored_body(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    poem = (
+        "We sail on quiet starlight streams,\n"
+        "Past silver dust and engine dreams,\n"
+        "Where midnight hums in violet tone,\n"
+        "And every orbit feels like home."
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "write a short poem about space and save it as spacepoem.txt":
+            return {"answer": poem, "status": "ok:test"}
+        if user_message == "write a short poem and save it as poem.txt":
+            return {
+                "answer": (
+                    "Ash drifts softly where old fire slept,\n"
+                    "Stone remembers promises it kept.\n\n"
+                    "You can review the content in the preview pane and submit it whenever you're ready."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("write a short poem about space and save it as spacepoem.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/spacepoem.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert "starlight streams" in lowered
+    assert "i couldn't resolve a suitable recent assistant-authored summary/answer" not in lowered
+    assert "nothing has been submitted" not in lowered
+    assert "ready to submit" not in lowered
+
+    second = session.chat("write a short poem and save it as poem.txt")
+    assert second.status_code == 200
+    poem_preview = session.preview()
+    assert poem_preview is not None
+    assert poem_preview["write_file"]["path"] == "~/VoxeraOS/notes/poem.txt"
+    poem_body = poem_preview["write_file"]["content"].lower()
+    assert "ash drifts softly where old fire slept" in poem_body
+    assert "you can review the content in the preview pane" not in poem_body
+    assert "ready" not in poem_body
+
+
+def test_single_turn_generate_save_poem_strips_if_happy_helper_tail(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "write a short poem and save it as poem.txt":
+            return {
+                "answer": (
+                    "Ash drifts softly where old fire slept,\n"
+                    "Stone remembers promises it kept.\n\n"
+                    "If you're happy with how it looks, just let me know or click submit to save it.\n"
+                    "If that looks good, just hit Submit to save the file."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("write a short poem and save it as poem.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/poem.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert lowered.startswith("ash drifts softly where old fire slept")
+    assert lowered.endswith("stone remembers promises it kept.")
+    assert "if you're happy with how it looks" not in lowered
+    assert "click submit to save it" not in lowered
+    assert "if that looks good" not in lowered
+    assert "just hit submit to save the file" not in lowered
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["content"] == content
+
+
+def test_single_turn_generate_save_mauna_loa_summary_keeps_full_body_and_submit_truth(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+    summary = (
+        "Mauna Loa is one of Earth's largest active volcanoes and has erupted repeatedly in recorded "
+        "history, shaping Hawaii's landscape and serving as a major site for atmospheric monitoring."
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "give me a short summary of Mauna Loa and save it as maunaloa.txt":
+            return {
+                "answer": (
+                    "I've drafted a short summary for you and prepared a preview to save it as `maunaloa.txt`.\n\n"
+                    f"{summary}\n\n"
+                    "Nothing has been submitted or executed yet. "
+                    "I'm ready to submit this to the queue whenever you're set."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("give me a short summary of Mauna Loa and save it as maunaloa.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/maunaloa.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert content == summary
+    assert lowered.startswith("mauna loa is one of earth's largest active volcanoes")
+    assert lowered.endswith("serving as a major site for atmospheric monitoring.")
+    assert "i've drafted a short summary for you" not in lowered
+    assert "nothing has been submitted or executed yet" not in lowered
+    assert "i'm ready to submit this to the queue whenever you're set" not in lowered
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/maunaloa.txt"
+    assert payload["write_file"]["content"] == content
+
+
+def test_single_turn_generate_save_summary_ignores_preview_pane_meta_narration(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+    summary = (
+        "Mauna Loa is one of Earth's largest active volcanoes and remains active, with eruptions that "
+        "have shaped Hawaii and provided long-running atmospheric observations."
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "give me a short summary of Mauna Loa and save it as maunaloa.txt":
+            return {
+                "answer": (
+                    "I've staged a request in the preview pane for `maunaloa.txt`.\n\n"
+                    "Please review the content and submit when you're ready.\n\n"
+                    f"{summary}"
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("give me a short summary of Mauna Loa and save it as maunaloa.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/maunaloa.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert content == summary
+    assert "i've staged a request" not in lowered
+    assert "please review the content" not in lowered
+    assert lowered.startswith("mauna loa is one of earth's largest active volcanoes")
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/maunaloa.txt"
+    assert payload["write_file"]["content"] == content
+
+
+def test_single_turn_generate_save_joke_strips_explanatory_tail_and_submit_truthful(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me an astronaut joke and save it as astrojoke.txt":
+            return {
+                "answer": (
+                    "Why did the astronaut break up with the moon? "
+                    "It needed space.\n\n"
+                    "I've drafted a plan to save that joke to `astrojoke.txt` for you. "
+                    "Nothing has been submitted or executed yet. I'm ready to submit whenever you are."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("tell me an astronaut joke and save it as astrojoke.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/astrojoke.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert lowered.startswith("why did the astronaut break up with the moon?")
+    assert "it needed space." in lowered
+    assert "i've drafted a plan" not in lowered
+    assert "nothing has been submitted" not in lowered
+    assert "ready to submit" not in lowered
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/astrojoke.txt"
+    assert payload["write_file"]["content"] == content
+    assert "i've drafted a plan" not in payload["write_file"]["content"].lower()
+
+
+def test_single_turn_generate_save_volcano_fact_does_not_require_prior_artifact(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    fact = "Volcano fact: Magma is called lava only after it reaches Earth's surface."
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "give me a short volcano fact and save it as volcanofact.txt":
+            return {"answer": fact, "status": "ok:test"}
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("give me a short volcano fact and save it as volcanofact.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/volcanofact.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert "magma is called lava only after it reaches earth's surface" in lowered
+    assert "i couldn't resolve a suitable recent assistant-authored summary/answer" not in lowered
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/volcanofact.txt"
+    assert payload["write_file"]["content"] == content
+
+
+def test_combined_generate_save_content_type_matrix_prefers_authored_body_not_control_text(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    responses = {
+        "tell me a short joke and save it as matrix-joke.txt": (
+            "I've drafted a short joke for you and prepared a preview to save it as `matrix-joke.txt`.\n\n"
+            "Why don't scientists trust atoms? Because they make up everything."
+        ),
+        "write a short poem and save it as matrix-poem.txt": (
+            "I've drafted a short poem for you and prepared a preview to save it as `matrix-poem.txt`.\n\n"
+            "Rain taps softly on the street,\n"
+            "Night and neon gently meet."
+        ),
+        "give me a short volcano fact and save it as matrix-fact.txt": (
+            "I've drafted a short fact for you and prepared a preview to save it as `matrix-fact.txt`.\n\n"
+            "Volcano fact: Most volcanoes form where tectonic plates meet."
+        ),
+        "give me a short climate summary and save it as matrix-summary.txt": (
+            "I've drafted a short summary for you and prepared a preview to save it as `matrix-summary.txt`.\n\n"
+            "Climate summary: Global temperatures are trending upward over recent decades."
+        ),
+    }
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        return {"answer": responses[user_message], "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    expectations = {
+        "matrix-joke.txt": "scientists trust atoms",
+        "matrix-poem.txt": "rain taps softly",
+        "matrix-fact.txt": "most volcanoes form",
+        "matrix-summary.txt": "global temperatures are trending upward",
+    }
+
+    for message, expected_fragment in [
+        ("tell me a short joke and save it as matrix-joke.txt", expectations["matrix-joke.txt"]),
+        ("write a short poem and save it as matrix-poem.txt", expectations["matrix-poem.txt"]),
+        (
+            "give me a short volcano fact and save it as matrix-fact.txt",
+            expectations["matrix-fact.txt"],
+        ),
+        (
+            "give me a short climate summary and save it as matrix-summary.txt",
+            expectations["matrix-summary.txt"],
+        ),
+    ]:
+        res = session.chat(message)
+        assert res.status_code == 200
+        preview = session.preview()
+        assert preview is not None
+        body = preview["write_file"]["content"].lower()
+        assert expected_fragment in body
+        assert "i've drafted a short" not in body
+        assert "prepared a preview" not in body
+        assert "ready to save" not in body
+
+
 def test_checklist_request_returns_conversational_answer_not_preview_error(tmp_path, monkeypatch):
     """Checklist/planning requests must be answered conversationally,
     not routed through preview drafting."""

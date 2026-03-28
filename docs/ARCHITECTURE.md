@@ -223,6 +223,14 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8` snap
   - submit serializes the canonical active session preview (`pending_job_preview`), never a stale caller snapshot
   - submit fails closed when supplied preview state and canonical session preview diverge
   - linked completion auto-surfacing prioritizes the most recently submitted linked job so older unsurfaced history does not masquerade as the current submit outcome
+  - when a new handoff is active, linked-completion auto-surfacing is scoped to that latest submitted job ref; older completions are withheld until the latest linked job completion is known
+  - linked-completion status text (for example, "Your linked ... job completed successfully") is excluded from saveable assistant artifact candidates by default, so it cannot silently become future `write_file.content`
+  - combined generate+save turns bind `write_file.content` to the assistant-authored answer produced in the same turn (not canned fallback text or control acknowledgments)
+  - clear single-turn generate+save requests (for example, "write a short poem ... and save it as ...") do not require a prior assistant artifact; Vera can stage the preview shell and bind same-turn authored output post-reply
+  - draft-management wrapper narration (for example, "I added a new joke ...", "You can see the current draft ...") is excluded from authoritative `write_file.content`; when wrapper text quotes authored body content, only the quoted authored body is stored
+  - explanatory tail text appended after authored body (for example, "I've drafted a plan ...", readiness/status lines) is stripped from canonical preview content
+  - with an active text preview, clear content-generation turns (for example "tell me a joke") may refresh `write_file.content` from the current assistant-authored answer while keeping the existing destination path unchanged
+  - ambiguous active-draft content replacement requests fail closed with explicit "draft unchanged" messaging
   - accepted rename/name-note mutations must immediately change canonical `write_file.path` and produce explicit destination confirmation; ambiguous naming requests fail closed
 
 ### Queue orchestration

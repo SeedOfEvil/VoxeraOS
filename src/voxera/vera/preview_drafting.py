@@ -321,9 +321,18 @@ def _normalize_structured_file_write_payload(
     reference_requested = message_requests_referenced_content(text)
     ambiguous_reference = looks_like_ambiguous_reference_only(text)
     plural_reference = looks_like_plural_reference_request(text)
+    clear_generation_request = bool(
+        re.search(r"\b(tell|give|write|draft|create|generate|compose|share)\b", lowered)
+        and re.search(
+            r"\b(joke|funny|humorous|poem|story|paragraph|content|text|message|bio|summary|explanation|fact|facts|remind|reminder|note\s+for\s+later)\b",
+            lowered,
+        )
+    )
     if not target and not (reference_requested or ambiguous_reference or plural_reference):
         return None
-    if content is None:
+    if content is None and not (
+        clear_generation_request and target and not (reference_requested or ambiguous_reference)
+    ):
         referenced_artifact = select_recent_saveable_assistant_artifact(
             message=text,
             assistant_artifacts=assistant_artifacts,
@@ -334,7 +343,17 @@ def _normalize_structured_file_write_payload(
             else None
         )
     if content is None and (reference_requested or ambiguous_reference or plural_reference):
-        return None
+        if clear_generation_request and target:
+            # For same-turn generate+save intents, create a governed preview shell
+            # and let post-reply binding inject the authoritative authored body.
+            content = ""
+        elif clear_generation_request and not target:
+            # Let writing-draft classification handle targetless prose generation
+            # requests (for example article/essay follow-ups) instead of forcing
+            # a generic generated note path.
+            return None
+        else:
+            return None
     if content is None:
         content = _infer_content_from_message(text) or ""
     if not target:

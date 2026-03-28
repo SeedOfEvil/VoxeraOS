@@ -75,9 +75,37 @@ def looks_like_plural_reference_request(message: str) -> bool:
     )
 
 
-def _looks_like_non_authored_assistant_message(text: str) -> bool:
+def looks_like_non_authored_assistant_message(text: str) -> bool:
     lowered = text.strip().lower()
     if not lowered:
+        return True
+    if re.search(r"\byour linked .+ job completed successfully\b", lowered):
+        return True
+    if re.search(r"\byour linked request is paused pending approval\b", lowered):
+        return True
+    if re.search(r"\byour linked .+ job failed\b", lowered):
+        return True
+    if re.search(r"\bwrote text to\b", lowered):
+        return True
+    if re.search(r"\bi(?:'ve| have)\s+updated\s+the\s+draft\b", lowered):
+        return True
+    if re.search(r"\bupdated\s+the\s+draft\s+for\b", lowered):
+        return True
+    if re.search(r"\blet me know when you(?:'re| are)\s+ready\s+to\s+save\b", lowered):
+        return True
+    if re.search(r"\bready to save (?:it|this|that)\b", lowered):
+        return True
+    if re.search(r"\bready to submit\b", lowered):
+        return True
+    if re.search(r"\bsend it whenever you(?:'re| are)\s+ready\b", lowered):
+        return True
+    if re.search(r"\byou can see the current draft\b", lowered):
+        return True
+    if re.search(r"\blet me know if you(?:'d| would)\s+like to change\b", lowered):
+        return True
+    if re.search(r"\bi(?:'ve| have)\s+drafted\s+.+\s+for\s+you\b", lowered):
+        return True
+    if re.search(r"\bprepared\s+(?:a|the)\s+preview\b", lowered):
         return True
     non_authored_patterns = (
         r"\bi submitted the job to voxeraos\b",
@@ -162,21 +190,18 @@ def build_saveable_assistant_artifact(text: str) -> dict[str, str] | None:
     candidate = text.strip()
     if not candidate:
         return None
-    if _looks_like_non_authored_assistant_message(candidate):
-        return None
-    if _looks_like_trivial_courtesy_assistant_message(candidate):
-        return None
-    normalized = re.sub(r"\s+", " ", candidate.replace("—", "-")).strip().lower()
-    if any(re.fullmatch(pattern, normalized) for pattern in _LOW_INFORMATION_ASSISTANT_PATTERNS):
-        return None
 
-    cleaned = extract_text_draft_from_reply(candidate) or candidate
+    extracted = extract_text_draft_from_reply(candidate)
+    cleaned = extracted or candidate
     cleaned = cleaned.strip()
     if not cleaned:
         return None
-    if _looks_like_non_authored_assistant_message(cleaned):
+    if looks_like_non_authored_assistant_message(cleaned):
         return None
     if _looks_like_trivial_courtesy_assistant_message(cleaned):
+        return None
+    normalized = re.sub(r"\s+", " ", cleaned.replace("—", "-")).strip().lower()
+    if any(re.fullmatch(pattern, normalized) for pattern in _LOW_INFORMATION_ASSISTANT_PATTERNS):
         return None
 
     words = cleaned.split()

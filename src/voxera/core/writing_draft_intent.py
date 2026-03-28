@@ -127,6 +127,9 @@ def extract_text_draft_from_reply(text: str) -> str | None:
     normalized = text.replace("\r\n", "\n").strip()
     if not normalized:
         return None
+    wrapped_quoted_content = _extract_quoted_authored_content_from_wrapper(normalized)
+    if wrapped_quoted_content:
+        return wrapped_quoted_content
     content = _extract_prose_body(normalized)
     if not content:
         return None
@@ -188,6 +191,8 @@ def _extract_prose_body(content: str) -> str | None:
         trimmed[0], next_block=trimmed[1] if len(trimmed) > 1 else None
     ):
         trimmed.pop(0)
+    while trimmed and _looks_like_trailing_wrapper_block(trimmed[-1]):
+        trimmed.pop()
 
     if len(trimmed) >= 2 and _BODY_LABEL_RE.fullmatch(trimmed[0]):
         trimmed = trimmed[1:]
@@ -198,6 +203,8 @@ def _extract_prose_body(content: str) -> str | None:
             trimmed[0], next_block=trimmed[1] if len(trimmed) > 1 else None
         ):
             trimmed = trimmed[1:]
+        while trimmed and _looks_like_trailing_wrapper_block(trimmed[-1]):
+            trimmed = trimmed[:-1]
 
     if trimmed:
         trimmed[0] = _strip_leading_preface_sentences(trimmed[0])
@@ -230,6 +237,12 @@ def _looks_like_wrapper_block(block: str, *, next_block: str | None = None) -> b
             "i'd be happy to",
             "i would be happy to",
             "prepared a draft",
+            "updated the draft preview",
+            "updated the draft",
+            "i've staged a request",
+            "i have staged a request",
+            "staged a request in the preview pane",
+            "please review the content",
             "draft below",
             "essay below",
             "article below",
@@ -247,6 +260,37 @@ def _looks_like_wrapper_block(block: str, *, next_block: str | None = None) -> b
             return False
         return next_block is None or _looks_like_document_body_start(next_block)
     return False
+
+
+def _looks_like_trailing_wrapper_block(block: str) -> bool:
+    lowered = block.strip().lower()
+    if not lowered:
+        return True
+    trailing_wrapper_phrases = (
+        "i've drafted a plan",
+        "i have drafted a plan",
+        "i've staged a request",
+        "i have staged a request",
+        "staged a request in the preview pane",
+        "please review the content",
+        "you can see the current draft",
+        "you can review the content in the preview pane",
+        "if you're happy with how it looks",
+        "if you are happy with how it looks",
+        "if that looks good",
+        "click submit to save it",
+        "just hit submit",
+        "submit when you're ready",
+        "submit when you are ready",
+        "preview pane",
+        "nothing has been submitted",
+        "ready to submit",
+        "send it whenever you're ready",
+        "send it whenever you are ready",
+        "let me know if you'd like to change",
+        "let me know if you would like to change",
+    )
+    return any(phrase in lowered for phrase in trailing_wrapper_phrases)
 
 
 def _strip_leading_preface_sentences(block: str) -> str:
@@ -320,7 +364,7 @@ def _looks_like_document_body_start(block: str) -> bool:
         return True
     if re.fullmatch(r"\*\*[^*]{3,}\*\*", stripped):
         return True
-    return len(stripped.split()) >= 12 and stripped[0].isupper()
+    return len(stripped.split()) >= 6 and stripped[0].isupper()
 
 
 def _is_heading_like(block: str) -> bool:
@@ -330,3 +374,40 @@ def _is_heading_like(block: str) -> bool:
     if stripped.startswith("#"):
         return True
     return bool(_HEADING_RE.fullmatch(stripped)) and len(stripped.split()) <= 12
+
+
+def _extract_quoted_authored_content_from_wrapper(text: str) -> str | None:
+    lowered = text.lower()
+    wrapper_signals = (
+        "added a new joke",
+        "added this to the file content",
+        "added that to the file content",
+        "to the file content",
+        "current draft",
+        "preview pane",
+        "ready to submit",
+    )
+    if not any(signal in lowered for signal in wrapper_signals):
+        return None
+
+    quoted_candidates = [
+        match.group(1).strip() for match in re.finditer(r'"([^"\n]{4,})"', text)
+    ] + [
+        match.group(1).strip()
+        # Treat single-quoted payloads as quoted blocks only when the quote
+        # marks are not apostrophes inside words (e.g. don't, I've).
+        for match in re.finditer(r"(?<!\w)'([^'\n]{4,})'(?!\w)", text)
+    ]
+    if not quoted_candidates:
+        return None
+
+    for candidate in sorted(quoted_candidates, key=len, reverse=True):
+        lowered_candidate = candidate.lower()
+        if any(
+            token in lowered_candidate
+            for token in ("current draft", "preview pane", "ready to submit", "queue")
+        ):
+            continue
+        if len(candidate.split()) >= 4 or len(candidate) >= 24:
+            return candidate
+    return None
