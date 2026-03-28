@@ -191,6 +191,8 @@ def _extract_prose_body(content: str) -> str | None:
         trimmed[0], next_block=trimmed[1] if len(trimmed) > 1 else None
     ):
         trimmed.pop(0)
+    while trimmed and _looks_like_trailing_wrapper_block(trimmed[-1]):
+        trimmed.pop()
 
     if len(trimmed) >= 2 and _BODY_LABEL_RE.fullmatch(trimmed[0]):
         trimmed = trimmed[1:]
@@ -201,6 +203,8 @@ def _extract_prose_body(content: str) -> str | None:
             trimmed[0], next_block=trimmed[1] if len(trimmed) > 1 else None
         ):
             trimmed = trimmed[1:]
+        while trimmed and _looks_like_trailing_wrapper_block(trimmed[-1]):
+            trimmed = trimmed[:-1]
 
     if trimmed:
         trimmed[0] = _strip_leading_preface_sentences(trimmed[0])
@@ -250,6 +254,25 @@ def _looks_like_wrapper_block(block: str, *, next_block: str | None = None) -> b
             return False
         return next_block is None or _looks_like_document_body_start(next_block)
     return False
+
+
+def _looks_like_trailing_wrapper_block(block: str) -> bool:
+    lowered = block.strip().lower()
+    if not lowered:
+        return True
+    trailing_wrapper_phrases = (
+        "i've drafted a plan",
+        "i have drafted a plan",
+        "you can see the current draft",
+        "preview pane",
+        "nothing has been submitted",
+        "ready to submit",
+        "send it whenever you're ready",
+        "send it whenever you are ready",
+        "let me know if you'd like to change",
+        "let me know if you would like to change",
+    )
+    return any(phrase in lowered for phrase in trailing_wrapper_phrases)
 
 
 def _strip_leading_preface_sentences(block: str) -> str:

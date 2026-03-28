@@ -321,9 +321,12 @@ def _normalize_structured_file_write_payload(
     reference_requested = message_requests_referenced_content(text)
     ambiguous_reference = looks_like_ambiguous_reference_only(text)
     plural_reference = looks_like_plural_reference_request(text)
-    inline_generation_signal = bool(
-        re.search(r"\b(tell|give|write|make|create|generate|compose)\b", lowered)
-        and re.search(r"\b(joke|funny|humorous|remind|reminder|note\s+for\s+later)\b", lowered)
+    clear_generation_request = bool(
+        re.search(r"\b(tell|give|write|draft|create|generate|compose|share)\b", lowered)
+        and re.search(
+            r"\b(joke|funny|humorous|poem|story|paragraph|content|text|message|bio|summary|explanation|remind|reminder|note\s+for\s+later)\b",
+            lowered,
+        )
     )
     if not target and not (reference_requested or ambiguous_reference or plural_reference):
         return None
@@ -338,8 +341,10 @@ def _normalize_structured_file_write_payload(
             else None
         )
     if content is None and (reference_requested or ambiguous_reference or plural_reference):
-        if inline_generation_signal:
-            content = _infer_content_from_message(text)
+        if clear_generation_request:
+            # For same-turn generate+save intents, create a governed preview shell
+            # and let post-reply binding inject the authoritative authored body.
+            content = ""
         else:
             return None
     if content is None:

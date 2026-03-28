@@ -287,6 +287,12 @@ Expected pass:
 - if step 3 assistant reply uses wrapper phrasing with a quoted joke, preview stores only the quoted joke body
 - step 4 response explicitly states the draft content was left unchanged due to ambiguity
 
+Additional single-turn checks:
+
+- `write a short poem about space and save it as spacepoem.txt` creates preview path `~/VoxeraOS/notes/spacepoem.txt` and content is only the poem body from that same turn (no refusal about missing prior assistant-authored content)
+- `tell me an astronaut joke and save it as astrojoke.txt` creates preview path `~/VoxeraOS/notes/astrojoke.txt` and content excludes explanatory tail text like "I've drafted a plan..."
+- submit payload `write_file.content` exactly matches the pure preview content shown before submit
+
 ## 6) Verification steps per scenario
 
 Use these checks after each scenario:
