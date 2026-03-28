@@ -62,6 +62,7 @@ from ..vera.handoff import (
 from ..vera.preview_submission import (
     is_natural_preview_submission_confirmation,
     is_preview_submission_request,
+    looks_like_ambiguous_submit_phrase,
     normalize_preview_payload,
     should_submit_active_preview,
     submit_active_preview_for_session,
@@ -1809,6 +1810,21 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status=status,
+        )
+
+    if looks_like_ambiguous_submit_phrase(
+        message,
+        preview_available=pending_preview is not None,
+    ):
+        assistant_text = (
+            "I didn't submit anything yet because that submit phrase was ambiguous. "
+            "Please use an explicit handoff phrase such as 'send it' or 'submit it'."
+        )
+        append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="handoff_ambiguous_submit_phrase",
         )
 
     # Blocked bounded file intent: fail closed with a clear refusal before

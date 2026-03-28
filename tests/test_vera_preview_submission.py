@@ -5,6 +5,7 @@ import json
 from voxera.vera import service as vera_service
 from voxera.vera.preview_submission import (
     is_active_preview_submit_request,
+    looks_like_ambiguous_submit_phrase,
     should_submit_active_preview,
     submit_active_preview_for_session,
 )
@@ -112,3 +113,9 @@ def test_submit_active_preview_fails_closed_on_stale_provided_preview(tmp_path):
     assert handoff is not None
     assert handoff["status"] == "ambiguous_preview_state"
     assert vera_service.read_session_preview(queue, session_id) == canonical_preview
+
+
+def test_submit_detection_flags_typo_like_near_submit_as_ambiguous_when_preview_exists():
+    assert looks_like_ambiguous_submit_phrase("send iit", preview_available=True)
+    assert not should_submit_active_preview("send iit", preview_available=True)
+    assert not looks_like_ambiguous_submit_phrase("send it", preview_available=True)

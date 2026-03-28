@@ -328,8 +328,22 @@ def _looks_like_preface_setup_sentence(block: str) -> bool:
     lowered = block.strip().lower()
     if len(lowered.split()) > 36:
         return False
+    if lowered.startswith(("you can review the content", "please review the content")):
+        return any(
+            phrase in lowered
+            for phrase in (
+                "preview pane",
+                "submit",
+                "authorize",
+                "file creation",
+                "queue",
+            )
+        )
     starts_with_setup = bool(
-        re.match(r"^(?:i(?:'ll| will)|here(?:'s| is)|i(?:'ve| have)|you\s+can\s+see)\b", lowered)
+        re.match(
+            r"^(?:i(?:'ll| will)|here(?:'s| is)|i(?:'ve| have)|you\s+can\s+(?:see|review)|please\s+review)\b",
+            lowered,
+        )
     )
     if not starts_with_setup:
         return False

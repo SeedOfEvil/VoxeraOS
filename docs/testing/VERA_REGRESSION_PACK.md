@@ -238,6 +238,28 @@ Expected pass:
 
 ### J) Save-note rename integrity + linked completion binding
 
+### K) Summary preview purity + typo-like submit strictness
+
+Prompt sequence:
+
+1. `give me a short summary of Mauna Loa and save it as maunaloa.txt`
+2. verify preview content starts directly with authored summary body
+3. `send iit`
+4. `send it`
+
+Proves:
+
+- helper/control preface text is excluded from canonical `write_file.content`
+- typo-like near-submit phrases fail closed (no fake submission claim)
+- explicit submit phrase still uses canonical queue handoff path
+
+Expected pass:
+
+- preview path is `~/VoxeraOS/notes/maunaloa.txt`
+- preview content does **not** include helper narration such as `You can review the content...` / `Please review the content...`
+- `send iit` produces explicit no-submit response and creates no inbox file
+- `send it` returns a real queue handoff acknowledgment with job id
+
 Prompt sequence:
 
 1. `Explain earth's core in two short paragraphs.`
@@ -261,7 +283,7 @@ Expected pass:
 - completion text for step 4 references the newly submitted job/result (never an earlier filename)
 - submit turn does not auto-inject an older unsurfaced linked completion message
 
-### K) Active draft content integrity under prior linked completion history
+### L) Active draft content integrity under prior linked completion history
 
 Prompt sequence:
 

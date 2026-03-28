@@ -58,6 +58,12 @@ _ACTIVE_PREVIEW_SUBMIT_PATTERNS = (
     r"\bwrite\s+(?:it|this|that)\s+to\s+(?:a\s+)?(?:file|disk)\b",
 )
 
+
+_SUBMIT_VERB_RE = re.compile(
+    r"\b(submit|send|queue|enqueue|hand\s*off|handoff|push)\b", re.IGNORECASE
+)
+_AMBIGUOUS_SUBMIT_OBJECT_RE = re.compile(r"\b(?:iit|itt|ittt|thiss|thsi)\b", re.IGNORECASE)
+
 _NATURAL_CONFIRMATION_RE = re.compile(
     r"(?:yes(?:\s+please)?|yes\s+go\s+ahead|go\s+ahead|do\s+it|send\s+it|submit\s+it|hand\s+it\s+off)[.!?]*",
     re.IGNORECASE,
@@ -298,3 +304,24 @@ def submit_active_preview_for_session(
             f"Submission failed with: {exc}",
             "handoff_submit_failed",
         )
+
+
+def looks_like_ambiguous_submit_phrase(message: str, *, preview_available: bool) -> bool:
+    """Fail closed on typo-like near-submit phrasing when a preview is active."""
+
+    if not preview_available:
+        return False
+    normalized = message.strip().lower()
+    if not normalized:
+        return False
+    if should_submit_active_preview(normalized, preview_available=preview_available):
+        return False
+    if looks_like_preview_rename_or_save_as_request(normalized):
+        return False
+    if not _SUBMIT_VERB_RE.search(normalized):
+        return False
+
+    tokens = re.findall(r"[a-z']+", normalized)
+    if len(tokens) <= 3:
+        return True
+    return bool(_AMBIGUOUS_SUBMIT_OBJECT_RE.search(normalized))
