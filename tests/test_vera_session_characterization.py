@@ -239,6 +239,74 @@ def test_ambiguous_active_preview_content_replacement_fails_closed(tmp_path, mon
     assert "ambiguous" in last_turn
 
 
+def test_combined_generation_save_named_note_uses_actual_joke_not_control_ack(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me a hilarious joke and save it to a note called jokie.txt":
+            return {
+                "answer": (
+                    "Why did the scarecrow get promoted? Because he was outstanding in his field."
+                ),
+                "status": "ok:test",
+            }
+        return {
+            "answer": (
+                "Done. I've updated the draft for `jokie.txt` with a fresh joke. "
+                "Let me know when you're ready to save it."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("tell me a hilarious joke and save it to a note called jokie.txt")
+    assert res.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokie.txt"
+    content = preview["write_file"]["content"].lower()
+    assert "outstanding in his field" in content or "cache" in content
+    assert "i've updated the draft" not in content
+    assert "nothing has been submitted" not in content
+    assert "i still have the current request ready" not in content
+
+
+def test_followup_tell_another_joke_and_add_as_content_refreshes_preview_content(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me another joke and add as content":
+            return {
+                "answer": "I told my keyboard I needed space; it said, 'I’m already on it.'",
+                "status": "ok:test",
+            }
+        return {"answer": "Seed joke for the first draft content.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    session.chat("what is 2 + 2?")
+    session.chat("save that as jokie.txt")
+    baseline = session.preview()
+    assert baseline is not None
+    assert baseline["write_file"]["path"] == "~/VoxeraOS/notes/jokie.txt"
+
+    followup = session.chat("tell me another joke and add as content")
+    assert followup.status_code == 200
+    updated = session.preview()
+    assert updated is not None
+    assert updated["write_file"]["path"] == "~/VoxeraOS/notes/jokie.txt"
+    assert "keyboard i needed space" in updated["write_file"]["content"].lower()
+    assert "updated the draft" not in updated["write_file"]["content"].lower()
+
+
 def test_checklist_request_returns_conversational_answer_not_preview_error(tmp_path, monkeypatch):
     """Checklist/planning requests must be answered conversationally,
     not routed through preview drafting."""

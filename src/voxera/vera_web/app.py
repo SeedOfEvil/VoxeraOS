@@ -68,7 +68,10 @@ from ..vera.preview_submission import (
     submit_preview,
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
-from ..vera.saveable_artifacts import message_requests_referenced_content
+from ..vera.saveable_artifacts import (
+    looks_like_non_authored_assistant_message,
+    message_requests_referenced_content,
+)
 from ..vera.service import (
     _CODE_DRAFT_HINT,
     _WRITING_DRAFT_HINT,
@@ -431,6 +434,18 @@ def _looks_like_builder_refinement_placeholder(content: str) -> bool:
         "top stories:\n- headline 1\n- headline 2\n- headline 3",
     }
     return lowered in placeholder_values
+
+
+def _preview_body_looks_like_control_narration(preview: dict[str, object] | None) -> bool:
+    if not isinstance(preview, dict):
+        return False
+    write_file = preview.get("write_file")
+    if not isinstance(write_file, dict):
+        return False
+    content = str(write_file.get("content") or "").strip()
+    if not content:
+        return False
+    return looks_like_non_authored_assistant_message(content)
 
 
 def _is_targeted_code_preview_refinement(
@@ -1868,6 +1883,31 @@ async def chat(request: Request):
             and builder_payload == pending_preview
         ):
             builder_payload = None
+        if _preview_body_looks_like_control_narration(builder_payload):
+            recent_user_messages = [
+                str(turn.get("text") or "")
+                for turn in turns[-8:]
+                if str(turn.get("role") or "").strip().lower() == "user"
+            ]
+            deterministic_fallback = maybe_draft_job_payload(
+                message,
+                active_preview=pending_preview,
+                recent_user_messages=recent_user_messages,
+                enrichment_context=enrichment_context,
+                investigation_context=session_investigation,
+                recent_assistant_artifacts=recent_assistant_artifacts,
+            )
+            if isinstance(deterministic_fallback, dict):
+                try:
+                    fallback_payload = normalize_preview_payload(deterministic_fallback)
+                except Exception:
+                    fallback_payload = None
+                if not _preview_body_looks_like_control_narration(fallback_payload):
+                    builder_payload = fallback_payload
+                else:
+                    builder_payload = None
+            else:
+                builder_payload = None
         if builder_payload is not None and isinstance(pending_preview, dict):
             pending_write_file = pending_preview.get("write_file")
             pending_path = (
@@ -1937,7 +1977,12 @@ async def chat(request: Request):
     # code-draft hint could be passed to generate_vera_reply.
     reply_code_content = extract_code_from_reply(reply_answer)
     sanitized_answer = _strip_internal_control_blocks(reply_answer)
-    reply_text_draft = extract_text_draft_from_reply(sanitized_answer)
+    reply_text_draft_candidate = extract_text_draft_from_reply(sanitized_answer)
+    reply_text_draft = (
+        None
+        if looks_like_non_authored_assistant_message(str(reply_text_draft_candidate or ""))
+        else reply_text_draft_candidate
+    )
 
     # Code draft refinement: when an active preview has a code-type file
     # extension and the LLM reply contains a fenced code block, treat this
@@ -2137,27 +2182,32 @@ async def chat(request: Request):
         and not informational_web_turn
         and not is_enrichment_turn
         and _looks_like_active_preview_content_generation_turn(message)
-        and reply_text_draft is not None
     ):
-        pending_wf = pending_preview.get("write_file")
-        if isinstance(pending_wf, dict):
-            updated_preview: dict[str, object] = {
-                **pending_preview,
-                "write_file": {
-                    **pending_wf,
-                    "content": reply_text_draft,
-                },
-            }
-            builder_payload = updated_preview
-            write_session_preview(root, active_session, builder_payload)
-            write_session_handoff_state(
-                root,
-                active_session,
-                attempted=False,
-                queue_path=str(root),
-                status="preview_ready",
-                error=None,
-                job_id=None,
+        if reply_text_draft is not None:
+            pending_wf = pending_preview.get("write_file")
+            if isinstance(pending_wf, dict):
+                updated_preview: dict[str, object] = {
+                    **pending_preview,
+                    "write_file": {
+                        **pending_wf,
+                        "content": reply_text_draft,
+                    },
+                }
+                builder_payload = updated_preview
+                write_session_preview(root, active_session, builder_payload)
+                write_session_handoff_state(
+                    root,
+                    active_session,
+                    attempted=False,
+                    queue_path=str(root),
+                    status="preview_ready",
+                    error=None,
+                    job_id=None,
+                )
+        else:
+            sanitized_answer = (
+                "I left the active draft content unchanged because I could not extract a real "
+                "content body from this turn. Please provide the exact content to save."
             )
 
     # Create-and-save fallback: when the message has both explicit save/write
