@@ -696,12 +696,28 @@ def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> s
     registry = _read_linked_job_registry(queue_root, session_id)
     completions_raw = registry.get("completions")
     completions = completions_raw if isinstance(completions_raw, list) else []
+    handoff = read_session_handoff_state(queue_root, session_id) or {}
+    latest_handoff_ref = ""
+    handoff_job_id = str(handoff.get("job_id") or "").strip()
+    if handoff_job_id:
+        latest_handoff_ref = f"inbox-{handoff_job_id}.json"
 
     outbox_raw = registry.get("notification_outbox")
     outbox = outbox_raw if isinstance(outbox_raw, list) else []
-    for completion in completions:
-        if not isinstance(completion, dict):
-            continue
+
+    def _completion_priority(item: dict[str, Any]) -> tuple[int, int]:
+        completion_ref = str(item.get("job_ref") or "").strip()
+        matches_latest_handoff = int(
+            bool(latest_handoff_ref) and completion_ref == latest_handoff_ref
+        )
+        detected_at_ms = int(item.get("completion_detected_at_ms") or 0)
+        return (matches_latest_handoff, detected_at_ms)
+
+    for completion in sorted(
+        (item for item in completions if isinstance(item, dict)),
+        key=_completion_priority,
+        reverse=True,
+    ):
         notification = _upsert_completion_notification(
             session_id=session_id,
             registry=registry,

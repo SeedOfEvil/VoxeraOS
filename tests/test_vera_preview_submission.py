@@ -5,6 +5,7 @@ import json
 from voxera.vera import service as vera_service
 from voxera.vera.preview_submission import (
     is_active_preview_submit_request,
+    should_submit_active_preview,
     submit_active_preview_for_session,
 )
 
@@ -12,6 +13,13 @@ from voxera.vera.preview_submission import (
 def test_preview_submit_detection_preserves_save_as_boundary():
     assert is_active_preview_submit_request("save it")
     assert not is_active_preview_submit_request("save it as renamed.txt")
+
+
+def test_submit_detection_fails_closed_on_mixed_rename_and_submit():
+    assert not should_submit_active_preview(
+        "rename it to earthcore.txt and send it",
+        preview_available=True,
+    )
 
 
 def test_submit_active_preview_without_preview_is_truthful(tmp_path):
@@ -68,3 +76,39 @@ def test_submit_active_preview_uses_authoritative_preview_and_clears_it(tmp_path
     assert handoff["status"] == "submitted"
     assert handoff["job_id"]
     assert seen_job_refs == [f"{queue.name}:{session_id}:inbox-{handoff['job_id']}.json"]
+
+
+def test_submit_active_preview_fails_closed_on_stale_provided_preview(tmp_path):
+    queue = tmp_path / "queue"
+    session_id = "vera-test-ambiguous-preview"
+    canonical_preview = {
+        "goal": "write a file called earthcore.txt with provided content",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/earthcore.txt",
+            "content": "new content",
+            "mode": "overwrite",
+        },
+    }
+    stale_preview = {
+        "goal": "write a file called old-note.txt with provided content",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/old-note.txt",
+            "content": "old content",
+            "mode": "overwrite",
+        },
+    }
+    vera_service.write_session_preview(queue, session_id, canonical_preview)
+
+    message, status = submit_active_preview_for_session(
+        queue_root=queue,
+        session_id=session_id,
+        preview=stale_preview,
+    )
+
+    assert status == "handoff_ambiguous_preview_state"
+    assert "did not submit anything" in message.lower()
+    assert list((queue / "inbox").glob("inbox-*.json")) == []
+    handoff = vera_service.read_session_handoff_state(queue, session_id)
+    assert handoff is not None
+    assert handoff["status"] == "ambiguous_preview_state"
+    assert vera_service.read_session_preview(queue, session_id) == canonical_preview

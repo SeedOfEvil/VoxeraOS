@@ -219,6 +219,11 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8` snap
   - `weather_flow.py` for quick live-weather turns
   - `saveable_artifacts.py` for recent meaningful-content save targeting
   - `session_store.py` for persisted Vera session state
+- Save/write preview integrity invariants:
+  - submit serializes the canonical active session preview (`pending_job_preview`), never a stale caller snapshot
+  - submit fails closed when supplied preview state and canonical session preview diverge
+  - linked completion auto-surfacing prioritizes the most recently submitted linked job so older unsurfaced history does not masquerade as the current submit outcome
+  - accepted rename/name-note mutations must immediately change canonical `write_file.path` and produce explicit destination confirmation; ambiguous naming requests fail closed
 
 ### Queue orchestration
 

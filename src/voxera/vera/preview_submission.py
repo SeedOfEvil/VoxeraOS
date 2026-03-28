@@ -98,6 +98,11 @@ def is_preview_submission_request(message: str) -> bool:
 def should_submit_active_preview(message: str, *, preview_available: bool) -> bool:
     if not preview_available:
         return False
+    normalized = message.strip().lower()
+    if looks_like_preview_rename_or_save_as_request(normalized):
+        # Fail closed on mixed mutate+submit phrasing. A turn that appears to
+        # rename/save-as should stay in preview-mutation mode, not submit mode.
+        return False
     return is_explicit_handoff_request(message) or is_active_preview_submit_request(message)
 
 
@@ -232,7 +237,23 @@ def submit_active_preview_for_session(
     register_linked_job: Callable[[Path, str, str], None] | None = None,
     submit_preview_hook: Callable[..., dict[str, str]] = submit_preview,
 ) -> tuple[str, str]:
-    if preview is None:
+    canonical_preview = session_store.read_session_preview(queue_root, session_id)
+    if canonical_preview is not None and preview is not None and preview != canonical_preview:
+        session_store.write_session_handoff_state(
+            queue_root,
+            session_id,
+            attempted=False,
+            queue_path=str(queue_root),
+            status="ambiguous_preview_state",
+            error="Provided preview does not match canonical active preview state",
+        )
+        return (
+            "I did not submit anything because the active preview state was ambiguous. "
+            "Please review the current preview and submit again.",
+            "handoff_ambiguous_preview_state",
+        )
+    preview_to_submit = canonical_preview if canonical_preview is not None else preview
+    if preview_to_submit is None:
         session_store.write_session_handoff_state(
             queue_root,
             session_id,
@@ -247,7 +268,7 @@ def submit_active_preview_for_session(
         )
 
     try:
-        ack = submit_preview_hook(queue_root=queue_root, payload=preview)
+        ack = submit_preview_hook(queue_root=queue_root, payload=preview_to_submit)
         job_id = str(ack.get("job_id") or "").strip()
         if not job_id:
             raise RuntimeError("queue accepted payload but returned no job id")

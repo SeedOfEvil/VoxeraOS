@@ -57,7 +57,12 @@ def extract_content_after_markers(text: str, markers: tuple[str, ...]) -> str | 
 
 def extract_named_target(message: str) -> str | None:
     named = re.search(
-        r"\b(?:called|named|call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc)))\s+([^\s]+)",
+        r"\b(?:"
+        r"called|"
+        r"named|"
+        r"call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
+        r"name\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))"
+        r")\s+([^\s]+)",
         message,
         re.IGNORECASE,
     )
@@ -239,6 +244,7 @@ def looks_like_preview_rename_or_save_as_request(message: str) -> bool:
             r"\b("
             r"save\s+(?:it|this|that)?\s*as|"
             r"rename|"
+            r"name\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
             r"call\s+(?:it|that)|"
             r"change\s+(?:the\s+)?(?:name|filename|file\s+name)"
             r")\b",
@@ -312,6 +318,7 @@ def interpret_active_preview_draft_revision(
         r"\b("
         r"rename|"
         r"save\s+(?:it|this|that)?\s*as|"
+        r"name\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
         r"make\s+that|"
         r"call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
         r"change\s+(?:the\s+)?(?:name|filename|file\s+name|path)|"
