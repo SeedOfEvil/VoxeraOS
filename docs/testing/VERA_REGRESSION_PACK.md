@@ -291,7 +291,9 @@ Additional single-turn checks:
 
 - `write a short poem about space and save it as spacepoem.txt` creates preview path `~/VoxeraOS/notes/spacepoem.txt` and content is only the poem body from that same turn (no refusal about missing prior assistant-authored content)
 - `write a short poem and save it as poem.txt` strips explanatory tail lines like "You can review the content in the preview pane..."
+- poem helper tails like "If you're happy with how it looks ... click submit to save it" are excluded from `write_file.content`
 - `give me a short summary of Mauna Loa and save it as maunaloa.txt` yields non-empty full summary body only (no wrapper/control lines, no clipped lead/trail text)
+- summary meta/control narration like "I've staged a request in the preview pane ..." and "Please review the content ..." must not appear in preview body
 - `tell me an astronaut joke and save it as astrojoke.txt` creates preview path `~/VoxeraOS/notes/astrojoke.txt` and content excludes explanatory tail text like "I've drafted a plan..."
 - `give me a short volcano fact and save it as volcanofact.txt` stages preview in the same turn (no prior-artifact requirement) and stores only the generated fact body
 - content-type matrix (`joke`, `poem`, `fact`, `summary`) with combined generate+save binds authored body text, never wrapper/control text like "I've drafted..." or "prepared a preview..."

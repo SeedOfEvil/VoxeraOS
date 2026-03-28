@@ -484,6 +484,44 @@ def test_single_turn_generate_save_poem_uses_same_turn_authored_body(tmp_path, m
     assert "ready" not in poem_body
 
 
+def test_single_turn_generate_save_poem_strips_if_happy_helper_tail(tmp_path, monkeypatch):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "write a short poem and save it as poem.txt":
+            return {
+                "answer": (
+                    "Ash drifts softly where old fire slept,\n"
+                    "Stone remembers promises it kept.\n\n"
+                    "If you're happy with how it looks, just let me know or click submit to save it."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("write a short poem and save it as poem.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/poem.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert lowered.startswith("ash drifts softly where old fire slept")
+    assert lowered.endswith("stone remembers promises it kept.")
+    assert "if you're happy with how it looks" not in lowered
+    assert "click submit to save it" not in lowered
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["content"] == content
+
+
 def test_single_turn_generate_save_mauna_loa_summary_keeps_full_body_and_submit_truth(
     tmp_path, monkeypatch
 ):
@@ -522,6 +560,51 @@ def test_single_turn_generate_save_mauna_loa_summary_keeps_full_body_and_submit_
     assert "i've drafted a short summary for you" not in lowered
     assert "nothing has been submitted or executed yet" not in lowered
     assert "i'm ready to submit this to the queue whenever you're set" not in lowered
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/maunaloa.txt"
+    assert payload["write_file"]["content"] == content
+
+
+def test_single_turn_generate_save_summary_ignores_preview_pane_meta_narration(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+    summary = (
+        "Mauna Loa is one of Earth's largest active volcanoes and remains active, with eruptions that "
+        "have shaped Hawaii and provided long-running atmospheric observations."
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "give me a short summary of Mauna Loa and save it as maunaloa.txt":
+            return {
+                "answer": (
+                    "I've staged a request in the preview pane for `maunaloa.txt`.\n\n"
+                    "Please review the content and submit when you're ready.\n\n"
+                    f"{summary}"
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("give me a short summary of Mauna Loa and save it as maunaloa.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/maunaloa.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert content == summary
+    assert "i've staged a request" not in lowered
+    assert "please review the content" not in lowered
+    assert lowered.startswith("mauna loa is one of earth's largest active volcanoes")
 
     submit = session.chat("submit it")
     assert submit.status_code == 200
