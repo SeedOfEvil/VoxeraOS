@@ -264,6 +264,7 @@ def _looks_like_trailing_wrapper_block(block: str) -> bool:
         "i've drafted a plan",
         "i have drafted a plan",
         "you can see the current draft",
+        "you can review the content in the preview pane",
         "preview pane",
         "nothing has been submitted",
         "ready to submit",

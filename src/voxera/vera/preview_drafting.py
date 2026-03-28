@@ -324,7 +324,7 @@ def _normalize_structured_file_write_payload(
     clear_generation_request = bool(
         re.search(r"\b(tell|give|write|draft|create|generate|compose|share)\b", lowered)
         and re.search(
-            r"\b(joke|funny|humorous|poem|story|paragraph|content|text|message|bio|summary|explanation|remind|reminder|note\s+for\s+later)\b",
+            r"\b(joke|funny|humorous|poem|story|paragraph|content|text|message|bio|summary|explanation|fact|facts|remind|reminder|note\s+for\s+later)\b",
             lowered,
         )
     )

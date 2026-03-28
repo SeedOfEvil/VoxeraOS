@@ -407,6 +407,15 @@ def test_single_turn_generate_save_poem_uses_same_turn_authored_body(tmp_path, m
         _ = turns
         if user_message == "write a short poem about space and save it as spacepoem.txt":
             return {"answer": poem, "status": "ok:test"}
+        if user_message == "write a short poem and save it as poem.txt":
+            return {
+                "answer": (
+                    "Ash drifts softly where old fire slept,\n"
+                    "Stone remembers promises it kept.\n\n"
+                    "You can review the content in the preview pane and submit it whenever you're ready."
+                ),
+                "status": "ok:test",
+            }
         return {"answer": "fallback", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -422,6 +431,16 @@ def test_single_turn_generate_save_poem_uses_same_turn_authored_body(tmp_path, m
     assert "i couldn't resolve a suitable recent assistant-authored summary/answer" not in lowered
     assert "nothing has been submitted" not in lowered
     assert "ready to submit" not in lowered
+
+    second = session.chat("write a short poem and save it as poem.txt")
+    assert second.status_code == 200
+    poem_preview = session.preview()
+    assert poem_preview is not None
+    assert poem_preview["write_file"]["path"] == "~/VoxeraOS/notes/poem.txt"
+    poem_body = poem_preview["write_file"]["content"].lower()
+    assert "ash drifts softly where old fire slept" in poem_body
+    assert "you can review the content in the preview pane" not in poem_body
+    assert "ready" not in poem_body
 
 
 def test_single_turn_generate_save_joke_strips_explanatory_tail_and_submit_truthful(
@@ -466,6 +485,40 @@ def test_single_turn_generate_save_joke_strips_explanatory_tail_and_submit_truth
     assert payload["write_file"]["path"] == "~/VoxeraOS/notes/astrojoke.txt"
     assert payload["write_file"]["content"] == content
     assert "i've drafted a plan" not in payload["write_file"]["content"].lower()
+
+
+def test_single_turn_generate_save_volcano_fact_does_not_require_prior_artifact(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    fact = "Volcano fact: Magma is called lava only after it reaches Earth's surface."
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "give me a short volcano fact and save it as volcanofact.txt":
+            return {"answer": fact, "status": "ok:test"}
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("give me a short volcano fact and save it as volcanofact.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/volcanofact.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert "magma is called lava only after it reaches earth's surface" in lowered
+    assert "i couldn't resolve a suitable recent assistant-authored summary/answer" not in lowered
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/volcanofact.txt"
+    assert payload["write_file"]["content"] == content
 
 
 def test_checklist_request_returns_conversational_answer_not_preview_error(tmp_path, monkeypatch):

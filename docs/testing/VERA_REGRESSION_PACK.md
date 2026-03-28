@@ -290,7 +290,9 @@ Expected pass:
 Additional single-turn checks:
 
 - `write a short poem about space and save it as spacepoem.txt` creates preview path `~/VoxeraOS/notes/spacepoem.txt` and content is only the poem body from that same turn (no refusal about missing prior assistant-authored content)
+- `write a short poem and save it as poem.txt` strips explanatory tail lines like "You can review the content in the preview pane..."
 - `tell me an astronaut joke and save it as astrojoke.txt` creates preview path `~/VoxeraOS/notes/astrojoke.txt` and content excludes explanatory tail text like "I've drafted a plan..."
+- `give me a short volcano fact and save it as volcanofact.txt` stages preview in the same turn (no prior-artifact requirement) and stores only the generated fact body
 - submit payload `write_file.content` exactly matches the pure preview content shown before submit
 
 ## 6) Verification steps per scenario
