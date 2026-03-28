@@ -280,6 +280,7 @@ Proves:
 Expected pass:
 
 - step 2 preview path is `~/VoxeraOS/notes/superfunny.txt` and content is joke text (not linked-job status text)
+- for combined generate+save prompts, preview content matches the assistant-authored answer from that same turn (not canned fallback text)
 - step 3 updates preview content to the new joke and keeps the same path
 - step 4 response explicitly states the draft content was left unchanged due to ambiguity
 

@@ -1983,6 +1983,7 @@ async def chat(request: Request):
         if looks_like_non_authored_assistant_message(str(reply_text_draft_candidate or ""))
         else reply_text_draft_candidate
     )
+    generation_content_refresh_failed_closed = False
 
     # Code draft refinement: when an active preview has a code-type file
     # extension and the LLM reply contains a fenced code block, treat this
@@ -2173,42 +2174,44 @@ async def chat(request: Request):
                     job_id=None,
                 )
 
-    if (
-        builder_payload is None
-        and isinstance(pending_preview, dict)
-        and _is_refinable_prose_preview(pending_preview)
-        and not is_code_draft_turn
+    generation_binding_intent = (
+        not is_code_draft_turn
         and not is_writing_draft_turn
         and not informational_web_turn
         and not is_enrichment_turn
         and _looks_like_active_preview_content_generation_turn(message)
+    )
+    if generation_binding_intent and (
+        _is_refinable_prose_preview(builder_payload) or _is_refinable_prose_preview(pending_preview)
     ):
         if reply_text_draft is not None:
-            pending_wf = pending_preview.get("write_file")
-            if isinstance(pending_wf, dict):
-                updated_preview: dict[str, object] = {
-                    **pending_preview,
-                    "write_file": {
-                        **pending_wf,
-                        "content": reply_text_draft,
-                    },
-                }
-                builder_payload = updated_preview
-                write_session_preview(root, active_session, builder_payload)
-                write_session_handoff_state(
-                    root,
-                    active_session,
-                    attempted=False,
-                    queue_path=str(root),
-                    status="preview_ready",
-                    error=None,
-                    job_id=None,
-                )
-        else:
-            sanitized_answer = (
-                "I left the active draft content unchanged because I could not extract a real "
-                "content body from this turn. Please provide the exact content to save."
+            target_preview = (
+                builder_payload
+                if _is_refinable_prose_preview(builder_payload)
+                else pending_preview
+                if _is_refinable_prose_preview(pending_preview)
+                else None
             )
+            if isinstance(target_preview, dict):
+                target_wf = target_preview.get("write_file")
+                if isinstance(target_wf, dict):
+                    updated_preview: dict[str, object] = {
+                        **target_preview,
+                        "write_file": {**target_wf, "content": reply_text_draft},
+                    }
+                    builder_payload = updated_preview
+                    write_session_preview(root, active_session, builder_payload)
+                    write_session_handoff_state(
+                        root,
+                        active_session,
+                        attempted=False,
+                        queue_path=str(root),
+                        status="preview_ready",
+                        error=None,
+                        job_id=None,
+                    )
+        else:
+            generation_content_refresh_failed_closed = True
 
     # Create-and-save fallback: when the message has both explicit save/write
     # intent AND planning/checklist keywords (a "create and save" hybrid like
@@ -2357,6 +2360,13 @@ async def chat(request: Request):
             f"{assistant_text}\n\n"
             "I left the active draft content unchanged because the content replacement request was "
             "ambiguous. Please specify exact content or say what prior artifact to use."
+        ).strip()
+    if generation_content_refresh_failed_closed:
+        assistant_text = (
+            f"{assistant_text}\n\n"
+            "I left the active draft content unchanged because I could not use this turn as "
+            "authoritative generated content. Please ask for explicit content again or provide "
+            "the exact text to save."
         ).strip()
 
     status = "prepared_preview" if builder_payload is not None else reply_status

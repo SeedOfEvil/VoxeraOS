@@ -1510,6 +1510,7 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 
 - Operational note: linked Vera completions are ingested from canonical queue state/evidence only, without LLM monitoring.
 - Current auto-surfacing behavior is intentionally narrow: on each chat cycle Vera may emit one deterministic follow-up for at most one unsurfaced linked completion with policy `read_only_success`, `mutating_success`, `approval_blocked`, or `failed`, then marks that completion surfaced.
+- Latest-submit association guardrail: when a newer linked submit is active in-session, completion autosurfacing is scoped to that latest job ref so older completions are not surfaced ahead of the new submit outcome.
 - All other completion classes remain manual-review only in this phase.
 - Value-forward surfacing: when a linked completion contains structured evidence from read/inspection skills (file read, exists, stat, list_dir, service_status, recent_service_logs, diagnostics, process_list), the surfaced message prefers concise result text (e.g. "Service X is active/running (user service).", "/notes/todo.txt exists (file).") over generic "completed successfully" wording. Fallback to status-oriented text applies when no useful machine_payload is present.
 - Save-note integrity guardrail: linked completion status/success narration is excluded from saveable-assistant-artifact selection by default, preventing stale completion text from becoming active write-file draft content unless explicitly referenced by the user.

@@ -270,7 +270,7 @@ def test_combined_generation_save_named_note_uses_actual_joke_not_control_ack(
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokie.txt"
     content = preview["write_file"]["content"].lower()
-    assert "outstanding in his field" in content or "cache" in content
+    assert "outstanding in his field" in content
     assert "i've updated the draft" not in content
     assert "nothing has been submitted" not in content
     assert "i still have the current request ready" not in content

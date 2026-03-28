@@ -223,7 +223,9 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8` snap
   - submit serializes the canonical active session preview (`pending_job_preview`), never a stale caller snapshot
   - submit fails closed when supplied preview state and canonical session preview diverge
   - linked completion auto-surfacing prioritizes the most recently submitted linked job so older unsurfaced history does not masquerade as the current submit outcome
+  - when a new handoff is active, linked-completion auto-surfacing is scoped to that latest submitted job ref; older completions are withheld until the latest linked job completion is known
   - linked-completion status text (for example, "Your linked ... job completed successfully") is excluded from saveable assistant artifact candidates by default, so it cannot silently become future `write_file.content`
+  - combined generate+save turns bind `write_file.content` to the assistant-authored answer produced in the same turn (not canned fallback text or control acknowledgments)
   - with an active text preview, clear content-generation turns (for example "tell me a joke") may refresh `write_file.content` from the current assistant-authored answer while keeping the existing destination path unchanged
   - ambiguous active-draft content replacement requests fail closed with explicit "draft unchanged" messaging
   - accepted rename/name-note mutations must immediately change canonical `write_file.path` and produce explicit destination confirmation; ambiguous naming requests fail closed

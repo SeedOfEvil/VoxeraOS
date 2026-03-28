@@ -5285,6 +5285,71 @@ def test_submit_turn_suppresses_stale_linked_completion_autosurface(tmp_path, mo
     assert old_completion["surfaced_in_chat"] is False
 
 
+def test_auto_surface_waits_for_latest_submitted_job_instead_of_older_completion(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    sid = "vera-linked-latest-only"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
+    _write_job_artifacts(
+        queue,
+        "inbox-old.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Old completion path: ~/VoxeraOS/notes/old-note.txt",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-new.json")
+    vera_service.write_session_handoff_state(
+        queue,
+        sid,
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id="new",
+    )
+
+    vera_service.ingest_linked_job_completions(queue, sid)
+    assert vera_service.maybe_auto_surface_linked_completion(queue, sid) is None
+
+    _write_job_artifacts(
+        queue,
+        "inbox-new.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "New completion path: ~/VoxeraOS/notes/new-note.txt",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    vera_service.ingest_linked_job_completions(queue, sid)
+    surfaced = vera_service.maybe_auto_surface_linked_completion(queue, sid)
+    assert surfaced is not None
+    assert "new-note.txt" in surfaced
+    assert "old-note.txt" not in surfaced
+
+
 def test_linked_approval_blocked_auto_surfaces_once(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
