@@ -236,6 +236,30 @@ Expected pass:
 - blocked tree request returns clear refusal with no preview
 - missing-source copy fails after execution with truthful artifact-backed messaging
 
+### J) Save-note rename integrity + linked completion binding
+
+Prompt sequence:
+
+1. `Explain earth's core in two short paragraphs.`
+2. `save that to a note`
+3. `name it earthcore.txt`
+4. `submit it`
+5. Repeat steps 1-4 in the same session with a different filename.
+
+Proves:
+
+- active preview rename mutates canonical draft state
+- submit serializes exactly the visible renamed preview payload
+- linked completion is anchored to the newly submitted job, not stale prior job history
+- repeated save/submit flows in one session do not leak stale path/job state
+
+Expected pass:
+
+- step 3 preview path updates to `~/VoxeraOS/notes/earthcore.txt`
+- step 4 queue inbox payload `write_file.path` is exactly `~/VoxeraOS/notes/earthcore.txt`
+- completion text for step 4 references the newly submitted job/result (never an earlier filename)
+- submit turn does not auto-inject an older unsurfaced linked completion message
+
 ## 6) Verification steps per scenario
 
 Use these checks after each scenario:

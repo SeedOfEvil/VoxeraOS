@@ -1368,8 +1368,17 @@ async def chat(request: Request):
         )
 
     root = _active_queue_root()
+    pre_turn_preview = read_session_preview(root, active_session)
+    suppress_auto_completion_note = should_submit_active_preview(
+        message,
+        preview_available=pre_turn_preview is not None,
+    )
     ingest_linked_job_completions(root, active_session)
-    auto_completion_note = maybe_auto_surface_linked_completion(root, active_session)
+    auto_completion_note = (
+        None
+        if suppress_auto_completion_note
+        else maybe_auto_surface_linked_completion(root, active_session)
+    )
 
     append_session_turn(
         root,
@@ -1382,7 +1391,7 @@ async def chat(request: Request):
         append_session_turn(root, active_session, role="assistant", text=auto_completion_note)
     turns = read_session_turns(root, active_session)
 
-    pending_preview = read_session_preview(root, active_session)
+    pending_preview = pre_turn_preview
     requested_job_id = maybe_extract_job_id(message)
     diagnostics_service_turn = diagnostics_service_or_logs_intent(message)
 

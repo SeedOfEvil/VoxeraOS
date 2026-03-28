@@ -5092,6 +5092,118 @@ def test_linked_read_only_success_auto_surfaces_once_per_completion(tmp_path, mo
     assert len(surfaced_messages) == 1
 
 
+def test_auto_surface_prefers_latest_submitted_linked_job_completion(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    sid = "vera-linked-latest-priority"
+    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+
+    # Older linked completion is intentionally ingestible first.
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
+    _write_job_artifacts(
+        queue,
+        "inbox-old.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Old completion path: ~/VoxeraOS/notes/old-note.txt",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    # Newly submitted/linked job should win completion surfacing priority.
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-new.json")
+    vera_service.write_session_handoff_state(
+        queue,
+        sid,
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id="new",
+    )
+    _write_job_artifacts(
+        queue,
+        "inbox-new.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "New completion path: ~/VoxeraOS/notes/earthcore.txt",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    vera_service.ingest_linked_job_completions(queue, sid)
+    surfaced = vera_service.maybe_auto_surface_linked_completion(queue, sid)
+
+    assert surfaced is not None
+    assert "earthcore.txt" in surfaced
+    assert "old-note.txt" not in surfaced
+
+
+def test_submit_turn_suppresses_stale_linked_completion_autosurface(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called earthcore.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/earthcore.txt",
+                "content": "earth core summary",
+                "mode": "overwrite",
+            },
+        },
+    )
+    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
+    _write_job_artifacts(
+        queue,
+        "inbox-old.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "latest_summary": "Old completion path: ~/VoxeraOS/notes/old-note.txt",
+            "normalized_outcome_class": "succeeded",
+        },
+        state={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+        },
+    )
+
+    submit = client.post("/chat", data={"session_id": sid, "message": "submit it"})
+    assert submit.status_code == 200
+    assert "I submitted the job to VoxeraOS" in submit.text
+    assert "old-note.txt" not in submit.text
+
+    completions = vera_service.read_linked_job_completions(queue, sid)
+    old_completion = next(
+        item for item in completions if str(item.get("job_ref") or "") == "inbox-old.json"
+    )
+    assert old_completion["surfaced_in_chat"] is False
+
+
 def test_linked_approval_blocked_auto_surfaces_once(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
