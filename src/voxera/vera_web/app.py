@@ -2005,6 +2005,17 @@ async def chat(request: Request):
         if looks_like_non_authored_assistant_message(str(reply_text_draft_candidate or ""))
         else reply_text_draft_candidate
     )
+    if reply_text_draft is None and _looks_like_active_preview_content_generation_turn(message):
+        first_block = next(
+            (block.strip() for block in re.split(r"\n{2,}", sanitized_answer) if block.strip()),
+            "",
+        )
+        if (
+            first_block
+            and len(first_block.split()) >= 4
+            and not looks_like_non_authored_assistant_message(first_block)
+        ):
+            reply_text_draft = first_block
     generation_content_refresh_failed_closed = False
 
     # Code draft refinement: when an active preview has a code-type file
