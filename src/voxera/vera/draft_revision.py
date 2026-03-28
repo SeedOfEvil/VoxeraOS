@@ -264,6 +264,22 @@ def interpret_active_preview_draft_revision(
         return None
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
+    clear_generation_request = bool(
+        re.search(r"\b(tell|give|write|draft|create|generate|compose|share)\b", lowered)
+        and re.search(
+            r"\b(joke|funny|humorous|poem|story|paragraph|content|text|message|bio|summary|explanation|fact|facts)\b",
+            lowered,
+        )
+    )
+    if clear_generation_request and re.search(
+        r"\b(save\s+(?:it|this|that)?\s*as|called|named)\b",
+        lowered,
+    ):
+        # This is a same-turn generate+save request for new authored content.
+        # Let preview drafting create/bind a fresh shell instead of mutating the
+        # active preview as a reference-based rename/refinement.
+        return None
+
     current_goal = str(active_preview.get("goal") or "")
     references_prior_content = message_requests_referenced_content(text) or bool(
         re.search(r"\b(?:save|use|restore)\s+(?:the\s+)?previous\s+content\b", lowered)

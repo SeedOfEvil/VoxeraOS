@@ -488,6 +488,17 @@ def _is_targeted_code_preview_refinement(
     )
 
 
+def _extract_save_as_text_target(message: str) -> str | None:
+    match = re.search(
+        r"\bsave\s+(?:it|this|that)?\s*as\s+([a-zA-Z0-9_.-]+\.(?:md|txt))\b",
+        message,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
 def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
     """Replace false preview-existence claims with truthful language.
 
@@ -1599,12 +1610,16 @@ async def chat(request: Request):
             voice_flags=voice_flags,
         )
 
-    should_attempt_derived_save = not is_explicit_writing_transform and (
+    should_attempt_derived_save = (
+        not is_explicit_writing_transform
+        and not _looks_like_active_preview_content_generation_turn(message)
+        and (
         is_investigation_derived_save_request(message)
         or _prefer_derived_followup_save(
             message=message,
             session_derived_output=session_derived_output,
             turns=turns,
+        )
         )
     )
     if should_attempt_derived_save:
@@ -2268,9 +2283,17 @@ async def chat(request: Request):
             if isinstance(target_preview, dict):
                 target_wf = target_preview.get("write_file")
                 if isinstance(target_wf, dict):
+                    save_as_target = _extract_save_as_text_target(message)
+                    rewritten_path = str(target_wf.get("path") or "").strip()
+                    if save_as_target:
+                        rewritten_path = f"~/VoxeraOS/notes/{save_as_target}"
                     updated_preview: dict[str, object] = {
                         **target_preview,
-                        "write_file": {**target_wf, "content": reply_text_draft},
+                        "write_file": {
+                            **target_wf,
+                            "path": rewritten_path or target_wf.get("path"),
+                            "content": reply_text_draft,
+                        },
                     }
                     builder_payload = updated_preview
                     write_session_preview(root, active_session, builder_payload)

@@ -330,7 +330,9 @@ def _normalize_structured_file_write_payload(
     )
     if not target and not (reference_requested or ambiguous_reference or plural_reference):
         return None
-    if content is None:
+    if content is None and not (
+        clear_generation_request and target and not (reference_requested or ambiguous_reference)
+    ):
         referenced_artifact = select_recent_saveable_assistant_artifact(
             message=text,
             assistant_artifacts=assistant_artifacts,
