@@ -391,8 +391,6 @@ def _looks_like_active_preview_content_generation_turn(message: str) -> bool:
     if not text:
         return False
     lowered = text.lower()
-    if message_requests_referenced_content(text):
-        return False
     if looks_like_preview_rename_or_save_as_request(text):
         return False
     generation_signal = re.search(
@@ -402,6 +400,9 @@ def _looks_like_active_preview_content_generation_turn(message: str) -> bool:
         r"\b(joke|poem|story|paragraph|content|text|message|bio|summary|explanation)\b",
         lowered,
     )
+    references_prior_content = message_requests_referenced_content(text)
+    if references_prior_content and not (generation_signal and content_shape_signal):
+        return False
     return bool(generation_signal and content_shape_signal)
 
 
