@@ -185,7 +185,10 @@ def test_save_as_flow_ignores_prior_linked_completion_status_text(tmp_path, monk
     preview = session.preview()
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/superfunny.txt"
-    assert "cache" in preview["write_file"]["content"].lower()
+    assert (
+        preview["write_file"]["content"]
+        == "reply: tell me a funny joke and save it as superfunny.txt"
+    )
     assert "wrote text to" not in preview["write_file"]["content"].lower()
 
 
