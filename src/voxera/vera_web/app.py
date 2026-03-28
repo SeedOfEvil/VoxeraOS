@@ -1614,12 +1614,12 @@ async def chat(request: Request):
         not is_explicit_writing_transform
         and not _looks_like_active_preview_content_generation_turn(message)
         and (
-        is_investigation_derived_save_request(message)
-        or _prefer_derived_followup_save(
-            message=message,
-            session_derived_output=session_derived_output,
-            turns=turns,
-        )
+            is_investigation_derived_save_request(message)
+            or _prefer_derived_followup_save(
+                message=message,
+                session_derived_output=session_derived_output,
+                turns=turns,
+            )
         )
     )
     if should_attempt_derived_save:
