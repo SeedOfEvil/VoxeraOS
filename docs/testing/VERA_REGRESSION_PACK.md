@@ -341,6 +341,71 @@ Regression if any occur:
 - no-preview submit creating queue jobs
 - investigation lane causing side effects without governed save+submit
 
+### L) Submit-intent strictness / typo-like near-submit phrasing
+
+Prompt sequence:
+
+1. Create any preview (e.g., `write a poem and save it as poem.txt`)
+2. `send iit`
+
+Proves:
+
+- typo-like near-submit phrases do not trigger queue handoff
+- Vera explicitly states no submission occurred
+- no fake conversational submit acknowledgment
+
+Expected pass:
+
+- step 2 response explicitly says the preview was NOT submitted
+- preview remains active (not cleared)
+- no queue inbox job is created
+- subsequent `send it` (correct spelling) performs the real canonical submit
+
+### M) Post-preview informational rename mutation
+
+Prompt sequence:
+
+1. `tell me about the biggest volcano on earth`
+2. `save it to a note`
+3. `call it volcano.txt`
+
+Proves:
+
+- clear rename instructions after preview creation update the canonical path
+- preview content is preserved across rename
+- no stale auto-generated filename remains
+
+Expected pass:
+
+- step 2 creates preview with auto-generated `note-TIMESTAMP.txt` path
+- step 3 updates preview path to `~/VoxeraOS/notes/volcano.txt`
+- step 3 preserves original content
+- assistant reply confirms the new filename/path
+
+Also test variants: `name it volcano.txt`, `rename it to volcano.txt`
+
+### N) Summary preview-body purity
+
+Prompt sequence:
+
+1. `give me a short summary of Mauna Loa and save it as maunaloa.txt`
+
+Proves:
+
+- summary-type generate+save flows produce pure authored content
+- helper/control narration is stripped from preview body
+- no "You can review..." or "Please review..." preamble in content
+
+Expected pass:
+
+- preview path is `~/VoxeraOS/notes/maunaloa.txt`
+- preview content contains the summary body only
+- preview content does NOT contain helper/control text such as:
+  - "You can review the content..."
+  - "Please review the content..."
+  - "authorize the file creation"
+  - "preview pane"
+
 ## 8) Automated coverage anchors
 
 The pack is represented by focused Vera tests (not one giant mixed-flow test):
@@ -348,5 +413,6 @@ The pack is represented by focused Vera tests (not one giant mixed-flow test):
 - `tests/test_vera_web.py`
 - `tests/test_vera_contextual_flows.py`
 - `tests/test_vera_session_characterization.py`
+- `tests/test_vera_runtime_validation_fixes.py`
 
 Prefer extending those focused files for future Vera regression additions.

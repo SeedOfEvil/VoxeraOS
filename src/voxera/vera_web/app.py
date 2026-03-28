@@ -61,6 +61,7 @@ from ..vera.handoff import (
 )
 from ..vera.preview_submission import (
     is_natural_preview_submission_confirmation,
+    is_near_miss_submit_phrase,
     is_preview_submission_request,
     normalize_preview_payload,
     should_submit_active_preview,
@@ -1781,6 +1782,23 @@ async def chat(request: Request):
             status="prepared_preview",
         )
 
+    # Near-miss / typo-like submit phrasing: fail closed explicitly.
+    # This intercept runs BEFORE the canonical submit path so a fuzzy
+    # near-submit never reaches the LLM, which might overclaim submission.
+    if is_near_miss_submit_phrase(message):
+        near_miss_text = (
+            "I did not submit the preview. "
+            "That looked like a submit command but didn't match the expected phrasing. "
+            'Try "send it", "submit it", or "hand it off" to submit.'
+        )
+        append_session_turn(root, active_session, role="assistant", text=near_miss_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="near_miss_submit_rejected",
+            voice_flags=voice_flags,
+        )
+
     if (
         (is_preview_submission_request(message))
         and not is_recent_assistant_content_save_request(message)
@@ -1920,6 +1938,35 @@ async def chat(request: Request):
             and builder_payload == pending_preview
         ):
             builder_payload = None
+        # Rename-mutation fallback: when the user clearly asked for a rename
+        # but the builder returned the unchanged preview (hidden compiler
+        # override), re-run the deterministic path which handles rename/save-as
+        # mutations reliably.  Without this, the rename is silently lost.
+        if (
+            builder_payload is None
+            and isinstance(pending_preview, dict)
+            and looks_like_preview_rename_or_save_as_request(message)
+        ):
+            _rename_user_messages = [
+                str(turn.get("text") or "")
+                for turn in turns[-8:]
+                if str(turn.get("role") or "").strip().lower() == "user"
+            ]
+            _rename_fallback = maybe_draft_job_payload(
+                message,
+                active_preview=pending_preview,
+                recent_user_messages=_rename_user_messages,
+                enrichment_context=enrichment_context,
+                investigation_context=session_investigation,
+                recent_assistant_artifacts=recent_assistant_artifacts,
+            )
+            if isinstance(_rename_fallback, dict):
+                try:
+                    _rename_payload = normalize_preview_payload(_rename_fallback)
+                except Exception:
+                    _rename_payload = None
+                if _rename_payload is not None and _rename_payload != pending_preview:
+                    builder_payload = _rename_payload
         if _preview_body_looks_like_control_narration(builder_payload):
             recent_user_messages = [
                 str(turn.get("text") or "")
