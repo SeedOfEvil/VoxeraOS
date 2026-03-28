@@ -347,7 +347,7 @@ def _looks_like_document_body_start(block: str) -> bool:
         return True
     if re.fullmatch(r"\*\*[^*]{3,}\*\*", stripped):
         return True
-    return len(stripped.split()) >= 12 and stripped[0].isupper()
+    return len(stripped.split()) >= 6 and stripped[0].isupper()
 
 
 def _is_heading_like(block: str) -> bool:
