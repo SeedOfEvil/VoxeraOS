@@ -405,6 +405,26 @@ def _looks_like_active_preview_content_generation_turn(message: str) -> bool:
     return bool(generation_signal and content_shape_signal)
 
 
+def _message_has_explicit_content_literal(message: str) -> bool:
+    text = message.strip()
+    if not text:
+        return False
+    return bool(
+        re.search(r"\"[^\"]+\"|'[^']+'", text)
+        or re.search(
+            r"\b("
+            r"with\s+(?:the\s+)?(?:content|text)\b|"
+            r"(?:content|text)\s*:|"
+            r"as\s+content\s+add\b|"
+            r"add\s+content\s+to\b|"
+            r"put\s+.+?\s+(?:inside|in|into)\s+(?:it|the\s+file)\b"
+            r")",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _looks_like_ambiguous_active_preview_content_replacement_request(message: str) -> bool:
     text = message.strip()
     if not text:
@@ -2180,6 +2200,8 @@ async def chat(request: Request):
         and not informational_web_turn
         and not is_enrichment_turn
         and _looks_like_active_preview_content_generation_turn(message)
+        and not _message_has_explicit_content_literal(message)
+        and not str(reply_status).strip().lower().startswith("degraded")
     )
     if generation_binding_intent and (
         _is_refinable_prose_preview(builder_payload) or _is_refinable_prose_preview(pending_preview)
