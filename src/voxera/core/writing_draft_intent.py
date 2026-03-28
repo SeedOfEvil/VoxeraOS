@@ -237,6 +237,8 @@ def _looks_like_wrapper_block(block: str, *, next_block: str | None = None) -> b
             "i'd be happy to",
             "i would be happy to",
             "prepared a draft",
+            "updated the draft preview",
+            "updated the draft",
             "draft below",
             "essay below",
             "article below",
@@ -375,7 +377,12 @@ def _extract_quoted_authored_content_from_wrapper(text: str) -> str | None:
 
     quoted_candidates = [
         match.group(1).strip() for match in re.finditer(r'"([^"\n]{4,})"', text)
-    ] + [match.group(1).strip() for match in re.finditer(r"'([^'\n]{4,})'", text)]
+    ] + [
+        match.group(1).strip()
+        # Treat single-quoted payloads as quoted blocks only when the quote
+        # marks are not apostrophes inside words (e.g. don't, I've).
+        for match in re.finditer(r"(?<!\w)'([^'\n]{4,})'(?!\w)", text)
+    ]
     if not quoted_candidates:
         return None
 

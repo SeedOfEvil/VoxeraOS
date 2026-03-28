@@ -393,6 +393,47 @@ def test_active_draft_refresh_with_wrapper_reply_replaces_body_with_pure_new_jok
     assert "i’m ready to submit this to the queue whenever you’re set" not in refreshed
 
 
+def test_active_draft_refresh_unquoted_wrapper_with_contractions_keeps_full_joke(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "tell me an astronaut joke and save it as astrojoke.txt":
+            return {
+                "answer": "Why did the astronaut break up with the moon? It needed space.",
+                "status": "ok:test",
+            }
+        if user_message == "tell me a different joke and add it as content":
+            return {
+                "answer": (
+                    "Updated the draft preview with a fresh joke.\n\n"
+                    "Why don't skeletons fight each other? They don't have the guts.\n\n"
+                    "You can review the content in the preview pane and submit it whenever you're ready."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "ok", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    first = session.chat("tell me an astronaut joke and save it as astrojoke.txt")
+    assert first.status_code == 200
+
+    second = session.chat("tell me a different joke and add it as content")
+    assert second.status_code == 200
+    updated = session.preview()
+    assert updated is not None
+    assert updated["write_file"]["path"] == "~/VoxeraOS/notes/astrojoke.txt"
+    refreshed = updated["write_file"]["content"].lower()
+    assert refreshed == "why don't skeletons fight each other? they don't have the guts."
+    assert refreshed.startswith("why don't skeletons fight each other?")
+    assert refreshed.endswith("they don't have the guts.")
+    assert "updated the draft preview" not in refreshed
+    assert "you can review the content" not in refreshed
+
+
 def test_single_turn_generate_save_poem_uses_same_turn_authored_body(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
@@ -441,6 +482,54 @@ def test_single_turn_generate_save_poem_uses_same_turn_authored_body(tmp_path, m
     assert "ash drifts softly where old fire slept" in poem_body
     assert "you can review the content in the preview pane" not in poem_body
     assert "ready" not in poem_body
+
+
+def test_single_turn_generate_save_mauna_loa_summary_keeps_full_body_and_submit_truth(
+    tmp_path, monkeypatch
+):
+    session = make_vera_session(monkeypatch, tmp_path)
+    summary = (
+        "Mauna Loa is one of Earth's largest active volcanoes and has erupted repeatedly in recorded "
+        "history, shaping Hawaii's landscape and serving as a major site for atmospheric monitoring."
+    )
+
+    async def _fake_reply(*, turns, user_message):
+        _ = turns
+        if user_message == "give me a short summary of Mauna Loa and save it as maunaloa.txt":
+            return {
+                "answer": (
+                    "I've drafted a short summary for you and prepared a preview to save it as `maunaloa.txt`.\n\n"
+                    f"{summary}\n\n"
+                    "Nothing has been submitted or executed yet. "
+                    "I'm ready to submit this to the queue whenever you're set."
+                ),
+                "status": "ok:test",
+            }
+        return {"answer": "fallback", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    res = session.chat("give me a short summary of Mauna Loa and save it as maunaloa.txt")
+    assert res.status_code == 200
+    preview = session.preview()
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/maunaloa.txt"
+    content = preview["write_file"]["content"]
+    lowered = content.lower()
+    assert content == summary
+    assert lowered.startswith("mauna loa is one of earth's largest active volcanoes")
+    assert lowered.endswith("serving as a major site for atmospheric monitoring.")
+    assert "i've drafted a short summary for you" not in lowered
+    assert "nothing has been submitted or executed yet" not in lowered
+    assert "i'm ready to submit this to the queue whenever you're set" not in lowered
+
+    submit = session.chat("submit it")
+    assert submit.status_code == 200
+    inbox_files = list((session.queue / "inbox").glob("*.json"))
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/maunaloa.txt"
+    assert payload["write_file"]["content"] == content
 
 
 def test_single_turn_generate_save_joke_strips_explanatory_tail_and_submit_truthful(
