@@ -243,6 +243,9 @@ def _looks_like_wrapper_block(block: str, *, next_block: str | None = None) -> b
             "i have staged a request",
             "staged a request in the preview pane",
             "please review the content",
+            "you can review the content",
+            "authorize the file creation",
+            "review and authorize",
             "draft below",
             "essay below",
             "article below",
@@ -273,8 +276,11 @@ def _looks_like_trailing_wrapper_block(block: str) -> bool:
         "i have staged a request",
         "staged a request in the preview pane",
         "please review the content",
+        "you can review the content",
         "you can see the current draft",
         "you can review the content in the preview pane",
+        "authorize the file creation",
+        "review and authorize",
         "if you're happy with how it looks",
         "if you are happy with how it looks",
         "if that looks good",
@@ -329,7 +335,10 @@ def _looks_like_preface_setup_sentence(block: str) -> bool:
     if len(lowered.split()) > 36:
         return False
     starts_with_setup = bool(
-        re.match(r"^(?:i(?:'ll| will)|here(?:'s| is)|i(?:'ve| have)|you\s+can\s+see)\b", lowered)
+        re.match(
+            r"^(?:i(?:'ll| will)|here(?:'s| is)|i(?:'ve| have)|you\s+can\s+(?:see|review)|please\s+review)\b",
+            lowered,
+        )
     )
     if not starts_with_setup:
         return False
@@ -350,6 +359,10 @@ def _looks_like_preface_setup_sentence(block: str) -> bool:
             "step-by-step",
             "save it as",
             "saved as",
+            "authorize",
+            "file creation",
+            "content below",
+            "content and",
             ".md",
             ".txt",
         )

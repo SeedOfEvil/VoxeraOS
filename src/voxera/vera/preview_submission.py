@@ -63,6 +63,37 @@ _NATURAL_CONFIRMATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Near-miss / typo-like submit phrases that resemble a real submit command
+# but don't match any canonical pattern.  Used for fail-closed detection.
+_NEAR_SUBMIT_RE = re.compile(
+    r"^(?:"
+    r"send\s+i+t|"  # "send iit", "send iiit", etc.
+    r"sen\s+it|"  # "sen it"
+    r"sned\s+it|"  # "sned it"
+    r"sendit|"  # "sendit" (no space)
+    r"submt\s+it|"  # "submt it"
+    r"sumbit\s+it|"  # "sumbit it"
+    r"sbumit\s+it|"  # "sbumit it"
+    r"submitt?\s+i+t|"  # "submit iit"
+    r"sedn\s+it|"  # "sedn it"
+    r"send\s+ti"  # "send ti"
+    r")[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def is_near_miss_submit_phrase(message: str) -> bool:
+    """Detect typo-like near-submit phrases that do NOT match any canonical
+    submit pattern.  These must fail closed — no queue handoff, no fake
+    submission claim."""
+    normalized = message.strip().lower()
+    if not normalized:
+        return False
+    # If it already matches a real submit pattern, it's not a near-miss.
+    if is_preview_submission_request(message):
+        return False
+    return bool(_NEAR_SUBMIT_RE.fullmatch(normalized))
+
 
 def is_explicit_handoff_request(message: str) -> bool:
     normalized = message.strip().lower()

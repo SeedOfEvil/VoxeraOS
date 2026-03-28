@@ -231,7 +231,9 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8` snap
   - explanatory tail text appended after authored body (for example, "I've drafted a plan ...", readiness/status lines) is stripped from canonical preview content
   - with an active text preview, clear content-generation turns (for example "tell me a joke") may refresh `write_file.content` from the current assistant-authored answer while keeping the existing destination path unchanged
   - ambiguous active-draft content replacement requests fail closed with explicit "draft unchanged" messaging
-  - accepted rename/name-note mutations must immediately change canonical `write_file.path` and produce explicit destination confirmation; ambiguous naming requests fail closed
+  - accepted rename/name-note mutations must immediately change canonical `write_file.path` and produce explicit destination confirmation; ambiguous naming requests fail closed; when the hidden compiler overrides a deterministic rename with an unchanged preview, the app falls back to the deterministic rename path so the mutation is never silently lost
+  - summary-type generate+save flows strip "You can review..." and "Please review..." helper prefixes from preview content via extended preface sentence and wrapper block detection
+  - typo-like near-submit phrases (for example "send iit") fail closed with an explicit "did not submit" message before reaching the LLM, preventing conversational overclaiming
 
 ### Queue orchestration
 
