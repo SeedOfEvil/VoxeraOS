@@ -122,6 +122,7 @@ Vera active preview draft revision interpretation now lives in `src/voxera/vera/
 
 Vera preview submission and handoff normalization now live in `src/voxera/vera/preview_submission.py`, with `src/voxera/vera/handoff.py` and `src/voxera/vera_web/app.py` delegating submit-intent detection, authoritative preview normalization, truthful no-preview submit handling, and queue acknowledgement shaping into that module. Prefer extending `preview_submission.py` for submit/current-preview behavior instead of re-growing that seam inside `handoff.py` or `app.py`.
 Submission integrity rule: submit must serialize the canonical session preview (`pending_job_preview`) and fail closed if caller-provided preview state disagrees with canonical state. Mixed mutate+submit phrasing (for example “rename it … and send it”) is treated as preview mutation only, not submission, so visible preview truth cannot drift from queued payload truth.
+Naming-mutation rule: valid rename/name-note turns must update canonical preview `write_file.path` and return explicit destination confirmation text; ambiguous naming phrases fail closed with an unchanged draft.
 
 Vera deterministic preview drafting now lives in `src/voxera/vera/preview_drafting.py`, with `src/voxera/vera/handoff.py` intentionally reduced to an import-stable façade for existing callers. Prefer extending `preview_drafting.py` for narrow action-preview drafting, diagnostics preview shaping, note/file drafting, and contextual save-by-reference glue instead of re-growing those branches inside `handoff.py`.
 

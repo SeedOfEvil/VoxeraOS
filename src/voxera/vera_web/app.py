@@ -28,7 +28,10 @@ from ..core.writing_draft_intent import (
     is_writing_refinement_request,
 )
 from ..paths import queue_root as default_queue_root
-from ..vera.draft_revision import filename_from_preview
+from ..vera.draft_revision import (
+    filename_from_preview,
+    looks_like_preview_rename_or_save_as_request,
+)
 from ..vera.evidence_review import (
     draft_followup_preview,
     is_followup_preview_request,
@@ -1104,14 +1107,34 @@ def _conversational_preview_update_message(
     has_active_preview: bool,
     user_message: str,
     rejected: bool = False,
+    updated_preview: dict[str, object] | None = None,
 ) -> str:
+    naming_request = looks_like_preview_rename_or_save_as_request(user_message)
+    updated_write_file = (
+        updated_preview.get("write_file") if isinstance(updated_preview, dict) else None
+    )
+    updated_path = (
+        str(updated_write_file.get("path") or "").strip()
+        if isinstance(updated_write_file, dict)
+        else ""
+    )
     if rejected:
         return (
             "I couldn’t apply that update — the requested path is outside the safe notes workspace "
             "or contains an invalid traversal. The existing draft is unchanged."
         )
     if updated:
+        if naming_request and updated_path:
+            return (
+                f"Updated the draft destination to {updated_path}. "
+                "Nothing has been submitted or executed yet."
+            )
         return "Understood. Nothing has been submitted or executed yet. I can send it whenever you’re ready."
+    if naming_request and has_active_preview:
+        return (
+            "I couldn’t safely apply that naming update, so the draft destination is unchanged. "
+            "Please provide a specific filename (for example: name it bigvolcano.txt)."
+        )
     if has_active_preview:
         return "Understood. I still have the current request ready whenever you want to send it."
     if is_recent_assistant_content_save_request(user_message):
@@ -2162,6 +2185,15 @@ async def chat(request: Request):
     ) and not is_json_content_request
 
     assistant_text = guarded_answer
+    naming_mutation_request = looks_like_preview_rename_or_save_as_request(message)
+    if naming_mutation_request and (pending_preview is not None or builder_payload is not None):
+        assistant_text = _conversational_preview_update_message(
+            updated=builder_payload is not None,
+            has_active_preview=pending_preview is not None,
+            user_message=message,
+            rejected=preview_update_rejected,
+            updated_preview=builder_payload,
+        )
     if (
         explicit_targeted_content_refinement
         and builder_payload is not None
@@ -2172,6 +2204,7 @@ async def chat(request: Request):
             updated=True,
             has_active_preview=pending_preview is not None,
             user_message=message,
+            updated_preview=builder_payload,
         )
     # Code draft replies must NOT be suppressed — they contain the actual code
     # that the user needs to see in a proper fenced block.  All other preview
@@ -2193,6 +2226,7 @@ async def chat(request: Request):
             has_active_preview=pending_preview is not None,
             user_message=message,
             rejected=preview_update_rejected,
+            updated_preview=builder_payload,
         )
 
     status = "prepared_preview" if builder_payload is not None else reply_status

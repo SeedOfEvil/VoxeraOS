@@ -256,6 +256,7 @@ Proves:
 Expected pass:
 
 - step 3 preview path updates to `~/VoxeraOS/notes/earthcore.txt`
+- step 3 assistant reply explicitly confirms the new destination path
 - step 4 queue inbox payload `write_file.path` is exactly `~/VoxeraOS/notes/earthcore.txt`
 - completion text for step 4 references the newly submitted job/result (never an earlier filename)
 - submit turn does not auto-inject an older unsurfaced linked completion message

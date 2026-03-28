@@ -2312,6 +2312,87 @@ def test_filename_refinement_replaces_active_preview(tmp_path, monkeypatch):
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
+    turns = vera_service.read_session_turns(queue, sid)
+    assert "Updated the draft destination to ~/VoxeraOS/notes/jokester.txt" in turns[-1]["text"]
+
+
+def test_name_the_note_updates_preview_path_with_explicit_confirmation(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+    vera_service.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called note-123.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/note-123.txt",
+                "content": "Mauna Loa background text",
+                "mode": "overwrite",
+            },
+        },
+    )
+    client.post("/chat", data={"session_id": sid, "message": "name the note bigvolcano.txt"})
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/bigvolcano.txt"
+    turns = vera_service.read_session_turns(queue, sid)
+    assert "Updated the draft destination to ~/VoxeraOS/notes/bigvolcano.txt" in turns[-1]["text"]
+
+    client.post("/chat", data={"session_id": sid, "message": "submit it"})
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert len(jobs) == 1
+    payload = json.loads(jobs[0].read_text(encoding="utf-8"))
+    assert payload["write_file"]["path"] == "~/VoxeraOS/notes/bigvolcano.txt"
+
+
+def test_ambiguous_note_naming_fails_closed_with_specific_message(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "write a file called draft-note.txt with provided content",
+        },
+    )
+    client.post("/chat", data={"session_id": sid, "message": "name the note"})
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/draft-note.txt"
+    turns = vera_service.read_session_turns(queue, sid)
+    assert "couldn’t safely apply that naming update" in turns[-1]["text"].lower()
+
+
+def test_repeated_note_naming_keeps_latest_canonical_preview_path(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": "write a file called first-name.txt with provided content",
+        },
+    )
+    client.post("/chat", data={"session_id": sid, "message": "name it second-name.txt"})
+    client.post("/chat", data={"session_id": sid, "message": "call it final-name.txt"})
+
+    preview = vera_service.read_session_preview(queue, sid)
+    assert preview is not None
+    assert preview["write_file"]["path"] == "~/VoxeraOS/notes/final-name.txt"
 
 
 def test_content_refinement_replaces_active_preview(tmp_path, monkeypatch):
