@@ -494,7 +494,8 @@ def test_single_turn_generate_save_poem_strips_if_happy_helper_tail(tmp_path, mo
                 "answer": (
                     "Ash drifts softly where old fire slept,\n"
                     "Stone remembers promises it kept.\n\n"
-                    "If you're happy with how it looks, just let me know or click submit to save it."
+                    "If you're happy with how it looks, just let me know or click submit to save it.\n"
+                    "If that looks good, just hit Submit to save the file."
                 ),
                 "status": "ok:test",
             }
@@ -513,6 +514,8 @@ def test_single_turn_generate_save_poem_strips_if_happy_helper_tail(tmp_path, mo
     assert lowered.endswith("stone remembers promises it kept.")
     assert "if you're happy with how it looks" not in lowered
     assert "click submit to save it" not in lowered
+    assert "if that looks good" not in lowered
+    assert "just hit submit to save the file" not in lowered
 
     submit = session.chat("submit it")
     assert submit.status_code == 200
