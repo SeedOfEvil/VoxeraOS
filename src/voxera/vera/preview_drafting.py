@@ -321,6 +321,10 @@ def _normalize_structured_file_write_payload(
     reference_requested = message_requests_referenced_content(text)
     ambiguous_reference = looks_like_ambiguous_reference_only(text)
     plural_reference = looks_like_plural_reference_request(text)
+    inline_generation_signal = bool(
+        re.search(r"\b(tell|give|write|make|create|generate|compose)\b", lowered)
+        and re.search(r"\b(joke|funny|humorous|remind|reminder|note\s+for\s+later)\b", lowered)
+    )
     if not target and not (reference_requested or ambiguous_reference or plural_reference):
         return None
     if content is None:
@@ -334,7 +338,10 @@ def _normalize_structured_file_write_payload(
             else None
         )
     if content is None and (reference_requested or ambiguous_reference or plural_reference):
-        return None
+        if inline_generation_signal:
+            content = _infer_content_from_message(text)
+        else:
+            return None
     if content is None:
         content = _infer_content_from_message(text) or ""
     if not target:
