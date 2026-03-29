@@ -324,7 +324,7 @@ Panel operator notes:
 - Panel mutation routes (`/queue/create`, `/missions/create`, `/missions/templates/create`) accept `POST` by default.
 - `/missions/create` is the operator Create Mission intake (Easy mode: prompt-only) and writes deterministic jobs to `notes/queue/inbox/job-panel-mission-<slug>-<ts>.json`.
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
-- Shared panel wiring/security/view-model helpers still live in `src/voxera/panel/app.py`, while route-family ownership now lives in the extracted `src/voxera/panel/routes_*.py` modules:
+- Panel shared wiring/security and canonical job-detail assembly ownership remain in `src/voxera/panel/app.py`, while extracted low-risk presentation/status row builders now live in `src/voxera/panel/job_presentation.py`; route-family ownership lives in `src/voxera/panel/routes_*.py` modules:
   - `routes_home.py` — home/dashboard + queue create
   - `routes_jobs.py` — approvals, job list/detail/progress, cancel/retry/delete
   - `routes_queue_control.py` — pause/resume/delete queue controls
@@ -1318,6 +1318,7 @@ Panel home includes a read-only **Performance Stats** tab that surfaces these sa
 - `src/voxera/panel/routes_hygiene.py` owns hygiene/operator-maintenance routes.
 - `src/voxera/panel/routes_recovery.py` owns recovery/quarantine inspector routes.
 - `src/voxera/panel/helpers.py` contains shared request/value helpers.
+- `src/voxera/panel/job_presentation.py` contains low-risk job presentation/status helper builders used by `app.py` (operator outcome labels, policy/evidence rows, timeline, why-stopped rows).
 - Future panel changes should prefer extending a domain route module (or adding a new `routes_<domain>.py`) instead of growing `app.py` back into a monolith.
 - Jobs mutation redirects are intentionally emitted as relative `/jobs?...` URLs (not absolute `url_for` URLs) to avoid proxy/front-door host-scheme mismatches.
 
