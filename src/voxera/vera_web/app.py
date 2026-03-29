@@ -255,9 +255,9 @@ def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] |
         is_recent_assistant_content_save_request=is_recent_assistant_content_save_request,
         is_natural_preview_submission_confirmation=is_natural_preview_submission_confirmation,
         is_preview_submission_request=is_preview_submission_request,
-        maybe_draft_job_payload=lambda content, preview: maybe_draft_job_payload(
+        maybe_draft_job_payload=lambda content, active_preview=None: maybe_draft_job_payload(
             content,
-            active_preview=preview,
+            active_preview=active_preview,
         ),
     )
 
