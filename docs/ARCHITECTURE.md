@@ -5,6 +5,7 @@ VoxeraOS is an open-source alpha (v0.1.8) intent-driven AI control plane that si
 **Vera** is the conversational intelligence layer — she understands intent, drafts work, and guides operators. **VoxeraOS** is the trust layer — every real-world side effect is capability-gated, policy-evaluated, and evidence-tracked.
 
 For project overview, see [README.md](../README.md). For the product vision, see [NORTH_STAR.md](NORTH_STAR.md).
+For the current bounded hotspot audit and extraction order for large surface modules, see [HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md](HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md).
 
 ---
 

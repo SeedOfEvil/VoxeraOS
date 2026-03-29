@@ -197,6 +197,7 @@ Capability semantics are normalized centrally in `src/voxera/core/capability_sem
 The queue is the system boundary. Jobs flow through deterministic lifecycle buckets (`inbox/` → `pending/` → `done/` / `failed/` / `canceled/`) with sidecars and artifacts for debugging and audit.
 
 For deeper architectural detail, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+For the bounded hotspot responsibility map and PR-by-PR extraction sequence for `vera_web/app.py`, `panel/app.py`, and `cli_queue.py`, see [docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md](docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md).
 
 ## Repository structure
 
