@@ -26,11 +26,6 @@ artifacts_app = typer.Typer(help="Artifact management utilities")
 queue_app.add_typer(queue_approvals_app, name="approvals")
 queue_app.add_typer(queue_lock_app, name="lock")
 queue_app.add_typer(queue_files_app, name="files")
-queue_app.command("health")(queue_health)
-queue_app.command("health-reset")(queue_health_reset)
-queue_app.command("prune")(queue_prune)
-queue_app.command("reconcile")(queue_reconcile)
-artifacts_app.command("prune")(artifacts_prune)
 
 
 def register(app: typer.Typer) -> None:
@@ -301,6 +296,12 @@ def queue_status(
     console.print(failed_table)
 
 
+# Health command-family registration (after queue_status to preserve
+# subcommand ordering in help output)
+queue_app.command("health")(queue_health)
+queue_app.command("health-reset")(queue_health_reset)
+
+
 def _render_lock_status(status: dict[str, Any]) -> None:
     lock = status.get("lock_status", {}) if isinstance(status.get("lock_status"), dict) else {}
     lock_table = Table(title="Lock Status")
@@ -529,3 +530,13 @@ def inbox_list(
 
     for missing in missing_dirs:
         console.print(f"[yellow]Hint:[/yellow] missing directory: {missing}")
+
+
+# ---------------------------------------------------------------------------
+# Hygiene command-family registration (after all @-decorated commands to
+# preserve subcommand ordering in help output)
+# ---------------------------------------------------------------------------
+
+queue_app.command("prune")(queue_prune)
+queue_app.command("reconcile")(queue_reconcile)
+artifacts_app.command("prune")(artifacts_prune)
