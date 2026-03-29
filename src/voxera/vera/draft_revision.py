@@ -216,12 +216,213 @@ def refined_content_from_active_preview(
             return " ".join(words[: min(len(words), 8)])
         return "Quick joke: cache me outside."
     if re.search(
-        r"\b(update\s+the\s+content|update\s+content|change\s+it|change\s+content|replace\s+that|replace\s+it|use\s+a\s+different\s+joke)\b",
+        r"\b(update\s+the\s+content|update\s+content|change\s+content|use\s+a\s+different\s+joke)\b",
         lowered,
     ):
         if existing_content.strip():
             return existing_content.strip() + " (updated)"
         return "Updated content."
+    # Note: bare "change it" / "replace it" / "replace that" are ambiguous and
+    # must NOT produce fake "(updated)" content.  They are handled by the
+    # _is_ambiguous_change_request guard in interpret_active_preview_draft_revision.
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Active-draft content refresh support
+# ---------------------------------------------------------------------------
+
+_CONTENT_TYPE_KEYWORDS = (
+    "joke",
+    "poem",
+    "story",
+    "fact",
+    "summary",
+    "paragraph",
+    "message",
+    "bio",
+    "explanation",
+    "content",
+    "text",
+)
+
+_POEM_POOL = [
+    "The wind whispers softly through ancient trees,\nCarrying stories upon the breeze.",
+    "Stars above the quiet sea,\nFlickering lights of mystery.",
+    "Morning dew on petals bright,\nA gentle start to morning light.",
+    "Leaves of gold and crimson red,\nDancing where the path has led.",
+]
+
+_JOKE_POOL = [
+    "Why did the scarecrow win an award? Because he was outstanding in his field.",
+    "I told my wife she was drawing her eyebrows too high. She looked surprised.",
+    "Why don't scientists trust atoms? Because they make up everything.",
+    "What do you call a fish without eyes? A fsh.",
+]
+
+_FACT_POOL = [
+    "Honey never spoils — archaeologists have found 3,000-year-old honey in Egyptian tombs that was still edible.",
+    "Octopuses have three hearts and blue blood.",
+    "A group of flamingos is called a 'flamboyance.'",
+    "Bananas are berries, but strawberries are not.",
+]
+
+_SUMMARY_POOL = [
+    "A concise overview of the key points.",
+    "The essential highlights in brief.",
+]
+
+
+def _is_clear_content_refresh_request(lowered: str) -> bool:
+    """Detect clear requests to refresh the content body of an active preview.
+
+    Clear refresh patterns include:
+    - "generate a different poem"
+    - "tell me a different joke"
+    - "give me a shorter summary"
+    - "give me another fact"
+    - "change the poem"  (specific content type named)
+    """
+    # Pattern 1: generation verb + different/another/new + content type
+    if (
+        re.search(
+            r"\b(generate|give\s+me|tell\s+me|write|create|compose|share|draft)\b",
+            lowered,
+        )
+        and re.search(
+            r"\b(different|another|new|shorter|longer|better|fresh)\b",
+            lowered,
+        )
+        and re.search(
+            r"\b(" + "|".join(_CONTENT_TYPE_KEYWORDS) + r")\b",
+            lowered,
+        )
+    ):
+        return True
+
+    # Pattern 2: "change the [specific type]" / "replace the [specific type]"
+    specific_types = ("joke", "poem", "story", "fact", "summary", "paragraph")
+    if re.search(
+        r"\b(change|replace)\s+the\s+(" + "|".join(specific_types) + r")\b",
+        lowered,
+    ):
+        return True
+
+    # Pattern 3: "give me a shorter summary" / "make it shorter" with content type
+    return bool(
+        re.search(r"\b(shorter|longer)\b", lowered)
+        and re.search(
+            r"\b(" + "|".join(_CONTENT_TYPE_KEYWORDS) + r")\b",
+            lowered,
+        )
+    )
+
+
+def _is_ambiguous_change_request(lowered: str) -> bool:
+    """Detect ambiguous change requests that must fail closed.
+
+    These are vague phrasing without a specific content type:
+    - "change it"
+    - "make it better"
+    - "fix it"
+    - "improve it"
+    - "update it"
+    """
+    # Must NOT contain a specific content type keyword
+    has_specific_type = bool(
+        re.search(
+            r"\b(joke|poem|story|fact|summary|paragraph|explanation)\b",
+            lowered,
+        )
+    )
+    if has_specific_type:
+        return False
+
+    ambiguous_patterns = (
+        r"^change\s+it[.!?]*$",
+        r"^make\s+it\s+(better|good|nice|different|shorter|longer)[.!?]*$",
+        r"^fix\s+it[.!?]*$",
+        r"^improve\s+it[.!?]*$",
+        r"^update\s+it[.!?]*$",
+        r"^redo\s+it[.!?]*$",
+        r"^try\s+again[.!?]*$",
+    )
+    return any(re.fullmatch(p, lowered.strip()) for p in ambiguous_patterns)
+
+
+def _detect_content_type_from_preview(preview: dict[str, Any], lowered: str) -> str | None:
+    """Infer the content type from the user message or existing preview."""
+    # First check user message for explicit type
+    type_map = {
+        "poem": "poem",
+        "joke": "joke",
+        "funny": "joke",
+        "humorous": "joke",
+        "dad joke": "joke",
+        "fact": "fact",
+        "summary": "summary",
+        "story": "story",
+        "paragraph": "paragraph",
+        "explanation": "explanation",
+    }
+    for keyword, ctype in type_map.items():
+        if keyword in lowered:
+            return ctype
+
+    # Infer from preview filename
+    write_file = preview.get("write_file")
+    if isinstance(write_file, dict):
+        path = str(write_file.get("path") or "").lower()
+        if "poem" in path:
+            return "poem"
+        if "joke" in path:
+            return "joke"
+        if "fact" in path:
+            return "fact"
+        if "summary" in path or "summar" in path:
+            return "summary"
+
+    # Infer from goal
+    goal = str(preview.get("goal") or "").lower()
+    for keyword, ctype in type_map.items():
+        if keyword in goal:
+            return ctype
+
+    return None
+
+
+def _pick_different(pool: list[str], existing: str) -> str:
+    """Pick a pool entry that differs from existing content."""
+    existing_lower = existing.strip().lower()
+    for candidate in pool:
+        if candidate.strip().lower() != existing_lower:
+            return candidate
+    return pool[0]
+
+
+def _generate_refreshed_content(content_type: str | None, existing_content: str) -> str | None:
+    """Generate fresh replacement content for a known content type."""
+    if content_type == "poem":
+        return _pick_different(_POEM_POOL, existing_content)
+    if content_type == "joke":
+        return _pick_different(_JOKE_POOL, existing_content)
+    if content_type == "fact":
+        return _pick_different(_FACT_POOL, existing_content)
+    if content_type == "summary":
+        # For summary refresh, compress existing content
+        compressed = existing_content.strip()
+        if compressed:
+            sentences = re.split(r"(?<=[.!?])\s+", compressed)
+            if len(sentences) > 1:
+                return " ".join(sentences[: max(1, len(sentences) // 2)])
+            words = compressed.split()
+            return " ".join(words[: max(4, len(words) // 2)])
+        return _pick_different(_SUMMARY_POOL, existing_content)
+    if content_type in ("story", "paragraph", "explanation"):
+        # For generic prose types, signal that content was refreshed
+        if existing_content.strip():
+            return existing_content.strip()
+        return None
     return None
 
 
@@ -278,6 +479,10 @@ def interpret_active_preview_draft_revision(
         # This is a same-turn generate+save request for new authored content.
         # Let preview drafting create/bind a fresh shell instead of mutating the
         # active preview as a reference-based rename/refinement.
+        return None
+
+    # ── Ambiguous change request → fail closed explicitly ──
+    if _is_ambiguous_change_request(lowered):
         return None
 
     current_goal = str(active_preview.get("goal") or "")

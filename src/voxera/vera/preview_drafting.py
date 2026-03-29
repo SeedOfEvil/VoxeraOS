@@ -9,6 +9,9 @@ from typing import Any
 from ..core.file_intent import classify_bounded_file_intent
 from ..core.writing_draft_intent import classify_writing_draft_intent
 from .draft_revision import (
+    _is_ambiguous_change_request as _is_ambiguous_change_request,
+)
+from .draft_revision import (
     extract_content_after_markers as _extract_content_after_markers,
 )
 from .draft_revision import extract_quoted_content as _extract_quoted_content
@@ -618,6 +621,16 @@ def maybe_draft_job_payload(
     )
     if primary is not None:
         return primary
+
+    # When an active preview exists and the user's message is an ambiguous
+    # change request ("change it", "make it better", "fix it"), skip contextual
+    # refinement entirely.  Combining the ambiguous message with prior context
+    # could accidentally create a fresh generate+save preview shell, defeating
+    # the fail-closed intent.
+    if isinstance(active_preview, dict) and _is_ambiguous_change_request(
+        normalized.strip().lower()
+    ):
+        return None
 
     if not recent_user_messages or not _looks_like_contextual_refinement(normalized):
         return None

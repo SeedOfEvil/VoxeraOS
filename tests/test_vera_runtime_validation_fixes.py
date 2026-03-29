@@ -11,7 +11,13 @@ from __future__ import annotations
 import json
 
 from voxera.core.writing_draft_intent import extract_text_draft_from_reply
-from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+from voxera.vera.draft_revision import (
+    _detect_content_type_from_preview,
+    _generate_refreshed_content,
+    _is_ambiguous_change_request,
+    _is_clear_content_refresh_request,
+    interpret_active_preview_draft_revision,
+)
 from voxera.vera.preview_submission import (
     is_near_miss_submit_phrase,
     is_preview_submission_request,
@@ -456,4 +462,290 @@ class TestPreservationOfPassingFlows:
         assert len(inbox_files) == 1
         payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
         assert payload["write_file"]["path"] == "~/VoxeraOS/notes/poem.txt"
+        assert session.preview() is None
+
+
+# ---------------------------------------------------------------------------
+# Active-draft content refresh
+# ---------------------------------------------------------------------------
+
+
+class TestActiveDraftContentRefresh:
+    """Clear content-refresh requests on an active preview must replace the body."""
+
+    # ── Unit-level: helper function tests ──
+
+    def test_clear_refresh_detected_for_generate_different_poem(self):
+        assert _is_clear_content_refresh_request("generate a different poem")
+
+    def test_clear_refresh_detected_for_tell_me_different_joke(self):
+        assert _is_clear_content_refresh_request("tell me a different joke")
+
+    def test_clear_refresh_detected_for_give_me_shorter_summary(self):
+        assert _is_clear_content_refresh_request("give me a shorter summary")
+
+    def test_clear_refresh_detected_for_give_me_different_fact(self):
+        assert _is_clear_content_refresh_request("give me a different fact")
+
+    def test_clear_refresh_detected_for_change_the_poem(self):
+        assert _is_clear_content_refresh_request("change the poem")
+
+    def test_clear_refresh_not_detected_for_change_it(self):
+        assert not _is_clear_content_refresh_request("change it")
+
+    def test_clear_refresh_not_detected_for_make_it_better(self):
+        assert not _is_clear_content_refresh_request("make it better")
+
+    def test_generate_refreshed_poem_produces_content(self):
+        result = _generate_refreshed_content("poem", "Roses are red.")
+        assert result is not None
+        assert result.strip()
+        assert result != "Roses are red."
+
+    def test_generate_refreshed_joke_produces_content(self):
+        result = _generate_refreshed_content("joke", "Old joke.")
+        assert result is not None
+        assert result.strip()
+
+    def test_generate_refreshed_fact_produces_content(self):
+        result = _generate_refreshed_content("fact", "Old fact.")
+        assert result is not None
+        assert result.strip()
+
+    def test_generate_refreshed_summary_compresses(self):
+        original = (
+            "Mauna Loa is the world's largest active volcano. "
+            "It is located on the Big Island. "
+            "It rises 4,169 meters."
+        )
+        result = _generate_refreshed_content("summary", original)
+        assert result is not None
+        assert len(result) < len(original)
+
+    def test_detect_content_type_poem(self):
+        preview = {
+            "write_file": {"path": "~/VoxeraOS/notes/poem.txt"},
+            "goal": "write a file",
+        }
+        assert _detect_content_type_from_preview(preview, "generate a different poem") == "poem"
+
+    def test_detect_content_type_joke(self):
+        preview = {
+            "write_file": {"path": "~/VoxeraOS/notes/joke.txt"},
+            "goal": "write a file",
+        }
+        assert _detect_content_type_from_preview(preview, "tell me a different joke") == "joke"
+
+    def test_refreshed_poem_has_no_helper_text(self):
+        content = _generate_refreshed_content("poem", "Old poem text.")
+        assert content is not None
+        assert "updated the draft" not in content.lower()
+        assert "you can review" not in content.lower()
+        assert "if that looks good" not in content.lower()
+        assert "preview" not in content.lower()
+
+    def test_refreshed_joke_has_no_helper_text(self):
+        content = _generate_refreshed_content("joke", "Old joke.")
+        assert content is not None
+        assert "updated the draft" not in content.lower()
+        assert "you can review" not in content.lower()
+
+    # ── Ambiguity: fail closed ──
+
+    def test_change_it_fails_closed(self):
+        preview = {
+            "goal": "write a file called poem.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/poem.txt",
+                "content": "A poem about rain.",
+                "mode": "overwrite",
+            },
+        }
+        result = interpret_active_preview_draft_revision("change it", preview)
+        assert result is None
+
+    def test_make_it_better_fails_closed(self):
+        preview = {
+            "goal": "write a file called poem.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/poem.txt",
+                "content": "A poem about rain.",
+                "mode": "overwrite",
+            },
+        }
+        result = interpret_active_preview_draft_revision("make it better", preview)
+        assert result is None
+
+    def test_fix_it_fails_closed(self):
+        preview = {
+            "goal": "write a file called joke.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/joke.txt",
+                "content": "A joke.",
+                "mode": "overwrite",
+            },
+        }
+        result = interpret_active_preview_draft_revision("fix it", preview)
+        assert result is None
+
+    def test_ambiguous_change_it_detected(self):
+        assert _is_ambiguous_change_request("change it")
+
+    def test_ambiguous_make_it_better_detected(self):
+        assert _is_ambiguous_change_request("make it better")
+
+    def test_ambiguous_fix_it_detected(self):
+        assert _is_ambiguous_change_request("fix it")
+
+    def test_specific_type_not_ambiguous(self):
+        assert not _is_ambiguous_change_request("change the poem")
+
+    # ── Session-level: content refresh in full Vera flow ──
+
+    def test_poem_refresh_in_session(self, tmp_path, monkeypatch):
+        session = make_vera_session(monkeypatch, tmp_path)
+        call_count = [0]
+
+        async def _fake_reply(*, turns, user_message):
+            _ = turns
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return {
+                    "answer": "Roses are red, violets are blue, this poem is for you.",
+                    "status": "ok:test",
+                }
+            return {
+                "answer": "Stars above the quiet sea, flickering lights of mystery.",
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        session.chat("write a short poem and save it as poem.txt")
+        preview_before = session.preview()
+        assert preview_before is not None
+        assert preview_before["write_file"]["path"] == "~/VoxeraOS/notes/poem.txt"
+        original_content = preview_before["write_file"]["content"]
+
+        session.chat("generate a different poem")
+        preview_after = session.preview()
+        assert preview_after is not None
+        assert preview_after["write_file"]["path"] == "~/VoxeraOS/notes/poem.txt"
+        assert preview_after["write_file"]["content"] != original_content
+        assert preview_after["write_file"]["content"].strip()
+
+    def test_joke_refresh_in_session(self, tmp_path, monkeypatch):
+        session = make_vera_session(monkeypatch, tmp_path)
+        call_count = [0]
+
+        async def _fake_reply(*, turns, user_message):
+            _ = turns
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return {
+                    "answer": "Why did the chicken cross the road? To get to the other side.",
+                    "status": "ok:test",
+                }
+            return {
+                "answer": "I told my computer I needed a break. It said 'No problem, I'll go to sleep.'",
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        session.chat("tell me a dad joke and save it as dadjoke.txt")
+        preview_before = session.preview()
+        assert preview_before is not None
+        original_content = preview_before["write_file"]["content"]
+
+        session.chat("tell me a different joke and add it as content")
+        preview_after = session.preview()
+        assert preview_after is not None
+        assert preview_after["write_file"]["path"] == "~/VoxeraOS/notes/dadjoke.txt"
+        assert preview_after["write_file"]["content"] != original_content
+
+    def test_fact_refresh_in_session(self, tmp_path, monkeypatch):
+        session = make_vera_session(monkeypatch, tmp_path)
+        call_count = [0]
+
+        async def _fake_reply(*, turns, user_message):
+            _ = turns
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return {
+                    "answer": "Mauna Loa is the largest active volcano, covering over half of the Big Island.",
+                    "status": "ok:test",
+                }
+            return {
+                "answer": "Octopuses have three hearts and blue blood.",
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        session.chat("give me a short volcano fact and save it as volcanofact.txt")
+        preview_before = session.preview()
+        assert preview_before is not None
+
+        session.chat("give me a different fact")
+        preview_after = session.preview()
+        assert preview_after is not None
+        assert preview_after["write_file"]["path"] == "~/VoxeraOS/notes/volcanofact.txt"
+        assert preview_after["write_file"]["content"] != preview_before["write_file"]["content"]
+
+    def test_ambiguous_request_fails_closed_in_session(self, tmp_path, monkeypatch):
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message):
+            _ = turns
+            return {
+                "answer": "A lovely poem about the sea.",
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        session.chat("write a short poem and save it as poem.txt")
+        preview_before = session.preview()
+        assert preview_before is not None
+        original_content = preview_before["write_file"]["content"]
+
+        session.chat("change it")
+        preview_after = session.preview()
+        assert preview_after is not None
+        # Content must be unchanged
+        assert preview_after["write_file"]["content"] == original_content
+        # Response should indicate fail-closed
+        last_turn = session.turns()[-1]["text"].lower()
+        assert "unchanged" in last_turn or "ambiguous" in last_turn
+
+    # ── Submit after refresh ──
+
+    def test_submit_after_refresh_uses_refreshed_body(self, tmp_path, monkeypatch):
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message):
+            _ = turns
+            return {
+                "answer": "Old poem about the stars above.",
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        session.chat("write a short poem and save it as poem.txt")
+        assert session.preview() is not None
+
+        session.chat("generate a different poem")
+        refreshed_preview = session.preview()
+        assert refreshed_preview is not None
+        refreshed_content = refreshed_preview["write_file"]["content"]
+
+        submit = session.chat("send it")
+        assert submit.status_code == 200
+        inbox_files = list((session.queue / "inbox").glob("*.json"))
+        assert len(inbox_files) == 1
+        payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+        assert payload["write_file"]["path"] == "~/VoxeraOS/notes/poem.txt"
+        assert payload["write_file"]["content"] == refreshed_content
         assert session.preview() is None
