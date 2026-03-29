@@ -253,6 +253,16 @@ Any extraction PR following this roadmap must preserve these invariants:
   `panel/view_models.py` (or equivalent).
 - Keep current route and security wiring untouched.
 
+### Completed follow-on seam (between PR-3 and PR-4)
+
+- Vera preview-body/content-binding helper predicates were extracted from
+  `src/voxera/vera_web/app.py` into `src/voxera/vera_web/preview_content_binding.py`.
+- Scope remained intentionally bounded to low-risk helper predicates:
+  placeholder-body rejection, control-narration body rejection, and targeted
+  code-preview content-refinement detection.
+- Final preview/session write ownership, canonical submit/handoff path ownership,
+  and linked-completion/session truth ownership remained in `app.py`.
+
 ### PR-5: Extract panel auth-state storage helpers
 
 - Move `_prune_panel_auth_maps`, `_panel_auth_state_*`, `_active_lockout_until_ms`
