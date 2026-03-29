@@ -427,6 +427,9 @@ src/voxera/
 │                               command implementations (status, prune, reconcile,
 │                               approvals list/approve/deny, cancel, retry, delete, health,
 │                               health-reset, lock status/unlock, inbox add/list, etc.).
+├── cli_queue_payloads.py     — Low-risk CLI queue payload/arg shaping helpers used by
+│                               queue-files and health-reset commands. Keeps pure-ish
+│                               payload normalization out of command wiring/orchestration.
 ├── cli_doctor.py             — Doctor command wiring/implementation boundary.
 │                               Exposes register(app) to attach the doctor command to the
 │                               root Typer app from cli.py.
@@ -950,7 +953,7 @@ A recurring structural pattern now present across the three main subsystems:
 
 **CLI** (`src/voxera/`)
 - `cli.py` is the composition root — it creates the Typer app, registers sub-apps from `cli_queue.py`, and registers the `doctor` command from `cli_doctor.py`
-- Queue/operator command implementations live in `cli_queue.py`; doctor command wiring lives in `cli_doctor.py`; shared primitives live in `cli_common.py`
+- Queue/operator command registration, CLI contract ownership, and final enqueue boundaries live in `cli_queue.py`; low-risk queue payload/arg shaping helpers live in `cli_queue_payloads.py`; doctor command wiring lives in `cli_doctor.py`; shared primitives live in `cli_common.py`
 - New CLI command families should follow the same modular registration pattern rather than growing `cli.py`
 
 ---
