@@ -271,9 +271,13 @@ Any extraction PR following this roadmap must preserve these invariants:
 ### PR-5: Extract panel auth-state storage helpers
 
 - Move `_prune_panel_auth_maps`, `_panel_auth_state_*`, `_active_lockout_until_ms`
-  into dedicated `panel/security_state.py`.
+  into dedicated `panel/auth_state_store.py`.
 - Maintain identical snapshot keys and semantics.
 - Add explicit tests for `VOXERA_HEALTH_PATH` and queue-root precedence behavior.
+- Status: completed by extracting low-risk panel auth-state storage/cleanup/bookkeeping
+  helpers into `src/voxera/panel/auth_state_store.py` with thin update/read wrappers
+  kept in `app.py`; final auth/mutation enforcement, final route wiring, and final
+  security-boundary decisions remain owned by `app.py`.
 
 ### PR-6: Extract CLI queue-files command family
 
