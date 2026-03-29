@@ -51,6 +51,7 @@ VoxeraOS/
 │   │   ├── cli_common.py            — shared CLI primitives/options/constants
 │   │   ├── cli_queue.py             — queue/operator command family (registration + wiring)
 │   │   ├── cli_queue_files.py       — queue files command-family handlers
+│   │   ├── cli_queue_health.py      — queue health/health-reset command-family handlers
 │   │   ├── cli_config.py            — runtime config command implementations
 │   │   ├── cli_skills_missions.py   — skills/missions/run command implementations
 │   │   ├── cli_ops.py               — ops capability/bundle command implementations
@@ -426,16 +427,24 @@ src/voxera/
 │                               Owns: queue_app, queue_approvals_app, queue_lock_app,
 │                               inbox_app, artifacts_app Typer sub-apps and their
 │                               command implementations (status, prune, reconcile,
-│                               approvals list/approve/deny, cancel, retry, delete, health,
-│                               health-reset, lock status/unlock, inbox add/list, etc.).
+│                               approvals list/approve/deny, cancel, retry, delete,
+│                               lock status/unlock, inbox add/list, etc.).
 │                               Attaches queue_files_app (from cli_queue_files.py) as
-│                               "files" subcommand; final enqueue/queue-boundary ownership
-│                               for non-files commands remains here.
+│                               "files" subcommand; attaches queue health/health-reset
+│                               handlers (from cli_queue_health.py) via
+│                               queue_app.command(...)(fn); final enqueue/queue-boundary
+│                               ownership for non-files commands remains here.
 ├── cli_queue_files.py        — queue files command-family handlers (find, grep, tree,
 │                               copy, move, rename). Owns queue_files_app Typer sub-app,
 │                               _enqueue_files_step, and files-local payload-builder
 │                               invocation. queue_files_app is attached to queue_app in
 │                               cli_queue.py; top-level CLI registration stays there.
+├── cli_queue_health.py       — queue health/health-reset command-family handlers.
+│                               Owns: queue_health and queue_health_reset handler
+│                               functions (full implementation including snapshot/render
+│                               helpers and health-reset audit log emission). Registered
+│                               to queue_app in cli_queue.py; top-level CLI registration
+│                               and public CLI contract ownership stay in cli_queue.py.
 ├── cli_queue_payloads.py     — Low-risk CLI queue payload/arg shaping helpers used by
 │                               queue-files and health-reset commands. Keeps pure-ish
 │                               payload normalization out of command wiring/orchestration.
@@ -891,8 +900,8 @@ voxera                        (cli.py — Typer composition root)
 │   ├── status       queue health + job counters
 │   ├── prune        remove stale terminal jobs  (dry-run default)
 │   ├── reconcile    orphan/duplicate detection + quarantine-first fix
-│   ├── health       raw health snapshot (JSON)
-│   ├── health-reset reset health snapshot
+│   ├── health       raw health snapshot (cli_queue_health.py — queue_health)
+│   ├── health-reset reset health snapshot (cli_queue_health.py — queue_health_reset)
 │   ├── cancel       cancel a queued or pending job
 │   ├── retry        re-queue a failed job
 │   ├── delete       delete a terminal job + all sidecars
@@ -970,7 +979,7 @@ A recurring structural pattern now present across the three main subsystems:
 
 **CLI** (`src/voxera/`)
 - `cli.py` is the composition root — it creates the Typer app, registers sub-apps from `cli_queue.py`, and registers the `doctor` command from `cli_doctor.py`
-- Queue/operator command registration, CLI contract ownership, and final enqueue boundaries live in `cli_queue.py`; the `queue files` command-family handlers (find/grep/tree/copy/move/rename) live in `cli_queue_files.py` and are attached to `queue_app` in `cli_queue.py`; low-risk queue payload/arg shaping helpers live in `cli_queue_payloads.py`; doctor command wiring lives in `cli_doctor.py`; shared primitives live in `cli_common.py`
+- Queue/operator command registration, CLI contract ownership, and final enqueue boundaries live in `cli_queue.py`; the `queue files` command-family handlers (find/grep/tree/copy/move/rename) live in `cli_queue_files.py` and are attached to `queue_app` in `cli_queue.py`; the `queue health`/`queue health-reset` command-family handlers live in `cli_queue_health.py` and are registered to `queue_app` in `cli_queue.py` via `queue_app.command(...)(fn)`; low-risk queue payload/arg shaping helpers live in `cli_queue_payloads.py`; doctor command wiring lives in `cli_doctor.py`; shared primitives live in `cli_common.py`
 - New CLI command families should follow the same modular registration pattern rather than growing `cli.py`
 
 ---

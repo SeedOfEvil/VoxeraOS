@@ -215,6 +215,11 @@ Any extraction PR following this roadmap must preserve these invariants:
   command handlers. Top-level CLI registration (`queue_app.add_typer(queue_files_app, ...)`)
   and the `register()` composition root remain in `cli_queue.py`. CLI contract, command
   names, options, defaults, and help text are unchanged.
+- The `queue health` and `queue health-reset` command-family handlers have been extracted
+  from `cli_queue.py` into `src/voxera/cli_queue_health.py`. The extracted module owns
+  `queue_health` and `queue_health_reset` (full handler implementations). Both are
+  registered to `queue_app` in `cli_queue.py` via `queue_app.command(...)(fn)`. Top-level
+  CLI registration and `register()` remain in `cli_queue.py`. CLI contracts unchanged.
 
 ### Areas to avoid splitting first
 
@@ -316,6 +321,16 @@ Any extraction PR following this roadmap must preserve these invariants:
 
 - Move health and hygiene clusters to dedicated modules with stable output contract.
 - Preserve command names/options/help text and JSON output schema.
+- Status: `queue health` and `queue health-reset` command-family handlers extracted from
+  `src/voxera/cli_queue.py` into `src/voxera/cli_queue_health.py`. The extracted module
+  owns `queue_health` and `queue_health_reset` handler functions (full implementations
+  including the snapshot-with-sections builder, the rich-table render helper, and the
+  health-reset audit log emission). Both handlers are registered to `queue_app` from
+  `cli_queue.py` via `queue_app.command("health")(queue_health)` and
+  `queue_app.command("health-reset")(queue_health_reset)`. Top-level CLI registration,
+  public CLI contract ownership, and the `register()` composition root remain in
+  `cli_queue.py`. CLI contracts (command names, option names, defaults, help text) are
+  unchanged. reconcile/prune cluster extraction remains pending.
 
 ### PR-8: Final hotspot slimming pass (bounded)
 
