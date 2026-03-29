@@ -252,6 +252,11 @@ Any extraction PR following this roadmap must preserve these invariants:
 - Move pure `_format_*`, `_history_*`, evidence/policy row-builder helpers into
   `panel/view_models.py` (or equivalent).
 - Keep current route and security wiring untouched.
+- Status: completed by extracting low-risk panel job presentation/status helper
+  functions from `src/voxera/panel/app.py` into
+  `src/voxera/panel/job_presentation.py` with thin import delegation in
+  `app.py`, while leaving route wiring, auth/mutation guards, canonical loading,
+  and final truth-critical job-detail assembly ownership in `app.py`.
 
 ### Completed follow-on seam (between PR-3 and PR-4)
 
