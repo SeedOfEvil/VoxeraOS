@@ -580,6 +580,9 @@ src/voxera/
 │   │                           (CONVERSATIONAL_ARTIFACT vs GOVERNED_PREVIEW), preview
 │   │                           drafting/revision/submission, investigation flows,
 │   │                           weather routing, and linked-job result delivery.
+│   ├── execution_mode.py     — Non-I/O execution-mode predicates/classifier helpers.
+│   ├── conversational_checklist.py — Deterministic conversational checklist parsing/rendering/sanitization helpers.
+│   ├── preview_content_binding.py — Low-risk preview-body/content-binding purity helpers (selection/rejection predicates).
 │   ├── templates/index.html  — Single-page HTML shell for the Vera conversational UI
 │   └── static/vera.css       — Vera web stylesheet
 │
@@ -1469,6 +1472,7 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - Rule-based, not LLM-based — deterministic for the same input every time.
 - Matches planning/checklist patterns (checklist, list, plan, organize, prepare, grocery list, packing list, to do, brainstorm, itinerary, etc.) while excluding messages with explicit save/write/file intent (`_SAVE_WRITE_FILE_SIGNAL_RE`).
 - `vera_web/execution_mode.py` owns the low-risk non-I/O lane predicates/classification helpers; `vera_web/app.py` keeps final submit/handoff boundary ownership and preview/queue truth writes.
+- `vera_web/preview_content_binding.py` owns low-risk preview-body/content-binding helper predicates (placeholder-body rejection, control-narration body rejection, targeted code-content refinement detection), while `vera_web/app.py` retains final preview/session writes and canonical submit/handoff truth ownership.
 
 ### Multi-turn continuation (`vera/session_store.py`, `vera_web/app.py`)
 - A `conversational_planning_active` boolean is persisted in session state whenever a `CONVERSATIONAL_ARTIFACT` turn occurs.

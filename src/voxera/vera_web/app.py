@@ -30,7 +30,6 @@ from ..vera.draft_revision import (
     _detect_content_type_from_preview,
     _generate_refreshed_content,
     _is_clear_content_refresh_request,
-    filename_from_preview,
     looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.draft_revision import (
@@ -177,6 +176,11 @@ from .execution_mode import (
 )
 from .execution_mode import (
     _message_has_explicit_content_literal as _em_message_has_explicit_content_literal,
+)
+from .preview_content_binding import (
+    is_targeted_code_preview_refinement,
+    looks_like_builder_refinement_placeholder,
+    preview_body_looks_like_control_narration,
 )
 
 app = FastAPI(title="Vera v0", version="0")
@@ -341,49 +345,6 @@ def _message_has_explicit_content_literal(message: str) -> bool:
 
 def _looks_like_ambiguous_active_preview_content_replacement_request(message: str) -> bool:
     return _em_looks_like_ambiguous_active_preview_content_replacement_request(message)
-
-
-def _looks_like_builder_refinement_placeholder(content: str) -> bool:
-    lowered = content.strip().lower()
-    if not lowered:
-        return False
-    placeholder_values = {
-        "formal rewrite requested for the existing file content.",
-        "summary of today's top news headlines.",
-        "short summary of today's top news headlines.",
-        "top stories:\n- headline 1\n- headline 2\n- headline 3",
-    }
-    return lowered in placeholder_values
-
-
-def _preview_body_looks_like_control_narration(preview: dict[str, object] | None) -> bool:
-    if not isinstance(preview, dict):
-        return False
-    write_file = preview.get("write_file")
-    if not isinstance(write_file, dict):
-        return False
-    content = str(write_file.get("content") or "").strip()
-    if not content:
-        return False
-    return looks_like_non_authored_assistant_message(content)
-
-
-def _is_targeted_code_preview_refinement(
-    message: str, *, active_preview: dict[str, object] | None
-) -> bool:
-    if not isinstance(active_preview, dict):
-        return False
-    filename = filename_from_preview(active_preview)
-    if not filename:
-        return False
-    write_file = active_preview.get("write_file")
-    path = str(write_file.get("path") or "").strip() if isinstance(write_file, dict) else ""
-    if not path or not has_code_file_extension(path) or path.lower().endswith(".md"):
-        return False
-    return bool(
-        re.search(r"\badd\s+content\s+to\b", message, re.IGNORECASE)
-        and re.search(rf"\b{re.escape(filename)}\b", message, re.IGNORECASE)
-    )
 
 
 def _extract_save_as_text_target(message: str) -> str | None:
@@ -1108,7 +1069,7 @@ async def chat(request: Request):
     # Pre-compute code-draft intent so the LLM call can be given the code-generation
     # hint before the reply is generated.  This flag is reused below where
     # is_code_draft_turn would have been computed from the same expression.
-    explicit_targeted_content_refinement = _is_targeted_code_preview_refinement(
+    explicit_targeted_content_refinement = is_targeted_code_preview_refinement(
         message,
         active_preview=pending_preview,
     )
@@ -1208,7 +1169,7 @@ async def chat(request: Request):
                     _rename_payload = None
                 if _rename_payload is not None and _rename_payload != pending_preview:
                     builder_payload = _rename_payload
-        if _preview_body_looks_like_control_narration(builder_payload):
+        if preview_body_looks_like_control_narration(builder_payload):
             recent_user_messages = [
                 str(turn.get("text") or "")
                 for turn in turns[-8:]
@@ -1227,7 +1188,7 @@ async def chat(request: Request):
                     fallback_payload = normalize_preview_payload(deterministic_fallback)
                 except Exception:
                     fallback_payload = None
-                if not _preview_body_looks_like_control_narration(fallback_payload):
+                if not preview_body_looks_like_control_narration(fallback_payload):
                     builder_payload = fallback_payload
                 else:
                     builder_payload = None
@@ -1251,7 +1212,7 @@ async def chat(request: Request):
                 and has_code_file_extension(pending_path)
                 and not pending_path.lower().endswith(".md")
                 and is_writing_refinement_request(message)
-                and _looks_like_builder_refinement_placeholder(builder_content)
+                and looks_like_builder_refinement_placeholder(builder_content)
             ):
                 builder_payload = None
         if builder_payload is not None:
@@ -1470,7 +1431,7 @@ async def chat(request: Request):
             and bool(builder_content)
             and builder_content != pending_preview_content
             and (not reply_text_draft_content or builder_content == reply_text_draft_content)
-            and not _looks_like_builder_refinement_placeholder(builder_content)
+            and not looks_like_builder_refinement_placeholder(builder_content)
         )
 
     if (
