@@ -1456,7 +1456,7 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 
 Non-actionable structured reasoning requests (checklists, planning, brainstorming, itineraries) are answered conversationally by default — preview drafting is not attempted. The answer is stored as a saveable artifact so `save that` creates a governed preview afterward.
 
-### Execution mode (`vera_web/app.py`)
+### Execution mode (`vera_web/app.py`, `vera_web/execution_mode.py`)
 
 Every chat turn is classified into one of two execution modes **early** — the mode is then enforced **globally** at every downstream decision point:
 
@@ -1468,6 +1468,7 @@ Every chat turn is classified into one of two execution modes **early** — the 
 **Classifier (`_classify_execution_mode`, `_is_conversational_answer_first_request`):**
 - Rule-based, not LLM-based — deterministic for the same input every time.
 - Matches planning/checklist patterns (checklist, list, plan, organize, prepare, grocery list, packing list, to do, brainstorm, itinerary, etc.) while excluding messages with explicit save/write/file intent (`_SAVE_WRITE_FILE_SIGNAL_RE`).
+- `vera_web/execution_mode.py` owns the low-risk non-I/O lane predicates/classification helpers; `vera_web/app.py` keeps final submit/handoff boundary ownership and preview/queue truth writes.
 
 ### Multi-turn continuation (`vera/session_store.py`, `vera_web/app.py`)
 - A `conversational_planning_active` boolean is persisted in session state whenever a `CONVERSATIONAL_ARTIFACT` turn occurs.
