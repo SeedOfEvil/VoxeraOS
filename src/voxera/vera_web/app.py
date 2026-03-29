@@ -29,8 +29,14 @@ from ..core.writing_draft_intent import (
 )
 from ..paths import queue_root as default_queue_root
 from ..vera.draft_revision import (
+    _detect_content_type_from_preview,
+    _generate_refreshed_content,
+    _is_clear_content_refresh_request,
     filename_from_preview,
     looks_like_preview_rename_or_save_as_request,
+)
+from ..vera.draft_revision import (
+    _is_ambiguous_change_request as _is_ambiguous_change_request,
 )
 from ..vera.evidence_review import (
     draft_followup_preview,
@@ -2354,7 +2360,53 @@ async def chat(request: Request):
                         job_id=None,
                     )
         else:
-            generation_content_refresh_failed_closed = True
+            # Deterministic active-draft content refresh fallback: when the LLM
+            # did not produce usable text but the user clearly asked for a content
+            # refresh (e.g. "generate a different poem"), generate replacement
+            # content deterministically from a content-type pool.
+            _refresh_target = (
+                builder_payload
+                if _is_refinable_prose_preview(builder_payload)
+                else pending_preview
+                if _is_refinable_prose_preview(pending_preview)
+                else None
+            )
+            if isinstance(_refresh_target, dict) and _is_clear_content_refresh_request(
+                message.strip().lower()
+            ):
+                _refresh_wf = _refresh_target.get("write_file")
+                if isinstance(_refresh_wf, dict):
+                    _refresh_path = str(_refresh_wf.get("path") or "").strip()
+                    _existing = str(_refresh_wf.get("content") or "")
+                    _ctype = _detect_content_type_from_preview(
+                        _refresh_target, message.strip().lower()
+                    )
+                    _refreshed = _generate_refreshed_content(_ctype, _existing)
+                    if _refreshed and _refreshed != _existing.strip():
+                        _refreshed_preview: dict[str, object] = {
+                            **_refresh_target,
+                            "write_file": {
+                                **_refresh_wf,
+                                "content": _refreshed,
+                            },
+                        }
+                        builder_payload = _refreshed_preview
+                        write_session_preview(root, active_session, builder_payload)
+                        write_session_handoff_state(
+                            root,
+                            active_session,
+                            attempted=False,
+                            queue_path=str(root),
+                            status="preview_ready",
+                            error=None,
+                            job_id=None,
+                        )
+                    else:
+                        generation_content_refresh_failed_closed = True
+                else:
+                    generation_content_refresh_failed_closed = True
+            else:
+                generation_content_refresh_failed_closed = True
 
     # Create-and-save fallback: when the message has both explicit save/write
     # intent AND planning/checklist keywords (a "create and save" hybrid like
@@ -2504,6 +2556,16 @@ async def chat(request: Request):
             "I left the active draft content unchanged because the content replacement request was "
             "ambiguous. Please specify exact content or say what prior artifact to use."
         ).strip()
+    if (
+        builder_payload is None
+        and isinstance(pending_preview, dict)
+        and _is_ambiguous_change_request(message.strip().lower())
+    ):
+        assistant_text = (
+            "I left the active draft content unchanged because the request was ambiguous. "
+            "To refresh content, try something specific like 'generate a different poem' "
+            "or 'tell me a different joke'."
+        )
     if generation_content_refresh_failed_closed:
         assistant_text = (
             f"{assistant_text}\n\n"

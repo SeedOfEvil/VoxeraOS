@@ -100,7 +100,7 @@ VoxeraOS/
 │   │   │   ├── service.py           — top-level Vera orchestration + compatibility delegation
 │   │   │   ├── session_store.py     — session turns/preview/handoff persistence
 │   │   │   ├── preview_drafting.py  — deterministic preview drafting + save-by-reference previews
-│   │   │   ├── draft_revision.py    — active preview rename/path/content refinement parsing
+│   │   │   ├── draft_revision.py    — active preview rename/path/content refinement + active-draft content refresh parsing
 │   │   │   ├── preview_submission.py — active-preview submit detection + queue handoff normalization
 │   │   │   ├── investigation_flow.py — explicit read-only web investigation orchestration
 │   │   │   ├── investigation_derivations.py — compare/summarize/expand follow-up shaping
@@ -230,7 +230,8 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8` snap
   - draft-management wrapper narration (for example, "I added a new joke ...", "You can see the current draft ...") is excluded from authoritative `write_file.content`; when wrapper text quotes authored body content, only the quoted authored body is stored
   - explanatory tail text appended after authored body (for example, "I've drafted a plan ...", readiness/status lines) is stripped from canonical preview content
   - with an active text preview, clear content-generation turns (for example "tell me a joke") may refresh `write_file.content` from the current assistant-authored answer while keeping the existing destination path unchanged
-  - ambiguous active-draft content replacement requests fail closed with explicit "draft unchanged" messaging
+  - **active-draft content refresh**: when a valid write preview exists and the user makes a clear content-refresh request (for example "generate a different poem", "tell me a different joke", "give me a shorter summary", "give me a different fact"), Vera deterministically generates fresh replacement content, updates `write_file.content` with pure authored body only, and preserves the existing destination path; the deterministic refresh takes priority over speculative LLM-text binding
+  - ambiguous active-draft change requests (for example "change it", "make it better", "fix it") fail closed with explicit "draft unchanged" messaging; no fake "(updated)" content is injected
   - accepted rename/name-note mutations must immediately change canonical `write_file.path` and produce explicit destination confirmation; ambiguous naming requests fail closed; when the hidden compiler overrides a deterministic rename with an unchanged preview, the app falls back to the deterministic rename path so the mutation is never silently lost
   - summary-type generate+save flows strip "You can review..." and "Please review..." helper prefixes from preview content via extended preface sentence and wrapper block detection
   - typo-like near-submit phrases (for example "send iit") fail closed with an explicit "did not submit" message before reaching the LLM, preventing conversational overclaiming

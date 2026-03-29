@@ -301,6 +301,55 @@ Additional single-turn checks:
 - active-draft refresh with unquoted wrapper text and contractions (for example: "Why don't ... They don't ...") preserves the full joke body and strips wrapper/meta narration
 - submit payload `write_file.content` exactly matches the pure preview content shown before submit
 
+### O) Active-draft content refresh
+
+Prompt sequence:
+
+1. `write a short poem and save it as poem.txt`
+2. `generate a different poem`
+3. `send it`
+
+Proves:
+
+- clear content-refresh requests on an active preview replace the body
+- preview path is preserved during refresh
+- refreshed content is pure authored body (no helper/control narration)
+- submit after refresh uses the refreshed body exactly
+
+Expected pass:
+
+- step 1 creates preview with path `~/VoxeraOS/notes/poem.txt` and poem body
+- step 2 updates preview content to a different poem body
+- step 2 preserves path as `~/VoxeraOS/notes/poem.txt`
+- step 2 content does NOT contain helper text ("Updated the draft...", "You can review...", etc.)
+- step 3 submits the refreshed body exactly as previewed
+
+Also test variants:
+- `tell me a different joke and add it as content` (joke refresh)
+- `give me a shorter summary` (summary refresh)
+- `give me a different fact` (fact refresh)
+
+### P) Active-draft ambiguous change request fail-closed
+
+Prompt sequence:
+
+1. Create any preview (e.g., `write a poem and save it as poem.txt`)
+2. `change it`
+
+Proves:
+
+- ambiguous change requests fail closed
+- preview content remains unchanged
+- no fake content mutation
+
+Expected pass:
+
+- step 2 leaves preview content identical to step 1
+- step 2 response explicitly mentions the draft was left unchanged or the request was ambiguous
+- no helper/control text injected as content
+
+Also test variants: `make it better`, `fix it`
+
 ## 6) Verification steps per scenario
 
 Use these checks after each scenario:
