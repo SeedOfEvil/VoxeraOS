@@ -209,6 +209,12 @@ Any extraction PR following this roadmap must preserve these invariants:
   `cli_queue.py` into a focused helper module while intentionally keeping CLI registration,
   command contract ownership, and final enqueue/queue-boundary calls in `cli_queue.py`.
 - This reduces hotspot density without moving high-sensitivity command wiring seams yet.
+- The `queue files` command-family handlers (find, grep, tree, copy, move, rename) have been
+  extracted from `cli_queue.py` into `src/voxera/cli_queue_files.py`. The extracted module
+  owns `queue_files_app`, `_enqueue_files_step`, `_print_files_enqueue_result`, and all six
+  command handlers. Top-level CLI registration (`queue_app.add_typer(queue_files_app, ...)`)
+  and the `register()` composition root remain in `cli_queue.py`. CLI contract, command
+  names, options, defaults, and help text are unchanged.
 
 ### Areas to avoid splitting first
 
@@ -301,6 +307,10 @@ Any extraction PR following this roadmap must preserve these invariants:
 
 - Move `queue files *` commands and enqueue helper into `cli_queue_files.py`.
 - Keep top-level `cli_queue.register(...)` composition as single truth for app wiring.
+- Status: completed. `queue_files_app`, `_enqueue_files_step`, `_print_files_enqueue_result`,
+  and all six command handlers extracted into `src/voxera/cli_queue_files.py`.
+  `queue_app.add_typer(queue_files_app, name="files")` and `register()` remain in
+  `cli_queue.py`. CLI contracts (names, options, defaults, help) are unchanged.
 
 ### PR-7: Extract CLI health/reconcile/prune command clusters
 
