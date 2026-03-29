@@ -7767,3 +7767,44 @@ def test_build_vera_messages_rejects_conflicting_draft_hints():
             code_draft=True,
             writing_draft=True,
         )
+
+
+def test_near_miss_submit_with_active_preview_fails_closed_and_preserves_preview(
+    tmp_path, monkeypatch
+):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    client = TestClient(vera_app_module.app)
+    home = client.get("/")
+    assert home.status_code == 200
+    sid = client.cookies.get("vera_session_id") or ""
+
+    vera_service.write_session_preview(queue, sid, {"goal": "open https://example.com"})
+
+    res = client.post("/chat", data={"session_id": sid, "message": "sned it"})
+
+    assert res.status_code == 200
+    assert "did not submit the preview" in res.text.lower()
+    assert "submit command" in res.text.lower()
+    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
+    handoff = vera_service.read_session_handoff_state(queue, sid) or {}
+    assert handoff.get("status") != "submitted"
+    assert list((queue / "inbox").glob("inbox-*.json")) == []
+
+
+def test_active_preview_submit_intent_detection_keeps_rename_fail_closed_boundary():
+    assert vera_app_module._is_active_preview_submit_intent("submit it", preview_available=True)
+    assert vera_app_module._is_active_preview_submit_intent("save it", preview_available=True)
+    assert not vera_app_module._is_active_preview_submit_intent(
+        "save it as renamed.txt", preview_available=True
+    )
+
+
+def test_ambiguous_active_preview_replacement_detection_characterization():
+    assert vera_app_module._looks_like_ambiguous_active_preview_content_replacement_request(
+        "replace that text in the file"
+    )
+    assert not vera_app_module._looks_like_ambiguous_active_preview_content_replacement_request(
+        'replace that text in the file with "hello"'
+    )

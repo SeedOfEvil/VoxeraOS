@@ -971,3 +971,121 @@ def test_queue_health_and_reset_share_effective_health_path(tmp_path, monkeypatc
     health_payload = json.loads(health.output)
     assert health_payload["health_path"] == str((operator_queue / "health.json").resolve())
     assert health_payload["recent_history"]["last_brain_fallback"]["reason"] is None
+
+
+def test_queue_files_grep_payload_stays_queue_backed_contract(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "files",
+            "grep",
+            "--root-path",
+            "notes",
+            "--pattern",
+            "needle",
+            "--id",
+            "job-grep-1",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(
+        (queue_dir / "inbox" / "inbox-job-grep-1.json").read_text(encoding="utf-8")
+    )
+    assert payload["goal"] == "files:grep_text"
+    assert payload["steps"][0]["skill_id"] == "files.grep_text"
+    assert payload["job_intent"]["source_lane"] == "inbox_cli_files"
+
+
+def test_queue_files_rename_payload_stays_queue_backed_contract(tmp_path):
+    runner = CliRunner()
+    queue_dir = tmp_path / "queue"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "files",
+            "rename",
+            "--path",
+            "notes/old.txt",
+            "--new-name",
+            "new.txt",
+            "--overwrite",
+            "--id",
+            "job-rename-1",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(
+        (queue_dir / "inbox" / "inbox-job-rename-1.json").read_text(encoding="utf-8")
+    )
+    assert payload["goal"] == "files:rename"
+    assert payload["steps"] == [
+        {
+            "skill_id": "files.rename",
+            "args": {"path": "notes/old.txt", "new_name": "new.txt", "overwrite": True},
+        }
+    ]
+    assert payload["job_intent"]["source_lane"] == "inbox_cli_files"
+
+
+def test_queue_health_reset_current_and_recent_json_contract(tmp_path, monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(cli, "log", lambda _event: None)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text(
+        json.dumps(
+            {
+                "daemon_state": "degraded",
+                "last_error": "boom",
+                "last_error_ts_ms": 1700000000000,
+                "counters": {"panel_auth_invalid": 2},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "queue",
+            "health-reset",
+            "--scope",
+            "current_and_recent",
+            "--json",
+            "--queue-dir",
+            str(queue_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["scope"] == "current_and_recent"
+    assert payload["counter_group"] is None
+    assert "changed_fields" in payload
+
+
+def test_queue_health_reset_invalid_scope_fails_closed(tmp_path, monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(cli, "log", lambda _event: None)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(
+        cli.app,
+        ["queue", "health-reset", "--scope", "bogus", "--queue-dir", str(queue_dir)],
+    )
+
+    assert result.exit_code == 2
+    assert "ERROR" in result.output
