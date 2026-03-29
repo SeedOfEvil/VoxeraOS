@@ -2962,3 +2962,47 @@ def test_operator_assistant_followup_uses_same_thread(tmp_path, monkeypatch):
     assert len(queued) == 2
     payloads = [json.loads(path.read_text(encoding="utf-8")) for path in queued]
     assert all(item.get("thread_id") == thread_id for item in payloads)
+
+
+def test_operator_outcome_summary_semantics_precedence_characterization():
+    awaiting = panel_module._operator_outcome_summary(
+        bucket="pending",
+        execution={"lifecycle_state": "awaiting_approval"},
+        state_sidecar={},
+        job_context={},
+        has_approval=True,
+    )
+    assert awaiting["key"] == "awaiting_approval"
+
+    blocked = panel_module._operator_outcome_summary(
+        bucket="failed",
+        execution={
+            "lifecycle_state": "failed",
+            "terminal_outcome": "failed",
+            "blocked": True,
+            "blocked_reason_class": "path_blocked_scope",
+            "blocked_reason": "outside scope",
+        },
+        state_sidecar={},
+        job_context={},
+        has_approval=False,
+    )
+    assert blocked["key"] == "blocked_boundary"
+
+    succeeded = panel_module._operator_outcome_summary(
+        bucket="done",
+        execution={"lifecycle_state": "done", "terminal_outcome": "succeeded"},
+        state_sidecar={},
+        job_context={},
+        has_approval=False,
+    )
+    assert succeeded["key"] == "succeeded"
+
+    failed = panel_module._operator_outcome_summary(
+        bucket="failed",
+        execution={"lifecycle_state": "failed", "terminal_outcome": "failed", "retryable": False},
+        state_sidecar={},
+        job_context={},
+        has_approval=False,
+    )
+    assert failed["key"] == "failed"

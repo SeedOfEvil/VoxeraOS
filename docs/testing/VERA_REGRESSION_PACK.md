@@ -15,6 +15,8 @@ This pack protects the high-signal Vera behaviors that operators rely on every d
 - contextual save-by-reference
 - investigation-derived save flows
 - governed filesystem conversational handoff (find/grep/tree/copy/move/rename)
+- typo-like near-submit fail-closed handling (`sned it`, `submt it`, etc.)
+- active-preview ambiguity guards for content-replacement turns
 
 ## 2) Trust model reminder (must stay true)
 

@@ -123,6 +123,12 @@ voxera queue health --json | jq '.current_state,.recent_history,.counters'
 
 This verifies the CLI/operator layer is alive before deeper runtime assertions.
 
+Hotspot characterization anchors that should stay stable before/after extraction PRs:
+
+- Vera web: typo-like near-submit fail-closed behavior, active-preview submit detection boundary, and ambiguous active-draft mutation guardrails.
+- Panel: operator outcome semantics (`awaiting approval` vs `blocked boundary/policy` vs `failed` vs `succeeded`) must continue to project from canonical queue/artifact truth.
+- CLI queue: `queue files` helpers must continue to enqueue canonical queue payloads (no direct side effects), and `queue health-reset` must fail closed on invalid scopes.
+
 ## 9) Standard runtime scenarios
 
 Payload fixtures are provided in `docs/testing/payloads/`.
