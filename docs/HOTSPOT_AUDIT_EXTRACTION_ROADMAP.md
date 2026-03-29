@@ -243,6 +243,9 @@ Any extraction PR following this roadmap must preserve these invariants:
 - Move non-I/O lane classifier helper cluster into `vera_web/execution_mode.py`.
 - Keep final mode decision wiring in `app.py` initially.
 - Re-run characterization tests to prove no lane-truth regressions.
+- Status: completed by extracting execution-mode predicates/classifier helpers into
+  `src/voxera/vera_web/execution_mode.py` with thin `app.py` delegation wrappers,
+  while leaving submit/handoff/state-write truth-critical boundaries in `app.py`.
 
 ### PR-4: Extract panel presentation formatting helpers
 
