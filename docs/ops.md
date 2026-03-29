@@ -109,6 +109,7 @@ Current refactor ownership map for contributors/operators:
 - Queue lifecycle behavior is now intentionally split across `src/voxera/core/queue_execution.py`, `queue_approvals.py`, and `queue_recovery.py`, with `queue_daemon.py` acting as the runtime composition root.
 - Panel route ownership is split across `src/voxera/panel/routes_*.py`; prefer extending the route-family module first instead of adding new route behavior directly to `panel/app.py` unless the change is cross-cutting wiring/shared helper work.
 - Runtime/operator config (`config.json`, `load_config`) and app/provider config (`config.yml`, `load_app_config`) are distinct surfaces by design; keep docs and operational guidance explicit about which layer is being changed.
+- For bounded prep before further large module splits, use `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` as the extraction sequencing source of truth.
 
 Vera modularization safety-net note: session-sensitive Vera characterization coverage now has narrower anchors in `tests/test_vera_session_characterization.py` and `tests/test_vera_contextual_flows.py`, backed by the shared harness/builders in `tests/vera_session_helpers.py`. Prefer extending those focused tests for session/saveability/weather/investigation regressions when the scenario does not require the full mixed-flow surface in `tests/test_vera_web.py`.
 
