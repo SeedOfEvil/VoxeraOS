@@ -234,9 +234,9 @@ Any extraction PR following this roadmap must preserve these invariants:
 ### PR-2: Extract pure Vera conversational checklist helpers
 
 - Move checklist parsing/rendering/sanitization pure functions from `vera_web/app.py`
-  into `vera_web/checklist_rendering.py` (or equivalent).
+  into `vera_web/conversational_checklist.py`.
 - Keep route orchestration and submit/handoff logic in place.
-- Preserve function signatures via import aliases where needed.
+- Preserve behavior via thin `app.py` wrappers/import aliases where needed.
 
 ### PR-3: Extract Vera execution-mode classifier helpers
 

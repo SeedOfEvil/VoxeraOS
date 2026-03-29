@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import enum
 import inspect
-import json
 import re
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -117,6 +116,36 @@ from ..voice.flags import VoiceFoundationFlags, load_voice_foundation_flags
 from ..voice.input import VoiceInputDisabledError, ingest_voice_transcript
 from ..voice.models import InputOrigin, normalize_input_origin
 from ..voice.output import voice_output_status
+from .conversational_checklist import (
+    conversational_preview_update_message as _cc_conversational_preview_update_message,
+)
+from .conversational_checklist import (
+    enforce_conversational_checklist_output as _cc_enforce_conversational_checklist_output,
+)
+from .conversational_checklist import (
+    has_conversational_planning_signal as _cc_has_conversational_planning_signal,
+)
+from .conversational_checklist import (
+    has_save_write_file_signal as _cc_has_save_write_file_signal,
+)
+from .conversational_checklist import (
+    is_conversational_answer_first_request as _cc_is_conversational_answer_first_request,
+)
+from .conversational_checklist import (
+    looks_like_preview_pane_claim as _cc_looks_like_preview_pane_claim,
+)
+from .conversational_checklist import (
+    looks_like_preview_update_claim as _cc_looks_like_preview_update_claim,
+)
+from .conversational_checklist import (
+    looks_like_voxera_preview_dump as _cc_looks_like_voxera_preview_dump,
+)
+from .conversational_checklist import (
+    sanitize_false_preview_claims_from_answer as _cc_sanitize_false_preview_claims_from_answer,
+)
+from .conversational_checklist import (
+    should_use_conversational_artifact_mode as _cc_should_use_conversational_artifact_mode,
+)
 
 
 class ExecutionMode(enum.Enum):
@@ -236,62 +265,11 @@ def _prefer_derived_followup_save(
 
 
 def _looks_like_voxera_preview_dump(text: str) -> bool:
-    lowered = text.strip().lower()
-    if not lowered:
-        return False
-    if (
-        "proposed voxeraos job" in lowered
-        or "proposal for voxeraos" in lowered
-        or "submit-ready voxeraos preview" in lowered
-    ):
-        return True
-    return "```json" in lowered and any(
-        marker in lowered
-        for marker in (
-            '"goal"',
-            '"write_file"',
-            '"enqueue_child"',
-            "voxeraos",
-        )
-    )
+    return _cc_looks_like_voxera_preview_dump(text)
 
 
 def _looks_like_preview_update_claim(text: str) -> bool:
-    lowered = text.strip().lower()
-    if not lowered:
-        return False
-    return any(
-        phrase in lowered
-        for phrase in (
-            "prepared a proposal",
-            "prepared a preview",
-            "prepared a draft",
-            "prepared the following job",
-            "drafted a proposal",
-            "drafted a preview",
-            "i drafted",
-            "i've drafted",
-            "i have drafted",
-            "i've prepared",
-            "i have prepared",
-            "created a preview",
-            "created a draft",
-            "set up a preview",
-            "set up a draft",
-            "here is the prepared proposal",
-            "here is the json",
-            "here's a draft",
-            "here is a draft",
-            "updated the draft",
-            "updated the preview",
-            "preview is ready",
-            "draft is ready",
-            "preview ready",
-            "latest version is ready in the preview",
-            "proposal in the preview",
-            "refined the proposal in the preview",
-        )
-    )
+    return _cc_looks_like_preview_update_claim(text)
 
 
 def _strip_internal_control_blocks(text: str) -> str:
@@ -313,40 +291,6 @@ def _strip_internal_control_blocks(text: str) -> str:
     )
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
-
-
-def _text_outside_code_blocks(text: str) -> str:
-    """Return text with fenced code blocks removed."""
-    return re.sub(r"```[^\n]*\n.*?```", "", text, flags=re.DOTALL).strip()
-
-
-def _looks_like_preview_pane_claim(text: str) -> bool:
-    """Detect claims that a preview/draft currently exists or is available.
-
-    Only inspects text outside of fenced code blocks to avoid false
-    positives from code content that mentions "preview" as a variable name
-    or string literal.
-    """
-    outside = _text_outside_code_blocks(text)
-    lowered = outside.lower()
-    if not lowered:
-        return False
-    # Direct claims of preview/draft availability in a pane/panel
-    claim_phrases = (
-        "preview pane",
-        "preview panel",
-        "in the preview",
-        "in your preview",
-        "review it in",
-        "check the preview",
-        "available in preview",
-        "visible in preview",
-        "find it in the preview",
-        "see it in the preview",
-    )
-    if any(p in lowered for p in claim_phrases):
-        return True
-    return _looks_like_preview_update_claim(text)
 
 
 def _is_governed_writing_preview(preview: dict[str, object] | None) -> bool:
@@ -515,7 +459,7 @@ def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
     """
     if preview_exists:
         return text
-    if not _looks_like_preview_pane_claim(text):
+    if not _cc_looks_like_preview_pane_claim(text):
         return text
 
     # Preserve any fenced code blocks
@@ -535,623 +479,20 @@ def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
     )
 
 
-_PREVIEW_PANE_SENTENCE_RE = re.compile(
-    r"(?:^|\n)\s*[^\n]*?\b("
-    r"preview\s+pane|preview\s+panel|"
-    r"in\s+the\s+preview|in\s+your\s+preview|"
-    r"check\s+the\s+preview|available\s+in\s+preview|"
-    r"visible\s+in\s+preview|find\s+it\s+in\s+the\s+preview|"
-    r"see\s+it\s+in\s+the\s+preview|"
-    r"review\s+it\s+in\s+the\s+preview"
-    r")\b[^\n]*",
-    re.IGNORECASE,
-)
-
-# Broader set of false-claim phrases for conversational answer sanitization.
-# These cover preview-update claims, submission claims, and draft-readiness
-# language that must not appear unless a real preview/job exists.
-_FALSE_CLAIM_PHRASES = (
-    # Preview update claims (from _looks_like_preview_update_claim)
-    "prepared a proposal",
-    "prepared a preview",
-    "prepared a draft",
-    "prepared the following job",
-    "drafted a proposal",
-    "drafted a preview",
-    "i drafted",
-    "i've drafted",
-    "i have drafted",
-    "i've prepared",
-    "i have prepared",
-    "created a preview",
-    "created a draft",
-    "set up a preview",
-    "set up a draft",
-    "here is the prepared proposal",
-    "here is the json",
-    "here's a draft",
-    "here is a draft",
-    "updated the draft",
-    "updated the preview",
-    "preview is ready",
-    "draft is ready",
-    "preview ready",
-    "latest version is ready in the preview",
-    "proposal in the preview",
-    "refined the proposal in the preview",
-    # Submission claims (from _looks_like_submission_claim + broader)
-    "submitted to voxeraos",
-    "submitted the job",
-    "submitted that",
-    "submitted the checklist",
-    "submitted your",
-    "submitted it to",
-    "request is now in the queue",
-    "handed off to voxeraos",
-    "handed it off",
-    "sent it to voxeraos",
-    "sent it to the queue",
-    "sent to the queue",
-    "i sent it",
-    "i queued it",
-    "added to the queue",
-    "added it to the queue",
-    "it to the queue",
-    # Draft/submit readiness language
-    "ready to submit",
-    "submit whenever",
-    "you can submit",
-    "you can send it",
-    "i'll submit",
-    "i can submit",
-    "i will submit",
-    "i'll send it",
-    "i can send it",
-    "i will send it",
-    # Save/workflow-adjacent language (must not appear in conversational mode)
-    "save this when",
-    "save it when",
-    "i can save",
-    "i'll save",
-    "i will save",
-    "save this for",
-    "save it for",
-    "when you're ready",
-    "whenever you're ready",
-    "when you are ready",
-    "whenever you are ready",
-    "before we save",
-    "before saving",
-    "ready to save",
-    "want me to save",
-    "shall i save",
-    "would you like me to save",
-    "does this look right",
-    "does this look good",
-    "does that look right",
-    "does that look good",
-    "look right before",
-    "look good before",
-    "take a look",
-    "let me know when",
-    "let me know if you'd like",
-    "let me know if you want",
-)
-
-# Regex that matches lines referencing "the preview" or "the draft" (as a
-# governed system concept) that are NOT inside numbered/bulleted list items.
-# This catches broad phrasings like "Take a look at the preview" that the
-# phrase list above might miss.
-_PREVIEW_OR_DRAFT_REFERENCE_LINE_RE = re.compile(
-    r"(?:^|\n)\s*(?![0-9]+[.\)]\s|-\s|\*\s|\[[ x]\])[^\n]*?"
-    r"\b(?:the\s+preview|the\s+draft|the\s+preview\s+pane|system\s+queue)\b[^\n]*",
-    re.IGNORECASE,
-)
-
-
-def _is_list_item_line(line: str) -> bool:
-    """Return True if the line is a numbered or bulleted list item."""
-    stripped = line.lstrip()
-    if not stripped:
-        return False
-    if re.match(r"[0-9]+[.\)]\s", stripped):
-        return True
-    if stripped.startswith(("- ", "* ", "• ")):
-        return True
-    if re.match(r"\[[ x]\]\s", stripped):
-        return True
-    return bool(re.match(r"-\s+\[[ x]\]\s", stripped))
-
-
-# Hard-banned words for conversational mode.  ANY non-list-item line containing
-# one of these tokens is stripped as a last-resort guarantee of zero leakage.
-_HARD_BANNED_CONVERSATIONAL_TOKENS_RE = re.compile(
-    r"\b(?:preview|draft|submit|submitted|submission|queue|queued)\b",
-    re.IGNORECASE,
-)
-
-# Workflow narration patterns that must be stripped from conversational mode.
-# These catch save-adjacent and "meta about the list" language that doesn't
-# use the hard-banned tokens above but still leaks workflow framing.
-_WORKFLOW_NARRATION_LINE_RE = re.compile(
-    r"(?i)"
-    r"(?:"
-    r"when(?:ever)?\s+you(?:'re|\s+are)\s+ready"
-    r"|before\s+(?:we\s+)?sav(?:e|ing)"
-    r"|(?:want|shall|would you like)\s+me\s+to\s+save"
-    r"|i\s+can\s+save"
-    r"|i'?ll\s+save"
-    r"|ready\s+to\s+save"
-    r"|let\s+me\s+know\s+(?:when|if)"
-    r"|does\s+(?:this|that)\s+look\s+(?:right|good|ok)"
-    r"|look\s+(?:right|good)\s+before"
-    r"|take\s+a\s+look"
-    r")",
-)
-
-# Pure meta-commentary lines that talk ABOUT the list rather than presenting it.
-# Stripped only when actual list items are present elsewhere in the response.
-_META_COMMENTARY_RE = re.compile(
-    r"(?i)^(?:"
-    r"i'?ve\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled|put together|"
-    r"broken\s+(?:it|this|them)\s+down|laid\s+(?:it|this|them)\s+out|"
-    r"set\s+(?:it|this|them)\s+up|listed|prepared|created|made|built)"
-    r"|i\s+(?:organized|grouped|categorized|arranged|sorted|structured|compiled|"
-    r"broke\s+(?:it|this|them)\s+down|laid\s+(?:it|this|them)\s+out)"
-    r"|here(?:'s|\s+is)\s+(?:a\s+)?(?:quick\s+)?(?:summary|overview|breakdown|rundown)"
-    r"|here(?:'s|\s+is)\s+what\s+i\s+(?:came\s+up\s+with|put\s+together|prepared)"
-    r")\b"
-)
-
-# Regex matching bare (unfenced) JSON objects that look like VoxeraOS payloads.
-# Catches lines like: {"intent": "create_checklist", ...} or {"goal": ...}
-_BARE_JSON_PAYLOAD_RE = re.compile(
-    r'^\s*\{[^}]*"(?:intent|goal|action|write_file|enqueue_child)"',
-)
-
-
-def _has_list_content(text: str) -> bool:
-    """Return True if the text contains at least one list item line."""
-    return any(_is_list_item_line(ln) for ln in text.split("\n"))
-
-
-def _extract_list_items(text: str) -> list[str]:
-    """Extract list item lines from text, regardless of bullet/number format."""
-    items: list[str] = []
-    for line in text.split("\n"):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        # Numbered items: "1. Item", "1) Item"
-        m = re.match(r"[0-9]+[.\)]\s+(.*)", stripped)
-        if m:
-            items.append(m.group(1).strip())
-            continue
-        # Checkbox items: "- [ ] Item", "- [x] Item"
-        m = re.match(r"-\s+\[[ x]\]\s+(.*)", stripped)
-        if m:
-            items.append(m.group(1).strip())
-            continue
-        # Bare checkbox: "[ ] Item", "[x] Item"
-        m = re.match(r"\[[ x]\]\s+(.*)", stripped)
-        if m:
-            items.append(m.group(1).strip())
-            continue
-        # Bullet items: "- Item", "* Item", "• Item"
-        m = re.match(r"[-*•]\s+(.*)", stripped)
-        if m:
-            items.append(m.group(1).strip())
-            continue
-    return [item for item in items if item]
-
-
-def _render_plain_checklist(items: list[str]) -> str:
-    """Render a plain markdown checklist from extracted items."""
-    numbered = "\n".join(f"{idx}. {item}" for idx, item in enumerate(items, start=1))
-    return f"Here's your checklist:\n\n{numbered}"
-
-
-_FILE_RESIDUE_ITEM_RE = re.compile(
-    r"(?i)\b(?:create[_ -]?file|write_file|enqueue_child|payload|intent|goal|action)\b|"
-    r"\.(?:md|txt|json)\b"
-)
-
-
-def _normalize_extracted_item(item: str) -> str:
-    cleaned = re.sub(r"\s+", " ", item.strip(" \t-–—•*.,;:!?\"'`()[]{}")).strip()
-    cleaned = re.sub(r"^(?:and|also)\s+", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+(?:and)\s*$", "", cleaned, flags=re.IGNORECASE)
-    cleaned = cleaned.replace("+1", "plus-one")
-    if not cleaned:
-        return ""
-    lowered = cleaned.lower()
-    if lowered in {
-        "and",
-        "or",
-        "to",
-        "for",
-        "with",
-        "it",
-        "this",
-        "that",
-        "do",
-        "things",
-        "many things i need to do",
-    }:
-        return ""
-    if _FILE_RESIDUE_ITEM_RE.search(cleaned):
-        return ""
-    return cleaned[0].upper() + cleaned[1:] if cleaned else ""
-
-
-def _split_candidate_items(segment: str) -> list[str]:
-    parts: list[str] = []
-    for chunk in re.split(r"[,;\n]+", segment):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        for and_chunk in re.split(r"\s+\band\b\s+", chunk, flags=re.IGNORECASE):
-            normalized = _normalize_extracted_item(and_chunk)
-            if normalized:
-                parts.append(normalized)
-    return parts
-
-
-def _clean_item_candidates(items: list[str]) -> list[str]:
-    cleaned_items: list[str] = []
-    seen: set[str] = set()
-    for raw in items:
-        normalized = _normalize_extracted_item(raw)
-        if not normalized:
-            continue
-        key = normalized.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned_items.append(normalized)
-    return cleaned_items
-
-
-def _extract_items_from_user_message(user_message: str) -> list[str]:
-    """Extract explicit checklist items from the user's raw message."""
-    text = user_message.strip()
-    if not text:
-        return []
-
-    extracted: list[str] = []
-
-    explicit_following = re.search(r"(?:following|include|items?)\s*:\s*(.+)$", text, re.IGNORECASE)
-    if explicit_following:
-        extracted.extend(_split_candidate_items(explicit_following.group(1)))
-
-    if not extracted:
-        need_to_parts = re.split(
-            r"\b(?:first\s+i\s+need\s+to|i\s+also\s+need\s+to|i\s+need\s+to)\b",
-            text,
-            flags=re.IGNORECASE,
-        )
-        if len(need_to_parts) > 1:
-            for part in need_to_parts[1:]:
-                extracted.extend(_split_candidate_items(part))
-
-    if not extracted:
-        need_list = re.search(r"\bi\s+need\s+(.+)$", text, re.IGNORECASE)
-        if need_list and "," in need_list.group(1):
-            extracted.extend(_split_candidate_items(need_list.group(1)))
-
-    return _clean_item_candidates(extracted)
-
-
-def _extract_json_object_items(text: str) -> list[str]:
-    """Extract checklist-like items from JSON payloads embedded in model output."""
-    if not text.strip():
-        return []
-    candidates: list[str] = []
-    fenced_blocks = re.findall(r"```json\s*\n(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
-    candidates.extend(fenced_blocks)
-    stripped = text.strip()
-    if stripped.startswith("{") and stripped.endswith("}"):
-        candidates.append(stripped)
-
-    items: list[str] = []
-    for raw in candidates:
-        try:
-            parsed = json.loads(raw)
-        except Exception:
-            continue
-        if isinstance(parsed, dict):
-            for key in ("items", "checklist", "steps", "tasks", "todo", "to_do"):
-                value = parsed.get(key)
-                if isinstance(value, list):
-                    for entry in value:
-                        cleaned = str(entry).strip()
-                        if cleaned:
-                            normalized = _normalize_extracted_item(cleaned)
-                            if normalized:
-                                items.append(normalized)
-            if not items:
-                for value in parsed.values():
-                    if isinstance(value, str) and value.strip():
-                        normalized = _normalize_extracted_item(value)
-                        if normalized:
-                            items.append(normalized)
-        elif isinstance(parsed, list):
-            for entry in parsed:
-                cleaned = str(entry).strip()
-                normalized = _normalize_extracted_item(cleaned)
-                if normalized:
-                    items.append(normalized)
-    return items
-
-
-def _fallback_conversational_checklist_for_message(user_message: str) -> str:
-    """Deterministic checklist fallback when the model produced no usable artifact."""
-    lowered = user_message.lower()
-    if "wedding" in lowered:
-        return "\n".join(
-            (
-                "- Finalize guest list and plus-one confirmations",
-                "- Confirm attire, fittings, and accessories",
-                "- Book travel, lodging, and local transportation",
-                "- Verify venue timeline and vendor confirmations",
-                "- Prepare required documents and day-of essentials",
-            )
-        )
-    if any(token in lowered for token in ("grocery", "shopping list", "meal prep", "supermarket")):
-        return "\n".join(
-            (
-                "- Produce: fruit, leafy greens, onions, and tomatoes",
-                "- Protein: eggs, chicken or tofu, and yogurt",
-                "- Pantry: rice, pasta, beans, and cooking oil",
-                "- Dairy/alternatives: milk, cheese, and butter",
-                "- Household: paper goods and cleaning supplies",
-            )
-        )
-    return "\n".join(
-        (
-            "- Define the goal and outcome",
-            "- Break the work into concrete steps",
-            "- Order steps by priority and dependencies",
-            "- Add owners, dates, or needed resources",
-            "- Review and adjust after first progress check",
-        )
-    )
-
-
 def _sanitize_false_preview_claims_from_answer(text: str) -> str:
-    """Strip false preview/submission/draft/workflow claims from conversational answers.
-
-    Unlike the heavy guardrails (which replace the entire answer), this removes
-    individual lines that contain false claims — preserving the actual content
-    like checklists, plans, and brainstorms.
-
-    Six-phase sanitizer:
-      Phase 1 — strip fenced AND unfenced JSON blocks / payload lines.
-      Phase 2 — strip lines matching known false-claim phrases and regexes.
-      Phase 3 — HARD MODE LOCK: strip ANY remaining non-list-item line that
-                contains a banned token (preview/draft/submit/queue).
-      Phase 4 — strip non-list-item lines containing workflow narration
-                (save-adjacent language, "when you're ready", "take a look").
-      Phase 5 — strip pure meta-commentary lines ("I've organized the tasks
-                logically...") when actual list items are present.
-      Phase 6 — strip any remaining bare JSON-like payload lines
-                ({"intent":..}, {"goal":..}) that survived earlier phases.
-    """
-    if not text.strip():
-        return text
-
-    # Phase 1a: strip fenced JSON blocks that look like VoxeraOS preview dumps
-    cleaned = re.sub(
-        r"```json\s*\n.*?```",
-        "",
-        text,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-
-    # Phase 1b: strip unfenced JSON blocks (multi-line bare objects)
-    cleaned = re.sub(
-        r"^\s*\{[^}]*\n(?:[^}]*\n)*[^}]*\}",
-        "",
-        cleaned,
-        flags=re.MULTILINE,
-    )
-
-    # Phase 2: strip lines containing known false preview/submission claims
-    lowered_full = cleaned.lower()
-    has_false_claim = (
-        _looks_like_preview_pane_claim(cleaned)
-        or _looks_like_submission_claim(cleaned)
-        or any(p in lowered_full for p in _FALSE_CLAIM_PHRASES)
-        or _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE.search(cleaned) is not None
-    )
-    if has_false_claim:
-        cleaned = _PREVIEW_PANE_SENTENCE_RE.sub("", cleaned)
-        cleaned = _PREVIEW_OR_DRAFT_REFERENCE_LINE_RE.sub("", cleaned)
-        out_lines: list[str] = []
-        for line in cleaned.split("\n"):
-            lowered_line = line.lower()
-            if any(phrase in lowered_line for phrase in _FALSE_CLAIM_PHRASES):
-                continue
-            out_lines.append(line)
-        cleaned = "\n".join(out_lines)
-
-    # Phase 3: HARD MODE LOCK — strip ANY remaining non-list-item line that
-    # still contains a banned token.  This is the nuclear guarantee that zero
-    # preview/draft/submit/queue language ever reaches the user in
-    # conversational mode, regardless of LLM phrasing creativity.
-    hard_lines: list[str] = []
-    for line in cleaned.split("\n"):
-        if _is_list_item_line(line):
-            hard_lines.append(line)
-            continue
-        if _HARD_BANNED_CONVERSATIONAL_TOKENS_RE.search(line):
-            continue
-        hard_lines.append(line)
-    cleaned = "\n".join(hard_lines)
-
-    # Phase 4: strip non-list-item lines containing workflow narration —
-    # save-adjacent language, "when you're ready", "take a look", etc.
-    workflow_lines: list[str] = []
-    for line in cleaned.split("\n"):
-        if _is_list_item_line(line):
-            workflow_lines.append(line)
-            continue
-        if _WORKFLOW_NARRATION_LINE_RE.search(line):
-            continue
-        workflow_lines.append(line)
-    cleaned = "\n".join(workflow_lines)
-
-    # Phase 5: strip pure meta-commentary lines ("I've organized...",
-    # "I've grouped...") but ONLY when the response also contains actual
-    # list items — otherwise we'd strip the only content the LLM produced.
-    has_list_items = any(_is_list_item_line(ln) for ln in cleaned.split("\n"))
-    if has_list_items:
-        meta_lines: list[str] = []
-        for line in cleaned.split("\n"):
-            stripped_line = line.strip()
-            if stripped_line and _META_COMMENTARY_RE.match(stripped_line):
-                continue
-            meta_lines.append(line)
-        cleaned = "\n".join(meta_lines)
-
-    # Phase 6: strip any remaining bare JSON-like payload lines that survived
-    # earlier phases — catches single-line {"intent":..} / {"goal":..} payloads.
-    json_lines: list[str] = []
-    for line in cleaned.split("\n"):
-        if _BARE_JSON_PAYLOAD_RE.match(line):
-            continue
-        json_lines.append(line)
-    cleaned = "\n".join(json_lines)
-
-    cleaned = cleaned.strip()
-    if cleaned:
-        return cleaned
-    # Sanitization emptied the text — the original was ALL banned content.
-    # Do NOT fall back to the original (that would re-introduce leakage).
-    # Instead, extract any list items from the original and render them cleanly.
-    items = _extract_list_items(text)
-    if items:
-        return _render_plain_checklist(items)
-    # Absolute last resort: return the original only if it contains no banned
-    # tokens.  Otherwise return a safe empty acknowledgement.
-    if _HARD_BANNED_CONVERSATIONAL_TOKENS_RE.search(text):
-        return "Here's what I have so far — could you share more details so I can put together the list?"
-    return text
+    return _cc_sanitize_false_preview_claims_from_answer(text)
 
 
 def _enforce_conversational_checklist_output(
     text: str, *, raw_answer: str, user_message: str
 ) -> str:
-    """Final enforcement layer for conversational checklist/planning mode.
-
-    Runs AFTER the six-phase sanitizer as a deterministic safety net.
-    Guarantees:
-      1. No banned tokens in non-list-item lines.
-      2. No JSON payloads.
-      3. If violations remain, re-extract items and render deterministically.
-      4. If the text is empty, attempt item extraction from raw_answer.
-    """
-    user_items = _extract_items_from_user_message(user_message)
-    if len(user_items) >= 2:
-        return _render_plain_checklist(user_items)
-
-    if not text.strip():
-        items = _clean_item_candidates(
-            _extract_list_items(raw_answer) or _extract_json_object_items(raw_answer)
-        )
-        if items:
-            return _render_plain_checklist(items)
-        return _fallback_conversational_checklist_for_message(user_message)
-
-    # Scan for any remaining violations in non-list-item lines
-    has_violation = False
-    for line in text.split("\n"):
-        if _is_list_item_line(line):
-            continue
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if _HARD_BANNED_CONVERSATIONAL_TOKENS_RE.search(stripped):
-            has_violation = True
-            break
-        if _BARE_JSON_PAYLOAD_RE.match(stripped):
-            has_violation = True
-            break
-
-    if has_violation:
-        # Nuclear fallback: extract items from whatever we have and re-render
-        items = _clean_item_candidates(
-            _extract_list_items(text)
-            or _extract_list_items(raw_answer)
-            or _extract_json_object_items(text)
-            or _extract_json_object_items(raw_answer)
-        )
-        if items:
-            return _render_plain_checklist(items)
-        return _fallback_conversational_checklist_for_message(user_message)
-
-    if not _has_list_content(text):
-        items = _clean_item_candidates(
-            _extract_json_object_items(text) or _extract_json_object_items(raw_answer)
-        )
-        if items:
-            return _render_plain_checklist(items)
-        return _fallback_conversational_checklist_for_message(user_message)
-    return text
-
-
-_CONVERSATIONAL_PLANNING_RE = re.compile(
-    r"\b("
-    r"checklist|check\s*list|prep\s+list|to[- ]?do\s+list|action\s+items|"
-    r"grocery\s+list|packing\s+list|shopping\s+list|bucket\s+list|"
-    r"(?:plan|steps|ideas|suggestions|tips)\s+for\b|"
-    r"steps\s+to\b|"
-    r"brainstorm|"
-    r"help\s+me\s+(?:organize|plan|prepare|think\s+through|figure\s+out|prioritize)|"
-    r"give\s+me\s+(?:a\s+)?(?:plan|list|steps|ideas|suggestions|tips)|"
-    r"make\s+(?:me\s+)?a\s+(?:plan|list|checklist)|"
-    r"create\s+a\s+(?:plan|list|checklist)|"
-    r"what\s+(?:do\s+i|should\s+i)\s+need\s+(?:to|for)|"
-    r"itinerary|"
-    r"organize\s+(?:my|the|a)\b|"
-    r"prepare\s+(?:a|my)\s+(?:plan|list)|"
-    r"to\s+do(?:\s+for)?\b|"
-    r"prep(?:aration)?\s+(?:list|plan|guide)"
-    r")\b",
-    re.IGNORECASE,
-)
-
-_SAVE_WRITE_FILE_SIGNAL_RE = re.compile(
-    r"\b("
-    r"save\s+(?:that|this|it|as|to|into)|"
-    r"save\s+\S+.*?\b(?:to|as|into)\s+(?:a\s+)?(?:my\s+)?(?:file|note|notes)\b|"
-    r"write\s+(?:that|this|it)\s+(?:to|into)|"
-    r"write\s+(?:to|into)\s+(?:a\s+)?(?:file|note)|"
-    r"write\s+\S+.*?\b(?:to|as|into)\s+(?:a\s+)?(?:my\s+)?(?:file|note|notes)\b|"
-    r"create\s+(?:a\s+)?(?:file|note)\s+(?:called|named|with)|"
-    r"put\s+(?:that|this|it)\s+in(?:to)?\s+(?:a\s+)?(?:file|note)|"
-    r"as\s+a\s+(?:file|note|markdown)\b|"
-    r"\.(?:md|txt|json|ps1|sh|py)\b"
-    r")\b",
-    re.IGNORECASE,
-)
+    return _cc_enforce_conversational_checklist_output(
+        text, raw_answer=raw_answer, user_message=user_message
+    )
 
 
 def _is_conversational_answer_first_request(message: str) -> bool:
-    """Detect non-actionable structured reasoning/planning requests.
-
-    These should be answered conversationally by default — not routed through
-    preview drafting.  "save that" after the answer can still create a governed
-    preview.
-
-    Rule-based, not LLM-based — deterministic for the same input every time.
-    """
-    text = message.strip()
-    if not text:
-        return False
-    if _SAVE_WRITE_FILE_SIGNAL_RE.search(text):
-        return False
-    return bool(_CONVERSATIONAL_PLANNING_RE.search(text))
+    return _cc_is_conversational_answer_first_request(message)
 
 
 def _classify_execution_mode(
@@ -1169,11 +510,11 @@ def _classify_execution_mode(
     - control-reply suppression is bypassed
     - hard sanitization strips any surviving preview language
     """
-    is_answer_first = (
-        (_is_conversational_answer_first_request(message) or prior_planning_active)
-        and not is_recent_assistant_content_save_request(message)
-        and not _SAVE_WRITE_FILE_SIGNAL_RE.search(message)
-        and pending_preview is None
+    is_answer_first = _cc_should_use_conversational_artifact_mode(
+        message,
+        prior_planning_active=prior_planning_active,
+        pending_preview=pending_preview,
+        is_recent_assistant_content_save_request=is_recent_assistant_content_save_request(message),
     )
     return (
         ExecutionMode.CONVERSATIONAL_ARTIFACT if is_answer_first else ExecutionMode.GOVERNED_PREVIEW
@@ -1202,41 +543,16 @@ def _conversational_preview_update_message(
     rejected: bool = False,
     updated_preview: dict[str, object] | None = None,
 ) -> str:
-    naming_request = looks_like_preview_rename_or_save_as_request(user_message)
-    updated_write_file = (
-        updated_preview.get("write_file") if isinstance(updated_preview, dict) else None
+    return _cc_conversational_preview_update_message(
+        updated=updated,
+        has_active_preview=has_active_preview,
+        user_message=user_message,
+        is_recent_assistant_content_save_request=is_recent_assistant_content_save_request(
+            user_message
+        ),
+        rejected=rejected,
+        updated_preview=updated_preview,
     )
-    updated_path = (
-        str(updated_write_file.get("path") or "").strip()
-        if isinstance(updated_write_file, dict)
-        else ""
-    )
-    if rejected:
-        return (
-            "I couldn’t apply that update — the requested path is outside the safe notes workspace "
-            "or contains an invalid traversal. The existing draft is unchanged."
-        )
-    if updated:
-        if naming_request and updated_path:
-            return (
-                f"Updated the draft destination to {updated_path}. "
-                "Nothing has been submitted or executed yet."
-            )
-        return "Understood. Nothing has been submitted or executed yet. I can send it whenever you’re ready."
-    if naming_request and has_active_preview:
-        return (
-            "I couldn’t safely apply that naming update, so the draft destination is unchanged. "
-            "Please provide a specific filename (for example: name it bigvolcano.txt)."
-        )
-    if has_active_preview:
-        return "Understood. I still have the current request ready whenever you want to send it."
-    if is_recent_assistant_content_save_request(user_message):
-        return (
-            "I couldn't resolve a suitable recent assistant-authored summary/answer in this active session, "
-            "so I didn't prepare a write preview. Please point to a specific recent response or ask me to "
-            "generate one first."
-        )
-    return "I couldn’t safely prepare a request yet. If you share clearer target details, I can continue."
 
 
 async def _generate_vera_reply_with_optional_draft_hints(
@@ -2418,8 +1734,8 @@ async def chat(request: Request):
         and not is_code_draft_turn
         and builder_payload is None
         and pending_preview is None
-        and _SAVE_WRITE_FILE_SIGNAL_RE.search(message) is not None
-        and _CONVERSATIONAL_PLANNING_RE.search(message) is not None
+        and _cc_has_save_write_file_signal(message)
+        and _cc_has_conversational_planning_signal(message)
     )
     if _is_create_and_save and reply_text_draft:
         _note_suffix = active_session[-8:] if len(active_session) >= 8 else active_session

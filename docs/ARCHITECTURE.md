@@ -210,7 +210,7 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8` snap
 
 - `vera/service.py` remains the **conversation orchestration root**: it builds model messages, coordinates session state, routes into the extracted weather/investigation lanes, and manages linked-job completion delivery.
 - `vera/handoff.py` is now a **compatibility façade**, not the preferred place to grow new logic.
-- Conversational checklist/planning mode is a **chat artifact lane**: once classified answer-first in `vera_web/app.py`, the final user-visible response must be rendered as an in-chat checklist artifact (list items), not workflow narration. In that lane, preview/draft/save/submit/queue wording must not surface unless a real governed preview flow is active.
+- Conversational checklist/planning mode is a **chat artifact lane**: `vera_web/conversational_checklist.py` owns deterministic checklist sanitization/rendering helpers, while `vera_web/app.py` keeps classification and route-level wiring. In that lane, preview/draft/save/submit/queue wording must not surface unless a real governed preview flow is active.
 - Add or extend behavior in the dedicated modules first:
   - `preview_drafting.py` for deterministic preview generation
   - `draft_revision.py` for active-preview follow-up parsing
