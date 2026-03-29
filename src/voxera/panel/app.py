@@ -27,6 +27,11 @@ from ..health import increment_health_counter, read_health_snapshot, update_heal
 from ..health_semantics import build_health_semantic_sections
 from ..version import get_version
 from . import routes_assistant as _routes_assistant
+from .auth_state_store import PANEL_AUTH_LOCKOUT_S, PANEL_AUTH_WINDOW_S
+from .auth_state_store import active_lockout_until_ms as _stored_active_lockout_until_ms
+from .auth_state_store import apply_panel_auth_state_prune as _apply_panel_auth_state_prune
+from .auth_state_store import apply_panel_auth_state_update as _apply_panel_auth_state_update
+from .auth_state_store import auth_failure_snapshot as _auth_failure_snapshot
 from .helpers import coerce_int as _coerce_int
 from .helpers import request_value as _request_value
 from .job_presentation import evidence_summary_rows as _evidence_summary_rows
@@ -131,11 +136,6 @@ FLASH_MESSAGES = {
 
 CSRF_COOKIE = "voxera_panel_csrf"
 CSRF_FORM_KEY = "csrf_token"
-PANEL_AUTH_FAIL_THRESHOLD = 10
-PANEL_AUTH_WINDOW_S = 60
-PANEL_AUTH_LOCKOUT_S = 60
-_PANEL_AUTH_PRUNE_TTL_MS = 10 * 60 * 1000
-_PANEL_AUTH_MAX_TRACKED_IPS = 200
 _RECOVERY_ZIP_MAX_FILES = 5000
 _RECOVERY_ZIP_MAX_TOTAL_BYTES = 250 * 1024 * 1024
 
@@ -184,43 +184,6 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _prune_panel_auth_maps(store: dict[str, Any], *, now_ms: int) -> None:
-    cutoff_ms = now_ms - _PANEL_AUTH_PRUNE_TTL_MS
-
-    failures_raw = store.get("failures_by_ip")
-    failures = failures_raw if isinstance(failures_raw, dict) else {}
-    for ip, row in list(failures.items()):
-        if not isinstance(row, dict):
-            failures.pop(ip, None)
-            continue
-        if int(row.get("last_ts_ms", 0) or 0) < cutoff_ms:
-            failures.pop(ip, None)
-    if len(failures) > _PANEL_AUTH_MAX_TRACKED_IPS:
-        ordered = sorted(failures.items(), key=lambda item: int(item[1].get("last_ts_ms", 0) or 0))
-        for ip, _ in ordered[: len(failures) - _PANEL_AUTH_MAX_TRACKED_IPS]:
-            failures.pop(ip, None)
-
-    lockouts_raw = store.get("lockouts_by_ip")
-    lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
-    for ip, row in list(lockouts.items()):
-        if not isinstance(row, dict):
-            lockouts.pop(ip, None)
-            continue
-        last_event_ts = int(row.get("last_event_ts_ms", 0) or 0)
-        until_ts = int(row.get("until_ts_ms", 0) or 0)
-        if max(last_event_ts, until_ts) < cutoff_ms:
-            lockouts.pop(ip, None)
-    if len(lockouts) > _PANEL_AUTH_MAX_TRACKED_IPS:
-        ordered = sorted(
-            lockouts.items(), key=lambda item: int(item[1].get("last_event_ts_ms", 0) or 0)
-        )
-        for ip, _ in ordered[: len(lockouts) - _PANEL_AUTH_MAX_TRACKED_IPS]:
-            lockouts.pop(ip, None)
-
-    store["failures_by_ip"] = failures
-    store["lockouts_by_ip"] = lockouts
-
-
 def _panel_auth_state_update(
     queue_root: Path | None,
     *,
@@ -228,61 +191,20 @@ def _panel_auth_state_update(
     now_ms: int,
     auth_success: bool,
 ) -> dict[str, Any]:
-    ip_key = ip.strip() or "unknown"
-    window_ms = PANEL_AUTH_WINDOW_S * 1000
-    lockout_ms = PANEL_AUTH_LOCKOUT_S * 1000
-
     def _apply(payload: dict[str, Any]) -> dict[str, Any]:
-        panel_auth_raw = payload.get("panel_auth")
-        panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
-        _prune_panel_auth_maps(panel_auth, now_ms=now_ms)
-
-        failures = panel_auth.get("failures_by_ip", {})
-        lockouts = panel_auth.get("lockouts_by_ip", {})
-
-        if auth_success:
-            failures.pop(ip_key, None)
-            lockout = lockouts.get(ip_key)
-            if isinstance(lockout, dict) and now_ms >= int(lockout.get("until_ts_ms", 0) or 0):
-                lockouts.pop(ip_key, None)
-        else:
-            row = failures.get(ip_key)
-            if not isinstance(row, dict):
-                row = {"count": 0, "first_ts_ms": now_ms, "last_ts_ms": now_ms}
-            first_ts = int(row.get("first_ts_ms", now_ms) or now_ms)
-            count = int(row.get("count", 0) or 0)
-            if now_ms - first_ts > window_ms:
-                count = 1
-                first_ts = now_ms
-            else:
-                count += 1
-            failures[ip_key] = {"count": count, "first_ts_ms": first_ts, "last_ts_ms": now_ms}
-            if count >= PANEL_AUTH_FAIL_THRESHOLD:
-                prev = lockouts.get(ip_key)
-                prev_count = int(prev.get("count", 0) or 0) if isinstance(prev, dict) else 0
-                lockouts[ip_key] = {
-                    "until_ts_ms": now_ms + lockout_ms,
-                    "count": prev_count + 1,
-                    "last_event_ts_ms": now_ms,
-                }
-
-        panel_auth["failures_by_ip"] = failures
-        panel_auth["lockouts_by_ip"] = lockouts
-        payload["panel_auth"] = panel_auth
-        payload["updated_at_ms"] = now_ms
-        return payload
+        return _apply_panel_auth_state_update(
+            payload,
+            ip=ip,
+            now_ms=now_ms,
+            auth_success=auth_success,
+        )
 
     return update_health_snapshot(queue_root, _apply)
 
 
 def _panel_auth_state_prune(queue_root: Path | None, *, now_ms: int) -> dict[str, Any]:
     def _apply(payload: dict[str, Any]) -> dict[str, Any]:
-        panel_auth_raw = payload.get("panel_auth")
-        panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
-        _prune_panel_auth_maps(panel_auth, now_ms=now_ms)
-        payload["panel_auth"] = panel_auth
-        payload["updated_at_ms"] = now_ms
-        return payload
+        return _apply_panel_auth_state_prune(payload, now_ms=now_ms)
 
     return update_health_snapshot(queue_root, _apply)
 
@@ -291,13 +213,7 @@ def _active_lockout_until_ms(*, queue_root: Path | None, ip: str, now_ms: int) -
     payload = _panel_auth_state_prune(queue_root, now_ms=now_ms)
     panel_auth_raw = payload.get("panel_auth")
     panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
-    lockouts_raw = panel_auth.get("lockouts_by_ip")
-    lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
-    row = lockouts.get(ip.strip() or "unknown")
-    if not isinstance(row, dict):
-        return None
-    until = int(row.get("until_ts_ms", 0) or 0)
-    return until if now_ms < until else None
+    return _stored_active_lockout_until_ms(panel_auth, ip=ip, now_ms=now_ms)
 
 
 def _queue_root() -> Path:
@@ -705,16 +621,8 @@ def _require_operator_basic_auth(request: Request, authorization: str | None) ->
         )
         panel_auth_raw = payload.get("panel_auth")
         panel_auth = panel_auth_raw if isinstance(panel_auth_raw, dict) else {}
-        failures_raw = panel_auth.get("failures_by_ip")
-        failures = failures_raw if isinstance(failures_raw, dict) else {}
-        ip_key = ip.strip() or "unknown"
-        failure_row_raw = failures.get(ip_key)
-        failure_row = failure_row_raw if isinstance(failure_row_raw, dict) else {}
-        lockouts_raw = panel_auth.get("lockouts_by_ip")
-        lockouts = lockouts_raw if isinstance(lockouts_raw, dict) else {}
-        lockout_row = lockouts.get(ip_key) if isinstance(lockouts.get(ip_key), dict) else None
-        if lockout_row is not None and now_ms < int(lockout_row.get("until_ts_ms", 0) or 0):
-            attempt_count = int(failure_row.get("count", 0) or 0)
+        attempt_count, lockout_until_ms = _auth_failure_snapshot(panel_auth, ip=ip)
+        if now_ms < lockout_until_ms:
             _panel_security_counter_incr("panel_429_count")
             log(
                 {

@@ -324,7 +324,7 @@ Panel operator notes:
 - Panel mutation routes (`/queue/create`, `/missions/create`, `/missions/templates/create`) accept `POST` by default.
 - `/missions/create` is the operator Create Mission intake (Easy mode: prompt-only) and writes deterministic jobs to `notes/queue/inbox/job-panel-mission-<slug>-<ts>.json`.
 - Panel operator mutations now require HTTP Basic auth and CSRF validation. Set `VOXERA_PANEL_OPERATOR_PASSWORD` (and optional `VOXERA_PANEL_OPERATOR_USER`, default `admin`) before starting the panel.
-- Panel shared wiring/security and canonical job-detail assembly ownership remain in `src/voxera/panel/app.py`, while extracted low-risk presentation/status row builders now live in `src/voxera/panel/job_presentation.py`; route-family ownership lives in `src/voxera/panel/routes_*.py` modules:
+- Panel shared wiring/security and canonical job-detail assembly ownership remain in `src/voxera/panel/app.py`. Extracted low-risk helpers now include presentation/status row builders in `src/voxera/panel/job_presentation.py` and panel auth-state storage/lockout bookkeeping helpers in `src/voxera/panel/auth_state_store.py`; route-family ownership lives in `src/voxera/panel/routes_*.py` modules:
   - `routes_home.py` — home/dashboard + queue create
   - `routes_jobs.py` — approvals, job list/detail/progress, cancel/retry/delete
   - `routes_queue_control.py` — pause/resume/delete queue controls
@@ -1319,6 +1319,7 @@ Panel home includes a read-only **Performance Stats** tab that surfaces these sa
 - `src/voxera/panel/routes_recovery.py` owns recovery/quarantine inspector routes.
 - `src/voxera/panel/helpers.py` contains shared request/value helpers.
 - `src/voxera/panel/job_presentation.py` contains low-risk job presentation/status helper builders used by `app.py` (operator outcome labels, policy/evidence rows, timeline, why-stopped rows).
+- `src/voxera/panel/auth_state_store.py` contains low-risk panel auth-state storage/cleanup/bookkeeping helpers used by `app.py` (map pruning, payload shaping, lockout/failure reads).
 - Future panel changes should prefer extending a domain route module (or adding a new `routes_<domain>.py`) instead of growing `app.py` back into a monolith.
 - Jobs mutation redirects are intentionally emitted as relative `/jobs?...` URLs (not absolute `url_for` URLs) to avoid proxy/front-door host-scheme mismatches.
 
