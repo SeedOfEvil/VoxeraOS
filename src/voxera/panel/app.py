@@ -34,13 +34,9 @@ from .auth_state_store import apply_panel_auth_state_update as _apply_panel_auth
 from .auth_state_store import auth_failure_snapshot as _auth_failure_snapshot
 from .helpers import coerce_int as _coerce_int
 from .helpers import request_value as _request_value
-from .job_presentation import evidence_summary_rows as _evidence_summary_rows
+from .job_detail_sections import build_job_detail_sections as _build_job_detail_sections
 from .job_presentation import job_artifact_inventory as _job_artifact_inventory
-from .job_presentation import job_context_summary as _job_context_summary
-from .job_presentation import job_recent_timeline as _job_recent_timeline
 from .job_presentation import operator_outcome_summary as _operator_outcome_summary
-from .job_presentation import policy_rationale_rows as _policy_rationale_rows
-from .job_presentation import why_stopped_rows as _why_stopped_rows
 from .routes_bundle import register_bundle_routes
 from .routes_home import register_home_routes
 from .routes_hygiene import register_hygiene_routes
@@ -1049,40 +1045,23 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         approval=approval,
         failed_sidecar=failed_sidecar,
     )
-    context_summary = _job_context_summary(
-        primary,
+    audit_timeline = relevant_events[:40]
+    detail_sections = _build_job_detail_sections(
+        primary=primary,
         state_sidecar=state_sidecar,
         approval=approval,
         failed_sidecar=failed_sidecar,
         structured_execution=structured_execution,
-    )
-    operator_summary = _operator_outcome_summary(
-        bucket=bucket,
-        execution=structured_execution,
-        state_sidecar=state_sidecar,
-        job_context=context_summary,
-        has_approval=bool(approval),
-    )
-    policy_rationale = _policy_rationale_rows(
-        execution=structured_execution,
-        state_sidecar=state_sidecar,
-        approval=approval,
-        has_approval=bool(approval),
-    )
-    evidence_summary = _evidence_summary_rows(
         artifacts_dir=artifacts_dir,
         approval_path=approval_path if approval_path and approval_path.exists() else None,
         failed_sidecar_path=failed_sidecar_path
         if failed_sidecar_path and failed_sidecar_path.exists()
         else None,
         state_sidecar_paths=state_candidates,
+        bucket=bucket,
+        actions=actions,
+        audit_timeline=audit_timeline,
     )
-    why_stopped = _why_stopped_rows(
-        execution=structured_execution,
-        state_sidecar=state_sidecar,
-        job_context=context_summary,
-    )
-    audit_timeline = relevant_events[:40]
     lineage = (
         structured_execution.get("lineage")
         if isinstance(structured_execution.get("lineage"), dict)
@@ -1110,7 +1089,7 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "artifact_files": artifact_files,
         "artifact_inventory": artifact_inventory,
         "artifact_anomalies": artifact_anomalies,
-        "job_context": context_summary,
+        "job_context": detail_sections["job_context"],
         "lineage": lineage,
         "child_refs": structured_execution.get("child_refs")
         if isinstance(structured_execution.get("child_refs"), list)
@@ -1119,11 +1098,11 @@ def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         if isinstance(structured_execution.get("child_summary"), dict)
         else None,
         "execution": structured_execution,
-        "operator_summary": operator_summary,
-        "policy_rationale": policy_rationale,
-        "evidence_summary": evidence_summary,
-        "why_stopped": why_stopped,
-        "recent_timeline": _job_recent_timeline(actions, audit_timeline),
+        "operator_summary": detail_sections["operator_summary"],
+        "policy_rationale": detail_sections["policy_rationale"],
+        "evidence_summary": detail_sections["evidence_summary"],
+        "why_stopped": detail_sections["why_stopped"],
+        "recent_timeline": detail_sections["recent_timeline"],
         "artifacts_dir": str(artifacts_dir),
         "audit_timeline": audit_timeline,
         "has_approval": bool(approval),

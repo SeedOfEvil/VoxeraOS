@@ -841,6 +841,8 @@ Shared panel helpers  (not route modules):
   panel/assistant.py     assistant thread helpers  (used by routes_assistant.py)
   panel/job_presentation.py
                          job-detail presentation/status row builders used by app.py
+  panel/job_detail_sections.py
+                         low-risk job-detail section assembly helpers used by app.py
   panel/auth_state_store.py
                          panel auth-state storage/cleanup/bookkeeping helpers used by app.py
   panel/static/panel.css panel stylesheet
@@ -940,7 +942,8 @@ A recurring structural pattern now present across the three main subsystems:
 
 **Panel** (`src/voxera/panel/`)
 - `panel/app.py` is the composition root — it creates the FastAPI app, wires shared auth/CSRF/queue helpers, and calls `register_*_routes()` from each domain module
-- `panel/job_presentation.py` owns low-risk/pure-ish job detail presentation/status shaping helpers (outcome labeling, policy/evidence rows, timeline/why-stopped summaries)
+- `panel/job_presentation.py` owns low-risk/pure-ish row/presentation helpers used for operator outcome labeling and policy/evidence/why-stopped rendering
+- `panel/job_detail_sections.py` owns low-risk job-detail section assembly helpers that compose row builders from already-loaded canonical data while final truth-critical payload ownership remains in `panel/app.py`
 - `panel/auth_state_store.py` owns low-risk panel auth-state storage/cleanup/bookkeeping helpers (map pruning, payload updates, lockout state reads) while final auth/mutation enforcement remains in `panel/app.py`
 - Each route domain owns a focused set of paths: `routes_assistant.py`, `routes_missions.py`, `routes_bundle.py`, `routes_queue_control.py`, `routes_hygiene.py`, `routes_recovery.py`, `routes_home.py`, `routes_jobs.py`
 - New panel route domains should live in focused route modules; `panel/app.py` remains the composition root
