@@ -279,6 +279,16 @@ Any extraction PR following this roadmap must preserve these invariants:
   kept in `app.py`; final auth/mutation enforcement, final route wiring, and final
   security-boundary decisions remain owned by `app.py`.
 
+### PR-5b: Extract panel job-detail section assembly helpers
+
+- Move low-risk panel job-detail section assembly from `panel/app.py` into
+  `panel/job_detail_sections.py` (operator summary, policy rationale, evidence summary,
+  why-stopped, recent timeline composition).
+- Keep route wiring, auth/mutation guards, canonical queue/artifact/state loading, and
+  final truth-critical job-detail payload ownership in `panel/app.py`.
+- Status: completed with behavior-preserving extraction and existing characterization
+  anchors retained for operator outcome precedence and job-detail rendering semantics.
+
 ### PR-6: Extract CLI queue-files command family
 
 - Move `queue files *` commands and enqueue helper into `cli_queue_files.py`.
