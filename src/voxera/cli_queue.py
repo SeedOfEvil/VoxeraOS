@@ -8,6 +8,16 @@ import typer
 from rich.table import Table
 
 from .cli_common import OUT_PATH_OPTION, console, now_ms, queue_dir_path
+from .cli_queue_payloads import (
+    build_files_copy_move_args,
+    build_files_find_args,
+    build_files_grep_text_args,
+    build_files_list_tree_args,
+    build_files_queue_payload,
+    build_files_rename_args,
+    build_health_reset_event_name,
+    build_health_reset_log_payload,
+)
 from .core.artifacts import format_bytes, prune_artifacts
 from .core.inbox import add_inbox_job, add_inbox_payload, list_inbox_jobs
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
@@ -45,11 +55,11 @@ def _enqueue_files_step(
     step_skill_id: str,
     step_args: dict[str, Any],
 ) -> Path:
-    payload = {
-        "goal": f"files:{action}",
-        "steps": [{"skill_id": step_skill_id, "args": step_args}],
-        "notes": "Queued via voxera queue files helper.",
-    }
+    payload = build_files_queue_payload(
+        action=action,
+        step_skill_id=step_skill_id,
+        step_args=step_args,
+    )
     try:
         return add_inbox_payload(
             queue_dir_path(queue_dir),
@@ -91,15 +101,14 @@ def queue_files_find(
     ),
 ):
     """Enqueue files.find as a governed queue job."""
-    args: dict[str, Any] = {
-        "root_path": root_path,
-        "glob": glob,
-        "max_depth": max_depth,
-        "include_hidden": include_hidden,
-        "max_results": max_results,
-    }
-    if name_contains is not None:
-        args["name_contains"] = name_contains
+    args = build_files_find_args(
+        root_path=root_path,
+        glob=glob,
+        name_contains=name_contains,
+        max_depth=max_depth,
+        include_hidden=include_hidden,
+        max_results=max_results,
+    )
     created = _enqueue_files_step(
         queue_dir=queue_dir,
         job_id=id,
@@ -133,15 +142,15 @@ def queue_files_grep_text(
     ),
 ):
     """Enqueue files.grep_text as a governed queue job."""
-    args: dict[str, Any] = {
-        "root_path": root_path,
-        "pattern": pattern,
-        "case_sensitive": case_sensitive,
-        "max_depth": max_depth,
-        "include_hidden": include_hidden,
-        "max_matches": max_matches,
-        "max_file_bytes": max_file_bytes,
-    }
+    args = build_files_grep_text_args(
+        root_path=root_path,
+        pattern=pattern,
+        case_sensitive=case_sensitive,
+        max_depth=max_depth,
+        include_hidden=include_hidden,
+        max_matches=max_matches,
+        max_file_bytes=max_file_bytes,
+    )
     created = _enqueue_files_step(
         queue_dir=queue_dir,
         job_id=id,
@@ -168,12 +177,12 @@ def queue_files_list_tree(
     ),
 ):
     """Enqueue files.list_tree as a governed queue job."""
-    args: dict[str, Any] = {
-        "root_path": root_path,
-        "max_depth": max_depth,
-        "include_hidden": include_hidden,
-        "max_entries": max_entries,
-    }
+    args = build_files_list_tree_args(
+        root_path=root_path,
+        max_depth=max_depth,
+        include_hidden=include_hidden,
+        max_entries=max_entries,
+    )
     created = _enqueue_files_step(
         queue_dir=queue_dir,
         job_id=id,
@@ -195,11 +204,11 @@ def queue_files_copy(
     ),
 ):
     """Enqueue files.copy as a governed queue job."""
-    args: dict[str, Any] = {
-        "source_path": source_path,
-        "destination_path": destination_path,
-        "overwrite": overwrite,
-    }
+    args = build_files_copy_move_args(
+        source_path=source_path,
+        destination_path=destination_path,
+        overwrite=overwrite,
+    )
     created = _enqueue_files_step(
         queue_dir=queue_dir,
         job_id=id,
@@ -221,11 +230,11 @@ def queue_files_move(
     ),
 ):
     """Enqueue files.move as a governed queue job."""
-    args: dict[str, Any] = {
-        "source_path": source_path,
-        "destination_path": destination_path,
-        "overwrite": overwrite,
-    }
+    args = build_files_copy_move_args(
+        source_path=source_path,
+        destination_path=destination_path,
+        overwrite=overwrite,
+    )
     created = _enqueue_files_step(
         queue_dir=queue_dir,
         job_id=id,
@@ -247,11 +256,7 @@ def queue_files_rename(
     ),
 ):
     """Enqueue files.rename as a governed queue job."""
-    args: dict[str, Any] = {
-        "path": path,
-        "new_name": new_name,
-        "overwrite": overwrite,
-    }
+    args = build_files_rename_args(path=path, new_name=new_name, overwrite=overwrite)
     created = _enqueue_files_step(
         queue_dir=queue_dir,
         job_id=id,
@@ -794,22 +799,21 @@ def queue_health_reset(
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=2) from exc
 
-    event_name = (
-        "health_reset_historical_counters"
-        if counter_group
-        else EVENT_BY_SCOPE.get(scope, "health_reset")
+    event_name = build_health_reset_event_name(
+        scope=scope,
+        counter_group=counter_group,
+        event_by_scope=EVENT_BY_SCOPE,
     )
     from . import cli as cli_root
 
     cli_root.log(
-        {
-            "event": event_name,
-            "scope": scope,
-            "counter_group": counter_group,
-            "actor_surface": "cli",
-            "fields_changed": summary["changed_fields"],
-            "timestamp_ms": summary["timestamp_ms"],
-        }
+        build_health_reset_log_payload(
+            event_name=event_name,
+            scope=scope,
+            counter_group=counter_group,
+            changed_fields=summary["changed_fields"],
+            timestamp_ms=summary["timestamp_ms"],
+        )
     )
 
     if json_output:

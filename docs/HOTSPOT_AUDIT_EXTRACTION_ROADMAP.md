@@ -202,6 +202,14 @@ Any extraction PR following this roadmap must preserve these invariants:
 2. `queue health*` commands into dedicated `cli_queue_health.py`.
 3. Reconcile/prune/reporting helpers into `cli_queue_hygiene.py`.
 
+### Extraction progress notes
+
+- A bounded helper extraction moved low-risk queue payload-building and argument-normalization
+  helpers (queue-files payload shaping + health-reset event/log payload shaping) out of
+  `cli_queue.py` into a focused helper module while intentionally keeping CLI registration,
+  command contract ownership, and final enqueue/queue-boundary calls in `cli_queue.py`.
+- This reduces hotspot density without moving high-sensitivity command wiring seams yet.
+
 ### Areas to avoid splitting first
 
 - The top-level `register(...)` and command group wiring should remain centralized until
