@@ -1,3 +1,13 @@
+## 2026-03-30 — PR #TBD — docs(architecture): formally close CLI queue extraction series
+
+- **Decision: the CLI queue extraction series is considered complete.** `cli_queue.py` is now the intentional root CLI composition/truth surface for the queue command family. No further extraction PRs are planned for this series.
+- Eight command-family modules were successfully extracted: `cli_queue_payloads.py`, `cli_queue_files.py`, `cli_queue_health.py`, `cli_queue_hygiene.py`, `cli_queue_bundle.py`, `cli_queue_approvals.py`, `cli_queue_inbox.py`, `cli_queue_lifecycle.py`.
+- Remaining in `cli_queue.py` by design: `queue status` (dense operator-truth rendering), `queue init` (root-level operational surface), `queue lock status` + `_render_lock_status` (lock display), top-level Typer app definitions (`queue_app`, `queue_approvals_app`, `queue_lock_app`, `inbox_app`, `artifacts_app`), `register()` composition root, and all command registration wiring.
+- Rationale: `queue status` is truth-sensitive operator-facing rendering, not a mechanical handler. `queue init` and `queue lock status` are naturally root-level. Top-level Typer registration and public CLI contract ownership belong in the composition root. Further extraction is no longer high-value relative to complexity/risk. `cli_queue.py` (~315 lines) is no longer an uncontrolled hotspot.
+- **Future extraction of `queue status` is optional, not presumed.** Only consider if a strong concrete need emerges (e.g., significant growth from new root-level commands).
+- Updated `docs/ARCHITECTURE.md` (module map, CLI ownership notes), `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (completion decision, PR-8 status), and `docs/ops.md` (CLI contributor note).
+- **Recommended next work:** instead of continuing automatic CLI extraction, focus on other high-value areas — Vera web/panel hotspot extraction, expanded characterization coverage for other modules, or feature work.
+
 ## 2026-03-30 — PR #TBD — refactor(cli): extract CLI lifecycle command-family handlers into cli_queue_lifecycle.py
 
 - Extracted `queue_cancel`, `queue_retry`, `queue_unlock`, `queue_pause`, and `queue_resume` handler functions from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_lifecycle.py`. The new module owns the full lifecycle handler implementations: job-move dispatch, fail-closed `FileNotFoundError` and `QueueLockError` handling, force-unlock path, stale-lock detection and output, pause/resume dispatch, and all console output.
@@ -7,7 +17,7 @@
 - CLI contracts (command names, option names, defaults, help text) are preserved exactly. No behavioral change.
 - Updated `docs/ARCHITECTURE.md` (directory tree, module map, CLI command tree), `docs/ops.md` (CLI contributor guidance), and `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (extraction progress notes, next PR recommendation).
 - **Current cli_queue.py extraction state:** payload helpers (`cli_queue_payloads.py`), queue files (`cli_queue_files.py`), health (`cli_queue_health.py`), hygiene (`cli_queue_hygiene.py`), bundle (`cli_queue_bundle.py`), approvals (`cli_queue_approvals.py`), inbox (`cli_queue_inbox.py`), and lifecycle (`cli_queue_lifecycle.py`) are all extracted. Remaining in `cli_queue.py`: top-level app wiring, init, status, lock status (`queue lock status` + `_render_lock_status`), and all registration/contract ownership.
-- **Next safe extraction candidate:** `queue status` (densest operator-truth rendering surface; last remaining non-init, non-lock-status command body). Keep `register()`, `queue_init`, `queue_lock_status`, `_render_lock_status`, and root composition in `cli_queue.py`.
+- **Extraction series closed:** see the docs(architecture) entry above for the formal completion decision.
 
 ## 2026-03-30 — PR #TBD — refactor(cli): extract CLI approvals and inbox command-family handlers into focused modules
 

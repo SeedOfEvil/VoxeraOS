@@ -398,22 +398,37 @@ Any extraction PR following this roadmap must preserve these invariants:
   Remaining in `cli_queue.py`: top-level app wiring, init, status, lifecycle
   (cancel/retry/unlock/pause/resume), approvals (list/approve/deny), inbox (add/list).
 
-### PR-8: Final hotspot slimming pass (bounded)
+### PR-8: CLI queue extraction series — formal close (docs-only)
 
-- After prior seams stabilize, perform small import-graph cleanup.
-- Update architecture docs and ownership map.
-- Explicitly defer any architecture redesign or semantic behavior changes to later milestones.
+- Architecture docs and ownership map updated to reflect the intentional stopping point.
+- `cli_queue.py` is now documented as the intentional root composition/truth surface.
+- No further extraction PRs are planned for this series; future extraction is optional.
+- Status: completed (this PR).
 
-### Recommended next queue extraction after characterization pass
+### CLI queue extraction series — completion decision
 
 - Precondition status: satisfied for remaining `cli_queue.py` operator surfaces.
-- Completed: approvals + inbox family extraction (this PR).
-- Completed: lifecycle command-family extraction (cancel/retry/unlock/pause/resume)
-  into `cli_queue_lifecycle.py`.
-- Recommended bounded next PR: `queue status` extraction (densest operator-truth
-  rendering logic — the last remaining non-init, non-lock-status command body in
-  `cli_queue.py`); keep `register()`, `queue_init`, `queue_lock_status`,
-  `_render_lock_status`, and root composition in `cli_queue.py`.
+- Completed extractions: `cli_queue_payloads.py`, `cli_queue_files.py`,
+  `cli_queue_health.py`, `cli_queue_hygiene.py`, `cli_queue_bundle.py`,
+  `cli_queue_approvals.py`, `cli_queue_inbox.py`, `cli_queue_lifecycle.py`.
+- **Decision: the current CLI extraction series is considered complete.**
+- `cli_queue.py` is now the intentional root CLI composition/truth surface for the
+  queue command family. Remaining contents (`queue status`, `queue init`,
+  `queue lock status`, `_render_lock_status`, top-level Typer app definitions,
+  `register()`, and root command composition) stay there by design.
+- Rationale:
+  - `queue status` is a dense operator-truth rendering surface, not a mechanical
+    handler — extraction would add complexity without proportional value.
+  - `queue init` and `queue lock status` are naturally root-level operational surfaces.
+  - Top-level Typer registration and public CLI contract ownership belong in the
+    composition root.
+  - Further extraction is no longer obviously high-value compared to the added
+    complexity and risk of splitting truth-sensitive rendering.
+  - `cli_queue.py` is no longer an uncontrolled hotspot; it is an intentional root
+    composition module (~315 lines).
+- **Future extraction of `queue status` is optional, not presumed.** It should only
+  be considered if a strong, concrete need emerges (e.g., the file grows significantly
+  due to new root-level commands), not as the default next step.
 
 ## Dependency and sequencing notes
 
