@@ -60,6 +60,13 @@ def test_cli_public_command_surface_snapshot():
         "rename",
         "tree",
     ]
+    assert sorted(root.commands["queue"].commands["approvals"].commands.keys()) == [
+        "approve",
+        "deny",
+        "list",
+    ]
+    assert sorted(root.commands["queue"].commands["lock"].commands.keys()) == ["status"]
+    assert sorted(root.commands["inbox"].commands.keys()) == ["add", "list"]
 
 
 def _strip_ansi(text: str) -> str:
