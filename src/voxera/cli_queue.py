@@ -7,11 +7,16 @@ import typer
 from rich.table import Table
 
 from .cli_common import console, queue_dir_path
+from .cli_queue_approvals import (
+    queue_approvals_approve,
+    queue_approvals_deny,
+    queue_approvals_list,
+)
 from .cli_queue_bundle import queue_bundle
 from .cli_queue_files import queue_files_app
 from .cli_queue_health import queue_health, queue_health_reset
 from .cli_queue_hygiene import artifacts_prune, queue_prune, queue_reconcile
-from .core.inbox import add_inbox_job, list_inbox_jobs
+from .cli_queue_inbox import inbox_add, inbox_list
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .core.queue_result_consumers import resolve_structured_execution
 from .paths import queue_root_display
@@ -40,45 +45,20 @@ def register(app: typer.Typer) -> None:
 
 queue_app.command("bundle")(queue_bundle)
 
+# ---------------------------------------------------------------------------
+# Approvals command-family registration (handlers in cli_queue_approvals.py)
+# ---------------------------------------------------------------------------
 
-@queue_approvals_app.command("list")
-def queue_approvals_list(
-    queue_dir: str = typer.Option(
-        queue_root_display(),
-        "--queue-dir",
-        help="Queue directory containing JSON mission jobs.",
-    ),
-):
-    """List pending queue approvals."""
-    daemon = MissionQueueDaemon(queue_root=queue_dir_path(queue_dir))
-    approvals = daemon.approvals_list()
-    if not approvals:
-        console.print("No pending approvals.")
-        return
+queue_approvals_app.command("list")(queue_approvals_list)
+queue_approvals_app.command("approve")(queue_approvals_approve)
+queue_approvals_app.command("deny")(queue_approvals_deny)
 
-    table = Table(title="Queue Approval Inbox")
-    table.add_column("Job")
-    table.add_column("Approve As")
-    table.add_column("Step")
-    table.add_column("Skill")
-    table.add_column("Capability")
-    table.add_column("Reason")
-    table.add_column("Target")
-    table.add_column("Scope")
-    for item in approvals:
-        target = item.get("target", {}) if isinstance(item.get("target"), dict) else {}
-        scope = item.get("scope", {}) if isinstance(item.get("scope"), dict) else {}
-        table.add_row(
-            str(item.get("job", "")),
-            " | ".join(str(v) for v in item.get("approve_refs", [])[:2]),
-            str(item.get("step", "")),
-            str(item.get("skill", "")),
-            str(item.get("capability", "")),
-            str(item.get("policy_reason", item.get("reason", ""))),
-            f"{target.get('type', 'unknown')}: {target.get('value', '')}",
-            f"fs={scope.get('fs_scope', '-')}, net={scope.get('needs_network', False)}",
-        )
-    console.print(table)
+# ---------------------------------------------------------------------------
+# Inbox command-family registration (handlers in cli_queue_inbox.py)
+# ---------------------------------------------------------------------------
+
+inbox_app.command("add")(inbox_add)
+inbox_app.command("list")(inbox_list)
 
 
 @queue_app.command("init")
@@ -413,102 +393,6 @@ def queue_resume(
     daemon = MissionQueueDaemon(queue_root=queue_dir_path(queue_dir))
     daemon.resume()
     console.print("Queue processing resumed.")
-
-
-@queue_approvals_app.command("approve")
-def queue_approvals_approve(
-    ref: str,
-    always: bool = typer.Option(
-        False, "--always", help="Approve and grant always-allow for this skill+scope."
-    ),
-    queue_dir: str = typer.Option(
-        queue_root_display(),
-        "--queue-dir",
-        help="Queue directory containing JSON mission jobs.",
-    ),
-):
-    """Approve a pending queue job by filename or id."""
-    daemon = MissionQueueDaemon(queue_root=queue_dir_path(queue_dir))
-    try:
-        ok = daemon.resolve_approval(ref, approve=True, approve_always=always)
-    except FileNotFoundError as exc:
-        console.print(f"[red]ERROR:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
-    console.print(
-        "Approved and resumed." if ok else "Approval processed; job still pending another approval."
-    )
-
-
-@queue_approvals_app.command("deny")
-def queue_approvals_deny(
-    ref: str,
-    queue_dir: str = typer.Option(
-        queue_root_display(),
-        "--queue-dir",
-        help="Queue directory containing JSON mission jobs.",
-    ),
-):
-    """Deny a pending queue job by filename or id."""
-    daemon = MissionQueueDaemon(queue_root=queue_dir_path(queue_dir))
-    try:
-        daemon.resolve_approval(ref, approve=False)
-    except FileNotFoundError as exc:
-        console.print(f"[red]ERROR:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
-    console.print("Denied. Job moved to failed/.")
-
-
-@inbox_app.command("add")
-def inbox_add(
-    goal: str,
-    id: str | None = typer.Option(
-        None, "--id", help="Optional job id (defaults to generated timestamp+hash)."
-    ),
-    queue_dir: str = typer.Option(
-        queue_root_display(),
-        "--queue-dir",
-        help="Queue directory containing JSON mission jobs.",
-    ),
-):
-    """Create an inbox queue job from plain goal text."""
-    try:
-        created = add_inbox_job(queue_dir_path(queue_dir), goal, job_id=id)
-    except (ValueError, FileExistsError) as exc:
-        console.print(f"[red]ERROR:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
-
-    payload = json.loads(created.read_text(encoding="utf-8"))
-    console.print(f"Created inbox job: {created}")
-    console.print(f"ID: {payload.get('id', '')}")
-    console.print(f"Goal: {payload.get('goal', '')}")
-
-
-@inbox_app.command("list")
-def inbox_list(
-    n: int = typer.Option(20, "--n", min=1, help="Number of recent inbox jobs to show."),
-    queue_dir: str = typer.Option(
-        queue_root_display(),
-        "--queue-dir",
-        help="Queue directory containing JSON mission jobs.",
-    ),
-):
-    """List inbox-created jobs across queue states."""
-    jobs, missing_dirs = list_inbox_jobs(queue_dir_path(queue_dir), limit=n)
-
-    table = Table(title="Inbox Jobs")
-    table.add_column("State")
-    table.add_column("Job")
-    table.add_column("ID")
-    table.add_column("Goal")
-    if jobs:
-        for job in jobs:
-            table.add_row(job.state, job.filename, job.job_id, job.goal)
-    else:
-        table.add_row("-", "-", "-", "No inbox jobs found")
-    console.print(table)
-
-    for missing in missing_dirs:
-        console.print(f"[yellow]Hint:[/yellow] missing directory: {missing}")
 
 
 # ---------------------------------------------------------------------------

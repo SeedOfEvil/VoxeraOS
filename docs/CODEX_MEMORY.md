@@ -1,3 +1,14 @@
+## 2026-03-30 — PR #TBD — refactor(cli): extract CLI approvals and inbox command-family handlers into focused modules
+
+- Extracted `queue_approvals_list`, `queue_approvals_approve`, and `queue_approvals_deny` handler functions from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_approvals.py`. The new module owns the full approvals handler implementations: approval list rendering, resolve-approval dispatch, fail-closed `FileNotFoundError` handling, and console output.
+- Extracted `inbox_add` and `inbox_list` handler functions from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_inbox.py`. The new module owns the full inbox handler implementations: atomic job creation, goal validation, fail-closed error handling, and rich table rendering with missing-dir hints.
+- Registration of all five commands remains in `cli_queue.py` via `queue_approvals_app.command(...)(fn)` / `inbox_app.command(...)(fn)`. Top-level CLI wiring, `queue_approvals_app` and `inbox_app` ownership, `register()`, and public contract ownership are unchanged.
+- `from .core.inbox import add_inbox_job, list_inbox_jobs` moved from `cli_queue.py` to `cli_queue_inbox.py`; the `json` import remains in `cli_queue.py` (used by `queue_status`).
+- CLI contracts (command names, option names, defaults, help text) are preserved exactly. No behavioral change.
+- Updated `docs/ARCHITECTURE.md` (directory tree, module map, CLI command tree), `docs/ops.md` (CLI contributor guidance), and `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (extraction progress notes, next PR recommendation).
+- **Current cli_queue.py extraction state:** payload helpers (`cli_queue_payloads.py`), queue files (`cli_queue_files.py`), health (`cli_queue_health.py`), hygiene (`cli_queue_hygiene.py`), bundle (`cli_queue_bundle.py`), approvals (`cli_queue_approvals.py`), and inbox (`cli_queue_inbox.py`) are all extracted. Remaining in `cli_queue.py`: top-level app wiring, init, status, lifecycle (cancel/retry/unlock/pause/resume), lock status, and all registration/contract ownership.
+- **Next safe extraction candidate:** lifecycle commands (cancel/retry/unlock/pause/resume) as a bounded family, then `queue status` last (densest operator-truth rendering surface).
+
 ## 2026-03-30 — PR #TBD — test(cli_queue): characterize remaining truth-sensitive queue CLI surfaces pre-extraction
 
 - Added bounded characterization coverage for the remaining operator-facing surfaces still living in `src/voxera/cli_queue.py`: `queue status`, lifecycle commands (`cancel`, `retry`, `pause`, `resume`, `unlock`), approvals commands (`list`, `approve`, `deny`), inbox commands (`add`, `list`), and root CLI registration/contract shape checks.

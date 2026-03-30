@@ -240,6 +240,22 @@ Any extraction PR following this roadmap must preserve these invariants:
   `pause`, `resume`, `unlock`), approvals commands (`list`, `approve`, `deny`), inbox
   commands (`add`, `list`), plus root command-tree shape assertions for queue approvals,
   queue lock, and top-level inbox wiring.
+- The `queue approvals` command-family handlers (`list`, `approve`, `deny`) have been
+  extracted from `cli_queue.py` into `src/voxera/cli_queue_approvals.py`. The extracted
+  module owns `queue_approvals_list`, `queue_approvals_approve`, and `queue_approvals_deny`
+  (full handler implementations including approval resolution, fail-closed FileNotFoundError
+  handling, and rich table rendering). All three are registered to `queue_approvals_app` in
+  `cli_queue.py` via `queue_approvals_app.command(...)(fn)`. Top-level CLI registration,
+  `queue_approvals_app` ownership, and public CLI contract ownership remain in
+  `cli_queue.py`. CLI contracts (command names, option names, defaults, help text) are
+  unchanged.
+- The `inbox` command-family handlers (`add`, `list`) have been extracted from
+  `cli_queue.py` into `src/voxera/cli_queue_inbox.py`. The extracted module owns
+  `inbox_add` and `inbox_list` (full handler implementations including atomic job creation,
+  goal validation, fail-closed error handling, and rich table rendering with missing-dir
+  hints). Both are registered to `inbox_app` in `cli_queue.py` via
+  `inbox_app.command(...)(fn)`. Top-level CLI registration, `inbox_app` ownership, and
+  public CLI contract ownership remain in `cli_queue.py`. CLI contracts are unchanged.
 
 ### Areas to avoid splitting first
 
@@ -381,11 +397,11 @@ Any extraction PR following this roadmap must preserve these invariants:
 ### Recommended next queue extraction after characterization pass
 
 - Precondition status: satisfied for remaining `cli_queue.py` operator surfaces.
+- Completed: approvals + inbox family extraction (this PR).
 - Recommended bounded next PR: extract one command family at a time while keeping
   `register()` and command-tree ownership in `cli_queue.py`:
-  1. approvals + inbox family extraction first (lower coupling than status rendering),
-  2. lifecycle command extraction second,
-  3. `queue status` extraction last due to densest operator-truth rendering logic.
+  1. lifecycle command extraction next (cancel/retry/unlock/pause/resume),
+  2. `queue status` extraction last due to densest operator-truth rendering logic.
 
 ## Dependency and sequencing notes
 

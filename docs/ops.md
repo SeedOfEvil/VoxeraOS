@@ -875,8 +875,9 @@ The codebase follows a **thin composition root + focused domain modules** patter
 **CLI** (`src/voxera/`):
 - New queue/operator command families → `cli_queue.py` for registration/wiring;
   handler implementations belong in the focused submodule for the command family
-  (`cli_queue_bundle.py`, `cli_queue_files.py`, `cli_queue_health.py`,
-  `cli_queue_hygiene.py`, `cli_queue_payloads.py`)
+  (`cli_queue_approvals.py`, `cli_queue_bundle.py`, `cli_queue_files.py`,
+  `cli_queue_health.py`, `cli_queue_hygiene.py`, `cli_queue_inbox.py`,
+  `cli_queue_payloads.py`)
 - New diagnostic command logic → `cli_doctor.py` (expose via `register(app)`)
 - Runtime config command logic → `cli_config.py`; skills/missions/run → `cli_skills_missions.py`
 - Ops command logic → `cli_ops.py`; setup/demo/status/audit/panel/daemon → `cli_runtime.py`
