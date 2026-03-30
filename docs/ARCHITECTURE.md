@@ -431,10 +431,11 @@ src/voxera/
 ├── cli_queue.py              — Queue/operator-facing command registration + wiring.
 │                               Owns: queue_app, queue_approvals_app, queue_lock_app,
 │                               inbox_app, artifacts_app Typer sub-apps and their
-│                               remaining command implementations (bundle, init, status,
+│                               remaining command implementations (init, status,
 │                               cancel, retry, unlock, pause, resume, lock status).
 │                               Attaches queue_files_app (from cli_queue_files.py) as
-│                               "files" subcommand; attaches approvals handlers (from
+│                               "files" subcommand; attaches bundle handler (from
+│                               cli_queue_bundle.py), approvals handlers (from
 │                               cli_queue_approvals.py), inbox handlers (from
 │                               cli_queue_inbox.py), health/health-reset handlers (from
 │                               cli_queue_health.py), and hygiene handlers (from
