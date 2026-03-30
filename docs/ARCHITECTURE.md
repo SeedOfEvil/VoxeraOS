@@ -964,8 +964,7 @@ voxera                        (cli.py — Typer composition root)
 │   │   └── deny     deny a pending step
 │   │
 │   └── lock         (queue_lock_app)
-│       ├── status   show daemon lock status
-│       └── unlock   force-release a stale lock
+│       └── status   show daemon lock status
 │
 ├── inbox            (cli_queue_inbox.py — inbox_app)
 │   ├── add          submit a goal text as a job file
