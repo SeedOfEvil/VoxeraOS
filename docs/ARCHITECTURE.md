@@ -429,20 +429,19 @@ src/voxera/
 │                               console, RUN_ARG_OPTION, OUT_PATH_OPTION,
 │                               OPS_BUNDLE_ARCHIVE_DIR_OPTION, SNAPSHOT_PATH_OPTION,
 │                               DEMO_QUEUE_DIR_OPTION, now_ms(), queue_dir_path().
-├── cli_queue.py              — Queue/operator-facing command registration + wiring.
-│                               Owns: queue_app, queue_approvals_app, queue_lock_app,
-│                               inbox_app, artifacts_app Typer sub-apps and their
-│                               remaining command implementations (init, status,
-│                               lock status). Attaches queue_files_app (from
-│                               cli_queue_files.py) as "files" subcommand; attaches
-│                               bundle handler (from cli_queue_bundle.py), approvals
-│                               handlers (from cli_queue_approvals.py), inbox handlers
-│                               (from cli_queue_inbox.py), health/health-reset handlers
-│                               (from cli_queue_health.py), lifecycle handlers (from
-│                               cli_queue_lifecycle.py), and hygiene handlers (from
-│                               cli_queue_hygiene.py) via app.command(...)(fn); final
-│                               top-level CLI registration and public CLI contract
-│                               ownership remain here.
+├── cli_queue.py              — Intentional root CLI composition/truth surface for the
+│                               queue command family. Owns: queue_app,
+│                               queue_approvals_app, queue_lock_app, inbox_app,
+│                               artifacts_app Typer sub-apps; command implementations
+│                               for init, status, and lock status; _render_lock_status
+│                               helper; register() composition root. Attaches extracted
+│                               handler modules (cli_queue_files, cli_queue_bundle,
+│                               cli_queue_approvals, cli_queue_inbox, cli_queue_health,
+│                               cli_queue_lifecycle, cli_queue_hygiene) via
+│                               app.command(...)(fn). This is the intentional endpoint
+│                               of the CLI extraction series — remaining contents are
+│                               truth-sensitive operator-facing rendering and root
+│                               composition that stays here by design.
 ├── cli_queue_approvals.py    — queue approvals command-family handlers (list, approve,
 │                               deny). Owns: queue_approvals_list, queue_approvals_approve,
 │                               and queue_approvals_deny handler functions (full
@@ -1022,7 +1021,7 @@ A recurring structural pattern now present across the three main subsystems:
 
 **CLI** (`src/voxera/`)
 - `cli.py` is the composition root — it creates the Typer app, registers sub-apps from `cli_queue.py`, and registers the `doctor` command from `cli_doctor.py`
-- Queue/operator command registration, CLI contract ownership, and final enqueue boundaries live in `cli_queue.py`; the `queue files` command-family handlers (find/grep/tree/copy/move/rename) live in `cli_queue_files.py` and are attached to `queue_app` in `cli_queue.py`; the `queue health`/`queue health-reset` command-family handlers live in `cli_queue_health.py` and are registered to `queue_app` in `cli_queue.py` via `queue_app.command(...)(fn)`; low-risk queue payload/arg shaping helpers live in `cli_queue_payloads.py`; doctor command wiring lives in `cli_doctor.py`; shared primitives live in `cli_common.py`
+- `cli_queue.py` is the intentional root CLI composition/truth surface for the queue command family — it owns Typer sub-app definitions, `register()`, and the remaining truth-sensitive command implementations (`queue status`, `queue init`, `queue lock status`). Eight extracted handler modules (`cli_queue_payloads.py`, `cli_queue_files.py`, `cli_queue_health.py`, `cli_queue_hygiene.py`, `cli_queue_bundle.py`, `cli_queue_approvals.py`, `cli_queue_inbox.py`, `cli_queue_lifecycle.py`) own their respective command-family implementations and are registered from `cli_queue.py`. The CLI extraction series is considered complete; future extraction of remaining commands is optional, not presumed. Doctor command wiring lives in `cli_doctor.py`; shared primitives live in `cli_common.py`
 - New CLI command families should follow the same modular registration pattern rather than growing `cli.py`
 
 ---

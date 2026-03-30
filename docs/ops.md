@@ -873,6 +873,10 @@ The codebase follows a **thin composition root + focused domain modules** patter
 - Shared request/value parsing helpers go in `helpers.py`
 
 **CLI** (`src/voxera/`):
+- `cli_queue.py` is the intentional root CLI composition/truth surface for the queue
+  command family. The CLI extraction series is complete; remaining contents (`queue status`,
+  `queue init`, `queue lock status`, `_render_lock_status`, Typer sub-app definitions,
+  `register()`) stay there by design. Future extraction is optional, not presumed.
 - New queue/operator command families → `cli_queue.py` for registration/wiring;
   handler implementations belong in the focused submodule for the command family
   (`cli_queue_approvals.py`, `cli_queue_bundle.py`, `cli_queue_files.py`,
