@@ -1,3 +1,10 @@
+## 2026-03-30 — PR #TBD — test(cli_queue): characterize remaining truth-sensitive queue CLI surfaces pre-extraction
+
+- Added bounded characterization coverage for the remaining operator-facing surfaces still living in `src/voxera/cli_queue.py`: `queue status`, lifecycle commands (`cancel`, `retry`, `pause`, `resume`, `unlock`), approvals commands (`list`, `approve`, `deny`), inbox commands (`add`, `list`), and root CLI registration/contract shape checks.
+- Scope is test-only (`tests/test_cli_queue_remaining_surfaces.py` + expanded assertions in `tests/test_cli_contract_snapshot.py`); no runtime command handlers, contracts, or queue trust boundaries changed.
+- Coverage now anchors both positive and fail-closed behavior on truth-sensitive seams (including missing refs, malformed inbox input, unlock refusal path, and approvals deny behavior).
+- **Durable next step updated:** characterization precondition for remaining `cli_queue.py` extraction is now satisfied; next safe extraction PR can split one remaining command family (recommended order: approvals/inbox first, then lifecycle/status with root registration kept in `cli_queue.py`).
+
 ## 2026-03-30 — PR #TBD — refactor(cli): extract CLI bundle command handler into cli_queue_bundle.py
 
 - Extracted `queue_bundle` handler function from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_bundle.py`. The new module owns the full `queue bundle` handler implementation: job/system bundle dispatch, `BundleError` handling, output file writing, and console reporting.

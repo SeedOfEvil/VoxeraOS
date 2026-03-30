@@ -235,6 +235,11 @@ Any extraction PR following this roadmap must preserve these invariants:
   decorator to preserve subcommand help ordering. Top-level CLI registration and
   `register()` remain in `cli_queue.py`. CLI contracts (command name, option names,
   defaults, help text) are unchanged.
+- A bounded characterization pass now anchors the remaining truth-sensitive
+  `cli_queue.py` surfaces in tests: `queue status`, lifecycle commands (`cancel`, `retry`,
+  `pause`, `resume`, `unlock`), approvals commands (`list`, `approve`, `deny`), inbox
+  commands (`add`, `list`), plus root command-tree shape assertions for queue approvals,
+  queue lock, and top-level inbox wiring.
 
 ### Areas to avoid splitting first
 
@@ -372,6 +377,15 @@ Any extraction PR following this roadmap must preserve these invariants:
 - After prior seams stabilize, perform small import-graph cleanup.
 - Update architecture docs and ownership map.
 - Explicitly defer any architecture redesign or semantic behavior changes to later milestones.
+
+### Recommended next queue extraction after characterization pass
+
+- Precondition status: satisfied for remaining `cli_queue.py` operator surfaces.
+- Recommended bounded next PR: extract one command family at a time while keeping
+  `register()` and command-tree ownership in `cli_queue.py`:
+  1. approvals + inbox family extraction first (lower coupling than status rendering),
+  2. lifecycle command extraction second,
+  3. `queue status` extraction last due to densest operator-truth rendering logic.
 
 ## Dependency and sequencing notes
 
