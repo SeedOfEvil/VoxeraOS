@@ -1,3 +1,14 @@
+## 2026-03-30 — PR #TBD — refactor(cli): extract CLI lifecycle command-family handlers into cli_queue_lifecycle.py
+
+- Extracted `queue_cancel`, `queue_retry`, `queue_unlock`, `queue_pause`, and `queue_resume` handler functions from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_lifecycle.py`. The new module owns the full lifecycle handler implementations: job-move dispatch, fail-closed `FileNotFoundError` and `QueueLockError` handling, force-unlock path, stale-lock detection and output, pause/resume dispatch, and all console output.
+- Registration of all five commands remains in `cli_queue.py` via `queue_app.command(...)(fn)`. Top-level CLI wiring, `queue_app` ownership, `register()`, and public contract ownership are unchanged.
+- `_render_lock_status` and `queue_lock_status` intentionally remain in `cli_queue.py` — they are lock-status display surfaces, not lifecycle mutation handlers, and are more naturally paired with the lock sub-app wiring that lives there.
+- `QueueLockError` import removed from `cli_queue.py` (now owned by `cli_queue_lifecycle.py`); `MissionQueueDaemon` import remains in `cli_queue.py` (still used by `queue_init`, `queue_status`, and `queue_lock_status`).
+- CLI contracts (command names, option names, defaults, help text) are preserved exactly. No behavioral change.
+- Updated `docs/ARCHITECTURE.md` (directory tree, module map, CLI command tree), `docs/ops.md` (CLI contributor guidance), and `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (extraction progress notes, next PR recommendation).
+- **Current cli_queue.py extraction state:** payload helpers (`cli_queue_payloads.py`), queue files (`cli_queue_files.py`), health (`cli_queue_health.py`), hygiene (`cli_queue_hygiene.py`), bundle (`cli_queue_bundle.py`), approvals (`cli_queue_approvals.py`), inbox (`cli_queue_inbox.py`), and lifecycle (`cli_queue_lifecycle.py`) are all extracted. Remaining in `cli_queue.py`: top-level app wiring, init, status, lock status (`queue lock status` + `_render_lock_status`), and all registration/contract ownership.
+- **Next safe extraction candidate:** `queue status` (densest operator-truth rendering surface; last remaining non-init, non-lock-status command body). Keep `register()`, `queue_init`, `queue_lock_status`, `_render_lock_status`, and root composition in `cli_queue.py`.
+
 ## 2026-03-30 — PR #TBD — refactor(cli): extract CLI approvals and inbox command-family handlers into focused modules
 
 - Extracted `queue_approvals_list`, `queue_approvals_approve`, and `queue_approvals_deny` handler functions from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_approvals.py`. The new module owns the full approvals handler implementations: approval list rendering, resolve-approval dispatch, fail-closed `FileNotFoundError` handling, and console output.

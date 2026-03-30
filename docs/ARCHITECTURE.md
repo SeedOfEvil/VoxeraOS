@@ -56,6 +56,7 @@ VoxeraOS/
 │   │   ├── cli_queue_health.py      — queue health/health-reset command-family handlers
 │   │   ├── cli_queue_hygiene.py     — queue prune/reconcile/artifacts-prune hygiene handlers
 │   │   ├── cli_queue_inbox.py       — inbox command-family handlers (add/list)
+│   │   ├── cli_queue_lifecycle.py   — queue lifecycle command-family handlers (cancel/retry/unlock/pause/resume)
 │   │   ├── cli_queue_payloads.py    — low-risk CLI queue payload/arg shaping helpers
 │   │   ├── cli_config.py            — runtime config command implementations
 │   │   ├── cli_skills_missions.py   — skills/missions/run command implementations
@@ -432,13 +433,13 @@ src/voxera/
 │                               Owns: queue_app, queue_approvals_app, queue_lock_app,
 │                               inbox_app, artifacts_app Typer sub-apps and their
 │                               remaining command implementations (init, status,
-│                               cancel, retry, unlock, pause, resume, lock status).
-│                               Attaches queue_files_app (from cli_queue_files.py) as
-│                               "files" subcommand; attaches bundle handler (from
-│                               cli_queue_bundle.py), approvals handlers (from
-│                               cli_queue_approvals.py), inbox handlers (from
-│                               cli_queue_inbox.py), health/health-reset handlers (from
-│                               cli_queue_health.py), and hygiene handlers (from
+│                               lock status). Attaches queue_files_app (from
+│                               cli_queue_files.py) as "files" subcommand; attaches
+│                               bundle handler (from cli_queue_bundle.py), approvals
+│                               handlers (from cli_queue_approvals.py), inbox handlers
+│                               (from cli_queue_inbox.py), health/health-reset handlers
+│                               (from cli_queue_health.py), lifecycle handlers (from
+│                               cli_queue_lifecycle.py), and hygiene handlers (from
 │                               cli_queue_hygiene.py) via app.command(...)(fn); final
 │                               top-level CLI registration and public CLI contract
 │                               ownership remain here.
@@ -476,6 +477,15 @@ src/voxera/
 │                               handling, and rich table rendering). Registered to inbox_app
 │                               in cli_queue.py; top-level CLI registration and public CLI
 │                               contract ownership stay in cli_queue.py.
+├── cli_queue_lifecycle.py    — queue lifecycle command-family handlers (cancel, retry,
+│                               unlock, pause, resume). Owns: queue_cancel, queue_retry,
+│                               queue_unlock, queue_pause, and queue_resume handler
+│                               functions (full implementations including fail-closed
+│                               FileNotFoundError and QueueLockError handling, force-unlock
+│                               path, and stale-lock detection). Registered to queue_app in
+│                               cli_queue.py via queue_app.command(...)(fn); top-level CLI
+│                               registration and public CLI contract ownership stay in
+│                               cli_queue.py.
 ├── cli_queue_payloads.py     — Low-risk CLI queue payload/arg shaping helpers used by
 │                               queue-files and health-reset commands. Keeps pure-ish
 │                               payload normalization out of command wiring/orchestration.
@@ -933,8 +943,11 @@ voxera                        (cli.py — Typer composition root)
 │   ├── reconcile    orphan/duplicate detection + fix (cli_queue_hygiene.py — queue_reconcile)
 │   ├── health       raw health snapshot (cli_queue_health.py — queue_health)
 │   ├── health-reset reset health snapshot (cli_queue_health.py — queue_health_reset)
-│   ├── cancel       cancel a queued or pending job
-│   ├── retry        re-queue a failed job
+│   ├── cancel       cancel a queued or pending job (cli_queue_lifecycle.py — queue_cancel)
+│   ├── retry        re-queue a failed job (cli_queue_lifecycle.py — queue_retry)
+│   ├── unlock       remove stale/dead lock (cli_queue_lifecycle.py — queue_unlock)
+│   ├── pause        pause queue processing (cli_queue_lifecycle.py — queue_pause)
+│   ├── resume       resume queue processing (cli_queue_lifecycle.py — queue_resume)
 │   ├── delete       delete a terminal job + all sidecars
 │   │
 │   ├── files        (cli_queue_files.py — queue_files_app)
@@ -951,8 +964,7 @@ voxera                        (cli.py — Typer composition root)
 │   │   └── deny     deny a pending step
 │   │
 │   └── lock         (queue_lock_app)
-│       ├── status   show daemon lock status
-│       └── unlock   force-release a stale lock
+│       └── status   show daemon lock status
 │
 ├── inbox            (cli_queue_inbox.py — inbox_app)
 │   ├── add          submit a goal text as a job file
