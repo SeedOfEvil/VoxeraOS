@@ -12,28 +12,21 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import load_config as load_runtime_config
 from ..core.code_draft_intent import (
-    classify_code_draft_intent,
-    extract_code_from_reply,
     has_code_file_extension,
     is_code_draft_request,
 )
 from ..core.file_intent import detect_blocked_file_intent
 from ..core.writing_draft_intent import (
-    classify_writing_draft_intent,
-    extract_text_draft_from_reply,
     is_text_draft_preview,
     is_writing_draft_request,
     is_writing_refinement_request,
 )
 from ..paths import queue_root as default_queue_root
 from ..vera.draft_revision import (
-    _detect_content_type_from_preview,
-    _generate_refreshed_content,
-    _is_clear_content_refresh_request,
-    looks_like_preview_rename_or_save_as_request,
+    _is_ambiguous_change_request as _is_ambiguous_change_request,
 )
 from ..vera.draft_revision import (
-    _is_ambiguous_change_request as _is_ambiguous_change_request,
+    looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.evidence_review import (
     draft_followup_preview,
@@ -73,7 +66,6 @@ from ..vera.preview_submission import (
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.saveable_artifacts import (
-    looks_like_non_authored_assistant_message,
     message_requests_referenced_content,
 )
 from ..vera.service import (
@@ -121,12 +113,6 @@ from .conversational_checklist import (
     enforce_conversational_checklist_output as _cc_enforce_conversational_checklist_output,
 )
 from .conversational_checklist import (
-    has_conversational_planning_signal as _cc_has_conversational_planning_signal,
-)
-from .conversational_checklist import (
-    has_save_write_file_signal as _cc_has_save_write_file_signal,
-)
-from .conversational_checklist import (
     is_conversational_answer_first_request as _cc_is_conversational_answer_first_request,
 )
 from .conversational_checklist import (
@@ -143,6 +129,11 @@ from .conversational_checklist import (
 )
 from .conversational_checklist import (
     should_use_conversational_artifact_mode as _cc_should_use_conversational_artifact_mode,
+)
+from .draft_content_binding import (
+    extract_reply_drafts,
+    resolve_draft_content_binding,
+    strip_internal_control_blocks,
 )
 from .execution_mode import (
     ExecutionMode,
@@ -299,24 +290,7 @@ def _looks_like_preview_update_claim(text: str) -> bool:
 
 
 def _strip_internal_control_blocks(text: str) -> str:
-    """Remove internal Voxera control markup from user-visible assistant text."""
-    if not text:
-        return ""
-
-    cleaned = re.sub(
-        r"```[^\n]*\n\s*<voxera_control\b.*?</voxera_control>\s*```",
-        "",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    cleaned = re.sub(
-        r"<voxera_control\b[^>]*>.*?</voxera_control>",
-        "",
-        cleaned,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
+    return strip_internal_control_blocks(text)
 
 
 def _is_governed_writing_preview(preview: dict[str, object] | None) -> bool:
@@ -1256,391 +1230,45 @@ async def chat(request: Request):
             root, active_session, {**session_weather_context, "followup_active": False}
         )
 
-    # Code draft post-processing: after the LLM reply we know the actual code
-    # content.  Extract it from any fenced block and inject it into the preview
-    # so the preview is authoritative and submit-ready — not just a placeholder.
-    # is_code_draft_turn was pre-computed above (before the LLM call) so the
-    # code-draft hint could be passed to generate_vera_reply.
-    reply_code_content = extract_code_from_reply(reply_answer)
-    sanitized_answer = _strip_internal_control_blocks(reply_answer)
-    reply_text_draft_candidate = extract_text_draft_from_reply(sanitized_answer)
-    reply_text_draft = (
-        None
-        if looks_like_non_authored_assistant_message(str(reply_text_draft_candidate or ""))
-        else reply_text_draft_candidate
+    # ── Post-LLM draft content extraction and binding ──
+    # Extract code/text drafts from the reply, then resolve binding into
+    # preview payloads.  The derivation is in draft_content_binding.py;
+    # final session writes stay here in app.py.
+    _drafts = extract_reply_drafts(reply_answer, message)
+    sanitized_answer = _drafts.sanitized_answer
+
+    _binding = resolve_draft_content_binding(
+        message=message,
+        reply_code_content=_drafts.reply_code_content,
+        reply_text_draft=_drafts.reply_text_draft,
+        reply_status=reply_status,
+        builder_payload=builder_payload,
+        pending_preview=pending_preview,
+        is_code_draft_turn=is_code_draft_turn,
+        is_writing_draft_turn=is_writing_draft_turn,
+        is_explicit_writing_transform=is_explicit_writing_transform,
+        informational_web_turn=informational_web_turn,
+        is_enrichment_turn=is_enrichment_turn,
+        explicit_targeted_content_refinement=explicit_targeted_content_refinement,
+        active_preview_is_refinable_prose=active_preview_is_refinable_prose,
+        conversational_answer_first_turn=conversational_answer_first_turn,
+        active_session=active_session,
     )
-    if reply_text_draft is None and _looks_like_active_preview_content_generation_turn(message):
-        first_block = next(
-            (block.strip() for block in re.split(r"\n{2,}", sanitized_answer) if block.strip()),
-            "",
+    builder_payload = _binding.builder_payload
+    is_code_draft_turn = _binding.is_code_draft_turn
+    is_writing_draft_turn = _binding.is_writing_draft_turn
+    generation_content_refresh_failed_closed = _binding.generation_content_refresh_failed_closed
+    if _binding.preview_needs_write:
+        write_session_preview(root, active_session, builder_payload)
+        write_session_handoff_state(
+            root,
+            active_session,
+            attempted=False,
+            queue_path=str(root),
+            status="preview_ready",
+            error=None,
+            job_id=None,
         )
-        if (
-            first_block
-            and len(first_block.split()) >= 4
-            and not looks_like_non_authored_assistant_message(first_block)
-            and not _looks_like_preview_update_claim(first_block)
-            and not re.search(r"\bprepared\s+(?:a|the)\s+preview\b", first_block, re.IGNORECASE)
-        ):
-            reply_text_draft = first_block
-    generation_content_refresh_failed_closed = False
-
-    # Code draft refinement: when an active preview has a code-type file
-    # extension and the LLM reply contains a fenced code block, treat this
-    # turn as a code draft update so the reply is shown (not suppressed) and
-    # the preview content is refreshed with the updated code.
-    if (
-        not is_code_draft_turn
-        and not informational_web_turn
-        and not is_enrichment_turn
-        and not explicit_targeted_content_refinement
-        and isinstance(pending_preview, dict)
-        and reply_code_content is not None
-    ):
-        existing_wf = pending_preview.get("write_file")
-        if isinstance(existing_wf, dict) and has_code_file_extension(
-            str(existing_wf.get("path") or "")
-        ):
-            is_code_draft_turn = True
-
-    if is_code_draft_turn and reply_code_content is not None:
-        # Use existing builder payload if the hidden compiler built one;
-        # otherwise create a fresh code draft preview now.
-        target_draft: dict[str, object] | None = builder_payload
-        builder_has_explicit_content = False
-        explicit_literal_content_refinement = bool(
-            re.search(
-                r"\b("
-                r"add\s+content\s+to|"
-                r"use\s+this\s+as\s+(?:the\s+)?content|"
-                r"(?:content|text)\s*:|"
-                r"with\s+(?:the\s+)?(?:content|text)\b|"
-                r"as\s+content\s+add|"
-                r"put\s+.+?\s+(?:inside|in|into)\s+(?:it|the\s+file)\b"
-                r")",
-                message,
-                re.IGNORECASE,
-            )
-        )
-        if isinstance(builder_payload, dict):
-            builder_wf = builder_payload.get("write_file")
-            builder_has_explicit_content = isinstance(builder_wf, dict) and bool(
-                str(builder_wf.get("content") or "").strip()
-            )
-        if target_draft is None:
-            raw_draft = classify_code_draft_intent(message)
-            if raw_draft is not None:
-                try:
-                    target_draft = normalize_preview_payload(raw_draft)
-                except Exception:
-                    target_draft = None
-        # Fall back to the existing pending preview for refinement turns
-        # where the classifier doesn't match but a code preview already exists.
-        if target_draft is None and isinstance(pending_preview, dict):
-            target_draft = dict(pending_preview)
-        if (
-            builder_has_explicit_content
-            and explicit_literal_content_refinement
-            and not isinstance(pending_preview, dict)
-        ):
-            # When no active code preview exists yet, keep an explicit
-            # structured content payload from the deterministic builder rather
-            # than replacing it with a speculative fenced-code extraction.
-            reply_code_content = None
-        if isinstance(target_draft, dict) and reply_code_content is not None:
-            wf = target_draft.get("write_file")
-            if isinstance(wf, dict):
-                updated_draft: dict[str, object] = {
-                    **target_draft,
-                    "write_file": {**wf, "content": reply_code_content},
-                }
-                builder_payload = updated_draft
-                write_session_preview(root, active_session, builder_payload)
-                write_session_handoff_state(
-                    root,
-                    active_session,
-                    attempted=False,
-                    queue_path=str(root),
-                    status="preview_ready",
-                    error=None,
-                    job_id=None,
-                )
-
-    is_existing_refinable_prose_preview = active_preview_is_refinable_prose
-    is_existing_writing_preview = _is_governed_writing_preview(pending_preview)
-    if (
-        not is_writing_draft_turn
-        and not informational_web_turn
-        and not is_enrichment_turn
-        and not explicit_targeted_content_refinement
-        and is_existing_refinable_prose_preview
-        and is_writing_refinement_request(message)
-        and reply_text_draft is not None
-    ):
-        is_writing_draft_turn = True
-
-    pending_preview_write_file = (
-        pending_preview.get("write_file") if isinstance(pending_preview, dict) else None
-    )
-    pending_preview_path = (
-        str(pending_preview_write_file.get("path") or "").strip()
-        if isinstance(pending_preview_write_file, dict)
-        else ""
-    )
-    pending_preview_content = (
-        str(pending_preview_write_file.get("content") or "").strip()
-        if isinstance(pending_preview_write_file, dict)
-        else ""
-    )
-    active_preview_is_code = (
-        bool(pending_preview_path)
-        and has_code_file_extension(pending_preview_path)
-        and not pending_preview_path.lower().endswith(".md")
-    )
-    builder_is_governed_writing_preview = _is_governed_writing_preview(builder_payload)
-    builder_preview_write_file = (
-        builder_payload.get("write_file") if isinstance(builder_payload, dict) else None
-    )
-    builder_preview_path = (
-        str(builder_preview_write_file.get("path") or "").strip()
-        if isinstance(builder_preview_write_file, dict)
-        else ""
-    )
-    builder_preview_is_code = (
-        bool(builder_preview_path)
-        and has_code_file_extension(builder_preview_path)
-        and not builder_preview_path.lower().endswith(".md")
-    )
-
-    should_preserve_builder_refinement_content = (
-        active_preview_is_code
-        and not builder_is_governed_writing_preview
-        and (not builder_preview_path or builder_preview_is_code)
-    )
-    if (
-        not should_preserve_builder_refinement_content
-        and isinstance(builder_payload, dict)
-        and is_writing_refinement_request(message)
-    ):
-        builder_wf = builder_payload.get("write_file")
-        builder_content = (
-            str(builder_wf.get("content") or "").strip() if isinstance(builder_wf, dict) else ""
-        )
-        reply_text_draft_content = str(reply_text_draft or "").strip()
-        should_preserve_builder_refinement_content = (
-            not is_existing_writing_preview
-            and bool(builder_content)
-            and builder_content != pending_preview_content
-            and (not reply_text_draft_content or builder_content == reply_text_draft_content)
-            and not looks_like_builder_refinement_placeholder(builder_content)
-        )
-
-    if (
-        is_writing_draft_turn
-        and reply_text_draft is not None
-        and not reply_status.startswith("degraded")
-        and not should_preserve_builder_refinement_content
-    ):
-        prose_target_draft: dict[str, object] | None = builder_payload
-        if prose_target_draft is None:
-            raw_draft = classify_writing_draft_intent(message)
-            if raw_draft is not None:
-                try:
-                    prose_target_draft = normalize_preview_payload(raw_draft)
-                except Exception:
-                    prose_target_draft = None
-        if (
-            prose_target_draft is None
-            and isinstance(pending_preview, dict)
-            and _is_refinable_prose_preview(pending_preview)
-        ):
-            prose_target_draft = dict(pending_preview)
-        if isinstance(prose_target_draft, dict):
-            wf = prose_target_draft.get("write_file")
-            if isinstance(wf, dict):
-                updated_prose_draft: dict[str, object] = {
-                    **prose_target_draft,
-                    "write_file": {**wf, "content": reply_text_draft},
-                }
-                builder_payload = updated_prose_draft
-                write_session_preview(root, active_session, builder_payload)
-                write_session_handoff_state(
-                    root,
-                    active_session,
-                    attempted=False,
-                    queue_path=str(root),
-                    status="preview_ready",
-                    error=None,
-                    job_id=None,
-                )
-
-    # Single-turn generate+save guardrail: when the deterministic builder staged
-    # a text preview shell with empty content (for example "tell me a joke and
-    # save it as ..."), bind same-turn authored reply text directly so preview
-    # content never stays empty for a clear generation intent.
-    if (
-        isinstance(builder_payload, dict)
-        and _is_refinable_prose_preview(builder_payload)
-        and not is_code_draft_turn
-        and not is_writing_draft_turn
-        and not informational_web_turn
-        and not is_enrichment_turn
-        and _looks_like_active_preview_content_generation_turn(message)
-        and reply_text_draft is not None
-        and not str(reply_status).strip().lower().startswith("degraded")
-    ):
-        _shell_wf = builder_payload.get("write_file")
-        _shell_content = (
-            str(_shell_wf.get("content") or "").strip() if isinstance(_shell_wf, dict) else ""
-        )
-        if isinstance(_shell_wf, dict) and not _shell_content:
-            shell_bound_preview: dict[str, object] = {
-                **builder_payload,
-                "write_file": {**_shell_wf, "content": reply_text_draft},
-            }
-            builder_payload = shell_bound_preview
-            write_session_preview(root, active_session, builder_payload)
-            write_session_handoff_state(
-                root,
-                active_session,
-                attempted=False,
-                queue_path=str(root),
-                status="preview_ready",
-                error=None,
-                job_id=None,
-            )
-
-    generation_binding_intent = (
-        not is_code_draft_turn
-        and not is_writing_draft_turn
-        and not informational_web_turn
-        and not is_enrichment_turn
-        and _looks_like_active_preview_content_generation_turn(message)
-        and not _message_has_explicit_content_literal(message)
-        and not str(reply_status).strip().lower().startswith("degraded")
-    )
-    if generation_binding_intent and (
-        _is_refinable_prose_preview(builder_payload) or _is_refinable_prose_preview(pending_preview)
-    ):
-        if reply_text_draft is not None:
-            target_preview = (
-                builder_payload
-                if _is_refinable_prose_preview(builder_payload)
-                else pending_preview
-                if _is_refinable_prose_preview(pending_preview)
-                else None
-            )
-            if isinstance(target_preview, dict):
-                target_wf = target_preview.get("write_file")
-                if isinstance(target_wf, dict):
-                    save_as_target = _extract_save_as_text_target(message)
-                    rewritten_path = str(target_wf.get("path") or "").strip()
-                    if save_as_target:
-                        rewritten_path = f"~/VoxeraOS/notes/{save_as_target}"
-                    updated_preview: dict[str, object] = {
-                        **target_preview,
-                        "write_file": {
-                            **target_wf,
-                            "path": rewritten_path or target_wf.get("path"),
-                            "content": reply_text_draft,
-                        },
-                    }
-                    builder_payload = updated_preview
-                    write_session_preview(root, active_session, builder_payload)
-                    write_session_handoff_state(
-                        root,
-                        active_session,
-                        attempted=False,
-                        queue_path=str(root),
-                        status="preview_ready",
-                        error=None,
-                        job_id=None,
-                    )
-        else:
-            # Deterministic active-draft content refresh fallback: when the LLM
-            # did not produce usable text but the user clearly asked for a content
-            # refresh (e.g. "generate a different poem"), generate replacement
-            # content deterministically from a content-type pool.
-            _refresh_target = (
-                builder_payload
-                if _is_refinable_prose_preview(builder_payload)
-                else pending_preview
-                if _is_refinable_prose_preview(pending_preview)
-                else None
-            )
-            if isinstance(_refresh_target, dict) and _is_clear_content_refresh_request(
-                message.strip().lower()
-            ):
-                _refresh_wf = _refresh_target.get("write_file")
-                if isinstance(_refresh_wf, dict):
-                    _refresh_path = str(_refresh_wf.get("path") or "").strip()
-                    _existing = str(_refresh_wf.get("content") or "")
-                    _ctype = _detect_content_type_from_preview(
-                        _refresh_target, message.strip().lower()
-                    )
-                    _refreshed = _generate_refreshed_content(_ctype, _existing)
-                    if _refreshed and _refreshed != _existing.strip():
-                        _refreshed_preview: dict[str, object] = {
-                            **_refresh_target,
-                            "write_file": {
-                                **_refresh_wf,
-                                "content": _refreshed,
-                            },
-                        }
-                        builder_payload = _refreshed_preview
-                        write_session_preview(root, active_session, builder_payload)
-                        write_session_handoff_state(
-                            root,
-                            active_session,
-                            attempted=False,
-                            queue_path=str(root),
-                            status="preview_ready",
-                            error=None,
-                            job_id=None,
-                        )
-                    else:
-                        generation_content_refresh_failed_closed = True
-                else:
-                    generation_content_refresh_failed_closed = True
-            else:
-                generation_content_refresh_failed_closed = True
-
-    # Create-and-save fallback: when the message has both explicit save/write
-    # intent AND planning/checklist keywords (a "create and save" hybrid like
-    # "save a checklist to a note for my wedding prep"), but the builder failed
-    # to produce a content-bearing preview, create one from the LLM reply.
-    _is_create_and_save = (
-        not conversational_answer_first_turn
-        and not is_writing_draft_turn
-        and not is_code_draft_turn
-        and builder_payload is None
-        and pending_preview is None
-        and _cc_has_save_write_file_signal(message)
-        and _cc_has_conversational_planning_signal(message)
-    )
-    if _is_create_and_save and reply_text_draft:
-        _note_suffix = active_session[-8:] if len(active_session) >= 8 else active_session
-        _create_save_payload: dict[str, object] = {
-            "goal": f"save checklist/plan to a note ({message[:60]})",
-            "write_file": {
-                "path": f"~/VoxeraOS/notes/note-{_note_suffix}.md",
-                "content": reply_text_draft,
-                "mode": "overwrite",
-            },
-        }
-        try:
-            builder_payload = normalize_preview_payload(_create_save_payload)
-            write_session_preview(root, active_session, builder_payload)
-            write_session_handoff_state(
-                root,
-                active_session,
-                attempted=False,
-                queue_path=str(root),
-                status="preview_ready",
-                error=None,
-                job_id=None,
-            )
-        except Exception:
-            builder_payload = None
 
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative

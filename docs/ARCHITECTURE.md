@@ -644,6 +644,7 @@ src/voxera/
 │   ├── execution_mode.py     — Non-I/O execution-mode predicates/classifier helpers.
 │   ├── conversational_checklist.py — Deterministic conversational checklist parsing/rendering/sanitization helpers.
 │   ├── preview_content_binding.py — Low-risk preview-body/content-binding purity helpers (selection/rejection predicates).
+│   ├── draft_content_binding.py — Post-LLM reply content extraction and draft-to-preview binding derivation (code/writing/generation/create-and-save).
 │   ├── templates/index.html  — Single-page HTML shell for the Vera conversational UI
 │   └── static/vera.css       — Vera web stylesheet
 │
