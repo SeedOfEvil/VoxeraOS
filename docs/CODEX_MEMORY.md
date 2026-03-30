@@ -1,3 +1,13 @@
+## 2026-03-29 — PR #TBD — refactor(cli): extract CLI hygiene command family into cli_queue_hygiene.py
+
+- Extracted `queue_prune`, `queue_reconcile`, and `artifacts_prune` handler functions from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_hygiene.py`. The new module owns all three handler implementations including reporting, config-override resolution, and JSON output formatting.
+- Registration of all three commands remains in `cli_queue.py` via `queue_app.command()(fn)` / `artifacts_app.command()(fn)` — top-level CLI wiring, `register()`, and public contract ownership are unchanged.
+- `cli_queue.py` reduced from 909 to ~540 lines. CLI contracts (command names, option names, defaults, help text, JSON output schemas) are preserved exactly.
+- Registration calls placed after `@`-decorated commands to preserve subcommand ordering in `--help` output.
+- Updated `docs/ARCHITECTURE.md` (directory tree, module map, CLI command tree), `docs/ops.md` (contributor guidance), and `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (PR-7 hygiene status, Hotspot 3 progress notes).
+- **Current cli_queue.py extraction state:** payload helpers (`cli_queue_payloads.py`), queue files commands (`cli_queue_files.py`), health commands (`cli_queue_health.py`), and hygiene commands (`cli_queue_hygiene.py`) are all extracted. Remaining in `cli_queue.py`: top-level app wiring, bundle, init, status, lifecycle (cancel/retry/unlock/pause/resume), approvals, inbox.
+- **Next safe extraction candidate:** `queue bundle` (incident-bundle tooling), which is self-contained. After that, remaining commands are operator-lifecycle which are truth-critical and should wait for expanded characterization coverage.
+
 ## 2026-03-24 — PR #TBD — fix(vera): preserve user-provided checklist items in deterministic conversational rendering
 
 - **Root cause:** The previous hard-lock renderer over-prioritized generic fallback templates when sanitized output had no valid list content, but did not give first-class priority to extracting checklist items directly from the user message. This caused real user-provided wedding/grocery/planning items to be replaced by generic boilerplate.

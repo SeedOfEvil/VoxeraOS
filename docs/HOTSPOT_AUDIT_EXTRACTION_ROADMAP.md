@@ -220,6 +220,13 @@ Any extraction PR following this roadmap must preserve these invariants:
   `queue_health` and `queue_health_reset` (full handler implementations). Both are
   registered to `queue_app` in `cli_queue.py` via `queue_app.command(...)(fn)`. Top-level
   CLI registration and `register()` remain in `cli_queue.py`. CLI contracts unchanged.
+- The `queue prune`, `queue reconcile`, and `artifacts prune` command-family handlers have
+  been extracted from `cli_queue.py` into `src/voxera/cli_queue_hygiene.py`. The extracted
+  module owns `queue_prune`, `queue_reconcile`, and `artifacts_prune` (full handler
+  implementations including reporting, config-override resolution, and JSON output
+  formatting). All three are registered from `cli_queue.py` via
+  `queue_app.command(...)(fn)` / `artifacts_app.command(...)(fn)`. Top-level CLI
+  registration and `register()` remain in `cli_queue.py`. CLI contracts unchanged.
 
 ### Areas to avoid splitting first
 
@@ -321,8 +328,8 @@ Any extraction PR following this roadmap must preserve these invariants:
 
 - Move health and hygiene clusters to dedicated modules with stable output contract.
 - Preserve command names/options/help text and JSON output schema.
-- Status: `queue health` and `queue health-reset` command-family handlers extracted from
-  `src/voxera/cli_queue.py` into `src/voxera/cli_queue_health.py`. The extracted module
+- Status (health): `queue health` and `queue health-reset` command-family handlers extracted
+  from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_health.py`. The extracted module
   owns `queue_health` and `queue_health_reset` handler functions (full implementations
   including the snapshot-with-sections builder, the rich-table render helper, and the
   health-reset audit log emission). Both handlers are registered to `queue_app` from
@@ -330,7 +337,17 @@ Any extraction PR following this roadmap must preserve these invariants:
   `queue_app.command("health-reset")(queue_health_reset)`. Top-level CLI registration,
   public CLI contract ownership, and the `register()` composition root remain in
   `cli_queue.py`. CLI contracts (command names, option names, defaults, help text) are
-  unchanged. reconcile/prune cluster extraction remains pending.
+  unchanged.
+- Status (hygiene): `queue prune`, `queue reconcile`, and `artifacts prune` command-family
+  handlers extracted from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_hygiene.py`.
+  The extracted module owns all three handler functions (`queue_prune`, `queue_reconcile`,
+  `artifacts_prune`) including their full render/reporting logic and config-override
+  resolution. All three are registered from `cli_queue.py` via
+  `queue_app.command("prune")(queue_prune)`, `queue_app.command("reconcile")(queue_reconcile)`,
+  and `artifacts_app.command("prune")(artifacts_prune)`. Top-level CLI registration,
+  public CLI contract ownership, and the `register()` composition root remain in
+  `cli_queue.py`. CLI contracts (command names, option names, defaults, help text, JSON
+  output schemas) are unchanged. `cli_queue.py` reduced from 909 to 533 lines.
 
 ### PR-8: Final hotspot slimming pass (bounded)
 

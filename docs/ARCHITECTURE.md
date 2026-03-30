@@ -52,6 +52,8 @@ VoxeraOS/
 │   │   ├── cli_queue.py             — queue/operator command family (registration + wiring)
 │   │   ├── cli_queue_files.py       — queue files command-family handlers
 │   │   ├── cli_queue_health.py      — queue health/health-reset command-family handlers
+│   │   ├── cli_queue_hygiene.py     — queue prune/reconcile/artifacts-prune hygiene handlers
+│   │   ├── cli_queue_payloads.py    — low-risk CLI queue payload/arg shaping helpers
 │   │   ├── cli_config.py            — runtime config command implementations
 │   │   ├── cli_skills_missions.py   — skills/missions/run command implementations
 │   │   ├── cli_ops.py               — ops capability/bundle command implementations
@@ -426,14 +428,15 @@ src/voxera/
 ├── cli_queue.py              — Queue/operator-facing command registration + wiring.
 │                               Owns: queue_app, queue_approvals_app, queue_lock_app,
 │                               inbox_app, artifacts_app Typer sub-apps and their
-│                               command implementations (status, prune, reconcile,
-│                               approvals list/approve/deny, cancel, retry, delete,
-│                               lock status/unlock, inbox add/list, etc.).
+│                               remaining command implementations (bundle, init, status,
+│                               cancel, retry, unlock, pause, resume, approvals
+│                               list/approve/deny, lock status, inbox add/list).
 │                               Attaches queue_files_app (from cli_queue_files.py) as
 │                               "files" subcommand; attaches queue health/health-reset
-│                               handlers (from cli_queue_health.py) via
-│                               queue_app.command(...)(fn); final enqueue/queue-boundary
-│                               ownership for non-files commands remains here.
+│                               handlers (from cli_queue_health.py) and hygiene handlers
+│                               (from cli_queue_hygiene.py) via queue_app.command(...)(fn);
+│                               final top-level CLI registration and public CLI contract
+│                               ownership remain here.
 ├── cli_queue_files.py        — queue files command-family handlers (find, grep, tree,
 │                               copy, move, rename). Owns queue_files_app Typer sub-app,
 │                               _enqueue_files_step, and files-local payload-builder
@@ -445,6 +448,14 @@ src/voxera/
 │                               helpers and health-reset audit log emission). Registered
 │                               to queue_app in cli_queue.py; top-level CLI registration
 │                               and public CLI contract ownership stay in cli_queue.py.
+├── cli_queue_hygiene.py      — queue prune/reconcile and artifacts-prune hygiene
+│                               command-family handlers. Owns: queue_prune,
+│                               queue_reconcile, and artifacts_prune handler functions
+│                               (full implementations including reporting, config-override
+│                               resolution, and JSON output formatting). Registered to
+│                               queue_app / artifacts_app in cli_queue.py; top-level CLI
+│                               registration and public CLI contract ownership stay in
+│                               cli_queue.py.
 ├── cli_queue_payloads.py     — Low-risk CLI queue payload/arg shaping helpers used by
 │                               queue-files and health-reset commands. Keeps pure-ish
 │                               payload normalization out of command wiring/orchestration.
@@ -898,8 +909,8 @@ voxera                        (cli.py — Typer composition root)
 │
 ├── queue            (cli_queue.py — queue_app)
 │   ├── status       queue health + job counters
-│   ├── prune        remove stale terminal jobs  (dry-run default)
-│   ├── reconcile    orphan/duplicate detection + quarantine-first fix
+│   ├── prune        remove stale terminal jobs  (cli_queue_hygiene.py — queue_prune)
+│   ├── reconcile    orphan/duplicate detection + fix (cli_queue_hygiene.py — queue_reconcile)
 │   ├── health       raw health snapshot (cli_queue_health.py — queue_health)
 │   ├── health-reset reset health snapshot (cli_queue_health.py — queue_health_reset)
 │   ├── cancel       cancel a queued or pending job
@@ -928,7 +939,7 @@ voxera                        (cli.py — Typer composition root)
 │   └── list         list inbox items
 │
 ├── artifacts        (cli_queue.py — artifacts_app)
-│   └── ...          artifact inspection commands
+│   └── prune        prune stale artifacts (cli_queue_hygiene.py — artifacts_prune)
 │
 └── doctor           (cli_doctor.py — registered via register(app))
                      diagnostic: endpoint health, model test, lock/auth checks
