@@ -227,6 +227,14 @@ Any extraction PR following this roadmap must preserve these invariants:
   formatting). All three are registered from `cli_queue.py` via
   `queue_app.command(...)(fn)` / `artifacts_app.command(...)(fn)`. Top-level CLI
   registration and `register()` remain in `cli_queue.py`. CLI contracts unchanged.
+- The `queue bundle` command handler has been extracted from `cli_queue.py` into
+  `src/voxera/cli_queue_bundle.py`. The extracted module owns `queue_bundle` (full handler
+  implementation including job/system bundle dispatch, `BundleError` handling, and output
+  writing). Registration of the command to `queue_app` remains in `cli_queue.py` via
+  `queue_app.command("bundle")(queue_bundle)`, placed before the first `@queue_app.command`
+  decorator to preserve subcommand help ordering. Top-level CLI registration and
+  `register()` remain in `cli_queue.py`. CLI contracts (command name, option names,
+  defaults, help text) are unchanged.
 
 ### Areas to avoid splitting first
 
@@ -348,6 +356,16 @@ Any extraction PR following this roadmap must preserve these invariants:
   public CLI contract ownership, and the `register()` composition root remain in
   `cli_queue.py`. CLI contracts (command names, option names, defaults, help text, JSON
   output schemas) are unchanged. `cli_queue.py` reduced from 909 to 533 lines.
+
+### PR-7c: Extract CLI bundle command handler
+
+- Move `queue bundle` handler into `cli_queue_bundle.py`.
+- Keep registration, public contract ownership, and `register()` composition root in `cli_queue.py`.
+- Status: completed. `queue_bundle` handler extracted into `src/voxera/cli_queue_bundle.py`.
+  Registered to `queue_app` from `cli_queue.py` via `queue_app.command("bundle")(queue_bundle)`.
+  Command tree shape, help ordering, option names, defaults, and help text are unchanged.
+  Remaining in `cli_queue.py`: top-level app wiring, init, status, lifecycle
+  (cancel/retry/unlock/pause/resume), approvals (list/approve/deny), inbox (add/list).
 
 ### PR-8: Final hotspot slimming pass (bounded)
 

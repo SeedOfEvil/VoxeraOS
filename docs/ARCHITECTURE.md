@@ -50,6 +50,7 @@ VoxeraOS/
 │   │   ├── cli.py                   — Typer composition root
 │   │   ├── cli_common.py            — shared CLI primitives/options/constants
 │   │   ├── cli_queue.py             — queue/operator command family (registration + wiring)
+│   │   ├── cli_queue_bundle.py      — queue bundle/incident-bundle command handler
 │   │   ├── cli_queue_files.py       — queue files command-family handlers
 │   │   ├── cli_queue_health.py      — queue health/health-reset command-family handlers
 │   │   ├── cli_queue_hygiene.py     — queue prune/reconcile/artifacts-prune hygiene handlers

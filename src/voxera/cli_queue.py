@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import typer
 from rich.table import Table
 
-from .cli_common import OUT_PATH_OPTION, console, queue_dir_path
+from .cli_common import console, queue_dir_path
+from .cli_queue_bundle import queue_bundle
 from .cli_queue_files import queue_files_app
 from .cli_queue_health import queue_health, queue_health_reset
 from .cli_queue_hygiene import artifacts_prune, queue_prune, queue_reconcile
 from .core.inbox import add_inbox_job, list_inbox_jobs
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 from .core.queue_result_consumers import resolve_structured_execution
-from .incident_bundle import BundleError, build_job_bundle, build_system_bundle
 from .paths import queue_root_display
 
 queue_app = typer.Typer(help="Queue job utilities")
@@ -32,6 +31,14 @@ def register(app: typer.Typer) -> None:
     app.add_typer(artifacts_app, name="artifacts")
     app.add_typer(queue_app, name="queue")
     app.add_typer(inbox_app, name="inbox")
+
+
+# ---------------------------------------------------------------------------
+# Bundle command-family registration (before @-decorated queue_app commands
+# to preserve subcommand ordering in help output)
+# ---------------------------------------------------------------------------
+
+queue_app.command("bundle")(queue_bundle)
 
 
 @queue_approvals_app.command("list")
@@ -72,34 +79,6 @@ def queue_approvals_list(
             f"fs={scope.get('fs_scope', '-')}, net={scope.get('needs_network', False)}",
         )
     console.print(table)
-
-
-@queue_app.command("bundle")
-def queue_bundle(
-    job_id: str | None = typer.Argument(None),
-    system: bool = typer.Option(False, "--system", help="Export overall system bundle."),
-    out: Path = OUT_PATH_OPTION,
-    queue_dir: str = typer.Option(
-        queue_root_display(),
-        "--queue-dir",
-        help="Queue directory containing JSON mission jobs.",
-    ),
-):
-    """Export a deterministic incident bundle for a job or the whole system."""
-    root = queue_dir_path(queue_dir)
-    if system:
-        data = build_system_bundle(root)
-    else:
-        if not job_id:
-            raise typer.BadParameter("Provide <job_id> or use --system")
-        try:
-            data = build_job_bundle(root, job_id)
-        except BundleError as exc:
-            console.print(f"[red]ERROR:[/red] {exc}")
-            raise typer.Exit(code=1) from exc
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(data)
-    console.print(f"Bundle written: {out}")
 
 
 @queue_app.command("init")
