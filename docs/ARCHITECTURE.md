@@ -50,10 +50,12 @@ VoxeraOS/
 │   │   ├── cli.py                   — Typer composition root
 │   │   ├── cli_common.py            — shared CLI primitives/options/constants
 │   │   ├── cli_queue.py             — queue/operator command family (registration + wiring)
+│   │   ├── cli_queue_approvals.py   — queue approvals command-family handlers (list/approve/deny)
 │   │   ├── cli_queue_bundle.py      — queue bundle/incident-bundle command handler
 │   │   ├── cli_queue_files.py       — queue files command-family handlers
 │   │   ├── cli_queue_health.py      — queue health/health-reset command-family handlers
 │   │   ├── cli_queue_hygiene.py     — queue prune/reconcile/artifacts-prune hygiene handlers
+│   │   ├── cli_queue_inbox.py       — inbox command-family handlers (add/list)
 │   │   ├── cli_queue_payloads.py    — low-risk CLI queue payload/arg shaping helpers
 │   │   ├── cli_config.py            — runtime config command implementations
 │   │   ├── cli_skills_missions.py   — skills/missions/run command implementations
@@ -429,15 +431,26 @@ src/voxera/
 ├── cli_queue.py              — Queue/operator-facing command registration + wiring.
 │                               Owns: queue_app, queue_approvals_app, queue_lock_app,
 │                               inbox_app, artifacts_app Typer sub-apps and their
-│                               remaining command implementations (bundle, init, status,
-│                               cancel, retry, unlock, pause, resume, approvals
-│                               list/approve/deny, lock status, inbox add/list).
+│                               remaining command implementations (init, status,
+│                               cancel, retry, unlock, pause, resume, lock status).
 │                               Attaches queue_files_app (from cli_queue_files.py) as
-│                               "files" subcommand; attaches queue health/health-reset
-│                               handlers (from cli_queue_health.py) and hygiene handlers
-│                               (from cli_queue_hygiene.py) via queue_app.command(...)(fn);
-│                               final top-level CLI registration and public CLI contract
+│                               "files" subcommand; attaches bundle handler (from
+│                               cli_queue_bundle.py), approvals handlers (from
+│                               cli_queue_approvals.py), inbox handlers (from
+│                               cli_queue_inbox.py), health/health-reset handlers (from
+│                               cli_queue_health.py), and hygiene handlers (from
+│                               cli_queue_hygiene.py) via app.command(...)(fn); final
+│                               top-level CLI registration and public CLI contract
 │                               ownership remain here.
+├── cli_queue_approvals.py    — queue approvals command-family handlers (list, approve,
+│                               deny). Owns: queue_approvals_list, queue_approvals_approve,
+│                               and queue_approvals_deny handler functions (full
+│                               implementations including approval resolution, fail-closed
+│                               error handling, and rich table rendering). Registered to
+│                               queue_approvals_app in cli_queue.py; top-level CLI
+│                               registration and public CLI contract ownership stay in
+│                               cli_queue.py.
+├── cli_queue_bundle.py       — queue bundle/incident-bundle command handler.
 ├── cli_queue_files.py        — queue files command-family handlers (find, grep, tree,
 │                               copy, move, rename). Owns queue_files_app Typer sub-app,
 │                               _enqueue_files_step, and files-local payload-builder
@@ -457,6 +470,12 @@ src/voxera/
 │                               queue_app / artifacts_app in cli_queue.py; top-level CLI
 │                               registration and public CLI contract ownership stay in
 │                               cli_queue.py.
+├── cli_queue_inbox.py        — inbox command-family handlers (add, list). Owns: inbox_add
+│                               and inbox_list handler functions (full implementations
+│                               including job creation, goal validation, fail-closed error
+│                               handling, and rich table rendering). Registered to inbox_app
+│                               in cli_queue.py; top-level CLI registration and public CLI
+│                               contract ownership stay in cli_queue.py.
 ├── cli_queue_payloads.py     — Low-risk CLI queue payload/arg shaping helpers used by
 │                               queue-files and health-reset commands. Keeps pure-ish
 │                               payload normalization out of command wiring/orchestration.
@@ -926,7 +945,7 @@ voxera                        (cli.py — Typer composition root)
 │   │   ├── move     enqueue files.move as a governed queue job
 │   │   └── rename   enqueue files.rename as a governed queue job
 │   │
-│   ├── approvals    (queue_approvals_app)
+│   ├── approvals    (cli_queue_approvals.py — queue_approvals_app)
 │   │   ├── list     list pending approvals
 │   │   ├── approve  grant approval for a pending step
 │   │   └── deny     deny a pending step
@@ -935,7 +954,7 @@ voxera                        (cli.py — Typer composition root)
 │       ├── status   show daemon lock status
 │       └── unlock   force-release a stale lock
 │
-├── inbox            (cli_queue.py — inbox_app)
+├── inbox            (cli_queue_inbox.py — inbox_app)
 │   ├── add          submit a goal text as a job file
 │   └── list         list inbox items
 │
