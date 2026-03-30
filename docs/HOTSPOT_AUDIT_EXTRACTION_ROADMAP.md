@@ -256,6 +256,16 @@ Any extraction PR following this roadmap must preserve these invariants:
   hints). Both are registered to `inbox_app` in `cli_queue.py` via
   `inbox_app.command(...)(fn)`. Top-level CLI registration, `inbox_app` ownership, and
   public CLI contract ownership remain in `cli_queue.py`. CLI contracts are unchanged.
+- The lifecycle command-family handlers (`cancel`, `retry`, `unlock`, `pause`, `resume`)
+  have been extracted from `cli_queue.py` into `src/voxera/cli_queue_lifecycle.py`. The
+  extracted module owns `queue_cancel`, `queue_retry`, `queue_unlock`, `queue_pause`, and
+  `queue_resume` (full handler implementations including fail-closed `FileNotFoundError`
+  and `QueueLockError` handling, force-unlock path, and stale-lock detection output). All
+  five are registered to `queue_app` in `cli_queue.py` via `queue_app.command(...)(fn)`.
+  Top-level CLI registration, public CLI contract ownership, and root composition remain
+  in `cli_queue.py`. `_render_lock_status` and `queue_lock_status` remain in
+  `cli_queue.py` as they are more naturally paired with lock-status display than lifecycle
+  mutation. CLI contracts (command names, option names, defaults, help text) are unchanged.
 
 ### Areas to avoid splitting first
 
@@ -398,10 +408,12 @@ Any extraction PR following this roadmap must preserve these invariants:
 
 - Precondition status: satisfied for remaining `cli_queue.py` operator surfaces.
 - Completed: approvals + inbox family extraction (this PR).
-- Recommended bounded next PR: extract one command family at a time while keeping
-  `register()` and command-tree ownership in `cli_queue.py`:
-  1. lifecycle command extraction next (cancel/retry/unlock/pause/resume),
-  2. `queue status` extraction last due to densest operator-truth rendering logic.
+- Completed: lifecycle command-family extraction (cancel/retry/unlock/pause/resume)
+  into `cli_queue_lifecycle.py`.
+- Recommended bounded next PR: `queue status` extraction (densest operator-truth
+  rendering logic — the last remaining non-init, non-lock-status command body in
+  `cli_queue.py`); keep `register()`, `queue_init`, `queue_lock_status`,
+  `_render_lock_status`, and root composition in `cli_queue.py`.
 
 ## Dependency and sequencing notes
 
