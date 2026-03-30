@@ -1,3 +1,13 @@
+## 2026-03-30 — PR #TBD — refactor(cli): extract CLI bundle command handler into cli_queue_bundle.py
+
+- Extracted `queue_bundle` handler function from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_bundle.py`. The new module owns the full `queue bundle` handler implementation: job/system bundle dispatch, `BundleError` handling, output file writing, and console reporting.
+- Registration of `queue bundle` remains in `cli_queue.py` via `queue_app.command("bundle")(queue_bundle)`, placed before the first `@queue_app.command` decorator to preserve subcommand help ordering. Top-level CLI wiring, `register()`, and public contract ownership are unchanged.
+- `cli_queue.py` reduced from ~542 to ~514 lines. CLI contracts (command name, option names, defaults, help text) are preserved exactly.
+- The `from .incident_bundle import ...` import was removed from `cli_queue.py` (now owned by `cli_queue_bundle.py`); unused `Path` and `OUT_PATH_OPTION` imports were also removed.
+- Updated `docs/ARCHITECTURE.md` (module map), `docs/ops.md` (CLI contributor guidance), and `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (PR-7c bundle status, Hotspot 3 extraction progress notes).
+- **Current cli_queue.py extraction state:** payload helpers (`cli_queue_payloads.py`), queue files commands (`cli_queue_files.py`), health commands (`cli_queue_health.py`), hygiene commands (`cli_queue_hygiene.py`), and bundle command (`cli_queue_bundle.py`) are all extracted. Remaining in `cli_queue.py`: top-level app wiring, init, status, lifecycle (cancel/retry/unlock/pause/resume), approvals (list/approve/deny), inbox (add/list).
+- **Next safe extraction candidate:** The remaining commands in `cli_queue.py` (status, lifecycle, approvals, inbox) are operator-lifecycle and truth-critical. These should wait for expanded characterization coverage before extraction. No immediate safe seam is as bounded as bundle was.
+
 ## 2026-03-29 — PR #TBD — refactor(cli): extract CLI hygiene command family into cli_queue_hygiene.py
 
 - Extracted `queue_prune`, `queue_reconcile`, and `artifacts_prune` handler functions from `src/voxera/cli_queue.py` into `src/voxera/cli_queue_hygiene.py`. The new module owns all three handler implementations including reporting, config-override resolution, and JSON output formatting.
