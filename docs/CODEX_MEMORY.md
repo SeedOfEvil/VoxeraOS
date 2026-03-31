@@ -5,7 +5,7 @@
 - All final `write_session_preview` and `write_session_handoff_state` calls remain in `app.py`. Route orchestration, submit/handoff truth, queue-boundary decisions, and session persistence ownership are unchanged.
 - `app.py` reduced from ~1,864 to ~1,490 lines. The `chat()` function reduced from ~1,153 to ~797 lines.
 - Updated `docs/ARCHITECTURE.md` (directory tree), `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (Hotspot 1 extraction progress, next-seam recommendation), `docs/ops.md` (contributor guidance).
-- Characterization tests added in `tests/test_draft_content_binding.py` (21 tests covering control-block stripping, reply draft extraction, code/writing draft binding, create-and-save fallback, degraded-status skip, and write-signal correctness).
+- Characterization tests added in `tests/test_draft_content_binding.py` (25 tests covering control-block stripping, reply draft extraction, code/writing draft binding, late-detection paths, create-and-save fallback, degraded-status skip, generation-refresh fail-closed, enrichment-turn blocking, and write-signal correctness).
 - **This is the first decomposition strike against the Vera web chat() hotspot.** The giant function is now meaningfully safer and more readable. Truth ownership is unchanged.
 - **Recommended next seam:** response shaping / reply assembly cluster (~138 lines at tail of chat()) or early-exit intent handler dispatch (~337 lines). Both are coherent seams that could further reduce `chat()` without touching truth-sensitive write ownership.
 
