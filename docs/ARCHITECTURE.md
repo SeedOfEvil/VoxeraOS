@@ -645,6 +645,7 @@ src/voxera/
 │   ├── conversational_checklist.py — Deterministic conversational checklist parsing/rendering/sanitization helpers.
 │   ├── preview_content_binding.py — Low-risk preview-body/content-binding purity helpers (selection/rejection predicates).
 │   ├── draft_content_binding.py — Post-LLM reply content extraction and draft-to-preview binding derivation (code/writing/generation/create-and-save).
+│   ├── response_shaping.py   — Post-guardrail assistant reply assembly: preview-content derivation, false-claim guardrails, stale-shell cleanup predicate, and assemble_assistant_reply() (naming-mutation, control-turn, preview-dump suppression, ambiguous-request, fail-closed messaging, status derivation).
 │   ├── templates/index.html  — Single-page HTML shell for the Vera conversational UI
 │   └── static/vera.css       — Vera web stylesheet
 │

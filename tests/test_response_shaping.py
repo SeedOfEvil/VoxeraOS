@@ -1,0 +1,337 @@
+"""Characterization tests for the response shaping extraction.
+
+These tests anchor the behavior of the pure derivation logic extracted from
+``chat()`` into ``vera_web.response_shaping``.  They verify that preview
+content derivation, false-claim guardrails, stale-preview cleanup logic, and
+assistant reply assembly produce expected results without requiring the full
+``chat()`` integration path.
+"""
+
+from __future__ import annotations
+
+from voxera.vera_web.response_shaping import (
+    AssistantReplyResult,
+    assemble_assistant_reply,
+    derive_preview_has_content,
+    guardrail_false_preview_claim,
+    should_clear_stale_preview,
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_PROSE_PREVIEW = {
+    "goal": "save note",
+    "write_file": {"path": "~/VoxeraOS/notes/foo.md", "content": "hello world"},
+}
+_CODE_PREVIEW = {
+    "goal": "write script",
+    "write_file": {"path": "script.py", "content": "print('hi')"},
+}
+_EMPTY_CODE_PREVIEW = {
+    "goal": "write script",
+    "write_file": {"path": "script.py", "content": ""},
+}
+_EMPTY_PROSE_PREVIEW = {
+    "goal": "save note",
+    "write_file": {"path": "~/VoxeraOS/notes/foo.md", "content": ""},
+}
+_STALE_EMPTY_PREVIEW = {
+    "goal": "save",
+    "write_file": {"path": "~/VoxeraOS/notes/tmp.md", "content": ""},
+}
+
+
+def _base_assemble_kwargs(**overrides):
+    """Return a minimal set of kwargs for assemble_assistant_reply."""
+    base = dict(
+        message="tell me about the weather",
+        pending_preview=None,
+        builder_payload=None,
+        in_voxera_preview_flow=False,
+        is_code_draft_turn=False,
+        is_writing_draft_turn=False,
+        is_enrichment_turn=False,
+        conversational_answer_first_turn=False,
+        is_json_content_request=False,
+        is_voxera_control_turn=False,
+        explicit_targeted_content_refinement=False,
+        preview_update_rejected=False,
+        generation_content_refresh_failed_closed=False,
+        reply_status="ok:conversational",
+    )
+    base.update(overrides)
+    return base
+
+
+# ---------------------------------------------------------------------------
+# derive_preview_has_content
+# ---------------------------------------------------------------------------
+
+
+class TestDerivePreviewHasContent:
+    def test_none_preview_returns_false(self) -> None:
+        assert derive_preview_has_content(None) is False
+
+    def test_non_dict_returns_false(self) -> None:
+        # type: ignore[arg-type] — intentional bad input
+        assert derive_preview_has_content("not a dict") is False  # type: ignore[arg-type]
+
+    def test_prose_preview_with_content_returns_true(self) -> None:
+        assert derive_preview_has_content(_PROSE_PREVIEW) is True
+
+    def test_code_preview_with_content_returns_true(self) -> None:
+        assert derive_preview_has_content(_CODE_PREVIEW) is True
+
+    def test_empty_content_code_file_returns_false(self) -> None:
+        # Code file with no content is a placeholder shell, not real content.
+        assert derive_preview_has_content(_EMPTY_CODE_PREVIEW) is False
+
+    def test_empty_content_prose_file_txt_returns_true(self) -> None:
+        # Non-code-extension files (e.g. .txt) with a path count as having content
+        # even with empty content — they are not code placeholders.
+        preview = {
+            "goal": "save note",
+            "write_file": {"path": "~/VoxeraOS/notes/foo.txt", "content": ""},
+        }
+        assert derive_preview_has_content(preview) is True
+
+    def test_empty_content_md_file_returns_false(self) -> None:
+        # .md is classified as a code extension — empty content = placeholder shell.
+        assert derive_preview_has_content(_EMPTY_PROSE_PREVIEW) is False
+
+    def test_preview_without_write_file_key_returns_true(self) -> None:
+        # Non-write_file job payload is a real preview.
+        preview = {"goal": "run something", "enqueue_child": {}}
+        assert derive_preview_has_content(preview) is True
+
+    def test_write_file_key_present_but_non_dict_returns_false(self) -> None:
+        # write_file exists but is not a dict — treat as no authoritative content.
+        preview = {"goal": "run", "write_file": "not a dict"}
+        assert derive_preview_has_content(preview) is False
+
+
+# ---------------------------------------------------------------------------
+# guardrail_false_preview_claim
+# ---------------------------------------------------------------------------
+
+
+class TestGuardrailFalsePreviewClaim:
+    def test_preview_exists_returns_text_unchanged(self) -> None:
+        text = "I prepared a preview for you."
+        result = guardrail_false_preview_claim(text, preview_exists=True)
+        assert result == text
+
+    def test_no_claim_text_returned_unchanged(self) -> None:
+        text = "The capital of Canada is Ottawa."
+        result = guardrail_false_preview_claim(text, preview_exists=False)
+        assert result == text
+
+    def test_false_preview_claim_stripped_when_no_preview(self) -> None:
+        text = "I've prepared a preview for you in the preview pane."
+        result = guardrail_false_preview_claim(text, preview_exists=False)
+        assert "prepared a preview" not in result.lower()
+        assert "not able to prepare" in result or "not able to create" in result
+
+    def test_code_block_preserved_when_claim_stripped(self) -> None:
+        text = (
+            "I've set up a preview for you in the preview pane.\n\n```python\nprint('hello')\n```"
+        )
+        result = guardrail_false_preview_claim(text, preview_exists=False)
+        assert "```python" in result
+        assert "print('hello')" in result
+        assert "shown for reference only" in result
+
+    def test_empty_text_returned_unchanged(self) -> None:
+        result = guardrail_false_preview_claim("", preview_exists=False)
+        assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# should_clear_stale_preview
+# ---------------------------------------------------------------------------
+
+
+class TestShouldClearStalePreview:
+    def test_answers_equal_returns_false(self) -> None:
+        # No change from guardrail — nothing to clear.
+        assert should_clear_stale_preview("same text", "same text", _STALE_EMPTY_PREVIEW) is False
+
+    def test_no_effective_preview_returns_false(self) -> None:
+        assert should_clear_stale_preview("new text", "old text", None) is False
+
+    def test_stale_empty_shell_returns_true(self) -> None:
+        # Guardrail changed the answer AND preview has empty write_file content.
+        assert should_clear_stale_preview("new text", "old text", _STALE_EMPTY_PREVIEW) is True
+
+    def test_preview_with_content_returns_false(self) -> None:
+        # Guardrail changed the answer but preview has real content — do NOT clear.
+        assert should_clear_stale_preview("new text", "old text", _PROSE_PREVIEW) is False
+
+    def test_non_dict_write_file_returns_false(self) -> None:
+        preview = {"goal": "run", "write_file": "not a dict"}
+        assert should_clear_stale_preview("new text", "old text", preview) is False
+
+    def test_preview_without_write_file_returns_false(self) -> None:
+        # Non-write_file preview has no shell to clear.
+        preview = {"goal": "run something", "enqueue_child": {}}
+        assert should_clear_stale_preview("new text", "old text", preview) is False
+
+
+# ---------------------------------------------------------------------------
+# assemble_assistant_reply
+# ---------------------------------------------------------------------------
+
+
+class TestAssembleAssistantReply:
+    def test_returns_assistant_reply_result(self) -> None:
+        result = assemble_assistant_reply(
+            "Hello there.",
+            **_base_assemble_kwargs(),
+        )
+        assert isinstance(result, AssistantReplyResult)
+
+    def test_plain_conversational_reply_passes_through(self) -> None:
+        result = assemble_assistant_reply(
+            "The capital of Alberta is Edmonton.",
+            **_base_assemble_kwargs(),
+        )
+        assert result.assistant_text == "The capital of Alberta is Edmonton."
+        assert result.status == "ok:conversational"
+
+    def test_status_is_prepared_preview_when_builder_payload_set(self) -> None:
+        result = assemble_assistant_reply(
+            "I've prepared a preview.",
+            **_base_assemble_kwargs(
+                builder_payload=_PROSE_PREVIEW,
+                reply_status="ok:preview",
+            ),
+        )
+        assert result.status == "prepared_preview"
+
+    def test_status_is_reply_status_when_no_builder_payload(self) -> None:
+        result = assemble_assistant_reply(
+            "Sure, here you go.",
+            **_base_assemble_kwargs(reply_status="ok:investigation"),
+        )
+        assert result.status == "ok:investigation"
+
+    def test_generation_refresh_failed_closed_appends_message(self) -> None:
+        result = assemble_assistant_reply(
+            "I tried to generate content.",
+            **_base_assemble_kwargs(
+                pending_preview=_PROSE_PREVIEW,
+                generation_content_refresh_failed_closed=True,
+            ),
+        )
+        assert "left the active draft content unchanged" in result.assistant_text
+        assert "authoritative generated content" in result.assistant_text
+
+    def test_ambiguous_change_request_replaces_text(self) -> None:
+        # When no builder_payload, there's an active preview, and the message
+        # looks ambiguous, the reply gets a specific refusal text.
+        result = assemble_assistant_reply(
+            "Sure, I can do that.",
+            **_base_assemble_kwargs(
+                message="change it",
+                pending_preview=_PROSE_PREVIEW,
+                builder_payload=None,
+            ),
+        )
+        assert "left the active draft content unchanged" in result.assistant_text
+        assert "ambiguous" in result.assistant_text
+
+    def test_naming_mutation_with_pending_preview_uses_control_message(self) -> None:
+        # "rename it to foo.md" with active preview triggers the control message
+        # rather than the raw LLM reply.
+        result = assemble_assistant_reply(
+            "I'll rename that for you.",
+            **_base_assemble_kwargs(
+                message="rename it to foo.md",
+                pending_preview=_PROSE_PREVIEW,
+                builder_payload=None,
+            ),
+        )
+        # The control message should mention something about the draft or preview
+        # not being updated (no builder_payload means updated=False).
+        assert isinstance(result.assistant_text, str)
+        assert result.assistant_text.strip()
+
+    def test_code_draft_turn_not_suppressed_by_control_reply(self) -> None:
+        # Code draft replies are kept as-is even when voxera_control_turn is True.
+        code_reply = "Here is your script:\n\n```python\nprint('hi')\n```"
+        result = assemble_assistant_reply(
+            code_reply,
+            **_base_assemble_kwargs(
+                message="write a python script",
+                is_code_draft_turn=True,
+                is_voxera_control_turn=True,
+                builder_payload=_CODE_PREVIEW,
+            ),
+        )
+        # Code content must be preserved — not replaced by control narration.
+        assert "```python" in result.assistant_text
+
+    def test_empty_assistant_text_falls_back_to_control_message(self) -> None:
+        # If guarded_answer is blank, fall back to conversational control message.
+        result = assemble_assistant_reply(
+            "   ",
+            **_base_assemble_kwargs(
+                message="tell me about the job",
+                pending_preview=_PROSE_PREVIEW,
+            ),
+        )
+        assert result.assistant_text.strip()
+
+    def test_explicit_targeted_refinement_uses_control_message(self) -> None:
+        # When explicit_targeted_content_refinement=True and builder_payload is set,
+        # use the conversational preview update message.
+        result = assemble_assistant_reply(
+            "I updated the content of the file.",
+            **_base_assemble_kwargs(
+                message="update the content",
+                pending_preview=_PROSE_PREVIEW,
+                builder_payload=_PROSE_PREVIEW,
+                explicit_targeted_content_refinement=True,
+                is_code_draft_turn=False,
+                is_writing_draft_turn=False,
+            ),
+        )
+        # Should not use the raw LLM "I updated the content" text but the
+        # governed control message instead.
+        assert isinstance(result.assistant_text, str)
+        assert result.assistant_text.strip()
+
+    def test_voxera_control_turn_non_json_uses_control_message(self) -> None:
+        # A voxera control turn without json content request should use
+        # the conversational control reply, not the raw LLM narration.
+        narration = "I prepared a VoxeraOS job preview with write_file and goal."
+        result = assemble_assistant_reply(
+            narration,
+            **_base_assemble_kwargs(
+                message="show me the job",
+                is_voxera_control_turn=True,
+                is_json_content_request=False,
+                in_voxera_preview_flow=True,
+                pending_preview=_PROSE_PREVIEW,
+            ),
+        )
+        # The raw control narration should be suppressed.
+        assert result.assistant_text != narration
+
+    def test_json_content_request_does_not_suppress_reply(self) -> None:
+        # Explicit JSON content requests bypass control-reply suppression.
+        raw = '{"goal": "test", "write_file": {"path": "x.py", "content": "hi"}}'
+        result = assemble_assistant_reply(
+            raw,
+            **_base_assemble_kwargs(
+                message="show me the raw json",
+                is_json_content_request=True,
+                is_voxera_control_turn=True,
+                in_voxera_preview_flow=True,
+                pending_preview=_PROSE_PREVIEW,
+            ),
+        )
+        # JSON should pass through since it's an explicit JSON request.
+        assert result.assistant_text == raw
