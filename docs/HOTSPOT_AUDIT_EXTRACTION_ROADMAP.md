@@ -379,8 +379,8 @@ Any extraction PR following this roadmap must preserve these invariants:
   cleanup, `append_session_turn`, and `_render_page`. Route orchestration,
   submit/handoff truth, queue-boundary decisions, and session persistence ownership
   are unchanged.
-- `app.py` reduced from ~1,490 to ~1,430 lines. The `chat()` function reduced
-  from ~797 to ~735 lines. The inline Phase G/H response-shaping block shrank
+- `app.py` reduced from ~1,490 to ~1,400 lines. The `chat()` function reduced
+  from ~805 to ~737 lines. The inline Phase G/H response-shaping block shrank
   from ~127 to ~35 lines.
 - Characterization tests added in `tests/test_response_shaping.py` (32 tests
   covering preview-content derivation, false-claim guardrailing, stale-preview

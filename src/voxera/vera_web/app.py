@@ -1245,7 +1245,6 @@ async def chat(request: Request):
         )
 
     # Gate preview-existence claims on actual preview state.
-    # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative
     # code — treat it as "no real preview" for claim-checking purposes.
     effective_preview = read_session_preview(root, active_session)
@@ -1263,7 +1262,6 @@ async def chat(request: Request):
         guarded_answer = _enforce_conversational_checklist_output(
             guarded_answer, raw_answer=sanitized_answer, user_message=message
         )
-        _answer_before_preview_guardrail = guarded_answer
     else:
         guarded_answer = _guardrail_submission_claim(
             root=root,
