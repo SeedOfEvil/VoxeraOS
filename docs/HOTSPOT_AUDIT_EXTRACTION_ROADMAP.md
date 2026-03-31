@@ -333,6 +333,29 @@ Any extraction PR following this roadmap must preserve these invariants:
 - Final preview/session write ownership, canonical submit/handoff path ownership,
   and linked-completion/session truth ownership remained in `app.py`.
 
+### Completed follow-on seam (Vera web chat() decomposition — first strike)
+
+- The post-LLM draft content binding cluster (~385 lines) was extracted from
+  the giant `chat()` function in `src/voxera/vera_web/app.py` into
+  `src/voxera/vera_web/draft_content_binding.py`.
+- The extracted module owns:
+  - `strip_internal_control_blocks()` — pure control-markup removal.
+  - `extract_reply_drafts()` — pure extraction of code/text drafts from LLM replies.
+  - `resolve_draft_content_binding()` — the full post-LLM draft content binding
+    pipeline: late code/writing-draft detection, code draft injection, writing
+    draft injection, generation content binding, content refresh fallback, and
+    create-and-save fallback.
+- Scope remained intentionally bounded to derivation/computation logic. All
+  final `write_session_preview` and `write_session_handoff_state` calls remain
+  in `app.py`. Route orchestration, submit/handoff truth, queue-boundary
+  decisions, and session persistence ownership are unchanged.
+- `app.py` reduced from ~1,864 to ~1,490 lines. The `chat()` function reduced
+  from ~1,153 to ~797 lines.
+- Characterization tests added in `tests/test_draft_content_binding.py`.
+- **Next safe extraction candidate:** response shaping / reply assembly cluster
+  (~138 lines) or early-exit intent handler dispatch (~337 lines). Both are
+  coherent seams that could further reduce `chat()` in bounded follow-up PRs.
+
 ### PR-5: Extract panel auth-state storage helpers
 
 - Move `_prune_panel_auth_maps`, `_panel_auth_state_*`, `_active_lockout_until_ms`

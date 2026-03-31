@@ -1,3 +1,14 @@
+## 2026-03-30 — PR #TBD — refactor(vera_web): extract draft content binding from giant chat() function
+
+- Extracted the post-LLM draft content binding cluster (~385 lines) from the giant `chat()` orchestration function in `src/voxera/vera_web/app.py` into `src/voxera/vera_web/draft_content_binding.py`.
+- The extracted module owns: `strip_internal_control_blocks()` (pure control-markup removal), `extract_reply_drafts()` (pure extraction of code/text drafts from LLM replies), and `resolve_draft_content_binding()` (the full post-LLM draft binding pipeline: late code/writing-draft detection, code draft injection, writing draft injection, generation content binding, content refresh fallback, and create-and-save fallback).
+- All final `write_session_preview` and `write_session_handoff_state` calls remain in `app.py`. Route orchestration, submit/handoff truth, queue-boundary decisions, and session persistence ownership are unchanged.
+- `app.py` reduced from ~1,864 to ~1,490 lines. The `chat()` function reduced from ~1,153 to ~797 lines.
+- Updated `docs/ARCHITECTURE.md` (directory tree), `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (Hotspot 1 extraction progress, next-seam recommendation), `docs/ops.md` (contributor guidance).
+- Characterization tests added in `tests/test_draft_content_binding.py` (25 tests covering control-block stripping, reply draft extraction, code/writing draft binding, late-detection paths, create-and-save fallback, degraded-status skip, generation-refresh fail-closed, enrichment-turn blocking, and write-signal correctness).
+- **This is the first decomposition strike against the Vera web chat() hotspot.** The giant function is now meaningfully safer and more readable. Truth ownership is unchanged.
+- **Recommended next seam:** response shaping / reply assembly cluster (~138 lines at tail of chat()) or early-exit intent handler dispatch (~337 lines). Both are coherent seams that could further reduce `chat()` without touching truth-sensitive write ownership.
+
 ## 2026-03-30 — PR #TBD — docs(architecture): formally close CLI queue extraction series
 
 - **Decision: the CLI queue extraction series is considered complete.** `cli_queue.py` is now the intentional root CLI composition/truth surface for the queue command family. No further extraction PRs are planned for this series.
