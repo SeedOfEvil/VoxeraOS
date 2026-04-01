@@ -669,10 +669,8 @@ async def chat(request: Request):
     # submit checks to preserve ordering).
     _early = dispatch_early_exit_intent(
         message=message,
-        pending_preview=pending_preview,
         diagnostics_service_turn=diagnostics_service_turn,
         requested_job_id=requested_job_id,
-        is_explicit_writing_transform=is_explicit_writing_transform,
         should_attempt_derived_save=should_attempt_derived_save,
         session_investigation=session_investigation,
         session_derived_output=session_derived_output,

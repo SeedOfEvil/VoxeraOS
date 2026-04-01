@@ -98,10 +98,8 @@ class EarlyExitResult:
 def dispatch_early_exit_intent(
     *,
     message: str,
-    pending_preview: dict[str, object] | None,
     diagnostics_service_turn: bool,
     requested_job_id: str | None,
-    is_explicit_writing_transform: bool,
     should_attempt_derived_save: bool,
     session_investigation: dict[str, object] | None,
     session_derived_output: dict[str, object] | None,

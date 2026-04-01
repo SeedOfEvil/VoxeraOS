@@ -41,10 +41,8 @@ from voxera.vera_web.chat_early_exit_dispatch import (
 def _dispatch(
     *,
     message: str,
-    pending_preview: dict[str, object] | None = None,
     diagnostics_service_turn: bool = False,
     requested_job_id: str | None = None,
-    is_explicit_writing_transform: bool = False,
     should_attempt_derived_save: bool = False,
     session_investigation: dict[str, object] | None = None,
     session_derived_output: dict[str, object] | None = None,
@@ -54,10 +52,8 @@ def _dispatch(
     """Thin wrapper so tests don't have to pass every keyword argument."""
     return dispatch_early_exit_intent(
         message=message,
-        pending_preview=pending_preview,
         diagnostics_service_turn=diagnostics_service_turn,
         requested_job_id=requested_job_id,
-        is_explicit_writing_transform=is_explicit_writing_transform,
         should_attempt_derived_save=should_attempt_derived_save,
         session_investigation=session_investigation,
         session_derived_output=session_derived_output,
