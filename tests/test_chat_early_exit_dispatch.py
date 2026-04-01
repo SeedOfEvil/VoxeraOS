@@ -292,6 +292,87 @@ class TestFollowupPreview:
         assert "job-20260101-abcdef" in result.assistant_text
         assert "preview-only" in result.assistant_text.lower()
 
+    def test_draft_a_followup_based_on_job_result_regression(self, tmp_path: Path) -> None:
+        """Regression: 'Draft a follow-up based on that job's result.' must reach the
+        followup branch.  Previously failed because _FOLLOWUP_HINTS lacked the
+        'draft a follow-up' variant (with article 'a'), causing the message to fall
+        through all dispatch branches and hit the LLM, which returned a fail-closed
+        'I was not able to prepare a governed preview' response.
+        """
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260101-regression",
+            state="done",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Linked goal completed.",
+            failure_summary="",
+            artifact_families=("note",),
+            artifact_refs=("note-regression.md",),
+            evidence_trace=("done",),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="Draft a follow-up based on that job's result.",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "followup_preview_ready", (
+            "Regression: 'Draft a follow-up based on that job's result.' must reach "
+            "the followup branch and return 'followup_preview_ready', not fall through "
+            f"to the LLM. Got status={result.status!r}"
+        )
+        assert result.write_preview is True
+        assert result.write_handoff_ready is True
+        assert result.preview_payload is not None
+        assert "job-20260101-regression" in result.assistant_text
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            # Regression phrase — the exact text that exposed the bug
+            "draft a follow-up based on that job's result",
+            # Variants using 'write / create / make' + 'a follow-up'
+            "write a follow-up based on that result",
+            "create a follow-up for the completed job",
+            "make a follow-up based on the result",
+            # Bare new hint
+            "draft a follow-up",
+            # 'based on that job' hint (no review-hint collision — does not contain 'last job')
+            "please draft something based on that job outcome",
+            # 'based on the result' hint
+            "based on the result, prepare the next step",
+        ],
+    )
+    def test_followup_hint_variants_reach_followup_branch(
+        self, tmp_path: Path, phrase: str
+    ) -> None:
+        """New _FOLLOWUP_HINTS variants must route to the followup branch.
+
+        Evidence is None (tmp_path has no artifacts), so the branch returns
+        ``followup_missing_evidence`` — but the key assertion is that the
+        followup branch WAS reached (not ``matched=False`` or a different status).
+        """
+        result = _dispatch(message=phrase, queue_root=tmp_path)
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence", (
+            f"Phrase {phrase!r} did not reach the followup branch. Got status={result.status!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # 4. Investigation derived-save
