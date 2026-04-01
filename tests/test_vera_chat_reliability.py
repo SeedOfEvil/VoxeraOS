@@ -6,6 +6,7 @@ Covers:
   - Preview-only wording correctness for drafting flows
   - Wrapper stripping for new LLM reply patterns
   - Content-shape signal coverage (note, writeup as content targets)
+  - Preview truth binding: authored content reaches preview write_file.content
 """
 
 from __future__ import annotations
@@ -391,3 +392,136 @@ class TestContentShapeSignalExpanded:
         assert preview is not None
         content = preview["write_file"]["content"].lower()
         assert "gravity" in content
+
+
+# ---------------------------------------------------------------------------
+# 6. Preview truth binding — authored content reaches preview write_file.content
+# ---------------------------------------------------------------------------
+
+
+class TestPreviewTruthBinding:
+    """Regression: authored prose must be bound into the authoritative preview
+    payload, not just the assistant chat reply.  These tests verify the exact
+    live-failing prompts where recognition was correct but preview content was
+    empty or truncated."""
+
+    def test_writeup_about_operator_truth_surfaces_binds_to_preview(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Live failure: 'put together a short writeup about operator truth surfaces'
+        produced a good writeup in chat, but preview write_file.content was
+        truncated junk ('who, what, and when.').
+
+        Root cause: authored prose mentioned 'queue state' which triggered
+        looks_like_non_authored_assistant_message, causing reply_text_draft=None
+        and leaving the builder's junk content in the preview."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Operator truth surfaces in VoxeraOS are the canonical points where "
+            "system state becomes visible and actionable for human operators. "
+            "These surfaces include the queue state display, job evidence bundles, "
+            "artifact inspection views, and approval gates.\n\n"
+            "The key design principle is that every truth surface must be grounded "
+            "in real persisted state — never in LLM-generated claims or speculative "
+            "summaries."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("put together a short writeup about operator truth surfaces")
+        assert res.status_code == 200
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        assert wf["path"], "write_file.path must be non-empty"
+        content = wf["content"]
+        assert content, "write_file.content must be non-empty"
+        assert len(content) > 50, (
+            f"write_file.content must be substantial authored prose, got {len(content)} chars"
+        )
+        assert "operator truth surfaces" in content.lower()
+        assert "queue state" in content.lower()
+        # Must not be the builder's junk
+        assert content != "who, what, and when."
+
+    def test_note_about_artifact_evidence_model_binds_to_preview(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Live failure: 'write me a note about the artifact evidence model'
+        produced a good note in chat, but preview write_file.content was empty.
+
+        Root cause: same as above — authored content about VoxeraOS concepts
+        could trigger system-term filters, leaving reply_text_draft=None."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "The artifact evidence model in VoxeraOS provides a structured way "
+            "to track what happened during queue job execution. Each job produces "
+            "an evidence bundle containing the terminal outcome, approval status, "
+            "step results, and expected artifacts.\n\n"
+            "This model ensures operators can verify execution truth without "
+            "relying on LLM-generated summaries."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a note about the artifact evidence model")
+        assert res.status_code == 200
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        assert wf["path"], "write_file.path must be non-empty"
+        content = wf["content"]
+        assert content, "write_file.content must be non-empty"
+        assert len(content) > 50, (
+            f"write_file.content must be substantial authored prose, got {len(content)} chars"
+        )
+        assert "artifact evidence model" in content.lower()
+        assert "evidence bundle" in content.lower()
+        # Must not be empty string
+        assert content != ""
+
+    def test_preview_content_and_assistant_reply_stay_aligned(self, tmp_path, monkeypatch) -> None:
+        """Preview content and assistant reply must be aligned enough that
+        the governed UX is truthful: what the user sees in chat should
+        materially match what the preview would submit."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Tectonic plates are massive slabs of Earth's lithosphere that "
+            "move, float, and sometimes fracture. Their interaction causes "
+            "earthquakes, volcanic activity, and mountain formation."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("draft a brief summary of plate tectonics")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None
+        preview_content = preview["write_file"]["content"]
+
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        assistant_text = last_turn["text"]
+
+        # The preview content must be a meaningful portion of the authored content
+        assert "tectonic plates" in preview_content.lower()
+        # The assistant text should contain or reference the same content
+        assert "tectonic plates" in assistant_text.lower() or preview_content in assistant_text
