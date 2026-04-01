@@ -24,18 +24,27 @@ _DIRECT_WRITING_RE = re.compile(
     r"turn\s+(?:that|this|it)\s+into\s+(?:paragraphs?|an?\s+article|an?\s+essay)|"
     r"short\s+article\s+for\s+a\s+technical\s+teammate|"
     r"explain\s+how\s+this\s+script\s+works\s+in\s+plain\s+english|"
-    r"plain\s+english"
+    r"plain\s+english|"
+    r"explanation\b"
     r")\b",
     re.IGNORECASE,
 )
 _WRITING_VERB_RE = re.compile(
-    r"\b(write|rewrite|draft|expand|turn|explain|formal(?:ize)?|make)\b", re.IGNORECASE
+    r"\b(write|rewrite|draft|create|expand|turn|explain|formal(?:ize)?|make)\b", re.IGNORECASE
 )
 _SAVE_ONLY_RE = re.compile(
     r"\b(save|write|put)\b.*\b(note|file|markdown|\.md\b|\.txt\b)\b", re.IGNORECASE
 )
 _TRANSFORM_SIGNAL_RE = re.compile(
     r"\b(rewrite|essay|article|writeup|formal|expand|turn\s+.+\s+into|plain\s+english)\b",
+    re.IGNORECASE,
+)
+# Matches clear new-content creation requests with a note/file target and a topic signal.
+# These override the _SAVE_ONLY_RE early exit because they are generating fresh content,
+# not saving existing content.  Examples: "Write a short markdown file explaining X",
+# "Draft a short note about Y and save it as Z.txt".
+_SHORT_NEW_FILE_DRAFT_RE = re.compile(
+    r"\b(?:draft|write|create)\b.{0,40}\b(?:note|file)\b.{0,80}\b(?:explaining|about|on\s+\w|describing|regarding)\b",
     re.IGNORECASE,
 )
 _TEXT_FILENAME_RE = re.compile(r"\b([a-zA-Z0-9_.-]+\.(?:md|txt))\b")
@@ -68,6 +77,11 @@ def is_writing_draft_request(message: str) -> bool:
     text = message.strip()
     if not text:
         return False
+    # Clear new-content creation with a note/file target overrides the save-only
+    # early exit below.  These are generate-then-save requests ("draft a note
+    # explaining X", "write a file about Y"), not save-existing-content requests.
+    if _SHORT_NEW_FILE_DRAFT_RE.search(text):
+        return True
     if _SAVE_ONLY_RE.search(text) and not _TRANSFORM_SIGNAL_RE.search(text):
         return False
     if _PAGE_ESSAY_RE.search(text):

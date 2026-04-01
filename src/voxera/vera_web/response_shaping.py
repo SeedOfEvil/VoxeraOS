@@ -184,7 +184,13 @@ def assemble_assistant_reply(  # noqa: C901
 
     assistant_text = guarded_answer
     naming_mutation_request = looks_like_preview_rename_or_save_as_request(message)
-    if naming_mutation_request and (pending_preview is not None or builder_payload is not None):
+    # Writing draft turns generate new authored content — do not override the LLM
+    # reply with a path-mutation message even when the message contains "save as".
+    if (
+        naming_mutation_request
+        and not is_writing_draft_turn
+        and (pending_preview is not None or builder_payload is not None)
+    ):
         assistant_text = _conversational_preview_update_message(
             updated=builder_payload is not None,
             has_active_preview=pending_preview is not None,
