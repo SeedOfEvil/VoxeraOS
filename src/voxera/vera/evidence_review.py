@@ -30,7 +30,15 @@ _FOLLOWUP_HINTS = (
     "draft the next step",
     "prepare next step",
     "draft follow-up",
+    "draft a follow-up",
+    "write a follow-up",
+    "create a follow-up",
+    "make a follow-up",
     "prepare a follow-up",
+    "based on that job",
+    "based on the job",
+    "based on that result",
+    "based on the result",
 )
 
 

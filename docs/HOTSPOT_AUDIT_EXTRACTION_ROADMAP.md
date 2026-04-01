@@ -391,6 +391,39 @@ Any extraction PR following this roadmap must preserve these invariants:
   remaining coherent seam. The other safe option is targeted test hardening for
   the surviving inline `chat()` body before further extraction.
 
+### Completed follow-on seam (Vera web chat() decomposition — third strike)
+
+- The early-exit intent handler dispatch cluster (~290 inline lines spanning 9
+  independent short-circuit branches) was extracted from the `chat()` function
+  in `src/voxera/vera_web/app.py` into `src/voxera/vera_web/chat_early_exit_dispatch.py`.
+- The extracted module owns:
+  - `EarlyExitResult` — dataclass returned by `dispatch_early_exit_intent()`. Carries
+    assistant text, status code, preview/handoff write flags, derived-output write
+    flag, and the corresponding payload fields so `app.py` can perform final writes.
+  - `dispatch_early_exit_intent()` — evaluates 9 early-exit conditions in their
+    canonical order: (1) diagnostics refusal, (2) job review / evidence review,
+    (3) follow-up preview request, (4) investigation derived-save, (5) investigation
+    compare, (6) investigation summary, (7) investigation expand (invalid-reference
+    error path only), (8) investigation save, (9) near-miss submit phrase.
+    Returns `EarlyExitResult(matched=True)` for the first match, or
+    `EarlyExitResult(matched=False)` when none match.
+- Scope remained intentionally bounded. All truth-sensitive ownership stays in
+  `app.py`: `write_session_preview`, `write_session_handoff_state`,
+  `write_session_derived_investigation_output`, `append_session_turn`, `_render_page`,
+  all submit/handoff decisions (`_submit_handoff`), the weather-context LLM lookup
+  (requires async I/O), and the blocked-file guard (ordering constraint: must come
+  after submit checks).
+- `app.py` reduced from ~1,405 to ~1,182 lines. The `chat()` function reduced
+  from ~737 lines (post second strike) to approximately 445 lines.
+- Characterization tests added in `tests/test_chat_early_exit_dispatch.py` (43 tests
+  covering all 9 dispatch branches, EarlyExitResult defaults, write-flag integrity
+  invariants, and no-match fallthrough).
+- **Next safe extraction candidates:** (a) targeted test hardening for the remaining
+  inline `chat()` orchestration body, or (b) further extraction of the preview builder
+  update / LLM call cluster (the largest remaining self-contained block). The
+  vera_web hotspot is now substantially reduced: five focused modules own the pure
+  derivation seams and `app.py` retains truth-sensitive orchestration.
+
 ### PR-5: Extract panel auth-state storage helpers
 
 - Move `_prune_panel_auth_maps`, `_panel_auth_state_*`, `_active_lockout_until_ms`

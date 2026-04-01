@@ -644,6 +644,7 @@ src/voxera/
 │   ├── execution_mode.py     — Non-I/O execution-mode predicates/classifier helpers.
 │   ├── conversational_checklist.py — Deterministic conversational checklist parsing/rendering/sanitization helpers.
 │   ├── preview_content_binding.py — Low-risk preview-body/content-binding purity helpers (selection/rejection predicates).
+│   ├── chat_early_exit_dispatch.py — Early-exit intent handler dispatch: evaluates the coherent cluster of special-intent / short-circuit conditions (diagnostics refusal, job review, follow-up preview, investigation derived-save/compare/summary/expand/save, near-miss submit) before the LLM path. Returns EarlyExitResult with write instructions; app.py performs all session writes, turn appends, and rendering.
 │   ├── draft_content_binding.py — Post-LLM reply content extraction and draft-to-preview binding derivation (code/writing/generation/create-and-save).
 │   ├── response_shaping.py   — Post-guardrail assistant reply assembly: preview-content derivation, false-claim guardrails, stale-shell cleanup predicate, and assemble_assistant_reply() (naming-mutation, control-turn, preview-dump suppression, ambiguous-request, fail-closed messaging, status derivation).
 │   ├── templates/index.html  — Single-page HTML shell for the Vera conversational UI
@@ -1555,6 +1556,7 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - Matches planning/checklist patterns (checklist, list, plan, organize, prepare, grocery list, packing list, to do, brainstorm, itinerary, etc.) while excluding messages with explicit save/write/file intent (`_SAVE_WRITE_FILE_SIGNAL_RE`).
 - `vera_web/execution_mode.py` owns the low-risk non-I/O lane predicates/classification helpers; `vera_web/app.py` keeps final submit/handoff boundary ownership and preview/queue truth writes.
 - `vera_web/preview_content_binding.py` owns low-risk preview-body/content-binding helper predicates (placeholder-body rejection, control-narration body rejection, targeted code-content refinement detection), while `vera_web/app.py` retains final preview/session writes and canonical submit/handoff truth ownership.
+- `vera_web/chat_early_exit_dispatch.py` owns the early-exit intent handler dispatch cluster: diagnostics refusal, job review, follow-up preview, investigation derived-save/compare/summary/expand/save, and near-miss submit blocking. `app.py` performs all session writes described by the returned `EarlyExitResult`, owns `append_session_turn`, `_render_page`, and all submit/handoff truth decisions.
 
 ### Multi-turn continuation (`vera/session_store.py`, `vera_web/app.py`)
 - A `conversational_planning_active` boolean is persisted in session state whenever a `CONVERSATIONAL_ARTIFACT` turn occurs.

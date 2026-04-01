@@ -1,3 +1,44 @@
+## 2026-04-01 — PR #TBD — refactor(vera_web): extract early-exit intent handler dispatch from giant chat()
+
+- Extracted the early-exit intent handler dispatch cluster (~290 inline lines, 9 independent
+  short-circuit branches) from the `chat()` function in `src/voxera/vera_web/app.py` into
+  `src/voxera/vera_web/chat_early_exit_dispatch.py`. This is the **third decomposition strike**
+  against the Vera web `chat()` hotspot.
+- The extracted module owns `EarlyExitResult` (dataclass with write instructions and result
+  fields) and `dispatch_early_exit_intent()` (evaluates 9 ordered early-exit conditions:
+  diagnostics refusal, job review, follow-up preview, investigation derived-save, investigation
+  compare, investigation summary, investigation expand invalid-reference error path,
+  investigation save, near-miss submit phrase).
+- All truth-sensitive ownership stays in `app.py`: `write_session_preview`,
+  `write_session_handoff_state`, `write_session_derived_investigation_output`,
+  `append_session_turn`, `_render_page`, all submit/handoff decisions (`_submit_handoff`),
+  the weather-context LLM lookup (async I/O, stays in app.py), and the blocked-file guard
+  (ordering constraint: must follow submit checks, stays in app.py).
+- `app.py` reduced from ~1,405 to ~1,182 lines (third strike; ~223 lines removed this PR).
+  The `chat()` function reduced from ~737 to ~445 lines.
+- Updated `docs/ARCHITECTURE.md` (directory tree, refactor ownership notes), `docs/ops.md`
+  (Vera web contributor guidance), and `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` (third-strike
+  completion entry, next-seam recommendation).
+- Characterization tests added in `tests/test_chat_early_exit_dispatch.py` (43 tests covering
+  all 9 dispatch branches, EarlyExitResult defaults, write-flag integrity invariants, no-match
+  fallthrough, and fail-closed behavior across near-miss submit and missing-evidence paths).
+- **Current vera_web extraction state:** six focused modules now own pure derivation/dispatch
+  seams: `conversational_checklist.py`, `execution_mode.py`, `preview_content_binding.py`,
+  `draft_content_binding.py`, `response_shaping.py`, and `chat_early_exit_dispatch.py`.
+  `app.py` retains route handlers, truth-sensitive session writes, queue-boundary decisions,
+  and submit/handoff orchestration.
+- **Recommended next seam:** (a) targeted test hardening for the remaining inline `chat()`
+  orchestration body, or (b) extraction of the preview builder update / LLM call cluster
+  (largest remaining self-contained inline block). The vera_web hotspot is substantially
+  reduced; further extraction is optional based on concrete need.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make merge-readiness-check`
+  - `make golden-check`
+
 ## 2026-04-01 — PR #TBD — fix(vera_web): pre-handoff draft-creation / wrong-mode reply path
 
 - Summary:
