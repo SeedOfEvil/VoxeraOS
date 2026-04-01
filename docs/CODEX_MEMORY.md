@@ -13,7 +13,7 @@
   - **Root cause 3 — naming-mutation reply override fired on writing draft turns** (`src/voxera/vera_web/response_shaping.py`):
     - "Draft a short note...save it as explanation.txt." contains "save...as"; `looks_like_preview_rename_or_save_as_request` returned True, so `assemble_assistant_reply` replaced the LLM-generated content with "Updated the draft destination to ~/VoxeraOS/notes/explanation.txt."
     - Fix: guard the naming-mutation override with `and not is_writing_draft_turn`. Writing draft turns generate new content — the reply should not be a path-mutation control message.
-  - Characterization tests added in `tests/test_vera_draft_bug_fix.py` (22 tests): parametrized classification unit tests for 9 prompts that should be writing drafts and 6 that should not; `assemble_assistant_reply` unit tests for naming-mutation override exemption and regression; integration tests for all 4 observed failing prompts.
+  - Characterization tests added in `tests/test_vera_draft_bug_fix.py` (23 tests): parametrized classification unit tests for 9 prompts that should be writing drafts and 8 that should not (including "make a note for later about buying milk" regression guard); `assemble_assistant_reply` unit tests for naming-mutation override exemption and regression; integration tests for all 4 observed failing prompts.
   - Queue boundary / truth-sensitive handoff logic unchanged. Final `write_session_preview` / `write_session_handoff_state` ownership stays in `app.py`.
 - Validation:
   - `ruff format --check .`

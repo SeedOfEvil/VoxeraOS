@@ -58,6 +58,8 @@ SHOULD_NOT_BE_WRITING_DRAFT = [
     # Checklist/planning (conversational mode)
     "create a checklist for deployment",
     "make me a to-do list",
+    # Regression guard: "make a note" is organizational, not a writing draft
+    "make a note for later about buying milk",
 ]
 
 
@@ -143,8 +145,8 @@ def test_naming_mutation_override_still_fires_for_non_writing_draft_turn() -> No
     kwargs["is_writing_draft_turn"] = False
     kwargs["in_voxera_preview_flow"] = True
     result = assemble_assistant_reply("I updated the note path.", **kwargs)
-    # For a pure rename turn (not writing draft), the control reply should fire
-    assert "Updated the draft destination" in result.assistant_text or result.assistant_text
+    # For a pure rename turn (not writing draft), the naming-mutation control reply fires
+    assert "Updated the draft destination" in result.assistant_text
 
 
 # ---------------------------------------------------------------------------
