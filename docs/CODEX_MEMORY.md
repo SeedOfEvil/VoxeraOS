@@ -1,3 +1,28 @@
+## 2026-04-01 — PR #TBD — fix(vera_web): pre-handoff draft-creation / wrong-mode reply path
+
+- Summary:
+  - Four live prompts that should create authoritative writing-draft previews were misfiring: fail-closed reply ("I was not able to prepare a governed preview"), false submission-not-confirmed message, or path-only mutation without fresh authored content.
+  - **Root cause 1 — `is_writing_draft_request` too narrow** (`src/voxera/core/writing_draft_intent.py`):
+    - "Draft a short markdown note explaining..." — "note" was absent from `_DIRECT_WRITING_RE`; `_SHORT_NEW_FILE_DRAFT_RE` now catches "draft/write/create ... note/file ... explaining/about/describing/regarding" patterns.
+    - "Write a short markdown file explaining..." — `_SAVE_ONLY_RE` blocked it (write + file) and `_TRANSFORM_SIGNAL_RE` did not match; the new `_SHORT_NEW_FILE_DRAFT_RE` check runs first and returns True for clear new-content creation.
+    - "Draft a short note...save it as explanation.txt." — `_SAVE_ONLY_RE` matched on "save...\.txt"; `_SHORT_NEW_FILE_DRAFT_RE` (draft + note + about) takes priority.
+    - "Create a draft explanation as explanation.txt." — "create" was absent from `_WRITING_VERB_RE`; added. "explanation" was absent from `_DIRECT_WRITING_RE`; added.
+  - **Root cause 2 — `_guardrail_submission_claim` misfiring on authored content** (`src/voxera/vera_web/app.py`):
+    - LLM content explaining VoxeraOS queue semantics legitimately contains words like "queued"; the guardrail replaced the entire drafted note with "I have not submitted anything to VoxeraOS yet."
+    - Fix: skip `_guardrail_submission_claim` when `is_writing_draft_turn=True`. Writing draft turns author document content, not system-state claims.
+  - **Root cause 3 — naming-mutation reply override fired on writing draft turns** (`src/voxera/vera_web/response_shaping.py`):
+    - "Draft a short note...save it as explanation.txt." contains "save...as"; `looks_like_preview_rename_or_save_as_request` returned True, so `assemble_assistant_reply` replaced the LLM-generated content with "Updated the draft destination to ~/VoxeraOS/notes/explanation.txt."
+    - Fix: guard the naming-mutation override with `and not is_writing_draft_turn`. Writing draft turns generate new content — the reply should not be a path-mutation control message.
+  - Characterization tests added in `tests/test_vera_draft_bug_fix.py` (22 tests): parametrized classification unit tests for 9 prompts that should be writing drafts and 6 that should not; `assemble_assistant_reply` unit tests for naming-mutation override exemption and regression; integration tests for all 4 observed failing prompts.
+  - Queue boundary / truth-sensitive handoff logic unchanged. Final `write_session_preview` / `write_session_handoff_state` ownership stays in `app.py`.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make merge-readiness-check`
+  - `make golden-check`
+
 ## 2026-03-31 — PR #TBD — refactor(vera_web): extract response-shaping / reply-assembly seam from giant chat() function
 
 - Extracted the response-shaping / reply-assembly tail cluster (~127 lines) from the giant `chat()` orchestration function in `src/voxera/vera_web/app.py` into `src/voxera/vera_web/response_shaping.py`. This is the second decomposition strike against the Vera web `chat()` hotspot.

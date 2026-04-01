@@ -1263,11 +1263,18 @@ async def chat(request: Request):
             guarded_answer, raw_answer=sanitized_answer, user_message=message
         )
     else:
-        guarded_answer = _guardrail_submission_claim(
-            root=root,
-            session_id=active_session,
-            text=sanitized_answer,
-        )
+        # Writing draft turns author document content — that content may mention
+        # queuing or submission in an explanatory context (e.g. a note about the
+        # VoxeraOS queue boundary).  Skip the submission-claim guardrail so the
+        # authored text is not replaced with "I have not submitted anything".
+        if is_writing_draft_turn:
+            guarded_answer = sanitized_answer
+        else:
+            guarded_answer = _guardrail_submission_claim(
+                root=root,
+                session_id=active_session,
+                text=sanitized_answer,
+            )
         _answer_before_preview_guardrail = guarded_answer
         guarded_answer = _guardrail_false_preview_claim(
             text=guarded_answer,
