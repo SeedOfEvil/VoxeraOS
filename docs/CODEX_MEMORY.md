@@ -33,9 +33,10 @@
     "let me know if you want to change", "would you like me to save", "want me to save".
 - **No architecture/ownership changes.** Queue boundary, truth-sensitive submit/handoff, and
   execution mode classification are all unchanged. All fixes are pattern-level widening only.
-- Characterization tests added in `tests/test_vera_chat_reliability.py` (46 tests):
-  writing-draft recognition, follow-up phrasing, wrapper stripping, session-level drafting
-  flows, and content-shape signal coverage.
+- Characterization tests added in `tests/test_vera_chat_reliability.py` (56 tests):
+  writing-draft recognition (positive + negative regression guards for "put"/save-only),
+  follow-up phrasing (positive + negative regression guards for similar non-followup phrases),
+  wrapper stripping, session-level drafting flows, and content-shape signal coverage.
 - Validation: ruff format, ruff check, mypy, pytest, merge-readiness-check, golden-check.
 
 ## 2026-04-01 — PR #TBD — refactor(vera_web): extract early-exit intent handler dispatch from giant chat()

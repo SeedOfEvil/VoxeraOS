@@ -61,6 +61,14 @@ class TestWritingDraftRecognitionExpanded:
             "search the web for DNS documentation",
             "save that to a note",
             "submit it",
+            # Regression guards: "put" in non-drafting contexts must stay False
+            "put the book on the shelf",
+            "put it in the queue",
+            "put it in a note",
+            "put this answer in a note",
+            # "note" in non-drafting contexts
+            "note that the meeting is at 3pm",
+            "please note this for the record",
         ],
     )
     def test_non_drafting_phrases_not_matched(self, phrase: str) -> None:
@@ -110,6 +118,13 @@ class TestFollowupPhrasingExpanded:
             "write me a poem",
             "tell me a joke",
             "save that to a note",
+            # Regression guards: similar phrases that must NOT be follow-up
+            "do the homework",
+            "let's do this",
+            "write the next chapter",
+            "prepare the food",
+            "queue the print job",
+            "what should I do next",  # review hint, not follow-up
         ],
     )
     def test_non_followup_phrases_not_matched(self, phrase: str) -> None:
