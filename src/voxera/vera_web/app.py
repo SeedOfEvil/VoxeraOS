@@ -25,35 +25,20 @@ from ..vera.draft_revision import (
     looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.evidence_review import (
-    draft_followup_preview,
-    is_followup_preview_request,
-    is_review_request,
     maybe_extract_job_id,
-    review_job_outcome,
-    review_message,
 )
 from ..vera.handoff import (
-    derive_investigation_comparison,
     derive_investigation_expansion,
-    derive_investigation_summary,
-    diagnostics_request_refusal,
     diagnostics_service_or_logs_intent,
-    draft_investigation_derived_save_preview,
-    draft_investigation_save_preview,
     drafting_guidance,
-    is_investigation_compare_request,
     is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
     is_investigation_expand_request,
-    is_investigation_save_request,
-    is_investigation_summary_request,
     is_recent_assistant_content_save_request,
     maybe_draft_job_payload,
-    select_investigation_results,
 )
 from ..vera.preview_submission import (
     is_natural_preview_submission_confirmation,
-    is_near_miss_submit_phrase,
     is_preview_submission_request,
     normalize_preview_payload,
     should_submit_active_preview,
@@ -102,6 +87,7 @@ from ..voice.flags import VoiceFoundationFlags, load_voice_foundation_flags
 from ..voice.input import VoiceInputDisabledError, ingest_voice_transcript
 from ..voice.models import InputOrigin, normalize_input_origin
 from ..voice.output import voice_output_status
+from .chat_early_exit_dispatch import dispatch_early_exit_intent
 from .conversational_checklist import (
     conversational_preview_update_message as _cc_conversational_preview_update_message,
 )
@@ -655,87 +641,66 @@ async def chat(request: Request):
     requested_job_id = maybe_extract_job_id(message)
     diagnostics_service_turn = diagnostics_service_or_logs_intent(message)
 
-    diagnostics_refusal = diagnostics_request_refusal(message)
-    if diagnostics_refusal is not None:
-        append_session_turn(root, active_session, role="assistant", text=diagnostics_refusal)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="blocked_diagnostics",
-            voice_flags=voice_flags,
-        )
-
-    if (
-        is_review_request(message) and not diagnostics_service_turn
-    ) or requested_job_id is not None:
-        target_job_id = requested_job_id
-        if not target_job_id:
-            handoff = read_session_handoff_state(root, active_session) or {}
-            target_job_id = str(handoff.get("job_id") or "") or None
-        evidence = review_job_outcome(queue_root=root, requested_job_id=target_job_id)
-        if evidence is None:
-            assistant_text = (
-                "I could not resolve a VoxeraOS job to review from canonical evidence. "
-                "Share a job id (for example `job-123.json`) or submit a job first in this session."
-            )
-            status = "review_missing_job"
-        else:
-            assistant_text = review_message(evidence)
-            status = "reviewed_job_outcome"
-        append_session_turn(root, active_session, role="assistant", text=assistant_text)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status=status,
-            voice_flags=voice_flags,
-        )
-
-    if is_followup_preview_request(message):
-        handoff = read_session_handoff_state(root, active_session) or {}
-        evidence = review_job_outcome(
-            queue_root=root,
-            requested_job_id=str(handoff.get("job_id") or "") or None,
-        )
-        if evidence is None:
-            assistant_text = (
-                "I can draft a follow-up preview once we have a resolvable VoxeraOS job outcome. "
-                "Please give me a job id or ask me to review your most recent submitted job first."
-            )
-            append_session_turn(root, active_session, role="assistant", text=assistant_text)
-            return _render_page(
-                session_id=active_session,
-                turns=read_session_turns(root, active_session),
-                status="followup_missing_evidence",
-                voice_flags=voice_flags,
-            )
-
-        payload = draft_followup_preview(evidence)
-        write_session_preview(root, active_session, payload)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
-        )
-        assistant_text = (
-            f"I prepared a follow-up request based on evidence from `{evidence.job_id}`. "
-            "This is preview-only; I did not submit anything to VoxeraOS."
-        )
-        append_session_turn(root, active_session, role="assistant", text=assistant_text)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="followup_preview_ready",
-            voice_flags=voice_flags,
-        )
-
     session_investigation = read_session_investigation(root, active_session)
     session_derived_output = read_session_derived_investigation_output(root, active_session)
     session_weather_context = read_session_weather_context(root, active_session)
     is_explicit_writing_transform = is_writing_draft_request(message)
+
+    should_attempt_derived_save = (
+        not is_explicit_writing_transform
+        and not _looks_like_active_preview_content_generation_turn(message)
+        and (
+            is_investigation_derived_save_request(message)
+            or _prefer_derived_followup_save(
+                message=message,
+                session_derived_output=session_derived_output,
+                turns=turns,
+            )
+        )
+    )
+
+    # ── Early-exit intent handler dispatch ─────────────────────────────────
+    # Evaluates the coherent cluster of special-intent / short-circuit
+    # conditions before the LLM path.  Derivation and result structuring live
+    # in chat_early_exit_dispatch.py; session writes, turn append, and
+    # _render_page remain here.
+    # Intentionally NOT covered here: weather-context LLM lookup (async I/O,
+    # below), submit/handoff truth paths, and blocked-file check (after
+    # submit checks to preserve ordering).
+    _early = dispatch_early_exit_intent(
+        message=message,
+        pending_preview=pending_preview,
+        diagnostics_service_turn=diagnostics_service_turn,
+        requested_job_id=requested_job_id,
+        is_explicit_writing_transform=is_explicit_writing_transform,
+        should_attempt_derived_save=should_attempt_derived_save,
+        session_investigation=session_investigation,
+        session_derived_output=session_derived_output,
+        queue_root=root,
+        session_id=active_session,
+    )
+    if _early.matched:
+        if _early.write_preview:
+            write_session_preview(root, active_session, _early.preview_payload)
+        if _early.write_handoff_ready:
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+        if _early.write_derived_output:
+            write_session_derived_investigation_output(root, active_session, _early.derived_output)
+        append_session_turn(root, active_session, role="assistant", text=_early.assistant_text)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status=_early.status,
+            voice_flags=voice_flags,
+        )
 
     if (
         is_natural_preview_submission_confirmation(message)
@@ -758,194 +723,6 @@ async def chat(request: Request):
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status=str(reply.get("status") or "ok:weather_current"),
-            voice_flags=voice_flags,
-        )
-
-    should_attempt_derived_save = (
-        not is_explicit_writing_transform
-        and not _looks_like_active_preview_content_generation_turn(message)
-        and (
-            is_investigation_derived_save_request(message)
-            or _prefer_derived_followup_save(
-                message=message,
-                session_derived_output=session_derived_output,
-                turns=turns,
-            )
-        )
-    )
-    if should_attempt_derived_save:
-        derived_preview = draft_investigation_derived_save_preview(
-            message,
-            derived_output=session_derived_output,
-        )
-        if derived_preview is None:
-            assistant_text = (
-                "I couldn't find a current investigation comparison, summary, or expanded result to save in this session. "
-                "Ask me to compare, summarize, or expand a finding first, then ask to save that output."
-            )
-            append_session_turn(root, active_session, role="assistant", text=assistant_text)
-            return _render_page(
-                session_id=active_session,
-                turns=read_session_turns(root, active_session),
-                status="investigation_derived_missing",
-                voice_flags=voice_flags,
-            )
-        write_session_preview(root, active_session, derived_preview)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
-        )
-        assistant_text = (
-            "I prepared a governed save-to-note preview from the latest investigation-derived text artifact. "
-            "Nothing has been submitted yet."
-        )
-        append_session_turn(root, active_session, role="assistant", text=assistant_text)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="prepared_preview",
-            voice_flags=voice_flags,
-        )
-
-    if is_investigation_compare_request(message):
-        comparison = derive_investigation_comparison(
-            message,
-            investigation_context=session_investigation,
-        )
-        if comparison is None:
-            assistant_text = (
-                "I couldn't resolve those result references for comparison in this session. "
-                "Run a fresh read-only investigation first, then compare valid result numbers "
-                "(for example: 'compare results 1 and 3' or 'compare all findings')."
-            )
-            append_session_turn(root, active_session, role="assistant", text=assistant_text)
-            return _render_page(
-                session_id=active_session,
-                turns=read_session_turns(root, active_session),
-                status="investigation_reference_invalid",
-                voice_flags=voice_flags,
-            )
-        write_session_derived_investigation_output(root, active_session, comparison)
-        append_session_turn(
-            root, active_session, role="assistant", text=str(comparison.get("answer") or "")
-        )
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="ok:investigation_comparison",
-            voice_flags=voice_flags,
-        )
-
-    if is_investigation_summary_request(message):
-        summary = derive_investigation_summary(
-            message,
-            investigation_context=session_investigation,
-        )
-        if summary is None:
-            assistant_text = (
-                "I couldn't resolve those result references for summary in this session. "
-                "Run a fresh read-only investigation first, then summarize valid result numbers "
-                "(for example: 'summarize result 2' or 'summarize all findings')."
-            )
-            append_session_turn(root, active_session, role="assistant", text=assistant_text)
-            return _render_page(
-                session_id=active_session,
-                turns=read_session_turns(root, active_session),
-                status="investigation_reference_invalid",
-                voice_flags=voice_flags,
-            )
-        write_session_derived_investigation_output(root, active_session, summary)
-        append_session_turn(
-            root, active_session, role="assistant", text=str(summary.get("answer") or "")
-        )
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="ok:investigation_summary",
-            voice_flags=voice_flags,
-        )
-
-    if is_investigation_expand_request(message):
-        expansion_error_text = (
-            "I couldn't resolve that investigation result for expansion in this session. "
-            "Run a fresh read-only investigation first, then expand one valid result number "
-            "(for example: 'expand result 1 please')."
-        )
-        selected_results, selected_ids = select_investigation_results(
-            message,
-            investigation_context=session_investigation,
-        )
-        if (
-            selected_results is None
-            or selected_ids is None
-            or len(selected_ids) != 1
-            or not isinstance(session_investigation, dict)
-        ):
-            append_session_turn(root, active_session, role="assistant", text=expansion_error_text)
-            return _render_page(
-                session_id=active_session,
-                turns=read_session_turns(root, active_session),
-                status="investigation_reference_invalid",
-            )
-
-    if is_investigation_save_request(message):
-        investigation_preview = draft_investigation_save_preview(
-            message,
-            investigation_context=session_investigation,
-        )
-        if investigation_preview is None:
-            assistant_text = (
-                "I couldn't resolve those investigation result references in this session. "
-                "Run a fresh read-only investigation first, then refer to valid result numbers "
-                "(for example: 'save result 2 to a note' or 'save all findings')."
-            )
-            append_session_turn(root, active_session, role="assistant", text=assistant_text)
-            return _render_page(
-                session_id=active_session,
-                turns=read_session_turns(root, active_session),
-                status="investigation_reference_invalid",
-            )
-
-        write_session_preview(root, active_session, investigation_preview)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
-        )
-        assistant_text = (
-            "I prepared a governed save-to-note preview from your selected investigation findings. "
-            "Nothing has been submitted yet."
-        )
-        append_session_turn(root, active_session, role="assistant", text=assistant_text)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="prepared_preview",
-        )
-
-    # Near-miss / typo-like submit phrasing: fail closed explicitly.
-    # This intercept runs BEFORE the canonical submit path so a fuzzy
-    # near-submit never reaches the LLM, which might overclaim submission.
-    if is_near_miss_submit_phrase(message):
-        near_miss_text = (
-            "I did not submit the preview. "
-            "That looked like a submit command but didn't match the expected phrasing. "
-            'Try "send it", "submit it", or "hand it off" to submit.'
-        )
-        append_session_turn(root, active_session, role="assistant", text=near_miss_text)
-        return _render_page(
-            session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status="near_miss_submit_rejected",
             voice_flags=voice_flags,
         )
 

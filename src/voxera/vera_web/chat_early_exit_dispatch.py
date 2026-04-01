@@ -1,0 +1,340 @@
+"""Early-exit intent handler dispatch for the Vera web chat flow.
+
+This module owns the coherent cluster of special-intent / short-circuit
+conditions that are evaluated at the top of ``chat()`` before the normal
+LLM orchestration path is entered.  Each condition detects a specific intent,
+computes a structured early response, and signals an early return.
+
+Extraction rationale
+--------------------
+These branches were previously inline in the giant ``chat()`` function in
+``app.py``.  They are self-contained and independent of each other: each
+one either fires (returning an ``EarlyExitResult`` with ``matched=True``) or
+falls through (the caller proceeds to the next stage).
+
+Ownership boundaries
+--------------------
+This module is responsible for:
+  - Evaluating every early-exit intent condition in their canonical order.
+  - Deriving assistant text, status codes, and preview/state payloads.
+  - Any read-only I/O (filesystem artifact reads) required to compute
+    the result.
+
+This module is NOT responsible for:
+  - ``append_session_turn`` — final write stays in ``app.py``.
+  - ``write_session_preview`` / ``write_session_handoff_state`` — write
+    instructions are returned in the result; ``app.py`` performs them.
+  - ``write_session_derived_investigation_output`` — same: write flag only.
+  - ``_render_page`` — routing truth stays in ``app.py``.
+  - Submit / handoff decisions (``_submit_handoff``) — truth-sensitive,
+    always in ``app.py``.
+  - Weather-context LLM lookup — requires async I/O; handled in ``app.py``.
+  - Blocked-file intent check — ordering constraint (must come after submit
+    checks); handled in ``app.py``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from ..vera.evidence_review import (
+    draft_followup_preview,
+    is_followup_preview_request,
+    is_review_request,
+    review_job_outcome,
+    review_message,
+)
+from ..vera.handoff import (
+    derive_investigation_comparison,
+    derive_investigation_summary,
+    diagnostics_request_refusal,
+    draft_investigation_derived_save_preview,
+    draft_investigation_save_preview,
+    is_investigation_compare_request,
+    is_investigation_expand_request,
+    is_investigation_save_request,
+    is_investigation_summary_request,
+    select_investigation_results,
+)
+from ..vera.preview_submission import is_near_miss_submit_phrase
+from ..vera.service import read_session_handoff_state
+
+
+@dataclass
+class EarlyExitResult:
+    """Result returned by :func:`dispatch_early_exit_intent`.
+
+    When ``matched`` is ``False`` no early-exit condition fired; the caller
+    should continue through the normal LLM orchestration path.
+
+    When ``matched`` is ``True`` the caller (``app.py``) must:
+
+    1. If ``write_preview`` is True: call
+       ``write_session_preview(root, session_id, preview_payload)``.
+    2. If ``write_handoff_ready`` is True: call
+       ``write_session_handoff_state(root, session_id, attempted=False,
+       queue_path=..., status="preview_ready", error=None, job_id=None)``.
+    3. If ``write_derived_output`` is True: call
+       ``write_session_derived_investigation_output(root, session_id,
+       derived_output)``.
+    4. Call ``append_session_turn(root, session_id, role="assistant",
+       text=assistant_text)``.
+    5. Return ``_render_page(..., status=status)``.
+    """
+
+    matched: bool
+    assistant_text: str = ""
+    status: str = ""
+    # Preview write instructions — app.py performs these writes
+    preview_payload: dict[str, object] | None = None
+    write_preview: bool = False
+    write_handoff_ready: bool = False
+    # Derived investigation output write instructions — app.py performs these writes
+    derived_output: dict[str, object] | None = None
+    write_derived_output: bool = False
+
+
+def dispatch_early_exit_intent(
+    *,
+    message: str,
+    pending_preview: dict[str, object] | None,
+    diagnostics_service_turn: bool,
+    requested_job_id: str | None,
+    is_explicit_writing_transform: bool,
+    should_attempt_derived_save: bool,
+    session_investigation: dict[str, object] | None,
+    session_derived_output: dict[str, object] | None,
+    queue_root: Path,
+    session_id: str,
+) -> EarlyExitResult:
+    """Evaluate message against all early-exit intent conditions in chat() order.
+
+    Checks evaluated (in order):
+
+    1. Diagnostics refusal — blocked system-diagnostics phrasing.
+    2. Job review / evidence review — review request or explicit job ID.
+    3. Follow-up preview request — draft follow-up from prior job evidence.
+    4. Investigation derived-save — save the current derived artifact.
+    5. Investigation compare — compare investigation result references.
+    6. Investigation summary — summarise investigation result references.
+    7. Investigation expand (error path) — invalid expand reference.
+    8. Investigation save — save investigation findings to a governed preview.
+    9. Near-miss submit phrase — fail-closed block on fuzzy submit phrasing.
+
+    Returns ``EarlyExitResult(matched=True)`` for the first condition that
+    fires, or ``EarlyExitResult(matched=False)`` when none match.
+
+    Intentionally **not** evaluated here (remain in ``app.py``):
+
+    - Weather-context pending LLM lookup (requires async I/O).
+    - Submit / handoff dispatch (``_submit_handoff`` — truth-sensitive).
+    - Blocked-file intent check (ordering: must follow submit checks).
+    """
+
+    # ── 1. Diagnostics refusal ─────────────────────────────────────────────
+    refusal = diagnostics_request_refusal(message)
+    if refusal is not None:
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=refusal,
+            status="blocked_diagnostics",
+        )
+
+    # ── 2. Job review / evidence review ───────────────────────────────────
+    if (
+        is_review_request(message) and not diagnostics_service_turn
+    ) or requested_job_id is not None:
+        target_job_id = requested_job_id
+        if not target_job_id:
+            handoff = read_session_handoff_state(queue_root, session_id) or {}
+            target_job_id = str(handoff.get("job_id") or "") or None
+        evidence = review_job_outcome(queue_root=queue_root, requested_job_id=target_job_id)
+        if evidence is None:
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "I could not resolve a VoxeraOS job to review from canonical evidence. "
+                    "Share a job id (for example `job-123.json`) or submit a job first in this session."
+                ),
+                status="review_missing_job",
+            )
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=review_message(evidence),
+            status="reviewed_job_outcome",
+        )
+
+    # ── 3. Follow-up preview request ───────────────────────────────────────
+    if is_followup_preview_request(message):
+        handoff = read_session_handoff_state(queue_root, session_id) or {}
+        evidence = review_job_outcome(
+            queue_root=queue_root,
+            requested_job_id=str(handoff.get("job_id") or "") or None,
+        )
+        if evidence is None:
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "I can draft a follow-up preview once we have a resolvable VoxeraOS job outcome. "
+                    "Please give me a job id or ask me to review your most recent submitted job first."
+                ),
+                status="followup_missing_evidence",
+            )
+        payload: dict[str, object] = {**draft_followup_preview(evidence)}
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=(
+                f"I prepared a follow-up request based on evidence from `{evidence.job_id}`. "
+                "This is preview-only; I did not submit anything to VoxeraOS."
+            ),
+            status="followup_preview_ready",
+            preview_payload=payload,
+            write_preview=True,
+            write_handoff_ready=True,
+        )
+
+    # ── 4. Investigation derived-save request ──────────────────────────────
+    if should_attempt_derived_save:
+        derived_preview = draft_investigation_derived_save_preview(
+            message,
+            derived_output=session_derived_output,
+        )
+        if derived_preview is None:
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "I couldn't find a current investigation comparison, summary, or expanded result "
+                    "to save in this session. Ask me to compare, summarize, or expand a finding "
+                    "first, then ask to save that output."
+                ),
+                status="investigation_derived_missing",
+            )
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=(
+                "I prepared a governed save-to-note preview from the latest investigation-derived "
+                "text artifact. Nothing has been submitted yet."
+            ),
+            status="prepared_preview",
+            preview_payload=derived_preview,
+            write_preview=True,
+            write_handoff_ready=True,
+        )
+
+    # ── 5. Investigation compare request ───────────────────────────────────
+    if is_investigation_compare_request(message):
+        comparison = derive_investigation_comparison(
+            message,
+            investigation_context=session_investigation,
+        )
+        if comparison is None:
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "I couldn't resolve those result references for comparison in this session. "
+                    "Run a fresh read-only investigation first, then compare valid result numbers "
+                    "(for example: 'compare results 1 and 3' or 'compare all findings')."
+                ),
+                status="investigation_reference_invalid",
+            )
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=str(comparison.get("answer") or ""),
+            status="ok:investigation_comparison",
+            derived_output=comparison,
+            write_derived_output=True,
+        )
+
+    # ── 6. Investigation summary request ───────────────────────────────────
+    if is_investigation_summary_request(message):
+        summary = derive_investigation_summary(
+            message,
+            investigation_context=session_investigation,
+        )
+        if summary is None:
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "I couldn't resolve those result references for summary in this session. "
+                    "Run a fresh read-only investigation first, then summarize valid result numbers "
+                    "(for example: 'summarize result 2' or 'summarize all findings')."
+                ),
+                status="investigation_reference_invalid",
+            )
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=str(summary.get("answer") or ""),
+            status="ok:investigation_summary",
+            derived_output=summary,
+            write_derived_output=True,
+        )
+
+    # ── 7. Investigation expand request — invalid-reference early exit ─────
+    # NOTE: when the reference IS valid this branch does NOT return — the
+    # caller continues to the normal LLM flow which performs the expansion.
+    if is_investigation_expand_request(message):
+        selected_results, selected_ids = select_investigation_results(
+            message,
+            investigation_context=session_investigation,
+        )
+        if (
+            selected_results is None
+            or selected_ids is None
+            or len(selected_ids) != 1
+            or not isinstance(session_investigation, dict)
+        ):
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "I couldn't resolve that investigation result for expansion in this session. "
+                    "Run a fresh read-only investigation first, then expand one valid result number "
+                    "(for example: 'expand result 1 please')."
+                ),
+                status="investigation_reference_invalid",
+            )
+        # Valid reference — fall through to LLM expansion in normal flow.
+
+    # ── 8. Investigation save request ──────────────────────────────────────
+    if is_investigation_save_request(message):
+        investigation_preview = draft_investigation_save_preview(
+            message,
+            investigation_context=session_investigation,
+        )
+        if investigation_preview is None:
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "I couldn't resolve those investigation result references in this session. "
+                    "Run a fresh read-only investigation first, then refer to valid result numbers "
+                    "(for example: 'save result 2 to a note' or 'save all findings')."
+                ),
+                status="investigation_reference_invalid",
+            )
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=(
+                "I prepared a governed save-to-note preview from your selected investigation findings. "
+                "Nothing has been submitted yet."
+            ),
+            status="prepared_preview",
+            preview_payload=investigation_preview,
+            write_preview=True,
+            write_handoff_ready=True,
+        )
+
+    # ── 9. Near-miss submit phrase (fail-closed) ───────────────────────────
+    # Runs before the canonical submit path so a fuzzy near-submit never
+    # reaches the LLM, which might overclaim submission.
+    if is_near_miss_submit_phrase(message):
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=(
+                "I did not submit the preview. "
+                "That looked like a submit command but didn't match the expected phrasing. "
+                'Try "send it", "submit it", or "hand it off" to submit.'
+            ),
+            status="near_miss_submit_rejected",
+        )
+
+    return EarlyExitResult(matched=False)
