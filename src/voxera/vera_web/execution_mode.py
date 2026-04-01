@@ -104,7 +104,7 @@ def _looks_like_active_preview_content_generation_turn(
         r"\b(tell|give|write|draft|create|generate|compose|share)\b", lowered
     )
     content_shape_signal = re.search(
-        r"\b(joke|poem|story|paragraph|content|text|message|bio|summary|explanation|fact)\b",
+        r"\b(joke|poem|story|paragraph|content|text|message|bio|summary|explanation|fact|note|writeup|write-up)\b",
         lowered,
     )
     has_naming_mutation_phrase = looks_like_preview_rename_or_save_as_request(text)

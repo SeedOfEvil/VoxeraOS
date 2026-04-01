@@ -1,3 +1,43 @@
+## 2026-04-01 — PR #TBD — fix(vera): improve reliability of natural drafting and follow-up conversational paths
+
+- Summary: Bounded product-stabilization PR that widens Vera's recognition of natural user
+  drafting prompts, post-job follow-up phrasings, and LLM wrapper stripping patterns —
+  without changing architecture, ownership boundaries, or execution mode classification.
+- **Root cause 1 — `is_writing_draft_request` missed natural phrasing variants**
+  (`src/voxera/core/writing_draft_intent.py`):
+  - "write up a quick explanation of X" — `_DIRECT_WRITING_RE` now matches `write\s+up\s+(?:a|an)`.
+  - "put together a short writeup about X" — `_DIRECT_WRITING_RE` now matches
+    `put\s+together\s+(?:a|an)\s+(?:short\s+)?(?:writeup|write-up|summary|note|explanation)`.
+  - "draft a brief summary of X" — `_DIRECT_WRITING_RE` now matches
+    `brief\s+(?:summary|writeup|write-up|explanation)`.
+  - `_SHORT_NEW_FILE_DRAFT_RE` widened to accept `put\s+together` as a verb and `summary` as
+    a file-shape target, and `of\s+\w` as a topic signal.
+  - `_WRITING_VERB_RE` now includes `put` for "put together" patterns.
+- **Root cause 2 — `_FOLLOWUP_HINTS` missed conversational follow-up variants**
+  (`src/voxera/vera/evidence_review.py`):
+  - Added 16 new hint phrases: "now prepare/draft the follow-up", "queue the next step",
+    "queue a/the follow-up", "do the next step", "do the follow-up", "let's do the next step",
+    "based on that/the outcome", "what should we do next based on that", "what's the next step
+    based on that", "draft/prepare/write the follow-up".
+- **Root cause 3 — content-shape signal gaps in generation turn detection**
+  (`src/voxera/vera_web/execution_mode.py`):
+  - `_looks_like_active_preview_content_generation_turn` now recognizes "note", "writeup",
+    and "write-up" as content shape signals.
+- **Root cause 4 — wrapper stripping missed newer LLM reply patterns**
+  (`src/voxera/core/writing_draft_intent.py`):
+  - `_WRAPPER_PREFIX_RE` now matches "I've put together", "Here's what I came up with",
+    "Here's what I wrote/drafted/put together", and "Here's the note/summary".
+  - `_looks_like_wrapper_block` now detects "put together a draft/note/summary",
+    "here's what I came up with/wrote".
+  - `_looks_like_trailing_wrapper_block` now strips "let me know if you'd like any changes",
+    "let me know if you want to change", "would you like me to save", "want me to save".
+- **No architecture/ownership changes.** Queue boundary, truth-sensitive submit/handoff, and
+  execution mode classification are all unchanged. All fixes are pattern-level widening only.
+- Characterization tests added in `tests/test_vera_chat_reliability.py` (46 tests):
+  writing-draft recognition, follow-up phrasing, wrapper stripping, session-level drafting
+  flows, and content-shape signal coverage.
+- Validation: ruff format, ruff check, mypy, pytest, merge-readiness-check, golden-check.
+
 ## 2026-04-01 — PR #TBD — refactor(vera_web): extract early-exit intent handler dispatch from giant chat()
 
 - Extracted the early-exit intent handler dispatch cluster (~290 inline lines, 9 independent
