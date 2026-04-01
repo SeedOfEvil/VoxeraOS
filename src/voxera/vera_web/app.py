@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import re
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -22,9 +21,6 @@ from ..core.writing_draft_intent import (
     is_writing_refinement_request,
 )
 from ..paths import queue_root as default_queue_root
-from ..vera.draft_revision import (
-    _is_ambiguous_change_request as _is_ambiguous_change_request,
-)
 from ..vera.draft_revision import (
     looks_like_preview_rename_or_save_as_request,
 )
@@ -116,9 +112,6 @@ from .conversational_checklist import (
     is_conversational_answer_first_request as _cc_is_conversational_answer_first_request,
 )
 from .conversational_checklist import (
-    looks_like_preview_pane_claim as _cc_looks_like_preview_pane_claim,
-)
-from .conversational_checklist import (
     looks_like_preview_update_claim as _cc_looks_like_preview_update_claim,
 )
 from .conversational_checklist import (
@@ -172,6 +165,12 @@ from .preview_content_binding import (
     is_targeted_code_preview_refinement,
     looks_like_builder_refinement_placeholder,
     preview_body_looks_like_control_narration,
+)
+from .response_shaping import (
+    assemble_assistant_reply,
+    derive_preview_has_content,
+    guardrail_false_preview_claim,
+    should_clear_stale_preview,
 )
 
 app = FastAPI(title="Vera v0", version="0")
@@ -326,32 +325,7 @@ def _extract_save_as_text_target(message: str) -> str | None:
 
 
 def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
-    """Replace false preview-existence claims with truthful language.
-
-    When the LLM claims a preview/draft was created or is available but no
-    authoritative preview state exists, replace the claim.  Fenced code
-    blocks are preserved so users can still see generated code.
-    """
-    if preview_exists:
-        return text
-    if not _cc_looks_like_preview_pane_claim(text):
-        return text
-
-    # Preserve any fenced code blocks
-    code_blocks = re.findall(r"```[^\n]*\n.*?```", text, flags=re.DOTALL)
-    if code_blocks:
-        preserved = "\n\n".join(code_blocks)
-        return (
-            preserved
-            + "\n\n"
-            + "Note: I was not able to create a governed preview for this code. "
-            + "The code above is shown for reference only — "
-            + "no preview is active in this session."
-        )
-    return (
-        "I was not able to prepare a governed preview for this request. "
-        "If you share clearer details, I can try again."
-    )
+    return guardrail_false_preview_claim(text, preview_exists=preview_exists)
 
 
 def _sanitize_false_preview_claims_from_answer(text: str) -> str:
@@ -1274,17 +1248,7 @@ async def chat(request: Request):
     # An empty-content write_file preview is a placeholder, not authoritative
     # code — treat it as "no real preview" for claim-checking purposes.
     effective_preview = read_session_preview(root, active_session)
-    _preview_has_content = False
-    if isinstance(effective_preview, dict):
-        _epwf = effective_preview.get("write_file")
-        if isinstance(_epwf, dict):
-            preview_path = str(_epwf.get("path") or "").strip()
-            preview_content = str(_epwf.get("content") or "").strip()
-            _preview_has_content = bool(preview_content) or (
-                bool(preview_path) and not has_code_file_extension(preview_path)
-            )
-        else:
-            _preview_has_content = "write_file" not in effective_preview
+    _preview_has_content = derive_preview_has_content(effective_preview)
 
     if conversational_answer_first_turn:
         # HARD CONVERSATIONAL MODE LOCK (ExecutionMode.CONVERSATIONAL_ARTIFACT):
@@ -1309,96 +1273,38 @@ async def chat(request: Request):
             text=guarded_answer,
             preview_exists=effective_preview is not None and _preview_has_content,
         )
-        # All-or-nothing cleanup: when _guardrail_false_preview_claim stripped a
+        # All-or-nothing cleanup: when guardrail_false_preview_claim stripped a
         # false preview-existence claim, clear any empty write_file placeholder so
         # the session is clean — no orphaned shell, no accidental empty submission.
-        if guarded_answer != _answer_before_preview_guardrail and isinstance(
-            effective_preview, dict
+        if should_clear_stale_preview(
+            guarded_answer, _answer_before_preview_guardrail, effective_preview
         ):
-            _stale_wf = effective_preview.get("write_file")
-            if isinstance(_stale_wf, dict) and not str(_stale_wf.get("content") or "").strip():
-                write_session_preview(root, active_session, None)
-                builder_payload = None
+            write_session_preview(root, active_session, None)
+            builder_payload = None
+
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
     is_json_content_request = _is_explicit_json_content_request(message)
     is_voxera_control_turn = _is_voxera_control_turn(message, active_preview=pending_preview)
-    should_hide_voxera_preview_dump = (
-        in_voxera_preview_flow or is_voxera_control_turn
-    ) and not is_json_content_request
 
-    assistant_text = guarded_answer
-    naming_mutation_request = looks_like_preview_rename_or_save_as_request(message)
-    if naming_mutation_request and (pending_preview is not None or builder_payload is not None):
-        assistant_text = _conversational_preview_update_message(
-            updated=builder_payload is not None,
-            has_active_preview=pending_preview is not None,
-            user_message=message,
-            rejected=preview_update_rejected,
-            updated_preview=builder_payload,
-        )
-    if (
-        explicit_targeted_content_refinement
-        and builder_payload is not None
-        and not is_code_draft_turn
-        and not is_writing_draft_turn
-    ):
-        assistant_text = _conversational_preview_update_message(
-            updated=True,
-            has_active_preview=pending_preview is not None,
-            user_message=message,
-            updated_preview=builder_payload,
-        )
-    # Code draft replies must NOT be suppressed — they contain the actual code
-    # that the user needs to see in a proper fenced block.  All other preview
-    # control-turn suppression logic still applies.
-    should_use_conversational_control_reply = (
-        not is_enrichment_turn
-        and not is_code_draft_turn
-        and not is_writing_draft_turn
-        and not conversational_answer_first_turn
-        and (
-            (is_voxera_control_turn and not is_json_content_request)
-            or (should_hide_voxera_preview_dump and _looks_like_voxera_preview_dump(guarded_answer))
-            or (_looks_like_preview_update_claim(guarded_answer) and not is_json_content_request)
-        )
+    _reply = assemble_assistant_reply(
+        guarded_answer=guarded_answer,
+        message=message,
+        pending_preview=pending_preview,
+        builder_payload=builder_payload,
+        in_voxera_preview_flow=in_voxera_preview_flow,
+        is_code_draft_turn=is_code_draft_turn,
+        is_writing_draft_turn=is_writing_draft_turn,
+        is_enrichment_turn=is_enrichment_turn,
+        conversational_answer_first_turn=conversational_answer_first_turn,
+        is_json_content_request=is_json_content_request,
+        is_voxera_control_turn=is_voxera_control_turn,
+        explicit_targeted_content_refinement=explicit_targeted_content_refinement,
+        preview_update_rejected=preview_update_rejected,
+        generation_content_refresh_failed_closed=generation_content_refresh_failed_closed,
+        reply_status=reply_status,
     )
-    if should_use_conversational_control_reply or not assistant_text.strip():
-        assistant_text = _conversational_preview_update_message(
-            updated=builder_payload is not None,
-            has_active_preview=pending_preview is not None,
-            user_message=message,
-            rejected=preview_update_rejected,
-            updated_preview=builder_payload,
-        )
-    if (
-        builder_payload is None
-        and isinstance(pending_preview, dict)
-        and _looks_like_ambiguous_active_preview_content_replacement_request(message)
-    ):
-        assistant_text = (
-            f"{assistant_text}\n\n"
-            "I left the active draft content unchanged because the content replacement request was "
-            "ambiguous. Please specify exact content or say what prior artifact to use."
-        ).strip()
-    if (
-        builder_payload is None
-        and isinstance(pending_preview, dict)
-        and _is_ambiguous_change_request(message.strip().lower())
-    ):
-        assistant_text = (
-            "I left the active draft content unchanged because the request was ambiguous. "
-            "To refresh content, try something specific like 'generate a different poem' "
-            "or 'tell me a different joke'."
-        )
-    if generation_content_refresh_failed_closed:
-        assistant_text = (
-            f"{assistant_text}\n\n"
-            "I left the active draft content unchanged because I could not use this turn as "
-            "authoritative generated content. Please ask for explicit content again or provide "
-            "the exact text to save."
-        ).strip()
-
-    status = "prepared_preview" if builder_payload is not None else reply_status
+    assistant_text = _reply.assistant_text
+    status = _reply.status
 
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
 

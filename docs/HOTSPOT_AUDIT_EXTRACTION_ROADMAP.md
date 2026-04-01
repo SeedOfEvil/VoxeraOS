@@ -352,9 +352,44 @@ Any extraction PR following this roadmap must preserve these invariants:
 - `app.py` reduced from ~1,864 to ~1,490 lines. The `chat()` function reduced
   from ~1,153 to ~797 lines.
 - Characterization tests added in `tests/test_draft_content_binding.py`.
-- **Next safe extraction candidate:** response shaping / reply assembly cluster
-  (~138 lines) or early-exit intent handler dispatch (~337 lines). Both are
-  coherent seams that could further reduce `chat()` in bounded follow-up PRs.
+
+### Completed follow-on seam (Vera web chat() decomposition — second strike)
+
+- The response-shaping / reply-assembly cluster (~127 lines) was extracted from
+  the tail of the giant `chat()` function in `src/voxera/vera_web/app.py` into
+  `src/voxera/vera_web/response_shaping.py`.
+- The extracted module owns:
+  - `derive_preview_has_content()` — pure derivation: does effective preview contain
+    real authored content (not an empty placeholder shell)?
+  - `guardrail_false_preview_claim()` — pure text guardrail: replaces false
+    preview-existence claims when no authoritative preview state exists; preserves
+    fenced code blocks.
+  - `should_clear_stale_preview()` — pure predicate: should an orphaned empty
+    write_file shell be cleared after a guardrail strips a false claim?
+  - `assemble_assistant_reply()` — pure reply assembly: selects the final
+    assistant-facing text from the post-guardrail answer and all turn-state flags,
+    and derives the reply status string. Covers naming-mutation control replies,
+    explicit targeted-refinement control replies, voxera-control-turn suppression,
+    preview-dump suppression, ambiguous-request messaging, and
+    generation-refresh fail-closed appends.
+  - `AssistantReplyResult` — dataclass returned by `assemble_assistant_reply()`.
+- Scope remained intentionally bounded to pure derivation / text shaping. All I/O
+  stays in `app.py`: `read_session_preview`, `_guardrail_submission_claim` (reads
+  session handoff state), conditional `write_session_preview` for stale-shell
+  cleanup, `append_session_turn`, and `_render_page`. Route orchestration,
+  submit/handoff truth, queue-boundary decisions, and session persistence ownership
+  are unchanged.
+- `app.py` reduced from ~1,490 to ~1,400 lines. The `chat()` function reduced
+  from ~805 to ~737 lines. The inline Phase G/H response-shaping block shrank
+  from ~127 to ~35 lines.
+- Characterization tests added in `tests/test_response_shaping.py` (32 tests
+  covering preview-content derivation, false-claim guardrailing, stale-preview
+  cleanup, reply text assembly paths, and fail-closed messaging).
+- **Next safe extraction candidate:** early-exit intent handler dispatch (~337 lines
+  of well-bounded independent early-return paths in `chat()` — review, followup,
+  investigation, near-miss submit, blocked file, diagnostics). This is the largest
+  remaining coherent seam. The other safe option is targeted test hardening for
+  the surviving inline `chat()` body before further extraction.
 
 ### PR-5: Extract panel auth-state storage helpers
 
