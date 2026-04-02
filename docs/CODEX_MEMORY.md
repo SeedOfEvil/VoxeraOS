@@ -1,4 +1,4 @@
-## 2026-04-02 — PR #TBD — test(vera): expand evidence-grounded review and follow-up live-path characterization
+## 2026-04-02 — PR #275 — test(vera): expand evidence-grounded review and follow-up live-path characterization
 
 - Summary: Bounded stabilization/characterization PR that adds regression coverage for
   the strongest real user paths across drafting, preview-state UX, linked-job review,

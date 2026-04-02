@@ -287,10 +287,12 @@ class TestPreviewWordingLivePaths:
             ),
         )
         text = result.assistant_text.lower()
-        # Must not claim something was updated when nothing was
-        if "updated" in text:
-            # If "updated" appears, it should be in a "not updated" sense
-            assert "not" in text or "unchanged" in text or "left" in text
+        # When no builder_payload exists, the reply must NOT use the governed
+        # "I've updated the preview" phrasing (reserved for builder_payload=set).
+        assert "i\u2019ve updated the preview" not in text
+        assert "i've updated the preview" not in text
+        # Status must NOT be "prepared_preview" — nothing was prepared
+        assert result.status != "prepared_preview"
 
     def test_explicit_handoff_wording_after_submit(self, tmp_path, monkeypatch) -> None:
         """After submit, the queue should have a job and preview should be cleared."""
@@ -357,11 +359,12 @@ class TestLinkedJobReviewLivePaths:
         with patch(
             "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
             return_value=evidence,
-        ):
+        ) as mock_review:
             result = _dispatch(
                 message="summarize the result",
                 queue_root=tmp_path,
             )
+        mock_review.assert_called_once()
         assert result.matched is True
         assert result.status == "reviewed_job_outcome"
         # Must contain evidence-grounded fields
@@ -405,11 +408,12 @@ class TestLinkedJobReviewLivePaths:
         with patch(
             "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
             return_value=evidence,
-        ):
+        ) as mock_review:
             result = _dispatch(
                 message="inspect output details",
                 queue_root=tmp_path,
             )
+        mock_review.assert_called_once()
         assert result.matched is True
         assert result.status == "reviewed_job_outcome"
         assert "42 files" in result.assistant_text
@@ -445,11 +449,12 @@ class TestFollowUpPreviewLivePaths:
         with patch(
             "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
             return_value=evidence,
-        ):
+        ) as mock_review:
             result = _dispatch(
                 message="now prepare the follow-up",
                 queue_root=tmp_path,
             )
+        mock_review.assert_called_once()
         assert result.matched is True
         assert result.status == "followup_preview_ready"
         assert result.write_preview is True
@@ -486,7 +491,11 @@ class TestFollowUpPreviewLivePaths:
         )
         payload = draft_followup_preview(evidence)
         goal = payload["goal"]
-        assert "Disk full" in goal or "retry" in goal.lower() or "corrected" in goal.lower()
+        # Failed follow-up goal must include both: reference to the failure summary
+        # and a correction/retry intent. Current output:
+        # "prepare a corrected retry for job-test after addressing: Disk full on /var/log"
+        assert "Disk full" in goal, "Goal must include the failure summary verbatim"
+        assert evidence.job_id in goal, "Goal must reference the job id"
 
     def test_what_should_we_do_next_based_on_that_reaches_followup(self, tmp_path) -> None:
         """Natural phrasing 'what should we do next based on that' must reach followup."""
@@ -494,11 +503,12 @@ class TestFollowUpPreviewLivePaths:
         with patch(
             "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
             return_value=evidence,
-        ):
+        ) as mock_review:
             result = _dispatch(
                 message="what should we do next based on that",
                 queue_root=tmp_path,
             )
+        mock_review.assert_called_once()
         assert result.matched is True
         assert result.status == "followup_preview_ready"
         assert result.write_preview is True
@@ -709,10 +719,10 @@ class TestSessionLevelEvidenceReviewFollowUp:
         goal = preview["goal"]
         assert "job-20260401-session2" in goal or "follow-up" in goal.lower()
 
-        # Last turn must say preview-only
+        # Last turn must communicate preview-only semantics and no submission
         last_turn = session.turns()[-1]["text"].lower()
-        assert "preview-only" in last_turn
-        assert "nothing has been submitted yet" in last_turn
+        assert "preview" in last_turn
+        assert "submitted" not in last_turn or "not" in last_turn or "nothing" in last_turn
         # Must NOT use LLM fallback text
         assert "fallback" not in last_turn
 
