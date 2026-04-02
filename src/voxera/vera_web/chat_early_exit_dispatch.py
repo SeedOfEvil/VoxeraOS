@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..vera.evidence_review import (
+    ReviewedJobEvidence,
     draft_followup_preview,
     is_followup_preview_request,
     is_review_request,
@@ -93,6 +94,21 @@ class EarlyExitResult:
     # Derived investigation output write instructions — app.py performs these writes
     derived_output: dict[str, object] | None = None
     write_derived_output: bool = False
+
+
+def _followup_evidence_detail(evidence: ReviewedJobEvidence) -> str:
+    """Return a short evidence-grounded detail line for the follow-up reply."""
+    if evidence.state == "succeeded":
+        summary = evidence.latest_summary or "completed successfully"
+        return f"- Prior job outcome: succeeded — {summary}"
+    if evidence.state == "failed":
+        summary = evidence.failure_summary or evidence.latest_summary or "execution failed"
+        return f"- Prior job outcome: failed — {summary}"
+    if evidence.state == "awaiting_approval":
+        return "- Prior job state: awaiting operator approval"
+    if evidence.state == "canceled":
+        return "- Prior job state: canceled (not failed)"
+    return f"- Prior job state: {evidence.state}"
 
 
 def dispatch_early_exit_intent(
@@ -152,8 +168,10 @@ def dispatch_early_exit_intent(
             return EarlyExitResult(
                 matched=True,
                 assistant_text=(
-                    "I could not resolve a VoxeraOS job to review from canonical evidence. "
-                    "Share a job id (for example `job-123.json`) or submit a job first in this session."
+                    "I could not resolve a VoxeraOS job to review from canonical queue evidence. "
+                    "No completed or in-progress linked job was found for this session. "
+                    "Share a job id (for example `job-123.json`) or submit a job first so I can "
+                    "inspect real results."
                 ),
                 status="review_missing_job",
             )
@@ -175,15 +193,18 @@ def dispatch_early_exit_intent(
                 matched=True,
                 assistant_text=(
                     "I can draft a follow-up preview once we have a resolvable VoxeraOS job outcome. "
-                    "Please give me a job id or ask me to review your most recent submitted job first."
+                    "No completed linked job could be resolved from this session. "
+                    "Please give me a job id or submit a job first so I have canonical evidence to ground the follow-up."
                 ),
                 status="followup_missing_evidence",
             )
         payload: dict[str, object] = {**draft_followup_preview(evidence)}
+        followup_detail = _followup_evidence_detail(evidence)
         return EarlyExitResult(
             matched=True,
             assistant_text=(
-                f"I've prepared a follow-up preview based on evidence from `{evidence.job_id}`. "
+                f"I've prepared a follow-up preview grounded in canonical evidence from `{evidence.job_id}`.\n"
+                f"{followup_detail}\n"
                 "This is preview-only — nothing has been submitted yet."
             ),
             status="followup_preview_ready",

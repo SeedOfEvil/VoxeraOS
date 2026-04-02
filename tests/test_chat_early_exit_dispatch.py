@@ -724,3 +724,267 @@ class TestWriteFlagIntegrity:
         assert result.write_preview is False
         assert result.write_handoff_ready is False
         assert result.write_derived_output is False
+
+
+# ---------------------------------------------------------------------------
+# 12. Linked-job review — result inspection / summary phrases
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedJobReviewInspection:
+    """Regression: natural result-inspection phrases must reach the review branch."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "summarize the result",
+            "summarize that result",
+            "summarize the job result",
+            "inspect output details",
+            "inspect output",
+            "inspect the output",
+            "review the result",
+            "review that result",
+            "show me the result",
+            "show the result",
+            "what was the outcome",
+            "what was the result",
+        ],
+    )
+    def test_review_inspection_phrases_reach_review_branch(
+        self, tmp_path: Path, phrase: str
+    ) -> None:
+        result = _dispatch(message=phrase, queue_root=tmp_path)
+        assert result.matched is True
+        assert result.status == "review_missing_job", (
+            f"Phrase {phrase!r} did not reach the review branch. Got status={result.status!r}"
+        )
+
+    def test_inspect_output_details_with_evidence_returns_reviewed(self, tmp_path: Path) -> None:
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-inspect",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Generated report.pdf successfully.",
+            failure_summary="",
+            artifact_families=("report",),
+            artifact_refs=("report:report.pdf",),
+            evidence_trace=("terminal_outcome=succeeded",),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=("report.pdf",),
+            observed_expected_artifacts=("report.pdf",),
+            missing_expected_artifacts=(),
+            expected_artifact_status="observed",
+            normalized_outcome_class="success",
+            value_forward_text="Report generated.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="inspect output details",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "reviewed_job_outcome"
+        assert "job-20260401-inspect" in result.assistant_text
+        assert "succeeded" in result.assistant_text.lower()
+        assert "report" in result.assistant_text.lower()
+
+    def test_summarize_the_result_with_evidence_returns_reviewed(self, tmp_path: Path) -> None:
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-summary",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Backup completed.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="summarize the result",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "reviewed_job_outcome"
+        assert "Backup completed" in result.assistant_text
+
+
+# ---------------------------------------------------------------------------
+# 13. Linked-job follow-up — revise-from-evidence and save follow-up phrases
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedJobFollowupRevision:
+    """Regression: revise-from-evidence and save-follow-up phrases must reach the followup branch."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "revise that based on the result",
+            "revise based on the result",
+            "revise that based on the evidence",
+            "revise that based on the outcome",
+            "revise based on evidence",
+            "update that based on the result",
+            "update based on the result",
+            "save the follow-up",
+            "save that follow-up",
+            "save the follow-up as a file",
+        ],
+    )
+    def test_revision_phrases_reach_followup_branch(self, tmp_path: Path, phrase: str) -> None:
+        result = _dispatch(message=phrase, queue_root=tmp_path)
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence", (
+            f"Phrase {phrase!r} did not reach the followup branch. Got status={result.status!r}"
+        )
+
+    def test_revise_based_on_result_with_evidence_returns_preview_ready(
+        self, tmp_path: Path
+    ) -> None:
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-revise",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Analysis completed.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="revise that based on the result",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        assert result.write_preview is True
+        assert result.write_handoff_ready is True
+        assert result.preview_payload is not None
+        assert "job-20260401-revise" in result.assistant_text
+        assert "preview-only" in result.assistant_text.lower()
+        # Must include evidence detail
+        assert "succeeded" in result.assistant_text.lower()
+
+    def test_followup_preview_includes_evidence_detail(self, tmp_path: Path) -> None:
+        """Follow-up preview replies must include evidence-grounded detail."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-detail",
+            state="failed",
+            lifecycle_state="failed",
+            terminal_outcome="failed",
+            approval_status="",
+            latest_summary="",
+            failure_summary="Permission denied on /etc/shadow",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="policy_denied",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="now prepare the follow-up",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        # Must contain evidence detail about the failure
+        assert "failed" in result.assistant_text.lower()
+        assert "Permission denied" in result.assistant_text
+
+    def test_followup_goal_for_succeeded_job_is_follow_up_not_inspect(self, tmp_path: Path) -> None:
+        """Regression: succeeded-job follow-up goal must say 'follow-up step',
+        not 'inspect output details'."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-goal",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Scan completed.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="what should we do next based on that",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        assert result.preview_payload is not None
+        goal = str(result.preview_payload.get("goal") or "")
+        assert "follow-up" in goal.lower()
+        assert "inspect output details" not in goal.lower()

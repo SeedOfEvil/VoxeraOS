@@ -754,3 +754,253 @@ class TestRefinementContentExtraction:
         )
         # "what is this" is not a refinement request, so the filter applies
         assert result.reply_text_draft is None
+
+
+# ---------------------------------------------------------------------------
+# 9. Linked-job review — result inspection phrase recognition
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedJobReviewPhraseRecognition:
+    """Verify that result-inspection phrases are recognized as review requests."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "summarize the result",
+            "summarize that result",
+            "inspect output details",
+            "inspect output",
+            "inspect the output",
+            "review the result",
+            "review that result",
+            "show me the result",
+            "show the result",
+            "what was the outcome",
+            "what was the result",
+            "summarize the job result",
+        ],
+    )
+    def test_review_inspection_phrases_recognized(self, phrase: str) -> None:
+        from voxera.vera.evidence_review import is_review_request
+
+        assert is_review_request(phrase), f"Expected is_review_request to be True for: {phrase!r}"
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "write me a summary about dogs",
+            "inspect my code for bugs",
+            "show me how to cook pasta",
+            "review my essay draft",
+        ],
+    )
+    def test_non_review_inspection_phrases_not_matched(self, phrase: str) -> None:
+        from voxera.vera.evidence_review import is_review_request
+
+        assert not is_review_request(phrase), (
+            f"Expected is_review_request to be False for: {phrase!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 10. Linked-job follow-up — revise-from-evidence phrase recognition
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedJobReviseFromEvidence:
+    """Verify that revise-from-evidence phrases reach the follow-up branch."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "revise that based on the result",
+            "revise based on the result",
+            "revise that based on the evidence",
+            "revise that based on the outcome",
+            "revise based on evidence",
+            "update that based on the result",
+            "update based on the result",
+            "save the follow-up",
+            "save that follow-up",
+            "save the follow-up as a file",
+        ],
+    )
+    def test_revision_phrases_recognized_as_followup(self, phrase: str) -> None:
+        assert is_followup_preview_request(phrase), (
+            f"Expected is_followup_preview_request to be True for: {phrase!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "revise my essay",
+            "update the config file",
+            "save the document",
+            "save it as a note",
+        ],
+    )
+    def test_non_revision_phrases_not_matched(self, phrase: str) -> None:
+        assert not is_followup_preview_request(phrase), (
+            f"Expected is_followup_preview_request to be False for: {phrase!r}"
+        )
+
+    def test_revision_phrases_reach_dispatch_followup_branch(self, tmp_path: Path) -> None:
+        """Revise-from-evidence phrases must reach the followup branch in dispatch."""
+        phrases = [
+            "revise that based on the result",
+            "update that based on the result",
+            "save the follow-up",
+        ]
+        for phrase in phrases:
+            result = dispatch_early_exit_intent(
+                message=phrase,
+                diagnostics_service_turn=False,
+                requested_job_id=None,
+                should_attempt_derived_save=False,
+                session_investigation=None,
+                session_derived_output=None,
+                queue_root=tmp_path,
+                session_id="test-session",
+            )
+            assert result.matched is True, f"Phrase {phrase!r} did not match any early-exit"
+            assert result.status == "followup_missing_evidence", (
+                f"Phrase {phrase!r} got status={result.status!r} instead of followup_missing_evidence"
+            )
+
+    def test_revision_with_evidence_returns_preview_ready(self, tmp_path: Path) -> None:
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260402-revise",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Completed.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = dispatch_early_exit_intent(
+                message="revise that based on the result",
+                diagnostics_service_turn=False,
+                requested_job_id=None,
+                should_attempt_derived_save=False,
+                session_investigation=None,
+                session_derived_output=None,
+                queue_root=tmp_path,
+                session_id="test-session",
+            )
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        assert result.write_preview is True
+        assert "preview-only" in result.assistant_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# 11. Follow-up preview goal text correctness
+# ---------------------------------------------------------------------------
+
+
+class TestFollowupPreviewGoalText:
+    """Verify that follow-up preview goals are evidence-grounded, not vague."""
+
+    def test_succeeded_job_goal_says_follow_up_not_inspect(self) -> None:
+        from voxera.vera.evidence_review import draft_followup_preview
+
+        evidence = ReviewedJobEvidence(
+            job_id="job-20260402-goal",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Scan completed.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        payload = draft_followup_preview(evidence)
+        goal = payload["goal"]
+        assert "follow-up" in goal.lower()
+        assert "inspect output details" not in goal.lower()
+        assert "job-20260402-goal" in goal
+
+    def test_failed_job_goal_mentions_corrected_retry(self) -> None:
+        from voxera.vera.evidence_review import draft_followup_preview
+
+        evidence = ReviewedJobEvidence(
+            job_id="job-20260402-fail",
+            state="failed",
+            lifecycle_state="failed",
+            terminal_outcome="failed",
+            approval_status="",
+            latest_summary="",
+            failure_summary="Permission denied",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="policy_denied",
+            value_forward_text="",
+        )
+        payload = draft_followup_preview(evidence)
+        goal = payload["goal"]
+        assert "corrected retry" in goal.lower()
+        assert "Permission denied" in goal
+
+    def test_canceled_job_goal_mentions_replacement(self) -> None:
+        from voxera.vera.evidence_review import draft_followup_preview
+
+        evidence = ReviewedJobEvidence(
+            job_id="job-20260402-cancel",
+            state="canceled",
+            lifecycle_state="canceled",
+            terminal_outcome="canceled",
+            approval_status="",
+            latest_summary="",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="",
+            value_forward_text="",
+        )
+        payload = draft_followup_preview(evidence)
+        goal = payload["goal"]
+        assert "replacement" in goal.lower() or "canceled" in goal.lower()

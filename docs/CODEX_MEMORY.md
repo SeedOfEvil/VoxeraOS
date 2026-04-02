@@ -1,3 +1,48 @@
+## 2026-04-02 — PR #TBD — improve(vera): polish linked-job review and evidence-grounded follow-up workflows
+
+- Summary: Bounded workflow polish PR that strengthens Vera's handling of linked-job
+  review and evidence-grounded follow-up drafting. Widens phrase coverage for result
+  inspection, follow-up generation, and revise-from-evidence flows without changing
+  architecture, queue boundaries, or submission ownership.
+- **Review hint coverage widened** (`src/voxera/vera/evidence_review.py`):
+  - Added 12 new `_REVIEW_HINTS` phrases: "summarize the result", "summarize that result",
+    "summarize the job result", "inspect output", "inspect output details", "inspect the
+    output", "review the result", "review that result", "show me the result", "show the
+    result", "what was the outcome", "what was the result".
+  - These route to the existing evidence review dispatch, producing grounded review
+    messages from canonical queue evidence.
+  - Note: bare "summarize result" was intentionally excluded to avoid collisions with
+    investigation summary references like "summarize result 1".
+- **Follow-up hint coverage widened** (`src/voxera/vera/evidence_review.py`):
+  - Added 10 new `_FOLLOWUP_HINTS` phrases for revise-from-evidence ("revise that based on
+    the result", "update that based on the result", etc.) and save-follow-up ("save the
+    follow-up", "save that follow-up", "save the follow-up as a file").
+  - These route to the existing follow-up preview dispatch, producing preview-only drafts
+    grounded in completed job evidence.
+- **Follow-up preview goal text improved** (`src/voxera/vera/evidence_review.py`):
+  - Succeeded jobs: goal changed from "inspect output details from {job_id}" to
+    "draft a follow-up step grounded in completed evidence from {job_id}".
+  - Canceled jobs: now produce "draft a replacement step for canceled job {job_id}".
+- **Follow-up dispatch detail** (`src/voxera/vera_web/chat_early_exit_dispatch.py`):
+  - Follow-up preview replies now include an evidence-grounded detail line showing the
+    prior job outcome (state + summary), so the user sees what evidence grounds the draft.
+  - Fail-closed message improved: explicitly states no completed linked job was resolved.
+  - Review missing-job message improved: clarifies that canonical queue evidence is needed.
+- **Behavioral guidance**:
+  - Linked-job follow-up behavior is only correct when grounded in canonical queue evidence.
+    Conversational fluency must not bypass the requirement for a resolvable job outcome.
+  - Follow-up drafting stays preview-only unless explicitly submitted.
+  - Fail-closed behavior preserved: when no resolvable completed job exists, Vera refuses
+    to draft a follow-up and tells the user what is needed.
+  - Review phrases that inspect results are routed to the existing review dispatch, not to
+    the LLM, ensuring answers come from persisted queue evidence.
+- Non-goals preserved:
+  - No architecture redesign.
+  - No submit/handoff ownership changes.
+  - No queue-boundary behavior changes.
+  - No weakening of fail-closed behavior.
+  - No direct execution shortcuts from chat.
+
 ## 2026-04-02 — PR #TBD — improve(vera_web): clarify preview-only vs submitted reply UX
 
 - Summary: Bounded UX-wording PR that improves how Vera communicates preview state
