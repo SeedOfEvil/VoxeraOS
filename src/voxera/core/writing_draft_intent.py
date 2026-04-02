@@ -25,12 +25,15 @@ _DIRECT_WRITING_RE = re.compile(
     r"short\s+article\s+for\s+a\s+technical\s+teammate|"
     r"explain\s+how\s+this\s+script\s+works\s+in\s+plain\s+english|"
     r"plain\s+english|"
-    r"explanation\b"
+    r"explanation\b|"
+    r"write\s+up\s+(?:a|an)\b|"
+    r"put\s+together\s+(?:a|an)\s+(?:short\s+)?(?:writeup|write-up|summary|note|explanation)\b|"
+    r"brief\s+(?:summary|writeup|write-up|explanation)\b"
     r")\b",
     re.IGNORECASE,
 )
 _WRITING_VERB_RE = re.compile(
-    r"\b(write|rewrite|draft|create|expand|turn|explain|formal(?:ize)?|make)\b", re.IGNORECASE
+    r"\b(write|rewrite|draft|create|expand|turn|explain|formal(?:ize)?|make|put)\b", re.IGNORECASE
 )
 _SAVE_ONLY_RE = re.compile(
     r"\b(save|write|put)\b.*\b(note|file|markdown|\.md\b|\.txt\b)\b", re.IGNORECASE
@@ -44,7 +47,7 @@ _TRANSFORM_SIGNAL_RE = re.compile(
 # not saving existing content.  Examples: "Write a short markdown file explaining X",
 # "Draft a short note about Y and save it as Z.txt".
 _SHORT_NEW_FILE_DRAFT_RE = re.compile(
-    r"\b(?:draft|write|create)\b.{0,40}\b(?:note|file)\b.{0,80}\b(?:explaining|about|on\s+\w|describing|regarding)\b",
+    r"\b(?:draft|write|create|put\s+together)\b.{0,40}\b(?:note|file|summary)\b.{0,80}\b(?:explaining|about|on\s+\w|describing|regarding|of\s+\w)\b",
     re.IGNORECASE,
 )
 _TEXT_FILENAME_RE = re.compile(r"\b([a-zA-Z0-9_.-]+\.(?:md|txt))\b")
@@ -55,11 +58,12 @@ _TOPIC_RE = re.compile(r"\b(?:about|on|for|based\s+on)\s+(.+?)(?:[.?!]|$)", re.I
 _SLUG_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _WRAPPER_PREFIX_RE = re.compile(
     r"^(?:"
-    r"i(?:'ve| have)\s+(?:prepared|drafted|written)\b|"
+    r"i(?:'ve| have)\s+(?:prepared|drafted|written|put\s+together)\b|"
     r"i\s+can(?:\s+certainly)?\s+help(?:\s+you)?\b|"
     r"i(?:'d| would)\s+be\s+happy\s+to\b|"
-    r"here(?:'s| is)\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation)\b|"
+    r"here(?:'s| is)\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation|note|summary)\b|"
     r"here(?:'s| is)\s+(?:a|the)\s+(?:version|rewrite)\b|"
+    r"here(?:'s| is)\s+what\s+i\s+(?:came\s+up\s+with|wrote|drafted|put\s+together)\b|"
     r"below\s+is\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation)\b|"
     r"(?:essay|article|writeup|draft)\s+(?:overview|summary)\b|"
     r"(?:draft|essay|article|writeup)\s+body\b"
@@ -251,8 +255,15 @@ def _looks_like_wrapper_block(block: str, *, next_block: str | None = None) -> b
             "i'd be happy to",
             "i would be happy to",
             "prepared a draft",
+            "put together a draft",
+            "put together a note",
+            "put together a summary",
             "updated the draft preview",
             "updated the draft",
+            "here's what i came up with",
+            "here is what i came up with",
+            "here's what i wrote",
+            "here is what i wrote",
             "i've staged a request",
             "i have staged a request",
             "staged a request in the preview pane",
@@ -309,6 +320,11 @@ def _looks_like_trailing_wrapper_block(block: str) -> bool:
         "send it whenever you are ready",
         "let me know if you'd like to change",
         "let me know if you would like to change",
+        "let me know if you'd like any changes",
+        "let me know if you would like any changes",
+        "let me know if you want to change",
+        "would you like me to save",
+        "want me to save",
     )
     return any(phrase in lowered for phrase in trailing_wrapper_phrases)
 

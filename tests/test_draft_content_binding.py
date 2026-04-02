@@ -348,3 +348,135 @@ class TestPreviewWriteSignal:
         assert result.preview_needs_write is True
         # Caller (app.py) is responsible for the actual session write.
         # This test verifies the signal is set correctly.
+
+
+# ---------------------------------------------------------------------------
+# Writing-draft authored content with system terms (regression)
+# ---------------------------------------------------------------------------
+
+
+class TestWritingDraftSystemTermContent:
+    """Regression: authored prose that mentions system terms like 'queue state'
+    or 'approval status' must not be rejected by the non-authored-message filter
+    when the user explicitly asked for a writing draft."""
+
+    def test_writeup_mentioning_queue_state_is_extracted(self) -> None:
+        """Authored content about operator truth surfaces mentions 'queue state'
+        which used to trigger looks_like_non_authored_assistant_message → None."""
+        reply = (
+            "Operator truth surfaces in VoxeraOS are the canonical points where "
+            "system state becomes visible. These include the queue state display, "
+            "job evidence bundles, and approval gates."
+        )
+        drafts = extract_reply_drafts(
+            reply, "put together a short writeup about operator truth surfaces"
+        )
+        assert drafts.reply_text_draft is not None
+        assert "queue state" in drafts.reply_text_draft.lower()
+        assert "operator truth surfaces" in drafts.reply_text_draft.lower()
+
+    def test_note_mentioning_expected_artifacts_is_extracted(self) -> None:
+        """Authored content about evidence model mentions 'expected artifacts'."""
+        reply = (
+            "The artifact evidence model tracks execution outcomes. Each job "
+            "produces an evidence bundle containing the terminal outcome, "
+            "approval status, and expected artifacts."
+        )
+        drafts = extract_reply_drafts(reply, "write me a note about the artifact evidence model")
+        assert drafts.reply_text_draft is not None
+        assert "evidence model" in drafts.reply_text_draft.lower()
+
+    def test_non_writing_draft_still_filtered(self) -> None:
+        """For non-writing-draft messages, system-term content must still be
+        filtered by looks_like_non_authored_assistant_message."""
+        reply = (
+            "The queue state shows that your job is pending approval. "
+            "Check approval status in the panel."
+        )
+        drafts = extract_reply_drafts(reply, "what is the status of my job")
+        assert drafts.reply_text_draft is None
+
+    def test_writeup_binds_into_preview_over_junk_builder_content(self) -> None:
+        """Regression: when the builder produced junk content ('who, what, and
+        when.'), the writing-draft injection must replace it with the authored
+        reply text, not leave the junk in the preview."""
+        reply = (
+            "Here is a writeup about operator truth surfaces.\n\n"
+            "Operator truth surfaces in VoxeraOS are the canonical points where "
+            "system state becomes visible. These include the queue state display, "
+            "job evidence bundles, and approval gates."
+        )
+        drafts = extract_reply_drafts(
+            reply, "put together a short writeup about operator truth surfaces"
+        )
+        assert drafts.reply_text_draft is not None
+
+        builder = {
+            "goal": "write a file",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/writeup.md",
+                "content": "who, what, and when.",
+                "mode": "overwrite",
+            },
+        }
+        result = resolve_draft_content_binding(
+            message="put together a short writeup about operator truth surfaces",
+            reply_code_content=None,
+            reply_text_draft=drafts.reply_text_draft,
+            reply_status="ok:test",
+            builder_payload=builder,
+            pending_preview=None,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=True,
+            is_explicit_writing_transform=True,
+            informational_web_turn=False,
+            is_enrichment_turn=False,
+            explicit_targeted_content_refinement=False,
+            active_preview_is_refinable_prose=False,
+            conversational_answer_first_turn=False,
+            active_session="test-session",
+        )
+        assert result.preview_needs_write is True
+        wf = result.builder_payload["write_file"]
+        assert "operator truth surfaces" in wf["content"].lower()
+        assert wf["content"] != "who, what, and when."
+
+    def test_note_binds_into_empty_preview_content(self) -> None:
+        """Regression: when the builder produced empty content, the writing-draft
+        injection must populate it with the authored reply text."""
+        reply = (
+            "The artifact evidence model in VoxeraOS provides a structured way "
+            "to track what happened during queue job execution."
+        )
+        drafts = extract_reply_drafts(reply, "write me a note about the artifact evidence model")
+        assert drafts.reply_text_draft is not None
+
+        builder = {
+            "goal": "write a file",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/note.md",
+                "content": "",
+                "mode": "overwrite",
+            },
+        }
+        result = resolve_draft_content_binding(
+            message="write me a note about the artifact evidence model",
+            reply_code_content=None,
+            reply_text_draft=drafts.reply_text_draft,
+            reply_status="ok:test",
+            builder_payload=builder,
+            pending_preview=None,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=True,
+            is_explicit_writing_transform=True,
+            informational_web_turn=False,
+            is_enrichment_turn=False,
+            explicit_targeted_content_refinement=False,
+            active_preview_is_refinable_prose=False,
+            conversational_answer_first_turn=False,
+            active_session="test-session",
+        )
+        assert result.preview_needs_write is True
+        wf = result.builder_payload["write_file"]
+        assert "artifact evidence model" in wf["content"].lower()
+        assert wf["content"] != ""

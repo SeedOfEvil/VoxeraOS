@@ -1,3 +1,63 @@
+## 2026-04-01 — PR #TBD — fix(vera): improve reliability of natural drafting and follow-up conversational paths
+
+- Summary: Bounded product-stabilization PR that widens Vera's recognition of natural user
+  drafting prompts, post-job follow-up phrasings, and LLM wrapper stripping patterns —
+  without changing architecture, ownership boundaries, or execution mode classification.
+- **Root cause 1 — `is_writing_draft_request` missed natural phrasing variants**
+  (`src/voxera/core/writing_draft_intent.py`):
+  - "write up a quick explanation of X" — `_DIRECT_WRITING_RE` now matches `write\s+up\s+(?:a|an)`.
+  - "put together a short writeup about X" — `_DIRECT_WRITING_RE` now matches
+    `put\s+together\s+(?:a|an)\s+(?:short\s+)?(?:writeup|write-up|summary|note|explanation)`.
+  - "draft a brief summary of X" — `_DIRECT_WRITING_RE` now matches
+    `brief\s+(?:summary|writeup|write-up|explanation)`.
+  - `_SHORT_NEW_FILE_DRAFT_RE` widened to accept `put\s+together` as a verb and `summary` as
+    a file-shape target, and `of\s+\w` as a topic signal.
+  - `_WRITING_VERB_RE` now includes `put` for "put together" patterns.
+- **Root cause 2 — `_FOLLOWUP_HINTS` missed conversational follow-up variants**
+  (`src/voxera/vera/evidence_review.py`):
+  - Added 16 new hint phrases: "now prepare/draft the follow-up", "queue the next step",
+    "queue a/the follow-up", "do the next step", "do the follow-up", "let's do the next step",
+    "based on that/the outcome", "what should we do next based on that", "what's the next step
+    based on that", "draft/prepare/write the follow-up".
+- **Root cause 3 — content-shape signal gaps in generation turn detection**
+  (`src/voxera/vera_web/execution_mode.py`):
+  - `_looks_like_active_preview_content_generation_turn` now recognizes "note", "writeup",
+    and "write-up" as content shape signals.
+- **Root cause 4 — wrapper stripping missed newer LLM reply patterns**
+  (`src/voxera/core/writing_draft_intent.py`):
+  - `_WRAPPER_PREFIX_RE` now matches "I've put together", "Here's what I came up with",
+    "Here's what I wrote/drafted/put together", and "Here's the note/summary".
+  - `_looks_like_wrapper_block` now detects "put together a draft/note/summary",
+    "here's what I came up with/wrote".
+  - `_looks_like_trailing_wrapper_block` now strips "let me know if you'd like any changes",
+    "let me know if you want to change", "would you like me to save", "want me to save".
+- **Root cause 5 — `looks_like_non_authored_assistant_message` false-positives on writing-draft
+  content** (`src/voxera/vera_web/draft_content_binding.py`):
+  - When the user asked for a writeup about VoxeraOS concepts (e.g. "operator truth surfaces"),
+    the authored prose naturally mentioned system terms like "queue state" or "approval status".
+    The `looks_like_non_authored_assistant_message` filter matched these terms and set
+    `reply_text_draft=None`, preventing the writing-draft injection from binding the authored
+    content into the preview payload. The preview was left with the builder's junk/empty content.
+  - Fix: skip the `looks_like_non_authored_assistant_message` check in `extract_reply_drafts`
+    when `is_writing_draft_request(message)` is True. Writing-draft turns produce authored
+    document content that may legitimately contain any terms. Added a parallel fallback that
+    uses the full `sanitized_answer` when normal prose extraction also fails.
+  - **Important behavioral guidance**: for writing-draft turns, the non-authored-message filter
+    is bypassed because the user's intent is unambiguously to produce prose. For all other turn
+    types, the filter continues to operate as before.
+- **No architecture/ownership changes.** Queue boundary, truth-sensitive submit/handoff, and
+  execution mode classification are all unchanged. All fixes are pattern-level widening and
+  one conditional filter bypass for explicit writing-draft turns.
+- Characterization tests added in `tests/test_vera_chat_reliability.py` (59 tests):
+  writing-draft recognition (positive + negative regression guards for "put"/save-only),
+  follow-up phrasing (positive + negative regression guards for similar non-followup phrases),
+  wrapper stripping, session-level drafting flows, content-shape signal coverage, and
+  preview-truth binding regression tests for the two exact live-failing prompts.
+- Regression tests added in `tests/test_draft_content_binding.py` (5 tests):
+  system-term content extraction, non-writing-draft filter preservation, and preview binding
+  over junk/empty builder content.
+- Validation: ruff format, ruff check, mypy, pytest, merge-readiness-check, golden-check.
+
 ## 2026-04-01 — PR #TBD — refactor(vera_web): extract early-exit intent handler dispatch from giant chat()
 
 - Extracted the early-exit intent handler dispatch cluster (~290 inline lines, 9 independent

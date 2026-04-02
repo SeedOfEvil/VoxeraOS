@@ -23,6 +23,7 @@ from ..core.writing_draft_intent import (
     classify_writing_draft_intent,
     extract_text_draft_from_reply,
     is_text_draft_preview,
+    is_writing_draft_request,
     is_writing_refinement_request,
 )
 
@@ -128,9 +129,15 @@ def extract_reply_drafts(
     reply_code_content = extract_code_from_reply(reply_answer)
     sanitized_answer = strip_internal_control_blocks(reply_answer)
     reply_text_draft_candidate = extract_text_draft_from_reply(sanitized_answer)
+    # Writing-draft turns produce authored document content that may legitimately
+    # mention system terms (queue state, approval status, etc.).  Skip the
+    # non-authored-message filter for these turns so the authored prose is not
+    # rejected by a false-positive pattern match.
+    _is_explicit_writing_turn = is_writing_draft_request(message)
     reply_text_draft: str | None = (
         None
-        if looks_like_non_authored_assistant_message(str(reply_text_draft_candidate or ""))
+        if not _is_explicit_writing_turn
+        and looks_like_non_authored_assistant_message(str(reply_text_draft_candidate or ""))
         else reply_text_draft_candidate
     )
     if reply_text_draft is None and _looks_like_active_preview_content_generation_turn(message):
@@ -146,6 +153,15 @@ def extract_reply_drafts(
             and not re.search(r"\bprepared\s+(?:a|the)\s+preview\b", first_block, re.IGNORECASE)
         ):
             reply_text_draft = first_block
+
+    # Writing-draft fallback: when the user explicitly asked to write/draft
+    # content and the prose-body extractor returned nothing (e.g. the LLM
+    # wrapped the content in a way that _extract_prose_body couldn't parse),
+    # use the full sanitized answer as authored content.
+    if reply_text_draft is None and _is_explicit_writing_turn:
+        candidate = sanitized_answer.strip()
+        if candidate and len(candidate.split()) >= 4:
+            reply_text_draft = candidate
 
     return ReplyDrafts(
         reply_code_content=reply_code_content,
