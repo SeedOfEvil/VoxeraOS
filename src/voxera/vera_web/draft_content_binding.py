@@ -534,6 +534,34 @@ def resolve_draft_content_binding(  # noqa: C901
         except Exception:
             builder_payload = None
 
+    # ── Writing-draft preview truth guardrail ──
+    # When the user explicitly asked for a writing draft and the LLM produced
+    # substantial authored text, verify that the final preview write_file.content
+    # is not a short fragment from the builder.  If the builder content is much
+    # shorter than the authored reply_text_draft, override it.  This closes the
+    # gap where a pathological builder response produces a snippet (e.g. a mid-
+    # sentence fragment) that survives into the authoritative preview payload.
+    if (
+        is_writing_draft_turn
+        and reply_text_draft is not None
+        and len(reply_text_draft.split()) >= 8
+        and isinstance(builder_payload, dict)
+    ):
+        _final_wf = builder_payload.get("write_file")
+        _final_content = (
+            str(_final_wf.get("content") or "").strip() if isinstance(_final_wf, dict) else ""
+        )
+        if (
+            isinstance(_final_wf, dict)
+            and len(_final_content.split()) < len(reply_text_draft.split()) // 2
+            and _final_content != reply_text_draft.strip()
+        ):
+            builder_payload = {
+                **builder_payload,
+                "write_file": {**_final_wf, "content": reply_text_draft},
+            }
+            preview_needs_write = True
+
     return DraftContentBindingResult(
         builder_payload=builder_payload,
         is_code_draft_turn=is_code_draft_turn,

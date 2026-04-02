@@ -480,3 +480,124 @@ class TestWritingDraftSystemTermContent:
         wf = result.builder_payload["write_file"]
         assert "artifact evidence model" in wf["content"].lower()
         assert wf["content"] != ""
+
+
+# ---------------------------------------------------------------------------
+# Writing-draft preview truth guardrail
+# ---------------------------------------------------------------------------
+
+
+class TestWritingDraftPreviewTruthGuardrail:
+    """Regression: when the builder produces a short fragment from the authored
+    text, the guardrail at the end of resolve_draft_content_binding must
+    override it with the full reply_text_draft."""
+
+    def test_builder_fragment_overridden_by_guardrail(self) -> None:
+        """Builder content 'hallucination of success,' must be overridden."""
+        authored = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states.\n\n"
+            "The hallucination of success, progress, or completion without queue "
+            "evidence is explicitly treated as a trust violation."
+        )
+        builder: dict[str, object] = {
+            "goal": "draft a explanation as queue-truth-explanation.txt",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/queue-truth-explanation.txt",
+                "content": "hallucination of success,",
+                "mode": "overwrite",
+            },
+        }
+        result = resolve_draft_content_binding(
+            message="write me a short note about queue truth",
+            reply_code_content=None,
+            reply_text_draft=authored,
+            reply_status="ok:test",
+            builder_payload=builder,
+            pending_preview=None,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=True,
+            is_explicit_writing_transform=True,
+            informational_web_turn=False,
+            is_enrichment_turn=False,
+            explicit_targeted_content_refinement=False,
+            active_preview_is_refinable_prose=False,
+            conversational_answer_first_turn=False,
+            active_session="test-session",
+        )
+        assert result.preview_needs_write is True
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        content = wf["content"]
+        assert content != "hallucination of success,"
+        assert "queue truth" in content.lower()
+        assert len(content) > 100
+
+    def test_substantial_builder_content_preserved(self) -> None:
+        """When builder content is substantial and matches the authored text,
+        the guardrail must NOT override it."""
+        authored = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is "
+            "the single authoritative source of execution state."
+        )
+        builder: dict[str, object] = {
+            "goal": "draft a explanation",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/note.txt",
+                "content": authored,
+                "mode": "overwrite",
+            },
+        }
+        result = resolve_draft_content_binding(
+            message="write me a short note about queue truth",
+            reply_code_content=None,
+            reply_text_draft=authored,
+            reply_status="ok:test",
+            builder_payload=builder,
+            pending_preview=None,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=True,
+            is_explicit_writing_transform=True,
+            informational_web_turn=False,
+            is_enrichment_turn=False,
+            explicit_targeted_content_refinement=False,
+            active_preview_is_refinable_prose=False,
+            conversational_answer_first_turn=False,
+            active_session="test-session",
+        )
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        assert wf["content"] == authored
+
+    def test_guardrail_does_not_fire_for_non_writing_turns(self) -> None:
+        """The guardrail must not fire for non-writing-draft turns."""
+        builder: dict[str, object] = {
+            "goal": "check something",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/note.txt",
+                "content": "short fragment",
+                "mode": "overwrite",
+            },
+        }
+        result = resolve_draft_content_binding(
+            message="what is 2 + 2",
+            reply_code_content=None,
+            reply_text_draft="A longer reply about math that should not override the builder content here.",
+            reply_status="ok:test",
+            builder_payload=builder,
+            pending_preview=None,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=False,
+            is_explicit_writing_transform=False,
+            informational_web_turn=False,
+            is_enrichment_turn=False,
+            explicit_targeted_content_refinement=False,
+            active_preview_is_refinable_prose=False,
+            conversational_answer_first_turn=False,
+            active_session="test-session",
+        )
+        # Non-writing-draft turn: guardrail should not override
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        assert wf["content"] == "short fragment"

@@ -1004,3 +1004,167 @@ class TestFollowupPreviewGoalText:
         payload = draft_followup_preview(evidence)
         goal = payload["goal"]
         assert "replacement" in goal.lower() or "canceled" in goal.lower()
+
+
+# ---------------------------------------------------------------------------
+# 12. Preview truth — "write me a short note about queue truth" regression
+# ---------------------------------------------------------------------------
+
+
+class TestPreviewTruthQueueTruthNote:
+    """Regression: 'write me a short note about queue truth' must produce a
+    preview with substantial authored content in write_file.content, not a
+    short builder fragment like 'hallucination of success,'.
+
+    Root cause: the builder LLM may produce a fragmentary content snippet
+    from the authored text.  The writing-draft injection should override it
+    with the full reply_text_draft, but pathological LLM response structures
+    can cause the extraction to fail.  The post-binding guardrail ensures
+    the final preview content is not a truncated fragment.
+    """
+
+    def test_queue_truth_note_preview_has_substantial_content(self, tmp_path, monkeypatch) -> None:
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states and the queue state is the only "
+            "surface that operators should trust for determining what has actually "
+            "happened.\n\n"
+            "This means that approval status, terminal outcome, and artifact evidence "
+            "must all be grounded in persisted queue state, not in LLM-generated "
+            "claims or conversational inference. The hallucination of success, "
+            "progress, or completion without queue evidence is explicitly treated "
+            "as a trust violation."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        content = wf["content"]
+        assert content, "write_file.content must be non-empty"
+        assert len(content) > 100, (
+            f"write_file.content must be substantial authored prose, got {len(content)} chars"
+        )
+        assert "queue truth" in content.lower() or "queue" in content.lower()
+        # Must NOT be the builder fragment
+        assert content != "hallucination of success,"
+
+    def test_queue_truth_note_builder_fragment_overridden(self, tmp_path, monkeypatch) -> None:
+        """When the builder produces a short fragment from the authored content,
+        the writing-draft pipeline must override it with the full authored text."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states and the queue state is the only "
+            "surface that operators should trust for determining what has actually "
+            "happened.\n\n"
+            "This means that approval status, terminal outcome, and artifact evidence "
+            "must all be grounded in persisted queue state, not in LLM-generated "
+            "claims or conversational inference. The hallucination of success, "
+            "progress, or completion without queue evidence is explicitly treated "
+            "as a trust violation."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        async def _fake_builder(**kw):
+            return {
+                "goal": "draft a explanation as queue-truth-explanation.txt",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/queue-truth-explanation.txt",
+                    "content": "hallucination of success,",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        content = wf["content"]
+        assert content, "write_file.content must be non-empty"
+        # Must NOT be the builder fragment
+        assert content != "hallucination of success,", (
+            "Preview must contain authored content, not builder fragment"
+        )
+        assert len(content) > 100, f"Preview content must be substantial, got {len(content)} chars"
+        assert "queue truth" in content.lower()
+        assert "trust violation" in content.lower()
+
+    def test_queue_truth_note_assistant_wording_correct(self, tmp_path, monkeypatch) -> None:
+        """Assistant wording must clearly state preview-only + nothing submitted."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        reply_text = last_turn["text"].lower()
+        assert "preview-only" in reply_text
+        assert "nothing has been submitted yet" in reply_text
+
+    def test_preview_content_aligned_with_chat(self, tmp_path, monkeypatch) -> None:
+        """Preview content and assistant chat reply must be materially aligned."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None
+        preview_content = preview["write_file"]["content"]
+
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        assistant_text = last_turn["text"]
+
+        # The preview content must be a meaningful portion of the authored content
+        assert "queue truth" in preview_content.lower()
+        # The assistant text should contain or reference the same content
+        assert "queue truth" in assistant_text.lower() or preview_content in assistant_text
