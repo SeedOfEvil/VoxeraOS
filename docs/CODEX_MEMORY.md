@@ -15,10 +15,17 @@
 - **New parameter**: `preview_already_existed: bool` threaded through
   `conversational_preview_update_message` → `response_shaping._conversational_preview_update_message`
   → `assemble_assistant_reply` to distinguish "prepared" from "updated" wording.
+- **Writing-draft preview notice** (`src/voxera/vera_web/response_shaping.py`):
+  Writing-draft and refinement turns show authored content in chat (not a control
+  message). When a preview was prepared or updated on such a turn, a preview-state
+  notice is now appended to the authored content so the user clearly sees preview state.
+  This closes the gap where writing-draft turns bypassed all three controlled-wording
+  paths in `assemble_assistant_reply`.
 - **Behavioral guidance**: Reply wording for preview-state transitions is governed UX.
   Every preview reply must clearly state: (a) whether the preview is new or updated,
   (b) that it is preview-only, and (c) that nothing has been submitted. This applies
-  to all paths through `assemble_assistant_reply` and `chat_early_exit_dispatch`.
+  to all paths through `assemble_assistant_reply` and `chat_early_exit_dispatch`,
+  including writing-draft turns that show authored content with an appended notice.
 - Non-goals preserved:
   - No architecture redesign.
   - No submit/handoff ownership changes.

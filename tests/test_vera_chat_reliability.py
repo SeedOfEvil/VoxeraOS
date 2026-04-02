@@ -525,3 +525,162 @@ class TestPreviewTruthBinding:
         assert "tectonic plates" in preview_content.lower()
         # The assistant text should contain or reference the same content
         assert "tectonic plates" in assistant_text.lower() or preview_content in assistant_text
+
+
+# ---------------------------------------------------------------------------
+# 7. Live failure regression: drafting + refinement preview-state wording
+# ---------------------------------------------------------------------------
+
+
+class TestDraftingAndRefinementPreviewStateWording:
+    """Regression tests for the exact two-prompt live failure sequence:
+      1. "write me a note about the artifact evidence model"
+      2. "make it shorter and more operator-facing"
+
+    Verifies:
+    - preview is prepared after the first prompt
+    - preview content contains meaningful drafted note content, not placeholder
+    - assistant wording includes prepared-preview / preview-only / not submitted
+    - after refinement, preview content changes to the refined version
+    - assistant wording includes updated-preview / still preview-only / not submitted
+    """
+
+    def test_initial_draft_creates_preview_with_correct_content_and_wording(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "The artifact evidence model in VoxeraOS provides a structured way "
+            "to track what happened during queue job execution. Each job produces "
+            "an evidence bundle containing the terminal outcome, approval status, "
+            "step results, and expected artifacts."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a note about the artifact evidence model")
+        assert res.status_code == 200
+
+        # Preview must exist with real content
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        content = wf["content"]
+        assert content, "write_file.content must be non-empty"
+        assert len(content) > 50, (
+            f"write_file.content must be substantial, got {len(content)} chars"
+        )
+        assert "artifact evidence model" in content.lower()
+        # Must NOT be a stale placeholder
+        assert content.lower() != "update the config file."
+
+        # Assistant wording must include preview-state notice
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        reply_text = last_turn["text"].lower()
+        assert "preview-only" in reply_text, (
+            "Reply must include 'preview-only' notice for writing-draft turns"
+        )
+        assert "nothing has been submitted yet" in reply_text
+
+    def test_refinement_updates_preview_content_and_wording(self, tmp_path, monkeypatch) -> None:
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        initial_content = (
+            "The artifact evidence model in VoxeraOS provides a structured way "
+            "to track what happened during queue job execution. Each job produces "
+            "an evidence bundle containing the terminal outcome, approval status, "
+            "step results, and expected artifacts."
+        )
+        refined_content = (
+            "The artifact evidence model tracks what happened during job execution. "
+            "Each job produces an evidence bundle with terminal outcome and artifacts."
+        )
+
+        call_count = 0
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            nonlocal call_count
+            call_count += 1
+            _ = turns
+            if call_count == 1:
+                return {"answer": initial_content, "status": "ok:test"}
+            return {"answer": refined_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        # First turn: create the draft
+        session.chat("write me a note about the artifact evidence model")
+        initial_preview = session.preview()
+        assert initial_preview is not None
+        assert "artifact evidence model" in initial_preview["write_file"]["content"].lower()
+
+        # Second turn: refine the draft
+        res = session.chat("make it shorter and more operator-facing")
+        assert res.status_code == 200
+
+        # Preview must be updated with refined content
+        updated_preview = session.preview()
+        assert updated_preview is not None
+        updated_content = updated_preview["write_file"]["content"]
+        assert updated_content != initial_preview["write_file"]["content"], (
+            "Preview content must change after refinement"
+        )
+        assert "artifact evidence" in updated_content.lower()
+
+        # Assistant wording must include updated-preview notice
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        reply_text = last_turn["text"].lower()
+        assert "preview-only" in reply_text or "not submitted" in reply_text, (
+            "Refinement reply must include preview-only or not-submitted notice"
+        )
+
+    def test_draft_preview_content_matches_chat_not_builder_placeholder(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """When the builder produces placeholder content ('Update the config file.')
+        but the LLM produces real authored content, the preview must contain
+        the authored content, not the builder placeholder."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "The artifact evidence model in VoxeraOS provides a structured way "
+            "to track what happened during queue job execution."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        # Builder returns a shell with placeholder content
+        async def _fake_builder(**kw):
+            return {
+                "goal": "draft a explanation as artifact-evidence-model-explanation.txt",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/artifact-evidence-model-explanation.txt",
+                    "content": "Update the config file.",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        res = session.chat("write me a note about the artifact evidence model")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None
+        content = preview["write_file"]["content"]
+        # Must be the authored content, NOT the builder placeholder
+        assert content != "Update the config file.", (
+            "Preview must contain authored content, not builder placeholder"
+        )
+        assert "artifact evidence" in content.lower()

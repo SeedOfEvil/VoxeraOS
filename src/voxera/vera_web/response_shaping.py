@@ -265,6 +265,24 @@ def assemble_assistant_reply(  # noqa: C901
             "the exact text to save."
         ).strip()
 
+    # Writing-draft turns show authored content in chat (not a control message).
+    # When a preview was prepared or updated on such a turn, append a
+    # preview-state notice so the user clearly knows preview state.
+    if is_writing_draft_turn and builder_payload is not None and assistant_text.strip():
+        if pending_preview is not None:
+            assistant_text = (
+                f"{assistant_text}\n\n"
+                "I\u2019ve updated the preview with your changes. "
+                "This is still preview-only \u2014 nothing has been submitted yet."
+            )
+        else:
+            assistant_text = (
+                f"{assistant_text}\n\n"
+                "I\u2019ve prepared a preview with this content. "
+                "This is preview-only \u2014 nothing has been submitted yet. "
+                "Let me know when you\u2019d like to send it."
+            )
+
     status = "prepared_preview" if builder_payload is not None else reply_status
 
     return AssistantReplyResult(assistant_text=assistant_text, status=status)

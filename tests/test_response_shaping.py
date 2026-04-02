@@ -527,3 +527,86 @@ class TestPreviewStateWordingClarity:
         )
         assert with_builder.status == "prepared_preview"
         assert without_builder.status == "ok:conversational"
+
+    # -- Writing-draft turns: preview notice appended to authored content --
+
+    def test_writing_draft_new_preview_appends_prepared_notice(self) -> None:
+        # Writing-draft turn with new preview (no pending_preview) should append
+        # "prepared preview / preview-only" notice to authored content.
+        authored = "The artifact evidence model tracks execution outcomes."
+        result = assemble_assistant_reply(
+            authored,
+            **_base_assemble_kwargs(
+                message="write me a note about the artifact evidence model",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=None,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        # Authored content preserved
+        assert "artifact evidence model" in result.assistant_text.lower()
+        # Preview-state notice appended
+        assert "prepared" in result.assistant_text.lower()
+        assert "preview-only" in result.assistant_text.lower()
+        assert "nothing has been submitted yet" in result.assistant_text.lower()
+
+    def test_writing_draft_updated_preview_appends_updated_notice(self) -> None:
+        # Writing-draft refinement turn with existing preview should append
+        # "updated preview / still preview-only" notice.
+        authored = "The artifact evidence model gives operators visibility."
+        result = assemble_assistant_reply(
+            authored,
+            **_base_assemble_kwargs(
+                message="make it shorter and more operator-facing",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=_PROSE_PREVIEW,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        # Authored content preserved
+        assert "artifact evidence model" in result.assistant_text.lower()
+        # Updated preview notice appended
+        assert "updated" in result.assistant_text.lower()
+        assert "preview-only" in result.assistant_text.lower()
+        assert "nothing has been submitted yet" in result.assistant_text.lower()
+
+    def test_writing_draft_no_builder_payload_no_notice(self) -> None:
+        # Writing-draft turn where builder_payload is None should NOT
+        # append a preview notice (no preview was produced).
+        authored = "Content about something."
+        result = assemble_assistant_reply(
+            authored,
+            **_base_assemble_kwargs(
+                message="write me a note",
+                builder_payload=None,
+                pending_preview=None,
+                is_writing_draft_turn=True,
+            ),
+        )
+        assert result.assistant_text == authored
+
+    def test_writing_draft_prepared_vs_updated_notice_differs(self) -> None:
+        authored = "Some authored content."
+        prepared = assemble_assistant_reply(
+            authored,
+            **_base_assemble_kwargs(
+                message="write me a note",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=None,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        updated = assemble_assistant_reply(
+            authored,
+            **_base_assemble_kwargs(
+                message="make it shorter",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=_PROSE_PREVIEW,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        assert prepared.assistant_text != updated.assistant_text
