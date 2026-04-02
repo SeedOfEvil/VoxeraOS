@@ -335,3 +335,195 @@ class TestAssembleAssistantReply:
         )
         # JSON should pass through since it's an explicit JSON request.
         assert result.assistant_text == raw
+
+
+# ---------------------------------------------------------------------------
+# Preview-state wording clarity
+# ---------------------------------------------------------------------------
+
+
+class TestPreviewStateWordingClarity:
+    """Verify that assistant replies use clear, distinct wording for each
+    preview state transition: prepared, updated, preview-only, submitted,
+    stale/empty, and rename/save-as."""
+
+    def test_new_preview_prepared_says_prepared(self) -> None:
+        # First preview (no pending_preview) should say "prepared"
+        result = assemble_assistant_reply(
+            "I set up a preview for you in the preview pane.",
+            **_base_assemble_kwargs(
+                message="write a note about volcanoes",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=None,
+                is_voxera_control_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        assert "prepared" in result.assistant_text.lower()
+        assert "preview-only" in result.assistant_text.lower()
+        assert "nothing has been submitted yet" in result.assistant_text.lower()
+
+    def test_existing_preview_updated_says_updated(self) -> None:
+        # Update to existing preview (pending_preview exists) should say "updated"
+        result = assemble_assistant_reply(
+            "I updated the preview for you.",
+            **_base_assemble_kwargs(
+                message="make it shorter",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=_PROSE_PREVIEW,
+                is_voxera_control_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        assert "updated" in result.assistant_text.lower()
+        assert "preview-only" in result.assistant_text.lower()
+        assert "nothing has been submitted yet" in result.assistant_text.lower()
+
+    def test_prepared_vs_updated_wording_differs(self) -> None:
+        # Prepared (new) and updated (existing) should produce different wording
+        prepared = assemble_assistant_reply(
+            "I set up a preview.",
+            **_base_assemble_kwargs(
+                message="write a note",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=None,
+                is_voxera_control_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        updated = assemble_assistant_reply(
+            "I updated the preview.",
+            **_base_assemble_kwargs(
+                message="make it better",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=_PROSE_PREVIEW,
+                is_voxera_control_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        assert prepared.assistant_text != updated.assistant_text
+
+    def test_preview_only_no_submit_when_no_builder_payload(self) -> None:
+        # When nothing was built, with active preview, reply should not imply submission
+        result = assemble_assistant_reply(
+            "I updated the draft for you.",
+            **_base_assemble_kwargs(
+                message="tell me more",
+                builder_payload=None,
+                pending_preview=_PROSE_PREVIEW,
+                is_voxera_control_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        assert "submitted" not in result.assistant_text.lower() or (
+            "not" in result.assistant_text.lower() or "nothing" in result.assistant_text.lower()
+        )
+        # Should mention the preview still exists
+        assert (
+            "preview" in result.assistant_text.lower() or "draft" in result.assistant_text.lower()
+        )
+
+    def test_stale_empty_preview_gets_honest_reply(self) -> None:
+        # When active preview is empty shell and no builder update, don't imply content
+        result = assemble_assistant_reply(
+            "   ",
+            **_base_assemble_kwargs(
+                message="what is going on",
+                builder_payload=None,
+                pending_preview=_EMPTY_PROSE_PREVIEW,
+            ),
+        )
+        assert result.assistant_text.strip()
+        # Should not claim submission occurred
+        assert "submitted" not in result.assistant_text.lower() or (
+            "not" in result.assistant_text.lower() or "nothing" in result.assistant_text.lower()
+        )
+
+    def test_rename_with_update_mentions_path_and_preview_only(self) -> None:
+        # Rename/save-as with update should mention new path and "preview-only"
+        renamed = {
+            "goal": "save note",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/volcano.txt",
+                "content": "hello world",
+            },
+        }
+        result = assemble_assistant_reply(
+            "I renamed the file.",
+            **_base_assemble_kwargs(
+                message="save it as volcano.txt",
+                builder_payload=renamed,
+                pending_preview=_PROSE_PREVIEW,
+            ),
+        )
+        assert "volcano.txt" in result.assistant_text
+        assert "preview-only" in result.assistant_text.lower()
+
+    def test_save_as_with_update_does_not_say_submitted(self) -> None:
+        renamed = {
+            "goal": "save note",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/renamed.md",
+                "content": "content",
+            },
+        }
+        result = assemble_assistant_reply(
+            "I saved it as renamed.md.",
+            **_base_assemble_kwargs(
+                message="save it as renamed.md",
+                builder_payload=renamed,
+                pending_preview=_PROSE_PREVIEW,
+            ),
+        )
+        # Must NOT imply submission happened
+        if "submitted" in result.assistant_text.lower():
+            assert (
+                "not" in result.assistant_text.lower() or "nothing" in result.assistant_text.lower()
+            )
+
+    def test_explicit_refinement_with_existing_preview_says_updated(self) -> None:
+        result = assemble_assistant_reply(
+            "I updated the content of the file.",
+            **_base_assemble_kwargs(
+                message="make it more formal",
+                pending_preview=_PROSE_PREVIEW,
+                builder_payload=_PROSE_PREVIEW,
+                explicit_targeted_content_refinement=True,
+            ),
+        )
+        assert "updated" in result.assistant_text.lower()
+        assert "preview-only" in result.assistant_text.lower()
+
+    def test_no_preview_no_builder_gives_clear_failure(self) -> None:
+        # When nothing could be prepared, reply should be clear and user-facing
+        result = assemble_assistant_reply(
+            "",
+            **_base_assemble_kwargs(
+                message="do something",
+                builder_payload=None,
+                pending_preview=None,
+            ),
+        )
+        assert result.assistant_text.strip()
+        # Should NOT sound like raw control-plane JSON
+        assert "write_file" not in result.assistant_text
+        assert "goal" not in result.assistant_text.lower().split()
+
+    def test_status_is_prepared_preview_only_with_builder_payload(self) -> None:
+        # Status field must reflect actual state
+        with_builder = assemble_assistant_reply(
+            "preview ready",
+            **_base_assemble_kwargs(
+                builder_payload=_PROSE_PREVIEW,
+                reply_status="ok:preview",
+            ),
+        )
+        without_builder = assemble_assistant_reply(
+            "no preview here",
+            **_base_assemble_kwargs(
+                builder_payload=None,
+                reply_status="ok:conversational",
+            ),
+        )
+        assert with_builder.status == "prepared_preview"
+        assert without_builder.status == "ok:conversational"

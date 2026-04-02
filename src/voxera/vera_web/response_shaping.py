@@ -46,6 +46,7 @@ def _conversational_preview_update_message(
     user_message: str,
     rejected: bool = False,
     updated_preview: dict[str, object] | None = None,
+    preview_already_existed: bool = False,
 ) -> str:
     return _cc_conversational_preview_update_message(
         updated=updated,
@@ -56,6 +57,7 @@ def _conversational_preview_update_message(
         ),
         rejected=rejected,
         updated_preview=updated_preview,
+        preview_already_existed=preview_already_existed,
     )
 
 
@@ -197,6 +199,7 @@ def assemble_assistant_reply(  # noqa: C901
             user_message=message,
             rejected=preview_update_rejected,
             updated_preview=builder_payload,
+            preview_already_existed=pending_preview is not None,
         )
     if (
         explicit_targeted_content_refinement
@@ -209,6 +212,7 @@ def assemble_assistant_reply(  # noqa: C901
             has_active_preview=pending_preview is not None,
             user_message=message,
             updated_preview=builder_payload,
+            preview_already_existed=pending_preview is not None,
         )
     # Code draft replies must NOT be suppressed — they contain the actual code
     # that the user needs to see in a proper fenced block.  All other preview
@@ -231,6 +235,7 @@ def assemble_assistant_reply(  # noqa: C901
             user_message=message,
             rejected=preview_update_rejected,
             updated_preview=builder_payload,
+            preview_already_existed=pending_preview is not None,
         )
     if (
         builder_payload is None

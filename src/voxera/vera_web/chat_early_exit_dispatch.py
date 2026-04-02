@@ -183,8 +183,8 @@ def dispatch_early_exit_intent(
         return EarlyExitResult(
             matched=True,
             assistant_text=(
-                f"I prepared a follow-up request based on evidence from `{evidence.job_id}`. "
-                "This is preview-only; I did not submit anything to VoxeraOS."
+                f"I've prepared a follow-up preview based on evidence from `{evidence.job_id}`. "
+                "This is preview-only — nothing has been submitted yet."
             ),
             status="followup_preview_ready",
             preview_payload=payload,

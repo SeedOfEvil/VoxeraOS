@@ -356,6 +356,7 @@ def _conversational_preview_update_message(
     user_message: str,
     rejected: bool = False,
     updated_preview: dict[str, object] | None = None,
+    preview_already_existed: bool = False,
 ) -> str:
     return _cc_conversational_preview_update_message(
         updated=updated,
@@ -366,6 +367,7 @@ def _conversational_preview_update_message(
         ),
         rejected=rejected,
         updated_preview=updated_preview,
+        preview_already_existed=preview_already_existed,
     )
 
 
