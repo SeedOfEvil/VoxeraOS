@@ -21,11 +21,23 @@
   notice is now appended to the authored content so the user clearly sees preview state.
   This closes the gap where writing-draft turns bypassed all three controlled-wording
   paths in `assemble_assistant_reply`.
+- **Refinement content binding fix** (`src/voxera/vera_web/draft_content_binding.py`):
+  Refinement turns on active prose previews ("make it shorter") now bypass the
+  `looks_like_non_authored_assistant_message` filter in `extract_reply_drafts`.
+  Root cause: authored content about VoxeraOS concepts (queue state, approval status,
+  expected artifacts) was rejected as non-authored, causing `reply_text_draft=None`,
+  which prevented the late writing-draft refinement detection from firing and left
+  stale/truncated builder content in the authoritative preview.
+  The bypass is gated on `active_preview_is_refinable_prose AND is_writing_refinement_request
+  AND NOT looks_like_preview_rename_or_save_as_request` to prevent rename mutations
+  from accidentally overwriting preview content with narration text.
 - **Behavioral guidance**: Reply wording for preview-state transitions is governed UX.
   Every preview reply must clearly state: (a) whether the preview is new or updated,
   (b) that it is preview-only, and (c) that nothing has been submitted. This applies
   to all paths through `assemble_assistant_reply` and `chat_early_exit_dispatch`,
   including writing-draft turns that show authored content with an appended notice.
+  Preview payload truth must also be preserved: the authoritative preview content
+  must materially match the authored chat content, not be truncated or stale.
 - Non-goals preserved:
   - No architecture redesign.
   - No submit/handoff ownership changes.

@@ -26,6 +26,7 @@ from voxera.vera.evidence_review import (
 )
 from voxera.vera_web import app as vera_app_module
 from voxera.vera_web.chat_early_exit_dispatch import dispatch_early_exit_intent
+from voxera.vera_web.draft_content_binding import extract_reply_drafts
 
 from .vera_session_helpers import make_vera_session
 
@@ -590,6 +591,10 @@ class TestDraftingAndRefinementPreviewStateWording:
         assert "nothing has been submitted yet" in reply_text
 
     def test_refinement_updates_preview_content_and_wording(self, tmp_path, monkeypatch) -> None:
+        """Regression: refinement of a note containing system terms (queue state,
+        approval status, expected artifacts) must not be rejected by the
+        non-authored-message filter.  The refined content must be bound into
+        the authoritative preview, not truncated or stale."""
         session = make_vera_session(monkeypatch, tmp_path)
 
         initial_content = (
@@ -598,9 +603,13 @@ class TestDraftingAndRefinementPreviewStateWording:
             "an evidence bundle containing the terminal outcome, approval status, "
             "step results, and expected artifacts."
         )
+        # Refined content still mentions system terms — this is the live failure
+        # case where looks_like_non_authored_assistant_message would reject
+        # the content, causing reply_text_draft=None and preview drift.
         refined_content = (
-            "The artifact evidence model tracks what happened during job execution. "
-            "Each job produces an evidence bundle with terminal outcome and artifacts."
+            "The artifact evidence model tracks execution outcomes. "
+            "Each job's evidence bundle records terminal outcome, approval status, "
+            "and expected artifacts so operators can verify queue state truth."
         )
 
         call_count = 0
@@ -619,7 +628,8 @@ class TestDraftingAndRefinementPreviewStateWording:
         session.chat("write me a note about the artifact evidence model")
         initial_preview = session.preview()
         assert initial_preview is not None
-        assert "artifact evidence model" in initial_preview["write_file"]["content"].lower()
+        initial_bound = initial_preview["write_file"]["content"]
+        assert "artifact evidence model" in initial_bound.lower()
 
         # Second turn: refine the draft
         res = session.chat("make it shorter and more operator-facing")
@@ -629,10 +639,15 @@ class TestDraftingAndRefinementPreviewStateWording:
         updated_preview = session.preview()
         assert updated_preview is not None
         updated_content = updated_preview["write_file"]["content"]
-        assert updated_content != initial_preview["write_file"]["content"], (
-            "Preview content must change after refinement"
+        assert updated_content != initial_bound, "Preview content must change after refinement"
+        # Refined content must contain the system terms — not be truncated
+        assert "approval status" in updated_content.lower(), (
+            "Refined content with system terms must not be rejected"
         )
-        assert "artifact evidence" in updated_content.lower()
+        assert "expected artifacts" in updated_content.lower()
+        assert len(updated_content) > 50, (
+            f"Preview content must not be truncated, got {len(updated_content)} chars"
+        )
 
         # Assistant wording must include updated-preview notice
         last_turn = session.turns()[-1]
@@ -684,3 +699,58 @@ class TestDraftingAndRefinementPreviewStateWording:
             "Preview must contain authored content, not builder placeholder"
         )
         assert "artifact evidence" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# 8. Refinement content extraction — non-authored filter bypass
+# ---------------------------------------------------------------------------
+
+
+class TestRefinementContentExtraction:
+    """Regression: refinement turns on active prose previews must not have
+    their reply_text_draft rejected by the non-authored-message filter when
+    the authored content mentions system terms like queue state, approval
+    status, or expected artifacts."""
+
+    def test_refinement_with_system_terms_preserves_reply_text_draft(self) -> None:
+        content = (
+            "The artifact evidence model tracks execution outcomes. "
+            "Each job records terminal outcome, approval status, "
+            "and expected artifacts so operators can verify queue state truth."
+        )
+        # Without active prose preview: content rejected
+        result_no_preview = extract_reply_drafts(
+            content, "make it shorter", active_preview_is_refinable_prose=False
+        )
+        assert result_no_preview.reply_text_draft is None, (
+            "Without active prose preview, system-term content should be rejected"
+        )
+
+        # With active prose preview: content preserved
+        result_with_preview = extract_reply_drafts(
+            content, "make it shorter", active_preview_is_refinable_prose=True
+        )
+        assert result_with_preview.reply_text_draft is not None, (
+            "With active prose preview, system-term content must NOT be rejected"
+        )
+        assert "approval status" in result_with_preview.reply_text_draft.lower()
+        assert "expected artifacts" in result_with_preview.reply_text_draft.lower()
+
+    def test_refinement_without_system_terms_works_either_way(self) -> None:
+        content = (
+            "Volcanoes form when magma from the mantle reaches the surface. "
+            "They are classified as active, dormant, or extinct."
+        )
+        result = extract_reply_drafts(
+            content, "make it shorter", active_preview_is_refinable_prose=True
+        )
+        assert result.reply_text_draft is not None
+
+    def test_non_refinement_message_not_affected(self) -> None:
+        # Regular messages should not bypass the filter even with active preview
+        content = "The approval status shows the queue state for expected artifacts."
+        result = extract_reply_drafts(
+            content, "what is this", active_preview_is_refinable_prose=True
+        )
+        # "what is this" is not a refinement request, so the filter applies
+        assert result.reply_text_draft is None

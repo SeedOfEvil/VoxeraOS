@@ -121,6 +121,8 @@ class ReplyDrafts:
 def extract_reply_drafts(
     reply_answer: str,
     message: str,
+    *,
+    active_preview_is_refinable_prose: bool = False,
 ) -> ReplyDrafts:
     """Extract code and text draft content from an LLM reply.
 
@@ -133,10 +135,18 @@ def extract_reply_drafts(
     # mention system terms (queue state, approval status, etc.).  Skip the
     # non-authored-message filter for these turns so the authored prose is not
     # rejected by a false-positive pattern match.
+    # The same bypass applies to refinement turns on active prose previews —
+    # "make it shorter" on a note about queue state should not be rejected.
     _is_explicit_writing_turn = is_writing_draft_request(message)
+    _is_prose_refinement_turn = (
+        active_preview_is_refinable_prose
+        and is_writing_refinement_request(message)
+        and not looks_like_preview_rename_or_save_as_request(message)
+    )
+    _bypass_non_authored_filter = _is_explicit_writing_turn or _is_prose_refinement_turn
     reply_text_draft: str | None = (
         None
-        if not _is_explicit_writing_turn
+        if not _bypass_non_authored_filter
         and looks_like_non_authored_assistant_message(str(reply_text_draft_candidate or ""))
         else reply_text_draft_candidate
     )
@@ -154,11 +164,12 @@ def extract_reply_drafts(
         ):
             reply_text_draft = first_block
 
-    # Writing-draft fallback: when the user explicitly asked to write/draft
-    # content and the prose-body extractor returned nothing (e.g. the LLM
-    # wrapped the content in a way that _extract_prose_body couldn't parse),
-    # use the full sanitized answer as authored content.
-    if reply_text_draft is None and _is_explicit_writing_turn:
+    # Writing-draft / refinement fallback: when the user explicitly asked to
+    # write/draft content (or is refining an active prose preview) and the
+    # prose-body extractor returned nothing (e.g. the LLM wrapped the content
+    # in a way that _extract_prose_body couldn't parse), use the full
+    # sanitized answer as authored content.
+    if reply_text_draft is None and _bypass_non_authored_filter:
         candidate = sanitized_answer.strip()
         if candidate and len(candidate.split()) >= 4:
             reply_text_draft = candidate
