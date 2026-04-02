@@ -754,3 +754,476 @@ class TestRefinementContentExtraction:
         )
         # "what is this" is not a refinement request, so the filter applies
         assert result.reply_text_draft is None
+
+
+# ---------------------------------------------------------------------------
+# 9. Linked-job review — result inspection phrase recognition
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedJobReviewPhraseRecognition:
+    """Verify that result-inspection phrases are recognized as review requests."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "summarize the result",
+            "summarize that result",
+            "inspect output details",
+            "inspect output",
+            "inspect the output",
+            "review the result",
+            "review that result",
+            "show me the result",
+            "show the result",
+            "what was the outcome",
+            "what was the result",
+            "summarize the job result",
+        ],
+    )
+    def test_review_inspection_phrases_recognized(self, phrase: str) -> None:
+        from voxera.vera.evidence_review import is_review_request
+
+        assert is_review_request(phrase), f"Expected is_review_request to be True for: {phrase!r}"
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "write me a summary about dogs",
+            "inspect my code for bugs",
+            "show me how to cook pasta",
+            "review my essay draft",
+        ],
+    )
+    def test_non_review_inspection_phrases_not_matched(self, phrase: str) -> None:
+        from voxera.vera.evidence_review import is_review_request
+
+        assert not is_review_request(phrase), (
+            f"Expected is_review_request to be False for: {phrase!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 10. Linked-job follow-up — revise-from-evidence phrase recognition
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedJobReviseFromEvidence:
+    """Verify that revise-from-evidence phrases reach the follow-up branch."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "revise that based on the result",
+            "revise based on the result",
+            "revise that based on the evidence",
+            "revise that based on the outcome",
+            "revise based on evidence",
+            "update that based on the result",
+            "update based on the result",
+            "save the follow-up",
+            "save that follow-up",
+            "save the follow-up as a file",
+        ],
+    )
+    def test_revision_phrases_recognized_as_followup(self, phrase: str) -> None:
+        assert is_followup_preview_request(phrase), (
+            f"Expected is_followup_preview_request to be True for: {phrase!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "revise my essay",
+            "update the config file",
+            "save the document",
+            "save it as a note",
+        ],
+    )
+    def test_non_revision_phrases_not_matched(self, phrase: str) -> None:
+        assert not is_followup_preview_request(phrase), (
+            f"Expected is_followup_preview_request to be False for: {phrase!r}"
+        )
+
+    def test_revision_phrases_reach_dispatch_followup_branch(self, tmp_path: Path) -> None:
+        """Revise-from-evidence phrases must reach the followup branch in dispatch."""
+        phrases = [
+            "revise that based on the result",
+            "update that based on the result",
+            "save the follow-up",
+        ]
+        for phrase in phrases:
+            result = dispatch_early_exit_intent(
+                message=phrase,
+                diagnostics_service_turn=False,
+                requested_job_id=None,
+                should_attempt_derived_save=False,
+                session_investigation=None,
+                session_derived_output=None,
+                queue_root=tmp_path,
+                session_id="test-session",
+            )
+            assert result.matched is True, f"Phrase {phrase!r} did not match any early-exit"
+            assert result.status == "followup_missing_evidence", (
+                f"Phrase {phrase!r} got status={result.status!r} instead of followup_missing_evidence"
+            )
+
+    def test_revision_with_evidence_returns_preview_ready(self, tmp_path: Path) -> None:
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260402-revise",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Completed.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = dispatch_early_exit_intent(
+                message="revise that based on the result",
+                diagnostics_service_turn=False,
+                requested_job_id=None,
+                should_attempt_derived_save=False,
+                session_investigation=None,
+                session_derived_output=None,
+                queue_root=tmp_path,
+                session_id="test-session",
+            )
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        assert result.write_preview is True
+        assert "preview-only" in result.assistant_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# 11. Follow-up preview goal text correctness
+# ---------------------------------------------------------------------------
+
+
+class TestFollowupPreviewGoalText:
+    """Verify that follow-up preview goals are evidence-grounded, not vague."""
+
+    def test_succeeded_job_goal_says_follow_up_not_inspect(self) -> None:
+        from voxera.vera.evidence_review import draft_followup_preview
+
+        evidence = ReviewedJobEvidence(
+            job_id="job-20260402-goal",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Scan completed.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        payload = draft_followup_preview(evidence)
+        goal = payload["goal"]
+        assert "follow-up" in goal.lower()
+        assert "inspect output details" not in goal.lower()
+        assert "job-20260402-goal" in goal
+
+    def test_failed_job_goal_mentions_corrected_retry(self) -> None:
+        from voxera.vera.evidence_review import draft_followup_preview
+
+        evidence = ReviewedJobEvidence(
+            job_id="job-20260402-fail",
+            state="failed",
+            lifecycle_state="failed",
+            terminal_outcome="failed",
+            approval_status="",
+            latest_summary="",
+            failure_summary="Permission denied",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="policy_denied",
+            value_forward_text="",
+        )
+        payload = draft_followup_preview(evidence)
+        goal = payload["goal"]
+        assert "corrected retry" in goal.lower()
+        assert "Permission denied" in goal
+
+    def test_canceled_job_goal_mentions_replacement(self) -> None:
+        from voxera.vera.evidence_review import draft_followup_preview
+
+        evidence = ReviewedJobEvidence(
+            job_id="job-20260402-cancel",
+            state="canceled",
+            lifecycle_state="canceled",
+            terminal_outcome="canceled",
+            approval_status="",
+            latest_summary="",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="",
+            value_forward_text="",
+        )
+        payload = draft_followup_preview(evidence)
+        goal = payload["goal"]
+        assert "replacement" in goal.lower() or "canceled" in goal.lower()
+
+
+# ---------------------------------------------------------------------------
+# 12. Preview truth — "write me a short note about queue truth" regression
+# ---------------------------------------------------------------------------
+
+
+class TestPreviewTruthQueueTruthNote:
+    """Regression: 'write me a short note about queue truth' must produce a
+    preview with substantial authored content in write_file.content, not a
+    short builder fragment like 'hallucination of success,'.
+
+    Root cause: the builder LLM may produce a fragmentary content snippet
+    from the authored text.  The writing-draft injection should override it
+    with the full reply_text_draft, but pathological LLM response structures
+    can cause the extraction to fail.  The post-binding guardrail ensures
+    the final preview content is not a truncated fragment.
+    """
+
+    def test_queue_truth_note_preview_has_substantial_content(self, tmp_path, monkeypatch) -> None:
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states and the queue state is the only "
+            "surface that operators should trust for determining what has actually "
+            "happened.\n\n"
+            "This means that approval status, terminal outcome, and artifact evidence "
+            "must all be grounded in persisted queue state, not in LLM-generated "
+            "claims or conversational inference. The hallucination of success, "
+            "progress, or completion without queue evidence is explicitly treated "
+            "as a trust violation."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        content = wf["content"]
+        assert content, "write_file.content must be non-empty"
+        assert len(content) > 100, (
+            f"write_file.content must be substantial authored prose, got {len(content)} chars"
+        )
+        assert "queue truth" in content.lower() or "queue" in content.lower()
+        # Must NOT be the builder fragment
+        assert content != "hallucination of success,"
+
+    def test_queue_truth_note_builder_fragment_overridden(self, tmp_path, monkeypatch) -> None:
+        """When the builder produces a short fragment from the authored content,
+        the writing-draft pipeline must override it with the full authored text."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states and the queue state is the only "
+            "surface that operators should trust for determining what has actually "
+            "happened.\n\n"
+            "This means that approval status, terminal outcome, and artifact evidence "
+            "must all be grounded in persisted queue state, not in LLM-generated "
+            "claims or conversational inference. The hallucination of success, "
+            "progress, or completion without queue evidence is explicitly treated "
+            "as a trust violation."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        async def _fake_builder(**kw):
+            return {
+                "goal": "draft a explanation as queue-truth-explanation.txt",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/queue-truth-explanation.txt",
+                    "content": "hallucination of success,",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        content = wf["content"]
+        assert content, "write_file.content must be non-empty"
+        # Must NOT be the builder fragment
+        assert content != "hallucination of success,", (
+            "Preview must contain authored content, not builder fragment"
+        )
+        assert len(content) > 100, f"Preview content must be substantial, got {len(content)} chars"
+        assert "queue truth" in content.lower()
+        assert "trust violation" in content.lower()
+
+    def test_queue_truth_note_assistant_wording_correct(self, tmp_path, monkeypatch) -> None:
+        """Assistant wording must clearly state preview-only + nothing submitted."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        reply_text = last_turn["text"].lower()
+        assert "preview-only" in reply_text
+        assert "nothing has been submitted yet" in reply_text
+
+    def test_preview_content_aligned_with_chat(self, tmp_path, monkeypatch) -> None:
+        """Preview content and assistant chat reply must be materially aligned."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None
+        preview_content = preview["write_file"]["content"]
+
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        assistant_text = last_turn["text"]
+
+        # The preview content must be a meaningful portion of the authored content
+        assert "queue truth" in preview_content.lower()
+        # The assistant text should contain or reference the same content
+        assert "queue truth" in assistant_text.lower() or preview_content in assistant_text
+
+    def test_builder_fragment_overridden_even_when_extraction_fails(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Regression for the exact live failure: builder produces 'what is
+        happening now.' as a fragment, and the LLM reply is structured in a
+        way that extract_text_draft_from_reply returns None.  The guardrail
+        must use the sanitized_answer fallback to override the fragment."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        # Content that the LLM produces as good authored prose.
+        # The extract_text_draft_from_reply might fail on certain LLM reply
+        # structures, but the sanitized_answer should contain this text.
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states and the queue state is the only "
+            "surface that operators should trust for determining what is happening "
+            "now.\n\n"
+            "This means that approval status, terminal outcome, and artifact "
+            "evidence must all be grounded in persisted queue state, not in "
+            "LLM-generated claims or conversational inference."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        # Builder produces a fragmentary snippet
+        async def _fake_builder(**kw):
+            return {
+                "goal": "draft a explanation as queue-truth-explanation.txt",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/queue-truth-explanation.txt",
+                    "content": "what is happening now.",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        content = wf["content"]
+
+        # The authoritative preview must NOT be the builder fragment
+        assert content != "what is happening now.", (
+            "Preview must not be builder fragment 'what is happening now.'"
+        )
+        assert len(content) > 50, (
+            f"Preview content must be substantial, got {len(content)} chars: {content!r}"
+        )
+        assert "queue truth" in content.lower() or "queue" in content.lower()

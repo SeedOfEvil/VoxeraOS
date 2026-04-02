@@ -24,6 +24,19 @@ _REVIEW_HINTS = (
     "why is it stuck",
     "stuck",
     "awaiting approval",
+    # Result inspection / summary phrases
+    "summarize the result",
+    "summarize that result",
+    "summarize the job result",
+    "inspect output",
+    "inspect output details",
+    "inspect the output",
+    "review the result",
+    "review that result",
+    "show me the result",
+    "show the result",
+    "what was the outcome",
+    "what was the result",
 )
 _FOLLOWUP_HINTS = (
     "prepare the next step",
@@ -56,6 +69,18 @@ _FOLLOWUP_HINTS = (
     "okay now do the follow-up",
     "what should we do next based on that",
     "what's the next step based on that",
+    # Revise-from-evidence phrases
+    "revise that based on the result",
+    "revise based on the result",
+    "revise that based on the evidence",
+    "revise that based on the outcome",
+    "revise based on evidence",
+    "update that based on the result",
+    "update based on the result",
+    # Save follow-up phrases
+    "save the follow-up",
+    "save that follow-up",
+    "save the follow-up as a file",
 )
 
 
@@ -566,7 +591,12 @@ def draft_followup_preview(evidence: ReviewedJobEvidence) -> dict[str, str]:
         goal = f"prepare a corrected retry for {evidence.job_id} after addressing: {summary}"
     elif evidence.state == "succeeded":
         summary = evidence.latest_summary or "the completed result"
-        goal = f"inspect output details from {evidence.job_id}: {summary}"
+        goal = (
+            f"draft a follow-up step grounded in completed evidence from "
+            f"{evidence.job_id}: {summary}"
+        )
+    elif evidence.state == "canceled":
+        goal = f"draft a replacement step for canceled job {evidence.job_id}"
     else:
         goal = f"check status and evidence for {evidence.job_id}"
     return {"goal": goal}
