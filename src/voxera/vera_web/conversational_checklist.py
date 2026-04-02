@@ -662,6 +662,7 @@ def conversational_preview_update_message(
     is_recent_assistant_content_save_request: bool,
     rejected: bool = False,
     updated_preview: dict[str, object] | None = None,
+    preview_already_existed: bool = False,
 ) -> str:
     naming_request = looks_like_preview_rename_or_save_as_request(user_message)
     updated_write_file = (
@@ -680,21 +681,32 @@ def conversational_preview_update_message(
     if updated:
         if naming_request and updated_path:
             return (
-                f"Updated the draft destination to {updated_path}. "
-                "Nothing has been submitted or executed yet."
+                f"Updated the draft destination to `{updated_path}`. "
+                "This is preview-only — nothing has been submitted yet."
             )
-        return "Understood. Nothing has been submitted or executed yet. I can send it whenever you’re ready."
+        if preview_already_existed:
+            return (
+                "I’ve updated the preview with your changes. "
+                "This is still preview-only — nothing has been submitted yet."
+            )
+        return (
+            "I’ve prepared a preview of your request. "
+            "This is preview-only — nothing has been submitted yet. "
+            "Let me know when you’d like to send it."
+        )
     if naming_request and has_active_preview:
         return (
             "I couldn’t safely apply that naming update, so the draft destination is unchanged. "
             "Please provide a specific filename (for example: name it bigvolcano.txt)."
         )
     if has_active_preview:
-        return "Understood. I still have the current request ready whenever you want to send it."
+        return (
+            "The current draft is still in the preview, unchanged. "
+            "Nothing has been submitted. Let me know when you’d like to proceed."
+        )
     if is_recent_assistant_content_save_request:
         return (
-            "I couldn't resolve a suitable recent assistant-authored summary/answer in this active session, "
-            "so I didn't prepare a write preview. Please point to a specific recent response or ask me to "
-            "generate one first."
+            "I couldn’t find a recent response to save in this session. "
+            "Could you point to a specific response or ask me to generate something first?"
         )
-    return "I couldn’t safely prepare a request yet. If you share clearer target details, I can continue."
+    return "I wasn’t able to prepare a preview for this request. Could you share more details so I can try again?"

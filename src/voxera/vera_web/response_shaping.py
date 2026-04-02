@@ -46,6 +46,7 @@ def _conversational_preview_update_message(
     user_message: str,
     rejected: bool = False,
     updated_preview: dict[str, object] | None = None,
+    preview_already_existed: bool = False,
 ) -> str:
     return _cc_conversational_preview_update_message(
         updated=updated,
@@ -56,6 +57,7 @@ def _conversational_preview_update_message(
         ),
         rejected=rejected,
         updated_preview=updated_preview,
+        preview_already_existed=preview_already_existed,
     )
 
 
@@ -197,6 +199,7 @@ def assemble_assistant_reply(  # noqa: C901
             user_message=message,
             rejected=preview_update_rejected,
             updated_preview=builder_payload,
+            preview_already_existed=pending_preview is not None,
         )
     if (
         explicit_targeted_content_refinement
@@ -209,6 +212,7 @@ def assemble_assistant_reply(  # noqa: C901
             has_active_preview=pending_preview is not None,
             user_message=message,
             updated_preview=builder_payload,
+            preview_already_existed=pending_preview is not None,
         )
     # Code draft replies must NOT be suppressed — they contain the actual code
     # that the user needs to see in a proper fenced block.  All other preview
@@ -231,6 +235,7 @@ def assemble_assistant_reply(  # noqa: C901
             user_message=message,
             rejected=preview_update_rejected,
             updated_preview=builder_payload,
+            preview_already_existed=pending_preview is not None,
         )
     if (
         builder_payload is None
@@ -259,6 +264,24 @@ def assemble_assistant_reply(  # noqa: C901
             "authoritative generated content. Please ask for explicit content again or provide "
             "the exact text to save."
         ).strip()
+
+    # Writing-draft turns show authored content in chat (not a control message).
+    # When a preview was prepared or updated on such a turn, append a
+    # preview-state notice so the user clearly knows preview state.
+    if is_writing_draft_turn and builder_payload is not None and assistant_text.strip():
+        if pending_preview is not None:
+            assistant_text = (
+                f"{assistant_text}\n\n"
+                "I\u2019ve updated the preview with your changes. "
+                "This is still preview-only \u2014 nothing has been submitted yet."
+            )
+        else:
+            assistant_text = (
+                f"{assistant_text}\n\n"
+                "I\u2019ve prepared a preview with this content. "
+                "This is preview-only \u2014 nothing has been submitted yet. "
+                "Let me know when you\u2019d like to send it."
+            )
 
     status = "prepared_preview" if builder_payload is not None else reply_status
 

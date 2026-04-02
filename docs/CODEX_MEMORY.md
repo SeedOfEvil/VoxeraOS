@@ -1,3 +1,49 @@
+## 2026-04-02 — PR #TBD — improve(vera_web): clarify preview-only vs submitted reply UX
+
+- Summary: Bounded UX-wording PR that improves how Vera communicates preview state
+  transitions to users. Reply wording is part of the governed UX contract — the
+  assistant must not imply submission when none occurred, and must not sound vague
+  or control-plane-ish when a real preview was prepared.
+- **Wording changes** (`src/voxera/vera_web/conversational_checklist.py`):
+  - New preview prepared: "I've prepared a preview of your request. This is preview-only — nothing has been submitted yet."
+  - Existing preview updated: "I've updated the preview with your changes. This is still preview-only — nothing has been submitted yet."
+  - Rename/save-as with path: "Updated the draft destination to `{path}`. This is preview-only — nothing has been submitted yet."
+  - Stale/unchanged preview: "The current draft is still in the preview, unchanged. Nothing has been submitted."
+  - Empty/failed preview: "I wasn't able to prepare a preview for this request."
+  - Save-without-content: "I couldn't find a recent response to save in this session."
+  - Follow-up preview: "I've prepared a follow-up preview based on evidence from `{job_id}`. This is preview-only — nothing has been submitted yet."
+- **New parameter**: `preview_already_existed: bool` threaded through
+  `conversational_preview_update_message` → `response_shaping._conversational_preview_update_message`
+  → `assemble_assistant_reply` to distinguish "prepared" from "updated" wording.
+- **Writing-draft preview notice** (`src/voxera/vera_web/response_shaping.py`):
+  Writing-draft and refinement turns show authored content in chat (not a control
+  message). When a preview was prepared or updated on such a turn, a preview-state
+  notice is now appended to the authored content so the user clearly sees preview state.
+  This closes the gap where writing-draft turns bypassed all three controlled-wording
+  paths in `assemble_assistant_reply`.
+- **Refinement content binding fix** (`src/voxera/vera_web/draft_content_binding.py`):
+  Refinement turns on active prose previews ("make it shorter") now bypass the
+  `looks_like_non_authored_assistant_message` filter in `extract_reply_drafts`.
+  Root cause: authored content about VoxeraOS concepts (queue state, approval status,
+  expected artifacts) was rejected as non-authored, causing `reply_text_draft=None`,
+  which prevented the late writing-draft refinement detection from firing and left
+  stale/truncated builder content in the authoritative preview.
+  The bypass is gated on `active_preview_is_refinable_prose AND is_writing_refinement_request
+  AND NOT looks_like_preview_rename_or_save_as_request` to prevent rename mutations
+  from accidentally overwriting preview content with narration text.
+- **Behavioral guidance**: Reply wording for preview-state transitions is governed UX.
+  Every preview reply must clearly state: (a) whether the preview is new or updated,
+  (b) that it is preview-only, and (c) that nothing has been submitted. This applies
+  to all paths through `assemble_assistant_reply` and `chat_early_exit_dispatch`,
+  including writing-draft turns that show authored content with an appended notice.
+  Preview payload truth must also be preserved: the authoritative preview content
+  must materially match the authored chat content, not be truncated or stale.
+- Non-goals preserved:
+  - No architecture redesign.
+  - No submit/handoff ownership changes.
+  - No queue-boundary behavior changes.
+  - No weakening of fail-closed behavior.
+
 ## 2026-04-01 — PR #TBD — fix(vera): improve reliability of natural drafting and follow-up conversational paths
 
 - Summary: Bounded product-stabilization PR that widens Vera's recognition of natural user

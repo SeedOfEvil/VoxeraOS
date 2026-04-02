@@ -1220,9 +1220,8 @@ def test_action_request_creates_preview_only_until_explicit_handoff(tmp_path, mo
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
 
-    assert "send it whenever" in res.text
+    assert "nothing has been submitted yet" in res.text.lower()
     assert "Preview panel · Active VoxeraOS draft (authoritative, not submitted)" in res.text
-    assert "Nothing has been submitted or executed yet" in res.text
     assert list((queue / "inbox").glob("*.json")) == [] if (queue / "inbox").exists() else True
 
 
@@ -1234,7 +1233,7 @@ def test_explicit_submit_phrase_without_preview_is_honest_non_submission(tmp_pat
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "submit now please"})
 
-    assert "did not submit anything" in res.text.lower() or "prepared preview" in res.text.lower()
+    assert "not submitted" in res.text.lower() or "prepare" in res.text.lower()
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -1246,7 +1245,7 @@ def test_prepare_preview_sets_preview_available_true_for_natural_open_phrase(tmp
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "Can you open example.com?"})
 
-    assert "send it whenever" in res.text
+    assert "nothing has been submitted yet" in res.text.lower()
     assert "preview_available</b>: True" in res.text
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
@@ -1425,7 +1424,7 @@ def test_filesystem_copy_preview_then_submit_is_truthful_and_queue_backed(tmp_pa
             "message": "copy ~/VoxeraOS/notes/runtime-validation/src/a.txt to ~/VoxeraOS/notes/runtime-validation/dst/a-copy.txt",
         },
     )
-    assert "Nothing has been submitted or executed yet" in prep.text
+    assert "nothing has been submitted yet" in prep.text.lower()
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["steps"][0]["skill_id"] == "files.copy"
@@ -1455,7 +1454,8 @@ def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "yes please"})
 
-    assert "did not submit anything" in res.text.lower()
+    lowered = res.text.lower()
+    assert "have not submitted" in lowered or "not submitted" in lowered or "prepare" in lowered
     assert "I submitted the request" not in res.text
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
@@ -1561,7 +1561,7 @@ def test_contentful_natural_file_creation_phrase_produces_canonical_preview(tmp_
         },
     )
 
-    assert "send it whenever" in res.text
+    assert "nothing has been submitted yet" in res.text.lower()
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbiddy.txt"
@@ -1872,7 +1872,7 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
 
     res = client.post("/chat", data={"session_id": sid, "message": "add content"})
 
-    assert "still have the current request ready" in res.text
+    assert "current draft is still in the preview" in res.text.lower()
     assert vera_service.read_session_preview(queue, sid) == {
         "goal": "write a note called scipptyaway.txt"
     }
@@ -1950,7 +1950,7 @@ def test_builder_drops_extra_keys_and_keeps_supported_preview_shape(tmp_path, mo
 
     res = client.post("/chat", data={"session_id": sid, "message": "revise with content"})
 
-    assert "send it whenever" in res.text
+    assert "nothing has been submitted yet" in res.text.lower()
     assert vera_service.read_session_preview(queue, sid) == {
         "goal": "write a note called skibbidy.txt"
     }
@@ -2313,7 +2313,7 @@ def test_filename_refinement_replaces_active_preview(tmp_path, monkeypatch):
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
     turns = vera_service.read_session_turns(queue, sid)
-    assert "Updated the draft destination to ~/VoxeraOS/notes/jokester.txt" in turns[-1]["text"]
+    assert "Updated the draft destination to `~/VoxeraOS/notes/jokester.txt`" in turns[-1]["text"]
 
 
 def test_name_the_note_updates_preview_path_with_explicit_confirmation(tmp_path, monkeypatch):
@@ -2341,7 +2341,7 @@ def test_name_the_note_updates_preview_path_with_explicit_confirmation(tmp_path,
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/bigvolcano.txt"
     turns = vera_service.read_session_turns(queue, sid)
-    assert "Updated the draft destination to ~/VoxeraOS/notes/bigvolcano.txt" in turns[-1]["text"]
+    assert "Updated the draft destination to `~/VoxeraOS/notes/bigvolcano.txt`" in turns[-1]["text"]
 
     client.post("/chat", data={"session_id": sid, "message": "submit it"})
     jobs = list((queue / "inbox").glob("inbox-*.json"))
@@ -2829,8 +2829,8 @@ def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypa
         "/chat", data={"session_id": "sid-follow", "message": "prepare the next step"}
     )
 
-    assert "prepared a follow-up request" in res.text
-    assert "did not submit anything" in res.text.lower()
+    assert "prepared a follow-up preview" in res.text
+    assert "nothing has been submitted yet" in res.text.lower()
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
     assert vera_service.read_session_preview(queue, "sid-follow") is not None
 
@@ -2862,7 +2862,7 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
 
     assert "Proposed VoxeraOS Job" not in res.text
     assert "```json" not in res.text
-    assert "send it whenever" in res.text
+    assert "nothing has been submitted yet" in res.text.lower()
     assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
 
 
@@ -2896,7 +2896,7 @@ def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, 
 
     assert "prepared a proposal" not in res.text.lower()
     assert "let me know and i'll submit" not in res.text.lower()
-    assert "send it whenever" in res.text.lower()
+    assert "nothing has been submitted yet" in res.text.lower()
     assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
 
 
@@ -2923,7 +2923,7 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
 
     res = client.post("/chat", data={"session_id": sid, "message": "refine it"})
 
-    assert "still have the current request ready" in res.text
+    assert "current draft is still in the preview" in res.text.lower()
     assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
 
 
@@ -3004,7 +3004,7 @@ def test_open_target_without_tld_is_naturally_inferred_as_web_intent(tmp_path, m
     )
 
     assert "```json" not in res.text
-    assert "send it whenever" in res.text.lower()
+    assert "nothing has been submitted yet" in res.text.lower()
     assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://cnn.com"}
 
 
@@ -3058,7 +3058,7 @@ def test_natural_file_drafting_with_joke_infers_structured_preview(tmp_path, mon
     )
 
     assert "```json" not in res.text
-    assert "send it whenever" in res.text.lower()
+    assert "nothing has been submitted yet" in res.text.lower()
     preview = vera_service.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/txt.txt"
@@ -3199,7 +3199,7 @@ def test_active_preview_natural_content_refinement_updates_write_file_content(
     after = vera_service.read_session_preview(queue, sid)
     assert after is not None
     assert "```json" not in res.text
-    assert "send it whenever" in res.text.lower()
+    assert "nothing has been submitted yet" in res.text.lower()
     assert after["write_file"]["path"] == before["write_file"]["path"]
     assert after["write_file"]["mode"] == before["write_file"]["mode"]
     assert "programmers" in after["write_file"]["content"].lower()
@@ -4401,10 +4401,7 @@ def test_plural_save_reference_fails_closed(tmp_path, monkeypatch):
     preview = vera_service.read_session_preview(queue, sid)
     turns = vera_service.read_session_turns(queue, sid)
     assert preview is None
-    assert (
-        "couldn't resolve a suitable recent assistant-authored summary/answer"
-        in turns[-1]["text"].lower()
-    )
+    assert "couldn’t find a recent response to save" in turns[-1]["text"].lower()
 
 
 def test_recent_assistant_reference_failure_is_clear_when_no_content(tmp_path, monkeypatch):
@@ -4432,10 +4429,7 @@ def test_recent_assistant_reference_failure_is_clear_when_no_content(tmp_path, m
     assert vera_service.read_session_preview(queue, sid) is None
     turns = vera_service.read_session_turns(queue, sid)
     assert turns[-1]["role"] == "assistant"
-    assert (
-        "couldn't resolve a suitable recent assistant-authored summary/answer"
-        in turns[-1]["text"].lower()
-    )
+    assert "couldn’t find a recent response to save" in turns[-1]["text"].lower()
     assert res.status_code == 200
 
 

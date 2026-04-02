@@ -356,6 +356,7 @@ def _conversational_preview_update_message(
     user_message: str,
     rejected: bool = False,
     updated_preview: dict[str, object] | None = None,
+    preview_already_existed: bool = False,
 ) -> str:
     return _cc_conversational_preview_update_message(
         updated=updated,
@@ -366,6 +367,7 @@ def _conversational_preview_update_message(
         ),
         rejected=rejected,
         updated_preview=updated_preview,
+        preview_already_existed=preview_already_existed,
     )
 
 
@@ -983,7 +985,11 @@ async def chat(request: Request):
     # Extract code/text drafts from the reply, then resolve binding into
     # preview payloads.  The derivation is in draft_content_binding.py;
     # final session writes stay here in app.py.
-    _drafts = extract_reply_drafts(reply_answer, message)
+    _drafts = extract_reply_drafts(
+        reply_answer,
+        message,
+        active_preview_is_refinable_prose=active_preview_is_refinable_prose,
+    )
     sanitized_answer = _drafts.sanitized_answer
 
     _binding = resolve_draft_content_binding(

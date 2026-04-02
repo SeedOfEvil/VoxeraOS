@@ -26,6 +26,7 @@ from voxera.vera.evidence_review import (
 )
 from voxera.vera_web import app as vera_app_module
 from voxera.vera_web.chat_early_exit_dispatch import dispatch_early_exit_intent
+from voxera.vera_web.draft_content_binding import extract_reply_drafts
 
 from .vera_session_helpers import make_vera_session
 
@@ -525,3 +526,231 @@ class TestPreviewTruthBinding:
         assert "tectonic plates" in preview_content.lower()
         # The assistant text should contain or reference the same content
         assert "tectonic plates" in assistant_text.lower() or preview_content in assistant_text
+
+
+# ---------------------------------------------------------------------------
+# 7. Live failure regression: drafting + refinement preview-state wording
+# ---------------------------------------------------------------------------
+
+
+class TestDraftingAndRefinementPreviewStateWording:
+    """Regression tests for the exact two-prompt live failure sequence:
+      1. "write me a note about the artifact evidence model"
+      2. "make it shorter and more operator-facing"
+
+    Verifies:
+    - preview is prepared after the first prompt
+    - preview content contains meaningful drafted note content, not placeholder
+    - assistant wording includes prepared-preview / preview-only / not submitted
+    - after refinement, preview content changes to the refined version
+    - assistant wording includes updated-preview / still preview-only / not submitted
+    """
+
+    def test_initial_draft_creates_preview_with_correct_content_and_wording(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "The artifact evidence model in VoxeraOS provides a structured way "
+            "to track what happened during queue job execution. Each job produces "
+            "an evidence bundle containing the terminal outcome, approval status, "
+            "step results, and expected artifacts."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a note about the artifact evidence model")
+        assert res.status_code == 200
+
+        # Preview must exist with real content
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        content = wf["content"]
+        assert content, "write_file.content must be non-empty"
+        assert len(content) > 50, (
+            f"write_file.content must be substantial, got {len(content)} chars"
+        )
+        assert "artifact evidence model" in content.lower()
+        # Must NOT be a stale placeholder
+        assert content.lower() != "update the config file."
+
+        # Assistant wording must include preview-state notice
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        reply_text = last_turn["text"].lower()
+        assert "preview-only" in reply_text, (
+            "Reply must include 'preview-only' notice for writing-draft turns"
+        )
+        assert "nothing has been submitted yet" in reply_text
+
+    def test_refinement_updates_preview_content_and_wording(self, tmp_path, monkeypatch) -> None:
+        """Regression: refinement of a note containing system terms (queue state,
+        approval status, expected artifacts) must not be rejected by the
+        non-authored-message filter.  The refined content must be bound into
+        the authoritative preview, not truncated or stale."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        initial_content = (
+            "The artifact evidence model in VoxeraOS provides a structured way "
+            "to track what happened during queue job execution. Each job produces "
+            "an evidence bundle containing the terminal outcome, approval status, "
+            "step results, and expected artifacts."
+        )
+        # Refined content still mentions system terms — this is the live failure
+        # case where looks_like_non_authored_assistant_message would reject
+        # the content, causing reply_text_draft=None and preview drift.
+        refined_content = (
+            "The artifact evidence model tracks execution outcomes. "
+            "Each job's evidence bundle records terminal outcome, approval status, "
+            "and expected artifacts so operators can verify queue state truth."
+        )
+
+        call_count = 0
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            nonlocal call_count
+            call_count += 1
+            _ = turns
+            if call_count == 1:
+                return {"answer": initial_content, "status": "ok:test"}
+            return {"answer": refined_content, "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        # First turn: create the draft
+        session.chat("write me a note about the artifact evidence model")
+        initial_preview = session.preview()
+        assert initial_preview is not None
+        initial_bound = initial_preview["write_file"]["content"]
+        assert "artifact evidence model" in initial_bound.lower()
+
+        # Second turn: refine the draft
+        res = session.chat("make it shorter and more operator-facing")
+        assert res.status_code == 200
+
+        # Preview must be updated with refined content
+        updated_preview = session.preview()
+        assert updated_preview is not None
+        updated_content = updated_preview["write_file"]["content"]
+        assert updated_content != initial_bound, "Preview content must change after refinement"
+        # Refined content must contain the system terms — not be truncated
+        assert "approval status" in updated_content.lower(), (
+            "Refined content with system terms must not be rejected"
+        )
+        assert "expected artifacts" in updated_content.lower()
+        assert len(updated_content) > 50, (
+            f"Preview content must not be truncated, got {len(updated_content)} chars"
+        )
+
+        # Assistant wording must include updated-preview notice
+        last_turn = session.turns()[-1]
+        assert last_turn["role"] == "assistant"
+        reply_text = last_turn["text"].lower()
+        assert "preview-only" in reply_text or "not submitted" in reply_text, (
+            "Refinement reply must include preview-only or not-submitted notice"
+        )
+
+    def test_draft_preview_content_matches_chat_not_builder_placeholder(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """When the builder produces placeholder content ('Update the config file.')
+        but the LLM produces real authored content, the preview must contain
+        the authored content, not the builder placeholder."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        authored_content = (
+            "The artifact evidence model in VoxeraOS provides a structured way "
+            "to track what happened during queue job execution."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        # Builder returns a shell with placeholder content
+        async def _fake_builder(**kw):
+            return {
+                "goal": "draft a explanation as artifact-evidence-model-explanation.txt",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/artifact-evidence-model-explanation.txt",
+                    "content": "Update the config file.",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        res = session.chat("write me a note about the artifact evidence model")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None
+        content = preview["write_file"]["content"]
+        # Must be the authored content, NOT the builder placeholder
+        assert content != "Update the config file.", (
+            "Preview must contain authored content, not builder placeholder"
+        )
+        assert "artifact evidence" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# 8. Refinement content extraction — non-authored filter bypass
+# ---------------------------------------------------------------------------
+
+
+class TestRefinementContentExtraction:
+    """Regression: refinement turns on active prose previews must not have
+    their reply_text_draft rejected by the non-authored-message filter when
+    the authored content mentions system terms like queue state, approval
+    status, or expected artifacts."""
+
+    def test_refinement_with_system_terms_preserves_reply_text_draft(self) -> None:
+        content = (
+            "The artifact evidence model tracks execution outcomes. "
+            "Each job records terminal outcome, approval status, "
+            "and expected artifacts so operators can verify queue state truth."
+        )
+        # Without active prose preview: content rejected
+        result_no_preview = extract_reply_drafts(
+            content, "make it shorter", active_preview_is_refinable_prose=False
+        )
+        assert result_no_preview.reply_text_draft is None, (
+            "Without active prose preview, system-term content should be rejected"
+        )
+
+        # With active prose preview: content preserved
+        result_with_preview = extract_reply_drafts(
+            content, "make it shorter", active_preview_is_refinable_prose=True
+        )
+        assert result_with_preview.reply_text_draft is not None, (
+            "With active prose preview, system-term content must NOT be rejected"
+        )
+        assert "approval status" in result_with_preview.reply_text_draft.lower()
+        assert "expected artifacts" in result_with_preview.reply_text_draft.lower()
+
+    def test_refinement_without_system_terms_works_either_way(self) -> None:
+        content = (
+            "Volcanoes form when magma from the mantle reaches the surface. "
+            "They are classified as active, dormant, or extinct."
+        )
+        result = extract_reply_drafts(
+            content, "make it shorter", active_preview_is_refinable_prose=True
+        )
+        assert result.reply_text_draft is not None
+
+    def test_non_refinement_message_not_affected(self) -> None:
+        # Regular messages should not bypass the filter even with active preview
+        content = "The approval status shows the queue state for expected artifacts."
+        result = extract_reply_drafts(
+            content, "what is this", active_preview_is_refinable_prose=True
+        )
+        # "what is this" is not a refinement request, so the filter applies
+        assert result.reply_text_draft is None
