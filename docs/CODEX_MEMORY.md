@@ -38,14 +38,20 @@
     the LLM, ensuring answers come from persisted queue evidence.
 - **Writing-draft preview truth guardrail** (`src/voxera/vera_web/draft_content_binding.py`):
   - Added a post-binding safety check in `resolve_draft_content_binding`: when
-    `is_writing_draft_turn` is True and `reply_text_draft` has substantial authored
-    content (8+ words), verify that the final `builder_payload` write_file.content is
-    not a short fragment (less than half the word count of the authored text). If it is,
-    override the builder content with the full `reply_text_draft`.
+    `is_writing_draft_turn` is True and the best available authored content is 8+ words,
+    verify that the final `builder_payload` write_file.content is not a short fragment
+    (less than half the word count of the authored text). If it is, override the builder
+    content with the authored text.
+  - The guardrail selects the best available content source: `reply_text_draft` first,
+    then `sanitized_answer` as a fallback when text extraction missed but the LLM
+    produced good content visible in chat. `sanitized_answer` is now threaded to
+    `resolve_draft_content_binding` via `app.py` for this purpose.
   - Root cause: the builder LLM may produce a fragmentary content snippet (e.g.
-    "hallucination of success,") from the authored text. The writing-draft injection
-    should override it, but pathological LLM response structures can cause the normal
-    extraction/injection path to miss. The guardrail is a defensive last-resort check.
+    "what is happening now." or "hallucination of success,") from the authored text.
+    The writing-draft injection should override it, but pathological LLM response
+    structures can cause `reply_text_draft` to be None while the chat still shows
+    good content via `sanitized_answer`. Without the fallback, the builder fragment
+    survives into the authoritative preview payload.
   - The guardrail only fires for `is_writing_draft_turn=True` turns and only when
     the final content is much shorter than the authored text. It does not fire for
     non-writing-draft turns, code drafts, or when the builder content already matches.

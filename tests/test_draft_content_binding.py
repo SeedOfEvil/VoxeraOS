@@ -601,3 +601,83 @@ class TestWritingDraftPreviewTruthGuardrail:
         assert result.builder_payload is not None
         wf = result.builder_payload["write_file"]
         assert wf["content"] == "short fragment"
+
+    def test_guardrail_uses_sanitized_answer_when_reply_text_draft_is_none(self) -> None:
+        """When reply_text_draft is None (extraction failure) but the LLM
+        produced good content visible in sanitized_answer, the guardrail
+        must use sanitized_answer to override the builder fragment."""
+        good_content = (
+            "Queue truth in VoxeraOS is the principle that the queue is the single "
+            "authoritative source of execution state. Every job progresses through "
+            "well-defined lifecycle states and the queue state is the only surface "
+            "that operators should trust for determining what is happening now."
+        )
+        builder: dict[str, object] = {
+            "goal": "draft a explanation as queue-truth-explanation.txt",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/queue-truth-explanation.txt",
+                "content": "what is happening now.",
+                "mode": "overwrite",
+            },
+        }
+        result = resolve_draft_content_binding(
+            message="write me a short note about queue truth",
+            reply_code_content=None,
+            reply_text_draft=None,
+            sanitized_answer=good_content,
+            reply_status="ok:test",
+            builder_payload=builder,
+            pending_preview=None,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=True,
+            is_explicit_writing_transform=True,
+            informational_web_turn=False,
+            is_enrichment_turn=False,
+            explicit_targeted_content_refinement=False,
+            active_preview_is_refinable_prose=False,
+            conversational_answer_first_turn=False,
+            active_session="test-session",
+        )
+        assert result.preview_needs_write is True
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        content = wf["content"]
+        assert content != "what is happening now.", (
+            "Builder fragment must be overridden by sanitized_answer"
+        )
+        assert "queue truth" in content.lower()
+        assert len(content) > 100
+
+    def test_guardrail_does_not_fire_when_sanitized_answer_also_short(self) -> None:
+        """When both reply_text_draft and sanitized_answer are short,
+        the guardrail must not fire — there's no good content to use."""
+        builder: dict[str, object] = {
+            "goal": "draft a explanation",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/note.txt",
+                "content": "what is happening now.",
+                "mode": "overwrite",
+            },
+        }
+        result = resolve_draft_content_binding(
+            message="write me a short note about queue truth",
+            reply_code_content=None,
+            reply_text_draft=None,
+            sanitized_answer="Done.",
+            reply_status="ok:test",
+            builder_payload=builder,
+            pending_preview=None,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=True,
+            is_explicit_writing_transform=True,
+            informational_web_turn=False,
+            is_enrichment_turn=False,
+            explicit_targeted_content_refinement=False,
+            active_preview_is_refinable_prose=False,
+            conversational_answer_first_turn=False,
+            active_session="test-session",
+        )
+        # Both sources are short — guardrail should not fire
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        assert wf["content"] == "what is happening now."

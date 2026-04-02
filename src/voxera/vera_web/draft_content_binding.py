@@ -211,6 +211,7 @@ def resolve_draft_content_binding(  # noqa: C901
     message: str,
     reply_code_content: str | None,
     reply_text_draft: str | None,
+    sanitized_answer: str = "",
     reply_status: str,
     builder_payload: dict[str, object] | None,
     pending_preview: dict[str, object] | None,
@@ -535,16 +536,26 @@ def resolve_draft_content_binding(  # noqa: C901
             builder_payload = None
 
     # ── Writing-draft preview truth guardrail ──
-    # When the user explicitly asked for a writing draft and the LLM produced
-    # substantial authored text, verify that the final preview write_file.content
-    # is not a short fragment from the builder.  If the builder content is much
-    # shorter than the authored reply_text_draft, override it.  This closes the
-    # gap where a pathological builder response produces a snippet (e.g. a mid-
-    # sentence fragment) that survives into the authoritative preview payload.
+    # When the user explicitly asked for a writing draft, verify that the final
+    # preview write_file.content is not a short fragment from the builder.
+    # This closes the gap where a pathological builder response produces a
+    # snippet (e.g. a mid-sentence fragment) that survives into the
+    # authoritative preview payload.
+    #
+    # The guardrail uses the best available authored content source:
+    # 1. reply_text_draft (extracted prose body) — preferred
+    # 2. sanitized_answer (full LLM reply, stripped of control blocks) —
+    #    fallback when extraction missed but the LLM produced good content
+    _guardrail_content = reply_text_draft
+    if _guardrail_content is None or len(_guardrail_content.split()) < 8:
+        _sa_candidate = sanitized_answer.strip()
+        if _sa_candidate and len(_sa_candidate.split()) >= 8:
+            _guardrail_content = _sa_candidate
+
     if (
         is_writing_draft_turn
-        and reply_text_draft is not None
-        and len(reply_text_draft.split()) >= 8
+        and _guardrail_content is not None
+        and len(_guardrail_content.split()) >= 8
         and isinstance(builder_payload, dict)
     ):
         _final_wf = builder_payload.get("write_file")
@@ -553,12 +564,12 @@ def resolve_draft_content_binding(  # noqa: C901
         )
         if (
             isinstance(_final_wf, dict)
-            and len(_final_content.split()) < len(reply_text_draft.split()) // 2
-            and _final_content != reply_text_draft.strip()
+            and len(_final_content.split()) < len(_guardrail_content.split()) // 2
+            and _final_content != _guardrail_content.strip()
         ):
             builder_payload = {
                 **builder_payload,
-                "write_file": {**_final_wf, "content": reply_text_draft},
+                "write_file": {**_final_wf, "content": _guardrail_content},
             }
             preview_needs_write = True
 

@@ -1168,3 +1168,62 @@ class TestPreviewTruthQueueTruthNote:
         assert "queue truth" in preview_content.lower()
         # The assistant text should contain or reference the same content
         assert "queue truth" in assistant_text.lower() or preview_content in assistant_text
+
+    def test_builder_fragment_overridden_even_when_extraction_fails(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Regression for the exact live failure: builder produces 'what is
+        happening now.' as a fragment, and the LLM reply is structured in a
+        way that extract_text_draft_from_reply returns None.  The guardrail
+        must use the sanitized_answer fallback to override the fragment."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        # Content that the LLM produces as good authored prose.
+        # The extract_text_draft_from_reply might fail on certain LLM reply
+        # structures, but the sanitized_answer should contain this text.
+        authored_content = (
+            "Queue truth in VoxeraOS refers to the principle that the queue is the "
+            "single authoritative source of execution state. Every job progresses "
+            "through well-defined lifecycle states and the queue state is the only "
+            "surface that operators should trust for determining what is happening "
+            "now.\n\n"
+            "This means that approval status, terminal outcome, and artifact "
+            "evidence must all be grounded in persisted queue state, not in "
+            "LLM-generated claims or conversational inference."
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            _ = turns
+            return {"answer": authored_content, "status": "ok:test"}
+
+        # Builder produces a fragmentary snippet
+        async def _fake_builder(**kw):
+            return {
+                "goal": "draft a explanation as queue-truth-explanation.txt",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/queue-truth-explanation.txt",
+                    "content": "what is happening now.",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        res = session.chat("write me a short note about queue truth")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Preview must be created"
+        assert "write_file" in preview
+        wf = preview["write_file"]
+        content = wf["content"]
+
+        # The authoritative preview must NOT be the builder fragment
+        assert content != "what is happening now.", (
+            "Preview must not be builder fragment 'what is happening now.'"
+        )
+        assert len(content) > 50, (
+            f"Preview content must be substantial, got {len(content)} chars: {content!r}"
+        )
+        assert "queue truth" in content.lower() or "queue" in content.lower()

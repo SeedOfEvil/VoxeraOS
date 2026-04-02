@@ -996,6 +996,7 @@ async def chat(request: Request):
         message=message,
         reply_code_content=_drafts.reply_code_content,
         reply_text_draft=_drafts.reply_text_draft,
+        sanitized_answer=sanitized_answer,
         reply_status=reply_status,
         builder_payload=builder_payload,
         pending_preview=pending_preview,
