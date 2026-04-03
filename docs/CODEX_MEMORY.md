@@ -20,7 +20,7 @@
 - **Dispatch sub-intent routing** (`src/voxera/vera_web/chat_early_exit_dispatch.py`):
   - Follow-up dispatch branch (§3) now distinguishes three sub-intents:
     - §3a: Revise/update from evidence → `revised_preview_ready` status, revision-oriented goal.
-    - §3b: Save follow-up ��� `save_followup_preview_ready` status, saveable write_file preview.
+    - §3b: Save follow-up → `save_followup_preview_ready` status, saveable write_file preview.
     - §3c: General follow-up → unchanged `followup_preview_ready` behavior.
   - Fail-closed behavior is shared: all three sub-intents return `followup_missing_evidence`
     when no resolvable completed job exists.
@@ -52,7 +52,7 @@
   - No direct execution shortcuts from chat.
   - No speculative continuation when no completed linked job exists.
 
-## 2026-04-02 — PR #275 �� test(vera): expand evidence-grounded review and follow-up live-path characterization
+## 2026-04-02 — PR #275 — test(vera): expand evidence-grounded review and follow-up live-path characterization
 
 - Summary: Bounded stabilization/characterization PR that adds regression coverage for
   the strongest real user paths across drafting, preview-state UX, linked-job review,
