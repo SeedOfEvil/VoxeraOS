@@ -64,6 +64,7 @@ _WRAPPER_PREFIX_RE = re.compile(
     r"here(?:'s| is)\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation|note|summary)\b|"
     r"here(?:'s| is)\s+(?:a|the)\s+(?:version|rewrite)\b|"
     r"here(?:'s| is)\s+what\s+i\s+(?:came\s+up\s+with|wrote|drafted|put\s+together)\b|"
+    r"here(?:'s| is)\s+(?:a\s+)?(?:short|brief)?\s*(?:markdown\s+)?(?:note|draft|summary|explanation)\b|"
     r"below\s+is\s+(?:the\s+)?(?:draft|essay|article|writeup|explanation)\b|"
     r"(?:essay|article|writeup|draft)\s+(?:overview|summary)\b|"
     r"(?:draft|essay|article|writeup)\s+body\b"
@@ -147,8 +148,14 @@ def extract_text_draft_from_reply(text: str) -> str | None:
         return None
     wrapped_quoted_content = _extract_quoted_authored_content_from_wrapper(normalized)
     if wrapped_quoted_content:
-        return wrapped_quoted_content
-    content = _extract_prose_body(normalized)
+        return _normalize_markdown_spacing(wrapped_quoted_content)
+    # Pre-normalize compact markdown so that headings on single-newline
+    # boundaries are properly separated into distinct blocks for the
+    # prose-body extractor.  Without this, a compact LLM reply where
+    # headings and body text share a single block causes wrapper text
+    # to leak and heading spacing to collapse.
+    pre_normalized = _normalize_markdown_spacing(normalized)
+    content = _extract_prose_body(pre_normalized)
     if not content:
         return None
     if len(content) < 24 and len(content.split()) < 5:
@@ -189,6 +196,32 @@ def _topic_slug(text: str) -> str | None:
     if not tokens:
         return None
     return "-".join(tokens[:8])
+
+
+def _normalize_markdown_spacing(text: str) -> str:
+    """Ensure markdown headings are preceded and followed by blank lines.
+
+    LLM outputs sometimes produce compact markdown where ``## Heading``
+    immediately follows the previous line with only a single newline.
+    This normalizer inserts blank lines around heading boundaries so that
+    downstream block-splitting (which relies on ``\\n{2,}``) correctly
+    separates heading blocks from body text.
+
+    This preserves all content — no text is removed or truncated.
+    """
+    if not text:
+        return text
+    lines = text.split("\n")
+    result: list[str] = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        is_heading = bool(re.match(r"^#{1,6}\s+", stripped))
+        if is_heading and result and result[-1].strip():
+            result.append("")
+        result.append(line)
+        if is_heading and i + 1 < len(lines) and lines[i + 1].strip():
+            result.append("")
+    return "\n".join(result)
 
 
 def _extract_prose_body(content: str) -> str | None:
@@ -300,6 +333,10 @@ def _looks_like_trailing_wrapper_block(block: str) -> bool:
         "i've staged a request",
         "i have staged a request",
         "staged a request in the preview pane",
+        "i've prepared a preview",
+        "i have prepared a preview",
+        "preview-only",
+        "this is preview-only",
         "please review the content",
         "you can review the content",
         "you can see the current draft",
@@ -323,6 +360,8 @@ def _looks_like_trailing_wrapper_block(block: str) -> bool:
         "let me know if you'd like any changes",
         "let me know if you would like any changes",
         "let me know if you want to change",
+        "let me know when you'd like to send",
+        "let me know when you would like to send",
         "would you like me to save",
         "want me to save",
     )
