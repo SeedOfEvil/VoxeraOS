@@ -264,7 +264,8 @@ _CONVERSATIONAL_PLANNING_RE = re.compile(
     r"(?:plan|steps|ideas|suggestions|tips)\s+for\b|"
     r"steps\s+to\b|"
     r"brainstorm|"
-    r"help\s+me\s+(?:organize|plan|prepare|think\s+through|figure\s+out|prioritize)|"
+    r"help\s+me\s+(?:organize|plan|prepare|think\s+through|figure\s+out|prioritize|"
+    r"get\s+\S+.*?\b(?:going|started|set\s+up))|"
     r"give\s+me\s+(?:a\s+)?(?:plan|list|steps|ideas|suggestions|tips)|"
     r"make\s+(?:me\s+)?a\s+(?:plan|list|checklist)|"
     r"create\s+a\s+(?:plan|list|checklist)|"
@@ -273,7 +274,9 @@ _CONVERSATIONAL_PLANNING_RE = re.compile(
     r"organize\s+(?:my|the|a)\b|"
     r"prepare\s+(?:a|my)\s+(?:plan|list)|"
     r"to\s+do(?:\s+for)?\b|"
-    r"prep(?:aration)?\s+(?:list|plan|guide)"
+    r"prep(?:aration)?\s+(?:list|plan|guide)|"
+    r"(?:workout|training|fitness|exercise|study|meal|revision|review)\s+"
+    r"(?:plan|routine|program|course|schedule|regimen)"
     r")\b",
     re.IGNORECASE,
 )
