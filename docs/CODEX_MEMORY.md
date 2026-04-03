@@ -41,6 +41,15 @@
   rename→handoff, handoff→completion→review, review→resolution, fail-closed after clear,
   failed-followup draft reference fail-closed.
   9 new tests in `test_chat_early_exit_dispatch.py` for stale draft reference fail-closed.
+- **Non-authored content filtering** (`src/voxera/vera/saveable_artifacts.py`):
+  - `looks_like_non_authored_assistant_message` expanded with patterns for surfaced runtime
+    output: file stat lines (`type=file size=...`), file existence checks, directory listings,
+    evidence review messages, auto-surface completion messages, diagnostics snapshots, and
+    stale-draft refusals. Prevents surfaced runtime/result content from being stored as a
+    saveable assistant artifact and later reified as a preview by "save that" requests.
+  - Root cause: `build_saveable_assistant_artifact` treated file stat output and evidence
+    review text as authored content because no filter pattern matched them. The "save that"
+    code path then picked up this stale artifact and created a phantom preview.
 - **Trust boundaries preserved**: all canonical truth precedence unchanged. Lifecycle helpers
   update continuity refs only; preview/queue/artifact truth remain authoritative.
 - **Docs updated**: ARCHITECTURE.md (lifecycle update points section), QUEUE_OBJECT_MODEL.md,

@@ -226,3 +226,37 @@ def test_failed_followup_draft_reference_fails_closed(tmp_path, monkeypatch):
     result = resolve_session_reference("save that draft", ctx)
     assert isinstance(result, UnresolvedReference)
     assert result.reason == "no_active_draft_or_preview"
+
+
+def test_surfaced_runtime_output_not_saveable_as_draft(tmp_path, monkeypatch):
+    """Surfaced runtime/result content must not become a saveable artifact.
+
+    Exact repro: after handoff + completion, Vera surfaces runtime output
+    like a file stat line. 'save that draft' must not convert this into
+    a preview/note file.
+    """
+    from voxera.vera.saveable_artifacts import build_saveable_assistant_artifact
+
+    # These are surfaced runtime outputs, not authored content
+    runtime_outputs = [
+        "/home/user/VoxeraOS/notes/report.md: type=file size=632B modified=2026-03-28",
+        "/home/user/notes/plan.md exists (file).",
+        "/home/user/notes/missing.md does not exist.",
+        "I reviewed canonical VoxeraOS evidence for `inbox-abc.json`.\n"
+        "- State: `succeeded`\n- Lifecycle state: `done`",
+        "Your linked file organize job completed successfully. "
+        "I have the canonical result available for follow-up.",
+        "Your linked goal job completed successfully. Diagnostics snapshot: CPU 45%, mem 2.1GB.",
+        "There is no active draft or preview in this session.",
+    ]
+    for text in runtime_outputs:
+        artifact = build_saveable_assistant_artifact(text)
+        assert artifact is None, f"Runtime output should not become a saveable artifact: {text!r}"
+
+    # Real authored content should still be saveable
+    authored = (
+        "Here is a comprehensive analysis of the quarterly results. "
+        "The key findings include increased revenue and improved margins."
+    )
+    artifact = build_saveable_assistant_artifact(authored)
+    assert artifact is not None, "Real authored content should be saveable"

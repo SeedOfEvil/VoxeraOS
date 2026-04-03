@@ -1595,6 +1595,7 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - Successful job reviews set `last_reviewed_job_ref` in session context. File-save submissions set `last_saved_file_ref`.
 - Follow-up, revision, and save-follow-up early exits now also set `last_reviewed_job_ref` via `context_updates`, ensuring the evidence source job stays fresh for later reference resolution.
 - **Stale draft fail-closed:** When the user's message contains an explicit draft reference phrase ("save that draft", "the draft") but session context has no active draft or preview, the early-exit dispatch blocks the message with a clear refusal rather than letting the builder silently create a preview from recent assistant content. This prevents phantom drafts after handoff + failed continuation jobs.
+- **Non-authored content filtering:** Surfaced runtime/result content (file stat lines, file existence checks, directory listings, evidence review messages, auto-surface completion messages, diagnostics snapshots) is filtered from saveable assistant artifacts by `looks_like_non_authored_assistant_message` in `vera/saveable_artifacts.py`. This prevents "save that" from reifying runtime output as an authored note/preview.
 
 ### Hard conversational mode lock — zero preview/JSON/meta leakage guarantee
 
