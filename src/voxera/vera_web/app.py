@@ -55,6 +55,7 @@ from ..vera.service import (
     _is_informational_web_query,
     _weather_context_has_pending_lookup,
     append_session_turn,
+    clear_session_context,
     clear_session_turns,
     generate_preview_builder_update,
     generate_vera_reply,
@@ -75,6 +76,7 @@ from ..vera.service import (
     register_session_linked_job,
     run_web_enrichment,
     session_debug_info,
+    update_session_context,
     write_session_conversational_planning_active,
     write_session_derived_investigation_output,
     write_session_enrichment,
@@ -187,7 +189,7 @@ def _submit_handoff(
     session_id: str,
     preview: dict[str, object] | None,
 ) -> tuple[str, str]:
-    return submit_active_preview_for_session(
+    assistant_text, status = submit_active_preview_for_session(
         queue_root=root,
         session_id=session_id,
         preview=preview,
@@ -196,6 +198,17 @@ def _submit_handoff(
         ),
         submit_preview_hook=submit_preview,
     )
+    if status == "submitted":
+        handoff = read_session_handoff_state(root, session_id) or {}
+        job_id = str(handoff.get("job_id") or "").strip() or None
+        _ctx_updates: dict[str, object] = {
+            "active_preview_ref": None,
+            "active_draft_ref": None,
+        }
+        if job_id:
+            _ctx_updates["last_submitted_job_ref"] = job_id
+        update_session_context(root, session_id, **_ctx_updates)
+    return assistant_text, status
 
 
 def _looks_like_submission_claim(text: str) -> bool:
@@ -628,6 +641,11 @@ async def chat(request: Request):
         if suppress_auto_completion_note
         else maybe_auto_surface_linked_completion(root, active_session)
     )
+    if auto_completion_note is not None:
+        _handoff_for_completion = read_session_handoff_state(root, active_session) or {}
+        _completed_job = str(_handoff_for_completion.get("job_id") or "").strip() or None
+        if _completed_job:
+            update_session_context(root, active_session, last_completed_job_ref=_completed_job)
 
     append_session_turn(
         root,
@@ -683,6 +701,16 @@ async def chat(request: Request):
     if _early.matched:
         if _early.write_preview:
             write_session_preview(root, active_session, _early.preview_payload)
+            _early_wf = (_early.preview_payload or {}).get("write_file")
+            _early_path = (
+                str(_early_wf.get("path") or "").strip() if isinstance(_early_wf, dict) else None
+            )
+            update_session_context(
+                root,
+                active_session,
+                active_draft_ref=_early_path or "preview",
+                active_preview_ref="preview",
+            )
         if _early.write_handoff_ready:
             write_session_handoff_state(
                 root,
@@ -952,6 +980,14 @@ async def chat(request: Request):
                 error=None,
                 job_id=None,
             )
+            _bp_wf = builder_payload.get("write_file")
+            _bp_path = str(_bp_wf.get("path") or "").strip() if isinstance(_bp_wf, dict) else None
+            update_session_context(
+                root,
+                active_session,
+                active_draft_ref=_bp_path or "preview",
+                active_preview_ref="preview",
+            )
 
     reply = await _generate_vera_reply_with_optional_draft_hints(
         turns=turns,
@@ -1026,6 +1062,15 @@ async def chat(request: Request):
             error=None,
             job_id=None,
         )
+        if isinstance(builder_payload, dict):
+            _bd_wf = builder_payload.get("write_file")
+            _bd_path = str(_bd_wf.get("path") or "").strip() if isinstance(_bd_wf, dict) else None
+            update_session_context(
+                root,
+                active_session,
+                active_draft_ref=_bd_path or "preview",
+                active_preview_ref="preview",
+            )
 
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative
@@ -1184,7 +1229,9 @@ async def clear_chat(request: Request):
     active_session = session_id or (request.cookies.get("vera_session_id") or "").strip()
     active_session = active_session or new_session_id()
 
-    clear_session_turns(_active_queue_root(), active_session)
+    _clear_root = _active_queue_root()
+    clear_session_turns(_clear_root, active_session)
+    clear_session_context(_clear_root, active_session)
     return _render_page(
         session_id=active_session,
         turns=[],

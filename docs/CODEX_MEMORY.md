@@ -1,3 +1,38 @@
+## 2026-04-03 — PR #TBD — feat(vera): add shared session context model for workflow continuity
+
+- Summary: Foundation PR that introduces the canonical shared session context model for Vera.
+  Session continuity becomes an explicit product capability rather than a fragile side effect
+  of ad hoc session state.
+- **New model** (`src/voxera/vera/session_store.py`):
+  - Bounded `shared_context` dict with explicit vocabulary: `active_draft_ref`,
+    `active_preview_ref`, `last_submitted_job_ref`, `last_completed_job_ref`,
+    `last_reviewed_job_ref`, `last_saved_file_ref`, `active_topic`, `ambiguity_flags`.
+  - Normalized on every read/write: unknown keys dropped, missing keys filled from defaults.
+  - `ambiguity_flags` bounded to 8 entries.
+  - Preserved across turn appends like other session fields.
+- **API surface**: `read_session_context`, `write_session_context`, `update_session_context`,
+  `clear_session_context`. Update merges (not replaces) and normalizes.
+- **Lifecycle integration** (`src/voxera/vera_web/app.py`):
+  - Preview creation/update → sets `active_draft_ref` + `active_preview_ref`.
+  - Submit/handoff → clears preview refs, records `last_submitted_job_ref`.
+  - Completion ingestion → records `last_completed_job_ref`.
+  - Session clear → resets shared context to empty.
+- **Trust boundaries preserved**:
+  - Context is a continuity aid, NOT a trust-surface replacement.
+  - Preview truth, queue truth, artifact/evidence truth remain authoritative in their layers.
+  - If context conflicts with canonical truth, canonical truth wins.
+  - If continuity is ambiguous, fail closed.
+- **Tests**: 43 new tests covering schema coherence, normalization, persistence, turn
+  preservation, truth-precedence enforcement, conservative behavior on corrupt/missing data,
+  and lifecycle update semantics.
+- **Docs updated**: ARCHITECTURE.md (shared session context section), QUEUE_OBJECT_MODEL.md
+  (additive session context note), CODEX_MEMORY.md, prompt docs (system-overview,
+  platform-boundaries, vera role, queue-object-model capability).
+- **Non-goals preserved**: No reference-resolution behavior, no cross-session memory, no
+  preview/queue/artifact truth changes, no panel UX changes.
+- **Follow-up**: Future PRs can build reference resolution ("that file", "that draft",
+  "that result") and richer continuity behavior on top of this foundation.
+
 ## 2026-04-03 — PR #TBD — fix(vera): prevent internal payload leakage on authored planning requests
 
 - Summary: Bounded bug-fix PR that prevents internal draft-compiler / structured payload

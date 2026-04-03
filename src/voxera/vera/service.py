@@ -90,6 +90,10 @@ write_session_conversational_planning_active = (
     vera_session_store.write_session_conversational_planning_active
 )
 read_session_last_user_input_origin = vera_session_store.read_session_last_user_input_origin
+read_session_context = vera_session_store.read_session_context
+write_session_context = vera_session_store.write_session_context
+update_session_context = vera_session_store.update_session_context
+clear_session_context = vera_session_store.clear_session_context
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:

@@ -134,6 +134,7 @@ def append_session_turn(
         "linked_queue_jobs",
         "conversational_planning_active",
         "last_user_input_origin",
+        _SHARED_CONTEXT_FIELD,
     ):
         preserved = previous.get(preserved_key)
         if (
@@ -384,6 +385,9 @@ def session_debug_info(
         "linked_jobs": len(registry.get("tracked", [])),
         "linked_completions": len(registry.get("completions", [])),
         "last_user_input_origin": last_input_origin,
+        "shared_context_available": isinstance(
+            _read_session_payload(queue_root, session_id).get(_SHARED_CONTEXT_FIELD), dict
+        ),
     }
 
 
@@ -467,3 +471,122 @@ def write_session_conversational_planning_active(
     else:
         payload.pop("conversational_planning_active", None)
     _write_session_payload(queue_root, session_id, payload)
+
+
+# ---------------------------------------------------------------------------
+# Shared session context — bounded workflow-continuity surface
+# ---------------------------------------------------------------------------
+#
+# The shared session context tracks "what Vera currently believes is in play"
+# inside a session.  It is a **continuity aid**, NOT a trust-surface replacement.
+#
+# Precedence rules (enforced by consumers, documented here for clarity):
+#   1. Preview truth (pending_job_preview) is authoritative for pre-submit state.
+#   2. Queue truth (queue bucket + sidecar) is authoritative for submitted work.
+#   3. Artifact/evidence truth is authoritative for completed outcomes.
+#   4. Shared session context helps Vera remember workflow state across turns
+#      but MUST NEVER override (1), (2), or (3).
+#   5. If context conflicts with canonical truth, canonical truth wins.
+#   6. If continuity is ambiguous, fail closed (do not guess).
+
+_SHARED_CONTEXT_FIELD = "shared_context"
+_MAX_AMBIGUITY_FLAGS = 8
+
+
+def _empty_shared_context() -> dict[str, Any]:
+    """Return the canonical empty shared session context."""
+    return {
+        "active_draft_ref": None,
+        "active_preview_ref": None,
+        "last_submitted_job_ref": None,
+        "last_completed_job_ref": None,
+        "last_reviewed_job_ref": None,
+        "last_saved_file_ref": None,
+        "active_topic": None,
+        "ambiguity_flags": [],
+        "updated_at_ms": 0,
+    }
+
+
+_SHARED_CONTEXT_KEYS = frozenset(_empty_shared_context().keys())
+
+
+def _normalize_shared_context(raw: Any) -> dict[str, Any]:
+    """Validate and normalize a raw shared context dict.
+
+    Unknown keys are dropped.  Missing keys are filled from defaults.
+    Non-string scalar values for ref fields are coerced or cleared.
+    """
+    if not isinstance(raw, dict):
+        return _empty_shared_context()
+    ctx = _empty_shared_context()
+    _ref_keys = (
+        "active_draft_ref",
+        "active_preview_ref",
+        "last_submitted_job_ref",
+        "last_completed_job_ref",
+        "last_reviewed_job_ref",
+        "last_saved_file_ref",
+        "active_topic",
+    )
+    for key in _ref_keys:
+        val = raw.get(key)
+        if isinstance(val, str) and val.strip():
+            ctx[key] = val.strip()
+        else:
+            ctx[key] = None
+    raw_flags = raw.get("ambiguity_flags")
+    if isinstance(raw_flags, list):
+        ctx["ambiguity_flags"] = [
+            str(f).strip() for f in raw_flags[:_MAX_AMBIGUITY_FLAGS] if str(f).strip()
+        ]
+    else:
+        ctx["ambiguity_flags"] = []
+    raw_ts = raw.get("updated_at_ms")
+    if isinstance(raw_ts, int) and raw_ts > 0:
+        ctx["updated_at_ms"] = raw_ts
+    else:
+        ctx["updated_at_ms"] = 0
+    return ctx
+
+
+def read_session_context(queue_root: Path, session_id: str) -> dict[str, Any]:
+    """Read the shared session context, returning a normalized copy."""
+    payload = _read_session_payload(queue_root, session_id)
+    raw = payload.get(_SHARED_CONTEXT_FIELD)
+    return _normalize_shared_context(raw)
+
+
+def write_session_context(queue_root: Path, session_id: str, context: dict[str, Any]) -> None:
+    """Persist a full shared session context (normalized before write)."""
+    normalized = _normalize_shared_context(context)
+    normalized["updated_at_ms"] = int(time.time() * 1000)
+    _write_session_field(queue_root, session_id, field_name=_SHARED_CONTEXT_FIELD, value=normalized)
+
+
+def update_session_context(
+    queue_root: Path,
+    session_id: str,
+    **updates: Any,
+) -> dict[str, Any]:
+    """Merge *updates* into the existing shared session context and persist.
+
+    Only keys present in the canonical schema are accepted; unknown keys are
+    silently ignored.  Returns the resulting normalized context.
+    """
+    ctx = read_session_context(queue_root, session_id)
+    for key, value in updates.items():
+        if key not in _SHARED_CONTEXT_KEYS:
+            continue
+        if key == "updated_at_ms":
+            continue  # managed internally
+        ctx[key] = value
+    normalized = _normalize_shared_context(ctx)
+    normalized["updated_at_ms"] = int(time.time() * 1000)
+    _write_session_field(queue_root, session_id, field_name=_SHARED_CONTEXT_FIELD, value=normalized)
+    return normalized
+
+
+def clear_session_context(queue_root: Path, session_id: str) -> None:
+    """Reset the shared session context to the empty default."""
+    _write_session_field(queue_root, session_id, field_name=_SHARED_CONTEXT_FIELD, value=None)

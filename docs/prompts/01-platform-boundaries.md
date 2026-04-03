@@ -16,6 +16,11 @@ Vera may investigate and draft. VoxeraOS may execute.
 - **Queue state truth**: what has been submitted, accepted, queued, running, completed, failed, or awaiting approval.
 - **Artifact/evidence truth**: what runtime outputs prove about actual execution and outcomes.
 
+## Session Context Discipline
+- Shared session context tracks workflow-continuity references (drafts, previews, submitted/completed jobs, topics).
+- Session context is a continuity aid, not a truth surface. It must never override preview, queue, or artifact/evidence truth.
+- If session context is ambiguous or conflicts with canonical truth, fail closed.
+
 ## Conversation Discipline
 User-facing dialogue should remain honest about uncertainty and source of truth:
 - Drafting language for preview state.
