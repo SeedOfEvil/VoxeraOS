@@ -715,7 +715,7 @@ async def chat(request: Request):
             writing_draft=False,
             weather_context=session_weather_context,
         )
-        reply_answer = str(reply.get("answer") or "")
+        reply_answer = strip_internal_compiler_leakage(str(reply.get("answer") or ""))
         weather_payload = reply.get("weather_context") if isinstance(reply, dict) else None
         if isinstance(weather_payload, dict):
             write_session_weather_context(root, active_session, weather_payload)
