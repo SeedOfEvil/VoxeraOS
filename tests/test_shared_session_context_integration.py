@@ -188,3 +188,41 @@ def test_session_clear_then_fail_closed(tmp_path, monkeypatch):
     ctx = session.session_context()
     result = resolve_session_reference("what happened to the job", ctx)
     assert isinstance(result, UnresolvedReference)
+
+
+def test_failed_followup_draft_reference_fails_closed(tmp_path, monkeypatch):
+    """After follow-up handoff + failed job, 'save that draft' fails closed.
+
+    Exact repro: draft → handoff → complete → follow-up → handoff → fail
+    → 'save that draft' must not silently create a preview.
+    """
+    from voxera.vera.context_lifecycle import context_on_followup_preview_prepared
+    from voxera.vera.reference_resolver import UnresolvedReference, resolve_session_reference
+
+    session = make_vera_session(monkeypatch, tmp_path)
+    q, sid = session.queue, session.session_id
+
+    # Draft created and refined
+    context_on_preview_created(q, sid, draft_ref="notes/report.md")
+    context_on_preview_created(q, sid, draft_ref="notes/final-report.md")
+
+    # Handoff
+    context_on_handoff_submitted(q, sid, job_id="inbox-orig.json")
+
+    # Job completes
+    context_on_completion_ingested(q, sid, job_id="inbox-orig.json")
+
+    # Follow-up prepared
+    context_on_followup_preview_prepared(q, sid, source_job_id="inbox-orig.json")
+
+    # Follow-up handoff
+    context_on_handoff_submitted(q, sid, job_id="inbox-followup.json")
+
+    # Follow-up job fails (completion ingested)
+    context_on_completion_ingested(q, sid, job_id="inbox-followup.json")
+
+    # "save that draft" should fail closed — no active draft/preview
+    ctx = session.session_context()
+    result = resolve_session_reference("save that draft", ctx)
+    assert isinstance(result, UnresolvedReference)
+    assert result.reason == "no_active_draft_or_preview"

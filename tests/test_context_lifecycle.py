@@ -356,3 +356,43 @@ class TestFullLifecycleSequence:
         assert ctx["active_draft_ref"] is None
         assert ctx["last_submitted_job_ref"] is None
         assert ctx["last_completed_job_ref"] is None
+
+    def test_failed_followup_leaves_no_stale_draft(self, tmp_path: Path):
+        """Exact repro: draft → handoff → complete → follow-up → handoff → fail.
+
+        After the follow-up job fails, there must be no active draft/preview
+        refs in context, so 'save that draft' would fail closed.
+        """
+        queue, sid = _make_session(tmp_path)
+
+        # 1. Draft created and refined
+        context_on_preview_created(queue, sid, draft_ref="notes/report.md")
+        context_on_preview_created(queue, sid, draft_ref="notes/final-report.md")
+
+        # 2. First handoff
+        context_on_handoff_submitted(queue, sid, job_id="inbox-orig.json")
+        ctx = read_session_context(queue, sid)
+        assert ctx["active_draft_ref"] is None
+        assert ctx["active_preview_ref"] is None
+
+        # 3. First job completes successfully
+        context_on_completion_ingested(queue, sid, job_id="inbox-orig.json")
+
+        # 4. Follow-up prepared
+        context_on_followup_preview_prepared(queue, sid, source_job_id="inbox-orig.json")
+        ctx = read_session_context(queue, sid)
+        assert ctx["active_preview_ref"] == "preview"
+
+        # 5. Follow-up handoff
+        context_on_handoff_submitted(queue, sid, job_id="inbox-followup.json")
+        ctx = read_session_context(queue, sid)
+        assert ctx["active_draft_ref"] is None
+        assert ctx["active_preview_ref"] is None
+
+        # 6. Follow-up job fails (completion ingested regardless)
+        context_on_completion_ingested(queue, sid, job_id="inbox-followup.json")
+        ctx = read_session_context(queue, sid)
+        # Critical: no stale draft/preview refs after failed continuation
+        assert ctx["active_draft_ref"] is None
+        assert ctx["active_preview_ref"] is None
+        assert ctx["last_completed_job_ref"] == "inbox-followup.json"

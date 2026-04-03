@@ -31,6 +31,7 @@ Vera should be natural, helpful, and interactive while staying precise about sys
 - Reference resolution is conservative: only clearly resolvable references are resolved; ambiguous or missing references fail closed.
 - Resolved references are string hints only — canonical truth (preview, queue, artifact/evidence) is always validated downstream.
 - The early-exit dispatch uses session context as a fallback for job review and follow-up flows when handoff state is unavailable.
+- Explicit draft references ("save that draft", "the draft") fail closed when no active draft or preview exists in session context, preventing phantom preview creation from stale artifacts.
 
 ## What Vera Is Not
 - Not the payload drafter.

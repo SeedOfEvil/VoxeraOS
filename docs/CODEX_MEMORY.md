@@ -26,11 +26,21 @@
   - Follow-up (3c), revised-from-evidence (3a), and save-follow-up (3b) early exits now
     include `context_updates={"last_reviewed_job_ref": evidence.job_id}` so the evidence
     source job stays fresh for later reference resolution.
+- **Stale draft fail-closed** (`src/voxera/vera_web/chat_early_exit_dispatch.py`):
+  - New check (10): when message contains explicit draft reference phrase ("save that draft",
+    "the draft") but session context has no active draft/preview, fail closed instead of
+    letting the builder silently create a preview from recent assistant content.
+  - Root cause: after follow-up handoff + failed continuation job, draft refs are correctly
+    cleared, but the "save that" phrase was matching `message_requests_referenced_content`
+    and falling through to the builder, which created a phantom preview from stale artifacts.
 - **Tests**: 30+ new tests in `test_context_lifecycle.py` covering all lifecycle helpers,
   full sequences, rename/handoff, completion/review chains, follow-up preparation, stale
-  preview cleanup, session clear, fail-closed behavior, and repeated flows.
+  preview cleanup, session clear, fail-closed behavior, failed-followup stale-draft regression,
+  and repeated flows.
   Extended `test_shared_session_context_integration.py` with lifecycle-through-web tests:
-  rename→handoff, handoff→completion→review, review→resolution, fail-closed after clear.
+  rename→handoff, handoff→completion→review, review→resolution, fail-closed after clear,
+  failed-followup draft reference fail-closed.
+  9 new tests in `test_chat_early_exit_dispatch.py` for stale draft reference fail-closed.
 - **Trust boundaries preserved**: all canonical truth precedence unchanged. Lifecycle helpers
   update continuity refs only; preview/queue/artifact truth remain authoritative.
 - **Docs updated**: ARCHITECTURE.md (lifecycle update points section), QUEUE_OBJECT_MODEL.md,
