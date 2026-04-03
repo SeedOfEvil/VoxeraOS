@@ -50,6 +50,13 @@
   - Root cause: `build_saveable_assistant_artifact` treated file stat output and evidence
     review text as authored content because no filter pattern matched them. The "save that"
     code path then picked up this stale artifact and created a phantom preview.
+- **Rename-mutation fallback fix** (`src/voxera/vera_web/app.py`):
+  - Moved the rename-mutation fallback out of the `if builder_preview is not None:` block so
+    it fires regardless of whether the builder LLM returned a result. Previously the fallback
+    only ran when the builder returned a non-None result that was then normalized to None or
+    detected as a no-op. When the builder returned None outright (common for rename requests),
+    the deterministic rename path was unreachable, causing "I couldn't safely apply that naming
+    update" for legitimate rename/save-as on active authored previews.
 - **Trust boundaries preserved**: all canonical truth precedence unchanged. Lifecycle helpers
   update continuity refs only; preview/queue/artifact truth remain authoritative.
 - **Docs updated**: ARCHITECTURE.md (lifecycle update points section), QUEUE_OBJECT_MODEL.md,

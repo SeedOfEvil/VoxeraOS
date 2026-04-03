@@ -260,3 +260,51 @@ def test_surfaced_runtime_output_not_saveable_as_draft(tmp_path, monkeypatch):
     )
     artifact = build_saveable_assistant_artifact(authored)
     assert artifact is not None, "Real authored content should be saveable"
+
+
+def test_active_authored_preview_rename_save_as_works(tmp_path, monkeypatch):
+    """An active authored preview must support rename/save-as.
+
+    Exact repro: create authored draft → refine → 'save it as newname.md'
+    Expected: destination path updates, content preserved.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _fake_reply(*, turns, user_message, **kw):
+        if "queue truth" in user_message.lower():
+            return {
+                "answer": "Queue truth is the canonical execution boundary.",
+                "status": "ok:test",
+            }
+        if "shorter" in user_message.lower():
+            return {
+                "answer": "Queue truth: canonical boundary.",
+                "status": "ok:test",
+            }
+        return {"answer": "Done.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+    # Step 1: Create authored draft
+    session.chat("write me a short note about queue truth")
+    preview1 = session.preview()
+    assert preview1 is not None, "Draft should be created"
+    wf1 = preview1.get("write_file", {})
+    assert wf1.get("content"), "Draft should have content"
+
+    # Step 2: Refine
+    session.chat("make it shorter")
+
+    # Step 3: Rename / save-as
+    session.chat("save it as queue-truth-operator-brief.md")
+    preview3 = session.preview()
+    assert preview3 is not None, "Preview should still exist after rename"
+    wf3 = preview3.get("write_file", {})
+    assert wf3.get("path", "").endswith("queue-truth-operator-brief.md"), (
+        f"Path should be renamed, got: {wf3.get('path')}"
+    )
+    assert wf3.get("content"), "Content should be preserved after rename"
+
+    # Verify context tracks the renamed draft
+    ctx = session.session_context()
+    assert ctx["active_preview_ref"] == "preview"
