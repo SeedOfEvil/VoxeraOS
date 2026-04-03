@@ -17,18 +17,22 @@ def test_preview_creation_updates_context(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
     async def _fake_reply(*, turns, user_message):
-        return {"answer": "Here is your note.", "status": "ok:test"}
+        if user_message == "What is 2 + 2?":
+            return {"answer": "2 + 2 is 4.", "status": "ok:test"}
+        return {"answer": "ok", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
+    # First turn creates a meaningful assistant artifact
+    session.chat("What is 2 + 2?")
+    # Second turn triggers save-from-artifact → creates preview
     session.chat("save that to a note")
 
-    # If a preview was created, context should track it
     preview = session.preview()
+    assert preview is not None, "save-that should have created a preview"
     ctx = session.session_context()
-    if preview is not None:
-        assert ctx["active_preview_ref"] == "preview"
-        assert ctx["active_draft_ref"] is not None
+    assert ctx["active_preview_ref"] == "preview"
+    assert ctx["active_draft_ref"] is not None
 
 
 def test_session_clear_resets_context(tmp_path, monkeypatch):

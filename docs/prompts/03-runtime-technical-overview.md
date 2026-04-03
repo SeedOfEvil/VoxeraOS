@@ -52,6 +52,9 @@ Vera is no longer one large handoff file. Current boundaries:
 - `vera/saveable_artifacts.py` — recent meaningful assistant-content save targeting
 - `vera/handoff.py` — compatibility façade across the extracted seams
 
+### Session context and continuity
+`vera/session_store.py` persists a bounded `shared_context` dict alongside turns, preview, handoff, and other session fields. It tracks workflow-continuity references (active draft, active preview, last submitted/completed/reviewed job, active topic, ambiguity flags). Context is updated at preview creation, submit/handoff, completion ingestion, and session clear. It is subordinate to preview, queue, and artifact/evidence truth — if context conflicts with canonical truth, canonical truth wins.
+
 ## 5) Brain Layer (Reasoning Providers)
 Brain adapters provide model generation but are not execution truth:
 - base protocol (`generate`, `capability_test`)
