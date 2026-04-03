@@ -32,7 +32,7 @@ Key areas:
 
 ---
 
-## v0.1.9-Alpha — Governed Capability Expansion (theme largely shipped on current branch)
+## v0.1.9-Alpha — Governed Capability Expansion (release tag; shipped)
 
 **Theme:** Broaden what VoxeraOS can do safely and usefully while preserving trust boundaries.
 

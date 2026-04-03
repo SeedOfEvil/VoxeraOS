@@ -1,4 +1,4 @@
-# Queue Constitution (VoxeraOS 0.1.8 alpha)
+# Queue Constitution (VoxeraOS 0.1.9 alpha)
 
 This document freezes queue contracts for submitted jobs. It is the canonical reference for queue payload shape, lifecycle semantics, artifact guarantees, and result interpretation.
 

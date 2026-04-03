@@ -1,6 +1,6 @@
 # Architecture
 
-VoxeraOS is an open-source alpha (v0.1.8) intent-driven AI control plane that sits *above* a real Linux substrate. It routes user goals through a planning → policy → execution → audit pipeline.
+VoxeraOS is an open-source alpha (v0.1.9) intent-driven AI control plane that sits *above* a real Linux substrate. It routes user goals through a planning → policy → execution → audit pipeline.
 
 **Vera** is the conversational intelligence layer — she understands intent, drafts work, and guides operators. **VoxeraOS** is the trust layer — every real-world side effect is capability-gated, policy-evaluated, and evidence-tracked.
 
@@ -212,7 +212,7 @@ VoxeraOS/
 
 ## Refactor Ownership Boundaries
 
-The current codebase is intentionally more decomposed than earlier `v0.1.8` snapshots. These are the ownership boundaries to preserve when making changes.
+The current codebase is intentionally more decomposed than earlier `v0.1.8`/`v0.1.9` snapshots. These are the ownership boundaries to preserve when making changes.
 
 ### Vera control layer
 

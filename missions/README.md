@@ -93,7 +93,7 @@ The panel (`voxera panel --host 127.0.0.1 --port 8844`) provides (note: `make pa
 - Child job visibility under parent job detail (PR #149).
 - Lineage metadata display when present (PR #148).
 
-## Current status (v0.1.8 branch truth-sync)
+## Current status (v0.1.9 branch truth-sync)
 
 - Mission execution, approval flows, and audit trail: implemented and operator-visible.
 - Intent routing guardrail (PRs #144–#145): deterministic classifier runs before planning; fail-closed on skill family mismatch.

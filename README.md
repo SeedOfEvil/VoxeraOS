@@ -2,7 +2,7 @@
 
 **A queue-driven AI control plane for Linux — where Vera thinks freely and VoxeraOS holds the line.**
 
-[![Alpha](https://img.shields.io/badge/status-alpha%20v0.1.8-orange)]()
+[![Alpha](https://img.shields.io/badge/status-alpha%20v0.1.9-orange)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
@@ -22,7 +22,7 @@ The core idea: let AI stay free in reasoning space, keep execution controlled in
 
 ## Project status
 
-VoxeraOS is an **open-source alpha (v0.1.8)** — a working demo product, not production software.
+VoxeraOS is an **open-source alpha (v0.1.9)** — a working demo product, not production software.
 
 This is a **one-person evenings-and-weekends project**. The architecture is real, the end-to-end flows work, and the framework is honest about its boundaries. But many things will change, some current decisions are transitional, and some implementations still feel rough around the edges.
 
@@ -254,8 +254,7 @@ When extending one of these areas, prefer adding code to the dedicated ownership
 
 VoxeraOS is organized around three near-term milestone themes:
 
-- **v0.1.8 (current release tag)** — Vera Control Layer foundations are shipped on this branch
-- **v0.1.9 theme (largely landed on current branch)** — governed capability expansion is already present (system inspection/diagnostics, read-only investigation lanes, richer file helpers, capability semantics contracts)
+- **v0.1.9 (current release tag)** — Governed Capability Expansion: Vera chat orchestration decomposition, evidence-grounded review workflows, preview UX reliability, plus system inspection/diagnostics, read-only investigation lanes, richer file helpers, capability semantics contracts
 - **v0.2.0 (next milestone framing)** — platform polish and integration depth (session/planning maturity, operator-console refinement, and continued voice-foundation-to-UX progression)
 
 The long-term North Star is a **voice-first AI operating system** — an AI you can talk to that feels alive but behaves like infrastructure. Vera is the intelligence; VoxeraOS is the trust layer. See [docs/NORTH_STAR.md](docs/NORTH_STAR.md) for the full vision.

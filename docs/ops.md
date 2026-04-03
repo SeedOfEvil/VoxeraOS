@@ -1,4 +1,4 @@
-# Operations (Alpha v0.1.8)
+# Operations (Alpha v0.1.9)
 
 This guide covers day-2 operations for VoxeraOS in service mode.
 
@@ -203,7 +203,7 @@ Provider auth choices are intentionally non-destructive:
 - Skip for now (continue with offline demo flows)
 - Enter new/replace key (explicit only)
 
-For cloud setup in v0.1.8, `voxera setup` walks the brain chain one slot at a time (`primary`, `fast`, `reasoning`, `fallback`) with explicit provider/model confirmation for each slot.
+For cloud setup in v0.1.9, `voxera setup` walks the brain chain one slot at a time (`primary`, `fast`, `reasoning`, `fallback`) with explicit provider/model confirmation for each slot.
 
 If OpenRouter is selected for a slot, setup uses the curated repo catalog (`src/voxera/data/openrouter_catalog.json`) and a vendor-first guided flow (`OpenAI`, `Google`, `Anthropic`, `Meta`, etc.) so onboarding stays manageable. The default recommended models are slot-specific: `primary=google/gemini-3-flash-preview`, `fast=google/gemini-3.1-flash-lite-preview`, `reasoning=anthropic/claude-3.5-sonnet`, `fallback=meta-llama/llama-3.3-70b-instruct`. Advanced users can still choose manual model-id entry when needed.
 
@@ -1244,7 +1244,7 @@ jq "{daemon_state, consecutive_brain_failures, brain_backoff_wait_s, brain_backo
 
 ### Data freshness
 
-The widget reflects the most recent `health.json` write. The daemon and panel both write to this file atomically (`health.json.tmp` → rename). If the daemon is not running, the widget still renders the last snapshot — staleness is not surfaced explicitly in v0.1.8.
+The widget reflects the most recent `health.json` write. The daemon and panel both write to this file atomically (`health.json.tmp` → rename). If the daemon is not running, the widget still renders the last snapshot — staleness is not surfaced explicitly in v0.1.9.
 
 ---
 
