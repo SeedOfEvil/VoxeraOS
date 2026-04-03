@@ -68,6 +68,39 @@ class TestNormalizeMarkdownSpacing:
         text = "Just plain text.\nAnother line."
         assert _normalize_markdown_spacing(text) == text
 
+    def test_inline_heading_split_onto_own_line(self) -> None:
+        """Headings appearing mid-line after sentence-ending punctuation must
+        be split onto their own line — this was the exact live repro pattern."""
+        text = "built into the OS runtime. ### 2. Guarded Execution Lifecycle"
+        result = _normalize_markdown_spacing(text)
+        assert "runtime. ###" not in result
+        assert "### 2. Guarded Execution Lifecycle" in result
+        lines = result.split("\n")
+        heading_line = next(
+            (ln for ln in lines if ln.strip().startswith("### 2.")),
+            None,
+        )
+        assert heading_line is not None, "Heading not found on its own line"
+
+    def test_inline_heading_after_colon(self) -> None:
+        text = "Here's the overview: ## Section One"
+        result = _normalize_markdown_spacing(text)
+        assert "overview: ##" not in result
+        lines = result.split("\n")
+        assert any(ln.strip().startswith("## Section") for ln in lines)
+
+    def test_inline_heading_after_exclamation(self) -> None:
+        text = "That's great! # New Topic"
+        result = _normalize_markdown_spacing(text)
+        assert "great! #" not in result.replace("\n", " ")
+
+    def test_hash_in_non_heading_context_preserved(self) -> None:
+        """C# and other non-heading # uses must not be split."""
+        text = "Use the C# language for this."
+        result = _normalize_markdown_spacing(text)
+        assert "C#" in result
+        assert result.count("\n") == text.count("\n")
+
     def test_bullets_not_treated_as_headings(self) -> None:
         text = "- bullet 1\n- bullet 2"
         assert _normalize_markdown_spacing(text) == text
@@ -234,13 +267,117 @@ class TestEdgeCases:
         assert "No shortcuts" in result
         assert "prepared a preview" not in result
 
-    def test_heading_inline_with_wrapper(self) -> None:
-        """When heading is on same line as wrapper, heading may be lost — this
-        is a known limitation, not a regression from this fix."""
+    def test_heading_inline_with_wrapper_now_split(self) -> None:
+        """Headings inline with wrapper text are now split onto own lines."""
         reply = (
             "I've prepared a draft explanation. # Execution Safety\n\nAll ops go through the queue."
         )
         result = extract_text_draft_from_reply(reply)
-        # The inline heading case is a known limitation
         assert result is not None
         assert "queue" in result
+        assert "# Execution Safety" in result
+
+
+class TestInlineHeadingRegression:
+    """Regression tests for the live bug where inline headings caused preview
+    content corruption.
+
+    The exact live symptom was:
+    - ``...OS runtime. ### 2. Guarded Execution Lifecycle``
+    - Content truncated after section 2's first bullet
+    - Preview content did not match visible drafted reply
+    """
+
+    def test_inline_heading_after_sentence_end(self) -> None:
+        """Exact live repro pattern: heading mid-line after period."""
+        reply = (
+            "Here is a note:\n\n"
+            "# How VoxeraOS Keeps Execution Safe\n\n"
+            "VoxeraOS enforces strict safety through a layered architecture "
+            "built into the OS runtime. "
+            "### 2. Guarded Execution Lifecycle\n\n"
+            "Once a job is approved, it runs inside a sandboxed executor:\n\n"
+            "- Skills declare capabilities up front\n"
+            "- Execution stays within declared boundaries\n\n"
+            "### 3. Evidence-Grounded Outcomes\n\n"
+            "Results are surfaced through an evidence layer:\n\n"
+            "- Outcomes recorded as auditable artifacts\n\n"
+            "This ensures every action is authorized and traceable.\n\n"
+            "I've prepared a preview with this content."
+        )
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+
+        # The exact bug: heading collapsed into preceding text
+        assert "runtime. ###" not in result, "Inline heading not separated"
+
+        # All sections present
+        assert "# How VoxeraOS" in result
+        assert "### 2. Guarded Execution" in result
+        assert "### 3. Evidence-Grounded" in result
+
+        # No truncation
+        assert "authorized and traceable" in result
+
+        # Bullets preserved
+        assert "- Skills declare" in result
+        assert "- Outcomes recorded" in result
+
+        # Wrapper/trailer removed
+        assert "Here is a note" not in result
+        assert "prepared a preview" not in result
+
+    def test_multiple_inline_headings(self) -> None:
+        """Multiple headings inline with prose on the same line."""
+        reply = (
+            "# Title\n\n"
+            "First section text. ## Second Section\n"
+            "Second section body. ### Third Section\n"
+            "Third section body.\n\n"
+            "I've prepared a preview."
+        )
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+        assert "## Second Section" in result
+        assert "### Third Section" in result
+        # Headings must be on their own lines
+        lines = result.split("\n")
+        for line in lines:
+            stripped = line.strip()
+            if "##" in stripped and not stripped.startswith("#"):
+                pytest.fail(f"Heading still inline: {stripped!r}")
+
+    def test_no_content_truncation_with_inline_headings(self) -> None:
+        """Content after inline headings must not be truncated."""
+        reply = (
+            "# Overview\n\n"
+            "First section. ## Details\n"
+            "Second section has multiple points:\n"
+            "- Point A\n"
+            "- Point B\n"
+            "- Point C\n\n"
+            "Final paragraph at the end.\n\n"
+            "I've prepared a preview."
+        )
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+        assert "- Point A" in result
+        assert "- Point B" in result
+        assert "- Point C" in result
+        assert "Final paragraph at the end" in result
+
+    @pytest.mark.parametrize(
+        "inline_text",
+        [
+            "End of text. ## Next Section",
+            "Some conclusion! ### Subsection Three",
+            "Key points: ## Analysis",
+            "See above; ## Summary",
+        ],
+    )
+    def test_various_punctuation_before_inline_heading(self, inline_text: str) -> None:
+        """Headings after various sentence-ending punctuation are split."""
+        result = _normalize_markdown_spacing(inline_text)
+        lines = result.split("\n")
+        heading_lines = [ln for ln in lines if ln.strip().startswith("#")]
+        assert len(heading_lines) == 1, f"Expected heading on own line, got: {result!r}"

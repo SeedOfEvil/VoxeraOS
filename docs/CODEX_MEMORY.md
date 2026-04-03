@@ -1,22 +1,28 @@
-## 2026-04-03 — PR #TBD — fix(vera): preserve authored draft body fidelity in preview content binding
+## 2026-04-03 — PR #TBD — fix(vera): preserve full authored draft body in preview content
 
 - Summary: Fixes preview-content mismatch where authored draft body was truncated,
   heading formatting collapsed, and wrapper/trailer text leaked into `write_file.content`.
-- **Root cause** (`core/writing_draft_intent.py`):
+- **Root causes** (`core/writing_draft_intent.py`):
   - `_extract_prose_body` splits on `\n{2,}` only, so compact LLM output with single-newline
     heading boundaries treats the entire reply as one block — wrapper text leaks, heading
     spacing collapses, and trailing wrapper text survives.
+  - LLMs sometimes produce **inline headings** where a heading marker appears mid-line after
+    a sentence boundary (e.g. `...OS runtime. ### 2. Guarded Execution Lifecycle`). The
+    original `_normalize_markdown_spacing` only handled headings that started a line.
   - `_WRAPPER_PREFIX_RE` did not match "Here's a short markdown note..." pattern.
   - `_looks_like_trailing_wrapper_block` did not match "I've prepared a preview" or
     "preview-only" phrases.
 - **Fixes applied**:
-  - Added `_normalize_markdown_spacing()` that inserts blank lines around markdown headings
-    before extraction, ensuring proper block-splitting for the prose-body extractor.
+  - `_normalize_markdown_spacing()` Phase 1: regex-split inline headings after sentence-ending
+    punctuation (`[.!?:;]`) onto their own lines before Phase 2 blank-line insertion.
+  - `_normalize_markdown_spacing()` Phase 2: inserts blank lines around heading boundaries for
+    proper block-splitting by the prose-body extractor.
   - Extended `_WRAPPER_PREFIX_RE` with `here's a [short/brief] [markdown] note/draft/summary`.
   - Extended trailing wrapper phrases with "i've prepared a preview", "preview-only",
     "this is preview-only", "let me know when you'd like to send".
 - **Behavioral invariant**: authored draft body in preview content must match the visible
-  drafted artifact — no truncation, no collapsed heading spacing, no wrapper/trailer leakage.
+  drafted artifact — no truncation, no collapsed heading spacing, no wrapper/trailer leakage,
+  no inline heading corruption.
 
 ## 2026-04-03 — PR #TBD — fix(vera): preserve authored preview identity during session-aware drafting follow-ups
 

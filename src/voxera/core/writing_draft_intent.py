@@ -202,15 +202,29 @@ def _normalize_markdown_spacing(text: str) -> str:
     """Ensure markdown headings are preceded and followed by blank lines.
 
     LLM outputs sometimes produce compact markdown where ``## Heading``
-    immediately follows the previous line with only a single newline.
-    This normalizer inserts blank lines around heading boundaries so that
-    downstream block-splitting (which relies on ``\\n{2,}``) correctly
-    separates heading blocks from body text.
+    immediately follows the previous line with only a single newline, or
+    worse, where a heading appears inline mid-line (e.g.
+    ``...the OS runtime. ### 2. Guarded Execution``).
+
+    This normalizer:
+    1. Splits inline headings onto their own lines.
+    2. Inserts blank lines around heading boundaries so that downstream
+       block-splitting (which relies on ``\\n{2,}``) correctly separates
+       heading blocks from body text.
 
     This preserves all content — no text is removed or truncated.
     """
     if not text:
         return text
+    # Phase 1: split inline headings onto their own lines.
+    # Matches patterns like "...sentence end. ### Heading" or "...text. # Title"
+    # where a heading marker appears mid-line after sentence-ending punctuation.
+    text = re.sub(
+        r"([.!?:;])\s+(#{1,6}\s+)",
+        r"\1\n\n\2",
+        text,
+    )
+    # Phase 2: ensure headings that start a line are surrounded by blank lines.
     lines = text.split("\n")
     result: list[str] = []
     for i, line in enumerate(lines):
