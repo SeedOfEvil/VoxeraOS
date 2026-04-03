@@ -905,7 +905,7 @@ class TestLinkedJobReviseFromEvidence:
                 session_id="test-session",
             )
         assert result.matched is True
-        assert result.status == "followup_preview_ready"
+        assert result.status == "revised_preview_ready"
         assert result.write_preview is True
         assert "preview-only" in result.assistant_text.lower()
 

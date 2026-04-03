@@ -83,6 +83,22 @@ _FOLLOWUP_HINTS = (
     "save the follow-up as a file",
 )
 
+_REVISE_FROM_EVIDENCE_HINTS = (
+    "revise that based on the result",
+    "revise based on the result",
+    "revise that based on the evidence",
+    "revise that based on the outcome",
+    "revise based on evidence",
+    "update that based on the result",
+    "update based on the result",
+)
+
+_SAVE_FOLLOWUP_HINTS = (
+    "save the follow-up",
+    "save that follow-up",
+    "save the follow-up as a file",
+)
+
 
 @dataclass(frozen=True)
 class ReviewedJobEvidence:
@@ -146,6 +162,18 @@ def is_review_request(message: str) -> bool:
 def is_followup_preview_request(message: str) -> bool:
     lowered = message.strip().lower()
     return bool(lowered) and any(hint in lowered for hint in _FOLLOWUP_HINTS)
+
+
+def is_revise_from_evidence_request(message: str) -> bool:
+    """Return True when the message asks to revise/update prior output based on job evidence."""
+    lowered = message.strip().lower()
+    return bool(lowered) and any(hint in lowered for hint in _REVISE_FROM_EVIDENCE_HINTS)
+
+
+def is_save_followup_request(message: str) -> bool:
+    """Return True when the message asks to save the follow-up as a file or preview."""
+    lowered = message.strip().lower()
+    return bool(lowered) and any(hint in lowered for hint in _SAVE_FOLLOWUP_HINTS)
 
 
 def _classify_state(
@@ -600,3 +628,72 @@ def draft_followup_preview(evidence: ReviewedJobEvidence) -> dict[str, str]:
     else:
         goal = f"check status and evidence for {evidence.job_id}"
     return {"goal": goal}
+
+
+def draft_revised_preview(evidence: ReviewedJobEvidence) -> dict[str, str]:
+    """Produce a revision-oriented preview goal grounded in completed job evidence.
+
+    Used when the user asks to revise/update prior output based on the result.
+    The goal explicitly names the revision intent so downstream preview handling
+    and the operator can distinguish it from a generic follow-up.
+    """
+    summary = evidence.latest_summary or evidence.failure_summary or "the completed result"
+    if evidence.state == "succeeded":
+        goal = f"revise prior output based on completed evidence from {evidence.job_id}: {summary}"
+    elif evidence.state == "failed":
+        goal = f"revise prior output to address failure from {evidence.job_id}: {summary}"
+    else:
+        goal = (
+            f"revise prior output based on evidence from "
+            f"{evidence.job_id} (state: {evidence.state}): {summary}"
+        )
+    return {"goal": goal}
+
+
+def draft_saveable_followup_preview(evidence: ReviewedJobEvidence) -> dict[str, object]:
+    """Produce a saveable follow-up preview with a write_file payload.
+
+    Used when the user asks to save the follow-up (e.g. "save the follow-up",
+    "save the follow-up as a file"). Unlike the bare-goal follow-up, this
+    creates a structured preview with a write_file entry so the preview pane
+    shows a concrete saveable artifact.
+    """
+    summary = evidence.latest_summary or evidence.failure_summary or "the completed result"
+    if evidence.state == "succeeded":
+        goal = (
+            f"save follow-up draft grounded in completed evidence from {evidence.job_id}: {summary}"
+        )
+        content = (
+            f"# Follow-up: {evidence.job_id}\n\n"
+            f"Prior job completed successfully.\n\n"
+            f"**Result summary**: {summary}\n\n"
+            f"## Proposed next step\n\n"
+            f"(Operator: describe the follow-up action grounded in the above result.)\n"
+        )
+    elif evidence.state == "failed":
+        goal = f"save corrective follow-up for failed job {evidence.job_id}: {summary}"
+        content = (
+            f"# Corrective follow-up: {evidence.job_id}\n\n"
+            f"Prior job failed.\n\n"
+            f"**Failure summary**: {summary}\n\n"
+            f"## Proposed correction\n\n"
+            f"(Operator: describe the corrective action to address the failure above.)\n"
+        )
+    else:
+        goal = f"save follow-up draft for {evidence.job_id} (state: {evidence.state})"
+        content = (
+            f"# Follow-up: {evidence.job_id}\n\n"
+            f"Prior job state: {evidence.state}.\n\n"
+            f"**Summary**: {summary}\n\n"
+            f"## Proposed next step\n\n"
+            f"(Operator: describe the follow-up action.)\n"
+        )
+    job_stem = evidence.job_id.replace(".json", "")
+    return {
+        "goal": goal,
+        "write_file": {
+            "path": f"~/VoxeraOS/notes/followup-{job_stem}.md",
+            "content": content,
+            "mode": "overwrite",
+        },
+    }

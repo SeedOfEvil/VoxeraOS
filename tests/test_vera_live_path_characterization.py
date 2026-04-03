@@ -24,8 +24,12 @@ from voxera.vera import service as vera_service
 from voxera.vera.evidence_review import (
     ReviewedJobEvidence,
     draft_followup_preview,
+    draft_revised_preview,
+    draft_saveable_followup_preview,
     is_followup_preview_request,
     is_review_request,
+    is_revise_from_evidence_request,
+    is_save_followup_request,
     review_message,
 )
 from voxera.vera_web import app as vera_app_module
@@ -755,3 +759,346 @@ class TestSessionLevelEvidenceReviewFollowUp:
         assert "follow-up preview" in last_turn or "resolvable" in last_turn
         assert "here is a follow-up plan" not in last_turn
         assert session.preview() is None
+
+
+# ---------------------------------------------------------------------------
+# 7. Revise/update from completed job evidence
+# ---------------------------------------------------------------------------
+
+
+class TestReviseFromEvidenceLivePaths:
+    """Verify revise/update workflows produce revision-oriented previews grounded in evidence."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "revise that based on the result",
+            "revise based on the result",
+            "revise that based on the evidence",
+            "revise that based on the outcome",
+            "revise based on evidence",
+            "update that based on the result",
+            "update based on the result",
+        ],
+    )
+    def test_revise_phrases_are_recognized(self, phrase: str) -> None:
+        assert is_revise_from_evidence_request(phrase), f"Expected revise request: {phrase!r}"
+        # All revise phrases must also be recognized as follow-up requests
+        assert is_followup_preview_request(phrase), f"Expected followup superset: {phrase!r}"
+
+    def test_revise_produces_revision_oriented_goal(self) -> None:
+        """draft_revised_preview must produce a goal with 'revise' intent, not generic follow-up."""
+        evidence = _make_evidence(
+            job_id="job-20260401-rev1",
+            latest_summary="Applied config changes to prod.",
+        )
+        payload = draft_revised_preview(evidence)
+        goal = payload["goal"]
+        assert "revise" in goal.lower()
+        assert "job-20260401-rev1" in goal
+        assert "Applied config changes to prod." in goal
+
+    def test_revise_failed_job_references_failure(self) -> None:
+        """Revision for a failed job must reference the failure in the goal."""
+        evidence = _make_evidence(
+            state="failed",
+            terminal_outcome="failed",
+            failure_summary="Connection refused on port 5432",
+            latest_summary="",
+            normalized_outcome_class="runtime_error",
+        )
+        payload = draft_revised_preview(evidence)
+        goal = payload["goal"]
+        assert "revise" in goal.lower()
+        assert "Connection refused" in goal
+
+    def test_revise_dispatch_with_evidence_returns_revised_status(self, tmp_path) -> None:
+        """Revise dispatch with resolvable evidence must return revised_preview_ready."""
+        evidence = _make_evidence(
+            job_id="job-20260401-revdisp",
+            latest_summary="Deployed hotfix.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ):
+            result = _dispatch(
+                message="revise that based on the result",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "revised_preview_ready"
+        assert result.write_preview is True
+        assert result.write_handoff_ready is True
+        assert "preview-only" in result.assistant_text.lower()
+        assert "nothing has been submitted yet" in result.assistant_text.lower()
+        # Goal must be revision-oriented
+        goal = str(result.preview_payload.get("goal") or "")
+        assert "revise" in goal.lower()
+
+    def test_update_dispatch_with_evidence_returns_revised_status(self, tmp_path) -> None:
+        """'update that based on the result' must also route to revised_preview_ready."""
+        evidence = _make_evidence(
+            job_id="job-20260401-upd",
+            latest_summary="Scan completed.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ):
+            result = _dispatch(
+                message="update that based on the result",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "revised_preview_ready"
+        assert result.preview_payload is not None
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "revise that based on the result",
+            "revise based on evidence",
+            "update that based on the result",
+        ],
+    )
+    def test_revise_fails_closed_with_no_job(self, tmp_path, phrase: str) -> None:
+        """Revise requests must fail closed when no resolvable job exists."""
+        result = _dispatch(message=phrase, queue_root=tmp_path)
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
+        assert result.write_preview is False
+        assert result.preview_payload is None
+
+    def test_revise_preview_payload_is_coherent(self) -> None:
+        """Revised preview payload must have a goal, no write_file (bare revision intent)."""
+        evidence = _make_evidence(
+            job_id="job-20260401-coh",
+            latest_summary="Completed analysis.",
+        )
+        payload = draft_revised_preview(evidence)
+        assert "goal" in payload
+        # Revised preview is a bare goal (not a write_file), same as generic follow-up
+        assert "write_file" not in payload
+
+    def test_revise_chat_and_preview_truth_alignment(self, tmp_path) -> None:
+        """Chat text and preview goal must both reference revision intent and evidence."""
+        evidence = _make_evidence(
+            job_id="job-20260401-align",
+            latest_summary="Metrics collected.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ):
+            result = _dispatch(
+                message="revise that based on the result",
+                queue_root=tmp_path,
+            )
+        # Chat text says "revised preview"
+        assert "revised preview" in result.assistant_text.lower()
+        # Preview goal says "revise"
+        goal = str(result.preview_payload.get("goal") or "")
+        assert "revise" in goal.lower()
+        # Both reference the same job
+        assert "job-20260401-align" in result.assistant_text
+        assert "job-20260401-align" in goal
+
+
+# ---------------------------------------------------------------------------
+# 8. Save-follow-up from completed job evidence
+# ---------------------------------------------------------------------------
+
+
+class TestSaveFollowUpLivePaths:
+    """Verify save-follow-up workflows produce saveable previews with write_file."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "save the follow-up",
+            "save that follow-up",
+            "save the follow-up as a file",
+        ],
+    )
+    def test_save_followup_phrases_are_recognized(self, phrase: str) -> None:
+        assert is_save_followup_request(phrase), f"Expected save-followup: {phrase!r}"
+        # All save phrases must also be recognized as follow-up requests
+        assert is_followup_preview_request(phrase), f"Expected followup superset: {phrase!r}"
+
+    def test_saveable_preview_has_write_file_with_content(self) -> None:
+        """draft_saveable_followup_preview must produce a preview with write_file."""
+        evidence = _make_evidence(
+            job_id="job-20260401-sav1",
+            latest_summary="Built and deployed service.",
+        )
+        payload = draft_saveable_followup_preview(evidence)
+        assert "goal" in payload
+        assert "write_file" in payload
+        wf = payload["write_file"]
+        assert wf["content"]
+        assert wf["path"]
+        # Content must reference the job
+        assert "job-20260401-sav1" in wf["content"]
+        assert "Built and deployed service." in wf["content"]
+        # Path must be a followup note
+        assert "followup-" in wf["path"]
+
+    def test_saveable_preview_for_failed_job_includes_failure(self) -> None:
+        """Save-follow-up for a failed job must reference the failure in content."""
+        evidence = _make_evidence(
+            state="failed",
+            terminal_outcome="failed",
+            failure_summary="Timeout after 300s",
+            latest_summary="",
+            normalized_outcome_class="runtime_error",
+        )
+        payload = draft_saveable_followup_preview(evidence)
+        content = payload["write_file"]["content"]
+        assert "Timeout after 300s" in content
+        assert "failed" in content.lower()
+        # Goal should indicate corrective intent
+        goal = payload["goal"]
+        assert "corrective" in goal.lower() or "failed" in goal.lower()
+
+    def test_save_followup_dispatch_returns_saveable_status(self, tmp_path) -> None:
+        """Save-follow-up dispatch must return save_followup_preview_ready."""
+        evidence = _make_evidence(
+            job_id="job-20260401-savdisp",
+            latest_summary="Backup completed.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ):
+            result = _dispatch(
+                message="save the follow-up",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "save_followup_preview_ready"
+        assert result.write_preview is True
+        assert result.write_handoff_ready is True
+        assert result.preview_payload is not None
+        assert "write_file" in result.preview_payload
+        assert "preview-only" in result.assistant_text.lower()
+        assert "nothing has been submitted yet" in result.assistant_text.lower()
+
+    def test_save_followup_as_file_dispatch(self, tmp_path) -> None:
+        """'save the follow-up as a file' must produce a file-oriented saveable preview."""
+        evidence = _make_evidence(
+            job_id="job-20260401-savfile",
+            latest_summary="Report generated.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ):
+            result = _dispatch(
+                message="save the follow-up as a file",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "save_followup_preview_ready"
+        wf = result.preview_payload["write_file"]
+        assert wf["path"].endswith(".md")
+        content = str(wf["content"])
+        assert "job-20260401-savfile" in content
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "save the follow-up",
+            "save that follow-up",
+            "save the follow-up as a file",
+        ],
+    )
+    def test_save_followup_fails_closed_with_no_job(self, tmp_path, phrase: str) -> None:
+        """Save-follow-up must fail closed when no resolvable job exists."""
+        result = _dispatch(message=phrase, queue_root=tmp_path)
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
+        assert result.write_preview is False
+        assert result.preview_payload is None
+
+    def test_save_followup_chat_and_preview_truth_alignment(self, tmp_path) -> None:
+        """Chat text and preview content must both be evidence-grounded and aligned."""
+        evidence = _make_evidence(
+            job_id="job-20260401-salign",
+            latest_summary="Cleanup ran successfully.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ):
+            result = _dispatch(
+                message="save the follow-up",
+                queue_root=tmp_path,
+            )
+        # Chat references the job
+        assert "job-20260401-salign" in result.assistant_text
+        # Preview content references the job and summary
+        content = str(result.preview_payload["write_file"]["content"])
+        assert "job-20260401-salign" in content
+        assert "Cleanup ran successfully." in content
+        # Chat says "saveable follow-up draft"
+        assert "saveable follow-up draft" in result.assistant_text.lower()
+
+    def test_save_followup_session_level_creates_write_file_preview(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Full session: 'save the follow-up' with linked job creates write_file preview."""
+        session = make_vera_session(monkeypatch, tmp_path)
+        TestSessionLevelEvidenceReviewFollowUp._seed_completed_job(
+            session,
+            stem="job-20260401-sessav",
+            latest_summary="Deployed to production.",
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            return {"answer": "fallback", "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("save the follow-up")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Save-follow-up must create a preview"
+        assert "write_file" in preview
+        content = preview["write_file"]["content"]
+        assert "job-20260401-sessav" in content
+        assert "Deployed to production." in content
+
+        last_turn = session.turns()[-1]["text"].lower()
+        assert "preview-only" in last_turn
+        assert "nothing has been submitted" in last_turn
+        assert "fallback" not in last_turn
+
+    def test_revise_session_level_creates_revision_preview(self, tmp_path, monkeypatch) -> None:
+        """Full session: 'revise that based on the result' with linked job creates revision preview."""
+        session = make_vera_session(monkeypatch, tmp_path)
+        TestSessionLevelEvidenceReviewFollowUp._seed_completed_job(
+            session,
+            stem="job-20260401-sesrev",
+            latest_summary="Analysis completed.",
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            return {"answer": "fallback", "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("revise that based on the result")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Revise must create a preview"
+        assert "goal" in preview
+        goal = preview["goal"]
+        assert "revise" in goal.lower()
+
+        last_turn = session.turns()[-1]["text"].lower()
+        assert "preview-only" in last_turn
+        assert "nothing has been submitted" in last_turn
+        assert "fallback" not in last_turn

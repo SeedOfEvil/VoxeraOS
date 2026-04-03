@@ -865,7 +865,7 @@ class TestLinkedJobFollowupRevision:
             f"Phrase {phrase!r} did not reach the followup branch. Got status={result.status!r}"
         )
 
-    def test_revise_based_on_result_with_evidence_returns_preview_ready(
+    def test_revise_based_on_result_with_evidence_returns_revised_preview(
         self, tmp_path: Path
     ) -> None:
         from voxera.vera.evidence_review import ReviewedJobEvidence
@@ -900,7 +900,7 @@ class TestLinkedJobFollowupRevision:
                 queue_root=tmp_path,
             )
         assert result.matched is True
-        assert result.status == "followup_preview_ready"
+        assert result.status == "revised_preview_ready"
         assert result.write_preview is True
         assert result.write_handoff_ready is True
         assert result.preview_payload is not None
@@ -908,6 +908,100 @@ class TestLinkedJobFollowupRevision:
         assert "preview-only" in result.assistant_text.lower()
         # Must include evidence detail
         assert "succeeded" in result.assistant_text.lower()
+        # Goal must be revision-oriented
+        goal = str(result.preview_payload.get("goal") or "")
+        assert "revise" in goal.lower()
+        assert "job-20260401-revise" in goal
+
+    def test_save_followup_with_evidence_returns_saveable_preview(self, tmp_path: Path) -> None:
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-save",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Deployment completed.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="save the follow-up",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "save_followup_preview_ready"
+        assert result.write_preview is True
+        assert result.write_handoff_ready is True
+        assert result.preview_payload is not None
+        # Saveable preview must have write_file with content
+        assert "write_file" in result.preview_payload
+        wf = result.preview_payload["write_file"]
+        assert isinstance(wf, dict)
+        assert wf.get("content")
+        assert wf.get("path")
+        # Assistant text must communicate preview-only
+        assert "preview-only" in result.assistant_text.lower()
+        assert "nothing has been submitted yet" in result.assistant_text.lower()
+        assert "job-20260401-save" in result.assistant_text
+
+    def test_save_followup_as_file_produces_write_file_preview(self, tmp_path: Path) -> None:
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-filsave",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Report generated.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="save the follow-up as a file",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "save_followup_preview_ready"
+        wf = result.preview_payload["write_file"]
+        # File path must reference the job
+        assert "followup-" in str(wf.get("path") or "")
+        # Content must be evidence-grounded
+        content = str(wf.get("content") or "")
+        assert "job-20260401-filsave" in content
+        assert "Report generated" in content
 
     def test_followup_preview_includes_evidence_detail(self, tmp_path: Path) -> None:
         """Follow-up preview replies must include evidence-grounded detail."""
@@ -988,3 +1082,83 @@ class TestLinkedJobFollowupRevision:
         goal = str(result.preview_payload.get("goal") or "")
         assert "follow-up" in goal.lower()
         assert "inspect output details" not in goal.lower()
+
+    def test_revise_from_evidence_for_failed_job_references_failure(self, tmp_path: Path) -> None:
+        """Revise from failed job must produce a goal referencing the failure."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-failrev",
+            state="failed",
+            lifecycle_state="failed",
+            terminal_outcome="failed",
+            approval_status="",
+            latest_summary="",
+            failure_summary="Disk full on /var/log",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="runtime_error",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="revise that based on the result",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "revised_preview_ready"
+        goal = str(result.preview_payload.get("goal") or "")
+        assert "revise" in goal.lower()
+        assert "Disk full" in goal
+        assert "job-20260401-failrev" in goal
+
+    def test_save_followup_for_failed_job_includes_failure_in_content(self, tmp_path: Path) -> None:
+        """Save follow-up for a failed job must include failure details in write_file content."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260401-failsave",
+            state="failed",
+            lifecycle_state="failed",
+            terminal_outcome="failed",
+            approval_status="",
+            latest_summary="",
+            failure_summary="OOM killed",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="runtime_error",
+            value_forward_text="",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="save that follow-up",
+                queue_root=tmp_path,
+            )
+        assert result.matched is True
+        assert result.status == "save_followup_preview_ready"
+        wf = result.preview_payload["write_file"]
+        content = str(wf.get("content") or "")
+        assert "OOM killed" in content
+        assert "failed" in content.lower()

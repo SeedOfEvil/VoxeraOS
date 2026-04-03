@@ -1,3 +1,57 @@
+## 2026-04-03 — PR #TBD — feat(vera): improve revise and save-follow-up workflows from completed job evidence
+
+- Summary: Bounded workflow feature PR that makes Vera able to revise prior output and save
+  evidence-grounded follow-up drafts more reliably after a completed linked job. Distinguishes
+  three follow-up sub-intents (revise/update, save-follow-up, general follow-up) in the
+  dispatch layer, adds specialized preview builders for each, and preserves preview-only
+  semantics and fail-closed behavior.
+- **New intent classifiers** (`src/voxera/vera/evidence_review.py`):
+  - `is_revise_from_evidence_request()`: detects revise/update-from-evidence phrases.
+  - `is_save_followup_request()`: detects save-follow-up phrases.
+  - Both are strict subsets of `is_followup_preview_request()` — the superset routing
+    continues to catch all follow-up intents.
+- **New preview builders** (`src/voxera/vera/evidence_review.py`):
+  - `draft_revised_preview()`: produces a revision-oriented goal referencing the evidence
+    and naming "revise" intent explicitly so downstream preview handling and the operator
+    can distinguish it from a generic follow-up.
+  - `draft_saveable_followup_preview()`: produces a structured preview with `write_file`
+    containing evidence-grounded markdown content (job ID, outcome summary, next-step
+    template). The file path is `~/VoxeraOS/notes/followup-{job_stem}.md`.
+- **Dispatch sub-intent routing** (`src/voxera/vera_web/chat_early_exit_dispatch.py`):
+  - Follow-up dispatch branch (§3) now distinguishes three sub-intents:
+    - §3a: Revise/update from evidence → `revised_preview_ready` status, revision-oriented goal.
+    - §3b: Save follow-up → `save_followup_preview_ready` status, saveable write_file preview.
+    - §3c: General follow-up → unchanged `followup_preview_ready` behavior.
+  - Fail-closed behavior is shared: all three sub-intents return `followup_missing_evidence`
+    when no resolvable completed job exists.
+  - Assistant text for each sub-intent explicitly communicates preview-only semantics and
+    the evidence source.
+- **Behavioral guidance**:
+  - Revise/update workflows are only correct when grounded in canonical queue evidence from
+    a resolvable completed job. The revision goal must name the prior job and its evidence.
+  - Save-follow-up workflows must produce a concrete saveable preview (write_file with content),
+    not a bare conversational promise. The content must be evidence-grounded.
+  - All three follow-up sub-intents remain preview-only unless explicitly submitted.
+  - Fail-closed behavior is preserved: when no resolvable completed job exists, Vera refuses
+    and tells the user what is needed.
+  - Chat prose and preview payload truth must remain materially aligned: if the chat says
+    "revised preview", the preview goal must say "revise"; if the chat says "saveable
+    follow-up draft", the preview must contain a write_file.
+- **Recommended live-path regression anchors** (added to existing set):
+  - "revise that based on the result" → revised preview (or fail-closed)
+  - "revise that based on the evidence" → revised preview (or fail-closed)
+  - "update that based on the result" → revised preview (or fail-closed)
+  - "save the follow-up" → saveable write_file preview (or fail-closed)
+  - "save that follow-up" → saveable write_file preview (or fail-closed)
+  - "save the follow-up as a file" → saveable write_file preview (or fail-closed)
+- Non-goals preserved:
+  - No architecture redesign or app.py orchestration changes.
+  - No submit/handoff ownership changes.
+  - No queue-boundary behavior changes.
+  - No weakening of fail-closed behavior.
+  - No direct execution shortcuts from chat.
+  - No speculative continuation when no completed linked job exists.
+
 ## 2026-04-02 — PR #275 — test(vera): expand evidence-grounded review and follow-up live-path characterization
 
 - Summary: Bounded stabilization/characterization PR that adds regression coverage for

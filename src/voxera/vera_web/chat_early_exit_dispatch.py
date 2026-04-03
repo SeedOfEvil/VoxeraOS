@@ -41,8 +41,12 @@ from pathlib import Path
 from ..vera.evidence_review import (
     ReviewedJobEvidence,
     draft_followup_preview,
+    draft_revised_preview,
+    draft_saveable_followup_preview,
     is_followup_preview_request,
     is_review_request,
+    is_revise_from_evidence_request,
+    is_save_followup_request,
     review_job_outcome,
     review_message,
 )
@@ -198,8 +202,43 @@ def dispatch_early_exit_intent(
                 ),
                 status="followup_missing_evidence",
             )
-        payload: dict[str, object] = {**draft_followup_preview(evidence)}
         followup_detail = _followup_evidence_detail(evidence)
+
+        # ── 3a. Revise/update from evidence ──
+        if is_revise_from_evidence_request(message):
+            payload: dict[str, object] = {**draft_revised_preview(evidence)}
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    f"I've prepared a revised preview grounded in canonical evidence from `{evidence.job_id}`.\n"
+                    f"{followup_detail}\n"
+                    "This is preview-only — nothing has been submitted yet."
+                ),
+                status="revised_preview_ready",
+                preview_payload=payload,
+                write_preview=True,
+                write_handoff_ready=True,
+            )
+
+        # ── 3b. Save follow-up as file ──
+        if is_save_followup_request(message):
+            payload = {**draft_saveable_followup_preview(evidence)}
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    f"I've prepared a saveable follow-up draft grounded in canonical evidence from `{evidence.job_id}`.\n"
+                    f"{followup_detail}\n"
+                    "The follow-up has been placed in the preview as a file draft. "
+                    "This is preview-only — nothing has been submitted yet."
+                ),
+                status="save_followup_preview_ready",
+                preview_payload=payload,
+                write_preview=True,
+                write_handoff_ready=True,
+            )
+
+        # ── 3c. General follow-up ──
+        payload = {**draft_followup_preview(evidence)}
         return EarlyExitResult(
             matched=True,
             assistant_text=(
