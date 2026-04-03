@@ -1,3 +1,27 @@
+## 2026-04-03 — PR #TBD — feat(vera): use shared session context in authored drafting and planning workflows
+
+- Summary: Makes authored drafting and planning flows feel naturally session-aware
+  without weakening VoxeraOS truth boundaries.
+- **Authored-content transformation patterns** (`vera/draft_revision.py`):
+  - `refined_content_from_active_preview` now supports: concise compression, checklist/bullet-list
+    conversion, operator-facing/user-facing tone shifts, and same-tone preservation.
+  - These patterns work both in the active-preview refinement path and the session-context-aware
+    follow-up path.
+- **Session-context-aware follow-up resolution** (`vera/preview_drafting.py`):
+  - `_is_session_aware_authored_followup` detects bounded transformation/continuation requests
+    (not ambiguous "change it" patterns).
+  - `_resolve_authored_followup_from_session_context` resolves against the most recent saveable
+    assistant artifact when session context has `active_draft_ref`.
+  - Fail-closed when no active draft ref, no artifacts, or empty artifact content.
+  - `maybe_draft_job_payload` now accepts `session_context` parameter.
+  - `_looks_like_contextual_refinement` extended with transformation patterns.
+- **app.py wiring**: `session_context` passed to `maybe_draft_job_payload` calls in
+  the deterministic fallback and rename-mutation fallback paths.
+- **Trust model preserved**: Session context remains a continuity aid only. Preview truth,
+  queue truth, and artifact truth remain authoritative. Ambiguous references fail closed.
+- **Recommended next PR**: linked-job review/continuation evidence-grounded follow-ups,
+  `active_topic` tracking for richer planning continuity.
+
 ## 2026-04-03 — PR #TBD — feat(vera): update shared session context from preview, handoff, and job completion events
 
 - Summary: Lifecycle freshness PR that makes shared session context stay current automatically

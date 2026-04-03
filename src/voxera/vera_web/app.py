@@ -946,6 +946,7 @@ async def chat(request: Request):
                 enrichment_context=enrichment_context,
                 investigation_context=session_investigation,
                 recent_assistant_artifacts=recent_assistant_artifacts,
+                session_context=_session_ctx,
             )
             if isinstance(deterministic_fallback, dict):
                 try:
@@ -1016,6 +1017,7 @@ async def chat(request: Request):
             enrichment_context=enrichment_context,
             investigation_context=session_investigation,
             recent_assistant_artifacts=recent_assistant_artifacts,
+            session_context=_session_ctx,
         )
         if isinstance(_rename_fallback, dict):
             try:

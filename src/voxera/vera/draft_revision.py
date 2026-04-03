@@ -215,6 +215,45 @@ def refined_content_from_active_preview(
             words = compressed.split()
             return " ".join(words[: min(len(words), 8)])
         return "Quick joke: cache me outside."
+    # ── Authored-content transformation patterns ──
+    # These patterns support natural follow-up requests against an active
+    # authored draft.  Session context is a continuity aid only — the
+    # actual content comes from the active preview (existing_content).
+    if re.search(r"\b(more\s+concise|make\s+(?:it|that)\s+(?:more\s+)?concise)\b", lowered):
+        compressed = existing_content.strip()
+        if compressed:
+            sentences = re.split(r"(?<=[.!?])\s+", compressed)
+            if len(sentences) > 1:
+                return " ".join(sentences[: max(1, len(sentences) // 2)])
+            words = compressed.split()
+            return " ".join(words[: max(4, len(words) * 2 // 3)])
+        return None
+    if re.search(
+        r"\b((?:turn|convert|transform)\s+(?:it|that|this)\s+into\s+(?:a\s+)?(?:checklist|list|bullet\s*(?:ed)?\s*list|outline))\b",
+        lowered,
+    ) or re.search(r"\b(as\s+a\s+checklist|into\s+a\s+checklist)\b", lowered):
+        source = existing_content.strip()
+        if source:
+            sentences = re.split(r"(?<=[.!?])\s+", source)
+            if len(sentences) <= 1:
+                items = [s.strip() for s in re.split(r"[,;]\s*", source) if s.strip()]
+            else:
+                items = [s.strip().rstrip(".") for s in sentences if s.strip()]
+            if items:
+                return "\n".join(f"- {item}" for item in items)
+        return None
+    if re.search(r"\b(more\s+operator[- ]facing|more\s+operator[- ]focused)\b", lowered):
+        source = existing_content.strip()
+        if source:
+            return f"[Operator-facing]\n{source}"
+        return None
+    if re.search(r"\b(more\s+user[- ]facing|more\s+user[- ]friendly)\b", lowered):
+        source = existing_content.strip()
+        if source:
+            return f"[User-facing]\n{source}"
+        return None
+    if re.search(r"\b(keep\s+(?:the\s+)?same\s+tone)\b", lowered):
+        return existing_content.strip() or None
     if re.search(
         r"\b(update\s+the\s+content|update\s+content|change\s+content|use\s+a\s+different\s+joke)\b",
         lowered,
