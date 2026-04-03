@@ -138,6 +138,56 @@ def guardrail_false_preview_claim(text: str, *, preview_exists: bool) -> str:
     )
 
 
+_BARE_JSON_INTERNAL_MARKERS = (
+    '"intent"',
+    '"reasoning"',
+    '"decisions"',
+    '"write_file"',
+    '"tool"',
+    '"action"',
+)
+
+
+def _strip_bare_internal_json_objects(text: str) -> str:
+    """Strip bare JSON objects containing internal compiler markers.
+
+    Handles nested braces correctly by tracking brace depth rather than
+    relying on a single regex, which would leave trailing ``}`` residue
+    for payloads like ``{"intent":"x","write_file":{"path":"y"}}``.
+
+    For multi-line bare JSON, peeks ahead through the block to count markers
+    across all lines before deciding to strip.
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    skip_depth = 0
+    for idx, line in enumerate(lines):
+        if skip_depth > 0:
+            skip_depth += line.count("{") - line.count("}")
+            continue
+        stripped = line.lstrip()
+        if stripped.startswith("{"):
+            # Peek ahead: gather the full JSON block text to check markers
+            peek_text = stripped.lower()
+            depth = stripped.count("{") - stripped.count("}")
+            if depth > 0:
+                for future_line in lines[idx + 1 :]:
+                    peek_text += " " + future_line.lower()
+                    depth += future_line.count("{") - future_line.count("}")
+                    if depth <= 0:
+                        break
+            marker_count = sum(1 for m in _BARE_JSON_INTERNAL_MARKERS if m in peek_text)
+            if marker_count >= 2:
+                block_depth = stripped.count("{") - stripped.count("}")
+                if block_depth <= 0:
+                    # Single-line balanced JSON — skip it entirely
+                    continue
+                skip_depth = block_depth
+                continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def strip_internal_compiler_leakage(text: str) -> str:
     """Strip internal compiler/JSON payloads from assistant-visible text.
 
@@ -155,12 +205,9 @@ def strip_internal_compiler_leakage(text: str) -> str:
 
     cleaned = re.sub(r"```[^\n]*\n.*?```", _replace_if_internal, text, flags=re.DOTALL)
 
-    # Strip bare JSON objects that look like internal payloads
-    _bare_json_re = re.compile(
-        r'^\s*\{[^}]*"(?:intent|reasoning|decisions|write_file|tool|action)".*?\}',
-        re.MULTILINE | re.DOTALL,
-    )
-    cleaned = _bare_json_re.sub("", cleaned)
+    # Strip bare JSON objects that look like internal payloads.
+    # Uses brace-depth tracking to handle nested objects correctly.
+    cleaned = _strip_bare_internal_json_objects(cleaned)
 
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     # If stripping removed all content, the entire text was internal payload —

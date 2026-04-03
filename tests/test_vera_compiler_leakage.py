@@ -255,6 +255,28 @@ class TestStripInternalCompilerLeakage:
         result = strip_internal_compiler_leakage(text)
         assert "def hello():" in result
 
+    def test_strips_nested_bare_json_no_trailing_brace(self) -> None:
+        """Nested JSON objects must not leave a trailing ``}`` residue."""
+        text = '{"intent": "x", "write_file": {"path": "y", "content": "hello"}}'
+        result = strip_internal_compiler_leakage(text)
+        assert '"intent"' not in result
+        assert "}" not in result
+
+    def test_strips_multiline_bare_json(self) -> None:
+        """Multi-line bare JSON with markers spread across lines must be stripped."""
+        text = (
+            "Here is the plan.\n\n"
+            '{"intent": "create plan",\n'
+            ' "reasoning": "user wants workout",\n'
+            ' "write_file": {"path": "plan.md", "content": "Day 1: Chest"}}\n\n'
+            "Hope you like it."
+        )
+        result = strip_internal_compiler_leakage(text)
+        assert '"intent"' not in result
+        assert '"reasoning"' not in result
+        assert "Here is the plan." in result
+        assert "Hope you like it." in result
+
     def test_empty_input(self) -> None:
         assert strip_internal_compiler_leakage("") == ""
         assert strip_internal_compiler_leakage("   ") == "   "

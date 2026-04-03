@@ -21,7 +21,8 @@
   - `guardrail_false_preview_claim` now filters out internal compiler payloads from preserved
     code blocks — only user-facing code is preserved.
   - New `strip_internal_compiler_leakage()`: defense-in-depth guardrail for GOVERNED_PREVIEW
-    mode that strips both fenced and bare internal compiler JSON payloads.
+    mode that strips both fenced and bare internal compiler JSON payloads.  Bare JSON
+    stripping uses brace-depth tracking to handle nested objects without residue.
 - **Defense-in-depth integration** (`src/voxera/vera_web/app.py`):
   - `strip_internal_compiler_leakage` applied to sanitized_answer in the GOVERNED_PREVIEW
     path before downstream guardrails run.
