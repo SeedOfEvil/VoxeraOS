@@ -527,7 +527,7 @@ def _looks_like_contextual_refinement(message: str) -> bool:
         return False
     return bool(
         re.search(
-            r"\b(actually|instead|change|switch|rename|append|make\s+it|make\s+that|put\s+.*\s+in\s+it|use\s+this|for\s+later|more\s+concise|into\s+a\s+checklist|into\s+a\s+list|continue\s+(?:that|the)\s+plan|keep\s+(?:the\s+)?same\s+tone|more\s+operator|more\s+user)\b",
+            r"\b(actually|instead|change|switch|rename|append|make\s+it|make\s+that|put\s+.*\s+in\s+it|use\s+this|for\s+later|more\s+concise|into\s+a\s+checklist|into\s+a\s+list|keep\s+(?:the\s+)?same\s+tone|more\s+operator|more\s+user|more\s+formal)\b",
             lowered,
         )
     )
@@ -537,8 +537,8 @@ def _looks_like_contextual_refinement(message: str) -> bool:
 # Session-context-aware authored follow-up resolution
 # ---------------------------------------------------------------------------
 # This supports natural follow-up references ("make that more concise",
-# "turn that into a checklist", "continue that plan") against authored
-# content when session context confirms a clear, safe target.
+# "turn that into a checklist", "make that more operator-facing") against
+# authored content when session context confirms a clear, safe target.
 #
 # Architectural rules:
 # - Session context is a continuity aid, NOT a truth surface.
@@ -546,14 +546,19 @@ def _looks_like_contextual_refinement(message: str) -> bool:
 # - Fail closed when no valid target exists.
 # - Authored content stays authored — runtime/result text is never promoted.
 # - No cross-session memory.
+#
+# Only patterns that have a matching handler in refined_content_from_active_preview
+# are included.  Patterns like "continue that plan" (content generation) or
+# "make it longer" / "more detailed" (no handler) are intentionally excluded
+# so detection stays honest — every detected pattern can actually resolve.
 
 _SESSION_AUTHORED_FOLLOWUP_RE = re.compile(
     r"\b("
-    r"make\s+(?:that|it|this)\s+(?:more\s+)?(?:concise|shorter|longer|detailed|formal|casual)"
+    r"make\s+(?:that|it|this)\s+(?:more\s+)?(?:concise|shorter|formal)"
     r"|turn\s+(?:that|it|this)\s+into\s+(?:a\s+)?(?:checklist|list|outline|bullet)"
-    r"|(?:more|less)\s+(?:concise|verbose|detailed|formal|casual|operator[- ]facing|user[- ]facing|technical)"
+    r"|more\s+(?:concise|formal|operator[- ]facing|user[- ]facing)"
+    r"|(?:formal|more\s+formal)\s+tone"
     r"|keep\s+(?:the\s+)?same\s+(?:tone|style|format)"
-    r"|continue\s+(?:that|the)\s+(?:plan|outline|list|draft)"
     r"|make\s+(?:that|it)\s+(?:more\s+)?(?:operator|user)[- ](?:facing|focused|friendly)"
     r")\b",
     re.IGNORECASE,

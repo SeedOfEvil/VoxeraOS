@@ -162,11 +162,9 @@ class TestSessionAwareAuthoredFollowupDetection:
             "make it more operator-facing",
             "more user-facing",
             "keep the same tone",
-            "continue that plan",
-            "continue the outline",
             "make that more formal",
-            "make it more detailed",
-            "less verbose",
+            "make that shorter",
+            "more formal tone",
         ],
     )
     def test_recognizes_authored_followup_patterns(self, message: str) -> None:
@@ -183,6 +181,12 @@ class TestSessionAwareAuthoredFollowupDetection:
             "open google.com",
             "write a note",
             "",
+            # Intentionally excluded: patterns with no resolution handler
+            "continue that plan",
+            "make it more detailed",
+            "less verbose",
+            "more technical",
+            "make it longer",
         ],
     )
     def test_rejects_non_followup_patterns(self, message: str) -> None:
@@ -388,14 +392,8 @@ class TestMaybeDraftJobPayloadSessionContext:
 # ---------------------------------------------------------------------------
 
 
-class TestPlanningContinuationPatterns:
-    """Tests that planning continuation phrases are recognized as contextual refinement."""
-
-    def test_continue_that_plan_is_contextual_refinement(self) -> None:
-        from voxera.vera.preview_drafting import _looks_like_contextual_refinement
-
-        assert _looks_like_contextual_refinement("continue that plan") is True
-        assert _looks_like_contextual_refinement("continue the plan") is True
+class TestContextualRefinementPatterns:
+    """Tests that session-aware phrases are recognized as contextual refinement."""
 
     def test_keep_same_tone_is_contextual_refinement(self) -> None:
         from voxera.vera.preview_drafting import _looks_like_contextual_refinement
@@ -413,10 +411,53 @@ class TestPlanningContinuationPatterns:
 
         assert _looks_like_contextual_refinement("into a checklist") is True
 
+    def test_more_formal_is_contextual_refinement(self) -> None:
+        from voxera.vera.preview_drafting import _looks_like_contextual_refinement
+
+        assert _looks_like_contextual_refinement("more formal") is True
+
+    def test_continue_that_plan_is_not_contextual_refinement(self) -> None:
+        """'continue that plan' has no resolution handler — must not trigger refinement."""
+        from voxera.vera.preview_drafting import _looks_like_contextual_refinement
+
+        assert _looks_like_contextual_refinement("continue that plan") is False
+
 
 # ---------------------------------------------------------------------------
 # Regression anchors: trust boundary invariants
 # ---------------------------------------------------------------------------
+
+
+class TestDetectionResolutionHonesty:
+    """Every pattern detected by _is_session_aware_authored_followup must resolve."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "make that more concise",
+            "turn that into a checklist",
+            "make it more operator-facing",
+            "more user-facing",
+            "keep the same tone",
+            "make that more formal",
+            "make that shorter",
+        ],
+    )
+    def test_detected_patterns_actually_resolve(self, message: str) -> None:
+        """If detection fires, resolution must produce a result (no dead patterns)."""
+        assert _is_session_aware_authored_followup(message) is True
+        result = _resolve_authored_followup_from_session_context(
+            message,
+            session_context={"active_draft_ref": "~/VoxeraOS/notes/plan.txt"},
+            assistant_artifacts=[
+                {
+                    "content": "Point one. Point two. Point three.",
+                    "artifact_type": "explanation",
+                },
+            ],
+        )
+        assert result is not None, f"'{message}' detected but resolution returned None"
+        assert "write_file" in result
 
 
 class TestTrustBoundaryInvariants:

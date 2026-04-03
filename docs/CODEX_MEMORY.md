@@ -8,8 +8,9 @@
   - These patterns work both in the active-preview refinement path and the session-context-aware
     follow-up path.
 - **Session-context-aware follow-up resolution** (`vera/preview_drafting.py`):
-  - `_is_session_aware_authored_followup` detects bounded transformation/continuation requests
-    (not ambiguous "change it" patterns).
+  - `_is_session_aware_authored_followup` detects bounded transformation requests
+    (concise, checklist, tone shifts, formal — not ambiguous "change it" or
+    content-generation patterns like "continue that plan").
   - `_resolve_authored_followup_from_session_context` resolves against the most recent saveable
     assistant artifact when session context has `active_draft_ref`.
   - Fail-closed when no active draft ref, no artifacts, or empty artifact content.
