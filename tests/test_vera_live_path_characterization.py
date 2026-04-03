@@ -1,0 +1,757 @@
+"""Live-path characterization tests for Vera evidence-grounded workflows.
+
+Protects the strongest real user paths with regression coverage:
+
+1. Natural drafting → preview truth binding
+2. Preview prepared / updated / unchanged / submitted wording clarity
+3. Linked-job result review (evidence-grounded)
+4. Evidence-grounded follow-up preview preparation
+5. Fail-closed behavior when no resolvable completed job exists
+6. Explicit handoff wording after preview
+
+These tests assert meaningful behavior and truth surfaces, not incidental strings.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from voxera.vera import service as vera_service
+from voxera.vera.evidence_review import (
+    ReviewedJobEvidence,
+    draft_followup_preview,
+    is_followup_preview_request,
+    is_review_request,
+    review_message,
+)
+from voxera.vera_web import app as vera_app_module
+from voxera.vera_web.chat_early_exit_dispatch import dispatch_early_exit_intent
+from voxera.vera_web.response_shaping import assemble_assistant_reply
+
+from .vera_session_helpers import make_vera_session
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+_PROSE_PREVIEW = {
+    "goal": "save note",
+    "write_file": {"path": "~/VoxeraOS/notes/foo.md", "content": "hello world"},
+}
+
+
+def _base_assemble_kwargs(**overrides):
+    base = dict(
+        message="tell me about the weather",
+        pending_preview=None,
+        builder_payload=None,
+        in_voxera_preview_flow=False,
+        is_code_draft_turn=False,
+        is_writing_draft_turn=False,
+        is_enrichment_turn=False,
+        conversational_answer_first_turn=False,
+        is_json_content_request=False,
+        is_voxera_control_turn=False,
+        explicit_targeted_content_refinement=False,
+        preview_update_rejected=False,
+        generation_content_refresh_failed_closed=False,
+        reply_status="ok:conversational",
+    )
+    base.update(overrides)
+    return base
+
+
+def _dispatch(
+    *,
+    message: str,
+    queue_root: Path,
+    session_id: str = "test-session",
+    diagnostics_service_turn: bool = False,
+    requested_job_id: str | None = None,
+    should_attempt_derived_save: bool = False,
+    session_investigation: dict[str, object] | None = None,
+    session_derived_output: dict[str, object] | None = None,
+):
+    return dispatch_early_exit_intent(
+        message=message,
+        diagnostics_service_turn=diagnostics_service_turn,
+        requested_job_id=requested_job_id,
+        should_attempt_derived_save=should_attempt_derived_save,
+        session_investigation=session_investigation,
+        session_derived_output=session_derived_output,
+        queue_root=queue_root,
+        session_id=session_id,
+    )
+
+
+def _make_evidence(
+    *,
+    job_id: str = "job-20260401-abc123",
+    state: str = "succeeded",
+    terminal_outcome: str = "succeeded",
+    latest_summary: str = "Completed successfully.",
+    failure_summary: str = "",
+    lifecycle_state: str = "done",
+    normalized_outcome_class: str = "success",
+) -> ReviewedJobEvidence:
+    return ReviewedJobEvidence(
+        job_id=job_id,
+        state=state,
+        lifecycle_state=lifecycle_state,
+        terminal_outcome=terminal_outcome,
+        approval_status="",
+        latest_summary=latest_summary,
+        failure_summary=failure_summary,
+        artifact_families=("execution_result",),
+        artifact_refs=("execution_result:execution_result.json",),
+        evidence_trace=(
+            f"lifecycle_state={lifecycle_state}",
+            f"terminal_outcome={terminal_outcome}",
+        ),
+        child_summary=None,
+        execution_capabilities=None,
+        capability_boundary_violation=None,
+        expected_artifacts=(),
+        observed_expected_artifacts=(),
+        missing_expected_artifacts=(),
+        expected_artifact_status="",
+        normalized_outcome_class=normalized_outcome_class,
+        value_forward_text="",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1. Natural drafting → preview truth binding
+# ---------------------------------------------------------------------------
+
+
+class TestNaturalDraftingPreviewTruth:
+    """Verify that natural drafting flows bind authored content to preview truth."""
+
+    def test_write_me_a_note_about_artifact_evidence_creates_preview(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Live-path: 'write me a note about the artifact evidence model'."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            return {
+                "answer": (
+                    "The artifact evidence model in VoxeraOS tracks execution outcomes, "
+                    "attaches structured results as artifacts, and provides operators "
+                    "with canonical truth about what ran and what it produced."
+                ),
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("write me a note about the artifact evidence model")
+        assert res.status_code == 200
+
+        preview = session.preview()
+        assert preview is not None, "Preview must exist after drafting request"
+        assert "write_file" in preview
+        content = preview["write_file"]["content"]
+        # Authored content must reach the preview — not a control message
+        assert "artifact evidence model" in content.lower()
+        assert "execution outcomes" in content.lower()
+        # Must NOT contain control-plane text
+        assert "nothing has been submitted" not in content.lower()
+        assert "prepared a preview" not in content.lower()
+
+    def test_make_it_shorter_updates_preview_content(self, tmp_path, monkeypatch) -> None:
+        """Live-path: 'make it shorter and more operator-facing' after initial draft."""
+        session = make_vera_session(monkeypatch, tmp_path)
+        call_count = {"n": 0}
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return {
+                    "answer": (
+                        "The artifact evidence model in VoxeraOS tracks execution outcomes, "
+                        "attaches structured results as artifacts, and provides operators "
+                        "with canonical truth about what ran and what it produced."
+                    ),
+                    "status": "ok:test",
+                }
+            return {
+                "answer": (
+                    "VoxeraOS artifacts give operators canonical proof of execution "
+                    "outcomes and structured results."
+                ),
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        session.chat("write me a note about the artifact evidence model")
+        first_preview = session.preview()
+        assert first_preview is not None
+
+        session.chat("make it shorter and more operator-facing")
+        updated_preview = session.preview()
+        assert updated_preview is not None
+        updated_content = updated_preview["write_file"]["content"]
+        # Updated content should reflect the refinement
+        assert "operators" in updated_content.lower() or "canonical" in updated_content.lower()
+        # Should be shorter than original or at least different
+        assert updated_content != first_preview["write_file"]["content"]
+
+    def test_save_as_named_file_preserves_content_and_path(self, tmp_path, monkeypatch) -> None:
+        """Live-path: 'save it as artifact-evidence-operator-note.md' after drafting."""
+        session = make_vera_session(monkeypatch, tmp_path)
+        call_count = {"n": 0}
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return {
+                    "answer": (
+                        "VoxeraOS artifacts give operators canonical proof of execution "
+                        "outcomes and structured results."
+                    ),
+                    "status": "ok:test",
+                }
+            return {"answer": "ok", "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        session.chat("write me a note about the artifact evidence model")
+        session.chat("save it as artifact-evidence-operator-note.md")
+
+        preview = session.preview()
+        assert preview is not None
+        wf = preview["write_file"]
+        assert wf["path"] == "~/VoxeraOS/notes/artifact-evidence-operator-note.md"
+        # Content must survive the rename — not get replaced by control text
+        assert len(wf["content"]) > 10
+        assert "nothing has been submitted" not in wf["content"].lower()
+
+
+# ---------------------------------------------------------------------------
+# 2. Preview wording: prepared vs updated vs unchanged vs submitted
+# ---------------------------------------------------------------------------
+
+
+class TestPreviewWordingLivePaths:
+    """Verify that preview-state wording is truthful for each transition."""
+
+    def test_first_draft_says_prepared_and_preview_only(self) -> None:
+        """New preview (no prior) → 'prepared' + 'preview-only' + 'not submitted'."""
+        result = assemble_assistant_reply(
+            "I set up a preview for you.",
+            **_base_assemble_kwargs(
+                message="write me a note about the artifact evidence model",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=None,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        text = result.assistant_text.lower()
+        assert "prepared" in text
+        assert "preview-only" in text
+        assert "nothing has been submitted yet" in text
+
+    def test_refinement_says_updated_and_preview_only(self) -> None:
+        """Update to existing preview → 'updated' + 'preview-only' + 'not submitted'."""
+        result = assemble_assistant_reply(
+            "Here is the shorter version.",
+            **_base_assemble_kwargs(
+                message="make it shorter and more operator-facing",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=_PROSE_PREVIEW,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        text = result.assistant_text.lower()
+        assert "updated" in text
+        assert "preview-only" in text
+        assert "nothing has been submitted yet" in text
+
+    def test_unchanged_preview_does_not_claim_update(self) -> None:
+        """When builder_payload is None (no update), wording must not claim an update."""
+        result = assemble_assistant_reply(
+            "Sure, the note looks good.",
+            **_base_assemble_kwargs(
+                message="looks good",
+                builder_payload=None,
+                pending_preview=_PROSE_PREVIEW,
+            ),
+        )
+        text = result.assistant_text.lower()
+        # When no builder_payload exists, the reply must NOT use the governed
+        # "I've updated the preview" phrasing (reserved for builder_payload=set).
+        # Check both curly-quote (\u2019) and straight-quote variants because
+        # response shaping emits curly quotes but tests may normalize differently.
+        assert "i\u2019ve updated the preview" not in text
+        assert "i've updated the preview" not in text
+        # Status must NOT be "prepared_preview" — nothing was prepared
+        assert result.status != "prepared_preview"
+
+    def test_explicit_handoff_wording_after_submit(self, tmp_path, monkeypatch) -> None:
+        """After submit, the queue should have a job and preview should be cleared."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            return {
+                "answer": "VoxeraOS tracks execution outcomes with artifacts.",
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        session.chat("write me a note about artifacts")
+        session.chat("save that to a note")
+        preview_before = session.preview()
+        assert preview_before is not None
+
+        submit = session.chat("submit it")
+        assert submit.status_code == 200
+
+        # Preview must be cleared after submit
+        preview_after = session.preview()
+        assert preview_after is None
+
+        # Job must exist in inbox
+        inbox_files = list((session.queue / "inbox").glob("*.json"))
+        assert len(inbox_files) == 1
+
+        # Submitted job must contain authored content, not control text
+        payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+        assert "write_file" in payload
+        content = payload["write_file"]["content"]
+        assert "execution outcomes" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# 3. Linked-job result review (evidence-grounded)
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedJobReviewLivePaths:
+    """Verify that linked-job review is evidence-grounded, not LLM-fabricated."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "summarize the result",
+            "inspect output details",
+            "what happened",
+            "did it work",
+            "review the result",
+            "what was the outcome",
+        ],
+    )
+    def test_review_phrases_are_recognized(self, phrase: str) -> None:
+        assert is_review_request(phrase), f"Expected review request: {phrase!r}"
+
+    def test_review_with_evidence_returns_grounded_message(self, tmp_path) -> None:
+        """Review dispatch with resolvable evidence must return grounded review."""
+        evidence = _make_evidence(
+            latest_summary="Wrote artifact-evidence-operator-note.md successfully.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ) as mock_review:
+            result = _dispatch(
+                message="summarize the result",
+                queue_root=tmp_path,
+            )
+        mock_review.assert_called_once()
+        assert result.matched is True
+        assert result.status == "reviewed_job_outcome"
+        # Must contain evidence-grounded fields
+        assert evidence.job_id in result.assistant_text
+        assert "succeeded" in result.assistant_text.lower()
+        assert evidence.latest_summary in result.assistant_text
+        # Must NOT set write flags (review is read-only)
+        assert result.write_preview is False
+        assert result.write_handoff_ready is False
+
+    def test_review_message_surfaces_canonical_fields(self) -> None:
+        """review_message must surface job_id, state, outcome, and summary."""
+        evidence = _make_evidence(
+            job_id="job-20260401-review123",
+            latest_summary="Deployed config changes to staging.",
+        )
+        msg = review_message(evidence)
+        assert "job-20260401-review123" in msg
+        assert "succeeded" in msg.lower()
+        assert "Deployed config changes to staging." in msg
+        assert "Lifecycle state" in msg or "lifecycle_state" in msg.lower()
+        assert "Terminal outcome" in msg or "terminal_outcome" in msg.lower()
+
+    def test_review_failed_job_surfaces_failure_summary(self) -> None:
+        evidence = _make_evidence(
+            state="failed",
+            terminal_outcome="failed",
+            latest_summary="",
+            failure_summary="Permission denied: /etc/config",
+            normalized_outcome_class="runtime_error",
+        )
+        msg = review_message(evidence)
+        assert "Permission denied" in msg
+        assert "failed" in msg.lower()
+
+    def test_inspect_output_details_via_dispatch(self, tmp_path) -> None:
+        """'inspect output details' must reach the review branch and return evidence."""
+        evidence = _make_evidence(
+            latest_summary="Scanned 42 files, found 3 issues.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ) as mock_review:
+            result = _dispatch(
+                message="inspect output details",
+                queue_root=tmp_path,
+            )
+        mock_review.assert_called_once()
+        assert result.matched is True
+        assert result.status == "reviewed_job_outcome"
+        assert "42 files" in result.assistant_text
+
+
+# ---------------------------------------------------------------------------
+# 4. Evidence-grounded follow-up preview preparation
+# ---------------------------------------------------------------------------
+
+
+class TestFollowUpPreviewLivePaths:
+    """Verify follow-up preview preparation is grounded in real evidence."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "now prepare the follow-up",
+            "what should we do next based on that",
+            "draft a follow-up",
+            "prepare the follow-up",
+            "based on that result",
+        ],
+    )
+    def test_followup_phrases_are_recognized(self, phrase: str) -> None:
+        assert is_followup_preview_request(phrase), f"Expected followup: {phrase!r}"
+
+    def test_followup_with_succeeded_evidence_prepares_grounded_preview(self, tmp_path) -> None:
+        """Follow-up dispatch with succeeded evidence must return a grounded preview."""
+        evidence = _make_evidence(
+            job_id="job-20260401-followup1",
+            latest_summary="Applied security patches to 5 hosts.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ) as mock_review:
+            result = _dispatch(
+                message="now prepare the follow-up",
+                queue_root=tmp_path,
+            )
+        mock_review.assert_called_once()
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        assert result.write_preview is True
+        assert result.write_handoff_ready is True
+        assert result.preview_payload is not None
+        # Follow-up text must be grounded in evidence
+        assert "job-20260401-followup1" in result.assistant_text
+        assert "preview-only" in result.assistant_text.lower()
+        assert "nothing has been submitted yet" in result.assistant_text.lower()
+        # Evidence detail must appear
+        assert "succeeded" in result.assistant_text.lower()
+
+    def test_followup_preview_goal_references_prior_job(self) -> None:
+        """draft_followup_preview must produce a goal grounded in the prior job."""
+        evidence = _make_evidence(
+            job_id="job-20260401-goaltest",
+            latest_summary="Completed backup rotation.",
+        )
+        payload = draft_followup_preview(evidence)
+        assert "goal" in payload
+        goal = payload["goal"]
+        assert "job-20260401-goaltest" in goal
+        # Must reference evidence, not be generic
+        assert "follow-up" in goal.lower() or "grounded" in goal.lower()
+
+    def test_followup_for_failed_job_references_failure(self) -> None:
+        """Follow-up for a failed job must reference the failure for correction."""
+        evidence = _make_evidence(
+            state="failed",
+            terminal_outcome="failed",
+            failure_summary="Disk full on /var/log",
+            latest_summary="",
+            normalized_outcome_class="runtime_error",
+        )
+        payload = draft_followup_preview(evidence)
+        goal = payload["goal"]
+        # Failed follow-up goal must include both: reference to the failure summary
+        # and a correction/retry intent. Current output:
+        # "prepare a corrected retry for job-test after addressing: Disk full on /var/log"
+        assert "Disk full" in goal, "Goal must include the failure summary verbatim"
+        assert evidence.job_id in goal, "Goal must reference the job id"
+
+    def test_what_should_we_do_next_based_on_that_reaches_followup(self, tmp_path) -> None:
+        """Natural phrasing 'what should we do next based on that' must reach followup."""
+        evidence = _make_evidence()
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=evidence,
+        ) as mock_review:
+            result = _dispatch(
+                message="what should we do next based on that",
+                queue_root=tmp_path,
+            )
+        mock_review.assert_called_once()
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        assert result.write_preview is True
+
+
+# ---------------------------------------------------------------------------
+# 5. Fail-closed behavior: no resolvable completed job
+# ---------------------------------------------------------------------------
+
+
+class TestFailClosedNoResolvableJob:
+    """Verify fail-closed behavior when evidence cannot be resolved."""
+
+    def test_review_fails_closed_with_no_linked_job(self, tmp_path) -> None:
+        """'summarize the result' with no job must fail closed, not fabricate."""
+        result = _dispatch(
+            message="summarize the result",
+            queue_root=tmp_path,
+        )
+        assert result.matched is True
+        assert result.status == "review_missing_job"
+        text = result.assistant_text.lower()
+        assert "could not resolve" in text or "no completed" in text
+        # Must NOT claim to have reviewed anything
+        assert "reviewed" not in text
+        assert "succeeded" not in text
+        # Must NOT set write flags
+        assert result.write_preview is False
+        assert result.write_handoff_ready is False
+
+    def test_followup_fails_closed_with_no_linked_job(self, tmp_path) -> None:
+        """'now prepare the follow-up' with no job must fail closed."""
+        result = _dispatch(
+            message="now prepare the follow-up",
+            queue_root=tmp_path,
+        )
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
+        text = result.assistant_text.lower()
+        assert "follow-up preview" in text or "resolvable" in text
+        assert "no completed" in text or "no completed linked job" in text
+        # Must NOT produce a preview
+        assert result.write_preview is False
+        assert result.preview_payload is None
+
+    def test_inspect_output_details_fails_closed_with_no_job(self, tmp_path) -> None:
+        """'inspect output details' with no job must fail closed."""
+        result = _dispatch(
+            message="inspect output details",
+            queue_root=tmp_path,
+        )
+        assert result.matched is True
+        assert result.status == "review_missing_job"
+        assert result.write_preview is False
+
+    def test_what_should_we_do_next_fails_closed_with_no_job(self, tmp_path) -> None:
+        """'what should we do next based on that' with no job must fail closed."""
+        result = _dispatch(
+            message="what should we do next based on that",
+            queue_root=tmp_path,
+        )
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
+        assert result.preview_payload is None
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "summarize the result",
+            "inspect output details",
+            "review the result",
+            "what was the outcome",
+            "did it work",
+        ],
+    )
+    def test_review_fail_closed_never_sets_write_flags(self, tmp_path, phrase: str) -> None:
+        result = _dispatch(message=phrase, queue_root=tmp_path)
+        assert result.matched is True
+        assert result.write_preview is False
+        assert result.write_handoff_ready is False
+        assert result.preview_payload is None
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "now prepare the follow-up",
+            "draft the follow-up",
+            "what should we do next based on that",
+            "based on that result",
+        ],
+    )
+    def test_followup_fail_closed_never_sets_write_flags(self, tmp_path, phrase: str) -> None:
+        result = _dispatch(message=phrase, queue_root=tmp_path)
+        assert result.matched is True
+        assert result.write_preview is False
+        assert result.write_handoff_ready is False
+        assert result.preview_payload is None
+
+
+# ---------------------------------------------------------------------------
+# 6. Session-level evidence review and follow-up integration
+# ---------------------------------------------------------------------------
+
+
+class TestSessionLevelEvidenceReviewFollowUp:
+    """Session-level tests verifying the full chat → dispatch → reply path
+    for linked-job review and follow-up flows."""
+
+    @staticmethod
+    def _seed_completed_job(
+        session, *, stem: str, latest_summary: str, goal: str = "test goal"
+    ) -> str:
+        """Seed a completed job with artifacts and link it to the session.
+
+        Returns the job_id string.
+        """
+        job_id = f"{stem}.json"
+        bucket_dir = session.queue / "done"
+        bucket_dir.mkdir(parents=True, exist_ok=True)
+        (bucket_dir / job_id).write_text(json.dumps({"goal": goal}), encoding="utf-8")
+        art = session.queue / "artifacts" / stem
+        art.mkdir(parents=True, exist_ok=True)
+        (art / "execution_result.json").write_text(
+            json.dumps(
+                {
+                    "lifecycle_state": "done",
+                    "terminal_outcome": "succeeded",
+                    "review_summary": {
+                        "latest_summary": latest_summary,
+                        "terminal_outcome": "succeeded",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        vera_service.write_session_handoff_state(
+            session.queue,
+            session.session_id,
+            attempted=True,
+            queue_path=str(bucket_dir / job_id),
+            status="submitted",
+            job_id=job_id,
+        )
+        return job_id
+
+    def test_review_request_in_session_returns_evidence_grounded_reply(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Chat 'summarize the result' with a linked job returns evidence, not LLM."""
+        session = make_vera_session(monkeypatch, tmp_path)
+        self._seed_completed_job(
+            session,
+            stem="job-20260401-session1",
+            latest_summary="Wrote operator note successfully.",
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            return {"answer": "fallback", "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("summarize the result")
+        assert res.status_code == 200
+
+        # The reply must come from evidence, not the LLM fallback
+        last_turn = session.turns()[-1]["text"]
+        assert "Wrote operator note successfully." in last_turn
+        assert "fallback" not in last_turn
+
+    def test_followup_request_in_session_creates_preview_from_evidence(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Chat 'now prepare the follow-up' with linked job creates evidence-grounded preview."""
+        session = make_vera_session(monkeypatch, tmp_path)
+        self._seed_completed_job(
+            session,
+            stem="job-20260401-session2",
+            latest_summary="Config deployed to staging.",
+            goal="deploy config",
+        )
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            return {"answer": "fallback", "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("now prepare the follow-up")
+        assert res.status_code == 200
+
+        # A preview must now exist, grounded in the prior job
+        preview = session.preview()
+        assert preview is not None, "Follow-up must create a preview"
+        assert "goal" in preview
+        goal = preview["goal"]
+        assert "job-20260401-session2" in goal or "follow-up" in goal.lower()
+
+        # Last turn must communicate preview-only semantics and no submission.
+        # Check exact governed phrase rather than loose word presence.
+        last_turn = session.turns()[-1]["text"].lower()
+        assert "preview-only" in last_turn
+        assert "nothing has been submitted" in last_turn
+        # Must NOT use LLM fallback text
+        assert "fallback" not in last_turn
+
+    def test_review_request_with_no_linked_job_fails_closed_in_session(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Chat 'summarize the result' with no linked job must fail closed in session."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            return {"answer": "The result was great!", "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("summarize the result")
+        assert res.status_code == 200
+
+        last_turn = session.turns()[-1]["text"].lower()
+        # Must fail closed — not fabricate a review
+        assert "could not resolve" in last_turn or "no completed" in last_turn
+        # Must NOT use the LLM fabrication
+        assert "the result was great" not in last_turn
+        # No preview should be created
+        assert session.preview() is None
+
+    def test_followup_with_no_linked_job_fails_closed_in_session(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Chat 'now prepare the follow-up' with no linked job must fail closed."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message, **kw):
+            return {"answer": "Here is a follow-up plan.", "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        res = session.chat("now prepare the follow-up")
+        assert res.status_code == 200
+
+        last_turn = session.turns()[-1]["text"].lower()
+        assert "follow-up preview" in last_turn or "resolvable" in last_turn
+        assert "here is a follow-up plan" not in last_turn
+        assert session.preview() is None

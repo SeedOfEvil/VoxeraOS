@@ -1,3 +1,28 @@
+## 2026-04-02 — PR #275 — test(vera): expand evidence-grounded review and follow-up live-path characterization
+
+- Summary: Bounded stabilization/characterization PR that adds regression coverage for
+  the strongest real user paths across drafting, preview-state UX, linked-job review,
+  and evidence-grounded follow-up. No runtime behavior changes.
+- **New test file**: `tests/test_vera_live_path_characterization.py` (43 tests) covering:
+  1. Natural drafting → preview truth binding ("write me a note about..." → content reaches preview)
+  2. Preview prepared / updated / unchanged wording clarity (truthful state transitions)
+  3. Linked-job result review via dispatch and session (evidence-grounded, not LLM-fabricated)
+  4. Evidence-grounded follow-up preview preparation (goal references prior job, preview-only)
+  5. Fail-closed behavior when no resolvable completed job exists (review + follow-up)
+  6. Session-level integration: full chat → dispatch → reply path for review and follow-up
+- **Recommended live-path regression set** (for future Vera stabilization):
+  - "write me a note about the artifact evidence model" → preview truth
+  - "make it shorter and more operator-facing" → preview updated
+  - "save it as artifact-evidence-operator-note.md" → path preserved, content survives
+  - "submit it" → queue job, preview cleared
+  - "summarize the result" → evidence-grounded review (or fail-closed)
+  - "inspect output details" → evidence-grounded review
+  - "now prepare the follow-up" → evidence-grounded preview (or fail-closed)
+  - "what should we do next based on that" → follow-up preview
+- **Why no behavior change**: All tests characterize existing behavior. No source files
+  were modified. The test file asserts on truth surfaces (preview payload content, dispatch
+  status, write flags, session turns) rather than incidental strings.
+
 ## 2026-04-02 — PR #TBD — improve(vera): polish linked-job review and evidence-grounded follow-up workflows
 
 - Summary: Bounded workflow polish PR that strengthens linked-job review and follow-up
