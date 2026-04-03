@@ -48,6 +48,7 @@ def _dispatch(
     session_derived_output: dict[str, object] | None = None,
     queue_root: Path | None = None,
     session_id: str = "test-session",
+    session_context: dict[str, object] | None = None,
 ) -> EarlyExitResult:
     """Thin wrapper so tests don't have to pass every keyword argument."""
     return dispatch_early_exit_intent(
@@ -59,6 +60,7 @@ def _dispatch(
         session_derived_output=session_derived_output,
         queue_root=queue_root or Path("/tmp/nonexistent-queue"),
         session_id=session_id,
+        session_context=session_context,
     )
 
 
@@ -1162,3 +1164,215 @@ class TestLinkedJobFollowupRevision:
         content = str(wf.get("content") or "")
         assert "OOM killed" in content
         assert "failed" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# Session-context reference resolution in early-exit dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestSessionContextJobResolution:
+    """Session context provides fallback job-ID resolution for review/follow-up."""
+
+    def test_review_uses_session_context_when_handoff_empty(self, tmp_path: Path) -> None:
+        """When handoff state has no job_id, session context fallback is used."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="inbox-ctx-resolved.json",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="not_applicable",
+            latest_summary="Context-resolved job",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="succeeded",
+            value_forward_text="",
+        )
+        session_ctx = {"last_completed_job_ref": "inbox-ctx-resolved.json"}
+        with (
+            patch(
+                "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+                return_value=mock_evidence,
+            ) as mock_review,
+            patch(
+                "voxera.vera_web.chat_early_exit_dispatch.read_session_handoff_state",
+                return_value={},
+            ),
+        ):
+            result = _dispatch(
+                message="summarize the result",
+                queue_root=tmp_path,
+                session_context=session_ctx,
+            )
+        assert result.matched is True
+        assert result.status == "reviewed_job_outcome"
+        # Verify session context job-id was passed to review_job_outcome.
+        mock_review.assert_called_once_with(
+            queue_root=tmp_path, requested_job_id="inbox-ctx-resolved.json"
+        )
+
+    def test_review_sets_last_reviewed_job_ref_in_context_updates(self, tmp_path: Path) -> None:
+        """Successful review returns context_updates with last_reviewed_job_ref."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="inbox-reviewed.json",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="not_applicable",
+            latest_summary="Test",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="succeeded",
+            value_forward_text="",
+        )
+        with (
+            patch(
+                "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+                return_value=mock_evidence,
+            ),
+            patch(
+                "voxera.vera_web.chat_early_exit_dispatch.read_session_handoff_state",
+                return_value={"job_id": "inbox-reviewed.json"},
+            ),
+        ):
+            result = _dispatch(message="what happened", queue_root=tmp_path)
+        assert result.matched is True
+        assert result.context_updates == {"last_reviewed_job_ref": "inbox-reviewed.json"}
+
+    def test_followup_uses_session_context_when_handoff_empty(self, tmp_path: Path) -> None:
+        """Follow-up dispatch falls back to session context for job resolution."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="inbox-followup-ctx.json",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="not_applicable",
+            latest_summary="Completed successfully",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="succeeded",
+            value_forward_text="",
+        )
+        session_ctx = {"last_completed_job_ref": "inbox-followup-ctx.json"}
+        with (
+            patch(
+                "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+                return_value=mock_evidence,
+            ) as mock_review,
+            patch(
+                "voxera.vera_web.chat_early_exit_dispatch.read_session_handoff_state",
+                return_value={},
+            ),
+        ):
+            result = _dispatch(
+                message="draft the follow-up",
+                queue_root=tmp_path,
+                session_context=session_ctx,
+            )
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        mock_review.assert_called_once_with(
+            queue_root=tmp_path, requested_job_id="inbox-followup-ctx.json"
+        )
+
+    def test_review_fails_closed_with_no_context(self, tmp_path: Path) -> None:
+        """No handoff, no session context → review fails closed."""
+        with (
+            patch(
+                "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+                return_value=None,
+            ),
+            patch(
+                "voxera.vera_web.chat_early_exit_dispatch.read_session_handoff_state",
+                return_value={},
+            ),
+        ):
+            result = _dispatch(
+                message="summarize the result",
+                queue_root=tmp_path,
+                session_context={},
+            )
+        assert result.matched is True
+        assert result.status == "review_missing_job"
+
+    def test_context_updates_none_by_default(self) -> None:
+        """Non-review early exits do not set context_updates."""
+        # Near-miss submit is an early exit that doesn't involve job review.
+        result = _dispatch(message="submt it")
+        assert result.matched is True
+        assert result.context_updates is None
+
+    def test_explicit_job_id_takes_precedence_over_context(self, tmp_path: Path) -> None:
+        """An explicit requested_job_id always wins over session context."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="inbox-explicit.json",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="not_applicable",
+            latest_summary="Explicit job",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="succeeded",
+            value_forward_text="",
+        )
+        session_ctx = {"last_completed_job_ref": "inbox-context.json"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ) as mock_review:
+            result = _dispatch(
+                message="review inbox-explicit.json",
+                requested_job_id="inbox-explicit.json",
+                queue_root=tmp_path,
+                session_context=session_ctx,
+            )
+        assert result.matched is True
+        # Explicit job ID was used, not context.
+        mock_review.assert_called_once_with(
+            queue_root=tmp_path, requested_job_id="inbox-explicit.json"
+        )

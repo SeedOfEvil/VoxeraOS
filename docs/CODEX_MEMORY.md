@@ -1,3 +1,37 @@
+## 2026-04-03 — PR #TBD — feat(vera): resolve session-scoped references for drafts, files, and job results
+
+- Summary: Bounded PR that builds session-scoped reference resolution on the shared session
+  context foundation, making in-session continuity phrases ("that draft", "that file",
+  "the result", "the follow-up") resolve safely without weakening truth boundaries.
+- **New module** (`src/voxera/vera/reference_resolver.py`):
+  - Bounded reference-resolution layer with four reference classes: DRAFT, FILE, JOB_RESULT, CONTINUATION.
+  - Phrase → class mapping with conservative keyword matching.
+  - Priority-ordered resolution per class using shared session context refs.
+  - Returns `ResolvedReference` (string value + source) or `UnresolvedReference` (fail-closed).
+  - `resolve_job_id_from_context()` provides job-ID fallback for early-exit dispatch.
+- **Integration** (`src/voxera/vera_web/chat_early_exit_dispatch.py`):
+  - `dispatch_early_exit_intent()` accepts optional `session_context` parameter.
+  - Job review (check 2) and follow-up (check 3) use session context as fallback when
+    handoff state has no job_id.
+  - Successful reviews return `context_updates` with `last_reviewed_job_ref`.
+  - `EarlyExitResult` gains a `context_updates` field for session-context write instructions.
+- **Lifecycle integration** (`src/voxera/vera_web/app.py`):
+  - Reads session context before early-exit dispatch and passes it through.
+  - Applies `context_updates` returned by early-exit handlers.
+  - File-save submissions now set `last_saved_file_ref` in session context.
+  - Job reviews now set `last_reviewed_job_ref` via context_updates.
+- **Trust boundaries preserved**: all existing truth precedence rules unchanged. Resolver
+  returns string ref hints — callers validate against canonical preview/queue/artifact truth.
+- **Tests**: 53 new tests in `test_reference_resolver.py` covering all reference classes,
+  happy paths, fail-closed paths, priority ordering, truth-boundary invariants, and edge cases.
+  7 new tests in `test_chat_early_exit_dispatch.py` covering session-context fallback
+  resolution, context_updates propagation, and explicit-ID precedence.
+- **Docs updated**: ARCHITECTURE.md, QUEUE_OBJECT_MODEL.md, CODEX_MEMORY.md, and prompt docs
+  (system-overview, platform-boundaries, runtime-technical-overview, vera role,
+  queue-object-model capability).
+- **Non-goals preserved**: No cross-session memory, no speculative resolution, no truth-boundary
+  drift, no redesign of app.py orchestration, no operator-console work.
+
 ## 2026-04-03 — PR #TBD — feat(vera): add shared session context model for workflow continuity
 
 - Summary: Foundation PR that introduces the canonical shared session context model for Vera.

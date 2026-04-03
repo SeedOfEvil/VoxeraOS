@@ -115,6 +115,7 @@ VoxeraOS/
 │   │   │   ├── investigation_derivations.py — compare/summarize/expand follow-up shaping
 │   │   │   ├── weather_flow.py      — live-weather quick flow + follow-up continuity
 │   │   │   ├── saveable_artifacts.py — recent meaningful assistant-content selection
+│   │   │   ├── reference_resolver.py — bounded session-scoped reference resolution
 │   │   │   ├── result_surfacing.py  — evidence-grounded value-forward result extraction
 │   │   │   ├── evidence_review.py   — queue evidence review / review-message shaping
 │   │   │   ├── handoff.py           — thin compatibility façade for extracted handoff seams
@@ -1566,10 +1567,24 @@ Every chat turn is classified into one of two execution modes **early** — the 
 ### Shared session context (`vera/session_store.py`, `vera_web/app.py`)
 - A bounded `shared_context` dict is persisted in the session payload alongside other preserved fields.
 - Tracks workflow-continuity references: `active_draft_ref`, `active_preview_ref`, `last_submitted_job_ref`, `last_completed_job_ref`, `last_reviewed_job_ref`, `last_saved_file_ref`, `active_topic`, `ambiguity_flags`.
-- Updated at lifecycle points: preview creation/update, submit/handoff, completion ingestion, session clear.
+- Updated at lifecycle points: preview creation/update, submit/handoff, completion ingestion, job review, session clear.
 - **Subordinate to canonical truth:** preview truth, queue truth, and artifact/evidence truth always win if they conflict with session context. Context is a continuity aid, not a trust replacement.
 - If continuity is ambiguous, the system fails closed rather than guessing.
 - Schema is normalized on every read/write: unknown keys dropped, missing keys filled from defaults, non-string refs cleared.
+
+### Session-scoped reference resolution (`vera/reference_resolver.py`)
+- A bounded reference-resolution layer maps natural in-session phrases to concrete referents using shared session context.
+- Supported reference classes: `DRAFT` ("that draft", "the draft"), `FILE` ("that file", "the note"), `JOB_RESULT` ("that result", "the last job"), `CONTINUATION` ("the follow-up", "the last one").
+- Resolution priority per class:
+  - **Draft**: `active_draft_ref` > `active_preview_ref`.
+  - **File**: `last_saved_file_ref` > `active_draft_ref` (only if path-like).
+  - **Job/result**: `last_completed_job_ref` > `last_reviewed_job_ref` > `last_submitted_job_ref`.
+  - **Continuation**: `active_preview_ref` > completed/reviewed/submitted job refs.
+- The resolver returns string ref values only — callers validate against canonical preview/queue/artifact truth downstream.
+- Missing or ambiguous references fail closed (`UnresolvedReference`).
+- `resolve_job_id_from_context()` provides a job-ID fallback for the early-exit dispatch when neither explicit job ID nor handoff state provides one.
+- The early-exit dispatch (`vera_web/chat_early_exit_dispatch.py`) uses session context as a fallback for job review and follow-up flows.
+- Successful job reviews now set `last_reviewed_job_ref` in session context. File-save submissions now set `last_saved_file_ref`.
 
 ### Hard conversational mode lock — zero preview/JSON/meta leakage guarantee
 

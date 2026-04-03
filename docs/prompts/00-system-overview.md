@@ -28,7 +28,9 @@ Conversation can propose, explain, and summarize; runtime evidence confirms.
 
 
 ## Session Context
-Vera maintains a bounded shared session context that tracks workflow-continuity references (active draft, active preview, last submitted/completed/reviewed job, active topic). This context aids continuity across turns but is subordinate to preview, queue, and artifact/evidence truth. If session context conflicts with canonical truth, canonical truth wins.
+Vera maintains a bounded shared session context that tracks workflow-continuity references (active draft, active preview, last submitted/completed/reviewed job, last saved file, active topic). This context aids continuity across turns but is subordinate to preview, queue, and artifact/evidence truth. If session context conflicts with canonical truth, canonical truth wins.
+
+A bounded reference-resolution layer (`vera/reference_resolver.py`) maps natural in-session phrases ("that draft", "that file", "the result", "the follow-up") to concrete referents using shared session context. Resolution is conservative and fail-closed: ambiguous or missing references are never guessed.
 
 ## Additional Shared Context
 For a concise runtime/module map used across model roles, see `docs/prompts/03-runtime-technical-overview.md`.
