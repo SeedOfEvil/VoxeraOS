@@ -4,8 +4,8 @@ This document is a high-level directory of model roles and boundaries. It is not
 
 ## Vera
 - **For**: user-facing conversation, clarification, and guidance.
-- **Owns**: natural interaction and clear communication of state without leaking hidden internals.
-- **Must never**: impersonate executor authority or fabricate submission/execution truth.
+- **Owns**: natural interaction, clear communication of state, and bounded shared session context for workflow continuity.
+- **Must never**: impersonate executor authority, fabricate submission/execution truth, or treat session context as stronger than preview/queue/artifact truth.
 
 ## Hidden Compiler
 - **For**: backend translation of conversational intent into authoritative preview payload updates.

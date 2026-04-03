@@ -197,8 +197,7 @@ _QUEUE_BOUNDARY_CONTENT = (
 )
 
 
-@pytest.mark.asyncio
-async def test_draft_short_markdown_note_creates_preview(tmp_path, monkeypatch):
+def test_draft_short_markdown_note_creates_preview(tmp_path, monkeypatch):
     """Prompt 1: 'Draft a short markdown note explaining...' must create a real preview."""
     session = make_vera_session(monkeypatch, tmp_path)
     monkeypatch.setattr(
@@ -225,8 +224,7 @@ async def test_draft_short_markdown_note_creates_preview(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.asyncio
-async def test_create_draft_explanation_as_txt_creates_preview(tmp_path, monkeypatch):
+def test_create_draft_explanation_as_txt_creates_preview(tmp_path, monkeypatch):
     """Prompt 2: 'Create a draft explanation as explanation.txt.' must create a real preview."""
     session = make_vera_session(monkeypatch, tmp_path)
     monkeypatch.setattr(
@@ -253,10 +251,7 @@ async def test_create_draft_explanation_as_txt_creates_preview(tmp_path, monkeyp
     )
 
 
-@pytest.mark.asyncio
-async def test_write_short_markdown_file_does_not_produce_submission_language(
-    tmp_path, monkeypatch
-):
+def test_write_short_markdown_file_does_not_produce_submission_language(tmp_path, monkeypatch):
     """Prompt 3: 'Write a short markdown file explaining the queue boundary.' must not produce submission language."""
     # The LLM content explains queuing — this triggered the _guardrail_submission_claim
     session = make_vera_session(monkeypatch, tmp_path)
@@ -284,8 +279,7 @@ async def test_write_short_markdown_file_does_not_produce_submission_language(
     assert wf.get("content", "").strip(), "Preview content should not be empty"
 
 
-@pytest.mark.asyncio
-async def test_draft_note_with_save_as_creates_content_not_just_path(tmp_path, monkeypatch):
+def test_draft_note_with_save_as_creates_content_not_just_path(tmp_path, monkeypatch):
     """Prompt 4: 'Draft a short note...save it as explanation.txt.' must bind real content."""
     session = make_vera_session(monkeypatch, tmp_path)
     monkeypatch.setattr(

@@ -107,7 +107,7 @@ VoxeraOS/
 │   │   │   └── planner_context.py   — LLM prompt preamble assembly
 │   │   ├── vera/
 │   │   │   ├── service.py           — top-level Vera orchestration + compatibility delegation
-│   │   │   ├── session_store.py     — session turns/preview/handoff persistence
+│   │   │   ├── session_store.py     — session turns/preview/handoff/shared-context persistence
 │   │   │   ├── preview_drafting.py  — deterministic preview drafting + save-by-reference previews
 │   │   │   ├── draft_revision.py    — active preview rename/path/content refinement + active-draft content refresh parsing
 │   │   │   ├── preview_submission.py — active-preview submit detection + queue handoff normalization
@@ -1562,6 +1562,14 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - A `conversational_planning_active` boolean is persisted in session state whenever a `CONVERSATIONAL_ARTIFACT` turn occurs.
 - On the next turn, if the flag is set, the user has no save/write intent, and no preview is active, the turn stays conversational. This allows multi-turn planning flows where Vera asks for details and the user provides them.
 - The flag is cleared whenever the turn is `GOVERNED_PREVIEW` (save intent, preview exists, or the user changes topics).
+
+### Shared session context (`vera/session_store.py`, `vera_web/app.py`)
+- A bounded `shared_context` dict is persisted in the session payload alongside other preserved fields.
+- Tracks workflow-continuity references: `active_draft_ref`, `active_preview_ref`, `last_submitted_job_ref`, `last_completed_job_ref`, `last_reviewed_job_ref`, `last_saved_file_ref`, `active_topic`, `ambiguity_flags`.
+- Updated at lifecycle points: preview creation/update, submit/handoff, completion ingestion, session clear.
+- **Subordinate to canonical truth:** preview truth, queue truth, and artifact/evidence truth always win if they conflict with session context. Context is a continuity aid, not a trust replacement.
+- If continuity is ambiguous, the system fails closed rather than guessing.
+- Schema is normalized on every read/write: unknown keys dropped, missing keys filled from defaults, non-string refs cleared.
 
 ### Hard conversational mode lock — zero preview/JSON/meta leakage guarantee
 

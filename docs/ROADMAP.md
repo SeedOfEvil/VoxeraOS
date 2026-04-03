@@ -51,7 +51,7 @@ Key areas (current implementation state):
 **Theme:** Make Vera + VoxeraOS feel like a coherent AI operating system platform, not just a prototype.
 
 Key areas:
-- Shared operational session context between Vera and VoxeraOS
+- Shared operational session context between Vera and VoxeraOS (foundation shipped: bounded session context model with lifecycle hooks)
 - Richer environment awareness for planning and review
 - Stable end-to-end conversational operating loop
 - Task-to-capability planning maturity

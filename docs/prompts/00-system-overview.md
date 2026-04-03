@@ -27,5 +27,8 @@ Execution truth belongs to VoxeraOS runtime outputs (queue state, artifacts, evi
 Conversation can propose, explain, and summarize; runtime evidence confirms.
 
 
+## Session Context
+Vera maintains a bounded shared session context that tracks workflow-continuity references (active draft, active preview, last submitted/completed/reviewed job, active topic). This context aids continuity across turns but is subordinate to preview, queue, and artifact/evidence truth. If session context conflicts with canonical truth, canonical truth wins.
+
 ## Additional Shared Context
 For a concise runtime/module map used across model roles, see `docs/prompts/03-runtime-technical-overview.md`.

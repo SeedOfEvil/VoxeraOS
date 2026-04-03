@@ -40,6 +40,9 @@ class VeraSessionHarness:
     def write_investigation(self, payload: dict[str, Any] | None) -> None:
         vera_service.write_session_investigation(self.queue, self.session_id, payload)
 
+    def session_context(self) -> dict[str, Any]:
+        return vera_service.read_session_context(self.queue, self.session_id)
+
 
 def make_vera_session(monkeypatch: Any, tmp_path: Path) -> VeraSessionHarness:
     queue = tmp_path / "queue"
