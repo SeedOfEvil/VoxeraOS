@@ -21,6 +21,13 @@ from ..core.writing_draft_intent import (
     is_writing_refinement_request,
 )
 from ..paths import queue_root as default_queue_root
+from ..vera.context_lifecycle import (
+    context_on_completion_ingested,
+    context_on_handoff_submitted,
+    context_on_preview_cleared,
+    context_on_preview_created,
+    context_on_session_cleared,
+)
 from ..vera.draft_revision import (
     looks_like_preview_rename_or_save_as_request,
 )
@@ -55,7 +62,6 @@ from ..vera.service import (
     _is_informational_web_query,
     _weather_context_has_pending_lookup,
     append_session_turn,
-    clear_session_context,
     clear_session_turns,
     generate_preview_builder_update,
     generate_vera_reply,
@@ -202,22 +208,19 @@ def _submit_handoff(
     if status == "submitted":
         handoff = read_session_handoff_state(root, session_id) or {}
         job_id = str(handoff.get("job_id") or "").strip() or None
-        _ctx_updates: dict[str, object] = {
-            "active_preview_ref": None,
-            "active_draft_ref": None,
-        }
-        if job_id:
-            _ctx_updates["last_submitted_job_ref"] = job_id
-        # Track the file path when a write_file preview is submitted so
-        # session-scoped file references ("that file", "the note") resolve.
+        _submit_file_ref: str | None = None
         if isinstance(preview, dict):
             _submit_wf = preview.get("write_file")
-            _submit_path = (
+            _submit_file_ref = (
                 str(_submit_wf.get("path") or "").strip() if isinstance(_submit_wf, dict) else None
             )
-            if _submit_path:
-                _ctx_updates["last_saved_file_ref"] = _submit_path
-        update_session_context(root, session_id, **_ctx_updates)
+        if job_id:
+            context_on_handoff_submitted(
+                root, session_id, job_id=job_id, saved_file_ref=_submit_file_ref or None
+            )
+        else:
+            # Handoff succeeded but no job_id recorded — clear preview refs only.
+            context_on_preview_cleared(root, session_id)
     return assistant_text, status
 
 
@@ -645,17 +648,18 @@ async def chat(request: Request):
         message,
         preview_available=pre_turn_preview is not None,
     )
-    ingest_linked_job_completions(root, active_session)
+    _ingested_completions = ingest_linked_job_completions(root, active_session)
+    # Track the freshest ingested completion in session context so
+    # reference resolution ("that result", "the last job") stays current.
+    for _ic in _ingested_completions:
+        _ic_ref = str(_ic.get("job_ref") or "").strip()
+        if _ic_ref:
+            context_on_completion_ingested(root, active_session, job_id=_ic_ref)
     auto_completion_note = (
         None
         if suppress_auto_completion_note
         else maybe_auto_surface_linked_completion(root, active_session)
     )
-    if auto_completion_note is not None:
-        _handoff_for_completion = read_session_handoff_state(root, active_session) or {}
-        _completed_job = str(_handoff_for_completion.get("job_id") or "").strip() or None
-        if _completed_job:
-            update_session_context(root, active_session, last_completed_job_ref=_completed_job)
 
     append_session_turn(
         root,
@@ -717,12 +721,7 @@ async def chat(request: Request):
             _early_path = (
                 str(_early_wf.get("path") or "").strip() if isinstance(_early_wf, dict) else None
             )
-            update_session_context(
-                root,
-                active_session,
-                active_draft_ref=_early_path or "preview",
-                active_preview_ref="preview",
-            )
+            context_on_preview_created(root, active_session, draft_ref=_early_path or "preview")
         if _early.write_handoff_ready:
             write_session_handoff_state(
                 root,
@@ -997,12 +996,7 @@ async def chat(request: Request):
             )
             _bp_wf = builder_payload.get("write_file")
             _bp_path = str(_bp_wf.get("path") or "").strip() if isinstance(_bp_wf, dict) else None
-            update_session_context(
-                root,
-                active_session,
-                active_draft_ref=_bp_path or "preview",
-                active_preview_ref="preview",
-            )
+            context_on_preview_created(root, active_session, draft_ref=_bp_path or "preview")
 
     reply = await _generate_vera_reply_with_optional_draft_hints(
         turns=turns,
@@ -1080,12 +1074,7 @@ async def chat(request: Request):
         if isinstance(builder_payload, dict):
             _bd_wf = builder_payload.get("write_file")
             _bd_path = str(_bd_wf.get("path") or "").strip() if isinstance(_bd_wf, dict) else None
-            update_session_context(
-                root,
-                active_session,
-                active_draft_ref=_bd_path or "preview",
-                active_preview_ref="preview",
-            )
+            context_on_preview_created(root, active_session, draft_ref=_bd_path or "preview")
 
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative
@@ -1135,6 +1124,7 @@ async def chat(request: Request):
             guarded_answer, _answer_before_preview_guardrail, effective_preview
         ):
             write_session_preview(root, active_session, None)
+            context_on_preview_cleared(root, active_session)
             builder_payload = None
 
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
@@ -1246,7 +1236,7 @@ async def clear_chat(request: Request):
 
     _clear_root = _active_queue_root()
     clear_session_turns(_clear_root, active_session)
-    clear_session_context(_clear_root, active_session)
+    context_on_session_cleared(_clear_root, active_session)
     return _render_page(
         session_id=active_session,
         turns=[],

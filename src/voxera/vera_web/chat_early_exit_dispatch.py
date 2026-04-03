@@ -235,6 +235,7 @@ def dispatch_early_exit_intent(
                 preview_payload=payload,
                 write_preview=True,
                 write_handoff_ready=True,
+                context_updates={"last_reviewed_job_ref": evidence.job_id},
             )
 
         # ── 3b. Save follow-up as file ──
@@ -252,6 +253,7 @@ def dispatch_early_exit_intent(
                 preview_payload=payload,
                 write_preview=True,
                 write_handoff_ready=True,
+                context_updates={"last_reviewed_job_ref": evidence.job_id},
             )
 
         # ── 3c. General follow-up ──
@@ -267,6 +269,7 @@ def dispatch_early_exit_intent(
             preview_payload=payload,
             write_preview=True,
             write_handoff_ready=True,
+            context_updates={"last_reviewed_job_ref": evidence.job_id},
         )
 
     # ── 4. Investigation derived-save request ──────────────────────────────

@@ -1,12 +1,19 @@
 """Integration tests: shared session context updates through the Vera web layer.
 
 These tests verify that the app.py lifecycle hooks correctly update the shared
-session context at preview creation, submit/handoff, and session clear.
+session context at preview creation, submit/handoff, session clear, stale
+preview cleanup, and follow-up/review lifecycle events.
 """
 
 from __future__ import annotations
 
 from voxera.vera import service as vera_service
+from voxera.vera.context_lifecycle import (
+    context_on_completion_ingested,
+    context_on_handoff_submitted,
+    context_on_preview_created,
+    context_on_review_performed,
+)
 from voxera.vera_web import app as vera_app_module
 
 from .vera_session_helpers import make_vera_session
@@ -88,3 +95,96 @@ def test_context_empty_for_fresh_session(tmp_path, monkeypatch):
     assert ctx["active_preview_ref"] is None
     assert ctx["last_submitted_job_ref"] is None
     assert ctx["ambiguity_flags"] == []
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle freshness: full workflow through session store
+# ---------------------------------------------------------------------------
+
+
+def test_lifecycle_rename_then_handoff(tmp_path, monkeypatch):
+    """Draft → rename/save-as → handoff preserves the renamed path."""
+    session = make_vera_session(monkeypatch, tmp_path)
+    q, sid = session.queue, session.session_id
+
+    context_on_preview_created(q, sid, draft_ref="notes/draft-v1.md")
+    ctx = session.session_context()
+    assert ctx["active_draft_ref"] == "notes/draft-v1.md"
+
+    # Rename / save-as
+    context_on_preview_created(q, sid, draft_ref="notes/renamed.md")
+    ctx = session.session_context()
+    assert ctx["active_draft_ref"] == "notes/renamed.md"
+
+    # Submit
+    context_on_handoff_submitted(
+        q, sid, job_id="inbox-abc.json", saved_file_ref="~/VoxeraOS/notes/renamed.md"
+    )
+    ctx = session.session_context()
+    assert ctx["active_draft_ref"] is None
+    assert ctx["last_submitted_job_ref"] == "inbox-abc.json"
+    assert ctx["last_saved_file_ref"] == "~/VoxeraOS/notes/renamed.md"
+
+
+def test_lifecycle_handoff_completion_review(tmp_path, monkeypatch):
+    """Handoff → completion → review updates context at each step."""
+    session = make_vera_session(monkeypatch, tmp_path)
+    q, sid = session.queue, session.session_id
+
+    context_on_handoff_submitted(q, sid, job_id="inbox-xyz.json")
+    ctx = session.session_context()
+    assert ctx["last_submitted_job_ref"] == "inbox-xyz.json"
+
+    context_on_completion_ingested(q, sid, job_id="inbox-xyz.json")
+    ctx = session.session_context()
+    assert ctx["last_completed_job_ref"] == "inbox-xyz.json"
+
+    context_on_review_performed(q, sid, job_id="inbox-xyz.json")
+    ctx = session.session_context()
+    assert ctx["last_reviewed_job_ref"] == "inbox-xyz.json"
+
+
+def test_lifecycle_review_updates_context_for_later_resolution(tmp_path, monkeypatch):
+    """After review, reference resolution for 'the result' should find the reviewed job."""
+    from voxera.vera.reference_resolver import ReferenceClass, resolve_session_reference
+
+    session = make_vera_session(monkeypatch, tmp_path)
+    q, sid = session.queue, session.session_id
+
+    context_on_handoff_submitted(q, sid, job_id="inbox-reviewed.json")
+    context_on_completion_ingested(q, sid, job_id="inbox-reviewed.json")
+    context_on_review_performed(q, sid, job_id="inbox-reviewed.json")
+
+    ctx = session.session_context()
+    result = resolve_session_reference("summarize that result", ctx)
+    assert hasattr(result, "value")
+    assert result.reference_class == ReferenceClass.JOB_RESULT
+    assert result.value == "inbox-reviewed.json"
+
+
+def test_fresh_session_fail_closed_resolution(tmp_path, monkeypatch):
+    """A fresh session with no context should fail-closed on resolution."""
+    from voxera.vera.reference_resolver import UnresolvedReference, resolve_session_reference
+
+    session = make_vera_session(monkeypatch, tmp_path)
+    ctx = session.session_context()
+    result = resolve_session_reference("show me the result", ctx)
+    assert isinstance(result, UnresolvedReference)
+
+
+def test_session_clear_then_fail_closed(tmp_path, monkeypatch):
+    """After session clear, context is empty and resolution fails closed."""
+    from voxera.vera.reference_resolver import UnresolvedReference, resolve_session_reference
+
+    session = make_vera_session(monkeypatch, tmp_path)
+    q, sid = session.queue, session.session_id
+
+    context_on_handoff_submitted(q, sid, job_id="inbox-abc.json")
+    context_on_completion_ingested(q, sid, job_id="inbox-abc.json")
+
+    resp = session.client.post("/clear", data={"session_id": sid})
+    assert resp.status_code == 200
+
+    ctx = session.session_context()
+    result = resolve_session_reference("what happened to the job", ctx)
+    assert isinstance(result, UnresolvedReference)

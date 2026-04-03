@@ -1564,10 +1564,18 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - On the next turn, if the flag is set, the user has no save/write intent, and no preview is active, the turn stays conversational. This allows multi-turn planning flows where Vera asks for details and the user provides them.
 - The flag is cleared whenever the turn is `GOVERNED_PREVIEW` (save intent, preview exists, or the user changes topics).
 
-### Shared session context (`vera/session_store.py`, `vera_web/app.py`)
+### Shared session context (`vera/session_store.py`, `vera/context_lifecycle.py`, `vera_web/app.py`)
 - A bounded `shared_context` dict is persisted in the session payload alongside other preserved fields.
 - Tracks workflow-continuity references: `active_draft_ref`, `active_preview_ref`, `last_submitted_job_ref`, `last_completed_job_ref`, `last_reviewed_job_ref`, `last_saved_file_ref`, `active_topic`, `ambiguity_flags`.
-- Updated at lifecycle points: preview creation/update, submit/handoff, completion ingestion, job review, session clear.
+- **Lifecycle update points** are defined explicitly in `vera/context_lifecycle.py` and wired into `app.py` and `chat_early_exit_dispatch.py`:
+  - **Preview created/revised/renamed**: `context_on_preview_created` — sets `active_draft_ref` and `active_preview_ref`.
+  - **Preview cleared** (stale cleanup, discard): `context_on_preview_cleared` — clears `active_draft_ref` and `active_preview_ref`.
+  - **Handoff/submit**: `context_on_handoff_submitted` — clears preview refs, sets `last_submitted_job_ref` and optionally `last_saved_file_ref`.
+  - **Linked job registered**: `context_on_linked_job_registered` — sets `last_submitted_job_ref`.
+  - **Completion ingested**: `context_on_completion_ingested` — sets `last_completed_job_ref` from the actual completed job (not just handoff state).
+  - **Review performed**: `context_on_review_performed` — sets `last_reviewed_job_ref`.
+  - **Follow-up/revision/save-follow-up prepared**: `context_on_followup_preview_prepared` — sets preview refs and optionally records source job as reviewed.
+  - **Session cleared**: `context_on_session_cleared` — resets all context to empty defaults.
 - **Subordinate to canonical truth:** preview truth, queue truth, and artifact/evidence truth always win if they conflict with session context. Context is a continuity aid, not a trust replacement.
 - If continuity is ambiguous, the system fails closed rather than guessing.
 - Schema is normalized on every read/write: unknown keys dropped, missing keys filled from defaults, non-string refs cleared.
@@ -1584,7 +1592,8 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - Missing or ambiguous references fail closed (`UnresolvedReference`).
 - `resolve_job_id_from_context()` provides a job-ID fallback for the early-exit dispatch when neither explicit job ID nor handoff state provides one.
 - The early-exit dispatch (`vera_web/chat_early_exit_dispatch.py`) uses session context as a fallback for job review and follow-up flows.
-- Successful job reviews now set `last_reviewed_job_ref` in session context. File-save submissions now set `last_saved_file_ref`.
+- Successful job reviews set `last_reviewed_job_ref` in session context. File-save submissions set `last_saved_file_ref`.
+- Follow-up, revision, and save-follow-up early exits now also set `last_reviewed_job_ref` via `context_updates`, ensuring the evidence source job stays fresh for later reference resolution.
 
 ### Hard conversational mode lock — zero preview/JSON/meta leakage guarantee
 

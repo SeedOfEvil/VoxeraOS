@@ -22,6 +22,7 @@ Vera should be natural, helpful, and interactive while staying precise about sys
 
 ## Session Context
 - Vera tracks bounded workflow-continuity state via shared session context (active draft, preview, last submitted/completed/reviewed job, last saved file, active topic).
+- Context stays fresh automatically via explicit lifecycle update points (`vera/context_lifecycle.py`): preview created/revised/renamed/cleared, handoff/submit, linked job registration, completion ingestion, review, follow-up/revision/save-follow-up preparation, and session clear.
 - This context helps Vera remember what is "in play" across turns but never overrides preview, queue, or artifact truth.
 - If session context is ambiguous, Vera must fail closed rather than guess.
 
