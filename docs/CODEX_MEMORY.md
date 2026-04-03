@@ -1,3 +1,54 @@
+## 2026-04-03 — PR #TBD — fix(vera): prevent internal payload leakage on authored planning requests
+
+- Summary: Bounded bug-fix PR that prevents internal draft-compiler / structured payload
+  leakage into visible assistant chat on authored planning requests (workout plans, study
+  plans, routines, schedules, etc.).
+- **Root cause**: Three gaps combined to produce the observed leakage:
+  1. `_CONVERSATIONAL_PLANNING_RE` did not cover workout/training/fitness/study/meal/exercise
+     planning requests, so they bypassed the nuclear conversational sanitizer.
+  2. `guardrail_false_preview_claim` preserved ALL fenced code blocks — including those
+     containing internal compiler JSON payloads (intent, reasoning, decisions, write_file).
+  3. No defense-in-depth existed in GOVERNED_PREVIEW mode to strip bare internal payloads.
+- **Conversational planning coverage widened** (`src/voxera/vera_web/conversational_checklist.py`):
+  - Added `help\s+me\s+get\s+...\s+(?:going|started|set\s+up)` to catch "help me get X going"
+    phrasing.
+  - Added explicit `(?:workout|training|fitness|exercise|study|meal|revision|review)\s+
+    (?:plan|routine|program|course|schedule|regimen)` to catch planning-domain requests.
+  - These route to CONVERSATIONAL_ARTIFACT mode with the nuclear six-phase sanitizer.
+- **Internal compiler payload stripping** (`src/voxera/vera_web/response_shaping.py`):
+  - New `_looks_like_internal_compiler_payload()`: detects fenced code blocks containing
+    2+ internal markers (intent, reasoning, decisions, write_file, tool, action, enqueue_child).
+  - `guardrail_false_preview_claim` now filters out internal compiler payloads from preserved
+    code blocks — only user-facing code is preserved.
+  - New `strip_internal_compiler_leakage()`: defense-in-depth guardrail for GOVERNED_PREVIEW
+    mode that strips both fenced and bare internal compiler JSON payloads.
+- **Defense-in-depth integration** (`src/voxera/vera_web/app.py`):
+  - `strip_internal_compiler_leakage` applied to sanitized_answer in the GOVERNED_PREVIEW
+    path before downstream guardrails run.
+- **Behavioral guidance**:
+  - Internal system-facing JSON / compiler payloads / tool-planning structures must NEVER
+    leak into visible assistant chat as the user-facing answer.
+  - If Vera understands an authored request well enough to propose a structured document,
+    it must either create a proper preview or answer cleanly in prose.
+  - Planning-style requests (workout plans, study plans, routines, checklists, etc.) are
+    conversational artifacts unless the user has explicit save/file intent.
+  - Multi-turn continuation: when the first turn is classified as CONVERSATIONAL_ARTIFACT,
+    follow-up detail turns stay conversational via `prior_planning_active`.
+  - Fail-closed behavior is preserved: when truly unresolved, Vera refuses cleanly without
+    leaking internals.
+- **Recommended live-path regression anchors** (added to existing set):
+  - "can you help me get a training workout course going?" → conversational mode
+  - follow-up details (bodybuilding, 3-4x/week, 1hr, sets to failure) → stays conversational
+  - "I need a workout plan for building muscle" → conversational mode
+  - "give me a study plan for my exams" → conversational mode
+  - Internal JSON payloads in code blocks → stripped, never preserved in visible chat
+- Non-goals preserved:
+  - No architecture redesign or app.py orchestration changes.
+  - No submit/handoff ownership changes.
+  - No queue-boundary behavior changes.
+  - No weakening of fail-closed behavior.
+  - No broad domain-specific fitness logic.
+
 ## 2026-04-03 — PR #TBD — feat(vera): improve revise and save-follow-up workflows from completed job evidence
 
 - Summary: Bounded workflow feature PR that makes Vera able to revise prior output and save

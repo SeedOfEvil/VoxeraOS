@@ -87,22 +87,44 @@ def derive_preview_has_content(effective_preview: dict[str, object] | None) -> b
     return "write_file" not in effective_preview
 
 
+def _looks_like_internal_compiler_payload(block: str) -> bool:
+    """Return True when a fenced code block looks like an internal compiler/JSON payload.
+
+    Internal payloads typically contain structured keys like intent, reasoning,
+    decisions, write_file, or tool — these must never leak into visible chat.
+    """
+    lowered = block.lower()
+    internal_markers = (
+        '"intent"',
+        '"reasoning"',
+        '"decisions"',
+        '"write_file"',
+        '"tool"',
+        '"action"',
+        '"enqueue_child"',
+    )
+    marker_count = sum(1 for m in internal_markers if m in lowered)
+    return marker_count >= 2
+
+
 def guardrail_false_preview_claim(text: str, *, preview_exists: bool) -> str:
     """Replace false preview-existence claims with truthful language.
 
     When the LLM claims a preview/draft was created or is available but no
     authoritative preview state exists, replace the claim.  Fenced code
-    blocks are preserved so users can still see generated code.
+    blocks are preserved so users can still see generated code — unless they
+    contain internal compiler/JSON payloads, which are always stripped.
     """
     if preview_exists:
         return text
     if not _cc_looks_like_preview_pane_claim(text):
         return text
 
-    # Preserve any fenced code blocks
+    # Preserve user-facing fenced code blocks but strip internal compiler payloads
     code_blocks = re.findall(r"```[^\n]*\n.*?```", text, flags=re.DOTALL)
-    if code_blocks:
-        preserved = "\n\n".join(code_blocks)
+    user_facing_blocks = [b for b in code_blocks if not _looks_like_internal_compiler_payload(b)]
+    if user_facing_blocks:
+        preserved = "\n\n".join(user_facing_blocks)
         return (
             preserved
             + "\n\n"
@@ -114,6 +136,36 @@ def guardrail_false_preview_claim(text: str, *, preview_exists: bool) -> str:
         "I was not able to prepare a governed preview for this request. "
         "If you share clearer details, I can try again."
     )
+
+
+def strip_internal_compiler_leakage(text: str) -> str:
+    """Strip internal compiler/JSON payloads from assistant-visible text.
+
+    Catches fenced code blocks and bare JSON objects containing internal
+    compiler markers (intent, reasoning, decisions, write_file, tool).
+    This is a defense-in-depth guardrail for GOVERNED_PREVIEW mode where
+    the nuclear conversational sanitizer does not run.
+    """
+    if not text or not text.strip():
+        return text
+
+    # Strip fenced code blocks that look like internal compiler payloads
+    def _replace_if_internal(match: re.Match[str]) -> str:
+        return "" if _looks_like_internal_compiler_payload(match.group(0)) else match.group(0)
+
+    cleaned = re.sub(r"```[^\n]*\n.*?```", _replace_if_internal, text, flags=re.DOTALL)
+
+    # Strip bare JSON objects that look like internal payloads
+    _bare_json_re = re.compile(
+        r'^\s*\{[^}]*"(?:intent|reasoning|decisions|write_file|tool|action)".*?\}',
+        re.MULTILINE | re.DOTALL,
+    )
+    cleaned = _bare_json_re.sub("", cleaned)
+
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    # If stripping removed all content, the entire text was internal payload —
+    # return empty rather than falling back to the original leaked content.
+    return cleaned
 
 
 def should_clear_stale_preview(

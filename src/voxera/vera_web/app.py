@@ -157,6 +157,7 @@ from .response_shaping import (
     derive_preview_has_content,
     guardrail_false_preview_claim,
     should_clear_stale_preview,
+    strip_internal_compiler_leakage,
 )
 
 app = FastAPI(title="Vera v0", version="0")
@@ -1045,6 +1046,11 @@ async def chat(request: Request):
             guarded_answer, raw_answer=sanitized_answer, user_message=message
         )
     else:
+        # Defense-in-depth: strip any internal compiler/JSON payloads that
+        # survived into the sanitized answer before downstream guardrails run.
+        # This prevents intent/reasoning/decisions/write_file dumps from
+        # leaking into visible chat in GOVERNED_PREVIEW mode.
+        sanitized_answer = strip_internal_compiler_leakage(sanitized_answer)
         # Writing draft turns author document content — that content may mention
         # queuing or submission in an explanatory context (e.g. a note about the
         # VoxeraOS queue boundary).  Skip the submission-claim guardrail so the
