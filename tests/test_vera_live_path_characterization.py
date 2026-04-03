@@ -109,8 +109,8 @@ def _make_evidence(
         artifact_families=("execution_result",),
         artifact_refs=("execution_result:execution_result.json",),
         evidence_trace=(
-            "lifecycle_state=done",
-            "terminal_outcome=succeeded",
+            f"lifecycle_state={lifecycle_state}",
+            f"terminal_outcome={terminal_outcome}",
         ),
         child_summary=None,
         execution_capabilities=None,
@@ -289,6 +289,8 @@ class TestPreviewWordingLivePaths:
         text = result.assistant_text.lower()
         # When no builder_payload exists, the reply must NOT use the governed
         # "I've updated the preview" phrasing (reserved for builder_payload=set).
+        # Check both curly-quote (\u2019) and straight-quote variants because
+        # response shaping emits curly quotes but tests may normalize differently.
         assert "i\u2019ve updated the preview" not in text
         assert "i've updated the preview" not in text
         # Status must NOT be "prepared_preview" — nothing was prepared
@@ -617,18 +619,18 @@ class TestSessionLevelEvidenceReviewFollowUp:
     """Session-level tests verifying the full chat → dispatch → reply path
     for linked-job review and follow-up flows."""
 
-    def test_review_request_in_session_returns_evidence_grounded_reply(
-        self, tmp_path, monkeypatch
-    ) -> None:
-        """Chat 'summarize the result' with a linked job returns evidence, not LLM."""
-        session = make_vera_session(monkeypatch, tmp_path)
+    @staticmethod
+    def _seed_completed_job(
+        session, *, stem: str, latest_summary: str, goal: str = "test goal"
+    ) -> str:
+        """Seed a completed job with artifacts and link it to the session.
 
-        # Seed a completed job with artifacts
-        stem = "job-20260401-session1"
+        Returns the job_id string.
+        """
         job_id = f"{stem}.json"
         bucket_dir = session.queue / "done"
         bucket_dir.mkdir(parents=True, exist_ok=True)
-        (bucket_dir / job_id).write_text(json.dumps({"goal": "test goal"}), encoding="utf-8")
+        (bucket_dir / job_id).write_text(json.dumps({"goal": goal}), encoding="utf-8")
         art = session.queue / "artifacts" / stem
         art.mkdir(parents=True, exist_ok=True)
         (art / "execution_result.json").write_text(
@@ -637,15 +639,13 @@ class TestSessionLevelEvidenceReviewFollowUp:
                     "lifecycle_state": "done",
                     "terminal_outcome": "succeeded",
                     "review_summary": {
-                        "latest_summary": "Wrote operator note successfully.",
+                        "latest_summary": latest_summary,
                         "terminal_outcome": "succeeded",
                     },
                 }
             ),
             encoding="utf-8",
         )
-
-        # Link the job to the session via handoff state
         vera_service.write_session_handoff_state(
             session.queue,
             session.session_id,
@@ -653,6 +653,18 @@ class TestSessionLevelEvidenceReviewFollowUp:
             queue_path=str(bucket_dir / job_id),
             status="submitted",
             job_id=job_id,
+        )
+        return job_id
+
+    def test_review_request_in_session_returns_evidence_grounded_reply(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Chat 'summarize the result' with a linked job returns evidence, not LLM."""
+        session = make_vera_session(monkeypatch, tmp_path)
+        self._seed_completed_job(
+            session,
+            stem="job-20260401-session1",
+            latest_summary="Wrote operator note successfully.",
         )
 
         async def _fake_reply(*, turns, user_message, **kw):
@@ -673,35 +685,11 @@ class TestSessionLevelEvidenceReviewFollowUp:
     ) -> None:
         """Chat 'now prepare the follow-up' with linked job creates evidence-grounded preview."""
         session = make_vera_session(monkeypatch, tmp_path)
-
-        stem = "job-20260401-session2"
-        job_id = f"{stem}.json"
-        bucket_dir = session.queue / "done"
-        bucket_dir.mkdir(parents=True, exist_ok=True)
-        (bucket_dir / job_id).write_text(json.dumps({"goal": "deploy config"}), encoding="utf-8")
-        art = session.queue / "artifacts" / stem
-        art.mkdir(parents=True, exist_ok=True)
-        (art / "execution_result.json").write_text(
-            json.dumps(
-                {
-                    "lifecycle_state": "done",
-                    "terminal_outcome": "succeeded",
-                    "review_summary": {
-                        "latest_summary": "Config deployed to staging.",
-                        "terminal_outcome": "succeeded",
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        vera_service.write_session_handoff_state(
-            session.queue,
-            session.session_id,
-            attempted=True,
-            queue_path=str(bucket_dir / job_id),
-            status="submitted",
-            job_id=job_id,
+        self._seed_completed_job(
+            session,
+            stem="job-20260401-session2",
+            latest_summary="Config deployed to staging.",
+            goal="deploy config",
         )
 
         async def _fake_reply(*, turns, user_message, **kw):
@@ -719,10 +707,11 @@ class TestSessionLevelEvidenceReviewFollowUp:
         goal = preview["goal"]
         assert "job-20260401-session2" in goal or "follow-up" in goal.lower()
 
-        # Last turn must communicate preview-only semantics and no submission
+        # Last turn must communicate preview-only semantics and no submission.
+        # Check exact governed phrase rather than loose word presence.
         last_turn = session.turns()[-1]["text"].lower()
-        assert "preview" in last_turn
-        assert "submitted" not in last_turn or "not" in last_turn or "nothing" in last_turn
+        assert "preview-only" in last_turn
+        assert "nothing has been submitted" in last_turn
         # Must NOT use LLM fallback text
         assert "fallback" not in last_turn
 
