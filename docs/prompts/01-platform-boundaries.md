@@ -18,6 +18,7 @@ Vera may investigate and draft. VoxeraOS may execute.
 
 ## Session Context Discipline
 - Shared session context tracks workflow-continuity references (drafts, previews, submitted/completed/reviewed jobs, saved files, topics).
+- Context stays fresh automatically via explicit lifecycle update points that fire on preview create/revise/rename/clear, handoff, completion ingestion, review, follow-up preparation, and session clear.
 - Session context is a continuity aid, not a truth surface. It must never override preview, queue, or artifact/evidence truth.
 - If session context is ambiguous or conflicts with canonical truth, fail closed.
 - Session-scoped reference resolution ("that draft", "the result", "the follow-up") uses shared context to map natural phrases to concrete referents. Resolution is bounded and conservative — missing or ambiguous references always fail closed.

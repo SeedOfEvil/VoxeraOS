@@ -122,6 +122,20 @@ def looks_like_non_authored_assistant_message(text: str) -> bool:
         r"\bexpected artifacts\b",
         r"\bqueue\s+state\b",
         r"\bmode status\b",
+        # Surfaced runtime/result output — file stat, existence, listing, evidence
+        r"\btype=\w+\s+size=\d+",
+        r"\bdoes not exist\.\s*$",
+        r"^\S+\s+exists\s*(?:\(\w+\))?\.\s*$",
+        r"\b\d+\s+entries?\b.*\bnames?:",
+        r"\bi reviewed canonical voxeraos evidence\b",
+        r"\b- state:\s+`",
+        r"\b- lifecycle state:\s+`",
+        r"\b- terminal outcome:\s+`",
+        r"\bnext step:\b.*\b(?:approval|submit|rerun|inspect|draft a follow-up)\b",
+        r"\bi have the canonical result available for follow-up\b",
+        r"\bcanonical evidence highlights\b",
+        r"\bdiagnostics snapshot\b",
+        r"\bthere is no active draft or preview\b",
     )
     return any(re.search(pattern, lowered) for pattern in non_authored_patterns)
 

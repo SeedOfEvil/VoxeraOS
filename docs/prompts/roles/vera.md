@@ -22,6 +22,7 @@ Vera should be natural, helpful, and interactive while staying precise about sys
 
 ## Session Context
 - Vera tracks bounded workflow-continuity state via shared session context (active draft, preview, last submitted/completed/reviewed job, last saved file, active topic).
+- Context stays fresh automatically via explicit lifecycle update points (`vera/context_lifecycle.py`): preview created/revised/renamed/cleared, handoff/submit, linked job registration, completion ingestion, review, follow-up/revision/save-follow-up preparation, and session clear.
 - This context helps Vera remember what is "in play" across turns but never overrides preview, queue, or artifact truth.
 - If session context is ambiguous, Vera must fail closed rather than guess.
 
@@ -30,6 +31,7 @@ Vera should be natural, helpful, and interactive while staying precise about sys
 - Reference resolution is conservative: only clearly resolvable references are resolved; ambiguous or missing references fail closed.
 - Resolved references are string hints only — canonical truth (preview, queue, artifact/evidence) is always validated downstream.
 - The early-exit dispatch uses session context as a fallback for job review and follow-up flows when handoff state is unavailable.
+- Explicit draft references ("save that draft", "the draft") fail closed when no active draft or preview exists in session context, preventing phantom preview creation from stale artifacts.
 
 ## What Vera Is Not
 - Not the payload drafter.

@@ -13,7 +13,8 @@ Coverage:
   7. Investigation expand — invalid reference (error early-exit only).
   8. Investigation save — with and without investigation context.
   9. Near-miss submit phrase — fail-closed behavior.
-  10. No-match fallthrough — confirms normal flow is not interrupted.
+  10. Stale draft reference — fail-closed when no active draft/preview.
+  11. No-match fallthrough — confirms normal flow is not interrupted.
 
 Trust-sensitive boundaries verified:
   - ``matched=False`` never triggers session writes.
@@ -1376,3 +1377,69 @@ class TestSessionContextJobResolution:
         mock_review.assert_called_once_with(
             queue_root=tmp_path, requested_job_id="inbox-explicit.json"
         )
+
+
+# ---------------------------------------------------------------------------
+# 10. Stale draft reference — fail-closed when no active draft/preview
+# ---------------------------------------------------------------------------
+
+
+class TestStaleDraftReference:
+    """Verify stale draft references fail closed instead of reaching builder."""
+
+    def test_save_that_draft_no_active_draft_fails_closed(self):
+        """'save that draft' with no active draft/preview → stale_draft_reference."""
+        result = _dispatch(message="save that draft", session_context={})
+        assert result.matched is True
+        assert result.status == "stale_draft_reference"
+        assert "no active draft" in result.assistant_text.lower()
+
+    def test_save_the_draft_no_active_draft_fails_closed(self):
+        result = _dispatch(message="save the draft", session_context={})
+        assert result.matched is True
+        assert result.status == "stale_draft_reference"
+
+    def test_the_draft_no_active_draft_fails_closed(self):
+        result = _dispatch(message="where is the draft?", session_context={})
+        assert result.matched is True
+        assert result.status == "stale_draft_reference"
+
+    def test_save_that_draft_with_active_draft_passes_through(self):
+        """'save that draft' with an active draft → no match (builder handles)."""
+        ctx = {"active_draft_ref": "notes/plan.md", "active_preview_ref": "preview"}
+        result = _dispatch(message="save that draft", session_context=ctx)
+        assert result.matched is False
+
+    def test_save_that_draft_with_only_preview_ref_passes_through(self):
+        """active_preview_ref alone suffices — there is still a preview in play."""
+        ctx = {"active_preview_ref": "preview"}
+        result = _dispatch(message="save that draft", session_context=ctx)
+        assert result.matched is False
+
+    def test_after_handoff_no_draft_context_fails_closed(self):
+        """Simulates post-handoff: preview refs are None, job refs are set."""
+        ctx = {
+            "active_draft_ref": None,
+            "active_preview_ref": None,
+            "last_submitted_job_ref": "inbox-abc.json",
+            "last_completed_job_ref": "inbox-abc.json",
+        }
+        result = _dispatch(message="save that draft", session_context=ctx)
+        assert result.matched is True
+        assert result.status == "stale_draft_reference"
+
+    def test_no_session_context_fails_closed(self):
+        """None session_context → fail closed for draft reference."""
+        result = _dispatch(message="save that draft", session_context=None)
+        assert result.matched is True
+        assert result.status == "stale_draft_reference"
+
+    def test_non_draft_reference_not_blocked(self):
+        """A message without draft-class reference phrases should not be blocked."""
+        result = _dispatch(message="tell me more about the weather", session_context={})
+        assert result.matched is False
+
+    def test_no_reference_phrase_not_blocked(self):
+        """Messages without draft phrases should not be blocked."""
+        result = _dispatch(message="write me a poem", session_context={})
+        assert result.matched is False

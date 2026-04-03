@@ -1,3 +1,68 @@
+## 2026-04-03 — PR #TBD — feat(vera): update shared session context from preview, handoff, and job completion events
+
+- Summary: Lifecycle freshness PR that makes shared session context stay current automatically
+  as Vera moves through preview creation, revision, rename/save-as, stale preview cleanup,
+  explicit handoff, linked job registration, completion ingestion, review, follow-up preparation,
+  revised-from-evidence, save-follow-up, and session clear.
+- **New module** (`src/voxera/vera/context_lifecycle.py`):
+  - Explicit, named lifecycle update functions for each workflow event.
+  - `context_on_preview_created` — sets active_draft_ref and active_preview_ref.
+  - `context_on_preview_cleared` — clears preview-related refs (new: previously missing).
+  - `context_on_handoff_submitted` — clears preview refs, sets submitted job + file ref.
+  - `context_on_completion_ingested` — sets completed job ref from actual completion.
+  - `context_on_review_performed` — sets reviewed job ref. Wired into app.py for review early-exits.
+  - `context_on_followup_preview_prepared` — sets preview refs and source job. Wired into app.py for follow-up early-exits.
+  - `context_on_session_cleared` — resets context to empty defaults.
+- **Gap fixes** (`src/voxera/vera_web/app.py`):
+  - Stale preview cleanup (`should_clear_stale_preview`) now clears context refs via
+    `context_on_preview_cleared` — previously left phantom refs in context.
+  - Completion ingestion now tracks the actual completed job ID from the linked registry,
+    not just the handoff state job_id — fixes stale completion ref when different jobs complete.
+  - All inline `update_session_context` calls for preview/handoff/completion replaced with
+    named lifecycle helpers for coherence and auditability.
+  - `clear_session_context` import replaced by `context_on_session_cleared`.
+- **Early-exit dispatch** (`src/voxera/vera_web/chat_early_exit_dispatch.py`):
+  - Follow-up (3c), revised-from-evidence (3a), and save-follow-up (3b) early exits now
+    include `context_updates={"last_reviewed_job_ref": evidence.job_id}` so the evidence
+    source job stays fresh for later reference resolution.
+- **Stale draft fail-closed** (`src/voxera/vera_web/chat_early_exit_dispatch.py`):
+  - New check (10): when message contains explicit draft reference phrase ("save that draft",
+    "the draft") but session context has no active draft/preview, fail closed instead of
+    letting the builder silently create a preview from recent assistant content.
+  - Root cause: after follow-up handoff + failed continuation job, draft refs are correctly
+    cleared, but the "save that" phrase was matching `message_requests_referenced_content`
+    and falling through to the builder, which created a phantom preview from stale artifacts.
+- **Tests**: 30+ new tests in `test_context_lifecycle.py` covering all lifecycle helpers,
+  full sequences, rename/handoff, completion/review chains, follow-up preparation, stale
+  preview cleanup, session clear, fail-closed behavior, failed-followup stale-draft regression,
+  and repeated flows.
+  Extended `test_shared_session_context_integration.py` with lifecycle-through-web tests:
+  rename→handoff, handoff→completion→review, review→resolution, fail-closed after clear,
+  failed-followup draft reference fail-closed.
+  9 new tests in `test_chat_early_exit_dispatch.py` for stale draft reference fail-closed.
+- **Non-authored content filtering** (`src/voxera/vera/saveable_artifacts.py`):
+  - `looks_like_non_authored_assistant_message` expanded with patterns for surfaced runtime
+    output: file stat lines (`type=file size=...`), file existence checks, directory listings,
+    evidence review messages, auto-surface completion messages, diagnostics snapshots, and
+    stale-draft refusals. Prevents surfaced runtime/result content from being stored as a
+    saveable assistant artifact and later reified as a preview by "save that" requests.
+  - Root cause: `build_saveable_assistant_artifact` treated file stat output and evidence
+    review text as authored content because no filter pattern matched them. The "save that"
+    code path then picked up this stale artifact and created a phantom preview.
+- **Rename-mutation fallback fix** (`src/voxera/vera_web/app.py`):
+  - Moved the rename-mutation fallback out of the `if builder_preview is not None:` block so
+    it fires regardless of whether the builder LLM returned a result. Previously the fallback
+    only ran when the builder returned a non-None result that was then normalized to None or
+    detected as a no-op. When the builder returned None outright (common for rename requests),
+    the deterministic rename path was unreachable, causing "I couldn't safely apply that naming
+    update" for legitimate rename/save-as on active authored previews.
+- **Trust boundaries preserved**: all canonical truth precedence unchanged. Lifecycle helpers
+  update continuity refs only; preview/queue/artifact truth remain authoritative.
+- **Docs updated**: ARCHITECTURE.md (lifecycle update points section), QUEUE_OBJECT_MODEL.md,
+  CODEX_MEMORY.md, prompt docs (runtime-technical-overview, vera role, platform-boundaries).
+- **Non-goals preserved**: No cross-session memory, no fuzzy continuity intelligence,
+  no redesign of app.py orchestration, no operator-console surfaces, no truth-boundary drift.
+
 ## 2026-04-03 — PR #TBD — feat(vera): resolve session-scoped references for drafts, files, and job results
 
 - Summary: Bounded PR that builds session-scoped reference resolution on the shared session

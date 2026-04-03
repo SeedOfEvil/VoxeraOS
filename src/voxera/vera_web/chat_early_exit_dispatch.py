@@ -65,7 +65,11 @@ from ..vera.handoff import (
     select_investigation_results,
 )
 from ..vera.preview_submission import is_near_miss_submit_phrase
-from ..vera.reference_resolver import resolve_job_id_from_context
+from ..vera.reference_resolver import (
+    ReferenceClass,
+    classify_reference,
+    resolve_job_id_from_context,
+)
 from ..vera.service import read_session_handoff_state
 
 
@@ -147,6 +151,8 @@ def dispatch_early_exit_intent(
     7. Investigation expand (error path) — invalid expand reference.
     8. Investigation save — save investigation findings to a governed preview.
     9. Near-miss submit phrase — fail-closed block on fuzzy submit phrasing.
+    10. Stale draft reference — fail-closed when message references a draft
+        but no active draft/preview exists in session context.
 
     Returns ``EarlyExitResult(matched=True)`` for the first condition that
     fires, or ``EarlyExitResult(matched=False)`` when none match.
@@ -235,6 +241,7 @@ def dispatch_early_exit_intent(
                 preview_payload=payload,
                 write_preview=True,
                 write_handoff_ready=True,
+                context_updates={"last_reviewed_job_ref": evidence.job_id},
             )
 
         # ── 3b. Save follow-up as file ──
@@ -252,6 +259,7 @@ def dispatch_early_exit_intent(
                 preview_payload=payload,
                 write_preview=True,
                 write_handoff_ready=True,
+                context_updates={"last_reviewed_job_ref": evidence.job_id},
             )
 
         # ── 3c. General follow-up ──
@@ -267,6 +275,7 @@ def dispatch_early_exit_intent(
             preview_payload=payload,
             write_preview=True,
             write_handoff_ready=True,
+            context_updates={"last_reviewed_job_ref": evidence.job_id},
         )
 
     # ── 4. Investigation derived-save request ──────────────────────────────
@@ -411,5 +420,30 @@ def dispatch_early_exit_intent(
             ),
             status="near_miss_submit_rejected",
         )
+
+    # ── 10. Stale draft reference (fail-closed) ────────────────────────────
+    # When the message contains an explicit draft-class reference phrase
+    # ("save that draft", "the draft", etc.) but session context has no
+    # active draft or preview, fail closed rather than letting the builder
+    # silently create a preview from recent assistant content.  This
+    # prevents stale draft references after handoff + failed continuation.
+    if classify_reference(message) == ReferenceClass.DRAFT:
+        ctx = session_context if isinstance(session_context, dict) else {}
+        _has_active_draft = bool(
+            (isinstance(ctx.get("active_draft_ref"), str) and ctx["active_draft_ref"].strip())
+            or (
+                isinstance(ctx.get("active_preview_ref"), str) and ctx["active_preview_ref"].strip()
+            )
+        )
+        if not _has_active_draft:
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "There is no active draft or preview in this session. "
+                    "The previous draft was already submitted and is no longer in play. "
+                    "If you'd like to start a new draft, just ask."
+                ),
+                status="stale_draft_reference",
+            )
 
     return EarlyExitResult(matched=False)
