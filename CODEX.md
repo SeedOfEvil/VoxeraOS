@@ -7,13 +7,13 @@ This `CODEX.md` file exists as a stable entry point for contributors who expect 
 
 ## Project context
 
-VoxeraOS is an open-source alpha (v0.1.8) queue-driven AI control plane for Linux. Vera is the conversational intelligence layer; VoxeraOS is the trust, policy, execution, and evidence layer.
+VoxeraOS is an open-source alpha (v0.1.9) queue-driven AI control plane for Linux. Vera is the conversational intelligence layer; VoxeraOS is the trust, policy, execution, and evidence layer.
 
 **Provider support:** OpenRouter is the only officially tested and fully built provider path. Gemini 3 Flash is the current minimum supported requirement.
 
 ## Current focus
 
-Post-v0.1.8 work is focused on hardening Vera as a stable conversational control layer and preparing for the v0.1.9 governed capability expansion milestone. See `docs/ROADMAP.md` for the milestone themes.
+Post-v0.1.9 work is focused on the v0.2.0 first platform milestone: shared session context, operator-console polish, and continued voice-foundation progression. See `docs/ROADMAP.md` for the milestone themes.
 
 ## Hardening already shipped (do not re-implement)
 

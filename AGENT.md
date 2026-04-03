@@ -4,7 +4,7 @@ Use this file as a quick operational memory index for agent-style development in
 
 ## Project overview
 
-VoxeraOS is an open-source alpha (v0.1.8) queue-driven AI control plane for Linux. Vera is the conversational intelligence layer; VoxeraOS is the trust, policy, execution, and evidence layer.
+VoxeraOS is an open-source alpha (v0.1.9) queue-driven AI control plane for Linux. Vera is the conversational intelligence layer; VoxeraOS is the trust, policy, execution, and evidence layer.
 
 **Provider support:** OpenRouter is the only officially tested and fully built provider path. Gemini 3 Flash is the current minimum supported requirement.
 
@@ -45,6 +45,6 @@ VoxeraOS is an open-source alpha (v0.1.8) queue-driven AI control plane for Linu
 - Merge gate: `make merge-readiness-check` includes `security-check` — all 17 red-team tests must pass.
 
 ## Release alignment
-- Active release line: Alpha v0.1.8 (see `docs/CODEX_MEMORY.md`).
+- Active release line: Alpha v0.1.9 (see `docs/CODEX_MEMORY.md`).
 - Next milestone: v0.2 — first platform milestone (see `docs/ROADMAP.md`).
 - Previous releases: `docs/ROADMAP_0.1.6.md` (v0.1.6 shipped scope), `docs/ROADMAP_0.1.5.md` (artifacts prune), `docs/ROADMAP_0.1.4.md` (stability + UX baseline).
