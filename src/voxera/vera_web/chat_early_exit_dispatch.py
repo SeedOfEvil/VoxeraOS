@@ -25,6 +25,7 @@ This module is NOT responsible for:
   - ``write_session_preview`` / ``write_session_handoff_state`` — write
     instructions are returned in the result; ``app.py`` performs them.
   - ``write_session_derived_investigation_output`` — same: write flag only.
+  - ``update_session_context`` — context-update dict only; ``app.py`` writes.
   - ``_render_page`` — routing truth stays in ``app.py``.
   - Submit / handoff decisions (``_submit_handoff``) — truth-sensitive,
     always in ``app.py``.
@@ -85,9 +86,11 @@ class EarlyExitResult:
     3. If ``write_derived_output`` is True: call
        ``write_session_derived_investigation_output(root, session_id,
        derived_output)``.
-    4. Call ``append_session_turn(root, session_id, role="assistant",
+    4. If ``context_updates`` is not None: call
+       ``update_session_context(root, session_id, **context_updates)``.
+    5. Call ``append_session_turn(root, session_id, role="assistant",
        text=assistant_text)``.
-    5. Return ``_render_page(..., status=status)``.
+    6. Return ``_render_page(..., status=status)``.
     """
 
     matched: bool

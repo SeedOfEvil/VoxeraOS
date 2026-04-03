@@ -26,9 +26,9 @@
   happy paths, fail-closed paths, priority ordering, truth-boundary invariants, and edge cases.
   7 new tests in `test_chat_early_exit_dispatch.py` covering session-context fallback
   resolution, context_updates propagation, and explicit-ID precedence.
-- **Docs updated**: ARCHITECTURE.md, QUEUE_OBJECT_MODEL.md, CODEX_MEMORY.md, and prompt docs
-  (system-overview, platform-boundaries, runtime-technical-overview, vera role,
-  queue-object-model capability).
+- **Docs updated**: ARCHITECTURE.md, QUEUE_OBJECT_MODEL.md, ROADMAP.md, ops.md,
+  CODEX_MEMORY.md, and prompt docs (system-overview, platform-boundaries, role-map,
+  runtime-technical-overview, vera role, queue-object-model capability).
 - **Non-goals preserved**: No cross-session memory, no speculative resolution, no truth-boundary
   drift, no redesign of app.py orchestration, no operator-console work.
 
