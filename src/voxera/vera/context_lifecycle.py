@@ -100,29 +100,6 @@ def context_on_handoff_submitted(
 
 
 # ---------------------------------------------------------------------------
-# Linked job registration
-# ---------------------------------------------------------------------------
-
-
-def context_on_linked_job_registered(
-    queue_root: Path,
-    session_id: str,
-    *,
-    job_ref: str,
-) -> dict[str, Any]:
-    """Update context when a linked job is registered for tracking.
-
-    This is a lightweight update: it ensures the submitted job ref is
-    recorded even if the caller did not go through the full handoff path.
-    """
-    return update_session_context(
-        queue_root,
-        session_id,
-        last_submitted_job_ref=job_ref,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Completion ingestion lifecycle
 # ---------------------------------------------------------------------------
 

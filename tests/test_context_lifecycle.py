@@ -23,7 +23,6 @@ from voxera.vera.context_lifecycle import (
     context_on_completion_ingested,
     context_on_followup_preview_prepared,
     context_on_handoff_submitted,
-    context_on_linked_job_registered,
     context_on_preview_cleared,
     context_on_preview_created,
     context_on_review_performed,
@@ -141,19 +140,7 @@ class TestHandoffSubmitted:
 
 
 # ---------------------------------------------------------------------------
-# 3. Linked job registration
-# ---------------------------------------------------------------------------
-
-
-class TestLinkedJobRegistered:
-    def test_sets_submitted_job_ref(self, tmp_path: Path):
-        queue, sid = _make_session(tmp_path)
-        ctx = context_on_linked_job_registered(queue, sid, job_ref="inbox-abc.json")
-        assert ctx["last_submitted_job_ref"] == "inbox-abc.json"
-
-
-# ---------------------------------------------------------------------------
-# 4. Completion ingestion
+# 3. Completion ingestion
 # ---------------------------------------------------------------------------
 
 

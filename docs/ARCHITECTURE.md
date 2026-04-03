@@ -1571,10 +1571,9 @@ Every chat turn is classified into one of two execution modes **early** — the 
   - **Preview created/revised/renamed**: `context_on_preview_created` — sets `active_draft_ref` and `active_preview_ref`.
   - **Preview cleared** (stale cleanup, discard): `context_on_preview_cleared` — clears `active_draft_ref` and `active_preview_ref`.
   - **Handoff/submit**: `context_on_handoff_submitted` — clears preview refs, sets `last_submitted_job_ref` and optionally `last_saved_file_ref`.
-  - **Linked job registered**: `context_on_linked_job_registered` — sets `last_submitted_job_ref`.
   - **Completion ingested**: `context_on_completion_ingested` — sets `last_completed_job_ref` from the actual completed job (not just handoff state).
-  - **Review performed**: `context_on_review_performed` — sets `last_reviewed_job_ref`.
-  - **Follow-up/revision/save-follow-up prepared**: `context_on_followup_preview_prepared` — sets preview refs and optionally records source job as reviewed.
+  - **Review performed**: `context_on_review_performed` — sets `last_reviewed_job_ref`. Wired into `app.py` for review early-exit results.
+  - **Follow-up/revision/save-follow-up prepared**: `context_on_followup_preview_prepared` — sets preview refs and records source job as reviewed. Wired into `app.py` for follow-up early-exit results that include both a preview write and a source job ref.
   - **Session cleared**: `context_on_session_cleared` — resets all context to empty defaults.
 - **Subordinate to canonical truth:** preview truth, queue truth, and artifact/evidence truth always win if they conflict with session context. Context is a continuity aid, not a trust replacement.
 - If continuity is ambiguous, the system fails closed rather than guessing.

@@ -23,9 +23,11 @@ from ..core.writing_draft_intent import (
 from ..paths import queue_root as default_queue_root
 from ..vera.context_lifecycle import (
     context_on_completion_ingested,
+    context_on_followup_preview_prepared,
     context_on_handoff_submitted,
     context_on_preview_cleared,
     context_on_preview_created,
+    context_on_review_performed,
     context_on_session_cleared,
 )
 from ..vera.draft_revision import (
@@ -220,6 +222,8 @@ def _submit_handoff(
             )
         else:
             # Handoff succeeded but no job_id recorded — clear preview refs only.
+            # last_submitted_job_ref retains whatever stale value it had; this is
+            # acceptable as fail-closed behavior since there is no real job to track.
             context_on_preview_cleared(root, session_id)
     return assistant_text, status
 
@@ -721,7 +725,31 @@ async def chat(request: Request):
             _early_path = (
                 str(_early_wf.get("path") or "").strip() if isinstance(_early_wf, dict) else None
             )
-            context_on_preview_created(root, active_session, draft_ref=_early_path or "preview")
+            # Use the follow-up lifecycle function when the early-exit also
+            # records a source job (follow-up / revision / save-follow-up).
+            _early_source_job = (
+                str((_early.context_updates or {}).get("last_reviewed_job_ref") or "").strip()
+                or None
+            )
+            if _early_source_job:
+                context_on_followup_preview_prepared(
+                    root,
+                    active_session,
+                    draft_ref=_early_path or "preview",
+                    source_job_id=_early_source_job,
+                )
+            else:
+                context_on_preview_created(root, active_session, draft_ref=_early_path or "preview")
+        elif _early.context_updates:
+            # Non-preview early-exit with context updates (e.g. job review).
+            _review_job = (
+                str((_early.context_updates or {}).get("last_reviewed_job_ref") or "").strip()
+                or None
+            )
+            if _review_job and len(_early.context_updates) == 1:
+                context_on_review_performed(root, active_session, job_id=_review_job)
+            else:
+                update_session_context(root, active_session, **_early.context_updates)
         if _early.write_handoff_ready:
             write_session_handoff_state(
                 root,
@@ -734,9 +762,6 @@ async def chat(request: Request):
             )
         if _early.write_derived_output:
             write_session_derived_investigation_output(root, active_session, _early.derived_output)
-        # Apply session-context updates returned by the early-exit handler.
-        if _early.context_updates:
-            update_session_context(root, active_session, **_early.context_updates)
         append_session_turn(root, active_session, role="assistant", text=_early.assistant_text)
         return _render_page(
             session_id=active_session,

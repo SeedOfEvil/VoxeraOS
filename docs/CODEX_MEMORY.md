@@ -9,10 +9,9 @@
   - `context_on_preview_created` — sets active_draft_ref and active_preview_ref.
   - `context_on_preview_cleared` — clears preview-related refs (new: previously missing).
   - `context_on_handoff_submitted` — clears preview refs, sets submitted job + file ref.
-  - `context_on_linked_job_registered` — lightweight submitted ref tracking.
   - `context_on_completion_ingested` — sets completed job ref from actual completion.
-  - `context_on_review_performed` — sets reviewed job ref.
-  - `context_on_followup_preview_prepared` — sets preview refs and optionally source job.
+  - `context_on_review_performed` — sets reviewed job ref. Wired into app.py for review early-exits.
+  - `context_on_followup_preview_prepared` — sets preview refs and source job. Wired into app.py for follow-up early-exits.
   - `context_on_session_cleared` — resets context to empty defaults.
 - **Gap fixes** (`src/voxera/vera_web/app.py`):
   - Stale preview cleanup (`should_clear_stale_preview`) now clears context refs via
