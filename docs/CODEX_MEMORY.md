@@ -1,3 +1,27 @@
+## 2026-04-03 — PR #TBD — fix(vera): preserve authored preview identity during session-aware drafting follow-ups
+
+- Summary: Fixes live regression from the session-aware authored drafting PR where
+  transformation words ("more", "shorter", "formal") were extracted as filenames,
+  corrupting preview path and goal identity.
+- **Root causes fixed** (`vera/draft_revision.py`):
+  - `make\s+that` in the rename/save-as detection regex matched transformation
+    phrases like "make that more concise", entering the rename branch.
+  - `extract_named_target` tail regex extracted "more" from "make that more concise"
+    as a filename target → path became `~/VoxeraOS/notes/more`.
+  - `content_refinement_intent` verb list did not include `turn`/`convert`/`transform`/`keep`,
+    so "turn that into a checklist" and "keep the same tone" were not handled as
+    content refinement against the active preview.
+- **Fixes applied**:
+  - Added transformation-word guard before the rename detection regex: when the
+    message matches `make that` + transformation adjective, the rename block is skipped.
+  - Added transformation-word rejection in `extract_named_target`: words like "more",
+    "concise", "formal", "shorter" etc. are never returned as filename targets.
+  - Extended `content_refinement_intent` with `turn|convert|transform|keep` verbs
+    and `checklist|list|outline|tone|style|format` objects.
+- **Behavioral invariant**: Transformation follow-ups preserve the active preview's
+  path, goal, and file identity. Only explicit rename/save-as requests may change
+  file identity. This is now regression-tested.
+
 ## 2026-04-03 — PR #TBD — feat(vera): use shared session context in authored drafting and planning workflows
 
 - Summary: Makes authored drafting and planning flows feel naturally session-aware

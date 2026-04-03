@@ -88,7 +88,28 @@ def extract_named_target(message: str) -> str | None:
         re.IGNORECASE,
     )
     if tail:
-        return tail.group(1).strip("\"'.,!? ")
+        candidate = tail.group(1).strip("\"'.,!? ")
+        # Reject transformation adjectives accidentally captured as filenames.
+        # "make that more concise" → "more" is not a filename.
+        _TRANSFORMATION_WORDS = frozenset(
+            {
+                "more",
+                "less",
+                "into",
+                "shorter",
+                "longer",
+                "concise",
+                "formal",
+                "casual",
+                "operator",
+                "user",
+                "operator-facing",
+                "user-facing",
+                "a",
+            }
+        )
+        if candidate.lower() not in _TRANSFORMATION_WORDS:
+            return candidate
     return None
 
 
@@ -574,23 +595,33 @@ def interpret_active_preview_draft_revision(
                 "write_file": {"path": path, "content": refined_content, "mode": mode},
             }
 
-    if re.search(
-        r"\b("
-        r"rename|"
-        r"save\s+(?:it|this|that)?\s*as|"
-        r"name\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
-        r"make\s+that|"
-        r"call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
-        r"change\s+(?:the\s+)?(?:name|filename|file\s+name|path)|"
-        r"use\s+path|"
-        r"set\s+(?:the\s+)?path"
-        r")\b",
-        lowered,
-    ) or (
-        re.search(r"\b(save|write|put)\b", lowered)
-        and re.search(r"\b(note|file|markdown)\b", lowered)
-        and re.search(r"\b(?:called|named)\s+[^\s]+\b", lowered)
-        and message_requests_referenced_content(text)
+    _is_transformation_not_rename = bool(
+        re.search(
+            r"\bmake\s+that\s+(?:more|less|into|shorter|longer|concise|formal|casual|operator|user|a\s+(?:checklist|list|outline|bullet))\b",
+            lowered,
+        )
+    )
+    if (
+        not _is_transformation_not_rename
+        and re.search(
+            r"\b("
+            r"rename|"
+            r"save\s+(?:it|this|that)?\s*as|"
+            r"name\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
+            r"make\s+that|"
+            r"call\s+(?:it|that|(?:the|this)\s+(?:note|file|draft|document|doc))|"
+            r"change\s+(?:the\s+)?(?:name|filename|file\s+name|path)|"
+            r"use\s+path|"
+            r"set\s+(?:the\s+)?path"
+            r")\b",
+            lowered,
+        )
+        or (
+            re.search(r"\b(save|write|put)\b", lowered)
+            and re.search(r"\b(note|file|markdown)\b", lowered)
+            and re.search(r"\b(?:called|named)\s+[^\s]+\b", lowered)
+            and message_requests_referenced_content(text)
+        )
     ):
         new_name = extract_named_target(text)
         if new_name:
@@ -655,8 +686,12 @@ def interpret_active_preview_draft_revision(
                 }
 
     content_refinement_intent = re.search(
-        r"\b(add|put|use|make|change|update|replace|save|restore)\b", lowered
-    ) and re.search(r"\b(file|content|text|joke|script|it|that)\b", lowered)
+        r"\b(add|put|use|make|change|update|replace|save|restore|turn|convert|transform|keep)\b",
+        lowered,
+    ) and re.search(
+        r"\b(file|content|text|joke|script|it|that|checklist|list|outline|tone|style|format)\b",
+        lowered,
+    )
     if content_refinement_intent:
         write_file = active_preview.get("write_file")
         mode = "overwrite"

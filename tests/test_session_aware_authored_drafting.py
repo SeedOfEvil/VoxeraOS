@@ -499,3 +499,157 @@ class TestTrustBoundaryInvariants:
         )
         assert result is not None
         assert result["write_file"]["mode"] == "overwrite"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests: live repro from PR #282 — preview identity corruption
+# ---------------------------------------------------------------------------
+
+
+class TestPreviewIdentityPreservation:
+    """Regression tests for the live bug where transformation words like 'more'
+    were extracted as filenames, corrupting preview path and goal.
+
+    Repro:
+    1. "Draft a short markdown note explaining how VoxeraOS keeps execution safe."
+    2. "Make that more concise."  → path became ~/VoxeraOS/notes/more (BUG)
+    3. "Turn that into a checklist." → overlapping output (BUG)
+    """
+
+    @pytest.fixture()
+    def authored_preview(self) -> dict:
+        return {
+            "goal": "draft a explanation as safe-execution.md",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/safe-execution.md",
+                "content": (
+                    "VoxeraOS keeps execution safe through sandboxed environments. "
+                    "All operations are verified before execution. "
+                    "The queue system ensures proper authorization."
+                ),
+                "mode": "overwrite",
+            },
+        }
+
+    def test_make_that_more_concise_preserves_path(self, authored_preview: dict) -> None:
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        result = interpret_active_preview_draft_revision("Make that more concise", authored_preview)
+        assert result is not None
+        assert result["write_file"]["path"] == "~/VoxeraOS/notes/safe-execution.md"
+        assert result["write_file"]["path"].split("/")[-1] != "more"
+
+    def test_make_that_more_concise_preserves_goal_shape(self, authored_preview: dict) -> None:
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        result = interpret_active_preview_draft_revision("Make that more concise", authored_preview)
+        assert result is not None
+        assert "safe-execution.md" in result["goal"]
+        assert "as more" not in result["goal"]
+
+    def test_turn_into_checklist_preserves_path(self, authored_preview: dict) -> None:
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        result = interpret_active_preview_draft_revision(
+            "Turn that into a checklist", authored_preview
+        )
+        assert result is not None
+        assert result["write_file"]["path"] == "~/VoxeraOS/notes/safe-execution.md"
+
+    def test_turn_into_checklist_produces_list_content(self, authored_preview: dict) -> None:
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        result = interpret_active_preview_draft_revision(
+            "Turn that into a checklist", authored_preview
+        )
+        assert result is not None
+        content = result["write_file"]["content"]
+        assert content.startswith("- ")
+        lines = content.strip().split("\n")
+        assert len(lines) >= 2
+        assert all(line.startswith("- ") for line in lines)
+
+    def test_make_that_more_operator_facing_preserves_path(self, authored_preview: dict) -> None:
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        result = interpret_active_preview_draft_revision(
+            "make that more operator-facing", authored_preview
+        )
+        assert result is not None
+        assert result["write_file"]["path"] == "~/VoxeraOS/notes/safe-execution.md"
+        assert "[Operator-facing]" in result["write_file"]["content"]
+
+    def test_keep_same_tone_preserves_path(self, authored_preview: dict) -> None:
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        result = interpret_active_preview_draft_revision("keep the same tone", authored_preview)
+        assert result is not None
+        assert result["write_file"]["path"] == "~/VoxeraOS/notes/safe-execution.md"
+
+    def test_no_path_like_notes_more(self, authored_preview: dict) -> None:
+        """Regression anchor: transformation words must never become paths."""
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        for msg in [
+            "Make that more concise",
+            "make that shorter",
+            "make that more formal",
+            "make that more operator-facing",
+        ]:
+            result = interpret_active_preview_draft_revision(msg, authored_preview)
+            if result and "write_file" in result:
+                path = result["write_file"]["path"]
+                assert path != "~/VoxeraOS/notes/more", f"{msg!r} corrupted path to 'more'"
+                assert path != "~/VoxeraOS/notes/shorter", f"{msg!r} corrupted path"
+                assert path != "~/VoxeraOS/notes/formal", f"{msg!r} corrupted path"
+                assert path != "~/VoxeraOS/notes/concise", f"{msg!r} corrupted path"
+
+    def test_no_goal_like_draft_a_explanation_as_more(self, authored_preview: dict) -> None:
+        """Regression anchor: transformation words must never corrupt goal text."""
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        for msg in [
+            "Make that more concise",
+            "make that shorter",
+            "make that more formal",
+        ]:
+            result = interpret_active_preview_draft_revision(msg, authored_preview)
+            if result:
+                goal = result.get("goal", "")
+                assert "as more" not in goal, f"{msg!r} corrupted goal to '{goal}'"
+                assert "as shorter" not in goal, f"{msg!r} corrupted goal"
+                assert "as formal" not in goal, f"{msg!r} corrupted goal"
+
+    def test_actual_rename_still_works(self, authored_preview: dict) -> None:
+        """Rename intent must still change the path when explicitly requested."""
+        from voxera.vera.draft_revision import interpret_active_preview_draft_revision
+
+        result = interpret_active_preview_draft_revision("make that workout.txt", authored_preview)
+        assert result is not None
+        assert result["write_file"]["path"] == "~/VoxeraOS/notes/workout.txt"
+
+
+class TestExtractNamedTargetTransformationSafety:
+    """Regression: extract_named_target must not extract transformation words."""
+
+    @pytest.mark.parametrize(
+        "message,expected_none",
+        [
+            ("Make that more concise", True),
+            ("make that shorter", True),
+            ("make that more formal", True),
+            ("make that into a checklist", True),
+            ("make that workout.txt", False),  # actual rename
+            ("rename it to plan.md", False),  # actual rename
+        ],
+    )
+    def test_transformation_words_not_extracted_as_names(
+        self, message: str, expected_none: bool
+    ) -> None:
+        from voxera.vera.draft_revision import extract_named_target
+
+        result = extract_named_target(message)
+        if expected_none:
+            assert result is None, f"{message!r} extracted {result!r} as target name"
+        else:
+            assert result is not None, f"{message!r} should extract a real target name"
