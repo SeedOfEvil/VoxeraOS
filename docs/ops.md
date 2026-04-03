@@ -115,6 +115,8 @@ Vera modularization safety-net note: session-sensitive Vera characterization cov
 
 Vera session persistence/state ownership now lives in `src/voxera/vera/session_store.py`, with `src/voxera/vera/service.py` retaining compatibility delegation for existing call sites. Prefer adding or updating session read/write helpers in `session_store.py` first when working on future Vera modularization PRs.
 
+Vera session-scoped reference resolution lives in `src/voxera/vera/reference_resolver.py`. This module maps natural in-session phrases ("that draft", "that file", "the result", "the follow-up") to concrete referents using shared session context. It is consumed by `chat_early_exit_dispatch.py` for job-ID fallback in review/follow-up flows. Prefer extending `reference_resolver.py` for new reference classes or phrase patterns rather than embedding resolution logic in dispatch or app.py.
+
 Vera weather quick-flow orchestration now lives in `src/voxera/vera/weather_flow.py`, with `src/voxera/vera/service.py` delegating into that module while keeping compatibility aliases for existing patches/tests. Prefer extending `weather_flow.py` for weather-question detection, missing-location handling, follow-up continuity, and fail-closed weather-lane behavior instead of re-growing those branches inside `service.py`.
 
 Vera saveable assistant artifact selection now lives in `src/voxera/vera/saveable_artifacts.py`, with `src/voxera/vera/handoff.py` retaining compatibility imports for existing callers. Prefer extending `saveable_artifacts.py` for meaningful-content selection, courtesy/control filtering, and recent `"save that"` target resolution instead of re-growing that logic inside `handoff.py`.

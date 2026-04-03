@@ -53,7 +53,10 @@ Vera is no longer one large handoff file. Current boundaries:
 - `vera/handoff.py` — compatibility façade across the extracted seams
 
 ### Session context and continuity
-`vera/session_store.py` persists a bounded `shared_context` dict alongside turns, preview, handoff, and other session fields. It tracks workflow-continuity references (active draft, active preview, last submitted/completed/reviewed job, active topic, ambiguity flags). Context is updated at preview creation, submit/handoff, completion ingestion, and session clear. It is subordinate to preview, queue, and artifact/evidence truth — if context conflicts with canonical truth, canonical truth wins.
+`vera/session_store.py` persists a bounded `shared_context` dict alongside turns, preview, handoff, and other session fields. It tracks workflow-continuity references (active draft, active preview, last submitted/completed/reviewed job, active topic, ambiguity flags). Context is updated at preview creation, submit/handoff, completion ingestion, job review, and session clear. It is subordinate to preview, queue, and artifact/evidence truth — if context conflicts with canonical truth, canonical truth wins.
+
+### Session-scoped reference resolution
+`vera/reference_resolver.py` provides a bounded, fail-closed reference-resolution layer that maps natural in-session phrases ("that draft", "the result", "the follow-up") to concrete referents using shared session context. Supported reference classes: draft, file, job/result, and continuation. Resolution respects a strict priority ordering per class and returns string ref values — callers validate against canonical truth downstream. Missing or ambiguous references always fail closed. The early-exit dispatch uses session context as a fallback for job review and follow-up flows when handoff state is unavailable.
 
 ## 5) Brain Layer (Reasoning Providers)
 Brain adapters provide model generation but are not execution truth:

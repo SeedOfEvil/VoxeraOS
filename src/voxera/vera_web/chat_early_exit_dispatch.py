@@ -25,6 +25,7 @@ This module is NOT responsible for:
   - ``write_session_preview`` / ``write_session_handoff_state`` — write
     instructions are returned in the result; ``app.py`` performs them.
   - ``write_session_derived_investigation_output`` — same: write flag only.
+  - ``update_session_context`` — context-update dict only; ``app.py`` writes.
   - ``_render_page`` — routing truth stays in ``app.py``.
   - Submit / handoff decisions (``_submit_handoff``) — truth-sensitive,
     always in ``app.py``.
@@ -37,6 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ..vera.evidence_review import (
     ReviewedJobEvidence,
@@ -63,6 +65,7 @@ from ..vera.handoff import (
     select_investigation_results,
 )
 from ..vera.preview_submission import is_near_miss_submit_phrase
+from ..vera.reference_resolver import resolve_job_id_from_context
 from ..vera.service import read_session_handoff_state
 
 
@@ -83,9 +86,11 @@ class EarlyExitResult:
     3. If ``write_derived_output`` is True: call
        ``write_session_derived_investigation_output(root, session_id,
        derived_output)``.
-    4. Call ``append_session_turn(root, session_id, role="assistant",
+    4. If ``context_updates`` is not None: call
+       ``update_session_context(root, session_id, **context_updates)``.
+    5. Call ``append_session_turn(root, session_id, role="assistant",
        text=assistant_text)``.
-    5. Return ``_render_page(..., status=status)``.
+    6. Return ``_render_page(..., status=status)``.
     """
 
     matched: bool
@@ -98,6 +103,8 @@ class EarlyExitResult:
     # Derived investigation output write instructions — app.py performs these writes
     derived_output: dict[str, object] | None = None
     write_derived_output: bool = False
+    # Session-context update instructions — app.py performs these writes
+    context_updates: dict[str, object] | None = None
 
 
 def _followup_evidence_detail(evidence: ReviewedJobEvidence) -> str:
@@ -125,6 +132,7 @@ def dispatch_early_exit_intent(
     session_derived_output: dict[str, object] | None,
     queue_root: Path,
     session_id: str,
+    session_context: dict[str, Any] | None = None,
 ) -> EarlyExitResult:
     """Evaluate message against all early-exit intent conditions in chat() order.
 
@@ -167,6 +175,10 @@ def dispatch_early_exit_intent(
         if not target_job_id:
             handoff = read_session_handoff_state(queue_root, session_id) or {}
             target_job_id = str(handoff.get("job_id") or "") or None
+        # Session-context fallback: resolve job ref from shared context when
+        # neither explicit job ID nor handoff state provides one.
+        if not target_job_id:
+            target_job_id = resolve_job_id_from_context(session_context or {})
         evidence = review_job_outcome(queue_root=queue_root, requested_job_id=target_job_id)
         if evidence is None:
             return EarlyExitResult(
@@ -183,14 +195,19 @@ def dispatch_early_exit_intent(
             matched=True,
             assistant_text=review_message(evidence),
             status="reviewed_job_outcome",
+            context_updates={"last_reviewed_job_ref": evidence.job_id},
         )
 
     # ── 3. Follow-up preview request ───────────────────────────────────────
     if is_followup_preview_request(message):
         handoff = read_session_handoff_state(queue_root, session_id) or {}
+        _followup_job_id = str(handoff.get("job_id") or "") or None
+        # Session-context fallback for follow-up evidence resolution.
+        if not _followup_job_id:
+            _followup_job_id = resolve_job_id_from_context(session_context or {})
         evidence = review_job_outcome(
             queue_root=queue_root,
-            requested_job_id=str(handoff.get("job_id") or "") or None,
+            requested_job_id=_followup_job_id,
         )
         if evidence is None:
             return EarlyExitResult(

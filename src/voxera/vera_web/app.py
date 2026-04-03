@@ -62,6 +62,7 @@ from ..vera.service import (
     ingest_linked_job_completions,
     maybe_auto_surface_linked_completion,
     new_session_id,
+    read_session_context,
     read_session_conversational_planning_active,
     read_session_derived_investigation_output,
     read_session_enrichment,
@@ -207,6 +208,15 @@ def _submit_handoff(
         }
         if job_id:
             _ctx_updates["last_submitted_job_ref"] = job_id
+        # Track the file path when a write_file preview is submitted so
+        # session-scoped file references ("that file", "the note") resolve.
+        if isinstance(preview, dict):
+            _submit_wf = preview.get("write_file")
+            _submit_path = (
+                str(_submit_wf.get("path") or "").strip() if isinstance(_submit_wf, dict) else None
+            )
+            if _submit_path:
+                _ctx_updates["last_saved_file_ref"] = _submit_path
         update_session_context(root, session_id, **_ctx_updates)
     return assistant_text, status
 
@@ -688,6 +698,7 @@ async def chat(request: Request):
     # Intentionally NOT covered here: weather-context LLM lookup (async I/O,
     # below), submit/handoff truth paths, and blocked-file check (after
     # submit checks to preserve ordering).
+    _session_ctx = read_session_context(root, active_session)
     _early = dispatch_early_exit_intent(
         message=message,
         diagnostics_service_turn=diagnostics_service_turn,
@@ -697,6 +708,7 @@ async def chat(request: Request):
         session_derived_output=session_derived_output,
         queue_root=root,
         session_id=active_session,
+        session_context=_session_ctx,
     )
     if _early.matched:
         if _early.write_preview:
@@ -723,6 +735,9 @@ async def chat(request: Request):
             )
         if _early.write_derived_output:
             write_session_derived_investigation_output(root, active_session, _early.derived_output)
+        # Apply session-context updates returned by the early-exit handler.
+        if _early.context_updates:
+            update_session_context(root, active_session, **_early.context_updates)
         append_session_turn(root, active_session, role="assistant", text=_early.assistant_text)
         return _render_page(
             session_id=active_session,
