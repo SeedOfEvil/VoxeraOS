@@ -640,3 +640,97 @@ class TestAdjacentRegressionAnchors:
     def test_write_request_does_not_match_review_or_followup(self) -> None:
         assert not is_review_request("Write me a poem about autumn")
         assert not is_followup_preview_request("Write me a poem about autumn")
+
+
+# ---------------------------------------------------------------------------
+# 11. Known overbroad-matching boundary documentation
+# ---------------------------------------------------------------------------
+
+
+class TestKnownOverbroadBoundaries:
+    """Document known overbroad substring matches introduced by this PR.
+
+    These tests document that certain broad phrases DO match review/followup
+    hints via substring matching — this is the same pattern as pre-existing
+    hints like 'status' (matches 'status of the project') and 'what should i
+    do next' (matches 'what should i do next about dinner').
+
+    The fail-closed behavior is preserved: when no canonical job evidence
+    exists, the user gets an honest message — not a silent wrong-mode reply.
+
+    A follow-up PR should consider adding disambiguation (e.g. requiring
+    job-context words in the message, or checking session context before
+    matching) to reduce false positives. This is a pre-existing architectural
+    pattern, not a regression introduced by this PR.
+    """
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "what should we do next week",
+            "what's the next step in the migration",
+        ],
+    )
+    def test_bare_next_step_matches_broader_planning_phrases(self, phrase: str) -> None:
+        """Known overbroad: bare next-step hints match planning language.
+
+        Pre-existing parallel: 'what should i do next' (review hint) also
+        matches 'what should i do next about dinner'.
+        """
+        assert is_followup_preview_request(phrase)
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "show the output of the grep command",
+            "what was the output of that command",
+        ],
+    )
+    def test_output_review_hints_match_broader_output_phrases(self, phrase: str) -> None:
+        """Known overbroad: output-class review hints match generic output queries.
+
+        Pre-existing parallel: 'status' (review hint) matches 'status of the
+        project'. Fail-closed behavior preserved in fresh sessions.
+        """
+        assert is_review_request(phrase)
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "format the output as JSON",
+            "write the output to a file",
+            "pipe the output to grep",
+        ],
+    )
+    def test_output_reference_resolver_is_benign_in_dispatch(self, phrase: str) -> None:
+        """Reference resolver classifies 'the output' as JOB_RESULT, but this
+        does NOT cause false early-exit dispatch because the stale-draft check
+        (dispatch step 10) only gates on DRAFT-class references."""
+        assert classify_reference(phrase) == ReferenceClass.JOB_RESULT
+        # But these do NOT match review or followup dispatch:
+        assert not is_review_request(phrase)
+        assert not is_followup_preview_request(phrase)
+
+    def test_overbroad_followup_still_fails_closed_in_fresh_session(self, tmp_path: Path) -> None:
+        """Even when an overbroad phrase fires the followup branch, a fresh
+        session gets an honest fail-closed response, not a wrong-mode reply."""
+        result = _dispatch(
+            message="what should we do next week",
+            queue_root=tmp_path,
+            session_context={},
+        )
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
+        assert "follow-up preview" in result.assistant_text.lower()
+
+    def test_overbroad_review_still_fails_closed_in_fresh_session(self, tmp_path: Path) -> None:
+        """Even when an overbroad phrase fires the review branch, a fresh
+        session gets an honest fail-closed response."""
+        result = _dispatch(
+            message="show the output of the grep command",
+            queue_root=tmp_path,
+            session_context={},
+        )
+        assert result.matched is True
+        assert result.status == "review_missing_job"
+        assert "could not resolve" in result.assistant_text.lower()

@@ -27,8 +27,16 @@
   Preview wording is truthful (preview-only, nothing submitted).
 - **No architectural changes**: No new modules, no new session context fields, no changes
   to queue submission ownership or preview authority semantics.
+- **Known overbroad-matching boundary**: Bare next-step phrases ("what should we do next",
+  "what's the next step") and output-class review phrases ("show the output", "what was the
+  output") use substring matching and can false-match broader planning/output queries. This
+  is the same pattern as pre-existing hints ("status", "what should i do next", "last job")
+  which also match broader phrases. Fail-closed behavior is preserved: fresh sessions get
+  honest refusal messages, not wrong-mode replies. A follow-up PR may add disambiguation
+  (e.g. session-context-gated matching) to reduce false positives across all hint families.
 - **Recommended next PR**: `active_topic` tracking for richer planning continuity,
-  cross-turn context-aware refinement of follow-up previews.
+  cross-turn context-aware refinement of follow-up previews, hint-matching disambiguation
+  to reduce false positives.
 
 ## 2026-04-03 — PR #TBD — fix(vera): preserve full authored draft body in preview content
 
