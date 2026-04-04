@@ -44,7 +44,51 @@ from .weather_flow import (
     weather_followup_is_active,
 )
 
+# ---------------------------------------------------------------------------
+# Backward-compatibility re-exports from session_store
+#
+# Production callers now import session helpers directly from
+# vera.session_store.  These aliases remain so that existing tests which
+# call ``vera_service.<name>(...)`` keep working.  A follow-up PR should
+# migrate test call sites and remove this block.
+# ---------------------------------------------------------------------------
+MAX_SESSION_TURNS = vera_session_store.MAX_SESSION_TURNS
+new_session_id = vera_session_store.new_session_id
+read_session_turns = vera_session_store.read_session_turns
+read_session_updated_at_ms = vera_session_store.read_session_updated_at_ms
+append_session_turn = vera_session_store.append_session_turn
+read_session_preview = vera_session_store.read_session_preview
+write_session_preview = vera_session_store.write_session_preview
+write_session_handoff_state = vera_session_store.write_session_handoff_state
+read_session_handoff_state = vera_session_store.read_session_handoff_state
+clear_session_turns = vera_session_store.clear_session_turns
+read_session_enrichment = vera_session_store.read_session_enrichment
+write_session_enrichment = vera_session_store.write_session_enrichment
+read_session_investigation = vera_session_store.read_session_investigation
+read_session_weather_context = vera_session_store.read_session_weather_context
+write_session_weather_context = vera_session_store.write_session_weather_context
+write_session_investigation = vera_session_store.write_session_investigation
+read_session_derived_investigation_output = (
+    vera_session_store.read_session_derived_investigation_output
+)
+write_session_derived_investigation_output = (
+    vera_session_store.write_session_derived_investigation_output
+)
+read_session_saveable_assistant_artifacts = (
+    vera_session_store.read_session_saveable_assistant_artifacts
+)
+session_debug_info = vera_session_store.session_debug_info
+register_session_linked_job = vera_session_store.register_session_linked_job
 read_linked_job_completions = vera_session_store.read_linked_job_completions
+read_session_conversational_planning_active = (
+    vera_session_store.read_session_conversational_planning_active
+)
+write_session_conversational_planning_active = (
+    vera_session_store.write_session_conversational_planning_active
+)
+read_session_last_user_input_origin = vera_session_store.read_session_last_user_input_origin
+read_session_context = vera_session_store.read_session_context
+update_session_context = vera_session_store.update_session_context
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:

@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from voxera.vera import service as vera_service
+from voxera.vera import session_store as vera_session_store
 from voxera.vera.weather import WeatherLocation, WeatherSnapshot
 from voxera.vera_web import app as vera_app_module
 
@@ -26,22 +26,24 @@ class VeraSessionHarness:
         return self.client.post("/chat", data={"session_id": self.session_id, "message": message})
 
     def preview(self) -> dict[str, Any] | None:
-        return vera_service.read_session_preview(self.queue, self.session_id)
+        return vera_session_store.read_session_preview(self.queue, self.session_id)
 
     def turns(self) -> list[dict[str, str]]:
-        return vera_service.read_session_turns(self.queue, self.session_id)
+        return vera_session_store.read_session_turns(self.queue, self.session_id)
 
     def weather_context(self) -> dict[str, Any] | None:
-        return vera_service.read_session_weather_context(self.queue, self.session_id)
+        return vera_session_store.read_session_weather_context(self.queue, self.session_id)
 
     def derived_output(self) -> dict[str, Any] | None:
-        return vera_service.read_session_derived_investigation_output(self.queue, self.session_id)
+        return vera_session_store.read_session_derived_investigation_output(
+            self.queue, self.session_id
+        )
 
     def write_investigation(self, payload: dict[str, Any] | None) -> None:
-        vera_service.write_session_investigation(self.queue, self.session_id, payload)
+        vera_session_store.write_session_investigation(self.queue, self.session_id, payload)
 
     def session_context(self) -> dict[str, Any]:
-        return vera_service.read_session_context(self.queue, self.session_id)
+        return vera_session_store.read_session_context(self.queue, self.session_id)
 
 
 def make_vera_session(monkeypatch: Any, tmp_path: Path) -> VeraSessionHarness:
