@@ -101,6 +101,29 @@ class TestNormalizeMarkdownSpacing:
         assert "C#" in result
         assert result.count("\n") == text.count("\n")
 
+    def test_zero_space_inline_heading_after_period(self) -> None:
+        """Zero space between period and heading: 'safe.### 1.'"""
+        text = "auditable, and safe.### 1. The Reasoning Split"
+        result = _normalize_markdown_spacing(text)
+        assert "safe.###" not in result
+        lines = result.split("\n")
+        assert any(ln.strip().startswith("### 1.") for ln in lines)
+
+    def test_zero_space_inline_heading_no_punctuation(self) -> None:
+        """Heading jammed against preceding word: 'metadata### 4.'"""
+        text = "full lineage metadata### 4. Sandboxed Skills"
+        result = _normalize_markdown_spacing(text)
+        assert "metadata###" not in result
+        lines = result.split("\n")
+        assert any(ln.strip().startswith("### 4.") for ln in lines)
+
+    def test_single_hash_after_word_not_split(self) -> None:
+        """Single # after a word without punctuation is ambiguous — don't split."""
+        text = "the queue# Title"
+        result = _normalize_markdown_spacing(text)
+        # Should NOT be split (single # without preceding punctuation is ambiguous)
+        assert result.count("\n") == 0
+
     def test_bullets_not_treated_as_headings(self) -> None:
         text = "- bullet 1\n- bullet 2"
         assert _normalize_markdown_spacing(text) == text
@@ -373,6 +396,9 @@ class TestInlineHeadingRegression:
             "Some conclusion! ### Subsection Three",
             "Key points: ## Analysis",
             "See above; ## Summary",
+            "safe.### 1. The Split",
+            "queue### 2. Preview",
+            "metadata### 4. Sandboxed",
         ],
     )
     def test_various_punctuation_before_inline_heading(self, inline_text: str) -> None:
@@ -381,3 +407,87 @@ class TestInlineHeadingRegression:
         lines = result.split("\n")
         heading_lines = [ln for ln in lines if ln.strip().startswith("#")]
         assert len(heading_lines) == 1, f"Expected heading on own line, got: {result!r}"
+
+
+class TestFiveSectionZeroSpaceExtraction:
+    """End-to-end test for a 5-section markdown note where ALL headings are
+    inline with zero space — the exact live regression pattern."""
+
+    @pytest.fixture()
+    def five_section_zero_space_reply(self) -> str:
+        return (
+            "I've drafted a short markdown note for you.\n"
+            "\n"
+            "# How VoxeraOS Keeps Execution Safe\n"
+            "VoxeraOS ensures safety through layered boundaries, making everything "
+            "transparent, auditable, and safe.### 1. The Reasoning/Execution Split\n"
+            "Vera handles interaction but has no execution authority. All execution "
+            "flows through the governed queue.### 2. Preview and Explicit Intent\n"
+            "Users see a preview before submission:\n"
+            "- Goal description\n"
+            "- Files to be modified\n"
+            "- Execution steps\n"
+            "Nothing is submitted without explicit confirmation."
+            "### 3. Queue-Based Execution\n"
+            "All work enters a persistent queue:\n"
+            "- Policy validation\n"
+            "- Approval gates\n"
+            "- Full lineage metadata"
+            "### 4. Sandboxed Skills\n"
+            "Jobs execute in bounded sandboxes:\n"
+            "- Declared capabilities\n"
+            "- Resource limits\n"
+            "- Audit trails"
+            "### 5. Evidence-Grounded Outcomes\n"
+            "Results are surfaced through evidence:\n"
+            "- Structured artifacts\n"
+            "- Diagnostic context\n"
+            "- Grounded success claims\n"
+            "This ensures authorized, traceable execution.\n"
+            "\n"
+            "I've prepared a preview with this content. "
+            "This is preview-only \u2014 nothing has been submitted yet."
+        )
+
+    def test_all_five_sections_present(self, five_section_zero_space_reply: str) -> None:
+        result = extract_text_draft_from_reply(five_section_zero_space_reply)
+        assert result is not None
+        for i in range(1, 6):
+            assert f"### {i}." in result, f"Section {i} missing from extraction"
+
+    def test_no_collapsed_heading_boundaries(self, five_section_zero_space_reply: str) -> None:
+        result = extract_text_draft_from_reply(five_section_zero_space_reply)
+        assert result is not None
+        for i in range(1, 6):
+            assert f".### {i}." not in result, f"Section {i} heading collapsed against text"
+
+    def test_headings_on_own_lines(self, five_section_zero_space_reply: str) -> None:
+        result = extract_text_draft_from_reply(five_section_zero_space_reply)
+        assert result is not None
+        lines = result.split("\n")
+        for line in lines:
+            stripped = line.strip()
+            if "###" in stripped and not stripped.startswith("#"):
+                pytest.fail(f"Heading still inline: {stripped!r}")
+
+    def test_no_truncation_after_section_2(self, five_section_zero_space_reply: str) -> None:
+        result = extract_text_draft_from_reply(five_section_zero_space_reply)
+        assert result is not None
+        assert "Queue-Based Execution" in result
+        assert "Sandboxed Skills" in result
+        assert "Evidence-Grounded Outcomes" in result
+        assert "traceable execution" in result
+
+    def test_bullets_preserved(self, five_section_zero_space_reply: str) -> None:
+        result = extract_text_draft_from_reply(five_section_zero_space_reply)
+        assert result is not None
+        lines = result.split("\n")
+        bullet_count = sum(1 for ln in lines if ln.strip().startswith("- "))
+        assert bullet_count >= 9, f"Expected at least 9 bullets, got {bullet_count}"
+
+    def test_wrapper_and_trailer_removed(self, five_section_zero_space_reply: str) -> None:
+        result = extract_text_draft_from_reply(five_section_zero_space_reply)
+        assert result is not None
+        assert "drafted a short" not in result
+        assert "prepared a preview" not in result
+        assert "preview-only" not in result

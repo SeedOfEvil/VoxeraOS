@@ -13,8 +13,12 @@
   - `_looks_like_trailing_wrapper_block` did not match "I've prepared a preview" or
     "preview-only" phrases.
 - **Fixes applied**:
-  - `_normalize_markdown_spacing()` Phase 1: regex-split inline headings after sentence-ending
-    punctuation (`[.!?:;]`) onto their own lines before Phase 2 blank-line insertion.
+  - `_normalize_markdown_spacing()` Phase 1a: regex-split inline headings after sentence-ending
+    punctuation (`[.!?:;]`) with optional whitespace (`\s*`) onto their own lines. Handles
+    both `safe. ### 1.` (space) and `safe.### 1.` (zero-space) patterns.
+  - `_normalize_markdown_spacing()` Phase 1b: regex-split `##`+ headings jammed against
+    preceding word with no punctuation (e.g. `metadata### 4.`). Uses `#{2,6}` to avoid
+    splitting non-heading `#` uses like `C#`.
   - `_normalize_markdown_spacing()` Phase 2: inserts blank lines around heading boundaries for
     proper block-splitting by the prose-body extractor.
   - Extended `_WRAPPER_PREFIX_RE` with `here's a [short/brief] [markdown] note/draft/summary`.
@@ -22,7 +26,7 @@
     "this is preview-only", "let me know when you'd like to send".
 - **Behavioral invariant**: authored draft body in preview content must match the visible
   drafted artifact — no truncation, no collapsed heading spacing, no wrapper/trailer leakage,
-  no inline heading corruption.
+  no inline heading corruption. A 5-section zero-space regression test anchors this.
 
 ## 2026-04-03 — PR #TBD — fix(vera): preserve authored preview identity during session-aware drafting follow-ups
 

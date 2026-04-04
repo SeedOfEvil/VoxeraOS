@@ -217,10 +217,24 @@ def _normalize_markdown_spacing(text: str) -> str:
     if not text:
         return text
     # Phase 1: split inline headings onto their own lines.
-    # Matches patterns like "...sentence end. ### Heading" or "...text. # Title"
-    # where a heading marker appears mid-line after sentence-ending punctuation.
+    # Handles two patterns:
+    #   a) Heading after sentence-ending punctuation with optional space:
+    #      "...safe. ### 1." or "...safe.### 1." (zero-space variant)
+    #   b) Heading jammed against preceding word with no punctuation:
+    #      "...the queue### 2. Preview" (no punctuation, no space)
+    # The heading marker must be #{1,6} followed by a space to avoid
+    # splitting non-heading # uses (e.g. C#).
     text = re.sub(
-        r"([.!?:;])\s+(#{1,6}\s+)",
+        r"([.!?:;])\s*(#{1,6}\s+)",
+        r"\1\n\n\2",
+        text,
+    )
+    # Pattern (b): heading after a word character with no punctuation.
+    # More conservative — requires at least ## (not single #) to avoid
+    # splitting non-heading uses like "C# language".  Single # headings
+    # after word chars are rare in LLM output without preceding punctuation.
+    text = re.sub(
+        r"([a-zA-Z0-9)\]])\s*(#{2,6}\s+)",
         r"\1\n\n\2",
         text,
     )
