@@ -249,7 +249,22 @@ def _normalize_markdown_spacing(text: str) -> str:
         result.append(line)
         if is_heading and i + 1 < len(lines) and lines[i + 1].strip():
             result.append("")
-    return "\n".join(result)
+    # Phase 3: separate colon-terminated wrapper lines from following body.
+    # LLM replies like "Here is a short note:\nThe team discussed..."
+    # must be split so _extract_prose_body can strip the wrapper block.
+    final: list[str] = []
+    for i, line in enumerate(result):
+        final.append(line)
+        stripped = line.strip()
+        if (
+            stripped.endswith(":")
+            and i + 1 < len(result)
+            and result[i + 1].strip()
+            and not (i + 1 < len(result) and result[i + 1].strip() == "")
+            and _WRAPPER_PREFIX_RE.match(stripped)
+        ):
+            final.append("")
+    return "\n".join(final)
 
 
 def _extract_prose_body(content: str) -> str | None:
@@ -399,7 +414,7 @@ def _looks_like_trailing_wrapper_block(block: str) -> bool:
 def _strip_leading_preface_sentences(block: str) -> str:
     current = block.strip()
     while current:
-        match = re.match(r"^(.+?[.!?])(?:\s+|$)(.*)$", current, re.DOTALL)
+        match = re.match(r"^(.+?[.!?:])(?:\s+|$)(.*)$", current, re.DOTALL)
         if not match:
             return current
         sentence = match.group(1).strip()
@@ -460,6 +475,9 @@ def _looks_like_preface_setup_sentence(block: str) -> bool:
             "file creation",
             "content below",
             "content and",
+            "note",
+            "summary",
+            "summariz",
             ".md",
             ".txt",
         )

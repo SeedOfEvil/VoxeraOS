@@ -36,6 +36,7 @@ This module is NOT responsible for:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -126,6 +127,24 @@ def _followup_evidence_detail(evidence: ReviewedJobEvidence) -> str:
     return f"- Prior job state: {evidence.state}"
 
 
+_AUTHORED_DRAFTING_SIGNAL_RE = re.compile(
+    r"\b(?:write|create|draft|make|save)\s+(?:me\s+)?(?:a\s+)?(?:short\s+)?"
+    r"(?:note|memo|document|letter|report|file)(?!\s+(?:called|named))\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_authored_drafting_request(message: str) -> bool:
+    """Return True when the message has clear file-creation/note-writing signals.
+
+    Used to suppress review/followup hint matching when the message is primarily
+    an authored-drafting request that incidentally contains a hint substring
+    (e.g. "Write me a note about what happened at the meeting" contains the
+    review hint "what happened" but is clearly a drafting request).
+    """
+    return bool(_AUTHORED_DRAFTING_SIGNAL_RE.search(message))
+
+
 def dispatch_early_exit_intent(
     *,
     message: str,
@@ -175,11 +194,18 @@ def dispatch_early_exit_intent(
 
     # ── 2. Job review / evidence review ───────────────────────────────────
     # An explicit job ID in the message always enters review (fail-closed if
-    # evidence is missing).  Hint-based review requests only enter when a
-    # resolvable job target exists in handoff state or session context — this
-    # prevents overbroad substring matches (e.g. "why did" inside a drafting
-    # prompt) from hijacking normal authored-preview flow.
-    _review_hint_match = is_review_request(message) and not diagnostics_service_turn
+    # evidence is missing).  Hint-based review requests enter the branch and
+    # fail closed honestly when no job target is resolvable — this gives the
+    # user a clear message rather than silent misrouting.
+    #
+    # Anti-hijack: when the message is primarily an authored-drafting request
+    # (e.g. "Write me a note about what happened at the meeting") that
+    # incidentally contains a review hint substring, suppress the hint match
+    # so the drafting request proceeds normally.
+    _is_drafting = _looks_like_authored_drafting_request(message)
+    _review_hint_match = (
+        is_review_request(message) and not diagnostics_service_turn and not _is_drafting
+    )
     if requested_job_id is not None or _review_hint_match:
         target_job_id = requested_job_id
         if not target_job_id:
@@ -190,110 +216,102 @@ def dispatch_early_exit_intent(
         if not target_job_id:
             target_job_id = resolve_job_id_from_context(session_context or {})
 
-        # When the trigger was a hint match (not an explicit job ID) and no
-        # job target could be resolved, fall through to normal flow instead
-        # of blocking with a confusing review-missing message.
-        if not target_job_id and requested_job_id is None:
-            pass  # fall through — not a genuine review request
-        else:
-            evidence = review_job_outcome(queue_root=queue_root, requested_job_id=target_job_id)
-            if evidence is None:
-                return EarlyExitResult(
-                    matched=True,
-                    assistant_text=(
-                        "I could not resolve a VoxeraOS job to review from canonical queue evidence. "
-                        "No completed or in-progress linked job was found for this session. "
-                        "Share a job id (for example `job-123.json`) or submit a job first so I can "
-                        "inspect real results."
-                    ),
-                    status="review_missing_job",
-                )
+        evidence = review_job_outcome(queue_root=queue_root, requested_job_id=target_job_id)
+        if evidence is None:
             return EarlyExitResult(
                 matched=True,
-                assistant_text=review_message(evidence),
-                status="reviewed_job_outcome",
-                context_updates={"last_reviewed_job_ref": evidence.job_id},
+                assistant_text=(
+                    "I could not resolve a VoxeraOS job to review from canonical queue evidence. "
+                    "No completed or in-progress linked job was found for this session. "
+                    "Share a job id (for example `job-123.json`) or submit a job first so I can "
+                    "inspect real results."
+                ),
+                status="review_missing_job",
             )
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=review_message(evidence),
+            status="reviewed_job_outcome",
+            context_updates={"last_reviewed_job_ref": evidence.job_id},
+        )
 
     # ── 3. Follow-up preview request ───────────────────────────────────────
-    # Same gating as review: only enter follow-up dispatch when a job target
-    # is resolvable.  Without a grounded job, the follow-up branch would
-    # block normal authored-drafting flow with a confusing fail-closed message.
-    if is_followup_preview_request(message):
+    # Follow-up hint phrases enter the branch and fail closed honestly when
+    # no job target is resolvable.  Anti-hijack: suppress when the message
+    # is primarily an authored-drafting request.
+    if is_followup_preview_request(message) and not _is_drafting:
         handoff = read_session_handoff_state(queue_root, session_id) or {}
         _followup_job_id = str(handoff.get("job_id") or "") or None
         # Session-context fallback for follow-up evidence resolution.
         if not _followup_job_id:
             _followup_job_id = resolve_job_id_from_context(session_context or {})
 
-        if _followup_job_id:
-            evidence = review_job_outcome(
-                queue_root=queue_root,
-                requested_job_id=_followup_job_id,
-            )
-            if evidence is None:
-                return EarlyExitResult(
-                    matched=True,
-                    assistant_text=(
-                        "I can draft a follow-up preview once we have a resolvable VoxeraOS job outcome. "
-                        "No completed linked job could be resolved from this session. "
-                        "Please give me a job id or submit a job first so I have canonical evidence to ground the follow-up."
-                    ),
-                    status="followup_missing_evidence",
-                )
-            followup_detail = _followup_evidence_detail(evidence)
-
-            # ── 3a. Revise/update from evidence ──
-            if is_revise_from_evidence_request(message):
-                payload: dict[str, object] = {**draft_revised_preview(evidence)}
-                return EarlyExitResult(
-                    matched=True,
-                    assistant_text=(
-                        f"I've prepared a revised preview grounded in canonical evidence from `{evidence.job_id}`.\n"
-                        f"{followup_detail}\n"
-                        "This is preview-only — nothing has been submitted yet."
-                    ),
-                    status="revised_preview_ready",
-                    preview_payload=payload,
-                    write_preview=True,
-                    write_handoff_ready=True,
-                    context_updates={"last_reviewed_job_ref": evidence.job_id},
-                )
-
-            # ── 3b. Save follow-up as file ──
-            if is_save_followup_request(message):
-                payload = {**draft_saveable_followup_preview(evidence)}
-                return EarlyExitResult(
-                    matched=True,
-                    assistant_text=(
-                        f"I've prepared a saveable follow-up draft grounded in canonical evidence from `{evidence.job_id}`.\n"
-                        f"{followup_detail}\n"
-                        "The follow-up has been placed in the preview as a file draft. "
-                        "This is preview-only — nothing has been submitted yet."
-                    ),
-                    status="save_followup_preview_ready",
-                    preview_payload=payload,
-                    write_preview=True,
-                    write_handoff_ready=True,
-                    context_updates={"last_reviewed_job_ref": evidence.job_id},
-                )
-
-            # ── 3c. General follow-up ──
-            payload = {**draft_followup_preview(evidence)}
+        evidence = review_job_outcome(
+            queue_root=queue_root,
+            requested_job_id=_followup_job_id,
+        )
+        if evidence is None:
             return EarlyExitResult(
                 matched=True,
                 assistant_text=(
-                    f"I've prepared a follow-up preview grounded in canonical evidence from `{evidence.job_id}`.\n"
+                    "I can draft a follow-up preview once we have a resolvable VoxeraOS job outcome. "
+                    "No completed linked job could be resolved from this session. "
+                    "Please give me a job id or submit a job first so I have canonical evidence to ground the follow-up."
+                ),
+                status="followup_missing_evidence",
+            )
+        followup_detail = _followup_evidence_detail(evidence)
+
+        # ── 3a. Revise/update from evidence ──
+        if is_revise_from_evidence_request(message):
+            payload: dict[str, object] = {**draft_revised_preview(evidence)}
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    f"I've prepared a revised preview grounded in canonical evidence from `{evidence.job_id}`.\n"
                     f"{followup_detail}\n"
                     "This is preview-only — nothing has been submitted yet."
                 ),
-                status="followup_preview_ready",
+                status="revised_preview_ready",
                 preview_payload=payload,
                 write_preview=True,
                 write_handoff_ready=True,
                 context_updates={"last_reviewed_job_ref": evidence.job_id},
             )
-        # No resolvable job — fall through to normal flow.
+
+        # ── 3b. Save follow-up as file ──
+        if is_save_followup_request(message):
+            payload = {**draft_saveable_followup_preview(evidence)}
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    f"I've prepared a saveable follow-up draft grounded in canonical evidence from `{evidence.job_id}`.\n"
+                    f"{followup_detail}\n"
+                    "The follow-up has been placed in the preview as a file draft. "
+                    "This is preview-only — nothing has been submitted yet."
+                ),
+                status="save_followup_preview_ready",
+                preview_payload=payload,
+                write_preview=True,
+                write_handoff_ready=True,
+                context_updates={"last_reviewed_job_ref": evidence.job_id},
+            )
+
+        # ── 3c. General follow-up ──
+        payload = {**draft_followup_preview(evidence)}
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=(
+                f"I've prepared a follow-up preview grounded in canonical evidence from `{evidence.job_id}`.\n"
+                f"{followup_detail}\n"
+                "This is preview-only — nothing has been submitted yet."
+            ),
+            status="followup_preview_ready",
+            preview_payload=payload,
+            write_preview=True,
+            write_handoff_ready=True,
+            context_updates={"last_reviewed_job_ref": evidence.job_id},
+        )
 
     # ── 4. Investigation derived-save request ──────────────────────────────
     if should_attempt_derived_save:

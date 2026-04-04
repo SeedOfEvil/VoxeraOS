@@ -9,6 +9,9 @@ from voxera.skills.result_contract import SKILL_RESULT_KEY, build_skill_result
 
 ALLOWED_ROOT = Path.home() / "VoxeraOS" / "notes"
 
+# Bounded content excerpt limit — same as files_read_text.
+_MAX_CONTENT_CHARS = 2048
+
 
 def _resolve_safe_path(path: str) -> Path:
     return normalize_confined_path(path=path, allowed_root=ALLOWED_ROOT, must_exist=False)
@@ -64,6 +67,9 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
             f.write(text)
         bytes_written = len(text.encode("utf-8"))
         action = "Appended" if mode == "append" else "Wrote"
+        # Include bounded content excerpt for answer-first output surfacing.
+        content_excerpt = text[:_MAX_CONTENT_CHARS]
+        content_truncated = len(text) > _MAX_CONTENT_CHARS
         return RunResult(
             ok=True,
             output=f"{action} text to {target}",
@@ -73,7 +79,9 @@ def run(path: str, text: str, mode: Literal["append", "overwrite"] = "overwrite"
                     machine_payload={
                         "path": str(target),
                         "mode": mode,
-                        "bytes_written": bytes_written,
+                        "bytes": bytes_written,
+                        "content": content_excerpt,
+                        "content_truncated": content_truncated,
                     },
                     operator_note="Write completed in confined notes scope.",
                     next_action_hint="continue",

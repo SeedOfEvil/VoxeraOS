@@ -238,6 +238,43 @@ def should_clear_stale_preview(
 
 
 # ---------------------------------------------------------------------------
+# LLM preview-narration stripping
+# ---------------------------------------------------------------------------
+
+_LLM_PREVIEW_NARRATION_RE = re.compile(
+    r"(?:^|\n\n)"  # paragraph boundary
+    r"(?:I(?:\u2019ve|\u0027ve|'ve| have| already)?\s+"
+    r"(?:updated|prepared|created|set up|drafted|placed|put|saved)"
+    r".*?"
+    r"(?:preview|draft|note|file|pane|submit|submitted|changes)"
+    r".*?"
+    r"[.!])"
+    r"(?:\s+(?:You can|This is|Let me|Nothing|Feel free|Review).*?[.!])*",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_llm_preview_narration(text: str) -> str:
+    """Strip trailing LLM-generated preview/draft update narration.
+
+    When the LLM produces authored content followed by narration like
+    "I've updated the draft to include this note. You can review…",
+    strip that narration so the canonical preview-state notice can be
+    appended without duplication.
+
+    Only strips when the remaining text still has real content (at least
+    4 words). If the entire text is narration, it is left as-is so the
+    stock notice can replace it.
+    """
+    cleaned = _LLM_PREVIEW_NARRATION_RE.sub("", text).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    # Only accept the stripped version if real content remains
+    if cleaned and len(cleaned.split()) >= 4:
+        return cleaned
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
 # Reply assembly
 # ---------------------------------------------------------------------------
 
@@ -367,7 +404,13 @@ def assemble_assistant_reply(  # noqa: C901
     # Writing-draft turns show authored content in chat (not a control message).
     # When a preview was prepared or updated on such a turn, append a
     # preview-state notice so the user clearly knows preview state.
+    #
+    # When the LLM reply already contains preview/draft narration (e.g.
+    # "I've updated the draft to include this note…"), strip that narration
+    # before appending the canonical preview-state notice.  This prevents
+    # triple-layered responses (content + LLM narration + stock narration).
     if is_writing_draft_turn and builder_payload is not None and assistant_text.strip():
+        assistant_text = _strip_llm_preview_narration(assistant_text)
         if pending_preview is not None:
             assistant_text = (
                 f"{assistant_text}\n\n"

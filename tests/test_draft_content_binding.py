@@ -681,3 +681,62 @@ class TestWritingDraftPreviewTruthGuardrail:
         assert result.builder_payload is not None
         wf = result.builder_payload["write_file"]
         assert wf["content"] == "what is happening now."
+
+
+# ---------------------------------------------------------------------------
+# Regression: explicit literal content via "containing exactly:"
+# ---------------------------------------------------------------------------
+
+
+class TestExplicitLiteralContentBinding:
+    """Explicit literal content provided via 'containing exactly:' must be
+    bound into the preview payload — not left empty."""
+
+    def test_containing_exactly_binds_content_into_builder(self) -> None:
+        from voxera.vera.preview_drafting import maybe_draft_job_payload
+
+        msg = (
+            "Create a file called test-output-note.txt containing exactly: "
+            "Why did the queue cross the road? To get to done."
+        )
+        result = maybe_draft_job_payload(msg)
+        assert result is not None, "Builder should produce a payload"
+        wf = result.get("write_file")
+        assert isinstance(wf, dict), "Payload must have write_file"
+        assert wf.get("path", "").endswith("test-output-note.txt")
+        content = str(wf.get("content") or "").strip()
+        assert content, "Content must not be empty for explicit literal requests"
+        assert "queue cross the road" in content
+
+    def test_containing_exactly_detected_as_explicit_literal(self) -> None:
+        from voxera.vera_web.execution_mode import _message_has_explicit_content_literal
+
+        msg = (
+            "Create a file called test-output-note.txt containing exactly: "
+            "Why did the queue cross the road? To get to done."
+        )
+        assert _message_has_explicit_content_literal(msg) is True
+
+    def test_generation_binding_skipped_for_explicit_literal(self) -> None:
+        """When the message has explicit literal content, the generation
+        content binding path must be skipped — the builder content is
+        authoritative."""
+        builder = {
+            "goal": "write a file called test.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/test.txt",
+                "content": "explicit literal content here",
+                "mode": "overwrite",
+            },
+        }
+        result = resolve_draft_content_binding(
+            **{
+                **_default_binding_kwargs(),
+                "message": "Create a file called test.txt containing exactly: explicit literal content here",
+                "builder_payload": builder,
+                "reply_text_draft": "Some LLM-generated text that should NOT replace",
+            }
+        )
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        assert wf["content"] == "explicit literal content here"

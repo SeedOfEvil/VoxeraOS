@@ -165,14 +165,15 @@ class TestDiagnosticsRefusal:
 
 
 class TestJobReview:
-    def test_review_request_without_job_context_falls_through(self, tmp_path: Path) -> None:
-        # No session handoff state, no job ID, no session context → falls through
-        # to normal flow instead of blocking with review_missing_job.
+    def test_review_request_without_job_context_fails_closed(self, tmp_path: Path) -> None:
+        # No session handoff state, no job ID, no session context → fail closed
+        # with an honest review_missing_job message.
         result = _dispatch(
             message="what happened to the last job",
             queue_root=tmp_path,
         )
-        assert result.matched is False
+        assert result.matched is True
+        assert result.status == "review_missing_job"
 
     def test_explicit_job_id_returns_review_missing_when_no_artifacts(self, tmp_path: Path) -> None:
         result = _dispatch(
@@ -243,13 +244,14 @@ class TestJobReview:
 
 
 class TestFollowupPreview:
-    def test_followup_without_job_context_falls_through(self, tmp_path: Path) -> None:
-        # No job context → falls through to normal flow (not blocked).
+    def test_followup_without_job_context_fails_closed(self, tmp_path: Path) -> None:
+        # No job context → fail closed with an honest followup_missing_evidence message.
         result = _dispatch(
             message="prepare the next step",
             queue_root=tmp_path,
         )
-        assert result.matched is False
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
 
     def test_followup_with_evidence_returns_preview_ready(self, tmp_path: Path) -> None:
         from voxera.vera.evidence_review import ReviewedJobEvidence
@@ -359,15 +361,17 @@ class TestFollowupPreview:
             "based on the result, prepare the next step",
         ],
     )
-    def test_followup_hint_variants_do_not_enter_followup_without_job_context(
+    def test_followup_hint_variants_fail_closed_without_job_context(
         self, tmp_path: Path, phrase: str
     ) -> None:
-        """Followup hint variants without job context must NOT enter the
-        followup branch.  They may match a later dispatch step — that is
-        correct; the key invariant is no followup_missing_evidence block."""
+        """Followup hint variants without job context fail closed honestly
+        with followup_missing_evidence status."""
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.status != "followup_missing_evidence", (
-            f"Phrase {phrase!r} should not enter followup branch without job context. "
+        assert result.matched is True, (
+            f"Phrase {phrase!r} should fail closed without job context. Got matched=False"
+        )
+        assert result.status == "followup_missing_evidence", (
+            f"Phrase {phrase!r} should fail closed with followup_missing_evidence. "
             f"Got status={result.status!r}"
         )
 
@@ -762,12 +766,13 @@ class TestWriteFlagIntegrity:
         assert result.write_derived_output is False
 
     def test_review_without_context_has_no_write_flags(self, tmp_path: Path) -> None:
-        """Review hint without job context falls through — no writes."""
+        """Review hint without job context fails closed — no writes."""
         result = _dispatch(
             message="what happened to the last job",
             queue_root=tmp_path,
         )
-        assert result.matched is False
+        assert result.matched is True
+        assert result.status == "review_missing_job"
         assert result.write_preview is False
         assert result.write_handoff_ready is False
         assert result.write_derived_output is False
@@ -798,15 +803,17 @@ class TestLinkedJobReviewInspection:
             "what was the result",
         ],
     )
-    def test_review_inspection_phrases_do_not_enter_review_without_job_context(
+    def test_review_inspection_phrases_fail_closed_without_job_context(
         self, tmp_path: Path, phrase: str
     ) -> None:
-        """Review inspection phrases without job context must NOT enter the
-        review branch.  They may match a later dispatch step (e.g.
-        investigation summary for 'summarize' phrases) — that is correct."""
+        """Review inspection phrases without job context fail closed honestly
+        with review_missing_job status."""
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.status != "review_missing_job", (
-            f"Phrase {phrase!r} should not enter review branch without job context. "
+        assert result.matched is True, (
+            f"Phrase {phrase!r} should fail closed without job context. Got matched=False"
+        )
+        assert result.status == "review_missing_job", (
+            f"Phrase {phrase!r} should fail closed with review_missing_job. "
             f"Got status={result.status!r}"
         )
 
@@ -910,15 +917,15 @@ class TestLinkedJobFollowupRevision:
             "save the follow-up as a file",
         ],
     )
-    def test_revision_phrases_fall_through_without_job_context(
+    def test_revision_phrases_fail_closed_without_job_context(
         self, tmp_path: Path, phrase: str
     ) -> None:
-        """Revise/save phrases without job context must fall through."""
+        """Revise/save phrases without job context fail closed honestly."""
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.matched is False, (
-            f"Phrase {phrase!r} should fall through without job context. "
-            f"Got matched=True, status={result.status!r}"
+        assert result.matched is True, (
+            f"Phrase {phrase!r} should fail closed without job context. Got matched=False"
         )
+        assert result.status == "followup_missing_evidence"
 
     def test_revise_based_on_result_with_evidence_returns_revised_preview(
         self, tmp_path: Path
@@ -1368,8 +1375,8 @@ class TestSessionContextJobResolution:
             queue_root=tmp_path, requested_job_id="inbox-followup-ctx.json"
         )
 
-    def test_review_falls_through_with_no_context(self, tmp_path: Path) -> None:
-        """No handoff, no session context → falls through to normal flow."""
+    def test_review_fails_closed_with_no_context(self, tmp_path: Path) -> None:
+        """No handoff, no session context → fail closed with review_missing_job."""
         with (
             patch(
                 "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
@@ -1385,9 +1392,9 @@ class TestSessionContextJobResolution:
                 queue_root=tmp_path,
                 session_context={},
             )
-        # With no job context, review branch is not entered.
-        # "summarize the result" may match investigation_summary instead.
-        assert result.status != "review_missing_job"
+        # With no job context, review hint still matches and fails closed honestly.
+        assert result.matched is True
+        assert result.status == "review_missing_job"
 
     def test_context_updates_none_by_default(self) -> None:
         """Non-review early exits do not set context_updates."""
@@ -1562,14 +1569,15 @@ class TestOutputReviewDispatch:
         # A hallucinated alternative must NOT appear
         assert "invisible man" not in result.assistant_text
 
-    def test_what_was_the_output_falls_through_without_context(self, tmp_path: Path) -> None:
-        """'What was the output?' without job context falls through to normal flow."""
+    def test_what_was_the_output_fails_closed_without_context(self, tmp_path: Path) -> None:
+        """'What was the output?' without job context fails closed honestly."""
         result = _dispatch(
             message="What was the output?",
             queue_root=tmp_path,
             session_context={},
         )
-        assert result.matched is False
+        assert result.matched is True
+        assert result.status == "review_missing_job"
 
     def test_show_me_the_output_matches_review(self, tmp_path: Path) -> None:
         """'Show me the output' should also dispatch to review."""

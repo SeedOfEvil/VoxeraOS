@@ -534,37 +534,41 @@ class TestFollowUpPreviewLivePaths:
 class TestFailClosedNoResolvableJob:
     """Verify fail-closed behavior when evidence cannot be resolved."""
 
-    def test_review_falls_through_with_no_linked_job(self, tmp_path) -> None:
-        """'summarize the result' with no job context falls through to normal flow."""
+    def test_review_fails_closed_with_no_linked_job(self, tmp_path) -> None:
+        """'summarize the result' with no job context fails closed honestly."""
         result = _dispatch(
             message="summarize the result",
             queue_root=tmp_path,
         )
-        assert result.status != "review_missing_job"
+        assert result.matched is True
+        assert result.status == "review_missing_job"
 
-    def test_followup_falls_through_with_no_linked_job(self, tmp_path) -> None:
-        """'now prepare the follow-up' with no job context falls through to normal flow."""
+    def test_followup_fails_closed_with_no_linked_job(self, tmp_path) -> None:
+        """'now prepare the follow-up' with no job context fails closed honestly."""
         result = _dispatch(
             message="now prepare the follow-up",
             queue_root=tmp_path,
         )
-        assert result.status != "followup_missing_evidence"
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
 
-    def test_inspect_output_details_falls_through_with_no_job(self, tmp_path) -> None:
-        """'inspect output details' with no job context falls through to normal flow."""
+    def test_inspect_output_details_fails_closed_with_no_job(self, tmp_path) -> None:
+        """'inspect output details' with no job context fails closed honestly."""
         result = _dispatch(
             message="inspect output details",
             queue_root=tmp_path,
         )
-        assert result.status != "review_missing_job"
+        assert result.matched is True
+        assert result.status == "review_missing_job"
 
-    def test_what_should_we_do_next_falls_through_with_no_job(self, tmp_path) -> None:
-        """'what should we do next based on that' with no job context falls through."""
+    def test_what_should_we_do_next_fails_closed_with_no_job(self, tmp_path) -> None:
+        """'what should we do next based on that' with no job context fails closed."""
         result = _dispatch(
             message="what should we do next based on that",
             queue_root=tmp_path,
         )
-        assert result.status != "followup_missing_evidence"
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
 
     @pytest.mark.parametrize(
         "phrase",
@@ -576,9 +580,10 @@ class TestFailClosedNoResolvableJob:
             "did it work",
         ],
     )
-    def test_review_falls_through_without_job_context(self, tmp_path, phrase: str) -> None:
+    def test_review_fails_closed_without_job_context(self, tmp_path, phrase: str) -> None:
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.status != "review_missing_job"
+        assert result.matched is True
+        assert result.status == "review_missing_job"
 
     @pytest.mark.parametrize(
         "phrase",
@@ -589,9 +594,10 @@ class TestFailClosedNoResolvableJob:
             "based on that result",
         ],
     )
-    def test_followup_falls_through_without_job_context(self, tmp_path, phrase: str) -> None:
+    def test_followup_fails_closed_without_job_context(self, tmp_path, phrase: str) -> None:
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.status != "followup_missing_evidence"
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
 
 
 # ---------------------------------------------------------------------------
@@ -699,41 +705,31 @@ class TestSessionLevelEvidenceReviewFollowUp:
         # Must NOT use LLM fallback text
         assert "fallback" not in last_turn
 
-    def test_review_request_with_no_linked_job_falls_through_in_session(
+    def test_review_request_with_no_linked_job_fails_closed_in_session(
         self, tmp_path, monkeypatch
     ) -> None:
-        """Chat 'summarize the result' with no linked job falls through to normal flow."""
+        """Chat 'summarize the result' with no linked job fails closed honestly."""
         session = make_vera_session(monkeypatch, tmp_path)
-
-        async def _fake_reply(*, turns, user_message, **kw):
-            return {"answer": "The result was great!", "status": "ok:test"}
-
-        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
         res = session.chat("summarize the result")
         assert res.status_code == 200
 
         last_turn = session.turns()[-1]["text"].lower()
-        # Without job context, the message falls through — no fail-closed text
-        assert "could not resolve" not in last_turn
+        # Without job context, the review branch fails closed with honest message
+        assert "could not resolve" in last_turn
 
-    def test_followup_with_no_linked_job_falls_through_in_session(
+    def test_followup_with_no_linked_job_fails_closed_in_session(
         self, tmp_path, monkeypatch
     ) -> None:
-        """Chat 'now prepare the follow-up' with no linked job falls through to normal flow."""
+        """Chat 'now prepare the follow-up' with no linked job fails closed honestly."""
         session = make_vera_session(monkeypatch, tmp_path)
-
-        async def _fake_reply(*, turns, user_message, **kw):
-            return {"answer": "Here is a follow-up plan.", "status": "ok:test"}
-
-        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
         res = session.chat("now prepare the follow-up")
         assert res.status_code == 200
 
         last_turn = session.turns()[-1]["text"].lower()
-        # Without job context, the message falls through — no fail-closed text
-        assert "could not resolve" not in last_turn
+        # Without job context, the followup branch fails closed with honest message
+        assert "follow-up preview" in last_turn
 
 
 # ---------------------------------------------------------------------------
@@ -840,9 +836,10 @@ class TestReviseFromEvidenceLivePaths:
         ],
     )
     def test_revise_fails_closed_with_no_job(self, tmp_path, phrase: str) -> None:
-        """Revise requests without job context fall through to normal flow."""
+        """Revise requests without job context fail closed honestly."""
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.status != "followup_missing_evidence"
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
 
     def test_revise_preview_payload_is_coherent(self) -> None:
         """Revised preview payload must have a goal, no write_file (bare revision intent)."""
@@ -990,11 +987,12 @@ class TestSaveFollowUpLivePaths:
             "save the follow-up as a file",
         ],
     )
-    def test_save_followup_falls_through_with_no_job(self, tmp_path, phrase: str) -> None:
-        """Save-follow-up without job context falls through to normal flow."""
+    def test_save_followup_fails_closed_with_no_job(self, tmp_path, phrase: str) -> None:
+        """Save-follow-up without job context fails closed honestly."""
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.status != "followup_missing_evidence", (
-            f"Phrase {phrase!r} should fall through without job context"
+        assert result.matched is True, f"Phrase {phrase!r} should fail closed without job context"
+        assert result.status == "followup_missing_evidence", (
+            f"Phrase {phrase!r} should fail closed with followup_missing_evidence"
         )
 
     def test_save_followup_chat_and_preview_truth_alignment(self, tmp_path) -> None:
