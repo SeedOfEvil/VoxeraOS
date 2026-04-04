@@ -105,7 +105,7 @@ Current refactor ownership map for contributors/operators:
   - `src/voxera/vera/draft_revision.py` for active-preview rename/path/content follow-ups
   - `src/voxera/vera/preview_submission.py` for active-preview submit detection and queue handoff normalization
   - `src/voxera/vera/investigation_derivations.py` for compare/summarize/expand/save-derived follow-ups
-- `src/voxera/vera/service.py` remains the top-level Vera orchestrator (LLM reply, preview builder, linked completion delivery). Session state helpers live in `session_store.py`; new production code should import from `session_store` directly.  `service.py` retains backward-compat re-exports for existing test call sites pending a test-migration follow-up.
+- `src/voxera/vera/service.py` remains the top-level Vera orchestrator (LLM reply, preview builder, linked completion delivery). Session state helpers live in `session_store.py`; all production and test code imports from `session_store` directly.
 - Queue lifecycle behavior is now intentionally split across `src/voxera/core/queue_execution.py`, `queue_approvals.py`, and `queue_recovery.py`, with `queue_daemon.py` acting as the runtime composition root.
 - Panel route ownership is split across `src/voxera/panel/routes_*.py`; prefer extending the route-family module first instead of adding new route behavior directly to `panel/app.py` unless the change is cross-cutting wiring/shared helper work.
 - Runtime/operator config (`config.json`, `load_config`) and app/provider config (`config.yml`, `load_app_config`) are distinct surfaces by design; keep docs and operational guidance explicit about which layer is being changed.
@@ -113,7 +113,7 @@ Current refactor ownership map for contributors/operators:
 
 Vera modularization safety-net note: session-sensitive Vera characterization coverage now has narrower anchors in `tests/test_vera_session_characterization.py` and `tests/test_vera_contextual_flows.py`, backed by the shared harness/builders in `tests/vera_session_helpers.py`. Prefer extending those focused tests for session/saveability/weather/investigation regressions when the scenario does not require the full mixed-flow surface in `tests/test_vera_web.py`.
 
-Vera session persistence/state ownership lives in `src/voxera/vera/session_store.py`. New production code should import session helpers directly from `session_store`.  `service.py` retains backward-compat re-exports for existing test call sites; a follow-up PR should migrate those and remove the compat block. Prefer adding or updating session read/write helpers in `session_store.py` first when working on future Vera modularization PRs.
+Vera session persistence/state ownership lives in `src/voxera/vera/session_store.py`. All code (production and test) imports session helpers directly from `session_store`. Prefer adding or updating session read/write helpers in `session_store.py` first when working on future Vera modularization PRs.
 
 Vera session-scoped reference resolution lives in `src/voxera/vera/reference_resolver.py`. This module maps natural in-session phrases ("that draft", "that file", "the result", "the follow-up") to concrete referents using shared session context. It is consumed by `chat_early_exit_dispatch.py` for job-ID fallback in review/follow-up flows. Prefer extending `reference_resolver.py` for new reference classes or phrase patterns rather than embedding resolution logic in dispatch or app.py.
 

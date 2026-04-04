@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 
-from voxera.vera import service as vera_service
+from voxera.vera import session_store as vera_session_store
 from voxera.vera_web import app as vera_app_module
 
 from .vera_session_helpers import make_vera_session
@@ -107,7 +107,7 @@ def test_save_previous_content_repairs_empty_preview_content(tmp_path, monkeypat
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
     session.chat("Give me a concise summary.")
-    vera_service.write_session_preview(
+    vera_session_store.write_session_preview(
         session.queue,
         session.session_id,
         {
@@ -157,7 +157,7 @@ def test_active_preview_rename_path_revision_and_submit_remain_truthful(tmp_path
     assert len(inbox_files) == 1
     payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
     assert payload["write_file"]["path"] == "~/VoxeraOS/notes/math.txt"
-    assert vera_service.read_session_preview(session.queue, session.session_id) is None
+    assert vera_session_store.read_session_preview(session.queue, session.session_id) is None
 
 
 def test_save_as_flow_ignores_prior_linked_completion_status_text(tmp_path, monkeypatch):
@@ -169,7 +169,7 @@ def test_save_as_flow_ignores_prior_linked_completion_status_text(tmp_path, monk
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
-    vera_service.append_session_turn(
+    vera_session_store.append_session_turn(
         session.queue,
         session.session_id,
         role="assistant",
@@ -930,7 +930,7 @@ def test_checklist_request_with_active_preview_does_not_bypass(tmp_path, monkeyp
             "mode": "overwrite",
         },
     }
-    vera_service.write_session_preview(session.queue, session.session_id, preview)
+    vera_session_store.write_session_preview(session.queue, session.session_id, preview)
 
     async def _fake_reply(*, turns, user_message, **kw):
         _ = turns
@@ -961,12 +961,12 @@ def test_unsafe_path_revision_fails_closed_and_preserves_preview(tmp_path, monke
             "mode": "overwrite",
         },
     }
-    vera_service.write_session_preview(session.queue, session.session_id, preview)
+    vera_session_store.write_session_preview(session.queue, session.session_id, preview)
 
     res = session.chat("use path: ~/VoxeraOS/notes/../bad.txt")
 
     assert res.status_code == 200
-    assert vera_service.read_session_preview(session.queue, session.session_id) == preview
+    assert vera_session_store.read_session_preview(session.queue, session.session_id) == preview
     assert session.turns()[-1]["role"] == "assistant"
 
 

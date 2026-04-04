@@ -283,7 +283,7 @@ def test_vera_web_voice_transcript_fails_closed_when_disabled(tmp_path, monkeypa
 
     assert res.status_code == 200
     assert "Voice transcript input is disabled by runtime flags." in res.text
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert turns == []
 
 
@@ -312,7 +312,7 @@ def test_vera_web_voice_transcript_origin_is_persisted_and_visible(tmp_path, mon
     assert res.status_code == 200
     assert "You (voice transcript)" in res.text
     assert "Echo: schedule uptime check" in res.text
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert turns[0]["input_origin"] == "voice_transcript"
     assert turns[0]["text"] == "schedule uptime check"
 
@@ -347,8 +347,8 @@ def test_vera_web_context_is_preserved_and_capped(tmp_path, monkeypatch):
         res = client.post("/chat", data={"session_id": sid, "message": f"msg-{i}"})
         assert res.status_code == 200
 
-    turns = vera_service.read_session_turns(queue, sid)
-    assert len(turns) == vera_service.MAX_SESSION_TURNS
+    turns = vera_session_store.read_session_turns(queue, sid)
+    assert len(turns) == vera_session_store.MAX_SESSION_TURNS
     assert turns[0]["text"] == "msg-2"
 
 
@@ -364,13 +364,13 @@ def test_vera_clear_chat_and_context(tmp_path, monkeypatch):
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
     client.post("/chat", data={"session_id": sid, "message": "keep context"})
-    assert vera_service.read_session_turns(queue, sid)
+    assert vera_session_store.read_session_turns(queue, sid)
 
     res = client.post("/clear", data={"session_id": sid})
     assert res.status_code == 200
     assert "How to use Vera" in res.text
     assert "Preview → submit:" in res.text
-    assert vera_service.read_session_turns(queue, sid) == []
+    assert vera_session_store.read_session_turns(queue, sid) == []
 
 
 def test_guidance_is_hidden_once_chat_has_turns(tmp_path, monkeypatch):
@@ -440,7 +440,7 @@ def test_informational_web_query_does_not_auto_prepare_voxera_preview(tmp_path, 
 
     assert res.status_code == 200
     assert "Read-only findings from Brave" in res.text
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -462,7 +462,7 @@ def test_finance_informational_query_does_not_auto_prepare_voxera_preview(tmp_pa
 
     assert res.status_code == 200
     assert "Read-only market findings" in res.text
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -489,7 +489,7 @@ def test_news_query_skips_preview_builder_and_stays_informational(tmp_path, monk
 
     assert res.status_code == 200
     assert "Global headlines summary" in res.text
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -557,7 +557,7 @@ def test_structured_investigation_is_stored_and_numbered(tmp_path, monkeypatch):
 
     client.post("/chat", data={"session_id": sid, "message": "investigate this"})
 
-    stored = vera_service.read_session_investigation(queue, sid)
+    stored = vera_session_store.read_session_investigation(queue, sid)
     assert stored is not None
     assert [row["result_id"] for row in stored["results"]] == [1, 2, 3, 4]
 
@@ -568,7 +568,7 @@ def test_save_single_investigation_result_creates_governed_preview(tmp_path, mon
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     res = client.post(
         "/chat",
@@ -576,7 +576,7 @@ def test_save_single_investigation_result_creates_governed_preview(tmp_path, mon
     )
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert "investigation findings (2)" in preview["goal"]
     assert "## Result 2" in preview["write_file"]["content"]
@@ -590,14 +590,14 @@ def test_save_multiple_investigation_results_creates_expected_preview(tmp_path, 
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
         data={"session_id": sid, "message": "save results 1 and 3 to note"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     content = preview["write_file"]["content"]
     assert "## Result 1" in content
@@ -611,14 +611,14 @@ def test_save_all_investigation_results_to_markdown_file(tmp_path, monkeypatch):
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
         data={"session_id": sid, "message": "save all findings to research.md"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/research.md"
     content = preview["write_file"]["content"]
@@ -634,17 +634,17 @@ def test_invalid_investigation_reference_fails_closed_with_clear_message(tmp_pat
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
         data={"session_id": sid, "message": "save result 9 to a note"},
     )
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert turns[-1]["role"] == "assistant"
     assert "couldn't resolve" in turns[-1]["text"].lower()
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_save_investigation_without_active_result_set_fails_closed(tmp_path, monkeypatch):
@@ -660,7 +660,7 @@ def test_save_investigation_without_active_result_set_fails_closed(tmp_path, mon
     )
 
     assert "run a fresh read-only investigation first" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_compare_selected_investigation_results_stores_derived_output(tmp_path, monkeypatch):
@@ -669,7 +669,7 @@ def test_compare_selected_investigation_results_stores_derived_output(tmp_path, 
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     res = client.post(
         "/chat",
@@ -677,9 +677,9 @@ def test_compare_selected_investigation_results_stores_derived_output(tmp_path, 
     )
 
     assert res.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert "compared results: 1, 3" in turns[-1]["text"].lower()
-    derived = vera_service.read_session_derived_investigation_output(queue, sid)
+    derived = vera_session_store.read_session_derived_investigation_output(queue, sid)
     assert derived is not None
     assert derived["derivation_type"] == "comparison"
     assert derived["selected_result_ids"] == [1, 3]
@@ -691,7 +691,7 @@ def test_summarize_selected_investigation_results_stores_derived_output(tmp_path
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     res = client.post(
         "/chat",
@@ -699,9 +699,9 @@ def test_summarize_selected_investigation_results_stores_derived_output(tmp_path
     )
 
     assert res.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert "selected results: 2, 4" in turns[-1]["text"].lower()
-    derived = vera_service.read_session_derived_investigation_output(queue, sid)
+    derived = vera_session_store.read_session_derived_investigation_output(queue, sid)
     assert derived is not None
     assert derived["derivation_type"] == "summary"
     assert derived["selected_result_ids"] == [2, 4]
@@ -713,14 +713,14 @@ def test_summarize_all_findings_uses_all_results(tmp_path, monkeypatch):
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
         data={"session_id": sid, "message": "summarize all findings"},
     )
 
-    derived = vera_service.read_session_derived_investigation_output(queue, sid)
+    derived = vera_session_store.read_session_derived_investigation_output(queue, sid)
     assert derived is not None
     assert derived["selected_result_ids"] == [1, 2, 3, 4]
 
@@ -746,7 +746,7 @@ def test_expand_result_stores_saveable_derived_output_and_save_it_works(tmp_path
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     expand_res = client.post(
         "/chat",
@@ -754,7 +754,7 @@ def test_expand_result_stores_saveable_derived_output_and_save_it_works(tmp_path
     )
     assert expand_res.status_code == 200
 
-    derived = vera_service.read_session_derived_investigation_output(queue, sid)
+    derived = vera_session_store.read_session_derived_investigation_output(queue, sid)
     assert derived is not None
     assert derived["derivation_type"] == "expanded_result"
     assert derived["selected_result_ids"] == [1]
@@ -766,7 +766,7 @@ def test_expand_result_stores_saveable_derived_output_and_save_it_works(tmp_path
     )
 
     assert save_res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "write investigation expanded result to markdown note"
     assert "# Expanded Investigation Result 1" in preview["write_file"]["content"]
@@ -792,7 +792,7 @@ def test_expand_result_then_save_it_as_named_markdown_file_works(tmp_path, monke
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
@@ -803,7 +803,7 @@ def test_expand_result_then_save_it_as_named_markdown_file_works(tmp_path, monke
         data={"session_id": sid, "message": "save it as expanded-result-1.md"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/expanded-result-1.md"
     assert "# Expanded Investigation Result 1" in preview["write_file"]["content"]
@@ -815,7 +815,7 @@ def test_save_derived_summary_creates_governed_preview_only(tmp_path, monkeypatc
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
@@ -826,7 +826,7 @@ def test_save_derived_summary_creates_governed_preview_only(tmp_path, monkeypatc
         data={"session_id": sid, "message": "save that summary to investigation-summary.md"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/investigation-summary.md"
     assert "# Investigation Summary" in preview["write_file"]["content"]
@@ -858,7 +858,7 @@ def test_compare_then_save_that_to_note_uses_derived_output_precedence(tmp_path,
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
@@ -869,7 +869,7 @@ def test_compare_then_save_that_to_note_uses_derived_output_precedence(tmp_path,
         data={"session_id": sid, "message": "save that to a note"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "write investigation comparison to markdown note"
     assert "# Investigation Comparison" in preview["write_file"]["content"]
@@ -883,7 +883,7 @@ def test_compare_then_save_that_without_note_target_uses_derived_output_preceden
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
@@ -894,7 +894,7 @@ def test_compare_then_save_that_without_note_target_uses_derived_output_preceden
         data={"session_id": sid, "message": "save that"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "write investigation comparison to markdown note"
     assert "# Investigation Comparison" in preview["write_file"]["content"]
@@ -906,7 +906,7 @@ def test_summarize_then_save_that_to_markdown_uses_derived_output_precedence(tmp
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
@@ -917,7 +917,7 @@ def test_summarize_then_save_that_to_markdown_uses_derived_output_precedence(tmp
         data={"session_id": sid, "message": "save that to a markdown file"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "write investigation summary to markdown note"
     assert "# Investigation Summary" in preview["write_file"]["content"]
@@ -931,7 +931,7 @@ def test_summarize_then_save_that_without_note_target_uses_derived_output_preced
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
@@ -942,7 +942,7 @@ def test_summarize_then_save_that_without_note_target_uses_derived_output_preced
         data={"session_id": sid, "message": "save that"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "write investigation summary to markdown note"
     assert "# Investigation Summary" in preview["write_file"]["content"]
@@ -968,7 +968,7 @@ def test_derived_output_does_not_override_newer_conversational_answer_for_save_t
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
@@ -978,7 +978,7 @@ def test_derived_output_does_not_override_newer_conversational_answer_for_save_t
         "/chat",
         data={"session_id": sid, "message": "save that to a note"},
     )
-    vera_service.write_session_preview(queue, sid, None)
+    vera_session_store.write_session_preview(queue, sid, None)
     client.post(
         "/chat",
         data={"session_id": sid, "message": "Explain dark matter simply."},
@@ -988,7 +988,7 @@ def test_derived_output_does_not_override_newer_conversational_answer_for_save_t
         data={"session_id": sid, "message": "save that to a note called darkmatter.txt"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/darkmatter.txt"
     assert (
@@ -1009,12 +1009,12 @@ def test_save_derived_output_without_existing_derivation_fails_closed(tmp_path, 
         data={"session_id": sid, "message": "save that summary to a note"},
     )
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert (
         "couldn't find a current investigation comparison, summary, or expanded result"
         in turns[-1]["text"].lower()
     )
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_expand_result_save_it_then_create_it_submits_preview(tmp_path, monkeypatch):
@@ -1035,7 +1035,7 @@ def test_expand_result_save_it_then_create_it_submits_preview(tmp_path, monkeypa
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
@@ -1062,16 +1062,16 @@ def test_invalid_reference_for_summary_fails_closed(tmp_path, monkeypatch):
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_investigation(queue, sid, _sample_investigation_payload())
+    vera_session_store.write_session_investigation(queue, sid, _sample_investigation_payload())
 
     client.post(
         "/chat",
         data={"session_id": sid, "message": "summarize results 2 and 9"},
     )
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert "couldn't resolve those result references for summary" in turns[-1]["text"].lower()
-    assert vera_service.read_session_derived_investigation_output(queue, sid) is None
+    assert vera_session_store.read_session_derived_investigation_output(queue, sid) is None
 
 
 def test_mode_refinement_append_instead_updates_active_preview(tmp_path, monkeypatch):
@@ -1091,7 +1091,7 @@ def test_mode_refinement_append_instead_updates_active_preview(tmp_path, monkeyp
         data={"session_id": sid, "message": "append instead"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["mode"] == "append"
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/log.txt"
@@ -1117,12 +1117,12 @@ def test_put_that_into_file_after_informational_turn_does_not_claim_phantom_prev
     sid = client.cookies.get("vera_session_id") or ""
 
     client.post("/chat", data={"session_id": sid, "message": "find the latest news"})
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
     res = client.post("/chat", data={"session_id": sid, "message": "put that into the file"})
 
     assert "I've prepared a draft" not in res.text
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -1151,7 +1151,7 @@ def test_informational_query_then_send_it_does_not_enqueue(tmp_path, monkeypatch
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -1181,7 +1181,7 @@ def test_missing_key_informational_query_is_honest_and_no_preview(tmp_path, monk
 
     assert res.status_code == 200
     assert "not configured" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -1211,7 +1211,7 @@ def test_explicit_internal_search_request_stays_no_preview(tmp_path, monkeypatch
 
     assert res.status_code == 200
     assert "summarize" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -1250,7 +1250,7 @@ def test_prepare_preview_sets_preview_available_true_for_natural_open_phrase(tmp
 
     assert "nothing has been submitted yet" in res.text.lower()
     assert "preview_available</b>: True" in res.text
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "open https://example.com"
 
@@ -1272,7 +1272,7 @@ def test_open_up_domain_phrase_prepares_preview_and_renders_authoritative_pane(
     assert "Proposed VoxeraOS Job" not in res.text
     assert "```json" not in res.text
     assert "Preview panel · Active VoxeraOS draft" in res.text
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://cnn.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {"goal": "open https://cnn.com"}
 
 
 def test_yes_please_with_active_preview_submits_only_on_real_ack(tmp_path, monkeypatch):
@@ -1317,7 +1317,7 @@ def test_file_write_question_uses_authoritative_preview_pane_not_visible_json(
     assert "Proposed VoxeraOS Job" not in res.text
     assert "```json" not in res.text
     assert "Preview panel · Active VoxeraOS draft" in res.text
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert "wittyjoke.txt" in preview["goal"]
 
@@ -1364,7 +1364,7 @@ def test_note_write_and_file_read_requests_render_preview_pane_without_voxera_js
     )
     assert "```json" not in read_res.text
     assert "Preview panel · Active VoxeraOS draft" in read_res.text
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "read ~/VoxeraOS/notes/ideas.txt from notes"
     assert preview["steps"][0]["skill_id"] == "files.read_text"
@@ -1390,7 +1390,7 @@ def test_blocked_queue_path_returns_clean_refusal_no_preview(tmp_path, monkeypat
     # Must contain a clear refusal explanation
     assert "blocked" in res.text.lower()
     # Must NOT create a preview
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is None
 
 
@@ -1406,7 +1406,7 @@ def test_filesystem_find_request_creates_governed_preview(tmp_path, monkeypatch)
         data={"session_id": sid, "message": "find txt files in my notes/runtime-validation folder"},
     )
     assert "Preview panel · Active VoxeraOS draft" in res.text
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["steps"][0]["skill_id"] == "files.find"
     assert preview["steps"][0]["args"]["root_path"] == "~/VoxeraOS/notes/runtime-validation"
@@ -1428,7 +1428,7 @@ def test_filesystem_copy_preview_then_submit_is_truthful_and_queue_backed(tmp_pa
         },
     )
     assert "nothing has been submitted yet" in prep.text.lower()
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["steps"][0]["skill_id"] == "files.copy"
 
@@ -1565,7 +1565,7 @@ def test_contentful_natural_file_creation_phrase_produces_canonical_preview(tmp_
     )
 
     assert "nothing has been submitted yet" in res.text.lower()
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbiddy.txt"
     assert "Active directory script" in preview["write_file"]["content"]
@@ -1587,7 +1587,7 @@ def test_content_refinement_phrase_add_content_updates_active_preview(tmp_path, 
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbz.txt"
     assert preview["write_file"]["content"] == "hello"
@@ -1630,8 +1630,8 @@ def test_content_refinement_phrase_script_text_updates_active_preview(tmp_path, 
         data={"session_id": sid, "message": f"add content to script.ps1 {script_text}"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
-    turns = vera_service.read_session_turns(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
     assert preview["write_file"]["content"] == generated_script
@@ -1666,7 +1666,7 @@ def test_targeted_code_preview_refinement_uses_code_draft_hint(tmp_path, monkeyp
         data={"session_id": sid, "message": f"add content to script.ps1 {script_text}"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert observed["code_draft"] is True
     assert preview is not None
     assert preview["write_file"]["content"] == "Write-Host 'Skibbidy'"
@@ -1715,8 +1715,8 @@ def test_targeted_code_preview_refinement_uses_generated_script_reply_as_preview
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
-    turns = vera_service.read_session_turns(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert res.status_code == 200
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script.ps1"
@@ -1818,7 +1818,9 @@ def test_backend_builder_updates_active_preview_without_json_dumping_in_chat(tmp
 
     assert '"goal": "open https://openai.com"' in res.text
     assert "```json" not in res.text
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://openai.com"
+    }
 
 
 def test_submit_after_model_preview_replacement_uses_latest_payload(tmp_path, monkeypatch):
@@ -1871,12 +1873,14 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_preview(queue, sid, {"goal": "write a note called scipptyaway.txt"})
+    vera_session_store.write_session_preview(
+        queue, sid, {"goal": "write a note called scipptyaway.txt"}
+    )
 
     res = client.post("/chat", data={"session_id": sid, "message": "add content"})
 
     assert "current draft is still in the preview" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) == {
+    assert vera_session_store.read_session_preview(queue, sid) == {
         "goal": "write a note called scipptyaway.txt"
     }
 
@@ -1892,15 +1896,19 @@ def test_clear_resets_preview_and_new_preview_reinitializes_authoritative_state(
 
     first = client.post("/chat", data={"session_id": sid, "message": "open example.com"})
     assert '"goal": "open https://example.com"' in first.text
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://example.com"
+    }
 
     cleared = client.post("/clear", data={"session_id": sid})
     assert "Submit current preview to VoxeraOS" not in cleared.text
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
     second = client.post("/chat", data={"session_id": sid, "message": "open openai.com"})
     assert '"goal": "open https://openai.com"' in second.text
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://openai.com"
+    }
 
 
 def test_structured_write_file_preview_submits_exact_payload(tmp_path, monkeypatch):
@@ -1917,7 +1925,7 @@ def test_structured_write_file_preview_submits_exact_payload(tmp_path, monkeypat
             "message": 'write a file called skibbidy.txt with the content "hello world"',
         },
     )
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/skibbidy.txt"
 
@@ -1954,7 +1962,7 @@ def test_builder_drops_extra_keys_and_keeps_supported_preview_shape(tmp_path, mo
     res = client.post("/chat", data={"session_id": sid, "message": "revise with content"})
 
     assert "nothing has been submitted yet" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) == {
+    assert vera_session_store.read_session_preview(queue, sid) == {
         "goal": "write a note called skibbidy.txt"
     }
 
@@ -1987,11 +1995,15 @@ def test_builder_multiple_preview_replacements_latest_wins_in_pane(tmp_path, mon
 
     b = client.post("/chat", data={"session_id": sid, "message": "update to b"})
     assert '"goal": "open https://openai.com"' in b.text
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://openai.com"
+    }
 
     c = client.post("/chat", data={"session_id": sid, "message": "update to c"})
     assert '"goal": "open https://github.com"' in c.text
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://github.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://github.com"
+    }
 
 
 def test_builder_can_set_preview_without_changing_vera_voice(tmp_path, monkeypatch):
@@ -2017,7 +2029,9 @@ def test_builder_can_set_preview_without_changing_vera_voice(tmp_path, monkeypat
 
     assert "I updated the target in the preview." in res.text
     assert '"goal": "open https://openai.com"' in res.text
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://openai.com"
+    }
 
 
 def test_chat_model_cannot_bypass_handoff_with_fake_submission_language(tmp_path, monkeypatch):
@@ -2053,7 +2067,7 @@ def test_context_intact_across_preview_to_submit_flow(tmp_path, monkeypatch):
     client.post("/chat", data={"session_id": sid, "message": "open https://example.com"})
     client.post("/chat", data={"session_id": sid, "message": "submit it"})
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     joined = "\n".join(turn["text"] for turn in turns)
     assert "hello" in joined
     assert "submitted the job" in joined
@@ -2067,13 +2081,13 @@ def test_preview_survives_into_handoff_submit_action(tmp_path, monkeypatch):
     sid = client.cookies.get("vera_session_id") or ""
     client.post("/chat", data={"session_id": sid, "message": "write a note called hello.txt"})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
 
     res = client.post("/handoff", data={"session_id": sid})
     assert res.status_code == 200
     assert "I submitted the job to VoxeraOS" in res.text
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_dev_diagnostics_expose_safe_handoff_state(tmp_path, monkeypatch):
@@ -2123,7 +2137,7 @@ def test_rolling_turn_cap_does_not_drop_pending_preview(tmp_path, monkeypatch):
     for i in range(10):
         client.post("/chat", data={"session_id": sid, "message": f"chat-{i}"})
 
-    assert vera_service.read_session_preview(queue, sid) is not None
+    assert vera_session_store.read_session_preview(queue, sid) is not None
     res = client.post("/chat", data={"session_id": sid, "message": "submit it now"})
 
     assert "I submitted the job to VoxeraOS" in res.text
@@ -2158,7 +2172,7 @@ def test_web_navigation_phrases_prepare_preview(tmp_path, monkeypatch, message, 
     sid = client.cookies.get("vera_session_id") or ""
     client.post("/chat", data={"session_id": sid, "message": message})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview == {"goal": expected_goal}
 
 
@@ -2184,7 +2198,7 @@ def test_informational_domain_phrases_do_not_auto_prepare_preview(tmp_path, monk
     res = client.post("/chat", data={"session_id": sid, "message": message})
 
     assert "info mode" in res.text
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 @pytest.mark.parametrize(
@@ -2203,7 +2217,7 @@ def test_file_read_variants_prepare_preview(tmp_path, monkeypatch, message, expe
     sid = client.cookies.get("vera_session_id") or ""
     client.post("/chat", data={"session_id": sid, "message": message})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview == {"goal": expected_goal}
 
 
@@ -2240,7 +2254,7 @@ def test_note_write_variants_prepare_preview(
     sid = client.cookies.get("vera_session_id") or ""
     client.post("/chat", data={"session_id": sid, "message": message})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == expected_goal
     if expect_structured:
@@ -2263,7 +2277,7 @@ def test_contentful_file_write_phrase_prepares_structured_preview(tmp_path, monk
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/funnyjoke.txt"
     assert (
@@ -2280,7 +2294,7 @@ def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monk
     sid = client.cookies.get("vera_session_id") or ""
     client.post("/chat", data={"session_id": sid, "message": "write a note called jokester.txt"})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "write a file called jokester.txt with provided content"
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
@@ -2312,10 +2326,10 @@ def test_filename_refinement_replaces_active_preview(tmp_path, monkeypatch):
         data={"session_id": sid, "message": "actually rename it jokester.txt"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert "Updated the draft destination to `~/VoxeraOS/notes/jokester.txt`" in turns[-1]["text"]
 
 
@@ -2326,7 +2340,7 @@ def test_name_the_note_updates_preview_path_with_explicit_confirmation(tmp_path,
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_preview(
+    vera_session_store.write_session_preview(
         queue,
         sid,
         {
@@ -2340,10 +2354,10 @@ def test_name_the_note_updates_preview_path_with_explicit_confirmation(tmp_path,
     )
     client.post("/chat", data={"session_id": sid, "message": "name the note bigvolcano.txt"})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/bigvolcano.txt"
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert "Updated the draft destination to `~/VoxeraOS/notes/bigvolcano.txt`" in turns[-1]["text"]
 
     client.post("/chat", data={"session_id": sid, "message": "submit it"})
@@ -2369,10 +2383,10 @@ def test_ambiguous_note_naming_fails_closed_with_specific_message(tmp_path, monk
     )
     client.post("/chat", data={"session_id": sid, "message": "name the note"})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/draft-note.txt"
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert "couldn’t safely apply that naming update" in turns[-1]["text"].lower()
 
 
@@ -2393,7 +2407,7 @@ def test_repeated_note_naming_keeps_latest_canonical_preview_path(tmp_path, monk
     client.post("/chat", data={"session_id": sid, "message": "name it second-name.txt"})
     client.post("/chat", data={"session_id": sid, "message": "call it final-name.txt"})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/final-name.txt"
 
@@ -2420,7 +2434,7 @@ def test_content_refinement_replaces_active_preview(tmp_path, monkeypatch):
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert (
         preview["write_file"]["content"]
@@ -2436,11 +2450,11 @@ def test_submit_clears_preview_only_after_confirmed_success(tmp_path, monkeypatc
     sid = client.cookies.get("vera_session_id") or ""
     client.post("/chat", data={"session_id": sid, "message": "open example.com"})
 
-    assert vera_service.read_session_preview(queue, sid) is not None
+    assert vera_session_store.read_session_preview(queue, sid) is not None
 
     client.post("/chat", data={"session_id": sid, "message": "submit it"})
 
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_failed_submit_keeps_active_preview(tmp_path, monkeypatch):
@@ -2455,10 +2469,10 @@ def test_failed_submit_keeps_active_preview(tmp_path, monkeypatch):
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
     client.post("/chat", data={"session_id": sid, "message": "open example.com"})
-    before = vera_service.read_session_preview(queue, sid)
+    before = vera_session_store.read_session_preview(queue, sid)
 
     client.post("/chat", data={"session_id": sid, "message": "submit it"})
-    after = vera_service.read_session_preview(queue, sid)
+    after = vera_session_store.read_session_preview(queue, sid)
 
     assert before is not None
     assert after == before
@@ -2565,7 +2579,9 @@ def test_preview_replacement_updates_authoritative_pane_payload(tmp_path, monkey
     )
 
     assert '"goal": "open https://openai.com"' in res.text
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://openai.com"
+    }
 
 
 def test_handoff_submit_clears_authoritative_preview_pane(tmp_path, monkeypatch):
@@ -2597,7 +2613,7 @@ def test_review_latest_submitted_job_succeeded(tmp_path, monkeypatch):
             "step_results": [{"step_index": 1, "status": "succeeded", "summary": "Opened page"}],
         },
     )
-    vera_service.write_session_handoff_state(
+    vera_session_store.write_session_handoff_state(
         queue,
         "sid",
         attempted=True,
@@ -2639,7 +2655,7 @@ def test_review_latest_submitted_job_short_handoff_id_resolves_inbox_filename(
         },
         approval={"job": full_job_filename, "status": "pending"},
     )
-    vera_service.write_session_handoff_state(
+    vera_session_store.write_session_handoff_state(
         queue,
         "sid-short",
         attempted=True,
@@ -2815,7 +2831,7 @@ def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypa
             ],
         },
     )
-    vera_service.write_session_handoff_state(
+    vera_session_store.write_session_handoff_state(
         queue,
         "sid-follow",
         attempted=True,
@@ -2832,7 +2848,7 @@ def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypa
     assert "prepared a follow-up preview" in res.text
     assert "nothing has been submitted yet" in res.text.lower()
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
-    assert vera_service.read_session_preview(queue, "sid-follow") is not None
+    assert vera_session_store.read_session_preview(queue, "sid-follow") is not None
 
 
 def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path, monkeypatch):
@@ -2863,7 +2879,9 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
     assert "Proposed VoxeraOS Job" not in res.text
     assert "```json" not in res.text
     assert "nothing has been submitted yet" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://openai.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://openai.com"
+    }
 
 
 def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, monkeypatch):
@@ -2897,7 +2915,9 @@ def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, 
     assert "prepared a proposal" not in res.text.lower()
     assert "let me know and i'll submit" not in res.text.lower()
     assert "nothing has been submitted yet" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://example.com"
+    }
 
 
 def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_path, monkeypatch):
@@ -2919,12 +2939,14 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_preview(queue, sid, {"goal": "open https://example.com"})
+    vera_session_store.write_session_preview(queue, sid, {"goal": "open https://example.com"})
 
     res = client.post("/chat", data={"session_id": sid, "message": "refine it"})
 
     assert "current draft is still in the preview" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://example.com"
+    }
 
 
 def test_json_config_request_creates_preview_and_shows_fenced_code(tmp_path, monkeypatch):
@@ -2966,7 +2988,7 @@ def test_json_config_request_creates_preview_and_shows_fenced_code(tmp_path, mon
     assert "```json" in res.text
     assert "demo" in res.text
     # A governed write_file preview must also be created (code draft lane)
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".json")
     assert '{"app":"demo","enabled":true}' in preview["write_file"]["content"]
@@ -2984,7 +3006,7 @@ def test_append_file_intent_compiles_structured_append_preview(tmp_path, monkeyp
         data={"session_id": sid, "message": 'append "new line" to log.txt'},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/log.txt"
     assert preview["write_file"]["content"] == "new line"
@@ -3005,7 +3027,7 @@ def test_open_target_without_tld_is_naturally_inferred_as_web_intent(tmp_path, m
 
     assert "```json" not in res.text
     assert "nothing has been submitted yet" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://cnn.com"}
+    assert vera_session_store.read_session_preview(queue, sid) == {"goal": "open https://cnn.com"}
 
 
 def test_contextual_refinement_can_build_preview_from_recent_user_messages():
@@ -3038,7 +3060,7 @@ def test_natural_append_mode_refinement_updates_active_preview(tmp_path, monkeyp
         data={"session_id": sid, "message": "make it append to the same file"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/changelog.txt"
     assert preview["write_file"]["content"] == "release notes"
@@ -3059,7 +3081,7 @@ def test_natural_file_drafting_with_joke_infers_structured_preview(tmp_path, mon
 
     assert "```json" not in res.text
     assert "nothing has been submitted yet" in res.text.lower()
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/txt.txt"
     assert preview["write_file"]["mode"] == "overwrite"
@@ -3078,7 +3100,7 @@ def test_file_drafting_with_called_typo_still_builds_preview(tmp_path, monkeypat
         data={"session_id": sid, "message": "make a file calleddd txt.txt with a joke"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/txt.txt"
     assert preview["write_file"]["content"]
@@ -3096,7 +3118,7 @@ def test_minimal_file_drafting_defaults_to_empty_content(tmp_path, monkeypatch):
         data={"session_id": sid, "message": "build me a file called hello.txt"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/hello.txt"
     assert preview["write_file"]["mode"] == "overwrite"
@@ -3122,7 +3144,7 @@ def test_filename_refinement_call_it_updates_path(tmp_path, monkeypatch):
         data={"session_id": sid, "message": "call it funnierjoke.txt instead"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/funnierjoke.txt"
     assert preview["write_file"]["content"] == "hello"
@@ -3148,7 +3170,7 @@ def test_content_style_refinement_dad_joke_updates_content(tmp_path, monkeypatch
         data={"session_id": sid, "message": "make it a dad joke"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokes.txt"
     assert "anti-gravity" in preview["write_file"]["content"]
@@ -3166,7 +3188,7 @@ def test_note_for_later_creates_structured_note_preview(tmp_path, monkeypatch):
         data={"session_id": sid, "message": "make a note for later about buying milk"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "write a note about buying milk"
     assert preview["write_file"]["path"].startswith("~/VoxeraOS/notes/note-")
@@ -3188,7 +3210,7 @@ def test_active_preview_natural_content_refinement_updates_write_file_content(
         "/chat",
         data={"session_id": sid, "message": "make a file called jokes.txt with a funny joke"},
     )
-    before = vera_service.read_session_preview(queue, sid)
+    before = vera_session_store.read_session_preview(queue, sid)
     assert before is not None
 
     res = client.post(
@@ -3196,7 +3218,7 @@ def test_active_preview_natural_content_refinement_updates_write_file_content(
         data={"session_id": sid, "message": "actually make it a programmer joke"},
     )
 
-    after = vera_service.read_session_preview(queue, sid)
+    after = vera_session_store.read_session_preview(queue, sid)
     assert after is not None
     assert "```json" not in res.text
     assert "nothing has been submitted yet" in res.text.lower()
@@ -3224,7 +3246,7 @@ def test_active_preview_news_summary_refinement_updates_content(tmp_path, monkey
         data={"session_id": sid, "message": "make the content a summary of today's top news"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/testnews.txt"
     assert preview["write_file"]["mode"] == "overwrite"
@@ -3247,7 +3269,7 @@ def test_active_preview_put_that_into_file_is_fail_closed_without_grounded_conte
             "message": 'write a file called testnews.txt with content "placeholder"',
         },
     )
-    before = vera_service.read_session_preview(queue, sid)
+    before = vera_session_store.read_session_preview(queue, sid)
     assert before is not None
 
     client.post(
@@ -3255,7 +3277,7 @@ def test_active_preview_put_that_into_file_is_fail_closed_without_grounded_conte
         data={"session_id": sid, "message": "put that into the file"},
     )
 
-    after = vera_service.read_session_preview(queue, sid)
+    after = vera_session_store.read_session_preview(queue, sid)
     assert after == before
 
 
@@ -3290,8 +3312,8 @@ def test_save_previous_summary_creates_governed_write_preview(tmp_path, monkeypa
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
-    turns = vera_service.read_session_turns(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert preview is not None
     assert turns[-1]["role"] == "assistant"
     assert "nothing has been submitted" in turns[-1]["text"].lower()
@@ -3333,7 +3355,7 @@ def test_save_previous_answer_to_markdown_creates_preview(tmp_path, monkeypatch)
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/sessionstart.md"
     assert preview["write_file"]["mode"] == "overwrite"
@@ -3373,7 +3395,7 @@ def test_black_hole_explanation_then_save_previous_answer_creates_preview(tmp_pa
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/blackhole.md"
     assert (
@@ -3421,7 +3443,7 @@ def test_black_hole_explanation_then_essay_followup_creates_authoritative_previe
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert res.status_code == 200
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".md")
@@ -3484,7 +3506,7 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
 
     assert not list((queue / "inbox").glob("inbox-*.json"))
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/roman-empire-essay.md"
     assert "essay overview" not in preview["write_file"]["content"].lower()
@@ -3523,7 +3545,7 @@ def test_investigation_summary_then_article_followup_creates_preview(tmp_path, m
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_derived_investigation_output(
+    vera_session_store.write_session_derived_investigation_output(
         queue,
         sid,
         {
@@ -3541,7 +3563,7 @@ def test_investigation_summary_then_article_followup_creates_preview(tmp_path, m
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".md")
     assert "article overview" not in preview["write_file"]["content"].lower()
@@ -3579,7 +3601,7 @@ def test_investigation_summary_then_article_save_as_named_file_keeps_article_bod
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_derived_investigation_output(
+    vera_session_store.write_session_derived_investigation_output(
         queue,
         sid,
         {
@@ -3601,7 +3623,7 @@ def test_investigation_summary_then_article_save_as_named_file_keeps_article_bod
         data={"session_id": sid, "message": "save it as brave-api-article.md"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/brave-api-article.md"
     assert "# Brave Search API Notes" in preview["write_file"]["content"]
@@ -3668,7 +3690,7 @@ def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert "great-pyramids-of-giza-essay.md" in preview["write_file"]["path"]
     assert "prepared an essay draft" not in preview["write_file"]["content"].lower()
@@ -3782,8 +3804,8 @@ def test_writing_draft_hides_internal_control_block_but_keeps_authoritative_prev
         data={"session_id": sid, "message": "Write me a 2 page essay about black holes."},
     )
 
-    turns = vera_service.read_session_turns(queue, sid)
-    preview = vera_service.read_session_preview(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert res.status_code == 200
     assert "<voxera_control>" not in res.text
     assert "action: update_preview" not in res.text
@@ -3857,7 +3879,7 @@ def test_code_draft_rendering_still_shows_fenced_code_with_control_sanitizer_pre
         data={"session_id": sid, "message": "write me a python script that prints still visible"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert res.status_code == 200
     assert "```python" in res.text
     assert "still visible" in res.text
@@ -3890,7 +3912,7 @@ def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, mo
         data={"session_id": sid, "message": "save that to a note called entropy.txt"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/entropy.txt"
     assert (
@@ -3930,7 +3952,7 @@ def test_weather_answer_then_save_that_to_note_creates_preview(tmp_path, monkeyp
         data={"session_id": sid, "message": "save that to a note called weather.md"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/weather.md"
     assert "seattle today" in preview["write_file"]["content"].lower()
@@ -3954,7 +3976,7 @@ def test_weather_question_without_location_prompts_for_location(tmp_path, monkey
 
     assert res.status_code == 200
     assert "Which location should I check?" in res.text
-    weather_context = vera_service.read_session_weather_context(queue, sid)
+    weather_context = vera_session_store.read_session_weather_context(queue, sid)
     assert weather_context is not None
     assert weather_context["awaiting_location"] is True
 
@@ -4117,7 +4139,7 @@ def test_pending_weather_offer_acceptance_executes_lookup(tmp_path, monkeypatch)
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    vera_service.write_session_weather_context(
+    vera_session_store.write_session_weather_context(
         queue,
         sid,
         {
@@ -4152,7 +4174,7 @@ def test_concise_information_answer_then_save_it_creates_note_preview(tmp_path, 
     client.post("/chat", data={"session_id": sid, "message": "What is the capital of France?"})
     client.post("/chat", data={"session_id": sid, "message": "save it"})
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"].startswith("write a file called note-")
     assert preview["write_file"]["path"].startswith("~/VoxeraOS/notes/note-")
@@ -4196,7 +4218,7 @@ def test_previous_explanation_survives_trivial_thanks_turn_for_save_reference(
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/photosynthesis.txt"
     assert "sunlight" in preview["write_file"]["content"].lower()
@@ -4233,7 +4255,7 @@ def test_previous_explanation_without_courtesy_turn_uses_latest_explanation(tmp_
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/photosynthesis.txt"
     assert "stored chemical energy" in preview["write_file"]["content"].lower()
@@ -4283,7 +4305,7 @@ def test_code_explanation_then_save_explanation_creates_text_preview(tmp_path, m
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/script-explained.txt"
     assert "print function" in preview["write_file"]["content"].lower()
@@ -4327,8 +4349,8 @@ def test_ordinary_compare_prompt_stays_conversational_not_investigation(tmp_path
 
     assert res.status_code == 200
     assert "Roman amphitheater" in res.text
-    assert vera_service.read_session_investigation(queue, sid) is None
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_investigation(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_two_recent_assistant_answers_save_that_prefers_latest(tmp_path, monkeypatch):
@@ -4360,7 +4382,7 @@ def test_two_recent_assistant_answers_save_that_prefers_latest(tmp_path, monkeyp
         data={"session_id": sid, "message": "save that to a note called ambiguous.txt"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/ambiguous.txt"
     assert (
@@ -4398,8 +4420,8 @@ def test_plural_save_reference_fails_closed(tmp_path, monkeypatch):
         data={"session_id": sid, "message": "save both to a note called ambiguous.txt"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
-    turns = vera_service.read_session_turns(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert preview is None
     assert "couldn’t find a recent response to save" in turns[-1]["text"].lower()
 
@@ -4426,8 +4448,8 @@ def test_recent_assistant_reference_failure_is_clear_when_no_content(tmp_path, m
         },
     )
 
-    assert vera_service.read_session_preview(queue, sid) is None
-    turns = vera_service.read_session_turns(queue, sid)
+    assert vera_session_store.read_session_preview(queue, sid) is None
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert turns[-1]["role"] == "assistant"
     assert "couldn’t find a recent response to save" in turns[-1]["text"].lower()
     assert res.status_code == 200
@@ -4464,7 +4486,7 @@ def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch)
         data={"session_id": sid, "message": "make it more formal"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/notes.txt"
     assert preview["write_file"]["content"] == "Good afternoon.\n\nI hope you are doing well."
@@ -4506,7 +4528,7 @@ def test_active_preview_formal_refinement_and_save_as_updates_path_and_content(
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/polished.txt"
     assert preview["write_file"]["content"] == "Good afternoon.\n\nI hope you are doing well."
@@ -4533,7 +4555,7 @@ def test_active_preview_shorter_refinement_uses_reply_text_over_builder_heuristi
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
 
-    vera_service.write_session_preview(
+    vera_session_store.write_session_preview(
         queue,
         sid,
         {
@@ -4550,7 +4572,7 @@ def test_active_preview_shorter_refinement_uses_reply_text_over_builder_heuristi
         data={"session_id": sid, "message": "make it shorter"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".txt")
     assert (
@@ -4589,7 +4611,7 @@ def test_active_note_refinement_reuses_existing_preview_when_builder_returns_non
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
 
-    vera_service.write_session_preview(
+    vera_session_store.write_session_preview(
         queue,
         sid,
         {
@@ -4607,7 +4629,7 @@ def test_active_note_refinement_reuses_existing_preview_when_builder_returns_non
         data={"session_id": sid, "message": "make it more casual"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/notes.txt"
     assert (
@@ -4623,7 +4645,7 @@ def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
 
-    vera_service.write_session_preview(
+    vera_session_store.write_session_preview(
         queue,
         sid,
         {
@@ -4650,7 +4672,7 @@ def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path
         data={"session_id": sid, "message": "make it more formal"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/demo.py"
     assert preview["write_file"]["content"] == 'print("hello")'
@@ -4663,7 +4685,7 @@ def test_non_document_preview_refinement_does_not_write_prose_back(tmp_path, mon
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
 
-    vera_service.write_session_preview(
+    vera_session_store.write_session_preview(
         queue,
         sid,
         {
@@ -4701,7 +4723,7 @@ def test_non_document_preview_refinement_does_not_write_prose_back(tmp_path, mon
         data={"session_id": sid, "message": "make it more formal"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/report.csv"
     assert preview["write_file"]["content"] == "name,value\nalpha,1"
@@ -4714,7 +4736,7 @@ def test_code_preview_plain_english_save_as_updates_to_text_preview(tmp_path, mo
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
 
-    vera_service.write_session_preview(
+    vera_session_store.write_session_preview(
         queue,
         sid,
         {
@@ -4749,7 +4771,7 @@ def test_code_preview_plain_english_save_as_updates_to_text_preview(tmp_path, mo
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/notes.md"
     assert (
@@ -4780,7 +4802,7 @@ def test_active_preview_content_becomes_multiline_replaces_body_exactly(tmp_path
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/overwrite-test-3.txt"
     assert preview["write_file"]["mode"] == "overwrite"
@@ -4809,7 +4831,7 @@ def test_active_preview_replace_content_with_multiline_replaces_body_exactly(tmp
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/overwrite-test-4.txt"
     assert preview["write_file"]["content"] == "Version 2\nUpdated by Vera"
@@ -4837,7 +4859,7 @@ def test_active_preview_explicit_multiline_replacement_drops_stale_lines(tmp_pat
         },
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["content"] == "Replacement line A\nReplacement line B"
     assert "Old line" not in preview["write_file"]["content"]
@@ -4864,7 +4886,7 @@ def test_latest_preview_wins_across_multiple_natural_content_refinements(tmp_pat
         data={"session_id": sid, "message": "actually make it a pet joke"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert (
         "cat" in preview["write_file"]["content"].lower()
@@ -4888,7 +4910,7 @@ def test_update_content_refinement_and_submit_uses_latest_mutated_payload(tmp_pa
         data={"session_id": sid, "message": "and update the content"},
     )
 
-    latest = vera_service.read_session_preview(queue, sid)
+    latest = vera_session_store.read_session_preview(queue, sid)
     assert latest is not None
     assert latest["write_file"]["content"].strip()
 
@@ -4940,12 +4962,12 @@ def test_enrichment_stored_for_info_query_with_active_preview(tmp_path, monkeypa
         "/chat",
         data={"session_id": sid, "message": "write a file called news.txt with a placeholder"},
     )
-    assert vera_service.read_session_preview(queue, sid) is not None
+    assert vera_session_store.read_session_preview(queue, sid) is not None
 
     # Informational query WITH active preview → should run enrichment and store it
     client.post("/chat", data={"session_id": sid, "message": "find the latest news"})
 
-    enrichment = vera_service.read_session_enrichment(queue, sid)
+    enrichment = vera_session_store.read_session_enrichment(queue, sid)
     assert enrichment is not None
     assert enrichment["query"] == "latest news"
     assert "Big Tech Rally" in enrichment["summary"]
@@ -4974,7 +4996,7 @@ def test_enrichment_backed_put_that_into_file_updates_preview_content(tmp_path, 
         "/chat",
         data={"session_id": sid, "message": "write a file called news.txt with a placeholder"},
     )
-    before = vera_service.read_session_preview(queue, sid)
+    before = vera_session_store.read_session_preview(queue, sid)
     assert before is not None
 
     # Info query with active preview → stores enrichment
@@ -4983,7 +5005,7 @@ def test_enrichment_backed_put_that_into_file_updates_preview_content(tmp_path, 
     # Pronoun follow-up → enrichment summary resolves into file content
     client.post("/chat", data={"session_id": sid, "message": "put that into the file"})
 
-    after = vera_service.read_session_preview(queue, sid)
+    after = vera_session_store.read_session_preview(queue, sid)
     assert after is not None
     assert "Big Tech Rally" in after["write_file"]["content"]
     assert after["write_file"]["path"] == before["write_file"]["path"]
@@ -5014,7 +5036,7 @@ def test_standalone_info_query_does_not_store_enrichment(tmp_path, monkeypatch):
     client.post("/chat", data={"session_id": sid, "message": "find the latest news"})
 
     assert call_count["n"] == 0
-    assert vera_service.read_session_enrichment(queue, sid) is None
+    assert vera_session_store.read_session_enrichment(queue, sid) is None
 
 
 def test_put_that_into_file_without_enrichment_no_active_preview_fails_closed(
@@ -5029,7 +5051,7 @@ def test_put_that_into_file_without_enrichment_no_active_preview_fails_closed(
 
     client.post("/chat", data={"session_id": sid, "message": "put that into the file"})
 
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
 
 
@@ -5093,7 +5115,7 @@ def test_linked_job_terminal_completion_is_ingested_with_policy(tmp_path, monkey
     created = vera_service.ingest_linked_job_completions(queue, sid)
     assert len(created) == 1
 
-    completions = vera_service.read_linked_job_completions(queue, sid)
+    completions = vera_session_store.read_linked_job_completions(queue, sid)
     assert len(completions) == 1
     completion = completions[0]
     assert completion["lifecycle_state"] == "done"
@@ -5149,14 +5171,14 @@ def test_linked_read_only_success_auto_surfaces_once_per_completion(tmp_path, mo
     assert first.status_code == 200
     assert "Your linked goal job completed successfully." in first.text
 
-    completions = vera_service.read_linked_job_completions(queue, sid)
+    completions = vera_session_store.read_linked_job_completions(queue, sid)
     assert len(completions) == 1
     assert completions[0]["surfaced_in_chat"] is True
     assert isinstance(completions[0]["surfaced_at_ms"], int)
 
     second = client.post("/chat", data={"session_id": sid, "message": "hello again"})
     assert second.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     surfaced_messages = [
         turn["text"]
         for turn in turns
@@ -5171,10 +5193,10 @@ def test_auto_surface_prefers_latest_submitted_linked_job_completion(tmp_path, m
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
     sid = "vera-linked-latest-priority"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
 
     # Older linked completion is intentionally ingestible first.
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
     _write_job_artifacts(
         queue,
         "inbox-old.json",
@@ -5194,8 +5216,8 @@ def test_auto_surface_prefers_latest_submitted_linked_job_completion(tmp_path, m
     )
 
     # Newly submitted/linked job should win completion surfacing priority.
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-new.json")
-    vera_service.write_session_handoff_state(
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-new.json")
+    vera_session_store.write_session_handoff_state(
         queue,
         sid,
         attempted=True,
@@ -5236,7 +5258,7 @@ def test_submit_turn_suppresses_stale_linked_completion_autosurface(tmp_path, mo
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
 
-    vera_service.write_session_preview(
+    vera_session_store.write_session_preview(
         queue,
         sid,
         {
@@ -5248,7 +5270,7 @@ def test_submit_turn_suppresses_stale_linked_completion_autosurface(tmp_path, mo
             },
         },
     )
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
     _write_job_artifacts(
         queue,
         "inbox-old.json",
@@ -5272,7 +5294,7 @@ def test_submit_turn_suppresses_stale_linked_completion_autosurface(tmp_path, mo
     assert "I submitted the job to VoxeraOS" in submit.text
     assert "old-note.txt" not in submit.text
 
-    completions = vera_service.read_linked_job_completions(queue, sid)
+    completions = vera_session_store.read_linked_job_completions(queue, sid)
     old_completion = next(
         item for item in completions if str(item.get("job_ref") or "") == "inbox-old.json"
     )
@@ -5285,9 +5307,9 @@ def test_auto_surface_waits_for_latest_submitted_job_instead_of_older_completion
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
     sid = "vera-linked-latest-only"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
 
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-old.json")
     _write_job_artifacts(
         queue,
         "inbox-old.json",
@@ -5306,8 +5328,8 @@ def test_auto_surface_waits_for_latest_submitted_job_instead_of_older_completion
         },
     )
 
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-new.json")
-    vera_service.write_session_handoff_state(
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-new.json")
+    vera_session_store.write_session_handoff_state(
         queue,
         sid,
         attempted=True,
@@ -5399,7 +5421,7 @@ def test_linked_approval_blocked_auto_surfaces_once(tmp_path, monkeypatch):
     first = client.post("/chat", data={"session_id": sid, "message": "any updates?"})
     assert first.status_code == 200
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     approval_messages = [
         turn["text"]
         for turn in turns
@@ -5409,14 +5431,14 @@ def test_linked_approval_blocked_auto_surfaces_once(tmp_path, monkeypatch):
     assert len(approval_messages) == 1
     assert "pending approval" in approval_messages[0]
 
-    completions = vera_service.read_linked_job_completions(queue, sid)
+    completions = vera_session_store.read_linked_job_completions(queue, sid)
     assert len(completions) == 1
     assert completions[0]["surfacing_policy"] == "approval_blocked"
     assert completions[0]["surfaced_in_chat"] is True
 
     second = client.post("/chat", data={"session_id": sid, "message": "hello again"})
     assert second.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     surfaced_messages = [
         turn["text"]
         for turn in turns
@@ -5477,7 +5499,7 @@ def test_linked_failed_auto_surfaces_once(tmp_path, monkeypatch):
     first = client.post("/chat", data={"session_id": sid, "message": "status?"})
     assert first.status_code == 200
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     failed_messages = [
         turn["text"]
         for turn in turns
@@ -5486,14 +5508,14 @@ def test_linked_failed_auto_surfaces_once(tmp_path, monkeypatch):
     assert len(failed_messages) == 1
     assert "Failure summary: Path not found: ~/VoxeraOS/notes/report.txt" in failed_messages[0]
 
-    completions = vera_service.read_linked_job_completions(queue, sid)
+    completions = vera_session_store.read_linked_job_completions(queue, sid)
     assert len(completions) == 1
     assert completions[0]["surfacing_policy"] == "failed"
     assert completions[0]["surfaced_in_chat"] is True
 
     second = client.post("/chat", data={"session_id": sid, "message": "status again?"})
     assert second.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     surfaced_messages = [
         turn["text"]
         for turn in turns
@@ -5512,8 +5534,8 @@ def test_linked_mutating_success_auto_surfaces_once(tmp_path, monkeypatch):
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
     sid = "vera-test-mutate"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-a.json")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-a.json")
 
     _write_job_artifacts(
         queue,
@@ -5548,7 +5570,7 @@ def test_linked_mutating_success_auto_surfaces_once(tmp_path, monkeypatch):
     first = client.post("/chat", data={"session_id": sid, "message": "any update?"})
     assert first.status_code == 200
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     surfaced_first = [
         turn["text"]
         for turn in turns
@@ -5558,14 +5580,14 @@ def test_linked_mutating_success_auto_surfaces_once(tmp_path, monkeypatch):
     assert len(surfaced_first) == 1
     assert "Destination created at ~/VoxeraOS/notes/testdir." in surfaced_first[0]
 
-    completions = vera_service.read_linked_job_completions(queue, sid)
+    completions = vera_session_store.read_linked_job_completions(queue, sid)
     assert len(completions) == 1
     assert completions[0]["surfacing_policy"] == "mutating_success"
     assert completions[0]["surfaced_in_chat"] is True
 
     second = client.post("/chat", data={"session_id": sid, "message": "any update now?"})
     assert second.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     surfaced_messages = [
         turn["text"]
         for turn in turns
@@ -5585,8 +5607,8 @@ def test_linked_mutating_success_intermediate_orchestration_is_suppressed(tmp_pa
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
     sid = "vera-test-intermediate"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-parent.json")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-parent.json")
 
     _write_job_artifacts(
         queue,
@@ -5631,7 +5653,7 @@ def test_linked_mutating_success_intermediate_orchestration_is_suppressed(tmp_pa
     assert res.status_code == 200
     assert "Parent step succeeded and delegated child work" not in res.text
 
-    completions = vera_service.read_linked_job_completions(queue, sid)
+    completions = vera_session_store.read_linked_job_completions(queue, sid)
     assert len(completions) == 1
     assert completions[0]["surfacing_policy"] == "mutating_success"
     assert completions[0]["surfaced_in_chat"] is False
@@ -5642,8 +5664,8 @@ def test_linked_terminal_completion_live_delivery_posts_immediately(tmp_path, mo
     _set_queue_root(monkeypatch, queue)
 
     sid = "vera-live-delivery"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-live.json")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-live.json")
 
     _write_job_artifacts(
         queue,
@@ -5668,7 +5690,7 @@ def test_linked_terminal_completion_live_delivery_posts_immediately(tmp_path, mo
     )
     assert delivered == 1
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     messages = [
         turn["text"]
         for turn in turns
@@ -5693,9 +5715,9 @@ def test_linked_live_delivery_surfaces_subsequent_completions_in_same_session(
     _set_queue_root(monkeypatch, queue)
 
     sid = "vera-live-multi"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-live-1.json")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-live-2.json")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-live-1.json")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-live-2.json")
 
     _write_job_artifacts(
         queue,
@@ -5745,7 +5767,7 @@ def test_linked_live_delivery_surfaces_subsequent_completions_in_same_session(
         == 1
     )
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     surfaced = [
         turn["text"]
         for turn in turns
@@ -5768,8 +5790,8 @@ def test_linked_live_delivery_not_duplicated_after_refresh_or_later_chat(tmp_pat
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
     sid = "vera-live-no-duplicate"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-live-once.json")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-live-once.json")
 
     _write_job_artifacts(
         queue,
@@ -5803,7 +5825,7 @@ def test_linked_live_delivery_not_duplicated_after_refresh_or_later_chat(tmp_pat
     follow_up = client.post("/chat", data={"session_id": sid, "message": "ok"})
     assert follow_up.status_code == 200
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     surfaced = [
         turn["text"]
         for turn in turns
@@ -5819,8 +5841,8 @@ def test_linked_live_delivery_unavailable_persists_pending_for_fallback(tmp_path
     _set_queue_root(monkeypatch, queue)
 
     sid = "vera-live-unavailable"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-fallback.json")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-fallback.json")
 
     _write_job_artifacts(
         queue,
@@ -5869,8 +5891,8 @@ def test_live_delivered_linked_completion_not_reposted_by_fallback(tmp_path, mon
     _set_queue_root(monkeypatch, queue)
 
     sid = "vera-live-dedupe"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-dedupe.json")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-dedupe.json")
 
     _write_job_artifacts(
         queue,
@@ -5904,8 +5926,8 @@ def test_uncertain_mutating_completion_is_not_live_delivered_as_final(tmp_path, 
     _set_queue_root(monkeypatch, queue)
 
     sid = "vera-live-conservative"
-    vera_service.append_session_turn(queue, sid, role="user", text="seed")
-    vera_service.register_session_linked_job(queue, sid, job_ref="inbox-parent-live.json")
+    vera_session_store.append_session_turn(queue, sid, role="user", text="seed")
+    vera_session_store.register_session_linked_job(queue, sid, job_ref="inbox-parent-live.json")
 
     _write_job_artifacts(
         queue,
@@ -5946,7 +5968,7 @@ def test_uncertain_mutating_completion_is_not_live_delivered_as_final(tmp_path, 
     )
     assert delivered == 0
 
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert not any("Parent delegated child work" in turn["text"] for turn in turns)
 
 
@@ -5976,7 +5998,7 @@ def test_non_linked_terminal_jobs_do_not_attach_to_session(tmp_path, monkeypatch
 
     client.post("/chat", data={"session_id": sid, "message": "hello"})
 
-    assert vera_service.read_linked_job_completions(queue, sid) == []
+    assert vera_session_store.read_linked_job_completions(queue, sid) == []
 
 
 def test_chat_updates_endpoint_reports_changes_for_active_session(tmp_path, monkeypatch):
@@ -5994,7 +6016,7 @@ def test_chat_updates_endpoint_reports_changes_for_active_session(tmp_path, monk
     assert isinstance(baseline_payload.get("updated_at_ms"), int)
     assert "turns" not in baseline_payload
 
-    vera_service.append_session_turn(queue, sid, role="assistant", text="live completion")
+    vera_session_store.append_session_turn(queue, sid, role="assistant", text="live completion")
 
     updated = client.get("/chat/updates", params={"session_id": sid, "since_count": 0})
     assert updated.status_code == 200
@@ -6016,19 +6038,20 @@ def test_chat_updates_detects_new_turn_when_session_window_is_full(tmp_path, mon
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
 
-    for idx in range(vera_service.MAX_SESSION_TURNS):
+    for idx in range(vera_session_store.MAX_SESSION_TURNS):
         role = "user" if idx % 2 == 0 else "assistant"
-        vera_service.append_session_turn(queue, sid, role=role, text=f"seed-{idx}")
+        vera_session_store.append_session_turn(queue, sid, role=role, text=f"seed-{idx}")
 
     baseline = client.get(
-        "/chat/updates", params={"session_id": sid, "since_count": vera_service.MAX_SESSION_TURNS}
+        "/chat/updates",
+        params={"session_id": sid, "since_count": vera_session_store.MAX_SESSION_TURNS},
     )
     assert baseline.status_code == 200
     baseline_payload = baseline.json()
     assert baseline_payload["changed"] is False
     updated_at_ms = int(baseline_payload["updated_at_ms"])
 
-    vera_service.append_session_turn(
+    vera_session_store.append_session_turn(
         queue, sid, role="assistant", text="live completion second wave"
     )
 
@@ -6036,14 +6059,14 @@ def test_chat_updates_detects_new_turn_when_session_window_is_full(tmp_path, mon
         "/chat/updates",
         params={
             "session_id": sid,
-            "since_count": vera_service.MAX_SESSION_TURNS,
+            "since_count": vera_session_store.MAX_SESSION_TURNS,
             "since_updated_at_ms": updated_at_ms,
         },
     )
     assert refreshed.status_code == 200
     refreshed_payload = refreshed.json()
     assert refreshed_payload["changed"] is True
-    assert refreshed_payload["turn_count"] == vera_service.MAX_SESSION_TURNS
+    assert refreshed_payload["turn_count"] == vera_session_store.MAX_SESSION_TURNS
     assert isinstance(refreshed_payload.get("turns"), list)
     assert refreshed_payload["turns"][-1]["text"] == "live completion second wave"
 
@@ -6193,7 +6216,7 @@ def test_diagnostics_invalid_service_target_fails_closed_in_web_chat(tmp_path, m
 
     assert res.status_code == 200
     assert "unsafe or invalid" in res.text
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_unrelated_write_preview_flow_remains_unchanged():
@@ -6223,7 +6246,7 @@ def test_service_status_request_prefers_diagnostics_preview_over_review(tmp_path
 
     assert res.status_code == 200
     assert "could not resolve a VoxeraOS job" not in res.text
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["steps"][0]["skill_id"] == "system.service_status"
 
@@ -6281,7 +6304,7 @@ def test_what_was_the_output_surfaces_actual_written_content(tmp_path, monkeypat
             ],
         },
     )
-    vera_service.write_session_handoff_state(
+    vera_session_store.write_session_handoff_state(
         queue,
         "sid-output",
         attempted=True,
@@ -6595,7 +6618,7 @@ def test_python_script_request_creates_authoritative_preview(tmp_path, monkeypat
     res = client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, "Expected an authoritative preview to be created"
     assert "write_file" in preview
     assert preview["write_file"]["path"].endswith(".py")
@@ -6624,7 +6647,7 @@ def test_bash_script_request_creates_authoritative_preview(tmp_path, monkeypatch
     res = client.post("/chat", data={"session_id": sid, "message": "make a bash script for backup"})
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".sh")
     assert "bash" in preview["write_file"]["content"] or "echo" in preview["write_file"]["content"]
@@ -6652,7 +6675,7 @@ def test_yaml_config_request_creates_authoritative_preview(tmp_path, monkeypatch
     )
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".yaml")
     assert (
@@ -6679,7 +6702,7 @@ def test_json_config_request_creates_authoritative_preview(tmp_path, monkeypatch
     res = client.post("/chat", data={"session_id": sid, "message": "draft a JSON config file"})
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"].endswith(".json")
 
@@ -6751,7 +6774,7 @@ def test_follow_up_save_it_submits_code_draft_preview(tmp_path, monkeypatch):
 
     # First turn: request the script → preview is created
     client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, "Preview must exist after code draft request"
     assert preview["write_file"]["content"] == _PYTHON_CODE
 
@@ -6762,7 +6785,7 @@ def test_follow_up_save_it_submits_code_draft_preview(tmp_path, monkeypatch):
     inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
     assert inbox_files, "Expected a job to be written to the inbox after 'save it'"
     # The preview is cleared after successful submit
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_follow_up_save_this_submits_code_draft_preview(tmp_path, monkeypatch):
@@ -6782,7 +6805,7 @@ def test_follow_up_save_this_submits_code_draft_preview(tmp_path, monkeypatch):
     sid = client.cookies.get("vera_session_id") or ""
 
     client.post("/chat", data={"session_id": sid, "message": "create a python script"})
-    assert vera_service.read_session_preview(queue, sid) is not None
+    assert vera_session_store.read_session_preview(queue, sid) is not None
 
     res = client.post("/chat", data={"session_id": sid, "message": "save this"})
     assert res.status_code == 200
@@ -6813,7 +6836,7 @@ def test_code_draft_preview_has_real_content_not_empty_placeholder(tmp_path, mon
         data={"session_id": sid, "message": "write me a python scraper script"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["content"] == code
     assert preview["write_file"]["content"] != ""
@@ -6838,7 +6861,7 @@ def test_no_pseudo_preview_json_in_user_facing_chat_output(tmp_path, monkeypatch
     res = client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
 
     assert res.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assistant_turns = [t for t in turns if t["role"] == "assistant"]
     assert assistant_turns
     last_assistant = assistant_turns[-1]["text"]
@@ -6865,7 +6888,7 @@ def test_code_draft_when_llm_reply_has_no_code_fence_no_exception(tmp_path, monk
     res = client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
 
     assert res.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assert turns
 
 
@@ -6888,7 +6911,7 @@ def test_existing_write_file_flows_still_work(tmp_path, monkeypatch):
     )
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/hello.txt"
     assert preview["write_file"]["content"] == "world"
@@ -6915,7 +6938,7 @@ def test_code_draft_explicit_filename_is_used(tmp_path, monkeypatch):
         data={"session_id": sid, "message": "write me a python script called scraper.py"},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/scraper.py"
 
@@ -6974,7 +6997,7 @@ def test_code_draft_refinement_updates_preview_and_shows_reply(tmp_path, monkeyp
 
     # Turn 1: initial code draft
     client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["content"] == original_code
 
@@ -6986,7 +7009,7 @@ def test_code_draft_refinement_updates_preview_and_shows_reply(tmp_path, monkeyp
     assert res.status_code == 200
 
     # Preview must be updated with the new code
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["content"] == updated_code
 
@@ -7028,7 +7051,7 @@ def test_code_draft_refinement_then_save_it_submits(tmp_path, monkeypatch):
     client.post("/chat", data={"session_id": sid, "message": "create a python script"})
     # Refine
     client.post("/chat", data={"session_id": sid, "message": "change it to say hello world"})
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["content"] == updated_code
 
@@ -7055,7 +7078,7 @@ def test_lets_save_it_with_apostrophe_submits(tmp_path, monkeypatch):
     sid = client.cookies.get("vera_session_id") or ""
 
     client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
-    assert vera_service.read_session_preview(queue, sid) is not None
+    assert vera_session_store.read_session_preview(queue, sid) is not None
 
     client.post("/chat", data={"session_id": sid, "message": "let's save it"})
     inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
@@ -7079,7 +7102,7 @@ def test_write_that_to_a_file_submits_when_preview_exists(tmp_path, monkeypatch)
     sid = client.cookies.get("vera_session_id") or ""
 
     client.post("/chat", data={"session_id": sid, "message": "make a bash script"})
-    assert vera_service.read_session_preview(queue, sid) is not None
+    assert vera_session_store.read_session_preview(queue, sid) is not None
 
     client.post("/chat", data={"session_id": sid, "message": "write that to a file"})
     inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
@@ -7118,10 +7141,10 @@ def test_no_false_preview_claim_when_llm_has_no_fenced_code(tmp_path, monkeypatc
 
     assert res.status_code == 200
     # No real preview should exist
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is None, "No preview should exist when no fenced code was produced"
     # The response must NOT contain false preview-pane claims
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assistant_turns = [t for t in turns if t["role"] == "assistant"]
     assert assistant_turns
     last = assistant_turns[-1]["text"].lower()
@@ -7166,11 +7189,11 @@ def test_no_false_preview_claim_when_builder_creates_empty_preview(tmp_path, mon
 
     assert res.status_code == 200
     # False claim stripped AND empty placeholder shell cleared (all-or-nothing).
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is None, (
         "Empty-content placeholder must be cleared when a false preview claim is stripped"
     )
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assistant_turns = [t for t in turns if t["role"] == "assistant"]
     assert assistant_turns
     last = assistant_turns[-1]["text"]
@@ -7191,7 +7214,7 @@ def test_submit_with_no_preview_fails_truthfully(tmp_path, monkeypatch):
     res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
 
     assert res.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assistant_turns = [t for t in turns if t["role"] == "assistant"]
     assert assistant_turns
     last = assistant_turns[-1]["text"]
@@ -7216,7 +7239,7 @@ def test_go_ahead_with_no_preview_fails_truthfully(tmp_path, monkeypatch):
     res = client.post("/chat", data={"session_id": sid, "message": "go ahead"})
 
     assert res.status_code == 200
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assistant_turns = [t for t in turns if t["role"] == "assistant"]
     assert assistant_turns
     last = assistant_turns[-1]["text"]
@@ -7245,7 +7268,7 @@ def test_submit_with_real_code_preview_succeeds(tmp_path, monkeypatch):
 
     # Create the code draft
     client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["content"] == code
 
@@ -7254,7 +7277,7 @@ def test_submit_with_real_code_preview_succeeds(tmp_path, monkeypatch):
     inbox_files = list((queue / "inbox").glob("*.json")) if (queue / "inbox").exists() else []
     assert inbox_files, "Expected a job in the inbox after submitting a real preview"
     # Preview should be cleared after successful submit
-    assert vera_service.read_session_preview(queue, sid) is None
+    assert vera_session_store.read_session_preview(queue, sid) is None
 
 
 def test_code_in_chat_without_preview_does_not_claim_preview_exists(tmp_path, monkeypatch):
@@ -7293,7 +7316,7 @@ def test_code_in_chat_without_preview_does_not_claim_preview_exists(tmp_path, mo
         data={"session_id": sid, "message": "write me a python script"},
     )
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, "Real preview must exist when LLM produced fenced code"
     assert preview["write_file"]["content"] == "x = 1"
 
@@ -7331,10 +7354,10 @@ def test_false_preview_claim_stripped_preserves_code_blocks(tmp_path, monkeypatc
         data={"session_id": sid, "message": "explain how to print in python"},
     )
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is None, "No preview should exist for an informational query"
     # The code block should still be visible in the response
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assistant_turns = [t for t in turns if t["role"] == "assistant"]
     assert assistant_turns
     last = assistant_turns[-1]["text"]
@@ -7361,7 +7384,7 @@ def test_existing_explicit_write_file_flow_not_regressed(tmp_path, monkeypatch):
         data={"session_id": sid, "message": 'write a file called hello.txt with content "world"'},
     )
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/hello.txt"
     assert preview["write_file"]["content"] == "world"
@@ -7415,7 +7438,7 @@ def test_explicit_filename_code_draft_populates_preview_content(tmp_path, monkey
     )
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, "Preview must exist after successful code draft"
     assert "write_file" in preview
     assert "scraper.py" in preview["write_file"]["path"]
@@ -7472,10 +7495,10 @@ def test_failed_code_draft_clears_empty_preview_shell(tmp_path, monkeypatch):
 
     assert res.status_code == 200
     # All-or-nothing: empty shell must be cleared when false claim is stripped
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is None, "Empty placeholder shell must be cleared when no code was generated"
     # Chat wording must be truthful (not "check the preview pane")
-    turns = vera_service.read_session_turns(queue, sid)
+    turns = vera_session_store.read_session_turns(queue, sid)
     assistant_turns = [t for t in turns if t["role"] == "assistant"]
     assert assistant_turns
     last = assistant_turns[-1]["text"].lower()
@@ -7524,7 +7547,7 @@ def test_code_draft_placeholder_survives_when_llm_makes_no_preview_claim(tmp_pat
 
     assert res.status_code == 200
     # Placeholder must survive — no false claim, no clearing
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, (
         "Placeholder preview must survive when LLM makes no false preview claim"
     )
@@ -7556,7 +7579,7 @@ def test_code_draft_with_trailing_space_on_fence_line_extracts_code(tmp_path, mo
     )
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, (
         "Code extraction must succeed for fence lines with trailing whitespace"
     )
@@ -7677,7 +7700,7 @@ def test_real_world_python_url_fetch_script_creates_preview(tmp_path, monkeypatc
     )
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, "Preview must exist for real-world code-draft prompt"
     assert "write_file" in preview
     assert preview["write_file"]["content"] == code, (
@@ -7716,7 +7739,7 @@ def test_real_world_scrape_any_website_creates_preview(tmp_path, monkeypatch):
     )
 
     assert res.status_code == 200
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, "Preview must exist after code-draft request"
     assert preview["write_file"]["content"] == code
     assert preview["write_file"]["content"] != ""
@@ -7753,7 +7776,7 @@ def test_real_world_bash_disk_memory_creates_preview_and_submit_works(tmp_path, 
     )
     assert res.status_code == 200
 
-    preview = vera_service.read_session_preview(queue, sid)
+    preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None, "Preview must exist"
     assert preview["write_file"]["content"] == code, "Content must be real bash code"
     assert ".sh" in preview["write_file"]["path"], "Path must have .sh extension"
@@ -7825,15 +7848,17 @@ def test_near_miss_submit_with_active_preview_fails_closed_and_preserves_preview
     assert home.status_code == 200
     sid = client.cookies.get("vera_session_id") or ""
 
-    vera_service.write_session_preview(queue, sid, {"goal": "open https://example.com"})
+    vera_session_store.write_session_preview(queue, sid, {"goal": "open https://example.com"})
 
     res = client.post("/chat", data={"session_id": sid, "message": "sned it"})
 
     assert res.status_code == 200
     assert "did not submit the preview" in res.text.lower()
     assert "submit command" in res.text.lower()
-    assert vera_service.read_session_preview(queue, sid) == {"goal": "open https://example.com"}
-    handoff = vera_service.read_session_handoff_state(queue, sid) or {}
+    assert vera_session_store.read_session_preview(queue, sid) == {
+        "goal": "open https://example.com"
+    }
+    handoff = vera_session_store.read_session_handoff_state(queue, sid) or {}
     assert handoff.get("status") != "submitted"
     assert list((queue / "inbox").glob("inbox-*.json")) == []
 

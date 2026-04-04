@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from voxera.vera import service as vera_service
+from voxera.vera import session_store as vera_session_store
 from voxera.vera.evidence_review import (
     ReviewedJobEvidence,
     draft_followup_preview,
@@ -636,7 +636,7 @@ class TestSessionLevelEvidenceReviewFollowUp:
             ),
             encoding="utf-8",
         )
-        vera_service.write_session_handoff_state(
+        vera_session_store.write_session_handoff_state(
             session.queue,
             session.session_id,
             attempted=True,
