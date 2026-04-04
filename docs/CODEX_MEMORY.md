@@ -1,3 +1,14 @@
+## 2026-04-04 — refactor(vera): remove session-store re-export indirection and thin handoff facade usage
+
+- Removed 40+ session-store re-export aliases from `src/voxera/vera/service.py`.  Callers (`vera_web/app.py`, `panel/routes_vera.py`, `vera_web/chat_early_exit_dispatch.py`) now import session helpers directly from `vera/session_store.py`.
+- `service.py` retains only one session-store re-export (`read_linked_job_completions`) used by tests via `vera_service.*`; all other internal usages reference `vera_session_store.*` directly.
+- Gutted `vera/handoff.py` from a 50-line compatibility facade to a deprecation stub.  All production callers and tests now import from the true source modules: `preview_drafting.py`, `preview_submission.py`, `investigation_derivations.py`.
+- `service.py` itself now imports `drafting_guidance` / `maybe_draft_job_payload` from `preview_drafting` and `normalize_preview_payload` from `preview_submission` instead of through the handoff facade.
+- Removed `tests/test_vera_handoff_compat.py` (existed solely to verify the now-removed facade re-exports).
+- Updated `docs/ARCHITECTURE.md`, `docs/ops.md`, `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md`, and this file to reflect the new ownership boundaries.
+- **Import guidance**: session state → `vera.session_store`; preview drafting → `vera.preview_drafting`; preview submission → `vera.preview_submission`; investigation derivations → `vera.investigation_derivations`.  Do not re-introduce re-exports through `service.py` or `handoff.py`.
+- Weather/investigation compatibility aliases in `service.py` are explicitly out of scope for this PR and remain for a follow-up cleanup.
+
 ## 2026-04-04 — PR #284 hotfix — fix(vera): ground linked-job output review in canonical evidence
 
 - Summary: Hotfix on PR #284 branch. After the session-context gating fix resolved

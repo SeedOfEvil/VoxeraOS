@@ -14,13 +14,15 @@ from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
 from voxera.vera.brave_search import WebSearchResult
-from voxera.vera.handoff import (
+from voxera.vera.investigation_derivations import (
+    is_investigation_derived_followup_save_request,
+)
+from voxera.vera.preview_drafting import (
     diagnostics_request_refusal,
     drafting_guidance,
-    is_investigation_derived_followup_save_request,
     maybe_draft_job_payload,
-    normalize_preview_payload,
 )
+from voxera.vera.preview_submission import normalize_preview_payload
 from voxera.vera.weather import WeatherLocation, WeatherSnapshot
 from voxera.vera_web import app as vera_app_module
 

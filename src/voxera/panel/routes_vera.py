@@ -10,8 +10,10 @@ from fastapi.responses import HTMLResponse
 
 from ..vera.prompt import vera_queue_boundary_summary
 from ..vera.service import (
-    append_session_turn,
     generate_vera_reply,
+)
+from ..vera.session_store import (
+    append_session_turn,
     new_session_id,
     read_session_turns,
 )
