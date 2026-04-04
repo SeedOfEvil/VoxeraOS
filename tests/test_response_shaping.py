@@ -610,3 +610,108 @@ class TestPreviewStateWordingClarity:
             ),
         )
         assert prepared.assistant_text != updated.assistant_text
+
+
+# ---------------------------------------------------------------------------
+# Regression: no duplicate preview-narration layering
+# ---------------------------------------------------------------------------
+
+
+class TestNoDuplicatePreviewNarration:
+    """Successful authored drafting turns must not stack preview narration.
+
+    Regression: "Write me a short note about what happened at the meeting"
+    produced triple-layered output: content + LLM narration + stock narration.
+    """
+
+    def test_contentful_draft_with_llm_narration_strips_duplicate(self) -> None:
+        """When the LLM reply includes content + its own narration, the stock
+        preview-state notice should replace (not stack on) the LLM narration."""
+        llm_reply = (
+            "Meeting Notes - April 4, 2026\n\n"
+            "Key discussion points from today's team meeting:\n\n"
+            "1. Q2 roadmap review\n"
+            "2. Infrastructure upgrade\n\n"
+            "I've updated the draft to include this note. "
+            "You can review the changes in the preview pane before we submit it."
+        )
+        result = assemble_assistant_reply(
+            llm_reply,
+            **_base_assemble_kwargs(
+                message="Write me a short note about what happened at the meeting",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=None,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        text = result.assistant_text
+        # Authored content must survive
+        assert "Key discussion points" in text
+        assert "Q2 roadmap" in text
+        # LLM narration must be stripped
+        assert "review the changes in the preview pane" not in text
+        # Stock canonical narration must be present exactly once
+        assert text.count("preview-only") == 1
+        assert "nothing has been submitted yet" in text.lower()
+
+    def test_contentful_draft_without_narration_gets_stock_notice(self) -> None:
+        """When the LLM reply is pure content (no narration), the stock
+        preview-state notice is appended normally."""
+        llm_reply = (
+            "Meeting Notes\n\nThe team discussed Q2 milestones and agreed to push the deadline."
+        )
+        result = assemble_assistant_reply(
+            llm_reply,
+            **_base_assemble_kwargs(
+                message="Write me a short note about what happened at the meeting",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=None,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        text = result.assistant_text
+        assert "Meeting Notes" in text
+        assert "preview-only" in text.lower()
+        assert "nothing has been submitted yet" in text.lower()
+
+    def test_pure_narration_reply_still_gets_stock_notice(self) -> None:
+        """When the LLM reply is pure narration (no authored content), the
+        stock notice is still appended."""
+        result = assemble_assistant_reply(
+            "I set up a preview for you.",
+            **_base_assemble_kwargs(
+                message="write me a note about the artifact evidence model",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=None,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        text = result.assistant_text.lower()
+        assert "prepared" in text or "preview" in text
+        assert "preview-only" in text
+        assert "nothing has been submitted yet" in text
+
+    def test_update_turn_with_llm_narration_strips_duplicate(self) -> None:
+        """Same de-duplication on update turns (pending_preview exists)."""
+        llm_reply = (
+            "Here is the shorter version of your note.\n\n"
+            "I've updated the preview with your changes."
+        )
+        result = assemble_assistant_reply(
+            llm_reply,
+            **_base_assemble_kwargs(
+                message="make it shorter",
+                builder_payload=_PROSE_PREVIEW,
+                pending_preview=_PROSE_PREVIEW,
+                is_writing_draft_turn=True,
+                in_voxera_preview_flow=True,
+            ),
+        )
+        text = result.assistant_text
+        assert "shorter version" in text
+        # Stock narration present once, LLM duplicate stripped
+        assert text.count("updated the preview") == 1
+        assert "preview-only" in text.lower()
