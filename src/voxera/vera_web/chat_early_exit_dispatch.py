@@ -129,7 +129,7 @@ def _followup_evidence_detail(evidence: ReviewedJobEvidence) -> str:
 
 _AUTHORED_DRAFTING_SIGNAL_RE = re.compile(
     r"\b(?:write|create|draft|make|save)\s+(?:me\s+)?(?:a\s+)?(?:short\s+)?"
-    r"(?:note|memo|document|letter|report|file)\b",
+    r"(?:note|memo|document|letter|report|file)(?!\s+(?:called|named))\b",
     re.IGNORECASE,
 )
 
