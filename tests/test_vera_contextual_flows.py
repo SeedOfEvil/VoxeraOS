@@ -4,6 +4,7 @@ import json
 
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import service as vera_service
+from voxera.vera import session_store as vera_session_store
 from voxera.vera import weather_flow as vera_weather_flow
 from voxera.vera.brave_search import WebSearchResult
 from voxera.vera_web import app as vera_app_module
@@ -211,7 +212,7 @@ def test_service_level_pending_lookup_hook_still_controls_weather_confirmation_r
         "weather_context_has_pending_lookup",
         _fail_if_weather_flow_predicate_runs,
     )
-    vera_service.write_session_weather_context(
+    vera_session_store.write_session_weather_context(
         session.queue,
         session.session_id,
         {
@@ -262,7 +263,7 @@ def test_investigation_compare_summarize_expand_save_and_submit_preserve_lane_tr
     assert summary_output["derivation_type"] == "summary"
     assert summary_output["selected_result_ids"] == [1, 2, 3, 4]
 
-    vera_service.write_session_derived_investigation_output(
+    vera_session_store.write_session_derived_investigation_output(
         session.queue,
         session.session_id,
         {

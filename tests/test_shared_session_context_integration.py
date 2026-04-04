@@ -7,7 +7,7 @@ preview cleanup, and follow-up/review lifecycle events.
 
 from __future__ import annotations
 
-from voxera.vera import service as vera_service
+from voxera.vera import session_store as vera_session_store
 from voxera.vera.context_lifecycle import (
     context_on_completion_ingested,
     context_on_handoff_submitted,
@@ -47,7 +47,7 @@ def test_session_clear_resets_context(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
     # Set some context
-    vera_service.update_session_context(
+    vera_session_store.update_session_context(
         session.queue,
         session.session_id,
         active_topic="should be cleared",
@@ -74,7 +74,7 @@ def test_context_preserved_across_normal_turns(tmp_path, monkeypatch):
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
 
-    vera_service.update_session_context(
+    vera_session_store.update_session_context(
         session.queue,
         session.session_id,
         active_topic="persistent topic",

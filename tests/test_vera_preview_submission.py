@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from voxera.vera import service as vera_service
+from voxera.vera import session_store as vera_session_store
 from voxera.vera.preview_submission import (
     is_active_preview_submit_request,
     should_submit_active_preview,
@@ -34,10 +34,10 @@ def test_submit_active_preview_without_preview_is_truthful(tmp_path):
 
     assert status == "handoff_missing_preview"
     assert "did not submit anything" in message.lower()
-    handoff = vera_service.read_session_handoff_state(queue, session_id)
+    handoff = vera_session_store.read_session_handoff_state(queue, session_id)
     assert handoff is not None
     assert handoff["status"] == "missing_preview"
-    assert vera_service.read_session_preview(queue, session_id) is None
+    assert vera_session_store.read_session_preview(queue, session_id) is None
 
 
 def test_submit_active_preview_uses_authoritative_preview_and_clears_it(tmp_path):
@@ -52,12 +52,12 @@ def test_submit_active_preview_uses_authoritative_preview_and_clears_it(tmp_path
         },
     }
     seen_job_refs: list[str] = []
-    vera_service.write_session_preview(queue, session_id, preview)
+    vera_session_store.write_session_preview(queue, session_id, preview)
 
     message, status = submit_active_preview_for_session(
         queue_root=queue,
         session_id=session_id,
-        preview=vera_service.read_session_preview(queue, session_id),
+        preview=vera_session_store.read_session_preview(queue, session_id),
         register_linked_job=lambda root, sid, job_ref: seen_job_refs.append(
             f"{root.name}:{sid}:{job_ref}"
         ),
@@ -65,13 +65,13 @@ def test_submit_active_preview_uses_authoritative_preview_and_clears_it(tmp_path
 
     assert status == "handoff_submitted"
     assert "I submitted the job to VoxeraOS" in message
-    assert vera_service.read_session_preview(queue, session_id) is None
+    assert vera_session_store.read_session_preview(queue, session_id) is None
     inbox_files = list((queue / "inbox").glob("inbox-*.json"))
     assert len(inbox_files) == 1
     payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
     assert payload["goal"] == preview["goal"]
     assert payload["write_file"] == preview["write_file"]
-    handoff = vera_service.read_session_handoff_state(queue, session_id)
+    handoff = vera_session_store.read_session_handoff_state(queue, session_id)
     assert handoff is not None
     assert handoff["status"] == "submitted"
     assert handoff["job_id"]
@@ -97,7 +97,7 @@ def test_submit_active_preview_fails_closed_on_stale_provided_preview(tmp_path):
             "mode": "overwrite",
         },
     }
-    vera_service.write_session_preview(queue, session_id, canonical_preview)
+    vera_session_store.write_session_preview(queue, session_id, canonical_preview)
 
     message, status = submit_active_preview_for_session(
         queue_root=queue,
@@ -108,7 +108,7 @@ def test_submit_active_preview_fails_closed_on_stale_provided_preview(tmp_path):
     assert status == "handoff_ambiguous_preview_state"
     assert "did not submit anything" in message.lower()
     assert list((queue / "inbox").glob("inbox-*.json")) == []
-    handoff = vera_service.read_session_handoff_state(queue, session_id)
+    handoff = vera_session_store.read_session_handoff_state(queue, session_id)
     assert handoff is not None
     assert handoff["status"] == "ambiguous_preview_state"
-    assert vera_service.read_session_preview(queue, session_id) == canonical_preview
+    assert vera_session_store.read_session_preview(queue, session_id) == canonical_preview
