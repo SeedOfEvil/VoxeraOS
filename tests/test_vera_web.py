@@ -13,14 +13,17 @@ from voxera.core.writing_draft_intent import extract_text_draft_from_reply
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import prompt as vera_prompt
 from voxera.vera import service as vera_service
+from voxera.vera import session_store as vera_session_store
 from voxera.vera.brave_search import WebSearchResult
-from voxera.vera.handoff import (
+from voxera.vera.investigation_derivations import (
+    is_investigation_derived_followup_save_request,
+)
+from voxera.vera.preview_drafting import (
     diagnostics_request_refusal,
     drafting_guidance,
-    is_investigation_derived_followup_save_request,
     maybe_draft_job_payload,
-    normalize_preview_payload,
 )
+from voxera.vera.preview_submission import normalize_preview_payload
 from voxera.vera.weather import WeatherLocation, WeatherSnapshot
 from voxera.vera_web import app as vera_app_module
 
@@ -5840,8 +5843,8 @@ def test_linked_live_delivery_unavailable_persists_pending_for_fallback(tmp_path
     def _raise_append(*args, **kwargs):
         raise RuntimeError("transport unavailable")
 
-    original_append = vera_service.append_session_turn
-    monkeypatch.setattr(vera_service, "append_session_turn", _raise_append)
+    original_append = vera_session_store.append_session_turn
+    monkeypatch.setattr(vera_session_store, "append_session_turn", _raise_append)
     delivered = vera_service.maybe_deliver_linked_completion_live_for_job(
         queue, job_ref="inbox-fallback.json"
     )
@@ -5853,7 +5856,7 @@ def test_linked_live_delivery_unavailable_persists_pending_for_fallback(tmp_path
     assert outbox[0]["delivery_status"] == "unavailable"
     assert outbox[0]["fallback_pending"] is True
 
-    monkeypatch.setattr(vera_service, "append_session_turn", original_append)
+    monkeypatch.setattr(vera_session_store, "append_session_turn", original_append)
     msg = vera_service.maybe_auto_surface_linked_completion(queue, sid)
     assert msg is not None
     assert msg.startswith("Your linked ")

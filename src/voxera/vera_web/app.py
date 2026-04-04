@@ -36,13 +36,15 @@ from ..vera.draft_revision import (
 from ..vera.evidence_review import (
     maybe_extract_job_id,
 )
-from ..vera.handoff import (
+from ..vera.investigation_derivations import (
     derive_investigation_expansion,
-    diagnostics_service_or_logs_intent,
-    drafting_guidance,
     is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
     is_investigation_expand_request,
+)
+from ..vera.preview_drafting import (
+    diagnostics_service_or_logs_intent,
+    drafting_guidance,
     is_recent_assistant_content_save_request,
     maybe_draft_job_payload,
 )
@@ -63,12 +65,15 @@ from ..vera.service import (
     _WRITING_DRAFT_HINT,
     _is_informational_web_query,
     _weather_context_has_pending_lookup,
-    append_session_turn,
-    clear_session_turns,
     generate_preview_builder_update,
     generate_vera_reply,
     ingest_linked_job_completions,
     maybe_auto_surface_linked_completion,
+    run_web_enrichment,
+)
+from ..vera.session_store import (
+    append_session_turn,
+    clear_session_turns,
     new_session_id,
     read_session_context,
     read_session_conversational_planning_active,
@@ -83,7 +88,6 @@ from ..vera.service import (
     read_session_updated_at_ms,
     read_session_weather_context,
     register_session_linked_job,
-    run_web_enrichment,
     session_debug_info,
     update_session_context,
     write_session_conversational_planning_active,

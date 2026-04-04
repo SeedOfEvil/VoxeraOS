@@ -53,10 +53,9 @@ from ..vera.evidence_review import (
     review_job_outcome,
     review_message,
 )
-from ..vera.handoff import (
+from ..vera.investigation_derivations import (
     derive_investigation_comparison,
     derive_investigation_summary,
-    diagnostics_request_refusal,
     draft_investigation_derived_save_preview,
     draft_investigation_save_preview,
     is_investigation_compare_request,
@@ -65,13 +64,16 @@ from ..vera.handoff import (
     is_investigation_summary_request,
     select_investigation_results,
 )
+from ..vera.preview_drafting import (
+    diagnostics_request_refusal,
+)
 from ..vera.preview_submission import is_near_miss_submit_phrase
 from ..vera.reference_resolver import (
     ReferenceClass,
     classify_reference,
     resolve_job_id_from_context,
 )
-from ..vera.service import read_session_handoff_state
+from ..vera.session_store import read_session_handoff_state
 
 
 @dataclass

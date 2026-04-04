@@ -15,7 +15,6 @@ from ..core.queue_inspect import lookup_job
 from ..core.queue_result_consumers import resolve_structured_execution
 from . import session_store as vera_session_store
 from .brave_search import BraveSearchClient
-from .handoff import drafting_guidance, maybe_draft_job_payload, normalize_preview_payload
 from .investigation_flow import (
     build_structured_investigation_results,
     format_web_investigation_answer,
@@ -26,6 +25,8 @@ from .investigation_flow import (
 from .investigation_flow import (
     run_web_enrichment as _run_web_enrichment,
 )
+from .preview_drafting import drafting_guidance, maybe_draft_job_payload
+from .preview_submission import normalize_preview_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 from .result_surfacing import extract_value_forward_text
 from .saveable_artifacts import collect_recent_saveable_assistant_artifacts
@@ -43,15 +44,16 @@ from .weather_flow import (
     weather_followup_is_active,
 )
 
+# ---------------------------------------------------------------------------
+# Backward-compatibility re-exports from session_store
+#
+# Production callers now import session helpers directly from
+# vera.session_store.  These aliases remain so that existing tests which
+# call ``vera_service.<name>(...)`` keep working.  A follow-up PR should
+# migrate test call sites and remove this block.
+# ---------------------------------------------------------------------------
 MAX_SESSION_TURNS = vera_session_store.MAX_SESSION_TURNS
-_MAX_LINKED_JOB_TRACK = vera_session_store._MAX_LINKED_JOB_TRACK
-_MAX_LINKED_COMPLETIONS = vera_session_store._MAX_LINKED_COMPLETIONS
-_MAX_LINKED_NOTIFICATIONS = vera_session_store._MAX_LINKED_NOTIFICATIONS
-
 new_session_id = vera_session_store.new_session_id
-_session_path = vera_session_store._session_path
-_read_session_payload = vera_session_store._read_session_payload
-_write_session_payload = vera_session_store._write_session_payload
 read_session_turns = vera_session_store.read_session_turns
 read_session_updated_at_ms = vera_session_store.read_session_updated_at_ms
 append_session_turn = vera_session_store.append_session_turn
@@ -75,12 +77,7 @@ write_session_derived_investigation_output = (
 read_session_saveable_assistant_artifacts = (
     vera_session_store.read_session_saveable_assistant_artifacts
 )
-_write_session_saveable_assistant_artifacts = (
-    vera_session_store._write_session_saveable_assistant_artifacts
-)
 session_debug_info = vera_session_store.session_debug_info
-_read_linked_job_registry = vera_session_store._read_linked_job_registry
-_write_linked_job_registry = vera_session_store._write_linked_job_registry
 register_session_linked_job = vera_session_store.register_session_linked_job
 read_linked_job_completions = vera_session_store.read_linked_job_completions
 read_session_conversational_planning_active = (
@@ -91,9 +88,7 @@ write_session_conversational_planning_active = (
 )
 read_session_last_user_input_origin = vera_session_store.read_session_last_user_input_origin
 read_session_context = vera_session_store.read_session_context
-write_session_context = vera_session_store.write_session_context
 update_session_context = vera_session_store.update_session_context
-clear_session_context = vera_session_store.clear_session_context
 
 
 def _read_json_dict(path: Path | None) -> dict[str, Any]:
@@ -283,7 +278,7 @@ def _upsert_completion_notification(
                 existing["delivery_status"] = "delivered"
         else:
             existing["fallback_pending"] = True
-    registry["notification_outbox"] = outbox[-_MAX_LINKED_NOTIFICATIONS:]
+    registry["notification_outbox"] = outbox[-vera_session_store._MAX_LINKED_NOTIFICATIONS :]
     return existing
 
 
@@ -298,14 +293,16 @@ def _attempt_live_delivery(
         notification["delivery_status"] = "pending"
         notification["fallback_pending"] = True
         return False
-    if not _session_path(queue_root, session_id).exists():
+    if not vera_session_store._session_path(queue_root, session_id).exists():
         notification["delivery_status"] = "unavailable"
         notification["fallback_pending"] = True
         return False
 
     message = _format_completion_autosurface_message(completion)
     try:
-        append_session_turn(queue_root, session_id, role="assistant", text=message)
+        vera_session_store.append_session_turn(
+            queue_root, session_id, role="assistant", text=message
+        )
     except Exception:
         notification["delivery_status"] = "unavailable"
         notification["fallback_pending"] = True
@@ -544,7 +541,7 @@ def ingest_linked_job_completions(
     *,
     only_job_ref: str | None = None,
 ) -> list[dict[str, Any]]:
-    registry = _read_linked_job_registry(queue_root, session_id)
+    registry = vera_session_store._read_linked_job_registry(queue_root, session_id)
     tracked_raw = registry.get("tracked")
     tracked = tracked_raw if isinstance(tracked_raw, list) else []
     completions_raw = registry.get("completions")
@@ -611,9 +608,9 @@ def ingest_linked_job_completions(
         changed = True
 
     if changed:
-        registry["tracked"] = tracked[-_MAX_LINKED_JOB_TRACK:]
-        registry["completions"] = completions[-_MAX_LINKED_COMPLETIONS:]
-        _write_linked_job_registry(queue_root, session_id, registry)
+        registry["tracked"] = tracked[-vera_session_store._MAX_LINKED_JOB_TRACK :]
+        registry["completions"] = completions[-vera_session_store._MAX_LINKED_COMPLETIONS :]
+        vera_session_store._write_linked_job_registry(queue_root, session_id, registry)
 
     return created
 
@@ -697,12 +694,12 @@ def _is_true_terminal_completion(completion: dict[str, Any]) -> bool:
 
 
 def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> str | None:
-    registry = _read_linked_job_registry(queue_root, session_id)
+    registry = vera_session_store._read_linked_job_registry(queue_root, session_id)
     completions_raw = registry.get("completions")
     completions = completions_raw if isinstance(completions_raw, list) else []
     tracked_raw = registry.get("tracked")
     tracked = tracked_raw if isinstance(tracked_raw, list) else []
-    handoff = read_session_handoff_state(queue_root, session_id) or {}
+    handoff = vera_session_store.read_session_handoff_state(queue_root, session_id) or {}
     latest_handoff_ref = ""
     handoff_job_id = str(handoff.get("job_id") or "").strip()
     if handoff_job_id:
@@ -764,9 +761,9 @@ def maybe_auto_surface_linked_completion(queue_root: Path, session_id: str) -> s
         notification["fallback_pending"] = False
         notification["surfaced_in_chat"] = True
         notification["surfaced_at_ms"] = completion["surfaced_at_ms"]
-        registry["completions"] = completions[-_MAX_LINKED_COMPLETIONS:]
-        registry["notification_outbox"] = outbox[-_MAX_LINKED_NOTIFICATIONS:]
-        _write_linked_job_registry(queue_root, session_id, registry)
+        registry["completions"] = completions[-vera_session_store._MAX_LINKED_COMPLETIONS :]
+        registry["notification_outbox"] = outbox[-vera_session_store._MAX_LINKED_NOTIFICATIONS :]
+        vera_session_store._write_linked_job_registry(queue_root, session_id, registry)
         return _format_completion_autosurface_message(completion)
 
     return None
@@ -776,7 +773,7 @@ def maybe_deliver_linked_completion_live(
     queue_root: Path, session_id: str, *, job_ref: str
 ) -> bool:
     ingest_linked_job_completions(queue_root, session_id, only_job_ref=job_ref)
-    registry = _read_linked_job_registry(queue_root, session_id)
+    registry = vera_session_store._read_linked_job_registry(queue_root, session_id)
     completions_raw = registry.get("completions")
     completions = completions_raw if isinstance(completions_raw, list) else []
     changed = False
@@ -802,11 +799,11 @@ def maybe_deliver_linked_completion_live(
         else:
             changed = True
     if changed:
-        registry["completions"] = completions[-_MAX_LINKED_COMPLETIONS:]
+        registry["completions"] = completions[-vera_session_store._MAX_LINKED_COMPLETIONS :]
         outbox_raw = registry.get("notification_outbox")
         outbox = outbox_raw if isinstance(outbox_raw, list) else []
-        registry["notification_outbox"] = outbox[-_MAX_LINKED_NOTIFICATIONS:]
-        _write_linked_job_registry(queue_root, session_id, registry)
+        registry["notification_outbox"] = outbox[-vera_session_store._MAX_LINKED_NOTIFICATIONS :]
+        vera_session_store._write_linked_job_registry(queue_root, session_id, registry)
     return delivered
 
 
@@ -822,7 +819,7 @@ def maybe_deliver_linked_completion_live_for_job(queue_root: Path, *, job_ref: s
         session_id = session_file.stem.strip()
         if not session_id:
             continue
-        registry = _read_linked_job_registry(queue_root, session_id)
+        registry = vera_session_store._read_linked_job_registry(queue_root, session_id)
         tracked = registry.get("tracked")
         tracked_list = tracked if isinstance(tracked, list) else []
         if not any(
@@ -864,7 +861,7 @@ def build_vera_messages(
     if code_draft and writing_draft:
         raise ValueError("code_draft and writing_draft are mutually exclusive")
     messages: list[dict[str, str]] = [{"role": "system", "content": VERA_SYSTEM_PROMPT}]
-    for turn in turns[-MAX_SESSION_TURNS:]:
+    for turn in turns[-vera_session_store.MAX_SESSION_TURNS :]:
         messages.append({"role": turn["role"], "content": turn["text"]})
     content = user_message.strip()
     if code_draft:
@@ -887,7 +884,7 @@ def _recent_assistant_authored_content(turns: list[dict[str, str]]) -> list[str]
         "queue state",
     )
     authored: list[str] = []
-    for turn in turns[-MAX_SESSION_TURNS:]:
+    for turn in turns[-vera_session_store.MAX_SESSION_TURNS :]:
         if str(turn.get("role") or "").strip().lower() != "assistant":
             continue
         text = str(turn.get("text") or "").strip()
@@ -942,7 +939,7 @@ def _build_preview_builder_messages(
     context_payload: dict[str, Any] = {
         "active_preview": active_preview,
         "latest_user_message": user_message.strip(),
-        "recent_turns": turns[-MAX_SESSION_TURNS:],
+        "recent_turns": turns[-vera_session_store.MAX_SESSION_TURNS :],
         "recent_assistant_authored_content": _recent_assistant_authored_content(turns),
         "decision_contract": {
             "action": ["replace_preview", "patch_preview", "no_change"],
@@ -1046,12 +1043,12 @@ async def generate_preview_builder_update(
 
     recent_user_messages = [
         str(turn.get("text") or "")
-        for turn in turns[-MAX_SESSION_TURNS:]
+        for turn in turns[-vera_session_store.MAX_SESSION_TURNS :]
         if str(turn.get("role") or "").strip().lower() == "user"
     ]
     recent_assistant_messages = [
         str(turn.get("text") or "")
-        for turn in turns[-MAX_SESSION_TURNS:]
+        for turn in turns[-vera_session_store.MAX_SESSION_TURNS :]
         if str(turn.get("role") or "").strip().lower() == "assistant"
     ]
 

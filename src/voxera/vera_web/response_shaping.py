@@ -19,7 +19,7 @@ from ..vera.draft_revision import (
     _is_ambiguous_change_request,
     looks_like_preview_rename_or_save_as_request,
 )
-from ..vera.handoff import is_recent_assistant_content_save_request
+from ..vera.preview_drafting import is_recent_assistant_content_save_request
 from .conversational_checklist import (
     conversational_preview_update_message as _cc_conversational_preview_update_message,
 )

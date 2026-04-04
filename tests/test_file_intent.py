@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 
 from voxera.core.file_intent import classify_bounded_file_intent, detect_blocked_file_intent
-from voxera.vera.handoff import maybe_draft_job_payload, normalize_preview_payload
+from voxera.vera.preview_drafting import maybe_draft_job_payload
+from voxera.vera.preview_submission import normalize_preview_payload
 from voxera.vera.saveable_artifacts import (
     build_saveable_assistant_artifact,
     message_requests_referenced_content,

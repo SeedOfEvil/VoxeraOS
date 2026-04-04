@@ -61,8 +61,8 @@ Any extraction PR following this roadmap must preserve these invariants:
    - Enforces artifact rendering and strips queue/preview language where inappropriate.
 
 5. **Vera service orchestration bridge**
-   - Calls into `vera.service`, `vera.preview_submission`, `vera.draft_revision`,
-     `vera.evidence_review`, `vera.handoff`, and related session helpers.
+   - Calls into `vera.service`, `vera.session_store`, `vera.preview_submission`, `vera.preview_drafting`,
+     `vera.investigation_derivations`, `vera.draft_revision`, `vera.evidence_review`, and related helpers.
    - Also manages linked completion surfacing and session state writes.
 
 6. **Voice-foundation input gating**
@@ -87,7 +87,6 @@ Any extraction PR following this roadmap must preserve these invariants:
 - `src/voxera/vera/draft_revision.py`
 - `src/voxera/vera/preview_submission.py`
 - `src/voxera/vera/evidence_review.py`
-- `src/voxera/vera/handoff.py`
 - `src/voxera/vera/service.py`
 
 ### Safest early extraction candidates

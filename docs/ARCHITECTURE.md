@@ -106,7 +106,7 @@ VoxeraOS/
 │   │   │   ├── capabilities_snapshot.py  — runtime skill/mission catalog + validation
 │   │   │   └── planner_context.py   — LLM prompt preamble assembly
 │   │   ├── vera/
-│   │   │   ├── service.py           — top-level Vera orchestration + compatibility delegation
+│   │   │   ├── service.py           — top-level Vera orchestration (LLM reply, preview builder, linked completion delivery)
 │   │   │   ├── session_store.py     — session turns/preview/handoff/shared-context persistence
 │   │   │   ├── preview_drafting.py  — deterministic preview drafting + save-by-reference previews
 │   │   │   ├── draft_revision.py    — active preview rename/path/content refinement + active-draft content refresh parsing
@@ -118,7 +118,7 @@ VoxeraOS/
 │   │   │   ├── reference_resolver.py — bounded session-scoped reference resolution
 │   │   │   ├── result_surfacing.py  — evidence-grounded value-forward result extraction
 │   │   │   ├── evidence_review.py   — queue evidence review / review-message shaping
-│   │   │   ├── handoff.py           — thin compatibility façade for extracted handoff seams
+│   │   │   ├── handoff.py           — deprecated, empty placeholder (callers now import from source modules)
 │   │   │   └── weather.py           — weather provider client + snapshot types
 │   │   ├── vera_web/
 │   │   │   ├── app.py               — FastAPI Vera web service (port 8790); session
@@ -217,8 +217,8 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8`/`v0.
 
 ### Vera control layer
 
-- `vera/service.py` remains the **conversation orchestration root**: it builds model messages, coordinates session state, routes into the extracted weather/investigation lanes, and manages linked-job completion delivery.
-- `vera/handoff.py` is now a **compatibility façade**, not the preferred place to grow new logic.
+- `vera/service.py` remains the **conversation orchestration root**: it builds model messages, routes into the extracted weather/investigation lanes, and manages linked-job completion delivery.  Session state helpers live in `vera/session_store.py`; new production code imports from `session_store` directly.
+- `vera/handoff.py` is **deprecated and empty** — callers now import directly from `preview_drafting.py`, `preview_submission.py`, and `investigation_derivations.py`.
 - Conversational checklist/planning mode is a **chat artifact lane**: `vera_web/conversational_checklist.py` owns deterministic checklist sanitization/rendering helpers, while `vera_web/app.py` keeps classification and route-level wiring. In that lane, preview/draft/save/submit/queue wording must not surface unless a real governed preview flow is active.
 - Add or extend behavior in the dedicated modules first:
   - `preview_drafting.py` for deterministic preview generation
@@ -1388,7 +1388,7 @@ interpretation contracts, see `docs/QUEUE_CONSTITUTION.md`.
 
 ## Vera preview drafting boundary notes (PR #154)
 
-- Vera's deterministic preview drafting now lives in `src/voxera/vera/preview_drafting.py`, while `src/voxera/vera/handoff.py` remains an intentionally small compatibility façade for existing handoff-facing imports.
+- Vera's deterministic preview drafting lives in `src/voxera/vera/preview_drafting.py`.  Callers import directly from the source module; `handoff.py` is deprecated.
 - Supported intent families in this layer are intentionally narrow: web navigation URL opens, explicit file reads, and basic note/file write intents.
 - Save-by-reference write intents now include bounded current-session assistant-content resolution for phrases like `that summary`, `your previous answer`, and `the previous response`, routed into the same governed `write_file` preview contract.
 - Precedence rule: when a current investigation-derived comparison/summary/expanded-result exists in session, follow-up `save that` / `save it` routes to the derived investigation save path first; generic recent-assistant-content save resolution is fallback-only.
