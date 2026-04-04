@@ -57,3 +57,49 @@ def test_write_text_rejects_relative_traversal(tmp_path, monkeypatch):
 
     assert rr.ok is False
     assert rr.data[SKILL_RESULT_KEY]["error_class"] == "path_out_of_bounds"
+
+
+# ---------------------------------------------------------------------------
+# Regression: machine_payload must include bounded content for output review
+# ---------------------------------------------------------------------------
+
+
+def test_write_text_result_includes_content_in_machine_payload(tmp_path, monkeypatch):
+    """Regression: 'What was the output?' for a file-writing job must surface
+    the actual written content. The skill must include bounded content in
+    machine_payload so result_surfacing can extract it."""
+    allowed_root = tmp_path / "notes"
+    monkeypatch.setattr(files_write_text, "ALLOWED_ROOT", allowed_root)
+
+    joke = "Why did the queue cross the road? To get to done."
+    rr = files_write_text.run(
+        path=str(allowed_root / "test-output-note.txt"),
+        text=joke,
+        mode="overwrite",
+    )
+
+    assert rr.ok is True
+    skill_result = rr.data[SKILL_RESULT_KEY]
+    payload = skill_result["machine_payload"]
+    assert payload["content"] == joke
+    assert payload["bytes"] == len(joke.encode("utf-8"))
+    assert payload["content_truncated"] is False
+
+
+def test_write_text_result_truncates_large_content(tmp_path, monkeypatch):
+    """Large writes must include a bounded excerpt, not the full text."""
+    allowed_root = tmp_path / "notes"
+    monkeypatch.setattr(files_write_text, "ALLOWED_ROOT", allowed_root)
+
+    large_text = "x" * 5000
+    rr = files_write_text.run(
+        path=str(allowed_root / "big.txt"),
+        text=large_text,
+        mode="overwrite",
+    )
+
+    assert rr.ok is True
+    payload = rr.data[SKILL_RESULT_KEY]["machine_payload"]
+    assert payload["content_truncated"] is True
+    assert len(payload["content"]) == 2048
+    assert payload["content"] == large_text[:2048]

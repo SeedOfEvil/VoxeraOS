@@ -6244,6 +6244,61 @@ def test_job_review_query_fails_closed_without_job_context(tmp_path, monkeypatch
     assert "could not resolve a VoxeraOS job" in res.text
 
 
+def test_what_was_the_output_surfaces_actual_written_content(tmp_path, monkeypatch):
+    """End-to-end regression: 'What was the output?' for a completed file-write
+    job returns the actual written content, not just operator metadata.
+
+    Live repro: user saves a joke to a note, job completes, 'What was the output?'
+    must show the real joke text from canonical evidence."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+
+    joke = "Why did the queue cross the road? To get to done."
+    job_id = "job-joke-output.json"
+    _write_job_artifacts(
+        queue,
+        job_id,
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "approval_status": "none",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "status": "succeeded",
+                    "skill_id": "files.write_text",
+                    "summary": "Wrote text to ~/VoxeraOS/notes/note-joke.txt",
+                    "machine_payload": {
+                        "path": "~/VoxeraOS/notes/note-joke.txt",
+                        "bytes": len(joke),
+                        "content": joke,
+                    },
+                }
+            ],
+        },
+    )
+    vera_service.write_session_handoff_state(
+        queue,
+        "sid-output",
+        attempted=True,
+        queue_path=str(queue),
+        status="submitted",
+        job_id=job_id,
+    )
+    client = TestClient(vera_app_module.app)
+    client.cookies.set("vera_session_id", "sid-output")
+    res = client.post("/chat", data={"session_id": "sid-output", "message": "What was the output?"})
+
+    assert res.status_code == 200
+    # Must contain the actual written joke text
+    assert joke in res.text
+    # Must NOT contain an alternate/hallucinated joke
+    assert "invisible man" not in res.text
+    # Must identify the file path
+    assert "note-joke.txt" in res.text
+
+
 def test_diagnostics_system_mission_completion_surfaces_useful_values(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)

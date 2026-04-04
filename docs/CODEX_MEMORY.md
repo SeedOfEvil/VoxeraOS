@@ -2793,20 +2793,24 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 - Root causes:
   - "containing exactly:" was not recognized as a content-extraction marker in `_normalize_structured_file_write_payload` or as an explicit content literal signal in `_message_has_explicit_content_literal`. This caused `write_file.content` to be empty for requests like "Create a file called X containing exactly: Y".
   - PR #284's linked-job continuation gating overcorrected: review/followup hint phrases without resolvable job context fell through to normal LLM flow instead of failing closed honestly. This broke 18 tests in `test_linked_job_review_continuation.py` and violated the product contract for structured fail-closed behavior.
+  - The `files.write_text` skill did not include written content in `machine_payload`, unlike `files.read_text` which correctly includes a bounded content excerpt. This meant `_extract_file_write` in `result_surfacing.py` could never surface the actual written text — "What was the output?" returned only operator metadata for file-writing jobs. Additionally, the skill used `bytes_written` but the extractor expected `bytes`.
 - Fixes:
   - Added `r"\bcontaining\s+exactly\s*:\s*(.+)$"` to content extraction markers in `preview_drafting.py`.
   - Added `containing\s+exactly\s*:` to `_message_has_explicit_content_literal` in `execution_mode.py`.
   - Restored review/followup dispatch to always enter the branch and fail closed honestly when no job target is resolvable, instead of falling through silently.
   - Added `_looks_like_authored_drafting_request()` anti-hijack guard in `chat_early_exit_dispatch.py` so drafting prompts with incidental review/followup hint substrings (e.g. "Write me a note about what happened at the meeting") are not hijacked.
+  - Added bounded `content` excerpt, `content_truncated` flag, and `bytes` key (matching `_extract_file_write` contract) to `files_write_text.py` `machine_payload`, mirroring the existing pattern in `files_read_text.py`.
 - Files changed:
   - `src/voxera/vera/preview_drafting.py` — added "containing exactly:" extraction marker
   - `src/voxera/vera_web/execution_mode.py` — added "containing exactly:" to explicit content literal detection
   - `src/voxera/vera_web/chat_early_exit_dispatch.py` — restored fail-closed dispatch, added anti-hijack guard
+  - `src/voxera_builtin_skills/files_write_text.py` — added bounded content to machine_payload, fixed key name
   - `tests/test_draft_content_binding.py` — added 3 regression tests for explicit literal content
   - `tests/test_chat_early_exit_dispatch.py` — updated fall-through assertions to fail-closed
   - `tests/test_vera_chat_reliability.py` — updated fall-through assertions to fail-closed
   - `tests/test_vera_live_path_characterization.py` — updated fall-through assertions to fail-closed
-  - `tests/test_vera_web.py` — updated fall-through assertions to fail-closed
+  - `tests/test_vera_web.py` — updated fall-through assertions to fail-closed, added file-write output review e2e test
+  - `tests/test_files_write_text.py` — added 2 regression tests for content in machine_payload
 - Validation:
   - `ruff format --check .`
   - `ruff check .`
