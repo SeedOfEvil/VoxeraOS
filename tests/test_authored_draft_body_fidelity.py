@@ -491,3 +491,77 @@ class TestFiveSectionZeroSpaceExtraction:
         assert "drafted a short" not in result
         assert "prepared a preview" not in result
         assert "preview-only" not in result
+
+
+# ---------------------------------------------------------------------------
+# Regression: wrapper+body extraction for meeting-note live repro
+# ---------------------------------------------------------------------------
+
+
+class TestWrapperBodyExtraction:
+    """Regression: "Write me a short note about what happened at the meeting."
+    must bind only the drafted body into the preview, not the wrapper line.
+
+    Root cause: _extract_prose_body split only on double-newlines, so
+    single-newline and inline wrapper:body formats passed the wrapper
+    into the preview content.
+    """
+
+    def test_single_newline_wrapper_stripped(self) -> None:
+        reply = (
+            "Here is a short note summarizing the meeting:\n"
+            "The team met on April 4th to discuss Q2. They agreed on revised timelines."
+        )
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+        assert "Q2" in result
+        assert "summarizing the meeting" not in result
+
+    def test_inline_colon_wrapper_stripped(self) -> None:
+        reply = (
+            "Here is a short note summarizing the meeting: "
+            "The team met on April 4th to discuss Q2 milestones and agreed on the revised timeline."
+        )
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+        assert "Q2" in result
+        assert "summarizing the meeting" not in result
+
+    def test_double_newline_wrapper_stripped(self) -> None:
+        reply = (
+            "Here is a short note summarizing the meeting:\n\n"
+            "The team met on April 4th to discuss Q2. They agreed on revised timelines."
+        )
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+        assert "Q2" in result
+        assert "summarizing the meeting" not in result
+
+    def test_wrapper_only_returns_none(self) -> None:
+        result = extract_text_draft_from_reply("Here is a short note summarizing the meeting:")
+        assert result is None
+
+    def test_no_wrapper_body_survives(self) -> None:
+        reply = (
+            "The team met on April 4th to discuss Q2 milestones and agreed on the revised timeline."
+        )
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+        assert "Q2" in result
+
+    def test_here_is_note_variant_stripped(self) -> None:
+        reply = "Here's the note:\nThe team discussed Q2 goals and agreed on revised timelines."
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+        assert "Q2" in result
+        assert "Here's the note" not in result
+
+    def test_here_is_summary_variant_stripped(self) -> None:
+        reply = (
+            "Here is a brief summary of the meeting:\n"
+            "The team discussed Q2 goals and everyone agreed on the new timeline."
+        )
+        result = extract_text_draft_from_reply(reply)
+        assert result is not None
+        assert "Q2" in result
+        assert "summary of the meeting" not in result
