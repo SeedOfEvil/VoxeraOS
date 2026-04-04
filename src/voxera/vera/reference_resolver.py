@@ -110,6 +110,9 @@ _JOB_RESULT_PHRASES: tuple[str, ...] = (
     "that outcome",
     "the outcome",
     "the last result",
+    "that output",
+    "the output",
+    "the last output",
 )
 
 _CONTINUATION_PHRASES: tuple[str, ...] = (

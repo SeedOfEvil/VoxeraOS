@@ -31,12 +31,16 @@ _REVIEW_HINTS = (
     "inspect output",
     "inspect output details",
     "inspect the output",
+    "inspect the output details",
     "review the result",
     "review that result",
     "show me the result",
     "show the result",
+    "show me the output",
+    "show the output",
     "what was the outcome",
     "what was the result",
+    "what was the output",
 )
 _FOLLOWUP_HINTS = (
     "prepare the next step",
@@ -69,6 +73,9 @@ _FOLLOWUP_HINTS = (
     "okay now do the follow-up",
     "what should we do next based on that",
     "what's the next step based on that",
+    "what should we do next",
+    "what's the next step",
+    "what next based on that",
     # Revise-from-evidence phrases
     "revise that based on the result",
     "revise based on the result",
@@ -77,6 +84,10 @@ _FOLLOWUP_HINTS = (
     "revise based on evidence",
     "update that based on the result",
     "update based on the result",
+    "update that based on the output",
+    "update based on the output",
+    "revise that based on the output",
+    "revise based on the output",
     # Save follow-up phrases
     "save the follow-up",
     "save that follow-up",
@@ -91,6 +102,10 @@ _REVISE_FROM_EVIDENCE_HINTS = (
     "revise based on evidence",
     "update that based on the result",
     "update based on the result",
+    "update that based on the output",
+    "update based on the output",
+    "revise that based on the output",
+    "revise based on the output",
 )
 
 _SAVE_FOLLOWUP_HINTS = (
