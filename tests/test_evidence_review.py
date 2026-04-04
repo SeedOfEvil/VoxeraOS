@@ -610,7 +610,8 @@ def test_review_message_surfaces_diagnostics_snapshot(tmp_path: Path):
     assert "memory=8.0/32.0GiB" in evidence.value_forward_text
 
 
-def test_review_message_no_value_forward_for_thin_status(tmp_path: Path):
+def test_review_message_surfaces_write_path_for_file_write(tmp_path: Path):
+    """files.write_text with path metadata surfaces the path in value_forward_text."""
     queue = tmp_path / "queue"
     _write_job(
         queue,
@@ -632,6 +633,36 @@ def test_review_message_no_value_forward_for_thin_status(tmp_path: Path):
     )
 
     evidence = review_job_outcome(queue_root=queue, requested_job_id="job-write.json")
+    assert evidence is not None
+    assert "x.txt" in evidence.value_forward_text
+    message = review_message(evidence)
+    assert "- Result:" in message
+    assert "x.txt" in message
+
+
+def test_review_message_no_value_forward_for_thin_status(tmp_path: Path):
+    """Unknown skills with no extractor still produce empty value_forward_text."""
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-unknown.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "custom.unknown_skill",
+                    "status": "succeeded",
+                    "summary": "Did something",
+                    "machine_payload": {"key": "value"},
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-unknown.json")
     assert evidence is not None
     assert evidence.value_forward_text == ""
     message = review_message(evidence)

@@ -134,8 +134,8 @@ class TestFollowupPhrasingExpanded:
             f"Expected is_followup_preview_request to be False for: {phrase!r}"
         )
 
-    def test_expanded_followup_hints_reach_dispatch_branch(self, tmp_path: Path) -> None:
-        """New follow-up hints must actually reach the followup branch in dispatch."""
+    def test_expanded_followup_hints_fall_through_without_job_context(self, tmp_path: Path) -> None:
+        """Follow-up hints without job context must NOT enter the followup branch."""
         phrases = [
             "now prepare the follow-up",
             "queue the next step",
@@ -153,9 +153,8 @@ class TestFollowupPhrasingExpanded:
                 queue_root=tmp_path,
                 session_id="test-session",
             )
-            assert result.matched is True, f"Phrase {phrase!r} did not match any early-exit"
-            assert result.status == "followup_missing_evidence", (
-                f"Phrase {phrase!r} got status={result.status!r} instead of followup_missing_evidence"
+            assert result.status != "followup_missing_evidence", (
+                f"Phrase {phrase!r} should fall through without job context"
             )
 
     def test_expanded_followup_with_evidence_returns_preview_ready(self, tmp_path: Path) -> None:
@@ -193,6 +192,7 @@ class TestFollowupPhrasingExpanded:
                 session_derived_output=None,
                 queue_root=tmp_path,
                 session_id="test-session",
+                session_context={"last_completed_job_ref": "job-20260401-expanded"},
             )
         assert result.matched is True
         assert result.status == "followup_preview_ready"
@@ -779,6 +779,10 @@ class TestLinkedJobReviewPhraseRecognition:
             "what was the outcome",
             "what was the result",
             "summarize the job result",
+            "what was the output",
+            "what did it output",
+            "show me the output",
+            "show the output",
         ],
     )
     def test_review_inspection_phrases_recognized(self, phrase: str) -> None:
@@ -845,8 +849,8 @@ class TestLinkedJobReviseFromEvidence:
             f"Expected is_followup_preview_request to be False for: {phrase!r}"
         )
 
-    def test_revision_phrases_reach_dispatch_followup_branch(self, tmp_path: Path) -> None:
-        """Revise-from-evidence phrases must reach the followup branch in dispatch."""
+    def test_revision_phrases_fall_through_without_job_context(self, tmp_path: Path) -> None:
+        """Revise-from-evidence phrases without job context fall through."""
         phrases = [
             "revise that based on the result",
             "update that based on the result",
@@ -863,9 +867,8 @@ class TestLinkedJobReviseFromEvidence:
                 queue_root=tmp_path,
                 session_id="test-session",
             )
-            assert result.matched is True, f"Phrase {phrase!r} did not match any early-exit"
-            assert result.status == "followup_missing_evidence", (
-                f"Phrase {phrase!r} got status={result.status!r} instead of followup_missing_evidence"
+            assert result.status != "followup_missing_evidence", (
+                f"Phrase {phrase!r} should fall through without job context"
             )
 
     def test_revision_with_evidence_returns_preview_ready(self, tmp_path: Path) -> None:
@@ -903,6 +906,7 @@ class TestLinkedJobReviseFromEvidence:
                 session_derived_output=None,
                 queue_root=tmp_path,
                 session_id="test-session",
+                session_context={"last_completed_job_ref": "job-20260402-revise"},
             )
         assert result.matched is True
         assert result.status == "revised_preview_ready"

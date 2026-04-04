@@ -165,16 +165,14 @@ class TestDiagnosticsRefusal:
 
 
 class TestJobReview:
-    def test_review_request_without_job_returns_review_missing_job(self, tmp_path: Path) -> None:
-        # No session handoff state, no job ID → can't resolve
+    def test_review_request_without_job_context_falls_through(self, tmp_path: Path) -> None:
+        # No session handoff state, no job ID, no session context → falls through
+        # to normal flow instead of blocking with review_missing_job.
         result = _dispatch(
             message="what happened to the last job",
             queue_root=tmp_path,
         )
-        assert result.matched is True
-        assert result.status == "review_missing_job"
-        assert "could not resolve" in result.assistant_text.lower()
-        assert result.write_preview is False
+        assert result.matched is False
 
     def test_explicit_job_id_returns_review_missing_when_no_artifacts(self, tmp_path: Path) -> None:
         result = _dispatch(
@@ -231,6 +229,7 @@ class TestJobReview:
             result = _dispatch(
                 message="what happened to the last job",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260101-abc123"},
             )
         assert result.matched is True
         assert result.status == "reviewed_job_outcome"
@@ -244,16 +243,13 @@ class TestJobReview:
 
 
 class TestFollowupPreview:
-    def test_followup_without_evidence_returns_followup_missing(self, tmp_path: Path) -> None:
+    def test_followup_without_job_context_falls_through(self, tmp_path: Path) -> None:
+        # No job context → falls through to normal flow (not blocked).
         result = _dispatch(
             message="prepare the next step",
             queue_root=tmp_path,
         )
-        assert result.matched is True
-        assert result.status == "followup_missing_evidence"
-        assert "follow-up preview" in result.assistant_text.lower()
-        assert result.write_preview is False
-        assert result.write_handoff_ready is False
+        assert result.matched is False
 
     def test_followup_with_evidence_returns_preview_ready(self, tmp_path: Path) -> None:
         from voxera.vera.evidence_review import ReviewedJobEvidence
@@ -286,6 +282,7 @@ class TestFollowupPreview:
             result = _dispatch(
                 message="prepare the next step",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260101-abcdef"},
             )
         assert result.matched is True
         assert result.status == "followup_preview_ready"
@@ -332,6 +329,7 @@ class TestFollowupPreview:
             result = _dispatch(
                 message="Draft a follow-up based on that job's result.",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260101-regression"},
             )
         assert result.matched is True
         assert result.status == "followup_preview_ready", (
@@ -361,19 +359,16 @@ class TestFollowupPreview:
             "based on the result, prepare the next step",
         ],
     )
-    def test_followup_hint_variants_reach_followup_branch(
+    def test_followup_hint_variants_do_not_enter_followup_without_job_context(
         self, tmp_path: Path, phrase: str
     ) -> None:
-        """New _FOLLOWUP_HINTS variants must route to the followup branch.
-
-        Evidence is None (tmp_path has no artifacts), so the branch returns
-        ``followup_missing_evidence`` — but the key assertion is that the
-        followup branch WAS reached (not ``matched=False`` or a different status).
-        """
+        """Followup hint variants without job context must NOT enter the
+        followup branch.  They may match a later dispatch step — that is
+        correct; the key invariant is no followup_missing_evidence block."""
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.matched is True
-        assert result.status == "followup_missing_evidence", (
-            f"Phrase {phrase!r} did not reach the followup branch. Got status={result.status!r}"
+        assert result.status != "followup_missing_evidence", (
+            f"Phrase {phrase!r} should not enter followup branch without job context. "
+            f"Got status={result.status!r}"
         )
 
 
@@ -675,6 +670,55 @@ class TestNoMatchFallthrough:
 
 
 # ---------------------------------------------------------------------------
+# 10a. Regression: file-creation prompts must not trigger review
+# ---------------------------------------------------------------------------
+
+
+class TestFileCreationNotHijacked:
+    """Regression for PR #283 live bug: authored file-creation prompts must not
+    be intercepted by the review/followup dispatch."""
+
+    def test_create_file_with_why_did_in_content(self, tmp_path: Path) -> None:
+        """Exact live repro: 'Create a file called test-output-note.txt
+        containing exactly: Why did the queue cross the road? To get to done.'
+        was hijacked by the 'why did' review hint."""
+        result = _dispatch(
+            message=(
+                "Create a file called test-output-note.txt containing exactly: "
+                "Why did the queue cross the road? To get to done."
+            ),
+            queue_root=tmp_path,
+        )
+        assert result.matched is False, (
+            f"File-creation prompt should not trigger review/followup. "
+            f"Got matched=True, status={result.status!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Write a note about why did the project succeed",
+            "Draft a memo about the current status of our team",
+            "Write me a short note about what happened at the meeting",
+            "Create a note about the last job interview",
+            "Write about what stuck with me from the conference",
+            "Save a note about what should I do next in my career",
+            "Draft a note about did it succeed as a product",
+        ],
+    )
+    def test_drafting_prompts_not_hijacked_without_job_context(
+        self, tmp_path: Path, message: str
+    ) -> None:
+        """Normal authored-drafting prompts must not enter the review/followup
+        branch when no job context exists."""
+        result = _dispatch(message=message, queue_root=tmp_path)
+        assert result.status not in ("review_missing_job", "followup_missing_evidence"), (
+            f"Drafting prompt {message!r} should not enter review/followup branch. "
+            f"Got status={result.status!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 11. Write-flag integrity (fail-closed invariants)
 # ---------------------------------------------------------------------------
 
@@ -717,13 +761,13 @@ class TestWriteFlagIntegrity:
         assert result.write_handoff_ready is False
         assert result.write_derived_output is False
 
-    def test_review_missing_has_no_write_flags(self, tmp_path: Path) -> None:
+    def test_review_without_context_has_no_write_flags(self, tmp_path: Path) -> None:
+        """Review hint without job context falls through — no writes."""
         result = _dispatch(
             message="what happened to the last job",
             queue_root=tmp_path,
         )
-        assert result.matched is True
-        assert result.status == "review_missing_job"
+        assert result.matched is False
         assert result.write_preview is False
         assert result.write_handoff_ready is False
         assert result.write_derived_output is False
@@ -754,13 +798,16 @@ class TestLinkedJobReviewInspection:
             "what was the result",
         ],
     )
-    def test_review_inspection_phrases_reach_review_branch(
+    def test_review_inspection_phrases_do_not_enter_review_without_job_context(
         self, tmp_path: Path, phrase: str
     ) -> None:
+        """Review inspection phrases without job context must NOT enter the
+        review branch.  They may match a later dispatch step (e.g.
+        investigation summary for 'summarize' phrases) — that is correct."""
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.matched is True
-        assert result.status == "review_missing_job", (
-            f"Phrase {phrase!r} did not reach the review branch. Got status={result.status!r}"
+        assert result.status != "review_missing_job", (
+            f"Phrase {phrase!r} should not enter review branch without job context. "
+            f"Got status={result.status!r}"
         )
 
     def test_inspect_output_details_with_evidence_returns_reviewed(self, tmp_path: Path) -> None:
@@ -794,6 +841,7 @@ class TestLinkedJobReviewInspection:
             result = _dispatch(
                 message="inspect output details",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-inspect"},
             )
         assert result.matched is True
         assert result.status == "reviewed_job_outcome"
@@ -832,6 +880,7 @@ class TestLinkedJobReviewInspection:
             result = _dispatch(
                 message="summarize the result",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-summary"},
             )
         assert result.matched is True
         assert result.status == "reviewed_job_outcome"
@@ -861,11 +910,14 @@ class TestLinkedJobFollowupRevision:
             "save the follow-up as a file",
         ],
     )
-    def test_revision_phrases_reach_followup_branch(self, tmp_path: Path, phrase: str) -> None:
+    def test_revision_phrases_fall_through_without_job_context(
+        self, tmp_path: Path, phrase: str
+    ) -> None:
+        """Revise/save phrases without job context must fall through."""
         result = _dispatch(message=phrase, queue_root=tmp_path)
-        assert result.matched is True
-        assert result.status == "followup_missing_evidence", (
-            f"Phrase {phrase!r} did not reach the followup branch. Got status={result.status!r}"
+        assert result.matched is False, (
+            f"Phrase {phrase!r} should fall through without job context. "
+            f"Got matched=True, status={result.status!r}"
         )
 
     def test_revise_based_on_result_with_evidence_returns_revised_preview(
@@ -901,6 +953,7 @@ class TestLinkedJobFollowupRevision:
             result = _dispatch(
                 message="revise that based on the result",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-revise"},
             )
         assert result.matched is True
         assert result.status == "revised_preview_ready"
@@ -947,6 +1000,7 @@ class TestLinkedJobFollowupRevision:
             result = _dispatch(
                 message="save the follow-up",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-save"},
             )
         assert result.matched is True
         assert result.status == "save_followup_preview_ready"
@@ -995,6 +1049,7 @@ class TestLinkedJobFollowupRevision:
             result = _dispatch(
                 message="save the follow-up as a file",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-filsave"},
             )
         assert result.matched is True
         assert result.status == "save_followup_preview_ready"
@@ -1038,6 +1093,7 @@ class TestLinkedJobFollowupRevision:
             result = _dispatch(
                 message="now prepare the follow-up",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-detail"},
             )
         assert result.matched is True
         assert result.status == "followup_preview_ready"
@@ -1078,6 +1134,7 @@ class TestLinkedJobFollowupRevision:
             result = _dispatch(
                 message="what should we do next based on that",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-goal"},
             )
         assert result.matched is True
         assert result.status == "followup_preview_ready"
@@ -1118,6 +1175,7 @@ class TestLinkedJobFollowupRevision:
             result = _dispatch(
                 message="revise that based on the result",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-failrev"},
             )
         assert result.matched is True
         assert result.status == "revised_preview_ready"
@@ -1158,6 +1216,7 @@ class TestLinkedJobFollowupRevision:
             result = _dispatch(
                 message="save that follow-up",
                 queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260401-failsave"},
             )
         assert result.matched is True
         assert result.status == "save_followup_preview_ready"
@@ -1309,8 +1368,8 @@ class TestSessionContextJobResolution:
             queue_root=tmp_path, requested_job_id="inbox-followup-ctx.json"
         )
 
-    def test_review_fails_closed_with_no_context(self, tmp_path: Path) -> None:
-        """No handoff, no session context → review fails closed."""
+    def test_review_falls_through_with_no_context(self, tmp_path: Path) -> None:
+        """No handoff, no session context → falls through to normal flow."""
         with (
             patch(
                 "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
@@ -1326,8 +1385,9 @@ class TestSessionContextJobResolution:
                 queue_root=tmp_path,
                 session_context={},
             )
-        assert result.matched is True
-        assert result.status == "review_missing_job"
+        # With no job context, review branch is not entered.
+        # "summarize the result" may match investigation_summary instead.
+        assert result.status != "review_missing_job"
 
     def test_context_updates_none_by_default(self) -> None:
         """Non-review early exits do not set context_updates."""
@@ -1443,3 +1503,107 @@ class TestStaleDraftReference:
         """Messages without draft phrases should not be blocked."""
         result = _dispatch(message="write me a poem", session_context={})
         assert result.matched is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: "What was the output?" dispatches to review with evidence
+# ---------------------------------------------------------------------------
+
+
+class TestOutputReviewDispatch:
+    """Regression tests for output-review grounding.
+
+    Live repro: user writes a file, asks "What was the output?", Vera
+    replies with hallucinated content instead of the real file contents.
+
+    Root cause: "what was the output" was missing from _REVIEW_HINTS,
+    so the question fell through to the LLM.
+    """
+
+    def test_what_was_the_output_matches_review_with_context(self, tmp_path: Path) -> None:
+        """'What was the output?' should dispatch to review when job context exists."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        real_joke = "Why did the programmer quit his job? Because he didn't get arrays."
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260404-test01",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Wrote note to test-output-note.txt",
+            failure_summary="",
+            artifact_families=("note",),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text=f"Wrote /home/seedofevil/VoxeraOS/notes/test-output-note.txt:\n{real_joke}",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="What was the output?",
+                queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260404-test01"},
+            )
+        assert result.matched is True
+        assert result.status == "reviewed_job_outcome"
+        # The actual written content must appear in the review message
+        assert real_joke in result.assistant_text
+        # A hallucinated alternative must NOT appear
+        assert "invisible man" not in result.assistant_text
+
+    def test_what_was_the_output_falls_through_without_context(self, tmp_path: Path) -> None:
+        """'What was the output?' without job context falls through to normal flow."""
+        result = _dispatch(
+            message="What was the output?",
+            queue_root=tmp_path,
+            session_context={},
+        )
+        assert result.matched is False
+
+    def test_show_me_the_output_matches_review(self, tmp_path: Path) -> None:
+        """'Show me the output' should also dispatch to review."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260404-test02",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Done.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="Wrote file: /notes/output.txt.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="show me the output",
+                queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260404-test02"},
+            )
+        assert result.matched is True
+        assert result.status == "reviewed_job_outcome"

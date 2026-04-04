@@ -1,42 +1,72 @@
-## 2026-04-04 — PR #TBD — feat(vera): use shared session context in linked-job review and evidence-grounded continuation
+## 2026-04-04 — PR #284 hotfix — fix(vera): ground linked-job output review in canonical evidence
 
-- Summary: Makes linked-job review and evidence-grounded continuation workflows feel
-  naturally session-aware by extending natural-language phrase coverage and strengthening
-  session-context-aware resolution for review/follow-up flows.
-- **Changes** (`vera/evidence_review.py`):
-  - Added output-class review hints: "what was the output", "show me the output",
-    "show the output", "inspect the output details".
-  - Added bare next-step followup hints: "what should we do next", "what's the next step",
-    "what next based on that".
-  - Added output-class revise-from-evidence hints: "update that based on the output",
-    "update based on the output", "revise that based on the output", "revise based on the output".
-  - All new hints added to both `_FOLLOWUP_HINTS` and `_REVISE_FROM_EVIDENCE_HINTS` as
-    appropriate to preserve the existing dispatch priority (revise > save > general followup).
-- **Changes** (`vera/reference_resolver.py`):
-  - Added output-class JOB_RESULT phrases: "that output", "the output", "the last output".
-  - These allow session-context-aware reference resolution for "show me the output", etc.
-- **Tests** (`tests/test_linked_job_review_continuation.py`):
-  - 55+ regression tests covering: output-class review phrases, bare next-step followup phrases,
-    output-class revise-from-evidence phrases, output-class reference classification,
-    session-context-aware job resolution, multi-turn review→followup lifecycle continuity,
-    fresh-session fail-closed behavior, preview wording truthfulness, evidence grounding
-    invariants, and adjacent regression anchors.
+- Summary: Hotfix on PR #284 branch. After the session-context gating fix resolved
+  the hijack bug, live testing revealed that completed-job output review still was not
+  truth-grounded — "What was the output?" for a file-writing job fell through to the LLM,
+  which fabricated different content instead of surfacing the actual written file text.
+- **Root cause 1** (`vera/evidence_review.py`):
+  - `_REVIEW_HINTS` was missing output-oriented phrases: `"what was the output"`,
+    `"what did it output"`, `"show me the output"`, `"show the output"`. These phrases
+    did not trigger the evidence-review early-exit path, so they fell through to the
+    LLM which hallucinated an answer unconstrained by queue evidence.
+- **Root cause 2** (`vera/result_surfacing.py`):
+  - The result surfacing layer had extractors for `files.read_text`, `files.exists`,
+    `files.stat`, `files.list_dir`, and various system skills — but NO extractor for
+    `files.write_text`. File-writing jobs therefore produced `value_forward_text=None`,
+    meaning even when review DID fire, the actual written content was absent from the
+    review message, leaving the LLM to fill in prose.
+- **Fix 1** (`vera/evidence_review.py`):
+  - Added 4 output-oriented phrases to `_REVIEW_HINTS` so "What was the output?" and
+    variants correctly dispatch to the evidence-review path.
+- **Fix 2** (`vera/result_surfacing.py`):
+  - Added `_extract_file_write` extractor and `_classify_file_write` classifier for
+    `files.write_text` skill. Surfaces actual written content from `machine_payload.content`
+    answer-first (same pattern as `files.read_text`). Falls back to path+bytes metadata
+    when content is not in evidence. Failed writes return None (no false-success text).
+  - Added `RESULT_CLASS_WRITTEN_CONTENT` constant.
+  - Registered both in `_EXTRACTORS` and `_CLASSIFIERS` registries.
+- **Trust model preserved**: Review stays evidence-grounded. Written content comes from
+  canonical `machine_payload`, not from LLM generation. If content is not available in
+  evidence, the fallback is honest metadata, never fabricated prose.
+- **Regression tests added**:
+  - `test_result_surfacing.py`: 7 new tests for `files.write_text` surfacing (actual
+    content, no hallucination, classification, bytes-only fallback, empty file, truncation,
+    failed step). Updated 1 existing test that was asserting `files.write_text` returns None.
+  - `test_chat_early_exit_dispatch.py`: 3 new tests for "What was the output?" dispatch
+    (with context → review, without context → fallthrough, "show me the output" variant).
+  - `test_vera_chat_reliability.py`: Added 4 new output-oriented phrases to the
+    parametrized review-phrase recognition test.
+
+## 2026-04-04 — PR #TBD — fix(vera): gate linked-job continuation matching behind valid session context
+
+- Summary: Fixes blocking regression from PR #283 where overbroad review/followup
+  hint matching intercepted normal authored drafting requests.
+- **Root cause** (`vera/evidence_review.py`):
+  - `"why did"` (2-word substring) in `_REVIEW_HINTS` matched "Why did the queue cross the
+    road?" inside a file-creation prompt, causing the review branch to fire and block
+    normal authored-preview drafting.
+  - Additional overbroad 1-word hint `"stuck"` was redundant with `"why is it stuck"`.
+- **Structural fix** (`vera_web/chat_early_exit_dispatch.py`):
+  - Review dispatch (step 2): hint-based matches now require a resolvable job target
+    (handoff state or session context) before entering the review branch. Explicit job IDs
+    in the message always enter review (fail-closed if evidence is missing).
+  - Follow-up dispatch (step 3): same gating — requires resolvable job target before
+    entering. Without job context, falls through to normal authored-drafting flow.
+  - This prevents ALL overbroad substring matches (not just `"why did"`) from hijacking
+    normal drafting when no job is in play.
+- **Hint cleanup** (`vera/evidence_review.py`):
+  - Removed `"why did"` (redundant with `"why did it fail"`).
+  - Removed `"stuck"` (redundant with `"why is it stuck"`).
+- **Behavioral change**: On a fresh session with no job context, review/followup hint
+  phrases fall through to the LLM instead of returning `review_missing_job` or
+  `followup_missing_evidence`. This is correct: without a job in play, these phrases
+  are not genuine review requests. Explicit job IDs (e.g. `job-123.json` in the message)
+  still enter review and fail closed if evidence is missing.
 - **Trust model preserved**: Session context remains a continuity aid only. Review stays
-  evidence-grounded. Follow-up drafting stays grounded in canonical queue/artifact truth.
-  Fail-closed behavior preserved for fresh sessions and ambiguous references.
-  Preview wording is truthful (preview-only, nothing submitted).
-- **No architectural changes**: No new modules, no new session context fields, no changes
-  to queue submission ownership or preview authority semantics.
-- **Known overbroad-matching boundary**: Bare next-step phrases ("what should we do next",
-  "what's the next step") and output-class review phrases ("show the output", "what was the
-  output") use substring matching and can false-match broader planning/output queries. This
-  is the same pattern as pre-existing hints ("status", "what should i do next", "last job")
-  which also match broader phrases. Fail-closed behavior is preserved: fresh sessions get
-  honest refusal messages, not wrong-mode replies. A follow-up PR may add disambiguation
-  (e.g. session-context-gated matching) to reduce false positives across all hint families.
-- **Recommended next PR**: `active_topic` tracking for richer planning continuity,
-  cross-turn context-aware refinement of follow-up previews, hint-matching disambiguation
-  to reduce false positives.
+  evidence-grounded. Queue remains the execution boundary. No truth-boundary drift.
+- **Recommended next PR**: hint-matching disambiguation to reduce remaining false positives
+  across all hint families (pre-existing patterns like `"status"`, `"what happened"`,
+  `"last job"` still match broadly but are gated behind context now).
 
 ## 2026-04-03 — PR #TBD — fix(vera): preserve full authored draft body in preview content
 

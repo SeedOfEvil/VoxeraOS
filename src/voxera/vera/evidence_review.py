@@ -15,14 +15,11 @@ _REVIEW_HINTS = (
     "what happened to that job",
     "did it work",
     "did it succeed",
-    "status",
     "check the last job",
     "last job",
     "what should i do next",
-    "why did",
     "why did it fail",
     "why is it stuck",
-    "stuck",
     "awaiting approval",
     # Result inspection / summary phrases
     "summarize the result",
@@ -41,6 +38,9 @@ _REVIEW_HINTS = (
     "what was the outcome",
     "what was the result",
     "what was the output",
+    "what did it output",
+    "show me the output",
+    "show the output",
 )
 _FOLLOWUP_HINTS = (
     "prepare the next step",
