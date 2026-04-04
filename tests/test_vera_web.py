@@ -2779,6 +2779,8 @@ def test_review_missing_job_is_honest(tmp_path, monkeypatch):
 
 
 def test_review_missing_job_followups_stay_evidence_aware(tmp_path, monkeypatch):
+    """Explicit job ID in message → review branch fires and fails closed.
+    Hint-only match without job context → falls through to LLM."""
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -2790,12 +2792,12 @@ def test_review_missing_job_followups_stay_evidence_aware(tmp_path, monkeypatch)
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
+    # Explicit job ID → review fires, fails closed.
     first = client.post("/chat", data={"session_id": sid, "message": "what happened to job-404?"})
-    second = client.post("/chat", data={"session_id": sid, "message": "did it work?"})
-
     assert "could not resolve a VoxeraOS job" in first.text
-    assert "could not resolve a VoxeraOS job" in second.text
-    assert "generic model fallback" not in second.text
+    # Hint-only match without job context → falls through to LLM.
+    second = client.post("/chat", data={"session_id": sid, "message": "did it work?"})
+    assert "generic model fallback" in second.text
 
 
 def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypatch):
@@ -6228,7 +6230,8 @@ def test_service_status_request_prefers_diagnostics_preview_over_review(tmp_path
     assert preview["steps"][0]["skill_id"] == "system.service_status"
 
 
-def test_job_review_query_still_uses_review_path(tmp_path, monkeypatch):
+def test_job_review_query_falls_through_without_job_context(tmp_path, monkeypatch):
+    """Review hint on a fresh session (no job context) falls through to LLM."""
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -6246,7 +6249,8 @@ def test_job_review_query_still_uses_review_path(tmp_path, monkeypatch):
     )
 
     assert res.status_code == 200
-    assert "could not resolve a VoxeraOS job" in res.text
+    # Without job context, falls through to LLM instead of blocking.
+    assert "could not resolve a VoxeraOS job" not in res.text
 
 
 def test_diagnostics_system_mission_completion_surfaces_useful_values(tmp_path, monkeypatch):
@@ -6473,7 +6477,8 @@ def test_diagnostics_refusal_still_blocks_path_like_service_targets():
     assert "unsafe or invalid" in refusal
 
 
-def test_job_review_query_status_of_my_job_stays_on_review_path(tmp_path, monkeypatch):
+def test_job_review_query_status_of_my_job_falls_through_without_context(tmp_path, monkeypatch):
+    """'status of my job' on a fresh session → falls through to LLM."""
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -6491,10 +6496,11 @@ def test_job_review_query_status_of_my_job_stays_on_review_path(tmp_path, monkey
     )
 
     assert res.status_code == 200
-    assert "could not resolve a VoxeraOS job" in res.text
+    assert "could not resolve a VoxeraOS job" not in res.text
 
 
-def test_job_review_query_status_of_last_job_stays_on_review_path(tmp_path, monkeypatch):
+def test_job_review_query_status_of_last_job_falls_through_without_context(tmp_path, monkeypatch):
+    """'what is the status of the last job' on a fresh session → falls through."""
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -6512,7 +6518,7 @@ def test_job_review_query_status_of_last_job_stays_on_review_path(tmp_path, monk
     )
 
     assert res.status_code == 200
-    assert "could not resolve a VoxeraOS job" in res.text
+    assert "could not resolve a VoxeraOS job" not in res.text
 
 
 # ---------------------------------------------------------------------------

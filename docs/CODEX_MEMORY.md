@@ -1,3 +1,34 @@
+## 2026-04-04 — PR #TBD — fix(vera): gate linked-job continuation matching behind valid session context
+
+- Summary: Fixes blocking regression from PR #283 where overbroad review/followup
+  hint matching intercepted normal authored drafting requests.
+- **Root cause** (`vera/evidence_review.py`):
+  - `"why did"` (2-word substring) in `_REVIEW_HINTS` matched "Why did the queue cross the
+    road?" inside a file-creation prompt, causing the review branch to fire and block
+    normal authored-preview drafting.
+  - Additional overbroad 1-word hint `"stuck"` was redundant with `"why is it stuck"`.
+- **Structural fix** (`vera_web/chat_early_exit_dispatch.py`):
+  - Review dispatch (step 2): hint-based matches now require a resolvable job target
+    (handoff state or session context) before entering the review branch. Explicit job IDs
+    in the message always enter review (fail-closed if evidence is missing).
+  - Follow-up dispatch (step 3): same gating — requires resolvable job target before
+    entering. Without job context, falls through to normal authored-drafting flow.
+  - This prevents ALL overbroad substring matches (not just `"why did"`) from hijacking
+    normal drafting when no job is in play.
+- **Hint cleanup** (`vera/evidence_review.py`):
+  - Removed `"why did"` (redundant with `"why did it fail"`).
+  - Removed `"stuck"` (redundant with `"why is it stuck"`).
+- **Behavioral change**: On a fresh session with no job context, review/followup hint
+  phrases fall through to the LLM instead of returning `review_missing_job` or
+  `followup_missing_evidence`. This is correct: without a job in play, these phrases
+  are not genuine review requests. Explicit job IDs (e.g. `job-123.json` in the message)
+  still enter review and fail closed if evidence is missing.
+- **Trust model preserved**: Session context remains a continuity aid only. Review stays
+  evidence-grounded. Queue remains the execution boundary. No truth-boundary drift.
+- **Recommended next PR**: hint-matching disambiguation to reduce remaining false positives
+  across all hint families (pre-existing patterns like `"status"`, `"what happened"`,
+  `"last job"` still match broadly but are gated behind context now).
+
 ## 2026-04-03 — PR #TBD — fix(vera): preserve full authored draft body in preview content
 
 - Summary: Fixes preview-content mismatch where authored draft body was truncated,
