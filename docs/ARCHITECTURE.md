@@ -1581,7 +1581,7 @@ Every chat turn is classified into one of two execution modes **early** — the 
 
 ### Session-scoped reference resolution (`vera/reference_resolver.py`)
 - A bounded reference-resolution layer maps natural in-session phrases to concrete referents using shared session context.
-- Supported reference classes: `DRAFT` ("that draft", "the draft"), `FILE` ("that file", "the note"), `JOB_RESULT` ("that result", "the last job"), `CONTINUATION` ("the follow-up", "the last one").
+- Supported reference classes: `DRAFT` ("that draft", "the draft"), `FILE` ("that file", "the note"), `JOB_RESULT` ("that result", "the last job", "the output"), `CONTINUATION` ("the follow-up", "the last one").
 - Resolution priority per class:
   - **Draft**: `active_draft_ref` > `active_preview_ref`.
   - **File**: `last_saved_file_ref` > `active_draft_ref` (only if path-like).
