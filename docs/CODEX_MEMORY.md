@@ -1,3 +1,43 @@
+## 2026-04-04 — PR #TBD — feat(vera): use shared session context in linked-job review and evidence-grounded continuation
+
+- Summary: Makes linked-job review and evidence-grounded continuation workflows feel
+  naturally session-aware by extending natural-language phrase coverage and strengthening
+  session-context-aware resolution for review/follow-up flows.
+- **Changes** (`vera/evidence_review.py`):
+  - Added output-class review hints: "what was the output", "show me the output",
+    "show the output", "inspect the output details".
+  - Added bare next-step followup hints: "what should we do next", "what's the next step",
+    "what next based on that".
+  - Added output-class revise-from-evidence hints: "update that based on the output",
+    "update based on the output", "revise that based on the output", "revise based on the output".
+  - All new hints added to both `_FOLLOWUP_HINTS` and `_REVISE_FROM_EVIDENCE_HINTS` as
+    appropriate to preserve the existing dispatch priority (revise > save > general followup).
+- **Changes** (`vera/reference_resolver.py`):
+  - Added output-class JOB_RESULT phrases: "that output", "the output", "the last output".
+  - These allow session-context-aware reference resolution for "show me the output", etc.
+- **Tests** (`tests/test_linked_job_review_continuation.py`):
+  - 55+ regression tests covering: output-class review phrases, bare next-step followup phrases,
+    output-class revise-from-evidence phrases, output-class reference classification,
+    session-context-aware job resolution, multi-turn review→followup lifecycle continuity,
+    fresh-session fail-closed behavior, preview wording truthfulness, evidence grounding
+    invariants, and adjacent regression anchors.
+- **Trust model preserved**: Session context remains a continuity aid only. Review stays
+  evidence-grounded. Follow-up drafting stays grounded in canonical queue/artifact truth.
+  Fail-closed behavior preserved for fresh sessions and ambiguous references.
+  Preview wording is truthful (preview-only, nothing submitted).
+- **No architectural changes**: No new modules, no new session context fields, no changes
+  to queue submission ownership or preview authority semantics.
+- **Known overbroad-matching boundary**: Bare next-step phrases ("what should we do next",
+  "what's the next step") and output-class review phrases ("show the output", "what was the
+  output") use substring matching and can false-match broader planning/output queries. This
+  is the same pattern as pre-existing hints ("status", "what should i do next", "last job")
+  which also match broader phrases. Fail-closed behavior is preserved: fresh sessions get
+  honest refusal messages, not wrong-mode replies. A follow-up PR may add disambiguation
+  (e.g. session-context-gated matching) to reduce false positives across all hint families.
+- **Recommended next PR**: `active_topic` tracking for richer planning continuity,
+  cross-turn context-aware refinement of follow-up previews, hint-matching disambiguation
+  to reduce false positives.
+
 ## 2026-04-03 — PR #TBD — fix(vera): preserve full authored draft body in preview content
 
 - Summary: Fixes preview-content mismatch where authored draft body was truncated,
