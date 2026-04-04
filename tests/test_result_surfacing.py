@@ -28,6 +28,7 @@ from voxera.vera.result_surfacing import (
     RESULT_CLASS_SERVICE_STATE,
     RESULT_CLASS_STAT_INFO,
     RESULT_CLASS_TEXT_CONTENT,
+    RESULT_CLASS_WRITTEN_CONTENT,
     classify_result_family,
     extract_value_forward_text,
 )
@@ -394,6 +395,25 @@ def test_fallback_returns_none_when_no_useful_value():
         "step_summaries": [
             {
                 "step_index": 1,
+                "skill_id": "custom.unknown_skill",
+                "status": "succeeded",
+                "summary": "Did something",
+                "machine_payload": {"key": "value"},
+            }
+        ],
+        "latest_summary": "Did something",
+        "terminal_outcome": "succeeded",
+    }
+    result = extract_value_forward_text(structured=structured)
+    assert result is None
+
+
+def test_file_write_surfaces_path_only_when_no_content():
+    """files.write_text with path but no content/bytes surfaces path metadata."""
+    structured = {
+        "step_summaries": [
+            {
+                "step_index": 1,
                 "skill_id": "files.write_text",
                 "status": "succeeded",
                 "summary": "Wrote file",
@@ -404,7 +424,8 @@ def test_fallback_returns_none_when_no_useful_value():
         "terminal_outcome": "succeeded",
     }
     result = extract_value_forward_text(structured=structured)
-    assert result is None
+    assert result is not None
+    assert "x.txt" in result
 
 
 def test_fallback_returns_none_for_empty_structured():
@@ -860,5 +881,130 @@ def test_fallback_thin_status_for_unknown_skill():
         {"some_key": "some_value"},
         summary="Did something",
     )
+    result = extract_value_forward_text(structured=structured)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# File write: evidence-grounded output surfacing
+# ---------------------------------------------------------------------------
+
+
+def test_file_write_surfaces_actual_written_content():
+    """Completed file-write job surfaces the actual written content verbatim.
+
+    Regression: 'What was the output?' for a file-writing job must return the
+    real written text, not fall through to the LLM which may hallucinate.
+    """
+    joke = "Why did the programmer quit his job? Because he didn't get arrays."
+    structured = _structured_with_step(
+        "files.write_text",
+        {
+            "path": "/home/seedofevil/VoxeraOS/notes/test-output-note.txt",
+            "bytes": len(joke),
+            "content": joke,
+        },
+        summary="Wrote text to /home/seedofevil/VoxeraOS/notes/test-output-note.txt",
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    # Must contain the EXACT written content, not a different joke
+    assert joke in result
+    assert "test-output-note.txt" in result
+    assert "Wrote" in result
+
+
+def test_file_write_does_not_hallucinate_different_content():
+    """Review must never substitute different content for the canonical written text.
+
+    Regression: Vera replied with a different joke than what was actually written.
+    """
+    real_content = "Why did the programmer quit his job? Because he didn't get arrays."
+    fake_content = (
+        "Why did the invisible man turn down the job offer? He couldn't see himself doing it."
+    )
+    structured = _structured_with_step(
+        "files.write_text",
+        {
+            "path": "/home/seedofevil/VoxeraOS/notes/test-output-note.txt",
+            "bytes": len(real_content),
+            "content": real_content,
+        },
+        summary="Wrote text to /home/seedofevil/VoxeraOS/notes/test-output-note.txt",
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert real_content in result
+    # The hallucinated alternate content must NOT appear
+    assert fake_content not in result
+
+
+def test_file_write_classifies_as_written_content():
+    """files.write_text classifies as RESULT_CLASS_WRITTEN_CONTENT."""
+    structured = _structured_with_step(
+        "files.write_text",
+        {
+            "path": "/notes/output.txt",
+            "bytes": 10,
+            "content": "some text!",
+        },
+    )
+    assert classify_result_family(structured=structured) == RESULT_CLASS_WRITTEN_CONTENT
+
+
+def test_file_write_with_bytes_no_content_surfaces_metadata():
+    """When content is not in evidence, surface path+bytes honestly."""
+    structured = _structured_with_step(
+        "files.write_text",
+        {"path": "/notes/output.txt", "bytes": 64},
+        summary="Wrote text to /notes/output.txt",
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "output.txt" in result
+    assert "64 bytes" in result
+    assert "not available" in result
+
+
+def test_file_write_empty_content_surfaces_correctly():
+    """Writing an empty file should surface as empty, not fall through."""
+    structured = _structured_with_step(
+        "files.write_text",
+        {"path": "/notes/empty.txt", "bytes": 0, "content": ""},
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "empty.txt" in result
+    assert "(empty file)" in result
+
+
+def test_file_write_truncates_large_content():
+    """Large written content is truncated and bounded."""
+    big_content = "x" * 600
+    structured = _structured_with_step(
+        "files.write_text",
+        {"path": "/notes/big.txt", "bytes": 600, "content": big_content},
+    )
+    result = extract_value_forward_text(structured=structured)
+    assert result is not None
+    assert "[truncated]" in result
+    assert len(result) < 700
+
+
+def test_file_write_failed_step_returns_none():
+    """A failed files.write_text step should not produce success text."""
+    structured = {
+        "step_summaries": [
+            {
+                "step_index": 1,
+                "skill_id": "files.write_text",
+                "status": "failed",
+                "summary": "Permission denied",
+                "machine_payload": {"path": "/notes/forbidden.txt", "content": "secret"},
+            }
+        ],
+        "latest_summary": "Permission denied",
+        "terminal_outcome": "failed",
+    }
     result = extract_value_forward_text(structured=structured)
     assert result is None
