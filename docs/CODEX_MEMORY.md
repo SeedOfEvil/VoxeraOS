@@ -1,3 +1,42 @@
+## 2026-04-04 — PR #284 hotfix — fix(vera): ground linked-job output review in canonical evidence
+
+- Summary: Hotfix on PR #284 branch. After the session-context gating fix resolved
+  the hijack bug, live testing revealed that completed-job output review still was not
+  truth-grounded — "What was the output?" for a file-writing job fell through to the LLM,
+  which fabricated different content instead of surfacing the actual written file text.
+- **Root cause 1** (`vera/evidence_review.py`):
+  - `_REVIEW_HINTS` was missing output-oriented phrases: `"what was the output"`,
+    `"what did it output"`, `"show me the output"`, `"show the output"`. These phrases
+    did not trigger the evidence-review early-exit path, so they fell through to the
+    LLM which hallucinated an answer unconstrained by queue evidence.
+- **Root cause 2** (`vera/result_surfacing.py`):
+  - The result surfacing layer had extractors for `files.read_text`, `files.exists`,
+    `files.stat`, `files.list_dir`, and various system skills — but NO extractor for
+    `files.write_text`. File-writing jobs therefore produced `value_forward_text=None`,
+    meaning even when review DID fire, the actual written content was absent from the
+    review message, leaving the LLM to fill in prose.
+- **Fix 1** (`vera/evidence_review.py`):
+  - Added 4 output-oriented phrases to `_REVIEW_HINTS` so "What was the output?" and
+    variants correctly dispatch to the evidence-review path.
+- **Fix 2** (`vera/result_surfacing.py`):
+  - Added `_extract_file_write` extractor and `_classify_file_write` classifier for
+    `files.write_text` skill. Surfaces actual written content from `machine_payload.content`
+    answer-first (same pattern as `files.read_text`). Falls back to path+bytes metadata
+    when content is not in evidence. Failed writes return None (no false-success text).
+  - Added `RESULT_CLASS_WRITTEN_CONTENT` constant.
+  - Registered both in `_EXTRACTORS` and `_CLASSIFIERS` registries.
+- **Trust model preserved**: Review stays evidence-grounded. Written content comes from
+  canonical `machine_payload`, not from LLM generation. If content is not available in
+  evidence, the fallback is honest metadata, never fabricated prose.
+- **Regression tests added**:
+  - `test_result_surfacing.py`: 7 new tests for `files.write_text` surfacing (actual
+    content, no hallucination, classification, bytes-only fallback, empty file, truncation,
+    failed step). Updated 1 existing test that was asserting `files.write_text` returns None.
+  - `test_chat_early_exit_dispatch.py`: 3 new tests for "What was the output?" dispatch
+    (with context → review, without context → fallthrough, "show me the output" variant).
+  - `test_vera_chat_reliability.py`: Added 4 new output-oriented phrases to the
+    parametrized review-phrase recognition test.
+
 ## 2026-04-04 — PR #TBD — fix(vera): gate linked-job continuation matching behind valid session context
 
 - Summary: Fixes blocking regression from PR #283 where overbroad review/followup

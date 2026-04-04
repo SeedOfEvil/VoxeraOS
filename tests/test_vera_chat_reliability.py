@@ -779,6 +779,10 @@ class TestLinkedJobReviewPhraseRecognition:
             "what was the outcome",
             "what was the result",
             "summarize the job result",
+            "what was the output",
+            "what did it output",
+            "show me the output",
+            "show the output",
         ],
     )
     def test_review_inspection_phrases_recognized(self, phrase: str) -> None:

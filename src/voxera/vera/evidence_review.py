@@ -34,6 +34,10 @@ _REVIEW_HINTS = (
     "show the result",
     "what was the outcome",
     "what was the result",
+    "what was the output",
+    "what did it output",
+    "show me the output",
+    "show the output",
 )
 _FOLLOWUP_HINTS = (
     "prepare the next step",

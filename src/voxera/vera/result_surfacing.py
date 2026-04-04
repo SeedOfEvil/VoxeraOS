@@ -27,6 +27,7 @@ _MAX_LIST_DIR_ENTRIES = 12
 # Result class enum (for callers that want to branch on it)
 # ---------------------------------------------------------------------------
 RESULT_CLASS_TEXT_CONTENT = "text_content"
+RESULT_CLASS_WRITTEN_CONTENT = "written_content"
 RESULT_CLASS_EXISTENCE = "existence"
 RESULT_CLASS_STAT_INFO = "stat_info"
 RESULT_CLASS_LIST_DIR = "list_dir"
@@ -238,6 +239,53 @@ def _extract_file_read(*, structured: dict[str, Any], mission_id: str) -> str | 
         return f"File {path} ({byte_count} bytes). Content not available in evidence."
     if path:
         return f"Read file: {path}."
+    return None
+
+
+def _extract_file_write(*, structured: dict[str, Any], mission_id: str) -> str | None:
+    """files.write_text -> written file content or bounded excerpt.
+
+    For file-writing jobs, the canonical output IS the written content.
+    Surface it answer-first so review questions like "What was the output?"
+    return the actual written text rather than falling through to the LLM.
+    """
+    payload = _step_payload_for_skill(structured, "files.write_text")
+    if not payload:
+        return None
+
+    step_status = _step_status_for_skill(structured, "files.write_text")
+    if step_status != "succeeded":
+        return None
+
+    path = str(payload.get("path") or "").strip()
+    byte_count = payload.get("bytes")
+    content = payload.get("content")
+
+    # Strategy 1: content is directly in machine_payload (preferred).
+    if isinstance(content, str):
+        if content:
+            excerpt = _truncate(content)
+            meta_parts: list[str] = []
+            if isinstance(byte_count, int):
+                meta_parts.append(f"{byte_count} bytes")
+            meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
+            trunc_note = " [truncated]" if len(content) > _MAX_TEXT_EXCERPT_CHARS else ""
+            header = (
+                f"Wrote {path}{meta}{trunc_note}:"
+                if path
+                else f"Written file contents{meta}{trunc_note}:"
+            )
+            return f"{header}\n{excerpt}"
+        # Empty content write is valid.
+        if path:
+            return f"Wrote {path}: (empty file)"
+        return "Written file contents: (empty file)"
+
+    # Fallback: surface path + size as operator-grade metadata.
+    if path and isinstance(byte_count, int):
+        return f"Wrote {path} ({byte_count} bytes). Written content not available in evidence."
+    if path:
+        return f"Wrote file: {path}."
     return None
 
 
@@ -468,6 +516,12 @@ def _classify_file_read(*, structured: dict[str, Any], mission_id: str) -> str |
     return None
 
 
+def _classify_file_write(*, structured: dict[str, Any], mission_id: str) -> str | None:
+    if _step_payload_for_skill(structured, "files.write_text"):
+        return RESULT_CLASS_WRITTEN_CONTENT
+    return None
+
+
 def _classify_file_exists(*, structured: dict[str, Any], mission_id: str) -> str | None:
     if _step_payload_for_skill(structured, "files.exists"):
         return RESULT_CLASS_EXISTENCE
@@ -519,6 +573,7 @@ _EXTRACTORS = [
     _extract_file_exists,
     _extract_file_stat,
     _extract_file_read,
+    _extract_file_write,
     _extract_list_dir,
     _extract_service_status,
     _extract_recent_logs,
@@ -530,6 +585,7 @@ _CLASSIFIERS = [
     _classify_file_exists,
     _classify_file_stat,
     _classify_file_read,
+    _classify_file_write,
     _classify_list_dir,
     _classify_service_status,
     _classify_recent_logs,
