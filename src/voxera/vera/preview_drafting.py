@@ -527,10 +527,112 @@ def _looks_like_contextual_refinement(message: str) -> bool:
         return False
     return bool(
         re.search(
-            r"\b(actually|instead|change|switch|rename|append|make\s+it|put\s+.*\s+in\s+it|use\s+this|for\s+later)\b",
+            r"\b(actually|instead|change|switch|rename|append|make\s+it|make\s+that|put\s+.*\s+in\s+it|use\s+this|for\s+later|more\s+concise|into\s+a\s+checklist|into\s+a\s+list|keep\s+(?:the\s+)?same\s+tone|more\s+operator|more\s+user|more\s+formal)\b",
             lowered,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Session-context-aware authored follow-up resolution
+# ---------------------------------------------------------------------------
+# This supports natural follow-up references ("make that more concise",
+# "turn that into a checklist", "make that more operator-facing") against
+# authored content when session context confirms a clear, safe target.
+#
+# Architectural rules:
+# - Session context is a continuity aid, NOT a truth surface.
+# - Resolution only fires when session context provides an unambiguous target.
+# - Fail closed when no valid target exists.
+# - Authored content stays authored — runtime/result text is never promoted.
+# - No cross-session memory.
+#
+# Only patterns that have a matching handler in refined_content_from_active_preview
+# are included.  Patterns like "continue that plan" (content generation) or
+# "make it longer" / "more detailed" (no handler) are intentionally excluded
+# so detection stays honest — every detected pattern can actually resolve.
+
+_SESSION_AUTHORED_FOLLOWUP_RE = re.compile(
+    r"\b("
+    r"make\s+(?:that|it|this)\s+(?:more\s+)?(?:concise|shorter|formal)"
+    r"|turn\s+(?:that|it|this)\s+into\s+(?:a\s+)?(?:checklist|list|outline|bullet)"
+    r"|more\s+(?:concise|formal|operator[- ]facing|user[- ]facing)"
+    r"|(?:formal|more\s+formal)\s+tone"
+    r"|keep\s+(?:the\s+)?same\s+(?:tone|style|format)"
+    r"|make\s+(?:that|it)\s+(?:more\s+)?(?:operator|user)[- ](?:facing|focused|friendly)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_session_aware_authored_followup(message: str) -> bool:
+    """Detect follow-up patterns that should resolve against session context.
+
+    Only matches clear, bounded transformation/continuation requests.
+    Does NOT match ambiguous references like bare "change it" or "fix it".
+    """
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    return bool(_SESSION_AUTHORED_FOLLOWUP_RE.search(lowered))
+
+
+def _resolve_authored_followup_from_session_context(
+    message: str,
+    *,
+    session_context: dict[str, Any] | None,
+    assistant_artifacts: list[dict[str, str]] | None = None,
+) -> dict[str, Any] | None:
+    """Resolve a follow-up request against session context and recent artifacts.
+
+    Returns a preview payload when:
+    1. The message is a clear authored-content follow-up request.
+    2. Session context has an active_draft_ref (an authored draft is "in play").
+    3. A matching assistant artifact provides the source content.
+
+    Returns None (fail-closed) when any condition is not met.
+    """
+    if not _is_session_aware_authored_followup(message):
+        return None
+    if not isinstance(session_context, dict):
+        return None
+    # Only resolve when session context indicates an authored draft is active.
+    draft_ref = session_context.get("active_draft_ref")
+    if not isinstance(draft_ref, str) or not draft_ref.strip():
+        return None
+    # Resolve source content from the most recent saveable assistant artifact.
+    if not assistant_artifacts:
+        return None
+    # Pick the most recent artifact as the authored content target.
+    target_artifact = assistant_artifacts[-1]
+    source_content = str(target_artifact.get("content") or "").strip()
+    if not source_content:
+        return None
+    # Apply the transformation using the same refinement logic as active
+    # preview revision.  Import here to avoid circular dependency issues.
+    from .draft_revision import refined_content_from_active_preview
+
+    text = message.strip().rstrip("?.!")
+    lowered = text.lower()
+    refined = refined_content_from_active_preview(
+        text=text,
+        lowered=lowered,
+        existing_content=source_content,
+    )
+    if refined is None:
+        return None
+    # Build a governed write_file preview with the refined content.
+    # Use the draft_ref as the path if it looks like a file path,
+    # otherwise generate a default notes path.
+    if "/" in draft_ref or "." in draft_ref:
+        target_path = draft_ref
+    else:
+        target_path = f"~/VoxeraOS/notes/note-{int(time.time())}.txt"
+    filename = Path(target_path).name
+    return {
+        "goal": f"write a file called {filename} with provided content",
+        "write_file": {"path": target_path, "content": refined, "mode": "overwrite"},
+    }
 
 
 def _draft_from_candidate_message(
@@ -595,6 +697,7 @@ def maybe_draft_job_payload(
     investigation_context: dict[str, Any] | None = None,
     recent_assistant_messages: list[str] | None = None,
     recent_assistant_artifacts: list[dict[str, str]] | None = None,
+    session_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     normalized = message.strip()
     if not normalized:
@@ -631,6 +734,20 @@ def maybe_draft_job_payload(
         normalized.strip().lower()
     ):
         return None
+
+    # ── Session-context-aware authored follow-up resolution ──
+    # When no active preview exists but session context indicates a recent
+    # authored draft is in play, resolve transformation/continuation requests
+    # against the most recent saveable assistant artifact.  Fail-closed when
+    # session context does not provide a clear target.
+    if active_preview is None and session_context is not None:
+        session_followup = _resolve_authored_followup_from_session_context(
+            normalized,
+            session_context=session_context,
+            assistant_artifacts=assistant_artifacts,
+        )
+        if session_followup is not None:
+            return session_followup
 
     if not recent_user_messages or not _looks_like_contextual_refinement(normalized):
         return None

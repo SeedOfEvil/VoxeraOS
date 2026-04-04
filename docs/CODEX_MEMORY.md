@@ -1,3 +1,82 @@
+## 2026-04-03 — PR #TBD — fix(vera): preserve full authored draft body in preview content
+
+- Summary: Fixes preview-content mismatch where authored draft body was truncated,
+  heading formatting collapsed, and wrapper/trailer text leaked into `write_file.content`.
+- **Root causes** (`core/writing_draft_intent.py`):
+  - `_extract_prose_body` splits on `\n{2,}` only, so compact LLM output with single-newline
+    heading boundaries treats the entire reply as one block — wrapper text leaks, heading
+    spacing collapses, and trailing wrapper text survives.
+  - LLMs sometimes produce **inline headings** where a heading marker appears mid-line after
+    a sentence boundary (e.g. `...OS runtime. ### 2. Guarded Execution Lifecycle`). The
+    original `_normalize_markdown_spacing` only handled headings that started a line.
+  - `_WRAPPER_PREFIX_RE` did not match "Here's a short markdown note..." pattern.
+  - `_looks_like_trailing_wrapper_block` did not match "I've prepared a preview" or
+    "preview-only" phrases.
+- **Fixes applied**:
+  - `_normalize_markdown_spacing()` Phase 1a: regex-split inline headings after sentence-ending
+    punctuation (`[.!?:;]`) with optional whitespace (`\s*`) onto their own lines. Handles
+    both `safe. ### 1.` (space) and `safe.### 1.` (zero-space) patterns.
+  - `_normalize_markdown_spacing()` Phase 1b: regex-split `##`+ headings jammed against
+    preceding word with no punctuation (e.g. `metadata### 4.`). Uses `#{2,6}` to avoid
+    splitting non-heading `#` uses like `C#`.
+  - `_normalize_markdown_spacing()` Phase 2: inserts blank lines around heading boundaries for
+    proper block-splitting by the prose-body extractor.
+  - Extended `_WRAPPER_PREFIX_RE` with `here's a [short/brief] [markdown] note/draft/summary`.
+  - Extended trailing wrapper phrases with "i've prepared a preview", "preview-only",
+    "this is preview-only", "let me know when you'd like to send".
+- **Behavioral invariant**: authored draft body in preview content must match the visible
+  drafted artifact — no truncation, no collapsed heading spacing, no wrapper/trailer leakage,
+  no inline heading corruption. A 5-section zero-space regression test anchors this.
+
+## 2026-04-03 — PR #TBD — fix(vera): preserve authored preview identity during session-aware drafting follow-ups
+
+- Summary: Fixes live regression from the session-aware authored drafting PR where
+  transformation words ("more", "shorter", "formal") were extracted as filenames,
+  corrupting preview path and goal identity.
+- **Root causes fixed** (`vera/draft_revision.py`):
+  - `make\s+that` in the rename/save-as detection regex matched transformation
+    phrases like "make that more concise", entering the rename branch.
+  - `extract_named_target` tail regex extracted "more" from "make that more concise"
+    as a filename target → path became `~/VoxeraOS/notes/more`.
+  - `content_refinement_intent` verb list did not include `turn`/`convert`/`transform`/`keep`,
+    so "turn that into a checklist" and "keep the same tone" were not handled as
+    content refinement against the active preview.
+- **Fixes applied**:
+  - Added transformation-word guard before the rename detection regex: when the
+    message matches `make that` + transformation adjective, the rename block is skipped.
+  - Added transformation-word rejection in `extract_named_target`: words like "more",
+    "concise", "formal", "shorter" etc. are never returned as filename targets.
+  - Extended `content_refinement_intent` with `turn|convert|transform|keep` verbs
+    and `checklist|list|outline|tone|style|format` objects.
+- **Behavioral invariant**: Transformation follow-ups preserve the active preview's
+  path, goal, and file identity. Only explicit rename/save-as requests may change
+  file identity. This is now regression-tested.
+
+## 2026-04-03 — PR #TBD — feat(vera): use shared session context in authored drafting and planning workflows
+
+- Summary: Makes authored drafting and planning flows feel naturally session-aware
+  without weakening VoxeraOS truth boundaries.
+- **Authored-content transformation patterns** (`vera/draft_revision.py`):
+  - `refined_content_from_active_preview` now supports: concise compression, checklist/bullet-list
+    conversion, operator-facing/user-facing tone shifts, and same-tone preservation.
+  - These patterns work both in the active-preview refinement path and the session-context-aware
+    follow-up path.
+- **Session-context-aware follow-up resolution** (`vera/preview_drafting.py`):
+  - `_is_session_aware_authored_followup` detects bounded transformation requests
+    (concise, checklist, tone shifts, formal — not ambiguous "change it" or
+    content-generation patterns like "continue that plan").
+  - `_resolve_authored_followup_from_session_context` resolves against the most recent saveable
+    assistant artifact when session context has `active_draft_ref`.
+  - Fail-closed when no active draft ref, no artifacts, or empty artifact content.
+  - `maybe_draft_job_payload` now accepts `session_context` parameter.
+  - `_looks_like_contextual_refinement` extended with transformation patterns.
+- **app.py wiring**: `session_context` passed to `maybe_draft_job_payload` calls in
+  the deterministic fallback and rename-mutation fallback paths.
+- **Trust model preserved**: Session context remains a continuity aid only. Preview truth,
+  queue truth, and artifact truth remain authoritative. Ambiguous references fail closed.
+- **Recommended next PR**: linked-job review/continuation evidence-grounded follow-ups,
+  `active_topic` tracking for richer planning continuity.
+
 ## 2026-04-03 — PR #TBD — feat(vera): update shared session context from preview, handoff, and job completion events
 
 - Summary: Lifecycle freshness PR that makes shared session context stay current automatically
