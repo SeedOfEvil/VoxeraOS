@@ -134,8 +134,8 @@ class TestFollowupPhrasingExpanded:
             f"Expected is_followup_preview_request to be False for: {phrase!r}"
         )
 
-    def test_expanded_followup_hints_fall_through_without_job_context(self, tmp_path: Path) -> None:
-        """Follow-up hints without job context must NOT enter the followup branch."""
+    def test_expanded_followup_hints_fail_closed_without_job_context(self, tmp_path: Path) -> None:
+        """Follow-up hints without job context fail closed honestly."""
         phrases = [
             "now prepare the follow-up",
             "queue the next step",
@@ -153,8 +153,11 @@ class TestFollowupPhrasingExpanded:
                 queue_root=tmp_path,
                 session_id="test-session",
             )
-            assert result.status != "followup_missing_evidence", (
-                f"Phrase {phrase!r} should fall through without job context"
+            assert result.matched is True, (
+                f"Phrase {phrase!r} should fail closed without job context"
+            )
+            assert result.status == "followup_missing_evidence", (
+                f"Phrase {phrase!r} should fail closed with followup_missing_evidence"
             )
 
     def test_expanded_followup_with_evidence_returns_preview_ready(self, tmp_path: Path) -> None:
@@ -849,8 +852,8 @@ class TestLinkedJobReviseFromEvidence:
             f"Expected is_followup_preview_request to be False for: {phrase!r}"
         )
 
-    def test_revision_phrases_fall_through_without_job_context(self, tmp_path: Path) -> None:
-        """Revise-from-evidence phrases without job context fall through."""
+    def test_revision_phrases_fail_closed_without_job_context(self, tmp_path: Path) -> None:
+        """Revise-from-evidence phrases without job context fail closed honestly."""
         phrases = [
             "revise that based on the result",
             "update that based on the result",
@@ -867,8 +870,11 @@ class TestLinkedJobReviseFromEvidence:
                 queue_root=tmp_path,
                 session_id="test-session",
             )
-            assert result.status != "followup_missing_evidence", (
-                f"Phrase {phrase!r} should fall through without job context"
+            assert result.matched is True, (
+                f"Phrase {phrase!r} should fail closed without job context"
+            )
+            assert result.status == "followup_missing_evidence", (
+                f"Phrase {phrase!r} should fail closed with followup_missing_evidence"
             )
 
     def test_revision_with_evidence_returns_preview_ready(self, tmp_path: Path) -> None:

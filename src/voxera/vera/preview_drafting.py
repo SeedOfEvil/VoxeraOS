@@ -300,6 +300,7 @@ def _normalize_structured_file_write_payload(
         content = _extract_content_after_markers(
             text,
             (
+                r"\bcontaining\s+exactly\s*:\s*(.+)$",
                 r"\bwith\s+(?:exactly\s+)?this\s+(?:content|text)\s*:\s*(.+)$",
                 r"\bwith\s+(?:the\s+)?(?:content|text)\s*:\s*(.+)$",
                 r"\b(?:content|text)\s*:\s*(.+)$",

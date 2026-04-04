@@ -124,6 +124,7 @@ def _message_has_explicit_content_literal(message: str) -> bool:
         re.search(r"\"[^\"]+\"|'[^']+'", text)
         or re.search(
             r"\b("
+            r"containing\s+exactly\s*:|"
             r"with\s+(?:the\s+)?(?:content|text)\b|"
             r"(?:content|text)\s*:|"
             r"as\s+content\s+add\b|"
