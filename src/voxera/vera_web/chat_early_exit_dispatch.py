@@ -230,11 +230,18 @@ def dispatch_early_exit_intent(
                 ),
                 status="review_missing_job",
             )
+        _review_ctx: dict[str, object] = {"last_reviewed_job_ref": evidence.job_id}
+        # When the reviewed job has reached a terminal state, also record it
+        # as the last completed job so the debug surface stays lifecycle-fresh
+        # even if the ingestion path hasn't run yet (e.g. user reviews before
+        # the next turn triggers ingest_linked_job_completions).
+        if evidence.state in {"succeeded", "failed", "canceled"}:
+            _review_ctx["last_completed_job_ref"] = evidence.job_id
         return EarlyExitResult(
             matched=True,
             assistant_text=review_message(evidence),
             status="reviewed_job_outcome",
-            context_updates={"last_reviewed_job_ref": evidence.job_id},
+            context_updates=_review_ctx,
         )
 
     # ── 3. Follow-up preview request ───────────────────────────────────────

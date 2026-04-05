@@ -687,3 +687,166 @@ class TestLifecycleFreshness:
         assert snapshot["context_last_reviewed_job_ref"] is not None
         # active_preview_ref must be clean
         assert snapshot["context_active_preview_ref"] is None
+
+    def test_completion_ingested_after_daemon_moves_job_to_done(self, tmp_path, monkeypatch):
+        """Submit -> daemon completes -> next turn ingests -> last_completed_job_ref set.
+
+        Simulates the exact live flow where:
+        1. User creates preview + submits
+        2. Daemon moves job from inbox to done (simulated by file move)
+        3. User asks "What was the output?"
+        4. Debug surface must show last_completed_job_ref
+        """
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message, **_kw):
+            return {"answer": "Done.", "status": "ok:test"}
+
+        async def _fake_builder(*, turns, user_message, active_preview, **_kw):
+            return {
+                "goal": "completion test",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/done-test.md",
+                    "content": "done content",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        # 1. Create preview
+        session.chat("write a note")
+        assert session.preview() is not None
+
+        # 2. Submit
+        session.chat("send it")
+        ctx = session.session_context()
+        assert ctx["last_submitted_job_ref"] is not None
+
+        # 3. Simulate daemon: move job from inbox to done with state sidecar
+        handoff = vera_session_store.read_session_handoff_state(session.queue, session.session_id)
+        job_id = (handoff or {}).get("job_id")
+        assert job_id, "handoff must have job_id after successful submit"
+
+        job_filename = f"inbox-{job_id}.json"
+        inbox_path = session.queue / "inbox" / job_filename
+        assert inbox_path.exists(), f"job must exist in inbox: {inbox_path}"
+
+        done_dir = session.queue / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        done_path = done_dir / job_filename
+        inbox_path.rename(done_path)
+
+        # Write a state sidecar marking it as succeeded
+        state_path = done_dir / f"inbox-{job_id}.state.json"
+        state_path.write_text(
+            json.dumps(
+                {
+                    "lifecycle_state": "done",
+                    "terminal_outcome": "succeeded",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # 4. Next chat turn should ingest the completion
+        session.chat("What was the output?")
+
+        ctx = session.session_context()
+        assert ctx["last_completed_job_ref"] is not None, (
+            "last_completed_job_ref must be set after daemon completes job "
+            "and next chat turn ingests the completion"
+        )
+
+        snapshot = session_debug_snapshot(session.queue, session.session_id, mode_status="test")
+        assert snapshot["context_last_completed_job_ref"] is not None
+        assert snapshot["context_last_submitted_job_ref"] is not None
+
+    def test_review_of_terminal_job_sets_last_completed_job_ref(self, tmp_path, monkeypatch):
+        """Review of a terminal (succeeded/failed) job must also set last_completed_job_ref.
+
+        This covers the scenario where the user reviews a completed job before
+        the ingestion path has run (e.g. the review fires on the same turn
+        but the job wasn't terminal when ingest_linked_job_completions ran,
+        or ingestion ran on a prior turn when the job wasn't yet terminal).
+        The review path discovers terminal state via review_job_outcome and
+        should record it in last_completed_job_ref.
+        """
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        # Seed a completed job directly (simulating daemon completion)
+        job_id = "inbox-review-completed-test.json"
+        done_dir = session.queue / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        (done_dir / job_id).write_text(
+            json.dumps({"job_intent": {"goal": "test"}, "mission_id": ""}),
+            encoding="utf-8",
+        )
+        (done_dir / "inbox-review-completed-test.state.json").write_text(
+            json.dumps(
+                {
+                    "lifecycle_state": "done",
+                    "terminal_outcome": "succeeded",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Seed handoff state pointing to this job so the review resolver finds it
+        vera_session_store.write_session_handoff_state(
+            session.queue,
+            session.session_id,
+            attempted=True,
+            queue_path=str(session.queue),
+            status="submitted",
+            job_id="review-completed-test.json",
+        )
+
+        # Review the job
+        resp = session.chat("what happened to that job")
+        assert resp.status_code == 200
+
+        ctx = session.session_context()
+        assert ctx["last_reviewed_job_ref"] is not None, (
+            "last_reviewed_job_ref must be set after review"
+        )
+        assert ctx["last_completed_job_ref"] is not None, (
+            "last_completed_job_ref must be set when reviewing a terminal job"
+        )
+
+        snapshot = session_debug_snapshot(session.queue, session.session_id, mode_status="test")
+        assert snapshot["context_last_completed_job_ref"] is not None
+        assert snapshot["context_last_reviewed_job_ref"] is not None
+
+    def test_review_of_non_terminal_job_does_not_set_completed_ref(self, tmp_path, monkeypatch):
+        """Review of a non-terminal (pending/running) job must NOT set last_completed_job_ref."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        # Seed a job in inbox (non-terminal)
+        job_id = "inbox-pending-review-test.json"
+        inbox_dir = session.queue / "inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        (inbox_dir / job_id).write_text(
+            json.dumps({"job_intent": {"goal": "test"}, "mission_id": ""}),
+            encoding="utf-8",
+        )
+
+        vera_session_store.write_session_handoff_state(
+            session.queue,
+            session.session_id,
+            attempted=True,
+            queue_path=str(session.queue),
+            status="submitted",
+            job_id="pending-review-test.json",
+        )
+
+        resp = session.chat("what happened to that job")
+        assert resp.status_code == 200
+
+        ctx = session.session_context()
+        assert ctx["last_reviewed_job_ref"] is not None
+        # Non-terminal job: last_completed_job_ref must remain None
+        assert ctx["last_completed_job_ref"] is None, (
+            "last_completed_job_ref must NOT be set for non-terminal jobs"
+        )
