@@ -471,30 +471,65 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
         lines.append(evidence.value_forward_text)
         lines.append("")
         lines.append(f"Evidence for `{evidence.job_id}`:")
+        lines.extend(_condensed_evidence_lines(evidence))
     else:
         lines.append(f"I reviewed canonical VoxeraOS evidence for `{evidence.job_id}`.")
+        lines.extend(_verbose_evidence_lines(evidence))
+    lines.append(f"Next step: {_next_step(evidence)}")
+    return "\n".join(lines)
 
-    lines.extend(
-        [
-            f"- State: `{evidence.state}`",
-            f"- Lifecycle state: `{evidence.lifecycle_state or 'unknown'}`",
-            f"- Terminal outcome: `{evidence.terminal_outcome or 'not terminal yet'}`",
-            f"- Approval status: `{evidence.approval_status or 'none'}`",
-            f"- Normalized outcome class: `{evidence.normalized_outcome_class or 'unknown'}`",
-        ]
-    )
-    # When content-first, skip latest_summary if it is already contained in the
-    # value-forward text shown at the top (avoids near-duplicate content when
-    # result_surfacing uses latest_summary as its content source).
-    summary_text = evidence.latest_summary or ""
-    summary_redundant = bool(
-        evidence.value_forward_text and summary_text and summary_text in evidence.value_forward_text
-    )
-    if not summary_redundant:
+
+def _condensed_evidence_lines(evidence: ReviewedJobEvidence) -> list[str]:
+    """Compact evidence metadata for content-first review replies.
+
+    Preserves key truth signals (state, outcome, class) in a single line,
+    then surfaces only important anomaly details (failures, violations,
+    missing artifacts).  Omits verbose metadata already implied by the
+    canonical content shown above.
+    """
+    lines: list[str] = []
+
+    # Single compact state summary line
+    parts = [f"State: `{evidence.state}`"]
+    outcome = evidence.terminal_outcome or "not terminal yet"
+    parts.append(f"Outcome: `{outcome}`")
+    noc = (evidence.normalized_outcome_class or "").strip()
+    if noc and noc != "unknown":
+        parts.append(f"Class: `{noc}`")
+    lines.append(" · ".join(parts))
+
+    # Important anomaly details only — these cannot be condensed away
+    if evidence.failure_summary:
+        lines.append(f"- Failure summary: {evidence.failure_summary}")
+    if evidence.capability_boundary_violation:
         lines.append(
-            f"- Latest summary: {evidence.latest_summary or 'No summary is available yet.'}"
+            "- Capability boundary violation: "
+            f"boundary={evidence.capability_boundary_violation.get('boundary', 'unknown')}, "
+            f"declared_network_scope={evidence.capability_boundary_violation.get('declared_network_scope', 'unknown')}, "
+            f"requested_network={evidence.capability_boundary_violation.get('requested_network', 'unknown')}"
         )
-    # value_forward_text is already shown at the top; do not repeat as a bullet.
+    artifact_observation = _artifact_observation_line(evidence)
+    if artifact_observation:
+        lines.append(f"- {artifact_observation}")
+
+    return lines
+
+
+def _verbose_evidence_lines(evidence: ReviewedJobEvidence) -> list[str]:
+    """Full evidence metadata for fallback (evidence-first) review replies.
+
+    Used when exact canonical output content is not available and the
+    review message leads with metadata instead.  Unchanged from original
+    presentation to preserve honest fallback behavior.
+    """
+    lines: list[str] = [
+        f"- State: `{evidence.state}`",
+        f"- Lifecycle state: `{evidence.lifecycle_state or 'unknown'}`",
+        f"- Terminal outcome: `{evidence.terminal_outcome or 'not terminal yet'}`",
+        f"- Approval status: `{evidence.approval_status or 'none'}`",
+        f"- Normalized outcome class: `{evidence.normalized_outcome_class or 'unknown'}`",
+    ]
+    lines.append(f"- Latest summary: {evidence.latest_summary or 'No summary is available yet.'}")
     if evidence.failure_summary:
         lines.append(f"- Failure summary: {evidence.failure_summary}")
     if evidence.child_summary:
@@ -539,8 +574,8 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
             )
     else:
         lines.append("- Expected artifacts: none declared for this job.")
-    lines.append(f"Next step: {_next_step(evidence)}")
-    return "\n".join(lines)
+
+    return lines
 
 
 def _artifact_observation_line(evidence: ReviewedJobEvidence) -> str:

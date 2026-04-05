@@ -755,9 +755,15 @@ def test_content_first_file_write_leads_with_written_content(tmp_path: Path):
         "Canonical output content must lead the message, not follow evidence metadata"
     )
 
-    # Evidence metadata is still present as secondary information
+    # Condensed evidence metadata is still present as secondary information
     assert "State: `succeeded`" in message
+    assert "Outcome: `succeeded`" in message
     assert "Next step:" in message
+
+    # Verbose metadata is condensed away in content-first mode
+    assert "- Lifecycle state:" not in message
+    assert "- Approval status:" not in message
+    assert "- Artifact families:" not in message
 
     # No hallucinated or duplicate content
     assert message.count(joke) == 1
@@ -876,8 +882,8 @@ def test_content_first_file_read_leads_with_file_content(tmp_path: Path):
     assert "Evidence for `job-read-first.json`:" in message
 
 
-def test_content_first_preserves_next_step_and_evidence_trace(tmp_path: Path):
-    """Content-first mode still includes next-step guidance and evidence trace."""
+def test_content_first_preserves_next_step_and_compact_state(tmp_path: Path):
+    """Content-first mode includes next-step guidance and compact state line."""
     queue = tmp_path / "queue"
     _write_job(
         queue,
@@ -915,23 +921,27 @@ def test_content_first_preserves_next_step_and_evidence_trace(tmp_path: Path):
     # Content first
     assert message.startswith("/notes/config.yaml exists")
 
-    # Evidence metadata preserved
+    # Condensed evidence: compact state line, next-step guidance
+    assert "State: `succeeded`" in message
+    assert "Outcome: `succeeded`" in message
     assert "Next step:" in message
-    assert "Evidence trace:" in message
+
+    # Verbose metadata condensed away in content-first mode
+    assert "- Evidence trace:" not in message
+    assert "- Lifecycle state:" not in message
 
 
-def test_content_first_deduplicates_latest_summary():
-    """When latest_summary is already contained in value_forward_text,
-    suppress the '- Latest summary:' bullet to avoid near-duplicate content.
+def test_content_first_condensed_omits_latest_summary():
+    """In content-first condensed mode, latest_summary is always omitted
+    because the canonical content is shown above and the evidence section
+    is condensed to key truth signals only.
 
-    This tests review_message() directly since the deduplication is a
+    This tests review_message() directly since condensation is a
     presentation concern, not an extraction concern.
     """
     from voxera.vera.evidence_review import ReviewedJobEvidence
 
     rich_summary = "buy milk\nwalk dog\nfix bug"
-    # Simulate the result_surfacing Strategy 2 path where value_forward_text
-    # contains the latest_summary text as its content excerpt.
     evidence = ReviewedJobEvidence(
         job_id="job-dedup.json",
         state="succeeded",
@@ -958,16 +968,20 @@ def test_content_first_deduplicates_latest_summary():
     # Content leads the message
     assert message.startswith("Contents of /notes/todo.txt")
 
-    # latest_summary is redundant with value_forward_text — should be suppressed
+    # Condensed mode: latest_summary omitted, verbose bullets omitted
     assert "- Latest summary:" not in message
+    assert "- Lifecycle state:" not in message
+    assert "- Approval status:" not in message
 
-    # Other metadata is still present
+    # Compact state line and next-step preserved
     assert "State: `succeeded`" in message
     assert "Next step:" in message
 
 
-def test_content_first_keeps_latest_summary_when_different():
-    """When latest_summary differs from value_forward_text, both are shown."""
+def test_content_first_condensed_omits_latest_summary_even_when_different():
+    """In condensed mode, latest_summary is omitted even when it differs
+    from value_forward_text.  The condensed evidence section focuses on
+    state/outcome truth signals; the canonical content above is the answer."""
     from voxera.vera.evidence_review import ReviewedJobEvidence
 
     evidence = ReviewedJobEvidence(
@@ -993,9 +1007,238 @@ def test_content_first_keeps_latest_summary_when_different():
     )
     message = review_message(evidence)
 
-    # Both content and different summary are shown
+    # Content leads
     assert "some text!" in message
-    assert "- Latest summary: File operation completed successfully." in message
+
+    # Condensed: latest_summary omitted, compact state line present
+    assert "- Latest summary:" not in message
+    assert "State: `succeeded`" in message
+    assert "Outcome: `succeeded`" in message
+
+
+# ---------------------------------------------------------------------------
+# Condensed evidence metadata regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_condensed_evidence_compact_state_line_format():
+    """Content-first condensed mode uses a single compact state line
+    with state, outcome, and class separated by ' · ' markers."""
+    from voxera.vera.evidence_review import ReviewedJobEvidence
+
+    evidence = ReviewedJobEvidence(
+        job_id="job-compact.json",
+        state="succeeded",
+        lifecycle_state="done",
+        terminal_outcome="succeeded",
+        approval_status="none",
+        latest_summary="Done.",
+        failure_summary="",
+        artifact_families=("note",),
+        artifact_refs=("note:output.md",),
+        evidence_trace=("terminal_outcome=succeeded",),
+        child_summary=None,
+        execution_capabilities=None,
+        capability_boundary_violation=None,
+        expected_artifacts=(),
+        observed_expected_artifacts=(),
+        missing_expected_artifacts=(),
+        expected_artifact_status="",
+        normalized_outcome_class="success",
+        value_forward_text="Wrote /notes/output.md (42 bytes):\nHello world!",
+    )
+    message = review_message(evidence)
+
+    # Compact state line present with all three parts
+    assert "State: `succeeded` · Outcome: `succeeded` · Class: `success`" in message
+
+    # Verbose bullets absent in condensed mode
+    assert "- State: `succeeded`" not in message
+    assert "- Lifecycle state:" not in message
+    assert "- Terminal outcome:" not in message
+    assert "- Approval status:" not in message
+    assert "- Normalized outcome class:" not in message
+    assert "- Artifact families:" not in message
+    assert "- Artifact refs:" not in message
+    assert "- Evidence trace:" not in message
+    assert "- Latest summary:" not in message
+    assert "- Expected artifacts: none declared" not in message
+
+
+def test_condensed_evidence_omits_class_when_unknown():
+    """When normalized_outcome_class is empty or 'unknown', the Class
+    segment is omitted from the compact state line."""
+    from voxera.vera.evidence_review import ReviewedJobEvidence
+
+    evidence = ReviewedJobEvidence(
+        job_id="job-no-class.json",
+        state="succeeded",
+        lifecycle_state="done",
+        terminal_outcome="succeeded",
+        approval_status="none",
+        latest_summary="",
+        failure_summary="",
+        artifact_families=(),
+        artifact_refs=(),
+        evidence_trace=(),
+        child_summary=None,
+        execution_capabilities=None,
+        capability_boundary_violation=None,
+        expected_artifacts=(),
+        observed_expected_artifacts=(),
+        missing_expected_artifacts=(),
+        expected_artifact_status="",
+        normalized_outcome_class="",
+        value_forward_text="File contents:\ntest",
+    )
+    message = review_message(evidence)
+
+    assert "State: `succeeded` · Outcome: `succeeded`" in message
+    assert "Class:" not in message
+
+
+def test_condensed_evidence_preserves_failure_and_violation_details():
+    """Content-first condensed mode still surfaces failure summary and
+    capability boundary violation when present — these are important
+    anomaly details that cannot be condensed away."""
+    from voxera.vera.evidence_review import ReviewedJobEvidence
+
+    evidence = ReviewedJobEvidence(
+        job_id="job-fail-condensed.json",
+        state="failed",
+        lifecycle_state="failed",
+        terminal_outcome="failed",
+        approval_status="none",
+        latest_summary="Execution failed",
+        failure_summary="Permission denied for /etc/shadow",
+        artifact_families=(),
+        artifact_refs=(),
+        evidence_trace=("terminal_outcome=failed",),
+        child_summary=None,
+        execution_capabilities={
+            "side_effect_class": "class_b",
+            "network_scope": "none",
+            "fs_scope": "confined",
+            "sandbox_profile": "host_local",
+        },
+        capability_boundary_violation={
+            "boundary": "network",
+            "declared_network_scope": "none",
+            "requested_network": True,
+        },
+        expected_artifacts=("stdout",),
+        observed_expected_artifacts=(),
+        missing_expected_artifacts=("stdout",),
+        expected_artifact_status="missing",
+        normalized_outcome_class="capability_boundary_mismatch",
+        value_forward_text="Error output captured.",
+    )
+    message = review_message(evidence)
+
+    # Compact state line with class
+    assert "State: `failed` · Outcome: `failed` · Class: `capability_boundary_mismatch`" in message
+
+    # Important anomaly details preserved
+    assert "- Failure summary: Permission denied for /etc/shadow" in message
+    assert "- Capability boundary violation: boundary=network" in message
+    assert "Expected artifacts were not observed" in message
+
+    # Verbose metadata condensed away
+    assert "- Execution capabilities:" not in message
+    assert "- Evidence trace:" not in message
+    assert "- Lifecycle state:" not in message
+
+
+def test_condensed_evidence_preserves_artifact_observation():
+    """Content-first condensed mode surfaces the artifact observation line
+    when expected artifacts have observation status."""
+    from voxera.vera.evidence_review import ReviewedJobEvidence
+
+    evidence = ReviewedJobEvidence(
+        job_id="job-artifact-obs.json",
+        state="succeeded",
+        lifecycle_state="done",
+        terminal_outcome="succeeded",
+        approval_status="none",
+        latest_summary="Done",
+        failure_summary="",
+        artifact_families=("execution_result",),
+        artifact_refs=(),
+        evidence_trace=(),
+        child_summary=None,
+        execution_capabilities=None,
+        capability_boundary_violation=None,
+        expected_artifacts=("execution_result", "stdout"),
+        observed_expected_artifacts=("execution_result",),
+        missing_expected_artifacts=("stdout",),
+        expected_artifact_status="partial",
+        normalized_outcome_class="partial_artifact_gap",
+        value_forward_text="Task output here.",
+    )
+    message = review_message(evidence)
+
+    # Artifact observation preserved in condensed mode
+    assert "Expected artifacts were partially observed" in message
+    assert "missing=stdout" in message
+
+    # Detailed artifact lists condensed away
+    assert "- Expected artifacts (partial):" not in message
+    assert "- Observed expected artifacts:" not in message
+    assert "- Missing expected artifacts:" not in message
+
+
+def test_fallback_verbose_mode_unchanged_when_no_content(tmp_path: Path):
+    """When value_forward_text is empty, fallback mode uses full verbose
+    evidence presentation — completely unchanged by condensation."""
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-verbose.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "review_summary": {
+                "latest_summary": "Completed opaque task.",
+            },
+            "artifact_families": ["execution_result"],
+            "artifact_refs": [
+                {
+                    "artifact_family": "execution_result",
+                    "artifact_path": "execution_result.json",
+                }
+            ],
+            "evidence_bundle": {
+                "trace": {
+                    "terminal_outcome": "succeeded",
+                    "lifecycle_state": "done",
+                }
+            },
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-verbose.json")
+    assert evidence is not None
+    assert evidence.value_forward_text == ""
+    message = review_message(evidence)
+
+    # Fallback: verbose evidence-first header
+    assert message.startswith("I reviewed canonical VoxeraOS evidence")
+
+    # All verbose bullets present
+    assert "- State: `succeeded`" in message
+    assert "- Lifecycle state: `done`" in message
+    assert "- Terminal outcome: `succeeded`" in message
+    assert "- Approval status: `none`" in message
+    assert "- Normalized outcome class:" in message
+    assert "- Latest summary: Completed opaque task." in message
+    assert "- Artifact families: execution_result" in message
+    assert "- Evidence trace:" in message
+    assert "- Expected artifacts: none declared for this job." in message
+    assert "Next step:" in message
+
+    # Content-first markers absent
+    assert "Evidence for `" not in message
 
 
 def test_no_behavior_drift_in_linked_job_review_routing(tmp_path: Path):
