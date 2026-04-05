@@ -27,6 +27,7 @@ from voxera.vera.session_store import (
     append_session_turn,
     clear_session_routing_debug,
     new_session_id,
+    read_session_context,
     read_session_routing_debug,
     session_debug_snapshot,
     update_session_context,
@@ -490,3 +491,199 @@ class TestBoundedOutputShape:
         data = resp.json()
         # Round-trip through json.dumps must work
         json.dumps(data)
+
+
+# ---------------------------------------------------------------------------
+# 9. Lifecycle freshness — debug surface reflects submit/completion/review
+# ---------------------------------------------------------------------------
+
+
+class TestLifecycleFreshness:
+    """Regression tests for the debug surface reflecting lifecycle transitions.
+
+    The debug surface must show fresh refs after each lifecycle event:
+    - submit updates last_submitted_job_ref and clears preview refs
+    - completion updates last_completed_job_ref
+    - review updates last_reviewed_job_ref
+    """
+
+    def test_submit_updates_last_submitted_job_ref_in_debug_surface(self, tmp_path, monkeypatch):
+        """After submit, the debug snapshot must show the submitted job ref."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message, **_kw):
+            return {"answer": "I can do that.", "status": "ok:test"}
+
+        async def _fake_builder(*, turns, user_message, active_preview, **_kw):
+            return {
+                "goal": "test goal",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/test.md",
+                    "content": "test content",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        # Step 1: create a preview
+        session.chat("write a note about testing")
+        preview = session.preview()
+        assert preview is not None
+
+        # Context should have active preview refs
+        ctx = session.session_context()
+        assert ctx["active_preview_ref"] == "preview"
+
+        # Step 2: submit it
+        resp = session.chat("send it")
+        assert resp.status_code == 200
+
+        # Context must now show submitted job ref and cleared preview refs
+        ctx = session.session_context()
+        assert ctx["last_submitted_job_ref"] is not None, (
+            "last_submitted_job_ref must be set after successful submit"
+        )
+        assert ctx["active_preview_ref"] is None, "active_preview_ref must be cleared after submit"
+        assert ctx["active_draft_ref"] is None, "active_draft_ref must be cleared after submit"
+
+        # Debug snapshot must reflect the same
+        snapshot = session_debug_snapshot(session.queue, session.session_id, mode_status="test")
+        assert snapshot["context_last_submitted_job_ref"] is not None
+        assert snapshot["context_active_preview_ref"] is None
+
+    def test_submit_clears_active_preview_ref_even_when_preview_gone(self, tmp_path, monkeypatch):
+        """active_preview_ref must not linger after submit completes."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message, **_kw):
+            return {"answer": "Done.", "status": "ok:test"}
+
+        async def _fake_builder(*, turns, user_message, active_preview, **_kw):
+            return {
+                "goal": "test",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/t.md",
+                    "content": "c",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        session.chat("write a note")
+        assert session.preview() is not None
+
+        session.chat("submit it")
+
+        ctx = session.session_context()
+        preview = session.preview()
+        # If preview_available is False, active_preview_ref must also be None
+        if preview is None:
+            assert ctx["active_preview_ref"] is None, (
+                "active_preview_ref must be None when no preview is available"
+            )
+
+    def test_review_updates_last_reviewed_job_ref_in_debug_surface(self, tmp_path, monkeypatch):
+        """Review via early-exit dispatch must set last_reviewed_job_ref."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        # Seed a handoff state so the review path has a job to resolve
+        vera_session_store.write_session_handoff_state(
+            session.queue,
+            session.session_id,
+            attempted=True,
+            queue_path=str(session.queue),
+            status="submitted",
+            job_id="inbox-test-review.json",
+        )
+        # Create a minimal job file so review can find it
+        inbox_dir = session.queue / "inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        job_file = inbox_dir / "inbox-test-review.json"
+        job_file.write_text(
+            json.dumps({"job_intent": {"goal": "test"}, "mission_id": ""}),
+            encoding="utf-8",
+        )
+
+        resp = session.chat("what happened to that job")
+        assert resp.status_code == 200
+
+        ctx = session.session_context()
+        assert ctx["last_reviewed_job_ref"] is not None, (
+            "last_reviewed_job_ref must be set after review"
+        )
+
+        snapshot = session_debug_snapshot(session.queue, session.session_id, mode_status="test")
+        assert snapshot["context_last_reviewed_job_ref"] is not None
+
+    def test_completion_ingestion_updates_last_completed_job_ref(self, tmp_path):
+        """Direct lifecycle call: completion ingestion must set last_completed_job_ref."""
+        queue, sid = _make_session(tmp_path)
+        from voxera.vera.context_lifecycle import context_on_completion_ingested
+
+        context_on_completion_ingested(queue, sid, job_id="inbox-done.json")
+        ctx = read_session_context(queue, sid)
+        assert ctx["last_completed_job_ref"] == "inbox-done.json"
+
+        snapshot = session_debug_snapshot(queue, sid, mode_status="test")
+        assert snapshot["context_last_completed_job_ref"] == "inbox-done.json"
+
+    def test_full_lifecycle_draft_submit_review_refs_fresh(self, tmp_path, monkeypatch):
+        """End-to-end: preview -> submit -> review must leave all refs fresh."""
+        session = make_vera_session(monkeypatch, tmp_path)
+
+        async def _fake_reply(*, turns, user_message, **_kw):
+            return {"answer": "OK.", "status": "ok:test"}
+
+        async def _fake_builder(*, turns, user_message, active_preview, **_kw):
+            return {
+                "goal": "lifecycle test",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/lifecycle.md",
+                    "content": "lifecycle content",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _fake_builder)
+
+        # 1. Create preview
+        session.chat("write a lifecycle note")
+        ctx = session.session_context()
+        assert ctx["active_preview_ref"] == "preview"
+
+        # 2. Submit
+        session.chat("send it")
+        ctx = session.session_context()
+        submitted_ref = ctx["last_submitted_job_ref"]
+        assert submitted_ref is not None
+        assert ctx["active_preview_ref"] is None
+
+        # 3. Seed handoff state for review and create the job file
+        handoff = vera_session_store.read_session_handoff_state(session.queue, session.session_id)
+        job_id = (handoff or {}).get("job_id")
+        if job_id:
+            inbox_dir = session.queue / "inbox"
+            inbox_dir.mkdir(parents=True, exist_ok=True)
+            (inbox_dir / f"inbox-{job_id}.json").write_text(
+                json.dumps({"job_intent": {"goal": "test"}}), encoding="utf-8"
+            )
+            (inbox_dir / job_id).write_text(
+                json.dumps({"job_intent": {"goal": "test"}}), encoding="utf-8"
+            )
+
+        # 4. Review
+        session.chat("what happened")
+        ctx = session.session_context()
+        assert ctx["last_reviewed_job_ref"] is not None
+
+        # 5. Final snapshot must have all three refs populated
+        snapshot = session_debug_snapshot(session.queue, session.session_id, mode_status="test")
+        assert snapshot["context_last_submitted_job_ref"] is not None
+        assert snapshot["context_last_reviewed_job_ref"] is not None
+        # active_preview_ref must be clean
+        assert snapshot["context_active_preview_ref"] is None

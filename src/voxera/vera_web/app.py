@@ -177,7 +177,7 @@ def _submit_handoff(
         ),
         submit_preview_hook=submit_preview,
     )
-    if status == "submitted":
+    if status == "handoff_submitted":
         handoff = read_session_handoff_state(root, session_id) or {}
         job_id = str(handoff.get("job_id") or "").strip() or None
         _submit_file_ref: str | None = None
