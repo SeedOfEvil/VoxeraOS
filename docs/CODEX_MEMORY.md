@@ -1,3 +1,12 @@
+## 2026-04-05 — refactor(vera): remove weather and investigation compatibility aliases from service
+
+- Removed all weather-flow and investigation-flow compatibility aliases from `vera/service.py`. These underscore-prefixed module-level names (`_is_weather_investigation_request`, `_is_weather_question`, `_normalize_weather_location_candidate`, `_extract_weather_location_from_message`, `_extract_weather_followup_kind`, `_weather_followup_is_active`, `_weather_context_has_pending_lookup`, `_weather_context_is_waiting_for_location`, `_weather_answer_for_followup`, `_is_informational_web_query`, `_normalize_web_query`, `_build_structured_investigation_results`, `_format_web_investigation_answer`, `run_web_enrichment`) were replaced by direct use of the imported names from `weather_flow.py` and `investigation_flow.py`.
+- `vera_web/app.py` now imports `is_informational_web_query` and `run_web_enrichment` from `vera.investigation_flow` and `weather_context_has_pending_lookup` from `vera.weather_flow` instead of compatibility aliases from `vera.service`.
+- Test patch targets updated: `test_vera_brave_search.py` calls investigation helpers from `investigation_flow` directly and patches non-underscore names on `vera.service`; `test_vera_contextual_flows.py` patches the imported name `weather_context_has_pending_lookup` on `vera.service` instead of the old `_weather_context_has_pending_lookup` alias.
+- Removed the now-unused `vera_weather_flow` import from `test_vera_contextual_flows.py`.
+- **Import guidance for new code**: weather helpers → `vera.weather_flow`; investigation helpers → `vera.investigation_flow`. Tests that need to control behavior through `generate_vera_reply` should patch the imported name in `vera.service`. Tests exercising helpers directly should import from the true source module.
+- No runtime behavior change. No architecture redesign.
+
 ## 2026-04-04 — refactor(vera): remove session-store re-export indirection and thin handoff facade usage
 
 - **Production callers migrated**: `vera_web/app.py`, `panel/routes_vera.py`, and `vera_web/chat_early_exit_dispatch.py` now import session helpers directly from `vera/session_store.py` instead of through `vera/service.py`.
@@ -9,7 +18,7 @@
 - Migrated shared test harness `tests/vera_session_helpers.py` to import from `vera.session_store` directly as the reference pattern for future test migration.
 - Updated `docs/ARCHITECTURE.md`, `docs/ops.md`, `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md`, and this file to reflect the new ownership boundaries.
 - **Import guidance for new code**: session state → `vera.session_store`; preview drafting → `vera.preview_drafting`; preview submission → `vera.preview_submission`; investigation derivations → `vera.investigation_derivations`.  Do not re-introduce re-exports through `handoff.py`.
-- **Follow-up needed**: remove weather/investigation compatibility aliases in `service.py`.
+- **Follow-up completed**: weather/investigation compatibility aliases removed from `service.py` (see entry below).
 
 ## 2026-04-04 — PR #284 hotfix — fix(vera): ground linked-job output review in canonical evidence
 
@@ -853,7 +862,7 @@
 ## 2026-03-22 — PR #TBD — refactor(vera): extract investigation flow orchestration from service
 
 - Extracted Vera's explicit web/investigation lane orchestration into `src/voxera/vera/investigation_flow.py`, moving informational-web intent detection, query normalization, Brave result shaping, read-only investigation reply formatting, and read-only enrichment lookup ownership out of `src/voxera/vera/service.py`.
-- Kept `src/voxera/vera/service.py` behavior-preserving and thin by delegating into the new investigation-flow module while retaining compatibility aliases for existing tests/call sites that still patch investigation helpers on `vera.service`.
+- Kept `src/voxera/vera/service.py` behavior-preserving and thin by delegating into the new investigation-flow module.  Compatibility aliases that were temporarily retained for existing tests/call sites have since been removed (see session-store cleanup entry above).
 - Added focused regression coverage proving those service-level investigation compatibility hooks still control the delegated flow, so the extraction does not silently break existing characterization seams.
 - Root cause: investigation-specific routing and result-shaping logic had accumulated inside the general Vera service orchestrator, making one of Vera's highest-risk behavioral lanes harder to reason about and riskier to modularize further.
 - Queue truth, preview truth, investigation-derived save/compare/expand semantics, and the user-facing investigation UX contract were intentionally preserved; this PR is a narrow module-boundary extraction only.
@@ -861,7 +870,7 @@
 ## 2026-03-22 — PR #TBD — refactor(vera): extract weather flow orchestration from service
 
 - Extracted Vera quick-weather routing and follow-up orchestration into `src/voxera/vera/weather_flow.py`, giving weather-question detection, missing-location handling, follow-up classification, fail-closed lookup behavior, and weather-lane continuity one dedicated module boundary.
-- Kept `src/voxera/vera/service.py` behavior-preserving and thin by delegating to the new weather-flow module while retaining compatibility aliases for existing call sites/tests that still patch weather helpers on `vera.service`.
+- Kept `src/voxera/vera/service.py` behavior-preserving and thin by delegating to the new weather-flow module.  Compatibility aliases that were temporarily retained for existing call sites/tests have since been removed (see session-store cleanup entry above).
 - Extended focused characterization coverage so `tests/test_vera_contextual_flows.py` now explicitly anchors `7 day` and `weekend` follow-ups in the structured weather lane in addition to the existing missing-location and `hourly` continuity checks.
 - Root cause: weather quick-flow logic had accumulated inside the general Vera reply orchestrator, making one of the most session-sensitive seams harder to reason about and riskier to extract further.
 - Queue truth, preview truth, and the user-visible weather UX contract were intentionally preserved; this PR is module-boundary cleanup only.

@@ -22,9 +22,6 @@ from .investigation_flow import (
     maybe_handle_investigation_turn,
     normalize_web_query,
 )
-from .investigation_flow import (
-    run_web_enrichment as _run_web_enrichment,
-)
 from .preview_drafting import drafting_guidance, maybe_draft_job_payload
 from .preview_submission import normalize_preview_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
@@ -111,45 +108,24 @@ class HiddenCompilerDecision:
         )
 
 
-# Weather-flow compatibility aliases kept here so existing tests/call sites can
-# continue patching `vera.service` while orchestration lives in weather_flow.py.
-_is_weather_investigation_request = is_weather_investigation_request
-_is_weather_question = is_weather_question
-_normalize_weather_location_candidate = normalize_weather_location_candidate
-_extract_weather_location_from_message = extract_weather_location_from_message
-_extract_weather_followup_kind = extract_weather_followup_kind
-_weather_followup_is_active = weather_followup_is_active
-_weather_context_has_pending_lookup = weather_context_has_pending_lookup
-_weather_context_is_waiting_for_location = weather_context_is_waiting_for_location
-_weather_answer_for_followup = weather_answer_for_followup
-
-# Investigation-flow compatibility aliases kept here so existing tests/call sites can
-# continue patching `vera.service` while orchestration lives in investigation_flow.py.
-_is_informational_web_query = is_informational_web_query
-_normalize_web_query = normalize_web_query
-_build_structured_investigation_results = build_structured_investigation_results
-_format_web_investigation_answer = format_web_investigation_answer
-run_web_enrichment = _run_web_enrichment
-
-
 def _service_weather_question(message: str) -> bool:
     try:
-        return _is_weather_question(
+        return is_weather_question(
             message,
-            is_weather_investigation_request_hook=_is_weather_investigation_request,
+            is_weather_investigation_request_hook=is_weather_investigation_request,
         )
     except TypeError:
-        return _is_weather_question(message)
+        return is_weather_question(message)
 
 
 def _service_extract_weather_location_from_message(message: str) -> str | None:
     try:
-        return _extract_weather_location_from_message(
+        return extract_weather_location_from_message(
             message,
-            normalize_weather_location_candidate_hook=_normalize_weather_location_candidate,
+            normalize_weather_location_candidate_hook=normalize_weather_location_candidate,
         )
     except TypeError:
-        return _extract_weather_location_from_message(message)
+        return extract_weather_location_from_message(message)
 
 
 async def _lookup_live_weather(
@@ -1116,15 +1092,15 @@ async def generate_vera_reply(
             location_query,
             followup_kind=followup_kind,
         ),
-        is_weather_investigation_request_hook=_is_weather_investigation_request,
-        extract_weather_followup_kind_hook=_extract_weather_followup_kind,
+        is_weather_investigation_request_hook=is_weather_investigation_request,
+        extract_weather_followup_kind_hook=extract_weather_followup_kind,
         is_weather_question_hook=_service_weather_question,
         extract_weather_location_from_message_hook=_service_extract_weather_location_from_message,
-        weather_followup_is_active_hook=_weather_followup_is_active,
-        weather_context_has_pending_lookup_hook=_weather_context_has_pending_lookup,
-        weather_context_is_waiting_for_location_hook=_weather_context_is_waiting_for_location,
-        normalize_weather_location_candidate_hook=_normalize_weather_location_candidate,
-        weather_answer_for_followup_hook=_weather_answer_for_followup,
+        weather_followup_is_active_hook=weather_followup_is_active,
+        weather_context_has_pending_lookup_hook=weather_context_has_pending_lookup,
+        weather_context_is_waiting_for_location_hook=weather_context_is_waiting_for_location,
+        normalize_weather_location_candidate_hook=normalize_weather_location_candidate,
+        weather_answer_for_followup_hook=weather_answer_for_followup,
     )
     if weather_reply is not None:
         return weather_reply
@@ -1132,11 +1108,11 @@ async def generate_vera_reply(
     investigation_reply = await maybe_handle_investigation_turn(
         user_message=user_message,
         web_cfg=web_cfg,
-        is_informational_web_query_hook=_is_informational_web_query,
-        normalize_web_query_hook=_normalize_web_query,
-        format_web_investigation_answer_hook=_format_web_investigation_answer,
+        is_informational_web_query_hook=is_informational_web_query,
+        normalize_web_query_hook=normalize_web_query,
+        format_web_investigation_answer_hook=format_web_investigation_answer,
         build_structured_investigation_results_hook=(
-            lambda query, results: _build_structured_investigation_results(
+            lambda query, results: build_structured_investigation_results(
                 query=query,
                 results=results,
             )

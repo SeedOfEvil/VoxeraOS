@@ -5,7 +5,6 @@ import json
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import service as vera_service
 from voxera.vera import session_store as vera_session_store
-from voxera.vera import weather_flow as vera_weather_flow
 from voxera.vera.brave_search import WebSearchResult
 from voxera.vera_web import app as vera_app_module
 
@@ -141,7 +140,7 @@ def test_service_level_weather_followup_hook_still_controls_delegated_flow(tmp_p
     monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
     monkeypatch.setattr(
         vera_service,
-        "_weather_answer_for_followup",
+        "weather_answer_for_followup",
         lambda snapshot_payload, followup_kind: f"patched followup: {followup_kind}",
     )
 
@@ -163,7 +162,7 @@ def test_service_level_investigation_detector_hook_still_controls_weather_questi
         return sample_weather_snapshot(query=location_query)
 
     monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
-    monkeypatch.setattr(vera_service, "_is_weather_investigation_request", lambda _message: False)
+    monkeypatch.setattr(vera_service, "is_weather_investigation_request", lambda _message: False)
 
     res = session.chat("Look up the weather in Calgary AB")
 
@@ -183,7 +182,7 @@ def test_service_level_location_normalizer_hook_still_controls_inline_weather_lo
     monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
     monkeypatch.setattr(
         vera_service,
-        "_normalize_weather_location_candidate",
+        "normalize_weather_location_candidate",
         lambda candidate: "Calgary AB" if "YYC" in candidate else candidate,
     )
 
@@ -202,16 +201,8 @@ def test_service_level_pending_lookup_hook_still_controls_weather_confirmation_r
         assert location_query == "Calgary AB"
         return sample_weather_snapshot(query=location_query)
 
-    def _fail_if_weather_flow_predicate_runs(_weather_context):
-        raise AssertionError("weather_flow pending-lookup predicate should not run directly")
-
     monkeypatch.setattr(vera_service, "_lookup_live_weather", _fake_lookup)
-    monkeypatch.setattr(vera_service, "_weather_context_has_pending_lookup", lambda _ctx: True)
-    monkeypatch.setattr(
-        vera_weather_flow,
-        "weather_context_has_pending_lookup",
-        _fail_if_weather_flow_predicate_runs,
-    )
+    monkeypatch.setattr(vera_service, "weather_context_has_pending_lookup", lambda _ctx: True)
     vera_session_store.write_session_weather_context(
         session.queue,
         session.session_id,

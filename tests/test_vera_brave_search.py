@@ -7,6 +7,7 @@ import pytest
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import service as vera_service
 from voxera.vera.brave_search import BraveSearchClient, WebSearchResult, _parse_brave_web_results
+from voxera.vera.investigation_flow import is_informational_web_query, normalize_web_query
 from voxera.vera.weather import FORECAST_URL, GEOCODING_URL, OpenMeteoWeatherClient
 
 
@@ -297,7 +298,7 @@ def test_open_meteo_weather_client_returns_structured_weather_snapshot(
     ],
 )
 def test_informational_query_classifier(message: str, expected: bool) -> None:
-    assert vera_service._is_informational_web_query(message) is expected
+    assert is_informational_web_query(message) is expected
 
 
 def test_conversational_explanation_prompt_stays_out_of_web_investigation(
@@ -382,8 +383,8 @@ def test_service_level_investigation_hooks_still_control_delegated_flow(
         )
     )
     monkeypatch.setattr(vera_service, "load_app_config", lambda: cfg)
-    monkeypatch.setattr(vera_service, "_is_informational_web_query", lambda _message: True)
-    monkeypatch.setattr(vera_service, "_normalize_web_query", lambda _message: "patched query")
+    monkeypatch.setattr(vera_service, "is_informational_web_query", lambda _message: True)
+    monkeypatch.setattr(vera_service, "normalize_web_query", lambda _message: "patched query")
 
     async def _fake_search(self, *, query: str, count: int = 5):
         assert query == "patched query"
@@ -415,7 +416,7 @@ def test_service_level_investigation_hooks_still_control_delegated_flow(
     ],
 )
 def test_normalize_web_query(message: str, expected: str) -> None:
-    assert vera_service._normalize_web_query(message) == expected
+    assert normalize_web_query(message) == expected
 
 
 def test_web_investigation_answer_avoids_voxera_execution_language(
