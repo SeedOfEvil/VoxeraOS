@@ -481,9 +481,19 @@ def review_message(evidence: ReviewedJobEvidence) -> str:
             f"- Terminal outcome: `{evidence.terminal_outcome or 'not terminal yet'}`",
             f"- Approval status: `{evidence.approval_status or 'none'}`",
             f"- Normalized outcome class: `{evidence.normalized_outcome_class or 'unknown'}`",
-            f"- Latest summary: {evidence.latest_summary or 'No summary is available yet.'}",
         ]
     )
+    # When content-first, skip latest_summary if it is already contained in the
+    # value-forward text shown at the top (avoids near-duplicate content when
+    # result_surfacing uses latest_summary as its content source).
+    summary_text = evidence.latest_summary or ""
+    summary_redundant = bool(
+        evidence.value_forward_text and summary_text and summary_text in evidence.value_forward_text
+    )
+    if not summary_redundant:
+        lines.append(
+            f"- Latest summary: {evidence.latest_summary or 'No summary is available yet.'}"
+        )
     # value_forward_text is already shown at the top; do not repeat as a bullet.
     if evidence.failure_summary:
         lines.append(f"- Failure summary: {evidence.failure_summary}")

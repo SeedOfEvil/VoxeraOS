@@ -920,6 +920,84 @@ def test_content_first_preserves_next_step_and_evidence_trace(tmp_path: Path):
     assert "Evidence trace:" in message
 
 
+def test_content_first_deduplicates_latest_summary():
+    """When latest_summary is already contained in value_forward_text,
+    suppress the '- Latest summary:' bullet to avoid near-duplicate content.
+
+    This tests review_message() directly since the deduplication is a
+    presentation concern, not an extraction concern.
+    """
+    from voxera.vera.evidence_review import ReviewedJobEvidence
+
+    rich_summary = "buy milk\nwalk dog\nfix bug"
+    # Simulate the result_surfacing Strategy 2 path where value_forward_text
+    # contains the latest_summary text as its content excerpt.
+    evidence = ReviewedJobEvidence(
+        job_id="job-dedup.json",
+        state="succeeded",
+        lifecycle_state="done",
+        terminal_outcome="succeeded",
+        approval_status="none",
+        latest_summary=rich_summary,
+        failure_summary="",
+        artifact_families=(),
+        artifact_refs=(),
+        evidence_trace=(),
+        child_summary=None,
+        execution_capabilities=None,
+        capability_boundary_violation=None,
+        expected_artifacts=(),
+        observed_expected_artifacts=(),
+        missing_expected_artifacts=(),
+        expected_artifact_status="",
+        normalized_outcome_class="",
+        value_forward_text=f"Contents of /notes/todo.txt:\n{rich_summary}",
+    )
+    message = review_message(evidence)
+
+    # Content leads the message
+    assert message.startswith("Contents of /notes/todo.txt")
+
+    # latest_summary is redundant with value_forward_text — should be suppressed
+    assert "- Latest summary:" not in message
+
+    # Other metadata is still present
+    assert "State: `succeeded`" in message
+    assert "Next step:" in message
+
+
+def test_content_first_keeps_latest_summary_when_different():
+    """When latest_summary differs from value_forward_text, both are shown."""
+    from voxera.vera.evidence_review import ReviewedJobEvidence
+
+    evidence = ReviewedJobEvidence(
+        job_id="job-both.json",
+        state="succeeded",
+        lifecycle_state="done",
+        terminal_outcome="succeeded",
+        approval_status="none",
+        latest_summary="File operation completed successfully.",
+        failure_summary="",
+        artifact_families=(),
+        artifact_refs=(),
+        evidence_trace=(),
+        child_summary=None,
+        execution_capabilities=None,
+        capability_boundary_violation=None,
+        expected_artifacts=(),
+        observed_expected_artifacts=(),
+        missing_expected_artifacts=(),
+        expected_artifact_status="",
+        normalized_outcome_class="",
+        value_forward_text="Wrote /notes/output.txt (10 bytes):\nsome text!",
+    )
+    message = review_message(evidence)
+
+    # Both content and different summary are shown
+    assert "some text!" in message
+    assert "- Latest summary: File operation completed successfully." in message
+
+
 def test_no_behavior_drift_in_linked_job_review_routing(tmp_path: Path):
     """Content-first change must not alter which messages match review dispatch."""
     from voxera.vera.evidence_review import is_review_request
