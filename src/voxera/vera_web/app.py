@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -65,8 +64,6 @@ from ..vera.saveable_artifacts import (
     message_requests_referenced_content,
 )
 from ..vera.service import (
-    _CODE_DRAFT_HINT,
-    _WRITING_DRAFT_HINT,
     generate_preview_builder_update,
     generate_vera_reply,
     ingest_linked_job_completions,
@@ -108,63 +105,30 @@ from ..voice.models import InputOrigin, normalize_input_origin
 from ..voice.output import voice_output_status
 from .chat_early_exit_dispatch import dispatch_early_exit_intent
 from .conversational_checklist import (
-    conversational_preview_update_message as _cc_conversational_preview_update_message,
-)
-from .conversational_checklist import (
-    enforce_conversational_checklist_output as _cc_enforce_conversational_checklist_output,
-)
-from .conversational_checklist import (
-    is_conversational_answer_first_request as _cc_is_conversational_answer_first_request,
-)
-from .conversational_checklist import (
-    looks_like_preview_update_claim as _cc_looks_like_preview_update_claim,
-)
-from .conversational_checklist import (
-    looks_like_voxera_preview_dump as _cc_looks_like_voxera_preview_dump,
-)
-from .conversational_checklist import (
-    sanitize_false_preview_claims_from_answer as _cc_sanitize_false_preview_claims_from_answer,
-)
-from .conversational_checklist import (
-    should_use_conversational_artifact_mode as _cc_should_use_conversational_artifact_mode,
+    enforce_conversational_checklist_output,
+    sanitize_false_preview_claims_from_answer,
+    should_use_conversational_artifact_mode,
 )
 from .draft_content_binding import (
     extract_reply_drafts,
     resolve_draft_content_binding,
-    strip_internal_control_blocks,
 )
 from .execution_mode import (
     ExecutionMode,
+    _is_explicit_json_content_request,
+    _is_relative_writing_refinement_request,
 )
 from .execution_mode import (
     _classify_execution_mode as _em_classify_execution_mode,
 )
 from .execution_mode import (
-    _extract_save_as_text_target as _em_extract_save_as_text_target,
-)
-from .execution_mode import (
-    _is_explicit_json_content_request as _em_is_explicit_json_content_request,
-)
-from .execution_mode import (
-    _is_governed_writing_preview as _em_is_governed_writing_preview,
-)
-from .execution_mode import (
     _is_refinable_prose_preview as _em_is_refinable_prose_preview,
-)
-from .execution_mode import (
-    _is_relative_writing_refinement_request as _em_is_relative_writing_refinement_request,
 )
 from .execution_mode import (
     _is_voxera_control_turn as _em_is_voxera_control_turn,
 )
 from .execution_mode import (
     _looks_like_active_preview_content_generation_turn as _em_looks_like_active_preview_content_generation_turn,
-)
-from .execution_mode import (
-    _looks_like_ambiguous_active_preview_content_replacement_request as _em_looks_like_ambiguous_active_preview_content_replacement_request,
-)
-from .execution_mode import (
-    _message_has_explicit_content_literal as _em_message_has_explicit_content_literal,
 )
 from .preview_content_binding import (
     is_targeted_code_preview_refinement,
@@ -194,10 +158,6 @@ def _active_queue_root() -> Path:
         return load_runtime_config().queue_root
     except Exception:
         return default_queue_root()
-
-
-def _is_active_preview_submit_intent(message: str, *, preview_available: bool) -> bool:
-    return should_submit_active_preview(message, preview_available=preview_available)
 
 
 def _submit_handoff(
@@ -305,28 +265,8 @@ def _prefer_derived_followup_save(
     return False
 
 
-def _looks_like_voxera_preview_dump(text: str) -> bool:
-    return _cc_looks_like_voxera_preview_dump(text)
-
-
-def _looks_like_preview_update_claim(text: str) -> bool:
-    return _cc_looks_like_preview_update_claim(text)
-
-
-def _strip_internal_control_blocks(text: str) -> str:
-    return strip_internal_control_blocks(text)
-
-
-def _is_governed_writing_preview(preview: dict[str, object] | None) -> bool:
-    return _em_is_governed_writing_preview(preview, is_text_draft_preview=is_text_draft_preview)
-
-
 def _is_refinable_prose_preview(preview: dict[str, object] | None) -> bool:
     return _em_is_refinable_prose_preview(preview, is_text_draft_preview=is_text_draft_preview)
-
-
-def _is_relative_writing_refinement_request(message: str) -> bool:
-    return _em_is_relative_writing_refinement_request(message)
 
 
 def _looks_like_active_preview_content_generation_turn(message: str) -> bool:
@@ -335,38 +275,6 @@ def _looks_like_active_preview_content_generation_turn(message: str) -> bool:
         looks_like_preview_rename_or_save_as_request=looks_like_preview_rename_or_save_as_request,
         message_requests_referenced_content=message_requests_referenced_content,
     )
-
-
-def _message_has_explicit_content_literal(message: str) -> bool:
-    return _em_message_has_explicit_content_literal(message)
-
-
-def _looks_like_ambiguous_active_preview_content_replacement_request(message: str) -> bool:
-    return _em_looks_like_ambiguous_active_preview_content_replacement_request(message)
-
-
-def _extract_save_as_text_target(message: str) -> str | None:
-    return _em_extract_save_as_text_target(message)
-
-
-def _guardrail_false_preview_claim(*, text: str, preview_exists: bool) -> str:
-    return guardrail_false_preview_claim(text, preview_exists=preview_exists)
-
-
-def _sanitize_false_preview_claims_from_answer(text: str) -> str:
-    return _cc_sanitize_false_preview_claims_from_answer(text)
-
-
-def _enforce_conversational_checklist_output(
-    text: str, *, raw_answer: str, user_message: str
-) -> str:
-    return _cc_enforce_conversational_checklist_output(
-        text, raw_answer=raw_answer, user_message=user_message
-    )
-
-
-def _is_conversational_answer_first_request(message: str) -> bool:
-    return _cc_is_conversational_answer_first_request(message)
 
 
 def _classify_execution_mode(
@@ -379,100 +287,8 @@ def _classify_execution_mode(
         message,
         prior_planning_active=prior_planning_active,
         pending_preview=pending_preview,
-        should_use_conversational_artifact_mode=_cc_should_use_conversational_artifact_mode,
+        should_use_conversational_artifact_mode=should_use_conversational_artifact_mode,
         is_recent_assistant_content_save_request=is_recent_assistant_content_save_request(message),
-    )
-
-
-def _is_explicit_json_content_request(message: str) -> bool:
-    return _em_is_explicit_json_content_request(message)
-
-
-def _conversational_preview_update_message(
-    *,
-    updated: bool,
-    has_active_preview: bool,
-    user_message: str,
-    rejected: bool = False,
-    updated_preview: dict[str, object] | None = None,
-    preview_already_existed: bool = False,
-) -> str:
-    return _cc_conversational_preview_update_message(
-        updated=updated,
-        has_active_preview=has_active_preview,
-        user_message=user_message,
-        is_recent_assistant_content_save_request=is_recent_assistant_content_save_request(
-            user_message
-        ),
-        rejected=rejected,
-        updated_preview=updated_preview,
-        preview_already_existed=preview_already_existed,
-    )
-
-
-async def _generate_vera_reply_with_optional_draft_hints(
-    *,
-    turns: list[dict[str, str]],
-    user_message: str,
-    code_draft: bool,
-    writing_draft: bool,
-    weather_context: dict[str, object] | None = None,
-) -> dict[str, object]:
-    signature = inspect.signature(generate_vera_reply)
-    parameters = signature.parameters
-    if (
-        "code_draft" in parameters
-        or "writing_draft" in parameters
-        or "weather_context" in parameters
-    ):
-        if "weather_context" in parameters:
-            return await generate_vera_reply(
-                turns=turns,
-                user_message=user_message,
-                code_draft=code_draft,
-                writing_draft=writing_draft,
-                weather_context=weather_context,
-            )
-        return await generate_vera_reply(
-            turns=turns,
-            user_message=user_message,
-            code_draft=code_draft,
-            writing_draft=writing_draft,
-        )
-
-    hinted_message = user_message
-    if code_draft:
-        hinted_message = user_message + _CODE_DRAFT_HINT
-    elif writing_draft:
-        hinted_message = user_message + _WRITING_DRAFT_HINT
-    return await generate_vera_reply(turns=turns, user_message=hinted_message)
-
-
-async def _generate_preview_builder_update_with_optional_artifacts(
-    *,
-    turns: list[dict[str, str]],
-    user_message: str,
-    active_preview: dict[str, object] | None,
-    enrichment_context: dict[str, object] | None = None,
-    investigation_context: dict[str, object] | None = None,
-    recent_assistant_artifacts: list[dict[str, str]] | None = None,
-) -> dict[str, object] | None:
-    signature = inspect.signature(generate_preview_builder_update)
-    if "recent_assistant_artifacts" in signature.parameters:
-        return await generate_preview_builder_update(
-            turns=turns,
-            user_message=user_message,
-            active_preview=active_preview,
-            enrichment_context=enrichment_context,
-            investigation_context=investigation_context,
-            recent_assistant_artifacts=recent_assistant_artifacts,
-        )
-    return await generate_preview_builder_update(
-        turns=turns,
-        user_message=user_message,
-        active_preview=active_preview,
-        enrichment_context=enrichment_context,
-        investigation_context=investigation_context,
     )
 
 
@@ -783,7 +599,7 @@ async def chat(request: Request):
         and pending_preview is None
         and weather_context_has_pending_lookup(session_weather_context)
     ):
-        reply = await _generate_vera_reply_with_optional_draft_hints(
+        reply = await generate_vera_reply(
             turns=turns,
             user_message=message,
             code_draft=False,
@@ -819,7 +635,7 @@ async def chat(request: Request):
             status=status,
         )
 
-    if _is_active_preview_submit_intent(message, preview_available=pending_preview is not None):
+    if should_submit_active_preview(message, preview_available=pending_preview is not None):
         assistant_text, status = _submit_handoff(
             root=root,
             session_id=active_session,
@@ -913,7 +729,7 @@ async def chat(request: Request):
 
     builder_preview: dict[str, object] | None = None
     if not informational_web_turn and not conversational_answer_first_turn:
-        builder_preview = await _generate_preview_builder_update_with_optional_artifacts(
+        builder_preview = await generate_preview_builder_update(
             turns=turns,
             user_message=message,
             active_preview=pending_preview,
@@ -1050,7 +866,7 @@ async def chat(request: Request):
                 )
                 context_on_preview_created(root, active_session, draft_ref=_rn_path or "preview")
 
-    reply = await _generate_vera_reply_with_optional_draft_hints(
+    reply = await generate_vera_reply(
         turns=turns,
         user_message=message,
         code_draft=is_code_draft_turn,
@@ -1140,10 +956,10 @@ async def chat(request: Request):
         # workflow/JSON leakage.  Phases 3-6 are nuclear layers that strip
         # banned tokens, workflow narration, meta-commentary, and bare JSON
         # payloads — making behavior deterministic regardless of LLM output.
-        guarded_answer = _sanitize_false_preview_claims_from_answer(sanitized_answer)
+        guarded_answer = sanitize_false_preview_claims_from_answer(sanitized_answer)
         # Final enforcement: deterministic safety net catches any edge cases
         # the sanitizer missed and re-renders as a plain checklist if needed.
-        guarded_answer = _enforce_conversational_checklist_output(
+        guarded_answer = enforce_conversational_checklist_output(
             guarded_answer, raw_answer=sanitized_answer, user_message=message
         )
     else:
@@ -1165,8 +981,8 @@ async def chat(request: Request):
                 text=sanitized_answer,
             )
         _answer_before_preview_guardrail = guarded_answer
-        guarded_answer = _guardrail_false_preview_claim(
-            text=guarded_answer,
+        guarded_answer = guardrail_false_preview_claim(
+            guarded_answer,
             preview_exists=effective_preview is not None and _preview_has_content,
         )
         # All-or-nothing cleanup: when guardrail_false_preview_claim stripped a

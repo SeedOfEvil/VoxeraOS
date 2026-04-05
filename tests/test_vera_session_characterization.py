@@ -2668,7 +2668,9 @@ def test_wedding_checklist_repeated_5_runs_deterministic(tmp_path, monkeypatch):
 def test_enforcement_layer_catches_sanitizer_edge_case(tmp_path, monkeypatch):
     """If the sanitizer somehow misses a violation, the enforcement layer
     must catch it and re-render deterministically."""
-    from voxera.vera_web.app import _enforce_conversational_checklist_output
+    from voxera.vera_web.conversational_checklist import (
+        enforce_conversational_checklist_output as _enforce_conversational_checklist_output,
+    )
 
     # Simulate a sanitizer output that still has a banned token in a non-list line
     dirty = "1. Coffee\n2. Rice\nCheck the preview for more."
@@ -2682,7 +2684,9 @@ def test_enforcement_layer_catches_sanitizer_edge_case(tmp_path, monkeypatch):
 
 def test_enforcement_layer_handles_empty_text(tmp_path, monkeypatch):
     """Enforcement layer must extract items from raw_answer when text is empty."""
-    from voxera.vera_web.app import _enforce_conversational_checklist_output
+    from voxera.vera_web.conversational_checklist import (
+        enforce_conversational_checklist_output as _enforce_conversational_checklist_output,
+    )
 
     raw = "I prepared this in the preview.\n\n- Milk\n- Eggs\n- Bread"
     result = _enforce_conversational_checklist_output(

@@ -4603,7 +4603,7 @@ def test_active_note_refinement_reuses_existing_preview_when_builder_returns_non
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(
         vera_app_module,
-        "_generate_preview_builder_update_with_optional_artifacts",
+        "generate_preview_builder_update",
         _fake_builder_update,
     )
 
@@ -4714,7 +4714,7 @@ def test_non_document_preview_refinement_does_not_write_prose_back(tmp_path, mon
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(
         vera_app_module,
-        "_generate_preview_builder_update_with_optional_artifacts",
+        "generate_preview_builder_update",
         _fake_builder_update,
     )
 
@@ -7864,17 +7864,21 @@ def test_near_miss_submit_with_active_preview_fails_closed_and_preserves_preview
 
 
 def test_active_preview_submit_intent_detection_keeps_rename_fail_closed_boundary():
-    assert vera_app_module._is_active_preview_submit_intent("submit it", preview_available=True)
-    assert vera_app_module._is_active_preview_submit_intent("save it", preview_available=True)
-    assert not vera_app_module._is_active_preview_submit_intent(
-        "save it as renamed.txt", preview_available=True
-    )
+    from voxera.vera.preview_submission import should_submit_active_preview
+
+    assert should_submit_active_preview("submit it", preview_available=True)
+    assert should_submit_active_preview("save it", preview_available=True)
+    assert not should_submit_active_preview("save it as renamed.txt", preview_available=True)
 
 
 def test_ambiguous_active_preview_replacement_detection_characterization():
-    assert vera_app_module._looks_like_ambiguous_active_preview_content_replacement_request(
+    from voxera.vera_web.execution_mode import (
+        _looks_like_ambiguous_active_preview_content_replacement_request,
+    )
+
+    assert _looks_like_ambiguous_active_preview_content_replacement_request(
         "replace that text in the file"
     )
-    assert not vera_app_module._looks_like_ambiguous_active_preview_content_replacement_request(
+    assert not _looks_like_ambiguous_active_preview_content_replacement_request(
         'replace that text in the file with "hello"'
     )
