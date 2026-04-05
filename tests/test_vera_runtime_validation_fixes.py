@@ -71,7 +71,7 @@ class TestSummaryPreviewBodyPurity:
     def test_summary_generate_save_produces_pure_body(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             if "summary" in user_message.lower() and "mauna loa" in user_message.lower():
                 return {
@@ -104,7 +104,7 @@ class TestSummaryPreviewBodyPurity:
     def test_summary_with_please_review_prefix_produces_pure_body(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             if "summary" in user_message.lower():
                 return {
@@ -164,7 +164,7 @@ class TestSubmitIntentStrictness:
     def test_near_miss_submit_fails_closed_in_session(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {"answer": "Here is a poem about rain.", "status": "ok:test"}
 
@@ -189,7 +189,7 @@ class TestSubmitIntentStrictness:
     def test_near_miss_submit_without_preview_also_fails_closed(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {"answer": "ok", "status": "ok:test"}
 
@@ -204,7 +204,7 @@ class TestSubmitIntentStrictness:
     def test_real_submit_still_works_after_near_miss(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {"answer": "Here is your poem about clouds.", "status": "ok:test"}
 
@@ -278,7 +278,7 @@ class TestPostPreviewRenameMutation:
     def test_rename_preserves_content_in_session(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             if "biggest volcano" in user_message.lower():
                 return {
@@ -309,7 +309,7 @@ class TestPostPreviewRenameMutation:
     def test_name_it_variant_renames_in_session(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             if "biggest volcano" in user_message.lower():
                 return {
@@ -331,7 +331,7 @@ class TestPostPreviewRenameMutation:
     def test_rename_it_to_variant_renames_in_session(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             if "biggest volcano" in user_message.lower():
                 return {
@@ -353,7 +353,7 @@ class TestPostPreviewRenameMutation:
     def test_rename_does_not_leave_stale_auto_filename(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {"answer": "Some informational content about volcanoes.", "status": "ok:test"}
 
@@ -384,7 +384,7 @@ class TestPreservationOfPassingFlows:
     def test_poem_flow_preview_path_correct(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {
                 "answer": "Roses are red, violets are blue, this is a poem, written for you.",
@@ -402,7 +402,7 @@ class TestPreservationOfPassingFlows:
     def test_joke_flow_clean_preview_body(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {
                 "answer": "Why don't astronauts ever get hungry in space? Because they just had a big launch.",
@@ -423,7 +423,7 @@ class TestPreservationOfPassingFlows:
     def test_fact_flow_clean_preview_body(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {
                 "answer": "Mauna Loa is the largest active volcano on Earth, covering over half of the Big Island.",
@@ -444,7 +444,7 @@ class TestPreservationOfPassingFlows:
     def test_submit_after_preview_handoff_produces_queue_job(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {
                 "answer": "Here is a lovely poem about stars shining bright.",
@@ -606,7 +606,7 @@ class TestActiveDraftContentRefresh:
         session = make_vera_session(monkeypatch, tmp_path)
         call_count = [0]
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             call_count[0] += 1
             if call_count[0] == 1:
@@ -638,7 +638,7 @@ class TestActiveDraftContentRefresh:
         session = make_vera_session(monkeypatch, tmp_path)
         call_count = [0]
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             call_count[0] += 1
             if call_count[0] == 1:
@@ -668,7 +668,7 @@ class TestActiveDraftContentRefresh:
         session = make_vera_session(monkeypatch, tmp_path)
         call_count = [0]
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             call_count[0] += 1
             if call_count[0] == 1:
@@ -696,7 +696,7 @@ class TestActiveDraftContentRefresh:
     def test_ambiguous_request_fails_closed_in_session(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {
                 "answer": "A lovely poem about the sea.",
@@ -724,7 +724,7 @@ class TestActiveDraftContentRefresh:
     def test_submit_after_refresh_uses_refreshed_body(self, tmp_path, monkeypatch):
         session = make_vera_session(monkeypatch, tmp_path)
 
-        async def _fake_reply(*, turns, user_message):
+        async def _fake_reply(*, turns, user_message, **_kw):
             _ = turns
             return {
                 "answer": "Old poem about the stars above.",

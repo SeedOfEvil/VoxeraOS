@@ -340,7 +340,7 @@ def test_explicit_weather_investigation_stays_in_brave_lane(tmp_path, monkeypatc
 def test_regression_pack_code_save_submit_handoff_smoke(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "write me a python script" in user_message.lower():
             return {
@@ -382,7 +382,7 @@ def test_regression_pack_courtesy_turn_previous_explanation_save_submit_smoke(
 ):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "photosynthesis" in lowered:
