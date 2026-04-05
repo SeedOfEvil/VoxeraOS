@@ -10,7 +10,7 @@
 - **Trust model preserved**: session context and routing debug remain continuity aids only. Preview truth, queue truth, and artifact/evidence truth remain authoritative. The debug surface reveals state, does not change truth boundaries.
 - **Files changed**: `src/voxera/vera/session_store.py`, `src/voxera/vera_web/app.py`, `src/voxera/vera_web/templates/index.html`, `tests/test_session_routing_debug.py`, `docs/ARCHITECTURE.md`, `docs/ops.md`, `docs/CODEX_MEMORY.md`.
 - **Tests added**: 25 tests in `tests/test_session_routing_debug.py` covering routing debug persistence, normalization, preservation across turns, session debug snapshot, JSON endpoint, chat flow integration, no-behavior-drift, and bounded output shape.
-- Validation: `ruff format --check .`, `ruff check .`, `pytest -q` — all pass (2428 passed, 2 skipped). No runtime behavior change.
+- Validation: `ruff format --check .`, `ruff check .`, `mypy src/voxera`, `pytest -q`, `make merge-readiness-check`, `make golden-check` — all pass (2428 passed, 2 skipped). No runtime behavior change.
 - **Import guidance**: routing debug helpers → `vera.session_store`. Debug snapshot → `session_debug_snapshot`. JSON endpoint → `GET /vera/debug/session.json?session_id=...`.
 - **Recommended next PR**: strengthen routing debug with execution-mode classification trace (which `ExecutionMode` was chosen and why) and enrich the debug surface with preview content hash for operator-safe preview identity verification.
 
