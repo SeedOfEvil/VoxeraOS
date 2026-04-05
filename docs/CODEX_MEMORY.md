@@ -1,3 +1,16 @@
+## 2026-04-05 — improve(vera): condense evidence metadata in content-first review replies
+
+- **Motivation**: Content-first review replies (from the prior PR) correctly led with canonical output content, but the secondary evidence metadata section was still verbose — multiple bullets repeating lifecycle state, approval status, artifact families, refs, evidence trace, and execution capabilities. This made conversational review replies feel operator-heavy rather than conversational.
+- **Fix** (`vera/evidence_review.py`): Split `review_message()` evidence presentation into two paths:
+  - **Content-first condensed** (when `value_forward_text` present): canonical content leads, followed by a single compact state line (`State: \`succeeded\` · Outcome: \`succeeded\` · Class: \`success\``) plus only important anomaly details (failure summary, capability boundary violation, artifact observation). Verbose metadata (lifecycle state, approval status, artifact families/refs, evidence trace, execution capabilities, child summary, latest summary, expected artifact lists) is omitted.
+  - **Fallback verbose** (when no canonical content): unchanged from original format — full bullet-point evidence metadata preserved as honest fallback.
+- **Two new helpers**: `_condensed_evidence_lines()` (compact path) and `_verbose_evidence_lines()` (extracted original verbose path). No changes to `review_message()` signature or `ReviewedJobEvidence` dataclass.
+- **Presentation change only**: no changes to truth ownership, queue boundaries, evidence grounding, routing logic, or result surfacing. Preview truth, queue truth, and artifact/evidence truth remain distinct. Bounded excerpting limits unchanged.
+- **Files changed**: `src/voxera/vera/evidence_review.py`, `tests/test_evidence_review.py`, `docs/CODEX_MEMORY.md`.
+- **Tests**: Updated 4 existing content-first tests to match condensed output shape. Added 6 new condensed-evidence regression tests: `test_condensed_evidence_compact_state_line_format`, `test_condensed_evidence_omits_class_when_unknown`, `test_condensed_evidence_preserves_failure_and_violation_details`, `test_condensed_evidence_preserves_artifact_observation`, `test_fallback_verbose_mode_unchanged_when_no_content`, plus existing fallback/routing tests confirmed unchanged.
+- **Import guidance**: no new exports. `review_message()` signature unchanged.
+- **Recommended next PR**: consider condensing fallback (evidence-first) mode as well for consistency, or adding operator-facing detail-level toggle for evidence depth.
+
 ## 2026-04-05 — fix(vera): make output review content-first when canonical content is available
 
 - **Root cause** (`vera/evidence_review.py`): `review_message()` always led with operator-oriented metadata (state, lifecycle, approval status, artifact families, evidence trace), with the actual canonical output content buried mid-message as a `- Result:` bullet. For prompts like "What was the output?", the best first answer is the actual content, not metadata.
@@ -8,7 +21,7 @@
 - **Files changed**: `src/voxera/vera/evidence_review.py`, `tests/test_evidence_review.py`, `docs/CODEX_MEMORY.md`.
 - **Tests**: Updated 3 existing assertions (from `"- Result:"` to content-first format checks). Added 8 new content-first regression tests: `test_content_first_file_write_leads_with_written_content`, `test_content_first_does_not_hallucinate_alternate_content`, `test_content_first_fallback_when_content_unavailable`, `test_content_first_file_read_leads_with_file_content`, `test_content_first_preserves_next_step_and_evidence_trace`, `test_content_first_deduplicates_latest_summary`, `test_content_first_keeps_latest_summary_when_different`, `test_no_behavior_drift_in_linked_job_review_routing`.
 - **Import guidance**: no new exports. `review_message()` signature unchanged.
-- **Recommended next PR**: condense evidence metadata section further when content-first (e.g. single-line state overview instead of per-field bullets) for cleaner conversational UX.
+- **Recommended next PR**: ~~condense evidence metadata section further when content-first~~ → completed (see entry above).
 
 ## 2026-04-05 — feat(vera): add session context and routing debug surfaces for seamless continuity
 
