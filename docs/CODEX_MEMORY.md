@@ -1,3 +1,15 @@
+## 2026-04-05 — docs(vera): document retained dependency-binding wrappers in app.py
+
+- Evaluation pass confirmed all 4 dependency-binding wrappers in `vera_web/app.py` should remain.  They are intentional boundary glue, not leftover indirection.
+- `execution_mode.py` is deliberately pure (stdlib-only imports); these wrappers bind concrete Vera module dependencies into its pure functions at the app boundary.
+- Per-wrapper rationale:
+  - `_is_voxera_control_turn`: binds 5 dependencies; lambda-wraps `maybe_draft_job_payload` to default `active_preview=None`.
+  - `_is_refinable_prose_preview`: binds 1 dependency (`is_text_draft_preview`); weakest case but maintains pattern consistency and `execution_mode.py` purity.
+  - `_looks_like_active_preview_content_generation_turn`: binds 2 dependencies from separate modules (`draft_revision`, `saveable_artifacts`).
+  - `_classify_execution_mode`: binds 1 dependency + evaluates `is_recent_assistant_content_save_request(message)` (function→value conversion).
+- Added explanatory block comment above the wrapper cluster in `app.py`.
+- No code logic changes. No test changes.
+
 ## 2026-04-05 — refactor(vera): remove app.py compatibility shims and thin wrapper indirection
 
 - Removed `inspect.signature()` compatibility shims around `generate_vera_reply` and `generate_preview_builder_update` in `vera_web/app.py`. Both function signatures are now stable (`code_draft`, `writing_draft`, `weather_context`, `recent_assistant_artifacts` all present). `app.py` now calls both functions directly with the full kwargs.

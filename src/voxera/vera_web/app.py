@@ -226,6 +226,12 @@ def _guardrail_submission_claim(*, root: Path, session_id: str, text: str) -> st
     return text
 
 
+# -- Dependency-binding wrappers for execution_mode.py --
+# execution_mode.py is intentionally kept pure (stdlib-only imports) so its
+# predicates remain isolated and easily testable.  These wrappers bind concrete
+# Vera module dependencies into those pure functions at the app boundary.
+
+
 def _is_voxera_control_turn(message: str, *, active_preview: dict[str, object] | None) -> bool:
     return _em_is_voxera_control_turn(
         message,
