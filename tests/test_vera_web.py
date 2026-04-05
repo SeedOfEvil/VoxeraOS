@@ -7685,10 +7685,11 @@ def test_code_draft_with_trailing_space_on_fence_line_extracts_code(tmp_path, mo
 
 
 def test_code_draft_hint_injected_into_user_message_for_code_draft(tmp_path, monkeypatch):
-    """The code-generation hint must be appended to user_message for code-draft requests.
+    """code_draft=True must be passed to generate_vera_reply for code-draft requests.
 
-    This verifies the LLM receives an explicit instruction to output code in a
-    fenced block, overriding Vera's default "not the payload drafter" stance.
+    This verifies the LLM will receive the code-generation hint (injected by
+    service.py's build_vera_messages) to output code in a fenced block,
+    overriding Vera's default "not the payload drafter" stance.
     """
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
@@ -7697,6 +7698,7 @@ def test_code_draft_hint_injected_into_user_message_for_code_draft(tmp_path, mon
 
     async def _capture_reply(*, turns, user_message, **_kw):
         captured["user_message"] = user_message
+        captured["code_draft"] = _kw.get("code_draft", False)
         return {
             "answer": "```python\nprint('hi')\n```",
             "status": "ok:code_draft",
@@ -7713,16 +7715,14 @@ def test_code_draft_hint_injected_into_user_message_for_code_draft(tmp_path, mon
     )
 
     assert "user_message" in captured, "generate_vera_reply must have been called"
-    assert "fenced code block" in captured["user_message"], (
-        "Code-draft hint must instruct LLM to use a fenced code block"
-    )
-    assert "write me a python script" in captured["user_message"], (
-        "Original user message must be preserved in the augmented message"
+    assert captured["code_draft"] is True, "code_draft=True must be passed for code-draft requests"
+    assert captured["user_message"] == "write me a python script", (
+        "Original user message must be preserved (hint injected by service layer)"
     )
 
 
 def test_code_draft_hint_not_injected_for_non_code_draft(tmp_path, monkeypatch):
-    """The code-generation hint must NOT be in user_message for non-code-draft requests."""
+    """code_draft must be False for non-code-draft requests."""
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
@@ -7730,6 +7730,7 @@ def test_code_draft_hint_not_injected_for_non_code_draft(tmp_path, monkeypatch):
 
     async def _capture_reply(*, turns, user_message, **_kw):
         captured["user_message"] = user_message
+        captured["code_draft"] = _kw.get("code_draft", False)
         return {"answer": "Here is the status.", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _capture_reply)
@@ -7741,8 +7742,8 @@ def test_code_draft_hint_not_injected_for_non_code_draft(tmp_path, monkeypatch):
     client.post("/chat", data={"session_id": sid, "message": "tell me about yourself"})
 
     assert "user_message" in captured, "generate_vera_reply must have been called"
-    assert "fenced code block" not in captured["user_message"], (
-        "Code-draft hint must NOT be added to non-code-draft requests"
+    assert captured["code_draft"] is not True, (
+        "code_draft must NOT be True for non-code-draft requests"
     )
     assert captured["user_message"] == "tell me about yourself"
 
