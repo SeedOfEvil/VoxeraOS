@@ -70,7 +70,9 @@ from ..vera.service import (
     maybe_auto_surface_linked_completion,
 )
 from ..vera.session_store import (
+    append_routing_debug_entry,
     append_session_turn,
+    clear_session_routing_debug,
     clear_session_turns,
     new_session_id,
     read_session_context,
@@ -86,7 +88,7 @@ from ..vera.session_store import (
     read_session_updated_at_ms,
     read_session_weather_context,
     register_session_linked_job,
-    session_debug_info,
+    session_debug_snapshot,
     update_session_context,
     write_session_conversational_planning_active,
     write_session_derived_investigation_output,
@@ -175,7 +177,7 @@ def _submit_handoff(
         ),
         submit_preview_hook=submit_preview,
     )
-    if status == "submitted":
+    if status == "handoff_submitted":
         handoff = read_session_handoff_state(root, session_id) or {}
         job_id = str(handoff.get("job_id") or "").strip() or None
         _submit_file_ref: str | None = None
@@ -340,7 +342,7 @@ def _render_page(
         mode_status=status,
         queue_boundary=vera_queue_boundary_summary(),
         error=error,
-        debug_info=session_debug_info(root, session_id, mode_status=status),
+        debug_info=session_debug_snapshot(root, session_id, mode_status=status),
         voice_runtime=voice_runtime,
         last_user_input_origin=read_session_last_user_input_origin(root, session_id),
         system_prompt=VERA_SYSTEM_PROMPT,
@@ -593,9 +595,18 @@ async def chat(request: Request):
         if _early.write_derived_output:
             write_session_derived_investigation_output(root, active_session, _early.derived_output)
         append_session_turn(root, active_session, role="assistant", text=_early.assistant_text)
+        _early_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status=_early.status,
+            dispatch_source="early_exit_dispatch",
+            matched_early_exit=True,
+            turn_index=len(_early_turns),
+        )
         return _render_page(
             session_id=active_session,
-            turns=read_session_turns(root, active_session),
+            turns=_early_turns,
             status=_early.status,
             voice_flags=voice_flags,
         )
@@ -617,10 +628,19 @@ async def chat(request: Request):
         if isinstance(weather_payload, dict):
             write_session_weather_context(root, active_session, weather_payload)
         append_session_turn(root, active_session, role="assistant", text=reply_answer)
+        _weather_status = str(reply.get("status") or "ok:weather_current")
+        _weather_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status=_weather_status,
+            dispatch_source="weather_pending_lookup",
+            turn_index=len(_weather_turns),
+        )
         return _render_page(
             session_id=active_session,
-            turns=read_session_turns(root, active_session),
-            status=str(reply.get("status") or "ok:weather_current"),
+            turns=_weather_turns,
+            status=_weather_status,
             voice_flags=voice_flags,
         )
 
@@ -635,9 +655,17 @@ async def chat(request: Request):
             preview=None,
         )
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        _submit_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status=status,
+            dispatch_source="submit_no_preview",
+            turn_index=len(_submit_turns),
+        )
         return _render_page(
             session_id=active_session,
-            turns=read_session_turns(root, active_session),
+            turns=_submit_turns,
             status=status,
         )
 
@@ -648,9 +676,17 @@ async def chat(request: Request):
             preview=pending_preview,
         )
         append_session_turn(root, active_session, role="assistant", text=assistant_text)
+        _submit_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status=status,
+            dispatch_source="submit_active_preview",
+            turn_index=len(_submit_turns),
+        )
         return _render_page(
             session_id=active_session,
-            turns=read_session_turns(root, active_session),
+            turns=_submit_turns,
             status=status,
         )
 
@@ -660,9 +696,17 @@ async def chat(request: Request):
     blocked_refusal = detect_blocked_file_intent(message)
     if blocked_refusal is not None:
         append_session_turn(root, active_session, role="assistant", text=blocked_refusal)
+        _blocked_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status="blocked_path",
+            dispatch_source="blocked_file_intent",
+            turn_index=len(_blocked_turns),
+        )
         return _render_page(
             session_id=active_session,
-            turns=read_session_turns(root, active_session),
+            turns=_blocked_turns,
             status="blocked_path",
         )
 
@@ -1026,10 +1070,18 @@ async def chat(request: Request):
     status = _reply.status
 
     append_session_turn(root, active_session, role="assistant", text=assistant_text)
+    _final_turns = read_session_turns(root, active_session)
+    append_routing_debug_entry(
+        root,
+        active_session,
+        route_status=status,
+        dispatch_source="llm_orchestration",
+        turn_index=len(_final_turns),
+    )
 
     return _render_page(
         session_id=active_session,
-        turns=read_session_turns(root, active_session),
+        turns=_final_turns,
         status=status,
         voice_flags=voice_flags,
     )
@@ -1111,9 +1163,38 @@ async def clear_chat(request: Request):
     _clear_root = _active_queue_root()
     clear_session_turns(_clear_root, active_session)
     context_on_session_cleared(_clear_root, active_session)
+    clear_session_routing_debug(_clear_root, active_session)
     return _render_page(
         session_id=active_session,
         turns=[],
         status="conversation",
         voice_flags=load_voice_foundation_flags(),
     )
+
+
+@app.get("/vera/debug/session.json")
+def vera_debug_session_json(request: Request):
+    """Operator-facing JSON debug endpoint for session context and routing state.
+
+    Returns a bounded snapshot of session debug info, shared context ref values,
+    and recent routing decisions.  This is a read-only observability surface —
+    it does not alter any truth boundaries or session state.
+
+    Access control: this endpoint has the same access posture as all other
+    Vera web routes (no additional auth).  The Vera web service binds to
+    127.0.0.1 by default, so access is limited to the local operator.
+    If the service is ever exposed beyond localhost, add auth here.
+    """
+    session_id = str(request.query_params.get("session_id") or "").strip()
+    active_session = session_id or (request.cookies.get("vera_session_id") or "").strip()
+    if not active_session:
+        return JSONResponse(
+            content={
+                "error": "no_session_id",
+                "detail": "Provide session_id query param or cookie.",
+            },
+            status_code=400,
+        )
+    root = _active_queue_root()
+    snapshot = session_debug_snapshot(root, active_session, mode_status="debug_inspection")
+    return JSONResponse(content=snapshot)

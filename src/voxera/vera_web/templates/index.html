@@ -137,6 +137,27 @@
           <div><b>last_user_input_origin</b>: {{debug_info.last_user_input_origin}}</div>
           <div><b>handoff_status</b>: {{debug_info.handoff_status}}</div>
           <div><b>handoff_job_id</b>: <span class="mono">{{debug_info.handoff_job_id}}</span></div>
+        </div>
+        <p class="dev-label">Session context (continuity refs)</p>
+        <div class="dev-grid">
+          <div><b>active_draft_ref</b>: <span class="mono">{{debug_info.context_active_draft_ref or 'none'}}</span></div>
+          <div><b>active_preview_ref</b>: <span class="mono">{{debug_info.context_active_preview_ref or 'none'}}</span></div>
+          <div><b>last_submitted_job_ref</b>: <span class="mono">{{debug_info.context_last_submitted_job_ref or 'none'}}</span></div>
+          <div><b>last_completed_job_ref</b>: <span class="mono">{{debug_info.context_last_completed_job_ref or 'none'}}</span></div>
+          <div><b>last_reviewed_job_ref</b>: <span class="mono">{{debug_info.context_last_reviewed_job_ref or 'none'}}</span></div>
+          <div><b>last_saved_file_ref</b>: <span class="mono">{{debug_info.context_last_saved_file_ref or 'none'}}</span></div>
+          <div><b>active_topic</b>: <span class="mono">{{debug_info.context_active_topic or 'none'}}</span></div>
+          <div><b>ambiguity_flags</b>: {{debug_info.context_ambiguity_flags}}</div>
+        </div>
+        <p class="dev-label">Routing debug (recent dispatch)</p>
+        <div class="dev-grid">
+          <div><b>routing_entries</b>: {{debug_info.routing_debug_entry_count}}</div>
+          {% for entry in debug_info.routing_debug_entries %}
+          <div><b>route[{{loop.index0}}]</b>: <span class="mono">{{entry.route_status}}</span> via {{entry.dispatch_source}}{% if entry.matched_early_exit %} (early-exit){% endif %}</div>
+          {% endfor %}
+        </div>
+        <p class="dev-label">Voice</p>
+        <div class="dev-grid">
           <div><b>voice_foundation_enabled</b>: {{_voice_runtime.get('voice_foundation_enabled', false)}}</div>
           <div><b>voice_input_enabled</b>: {{_voice_runtime.get('voice_input_enabled', false)}}</div>
           <div><b>voice_output_enabled</b>: {{_voice_runtime.get('voice_output_enabled', false)}}</div>

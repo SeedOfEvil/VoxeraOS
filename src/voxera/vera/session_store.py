@@ -135,6 +135,7 @@ def append_session_turn(
         "conversational_planning_active",
         "last_user_input_origin",
         _SHARED_CONTEXT_FIELD,
+        _ROUTING_DEBUG_FIELD,
     ):
         preserved = previous.get(preserved_key)
         if (
@@ -490,7 +491,9 @@ def write_session_conversational_planning_active(
 #   6. If continuity is ambiguous, fail closed (do not guess).
 
 _SHARED_CONTEXT_FIELD = "shared_context"
+_ROUTING_DEBUG_FIELD = "routing_debug"
 _MAX_AMBIGUITY_FLAGS = 8
+_MAX_ROUTING_DEBUG_HISTORY = 8
 
 
 def _empty_shared_context() -> dict[str, Any]:
@@ -590,3 +593,143 @@ def update_session_context(
 def clear_session_context(queue_root: Path, session_id: str) -> None:
     """Reset the shared session context to the empty default."""
     _write_session_field(queue_root, session_id, field_name=_SHARED_CONTEXT_FIELD, value=None)
+
+
+# ---------------------------------------------------------------------------
+# Routing debug — bounded operator-facing route/dispatch trace
+# ---------------------------------------------------------------------------
+#
+# Records the last N routing decisions made during Vera chat turns.
+# This is a **debug aid only** — it reveals which dispatch path fired and
+# why, so operators can answer "why did this routing path fire?" without
+# digging into logs.
+#
+# The routing debug surface must never alter truth boundaries, change
+# dispatch behavior, or expose raw internal payloads.
+
+
+def _empty_routing_debug() -> dict[str, Any]:
+    """Return the canonical empty routing debug state."""
+    return {"entries": [], "updated_at_ms": 0}
+
+
+def read_session_routing_debug(queue_root: Path, session_id: str) -> dict[str, Any]:
+    """Read the routing debug state for operator inspection."""
+    payload = _read_session_payload(queue_root, session_id)
+    raw = payload.get(_ROUTING_DEBUG_FIELD)
+    if not isinstance(raw, dict):
+        return _empty_routing_debug()
+    entries = raw.get("entries")
+    if not isinstance(entries, list):
+        return _empty_routing_debug()
+    # Normalize entries — keep only well-formed dicts with required keys.
+    normalized: list[dict[str, Any]] = []
+    for entry in entries[-_MAX_ROUTING_DEBUG_HISTORY:]:
+        if not isinstance(entry, dict):
+            continue
+        route_status = str(entry.get("route_status") or "").strip()
+        if not route_status:
+            continue
+        normalized.append(
+            {
+                "route_status": route_status,
+                "dispatch_source": str(entry.get("dispatch_source") or "").strip() or "unknown",
+                "matched_early_exit": entry.get("matched_early_exit") is True,
+                "turn_index": entry.get("turn_index")
+                if isinstance(entry.get("turn_index"), int)
+                else None,
+                "timestamp_ms": entry.get("timestamp_ms")
+                if isinstance(entry.get("timestamp_ms"), int)
+                else 0,
+            }
+        )
+    return {"entries": normalized, "updated_at_ms": raw.get("updated_at_ms", 0)}
+
+
+def append_routing_debug_entry(
+    queue_root: Path,
+    session_id: str,
+    *,
+    route_status: str,
+    dispatch_source: str,
+    matched_early_exit: bool = False,
+    turn_index: int | None = None,
+) -> None:
+    """Append a routing debug entry for the current turn.
+
+    Bounded to the last ``_MAX_ROUTING_DEBUG_HISTORY`` entries.
+    ``turn_index`` is the total turn count after the assistant turn has been
+    appended — i.e., the number of turns in the session at the time of the
+    routing decision.
+    """
+    now_ms = int(time.time() * 1000)
+    current = read_session_routing_debug(queue_root, session_id)
+    entries = current.get("entries", [])
+    if not isinstance(entries, list):
+        entries = []
+    entries.append(
+        {
+            "route_status": str(route_status).strip(),
+            "dispatch_source": str(dispatch_source).strip() or "unknown",
+            "matched_early_exit": bool(matched_early_exit),
+            "turn_index": turn_index,
+            "timestamp_ms": now_ms,
+        }
+    )
+    entries = entries[-_MAX_ROUTING_DEBUG_HISTORY:]
+    _write_session_field(
+        queue_root,
+        session_id,
+        field_name=_ROUTING_DEBUG_FIELD,
+        value={"entries": entries, "updated_at_ms": now_ms},
+    )
+
+
+def clear_session_routing_debug(queue_root: Path, session_id: str) -> None:
+    """Reset the routing debug state."""
+    _write_session_field(queue_root, session_id, field_name=_ROUTING_DEBUG_FIELD, value=None)
+
+
+# ---------------------------------------------------------------------------
+# Full operator debug snapshot — combines session debug, shared context,
+# and routing debug into a single bounded surface
+# ---------------------------------------------------------------------------
+
+
+def session_debug_snapshot(
+    queue_root: Path,
+    session_id: str,
+    *,
+    mode_status: str,
+) -> dict[str, Any]:
+    """Build a comprehensive operator-facing debug snapshot.
+
+    Combines:
+    - session_debug_info (existing): session metadata, preview/handoff state
+    - shared session context: active refs for continuity debugging
+    - routing debug: recent dispatch decisions
+
+    This is the single entry point for the operator debug surface.
+    All values are bounded and safe for operator display.
+    """
+    base = session_debug_info(queue_root, session_id, mode_status=mode_status)
+    ctx = read_session_context(queue_root, session_id)
+    routing = read_session_routing_debug(queue_root, session_id)
+
+    return {
+        **base,
+        # Shared session context — ref values for continuity debugging
+        "context_active_draft_ref": ctx.get("active_draft_ref"),
+        "context_active_preview_ref": ctx.get("active_preview_ref"),
+        "context_last_submitted_job_ref": ctx.get("last_submitted_job_ref"),
+        "context_last_completed_job_ref": ctx.get("last_completed_job_ref"),
+        "context_last_reviewed_job_ref": ctx.get("last_reviewed_job_ref"),
+        "context_last_saved_file_ref": ctx.get("last_saved_file_ref"),
+        "context_active_topic": ctx.get("active_topic"),
+        "context_ambiguity_flags": ctx.get("ambiguity_flags", []),
+        "context_updated_at_ms": ctx.get("updated_at_ms", 0),
+        # Routing debug — bounded recent dispatch trace
+        "routing_debug_entries": routing.get("entries", []),
+        "routing_debug_updated_at_ms": routing.get("updated_at_ms", 0),
+        "routing_debug_entry_count": len(routing.get("entries", [])),
+    }

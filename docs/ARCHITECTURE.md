@@ -107,7 +107,7 @@ VoxeraOS/
 │   │   │   └── planner_context.py   — LLM prompt preamble assembly
 │   │   ├── vera/
 │   │   │   ├── service.py           — top-level Vera orchestration (LLM reply, preview builder, linked completion delivery)
-│   │   │   ├── session_store.py     — session turns/preview/handoff/shared-context persistence
+│   │   │   ├── session_store.py     — session turns/preview/handoff/shared-context/routing-debug persistence
 │   │   │   ├── preview_drafting.py  — deterministic preview drafting + save-by-reference previews
 │   │   │   ├── draft_revision.py    — active preview rename/path/content refinement + active-draft content refresh parsing
 │   │   │   ├── preview_submission.py — active-preview submit detection + queue handoff normalization
@@ -1578,6 +1578,15 @@ Every chat turn is classified into one of two execution modes **early** — the 
 - **Subordinate to canonical truth:** preview truth, queue truth, and artifact/evidence truth always win if they conflict with session context. Context is a continuity aid, not a trust replacement.
 - If continuity is ambiguous, the system fails closed rather than guessing.
 - Schema is normalized on every read/write: unknown keys dropped, missing keys filled from defaults, non-string refs cleared.
+
+### Routing debug surface (`vera/session_store.py`, `vera_web/app.py`)
+- A bounded `routing_debug` dict is persisted in the session payload alongside shared context.
+- Tracks the last 8 routing decisions: `route_status`, `dispatch_source`, `matched_early_exit`, `turn_index`, `timestamp_ms`.
+- Each return path in `chat()` records a routing debug entry before rendering.
+- Dispatch sources: `early_exit_dispatch`, `weather_pending_lookup`, `submit_no_preview`, `submit_active_preview`, `blocked_file_intent`, `llm_orchestration`.
+- Cleared on session clear (alongside context and turns).
+- **Operator JSON endpoint:** `GET /vera/debug/session.json?session_id=...` returns a combined snapshot of session debug info, shared context ref values, and recent routing debug entries.
+- **Continuity aid only:** the routing debug surface reveals which dispatch path fired and why. It does not alter truth boundaries, change behavior, or expose raw internal payloads.
 
 ### Session-scoped reference resolution (`vera/reference_resolver.py`)
 - A bounded reference-resolution layer maps natural in-session phrases to concrete referents using shared session context.

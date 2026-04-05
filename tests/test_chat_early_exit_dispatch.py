@@ -1326,7 +1326,10 @@ class TestSessionContextJobResolution:
         ):
             result = _dispatch(message="what happened", queue_root=tmp_path)
         assert result.matched is True
-        assert result.context_updates == {"last_reviewed_job_ref": "inbox-reviewed.json"}
+        assert result.context_updates == {
+            "last_reviewed_job_ref": "inbox-reviewed.json",
+            "last_completed_job_ref": "inbox-reviewed.json",
+        }
 
     def test_followup_uses_session_context_when_handoff_empty(self, tmp_path: Path) -> None:
         """Follow-up dispatch falls back to session context for job resolution."""

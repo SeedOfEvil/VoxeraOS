@@ -90,6 +90,16 @@ Fail-closed behavior:
 
 For deterministic local/CI tests, Make targets run pytest with `VOXERA_LOAD_DOTENV=0` and unset key `VOXERA_*` vars so shell exports and repo `.env` do not alter test outcomes.
 
+### Session context and routing debug
+
+Vera exposes a bounded operator-facing debug surface for session continuity and routing state:
+
+- **In-page DEV diagnostics panel**: the `<details>` panel on the Vera web page now shows shared session context ref values (active draft, preview, submitted/completed/reviewed jobs, saved file, topic) and recent routing decisions (dispatch source, route status, early-exit match).
+- **JSON endpoint**: `GET /vera/debug/session.json?session_id=<id>` returns a combined snapshot of session debug info, shared context, and routing debug entries.  Read-only — does not alter session state.
+- **Routing debug entries**: each chat turn records which dispatch path fired (`early_exit_dispatch`, `submit_active_preview`, `llm_orchestration`, etc.), bounded to the last 8 entries.
+- **Trust model**: session context and routing debug are continuity aids only.  Preview truth, queue truth, and artifact/evidence truth remain the authoritative sources.
+- **Access control**: the debug endpoint has the same access posture as all Vera web routes — no additional auth beyond the Vera service binding to `127.0.0.1`.  If the Vera service is ever exposed beyond localhost, add authentication to the debug endpoint.
+
 ### Testing
 
 For repeatable end-to-end runtime validation across CLI, queue, panel, Vera, and artifact evidence, use the dedicated playbook: [`docs/testing/RUNTIME_VALIDATION_PLAYBOOK.md`](testing/RUNTIME_VALIDATION_PLAYBOOK.md).
