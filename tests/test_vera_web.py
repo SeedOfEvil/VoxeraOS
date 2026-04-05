@@ -1803,7 +1803,13 @@ def test_backend_builder_updates_active_preview_without_json_dumping_in_chat(tmp
         return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
@@ -1832,7 +1838,13 @@ def test_submit_after_model_preview_replacement_uses_latest_payload(tmp_path, mo
         return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = turns
         if "update" in user_message:
@@ -1863,7 +1875,13 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
         return {"answer": "Got it, I kept this conversational.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "", "write_file": "bad-shape"}
@@ -1947,7 +1965,13 @@ def test_builder_drops_extra_keys_and_keeps_supported_preview_shape(tmp_path, mo
         return {"answer": "I left the preview as-is.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "write a note called skibbidy.txt", "content": "hello"}
@@ -1976,7 +2000,13 @@ def test_builder_multiple_preview_replacements_latest_wins_in_pane(tmp_path, mon
         return {"answer": "plain reply", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, active_preview)
         if "to b" in user_message:
@@ -2015,7 +2045,13 @@ def test_builder_can_set_preview_without_changing_vera_voice(tmp_path, monkeypat
         return {"answer": "I updated the target in the preview.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
@@ -2863,7 +2899,13 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
@@ -2896,7 +2938,13 @@ def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, 
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://example.com"}
@@ -2929,7 +2977,13 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
         return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com", "write_file": "bad-shape"}
@@ -2968,7 +3022,13 @@ def test_json_config_request_creates_preview_and_shows_fenced_code(tmp_path, mon
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return None
@@ -7157,7 +7217,13 @@ def test_no_false_preview_claim_when_builder_creates_empty_preview(tmp_path, mon
     _set_queue_root(monkeypatch, queue)
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         # Builder creates a preview with empty write_file content
         return {
@@ -7296,7 +7362,13 @@ def test_code_in_chat_without_preview_does_not_claim_preview_exists(tmp_path, mo
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         return None
 
@@ -7338,7 +7410,13 @@ def test_false_preview_claim_stripped_preserves_code_blocks(tmp_path, monkeypatc
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         return None
 
@@ -7454,7 +7532,13 @@ def test_failed_code_draft_clears_empty_preview_shell(tmp_path, monkeypatch):
     _set_queue_root(monkeypatch, queue)
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         # Simulates the real hidden compiler creating a placeholder with the right path
         return {
@@ -7516,7 +7600,13 @@ def test_code_draft_placeholder_survives_when_llm_makes_no_preview_claim(tmp_pat
     _set_queue_root(monkeypatch, queue)
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         return {
             "goal": "create script.ps1",
