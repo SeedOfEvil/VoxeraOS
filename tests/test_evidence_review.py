@@ -463,8 +463,10 @@ def test_review_message_surfaces_file_read_result(tmp_path: Path):
     assert evidence.value_forward_text
     assert "todo.txt" in evidence.value_forward_text
     message = review_message(evidence)
-    assert "- Result:" in message
+    # Content-first: value_forward_text leads the message, not buried as "- Result:"
+    assert message.startswith("File") or message.startswith("Read")
     assert "todo.txt" in message
+    assert f"Evidence for `{evidence.job_id}`:" in message
 
 
 def test_review_message_surfaces_file_exists_result(tmp_path: Path):
@@ -567,7 +569,9 @@ def test_review_message_surfaces_recent_logs_result(tmp_path: Path):
     assert "3 line" in evidence.value_forward_text
     assert "Started." in evidence.value_forward_text
     message = review_message(evidence)
-    assert "- Result:" in message
+    # Content-first: log excerpt leads the message
+    assert "3 line" in message or "Started." in message
+    assert f"Evidence for `{evidence.job_id}`:" in message
 
 
 def test_review_message_surfaces_diagnostics_snapshot(tmp_path: Path):
@@ -636,8 +640,9 @@ def test_review_message_surfaces_write_path_for_file_write(tmp_path: Path):
     assert evidence is not None
     assert "x.txt" in evidence.value_forward_text
     message = review_message(evidence)
-    assert "- Result:" in message
+    # Content-first: file write result leads the message
     assert "x.txt" in message
+    assert f"Evidence for `{evidence.job_id}`:" in message
 
 
 def test_review_message_no_value_forward_for_thin_status(tmp_path: Path):
@@ -666,7 +671,9 @@ def test_review_message_no_value_forward_for_thin_status(tmp_path: Path):
     assert evidence is not None
     assert evidence.value_forward_text == ""
     message = review_message(evidence)
-    assert "- Result:" not in message
+    # Fallback path: no content-first header, uses original header
+    assert message.startswith("I reviewed canonical VoxeraOS evidence")
+    assert "Evidence for `" not in message
 
 
 def test_existing_review_behavior_preserved(tmp_path: Path):
@@ -699,3 +706,308 @@ def test_existing_review_behavior_preserved(tmp_path: Path):
     assert "review summary wins" in message
     # value_forward_text should be empty since no read-style skill
     assert evidence.value_forward_text == ""
+
+
+# ---------------------------------------------------------------------------
+# Content-first output review presentation
+# ---------------------------------------------------------------------------
+
+
+def test_content_first_file_write_leads_with_written_content(tmp_path: Path):
+    """Completed file-write job: review message leads with actual written content.
+
+    Regression: 'What was the output?' must return the real content first,
+    not a metadata summary with content buried as a bullet point.
+    """
+    queue = tmp_path / "queue"
+    joke = "Why did the programmer quit his job? Because he didn't get arrays."
+    _write_job(
+        queue,
+        job_id="job-content-first.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "files.write_text",
+                    "status": "succeeded",
+                    "summary": "Wrote text to /notes/joke.txt",
+                    "machine_payload": {
+                        "path": "/notes/joke.txt",
+                        "bytes": len(joke),
+                        "content": joke,
+                    },
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-content-first.json")
+    assert evidence is not None
+    message = review_message(evidence)
+
+    # Content must appear BEFORE the evidence header
+    content_pos = message.index(joke)
+    evidence_pos = message.index("Evidence for `")
+    assert content_pos < evidence_pos, (
+        "Canonical output content must lead the message, not follow evidence metadata"
+    )
+
+    # Evidence metadata is still present as secondary information
+    assert "State: `succeeded`" in message
+    assert "Next step:" in message
+
+    # No hallucinated or duplicate content
+    assert message.count(joke) == 1
+
+
+def test_content_first_does_not_hallucinate_alternate_content(tmp_path: Path):
+    """Review must never substitute different content for the canonical written text."""
+    queue = tmp_path / "queue"
+    real_content = "The real canonical output."
+    _write_job(
+        queue,
+        job_id="job-no-hallucinate.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "files.write_text",
+                    "status": "succeeded",
+                    "summary": "Wrote text",
+                    "machine_payload": {
+                        "path": "/notes/real.txt",
+                        "bytes": len(real_content),
+                        "content": real_content,
+                    },
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-no-hallucinate.json")
+    assert evidence is not None
+    message = review_message(evidence)
+
+    assert real_content in message
+    assert "A different thing entirely" not in message
+
+
+def test_content_first_fallback_when_content_unavailable(tmp_path: Path):
+    """When exact output content is not available, fallback to evidence summary."""
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-no-content.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "review_summary": {
+                "latest_summary": "Task completed, output not captured.",
+            },
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "custom.opaque_skill",
+                    "status": "succeeded",
+                    "summary": "Did something opaque",
+                    "machine_payload": {"key": "value"},
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-no-content.json")
+    assert evidence is not None
+    assert evidence.value_forward_text == ""
+    message = review_message(evidence)
+
+    # Fallback: uses original evidence-oriented header
+    assert message.startswith("I reviewed canonical VoxeraOS evidence for")
+    # All metadata is present
+    assert "State: `succeeded`" in message
+    assert "Task completed, output not captured." in message
+
+
+def test_content_first_file_read_leads_with_file_content(tmp_path: Path):
+    """File-read job surfaces actual file content first."""
+    queue = tmp_path / "queue"
+    file_content = "buy milk\nwalk dog\nfix bug"
+    _write_job(
+        queue,
+        job_id="job-read-first.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "files.read_text",
+                    "status": "succeeded",
+                    "summary": "Read text from /notes/todo.txt",
+                    "machine_payload": {
+                        "path": "/notes/todo.txt",
+                        "bytes": len(file_content),
+                        "line_count": 3,
+                        "content": file_content,
+                        "content_truncated": False,
+                    },
+                }
+            ],
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-read-first.json")
+    assert evidence is not None
+    message = review_message(evidence)
+
+    # Content leads the message
+    assert message.startswith("Contents of /notes/todo.txt")
+    assert "buy milk" in message
+
+    # Evidence metadata follows
+    assert "Evidence for `job-read-first.json`:" in message
+
+
+def test_content_first_preserves_next_step_and_evidence_trace(tmp_path: Path):
+    """Content-first mode still includes next-step guidance and evidence trace."""
+    queue = tmp_path / "queue"
+    _write_job(
+        queue,
+        job_id="job-trace.json",
+        bucket="done",
+        execution_result={
+            "lifecycle_state": "done",
+            "terminal_outcome": "succeeded",
+            "step_results": [
+                {
+                    "step_index": 1,
+                    "skill_id": "files.exists",
+                    "status": "succeeded",
+                    "summary": "Checked path",
+                    "machine_payload": {
+                        "path": "/notes/config.yaml",
+                        "exists": True,
+                        "kind": "file",
+                    },
+                }
+            ],
+            "evidence_bundle": {
+                "trace": {
+                    "terminal_outcome": "succeeded",
+                    "lifecycle_state": "done",
+                }
+            },
+        },
+    )
+
+    evidence = review_job_outcome(queue_root=queue, requested_job_id="job-trace.json")
+    assert evidence is not None
+    message = review_message(evidence)
+
+    # Content first
+    assert message.startswith("/notes/config.yaml exists")
+
+    # Evidence metadata preserved
+    assert "Next step:" in message
+    assert "Evidence trace:" in message
+
+
+def test_content_first_deduplicates_latest_summary():
+    """When latest_summary is already contained in value_forward_text,
+    suppress the '- Latest summary:' bullet to avoid near-duplicate content.
+
+    This tests review_message() directly since the deduplication is a
+    presentation concern, not an extraction concern.
+    """
+    from voxera.vera.evidence_review import ReviewedJobEvidence
+
+    rich_summary = "buy milk\nwalk dog\nfix bug"
+    # Simulate the result_surfacing Strategy 2 path where value_forward_text
+    # contains the latest_summary text as its content excerpt.
+    evidence = ReviewedJobEvidence(
+        job_id="job-dedup.json",
+        state="succeeded",
+        lifecycle_state="done",
+        terminal_outcome="succeeded",
+        approval_status="none",
+        latest_summary=rich_summary,
+        failure_summary="",
+        artifact_families=(),
+        artifact_refs=(),
+        evidence_trace=(),
+        child_summary=None,
+        execution_capabilities=None,
+        capability_boundary_violation=None,
+        expected_artifacts=(),
+        observed_expected_artifacts=(),
+        missing_expected_artifacts=(),
+        expected_artifact_status="",
+        normalized_outcome_class="",
+        value_forward_text=f"Contents of /notes/todo.txt:\n{rich_summary}",
+    )
+    message = review_message(evidence)
+
+    # Content leads the message
+    assert message.startswith("Contents of /notes/todo.txt")
+
+    # latest_summary is redundant with value_forward_text — should be suppressed
+    assert "- Latest summary:" not in message
+
+    # Other metadata is still present
+    assert "State: `succeeded`" in message
+    assert "Next step:" in message
+
+
+def test_content_first_keeps_latest_summary_when_different():
+    """When latest_summary differs from value_forward_text, both are shown."""
+    from voxera.vera.evidence_review import ReviewedJobEvidence
+
+    evidence = ReviewedJobEvidence(
+        job_id="job-both.json",
+        state="succeeded",
+        lifecycle_state="done",
+        terminal_outcome="succeeded",
+        approval_status="none",
+        latest_summary="File operation completed successfully.",
+        failure_summary="",
+        artifact_families=(),
+        artifact_refs=(),
+        evidence_trace=(),
+        child_summary=None,
+        execution_capabilities=None,
+        capability_boundary_violation=None,
+        expected_artifacts=(),
+        observed_expected_artifacts=(),
+        missing_expected_artifacts=(),
+        expected_artifact_status="",
+        normalized_outcome_class="",
+        value_forward_text="Wrote /notes/output.txt (10 bytes):\nsome text!",
+    )
+    message = review_message(evidence)
+
+    # Both content and different summary are shown
+    assert "some text!" in message
+    assert "- Latest summary: File operation completed successfully." in message
+
+
+def test_no_behavior_drift_in_linked_job_review_routing(tmp_path: Path):
+    """Content-first change must not alter which messages match review dispatch."""
+    from voxera.vera.evidence_review import is_review_request
+
+    # These must still match
+    assert is_review_request("what was the output")
+    assert is_review_request("show me the output")
+    assert is_review_request("what happened")
+    assert is_review_request("did it work")
+
+    # These must still NOT match
+    assert not is_review_request("write me a poem")
+    assert not is_review_request("hello")
