@@ -42,6 +42,10 @@ from ..vera.investigation_derivations import (
     is_investigation_derived_save_request,
     is_investigation_expand_request,
 )
+from ..vera.investigation_flow import (
+    is_informational_web_query,
+    run_web_enrichment,
+)
 from ..vera.preview_drafting import (
     diagnostics_service_or_logs_intent,
     drafting_guidance,
@@ -63,13 +67,10 @@ from ..vera.saveable_artifacts import (
 from ..vera.service import (
     _CODE_DRAFT_HINT,
     _WRITING_DRAFT_HINT,
-    _is_informational_web_query,
-    _weather_context_has_pending_lookup,
     generate_preview_builder_update,
     generate_vera_reply,
     ingest_linked_job_completions,
     maybe_auto_surface_linked_completion,
-    run_web_enrichment,
 )
 from ..vera.session_store import (
     append_session_turn,
@@ -97,6 +98,9 @@ from ..vera.session_store import (
     write_session_investigation,
     write_session_preview,
     write_session_weather_context,
+)
+from ..vera.weather_flow import (
+    weather_context_has_pending_lookup,
 )
 from ..voice.flags import VoiceFoundationFlags, load_voice_foundation_flags
 from ..voice.input import VoiceInputDisabledError, ingest_voice_transcript
@@ -777,7 +781,7 @@ async def chat(request: Request):
     if (
         is_natural_preview_submission_confirmation(message)
         and pending_preview is None
-        and _weather_context_has_pending_lookup(session_weather_context)
+        and weather_context_has_pending_lookup(session_weather_context)
     ):
         reply = await _generate_vera_reply_with_optional_draft_hints(
             turns=turns,
@@ -840,7 +844,7 @@ async def chat(request: Request):
             status="blocked_path",
         )
 
-    is_info_query = _is_informational_web_query(message)
+    is_info_query = is_informational_web_query(message)
     informational_web_turn = (
         is_info_query
         and pending_preview is None

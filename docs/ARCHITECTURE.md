@@ -217,7 +217,7 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8`/`v0.
 
 ### Vera control layer
 
-- `vera/service.py` remains the **conversation orchestration root**: it builds model messages, routes into the extracted weather/investigation lanes, and manages linked-job completion delivery.  Session state helpers live in `vera/session_store.py`; all code imports from `session_store` directly.
+- `vera/service.py` remains the **conversation orchestration root**: it builds model messages, routes into the extracted weather/investigation lanes, and manages linked-job completion delivery.  Session state helpers live in `vera/session_store.py`; all code imports from `session_store` directly.  Weather and investigation helpers are imported from their true source modules (`weather_flow.py` and `investigation_flow.py`) — no compatibility aliases remain.
 - `vera/handoff.py` is **deprecated and empty** — callers now import directly from `preview_drafting.py`, `preview_submission.py`, and `investigation_derivations.py`.
 - Conversational checklist/planning mode is a **chat artifact lane**: `vera_web/conversational_checklist.py` owns deterministic checklist sanitization/rendering helpers, while `vera_web/app.py` keeps classification and route-level wiring. In that lane, preview/draft/save/submit/queue wording must not surface unless a real governed preview flow is active.
 - Add or extend behavior in the dedicated modules first:
@@ -1532,7 +1532,7 @@ Vera now has a bounded prose-writing lane that mirrors the governed code-draft s
 - Writing follow-ups on top of investigation-derived summaries remain in the writing lane and produce text previews.
 - Plain save/save-as follow-ups on investigation-derived summaries still stay on the derived-artifact lane, so compare/summary/expanded-result save behavior remains unchanged when no transform is requested.
 - Expanded investigation-result writeups are stored in the same bounded session slot as compare/summary outputs, so follow-up `save it` / `save it as <name>.md` requests bind deterministically to the latest expanded result.
-- `_is_informational_web_query()` is intentionally narrower: ordinary compare/explain prompts stay conversational; explicit search/latest/current/docs/web-investigation intent still routes to Brave.
+- `is_informational_web_query()` is intentionally narrower: ordinary compare/explain prompts stay conversational; explicit search/latest/current/docs/web-investigation intent still routes to Brave.
 
 **Current limitations:**
 - The lane is intentionally bounded to single text documents.
