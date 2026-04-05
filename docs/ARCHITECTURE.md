@@ -1552,10 +1552,10 @@ Every chat turn is classified into one of two execution modes **early** — the 
 | `CONVERSATIONAL_ARTIFACT` | Planning/checklist keyword detected, no save/write intent, no active preview | Preview builder skipped, heavy guardrails bypassed, control-reply suppression bypassed, hard sanitization applied |
 | `GOVERNED_PREVIEW` | Everything else (save intent, active preview, non-planning requests) | Normal preview/builder/guardrail flow |
 
-**Classifier (`_classify_execution_mode`, `_is_conversational_answer_first_request`):**
+**Classifier (`_classify_execution_mode` in `app.py`, `is_conversational_answer_first_request` in `conversational_checklist.py`):**
 - Rule-based, not LLM-based — deterministic for the same input every time.
 - Matches planning/checklist patterns (checklist, list, plan, organize, prepare, grocery list, packing list, to do, brainstorm, itinerary, etc.) while excluding messages with explicit save/write/file intent (`_SAVE_WRITE_FILE_SIGNAL_RE`).
-- `vera_web/execution_mode.py` owns the low-risk non-I/O lane predicates/classification helpers; `vera_web/app.py` keeps final submit/handoff boundary ownership and preview/queue truth writes.
+- `vera_web/execution_mode.py` owns the low-risk non-I/O lane predicates/classification helpers; `vera_web/app.py` keeps 4 dependency-binding wrappers (`_is_voxera_control_turn`, `_is_refinable_prose_preview`, `_looks_like_active_preview_content_generation_turn`, `_classify_execution_mode`) and final submit/handoff boundary ownership and preview/queue truth writes. Pure predicates are imported directly from their source modules.
 - `vera_web/preview_content_binding.py` owns low-risk preview-body/content-binding helper predicates (placeholder-body rejection, control-narration body rejection, targeted code-content refinement detection), while `vera_web/app.py` retains final preview/session writes and canonical submit/handoff truth ownership.
 - `vera_web/chat_early_exit_dispatch.py` owns the early-exit intent handler dispatch cluster: diagnostics refusal, job review, follow-up preview, investigation derived-save/compare/summary/expand/save, and near-miss submit blocking. `app.py` performs all session writes described by the returned `EarlyExitResult`, owns `append_session_turn`, `_render_page`, and all submit/handoff truth decisions.
 

@@ -317,12 +317,16 @@ Any extraction PR following this roadmap must preserve these invariants:
 
 - Removed `inspect.signature()` compatibility shims around `generate_vera_reply` and
   `generate_preview_builder_update` — call signatures are now stable.
-- Removed pure pass-through wrapper functions that only forwarded to imported functions
-  with no added logic (13 wrappers removed).
+- Removed 15 pure pass-through wrapper functions that only forwarded to imported
+  functions with no added logic.
 - Retained 4 dependency-binding wrappers that curry module-level dependencies
   (`_is_voxera_control_turn`, `_is_refinable_prose_preview`,
   `_looks_like_active_preview_content_generation_turn`, `_classify_execution_mode`).
 - Cleaned up `_cc_`/`_em_` alias imports that only existed to support removed wrappers.
+- **Hidden test coupling discovered**: the `inspect.signature()` shims adapted kwargs
+  at runtime for test fakes with narrow signatures. Removing the shims required adding
+  `**_kw` to ~170 test fake definitions and updating 2 code-draft hint tests to verify
+  `code_draft=True` kwarg instead of hint text baked into `user_message`.
 - Updated test patch targets to point at true function locations.
 - Status: completed.
 
