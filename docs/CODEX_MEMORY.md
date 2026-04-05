@@ -1,3 +1,14 @@
+## 2026-04-05 — fix(vera): make output review content-first when canonical content is available
+
+- **Root cause** (`vera/evidence_review.py`): `review_message()` always led with operator-oriented metadata (state, lifecycle, approval status, artifact families, evidence trace), with the actual canonical output content buried mid-message as a `- Result:` bullet. For prompts like "What was the output?", the best first answer is the actual content, not metadata.
+- **Fix** (`vera/evidence_review.py`): When `value_forward_text` is present (canonical output content safely available from `result_surfacing.py`), `review_message()` now leads with the content, then shows evidence metadata under an `Evidence for \`{job_id}\`:` header. When no canonical content is available, the original evidence-first format is preserved as an honest fallback.
+- **Presentation change only**: no changes to truth ownership, queue boundaries, evidence grounding, or routing logic. Preview truth, queue truth, and artifact/evidence truth remain distinct and authoritative.
+- **Bounded excerpting preserved**: `result_surfacing.py` truncation limits (_MAX_TEXT_EXCERPT_CHARS=480, _MAX_LOG_LINES_SHOWN=8, _MAX_LIST_DIR_ENTRIES=12) are unchanged. Content-first presentation does not bypass bounded excerpting.
+- **Files changed**: `src/voxera/vera/evidence_review.py`, `tests/test_evidence_review.py`, `docs/CODEX_MEMORY.md`.
+- **Tests**: Updated 3 existing assertions (from `"- Result:"` to content-first format checks). Added 6 new content-first regression tests: `test_content_first_file_write_leads_with_written_content`, `test_content_first_does_not_hallucinate_alternate_content`, `test_content_first_fallback_when_content_unavailable`, `test_content_first_file_read_leads_with_file_content`, `test_content_first_preserves_next_step_and_evidence_trace`, `test_no_behavior_drift_in_linked_job_review_routing`.
+- **Import guidance**: no new exports. `review_message()` signature unchanged.
+- **Recommended next PR**: condense evidence metadata section further when content-first (e.g. single-line state overview instead of per-field bullets) for cleaner conversational UX.
+
 ## 2026-04-05 — feat(vera): add session context and routing debug surfaces for seamless continuity
 
 - Added bounded routing debug persistence in `vera/session_store.py`: `append_routing_debug_entry`, `read_session_routing_debug`, `clear_session_routing_debug`. Entries track `route_status`, `dispatch_source`, `matched_early_exit`, `turn_index`, `timestamp_ms`. History bounded to 8 entries.

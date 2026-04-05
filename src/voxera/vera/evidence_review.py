@@ -462,17 +462,29 @@ def _resolve_lookup_with_aliases(*, queue_root: Path, requested_job_id: str):
 
 
 def review_message(evidence: ReviewedJobEvidence) -> str:
-    lines = [
-        f"I reviewed canonical VoxeraOS evidence for `{evidence.job_id}`.",
-        f"- State: `{evidence.state}`",
-        f"- Lifecycle state: `{evidence.lifecycle_state or 'unknown'}`",
-        f"- Terminal outcome: `{evidence.terminal_outcome or 'not terminal yet'}`",
-        f"- Approval status: `{evidence.approval_status or 'none'}`",
-        f"- Normalized outcome class: `{evidence.normalized_outcome_class or 'unknown'}`",
-        f"- Latest summary: {evidence.latest_summary or 'No summary is available yet.'}",
-    ]
+    lines: list[str] = []
+
+    # Content-first: lead with canonical output content when safely available.
+    # When value_forward_text exists the user asked something like "What was the
+    # output?" and the best first answer is the actual content, not metadata.
     if evidence.value_forward_text:
-        lines.append(f"- Result: {evidence.value_forward_text}")
+        lines.append(evidence.value_forward_text)
+        lines.append("")
+        lines.append(f"Evidence for `{evidence.job_id}`:")
+    else:
+        lines.append(f"I reviewed canonical VoxeraOS evidence for `{evidence.job_id}`.")
+
+    lines.extend(
+        [
+            f"- State: `{evidence.state}`",
+            f"- Lifecycle state: `{evidence.lifecycle_state or 'unknown'}`",
+            f"- Terminal outcome: `{evidence.terminal_outcome or 'not terminal yet'}`",
+            f"- Approval status: `{evidence.approval_status or 'none'}`",
+            f"- Normalized outcome class: `{evidence.normalized_outcome_class or 'unknown'}`",
+            f"- Latest summary: {evidence.latest_summary or 'No summary is available yet.'}",
+        ]
+    )
+    # value_forward_text is already shown at the top; do not repeat as a bullet.
     if evidence.failure_summary:
         lines.append(f"- Failure summary: {evidence.failure_summary}")
     if evidence.child_summary:
