@@ -1,3 +1,19 @@
+## 2026-04-05 — feat(vera): add session context and routing debug surfaces for seamless continuity
+
+- Added bounded routing debug persistence in `vera/session_store.py`: `append_routing_debug_entry`, `read_session_routing_debug`, `clear_session_routing_debug`. Entries track `route_status`, `dispatch_source`, `matched_early_exit`, `turn_index`, `timestamp_ms`. History bounded to 8 entries.
+- Added `session_debug_snapshot` in `vera/session_store.py`: combines existing `session_debug_info` with shared context ref values and routing debug entries into a single operator-safe snapshot.
+- Instrumented all return paths in `vera_web/app.py` `chat()` to record routing debug entries before rendering: `early_exit_dispatch`, `weather_pending_lookup`, `submit_no_preview`, `submit_active_preview`, `blocked_file_intent`, `llm_orchestration`.
+- Added `GET /vera/debug/session.json` JSON endpoint in `vera_web/app.py` for operator-facing session debug inspection. Read-only, does not alter session state.
+- Updated HTML template `index.html` to display session context ref values (active draft, preview, submitted/completed/reviewed jobs, saved file, topic, ambiguity flags) and routing debug entries in the DEV diagnostics panel.
+- Routing debug is cleared on session clear alongside context and turns.
+- Routing debug field is preserved across turn appends (added to `append_session_turn` preserved keys).
+- **Trust model preserved**: session context and routing debug remain continuity aids only. Preview truth, queue truth, and artifact/evidence truth remain authoritative. The debug surface reveals state, does not change truth boundaries.
+- **Files changed**: `src/voxera/vera/session_store.py`, `src/voxera/vera_web/app.py`, `src/voxera/vera_web/templates/index.html`, `tests/test_session_routing_debug.py`, `docs/ARCHITECTURE.md`, `docs/ops.md`, `docs/CODEX_MEMORY.md`.
+- **Tests added**: 25 tests in `tests/test_session_routing_debug.py` covering routing debug persistence, normalization, preservation across turns, session debug snapshot, JSON endpoint, chat flow integration, no-behavior-drift, and bounded output shape.
+- Validation: `ruff format --check .`, `ruff check .`, `pytest -q` — all pass (2428 passed, 2 skipped). No runtime behavior change.
+- **Import guidance**: routing debug helpers → `vera.session_store`. Debug snapshot → `session_debug_snapshot`. JSON endpoint → `GET /vera/debug/session.json?session_id=...`.
+- **Recommended next PR**: strengthen routing debug with execution-mode classification trace (which `ExecutionMode` was chosen and why) and enrich the debug surface with preview content hash for operator-safe preview identity verification.
+
 ## 2026-04-05 — docs(vera): document retained dependency-binding wrappers in app.py
 
 - Evaluation pass confirmed all 4 dependency-binding wrappers in `vera_web/app.py` should remain.  They are intentional boundary glue, not leftover indirection.
