@@ -12,7 +12,7 @@ from .vera_session_helpers import make_vera_session
 def test_concise_answer_then_save_that_creates_preview(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "What is 2 + 2?":
             return {"answer": "2 + 2 is 4.", "status": "ok:test"}
@@ -32,7 +32,7 @@ def test_concise_answer_then_save_that_creates_preview(tmp_path, monkeypatch):
 def test_concise_answer_then_thanks_then_save_that_keeps_meaningful_answer(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "What is 2 + 2?":
             return {"answer": "2 + 2 is 4.", "status": "ok:test"}
@@ -53,7 +53,7 @@ def test_concise_answer_then_thanks_then_save_that_keeps_meaningful_answer(tmp_p
 def test_explanation_then_save_that_creates_preview(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "Explain photosynthesis simply.":
             return {
@@ -78,7 +78,7 @@ def test_explanation_then_save_that_creates_preview(tmp_path, monkeypatch):
 def test_concise_answer_then_save_that_as_named_file_preserves_content(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "What is 2 + 2?":
             return {"answer": "2 + 2 is 4.", "status": "ok:test"}
@@ -98,7 +98,7 @@ def test_concise_answer_then_save_that_as_named_file_preserves_content(tmp_path,
 def test_save_previous_content_repairs_empty_preview_content(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "Give me a concise summary.":
             return {"answer": "Concise summary with key point A and B.", "status": "ok:test"}
@@ -130,7 +130,7 @@ def test_save_previous_content_repairs_empty_preview_content(tmp_path, monkeypat
 def test_active_preview_rename_path_revision_and_submit_remain_truthful(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "Explain photosynthesis simply.":
             return {
@@ -163,7 +163,7 @@ def test_active_preview_rename_path_revision_and_submit_remain_truthful(tmp_path
 def test_save_as_flow_ignores_prior_linked_completion_status_text(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         return {"answer": f"reply: {user_message}", "status": "ok:test"}
 
@@ -195,7 +195,7 @@ def test_save_as_flow_ignores_prior_linked_completion_status_text(tmp_path, monk
 def test_active_text_preview_content_updates_on_clear_generation_followup(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "tell me a hilarious joke":
             return {"answer": "Fresh hilarious joke body for this draft only.", "status": "ok:test"}
@@ -220,7 +220,7 @@ def test_active_text_preview_content_updates_on_clear_generation_followup(tmp_pa
 def test_ambiguous_active_preview_content_replacement_fails_closed(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "What is 2 + 2?":
             return {"answer": "2 + 2 is 4.", "status": "ok:test"}
@@ -247,7 +247,7 @@ def test_combined_generation_save_named_note_uses_actual_joke_not_control_ack(
 ):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "tell me a hilarious joke and save it to a note called jokie.txt":
             return {
@@ -284,7 +284,7 @@ def test_combined_generation_save_filters_wrapper_text_and_keeps_only_joke_conte
 ):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "tell me a dad joke and save it as dadjoke.txt":
             return {
@@ -320,7 +320,7 @@ def test_followup_tell_another_joke_and_add_as_content_refreshes_preview_content
 ):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "tell me another joke and add as content":
             return {
@@ -351,7 +351,7 @@ def test_active_draft_refresh_with_wrapper_reply_replaces_body_with_pure_new_jok
 ):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "tell me a dad joke and save it as dadjoke.txt":
             return {
@@ -398,7 +398,7 @@ def test_active_draft_refresh_unquoted_wrapper_with_contractions_keeps_full_joke
 ):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "tell me an astronaut joke and save it as astrojoke.txt":
             return {
@@ -444,7 +444,7 @@ def test_single_turn_generate_save_poem_uses_same_turn_authored_body(tmp_path, m
         "And every orbit feels like home."
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "write a short poem about space and save it as spacepoem.txt":
             return {"answer": poem, "status": "ok:test"}
@@ -487,7 +487,7 @@ def test_single_turn_generate_save_poem_uses_same_turn_authored_body(tmp_path, m
 def test_single_turn_generate_save_poem_strips_if_happy_helper_tail(tmp_path, monkeypatch):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "write a short poem and save it as poem.txt":
             return {
@@ -534,7 +534,7 @@ def test_single_turn_generate_save_mauna_loa_summary_keeps_full_body_and_submit_
         "history, shaping Hawaii's landscape and serving as a major site for atmospheric monitoring."
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "give me a short summary of Mauna Loa and save it as maunaloa.txt":
             return {
@@ -582,7 +582,7 @@ def test_single_turn_generate_save_summary_ignores_preview_pane_meta_narration(
         "have shaped Hawaii and provided long-running atmospheric observations."
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "give me a short summary of Mauna Loa and save it as maunaloa.txt":
             return {
@@ -623,7 +623,7 @@ def test_single_turn_generate_save_joke_strips_explanatory_tail_and_submit_truth
 ):
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "tell me an astronaut joke and save it as astrojoke.txt":
             return {
@@ -669,7 +669,7 @@ def test_single_turn_generate_save_volcano_fact_does_not_require_prior_artifact(
 
     fact = "Volcano fact: Magma is called lava only after it reaches Earth's surface."
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if user_message == "give me a short volcano fact and save it as volcanofact.txt":
             return {"answer": fact, "status": "ok:test"}
@@ -721,7 +721,7 @@ def test_combined_generate_save_content_type_matrix_prefers_authored_body_not_co
         ),
     }
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         return {"answer": responses[user_message], "status": "ok:test"}
 
@@ -2668,7 +2668,9 @@ def test_wedding_checklist_repeated_5_runs_deterministic(tmp_path, monkeypatch):
 def test_enforcement_layer_catches_sanitizer_edge_case(tmp_path, monkeypatch):
     """If the sanitizer somehow misses a violation, the enforcement layer
     must catch it and re-render deterministically."""
-    from voxera.vera_web.app import _enforce_conversational_checklist_output
+    from voxera.vera_web.conversational_checklist import (
+        enforce_conversational_checklist_output as _enforce_conversational_checklist_output,
+    )
 
     # Simulate a sanitizer output that still has a banned token in a non-list line
     dirty = "1. Coffee\n2. Rice\nCheck the preview for more."
@@ -2682,7 +2684,9 @@ def test_enforcement_layer_catches_sanitizer_edge_case(tmp_path, monkeypatch):
 
 def test_enforcement_layer_handles_empty_text(tmp_path, monkeypatch):
     """Enforcement layer must extract items from raw_answer when text is empty."""
-    from voxera.vera_web.app import _enforce_conversational_checklist_output
+    from voxera.vera_web.conversational_checklist import (
+        enforce_conversational_checklist_output as _enforce_conversational_checklist_output,
+    )
 
     raw = "I prepared this in the preview.\n\n- Milk\n- Eggs\n- Bread"
     result = _enforce_conversational_checklist_output(

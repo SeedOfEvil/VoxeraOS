@@ -12,7 +12,9 @@ from voxera.vera.saveable_artifacts import (
     message_requests_referenced_content,
     select_recent_saveable_assistant_artifact,
 )
-from voxera.vera_web.app import _is_conversational_answer_first_request
+from voxera.vera_web.conversational_checklist import (
+    is_conversational_answer_first_request as _is_conversational_answer_first_request,
+)
 
 # ---------------------------------------------------------------------------
 # classify_bounded_file_intent: existence checks

@@ -248,7 +248,7 @@ def test_vera_web_chat_returns_assistant_response(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -266,7 +266,7 @@ def test_vera_web_voice_transcript_fails_closed_when_disabled(tmp_path, monkeypa
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
@@ -293,7 +293,7 @@ def test_vera_web_voice_transcript_origin_is_persisted_and_visible(tmp_path, mon
     monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
     monkeypatch.setenv("VOXERA_ENABLE_VOICE_INPUT", "1")
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test", "turn_count": len(turns)}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -336,7 +336,7 @@ def test_vera_web_context_is_preserved_and_capped(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"turns={len(turns)} latest={user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -356,7 +356,7 @@ def test_vera_clear_chat_and_context(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": "ok", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -377,7 +377,7 @@ def test_guidance_is_hidden_once_chat_has_turns(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -409,7 +409,7 @@ def test_vera_chat_does_not_enqueue_jobs(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": "proposal only", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -426,7 +426,7 @@ def test_informational_web_query_does_not_auto_prepare_voxera_preview(tmp_path, 
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": "Read-only findings from Brave", "status": "ok:web_investigation"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -448,7 +448,7 @@ def test_finance_informational_query_does_not_auto_prepare_voxera_preview(tmp_pa
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": "Read-only market findings", "status": "ok:web_investigation"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -473,7 +473,7 @@ def test_news_query_skips_preview_builder_and_stays_informational(tmp_path, monk
     async def _builder_should_not_run(**kwargs):
         raise AssertionError("preview builder should not run for informational web turns")
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": "Global headlines summary", "status": "ok:web_investigation"}
 
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _builder_should_not_run)
@@ -542,7 +542,7 @@ def test_structured_investigation_is_stored_and_numbered(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": "Result 1: Result One\nResult 2: Result Two",
@@ -729,7 +729,7 @@ def test_expand_result_stores_saveable_derived_output_and_save_it_works(tmp_path
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "expand result 1" in user_message.lower():
             return {
@@ -778,7 +778,7 @@ def test_expand_result_then_save_it_as_named_markdown_file_works(tmp_path, monke
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "expand result 1" in user_message.lower():
             return {
@@ -954,7 +954,7 @@ def test_derived_output_does_not_override_newer_conversational_answer_for_save_t
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "dark matter" in user_message.lower():
             return {
@@ -1021,7 +1021,7 @@ def test_expand_result_save_it_then_create_it_submits_preview(tmp_path, monkeypa
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "expand result 1" in user_message.lower():
             return {
@@ -1103,7 +1103,7 @@ def test_put_that_into_file_after_informational_turn_does_not_claim_phantom_prev
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         if "put" in user_message.lower():
             return {
                 "answer": "I've prepared a draft for the file with the news content.",
@@ -1130,7 +1130,7 @@ def test_informational_query_then_send_it_does_not_enqueue(tmp_path, monkeypatch
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         if "send it" in user_message.lower():
             return {"answer": "I did not submit anything.", "status": "info:no_submit"}
         return {"answer": "Top headlines summary", "status": "ok:web_investigation"}
@@ -1162,7 +1162,7 @@ def test_missing_key_informational_query_is_honest_and_no_preview(tmp_path, monk
     async def _builder_should_not_run(**kwargs):
         raise AssertionError("preview builder should not run for informational web turns")
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": "Brave web investigation is not configured yet (missing API key).",
             "status": "web_investigation_unconfigured",
@@ -1192,7 +1192,7 @@ def test_explicit_internal_search_request_stays_no_preview(tmp_path, monkeypatch
     async def _builder_should_not_run(**kwargs):
         raise AssertionError("preview builder should not run for informational web turns")
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": "I can check that online and summarize it.",
             "status": "ok:web_investigation",
@@ -1447,7 +1447,7 @@ def test_yes_please_without_preview_fails_closed_even_if_model_claims_submission
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "I submitted the request to VoxeraOS.", "status": "ok:test"}
 
@@ -1798,12 +1798,18 @@ def test_backend_builder_updates_active_preview_without_json_dumping_in_chat(tmp
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
@@ -1827,12 +1833,18 @@ def test_submit_after_model_preview_replacement_uses_latest_payload(tmp_path, mo
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = turns
         if "update" in user_message:
@@ -1858,12 +1870,18 @@ def test_invalid_builder_payload_is_ignored(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "Got it, I kept this conversational.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "", "write_file": "bad-shape"}
@@ -1942,12 +1960,18 @@ def test_builder_drops_extra_keys_and_keeps_supported_preview_shape(tmp_path, mo
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "I left the preview as-is.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "write a note called skibbidy.txt", "content": "hello"}
@@ -1971,12 +1995,18 @@ def test_builder_multiple_preview_replacements_latest_wins_in_pane(tmp_path, mon
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "plain reply", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, active_preview)
         if "to b" in user_message:
@@ -2010,12 +2040,18 @@ def test_builder_can_set_preview_without_changing_vera_voice(tmp_path, monkeypat
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "I updated the target in the preview.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
@@ -2038,7 +2074,7 @@ def test_chat_model_cannot_bypass_handoff_with_fake_submission_language(tmp_path
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "I submitted the job to VoxeraOS and it is queued.", "status": "ok:test"}
 
@@ -2056,7 +2092,7 @@ def test_context_intact_across_preview_to_submit_flow(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"ack {len(turns)}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -2125,7 +2161,7 @@ def test_rolling_turn_cap_does_not_drop_pending_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"ok {len(turns)} {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -2187,7 +2223,7 @@ def test_informational_domain_phrases_do_not_auto_prepare_preview(tmp_path, monk
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "info mode", "status": "ok:test"}
 
@@ -2498,7 +2534,7 @@ def test_preview_persists_across_followup_turn_before_submit(tmp_path, monkeypat
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "sounds good", "status": "ok:test"}
 
@@ -2552,7 +2588,7 @@ def test_natural_preview_submit_phrase_without_preview_fails_closed(tmp_path, mo
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "ordinary reply", "status": "ok:test"}
 
@@ -2855,7 +2891,7 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": ('Proposed VoxeraOS Job:\n```json\n{"goal": "open https://openai.com"}\n```'),
@@ -2863,7 +2899,13 @@ def test_voxera_refinement_hides_visible_json_dump_and_updates_preview(tmp_path,
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com"}
@@ -2888,7 +2930,7 @@ def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, 
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": "I prepared a proposal for VoxeraOS. Let me know and I'll submit it.",
@@ -2896,7 +2938,13 @@ def test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat(tmp_path, 
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://example.com"}
@@ -2924,12 +2972,18 @@ def test_chat_does_not_claim_preview_updated_when_builder_update_invalid(tmp_pat
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "Working on it.", "status": "ok:test"}
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return {"goal": "open https://openai.com", "write_file": "bad-shape"}
@@ -2960,7 +3014,7 @@ def test_json_config_request_creates_preview_and_shows_fenced_code(tmp_path, mon
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": '```json\n{"app":"demo","enabled":true}\n```',
@@ -2968,7 +3022,13 @@ def test_json_config_request_creates_preview_and_shows_fenced_code(tmp_path, mon
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         _ = (turns, user_message, active_preview)
         return None
@@ -3285,7 +3345,7 @@ def test_save_previous_summary_creates_governed_write_preview(tmp_path, monkeypa
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "summarize" in user_message.lower():
             return {
@@ -3328,7 +3388,7 @@ def test_save_previous_answer_to_markdown_creates_preview(tmp_path, monkeypatch)
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "explain" in user_message.lower():
             return {
@@ -3368,7 +3428,7 @@ def test_black_hole_explanation_then_save_previous_answer_creates_preview(tmp_pa
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "black hole" in user_message.lower():
             return {
@@ -3410,7 +3470,7 @@ def test_black_hole_explanation_then_essay_followup_creates_authoritative_previe
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "2 page essay" in lowered:
@@ -3456,7 +3516,7 @@ def test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview(tmp_pat
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "more formal" in lowered:
@@ -3527,7 +3587,7 @@ def test_investigation_summary_then_article_followup_creates_preview(tmp_path, m
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         return {
             "answer": (
@@ -3576,7 +3636,7 @@ def test_investigation_summary_then_article_save_as_named_file_keeps_article_bod
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "write a short article based on that summary" in lowered:
@@ -3665,7 +3725,7 @@ def test_direct_essay_request_creates_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": (
@@ -3701,7 +3761,7 @@ def test_black_hole_essay_submit_saves_clean_body_only(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "2 page essay" in lowered:
@@ -3739,7 +3799,7 @@ def test_direct_essay_submit_saves_clean_body_only(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": (
@@ -3790,7 +3850,7 @@ def test_writing_draft_hides_internal_control_block_but_keeps_authoritative_prev
         "</voxera_control>"
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": leaked, "status": "ok:test"}
 
@@ -3820,7 +3880,7 @@ def test_writing_draft_submit_after_control_block_strip_uses_clean_preview(tmp_p
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": (
@@ -3863,7 +3923,7 @@ def test_code_draft_rendering_still_shows_fenced_code_with_control_sanitizer_pre
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": "```python\nprint('still visible')\n```",
@@ -3891,7 +3951,7 @@ def test_entropy_explanation_then_save_that_to_note_creates_preview(tmp_path, mo
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "entropy" in user_message.lower():
             return {
@@ -3925,7 +3985,7 @@ def test_weather_answer_then_save_that_to_note_creates_preview(tmp_path, monkeyp
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "weather" in lowered:
@@ -4158,7 +4218,7 @@ def test_concise_information_answer_then_save_it_creates_note_preview(tmp_path, 
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "capital of france" in lowered:
@@ -4187,7 +4247,7 @@ def test_previous_explanation_survives_trivial_thanks_turn_for_save_reference(
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "photosynthesis" in lowered:
@@ -4229,7 +4289,7 @@ def test_previous_explanation_without_courtesy_turn_uses_latest_explanation(tmp_
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "photosynthesis" in lowered:
@@ -4265,7 +4325,7 @@ def test_code_explanation_then_save_explanation_creates_text_preview(tmp_path, m
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "write me a python script" in lowered:
@@ -4327,7 +4387,7 @@ def test_ordinary_compare_prompt_stays_conversational_not_investigation(tmp_path
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         return {
             "answer": (
@@ -4357,7 +4417,7 @@ def test_two_recent_assistant_answers_save_that_prefers_latest(tmp_path, monkeyp
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "gravity" in lowered:
@@ -4395,7 +4455,7 @@ def test_plural_save_reference_fails_closed(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         lowered = user_message.lower()
         if "gravity" in lowered:
@@ -4430,7 +4490,7 @@ def test_recent_assistant_reference_failure_is_clear_when_no_content(tmp_path, m
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {"answer": "ok", "status": "ok:test"}
 
@@ -4459,7 +4519,7 @@ def test_active_preview_formal_refinement_updates_content(tmp_path, monkeypatch)
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "make it more formal" in user_message.lower():
             return {
@@ -4498,7 +4558,7 @@ def test_active_preview_formal_refinement_and_save_as_updates_path_and_content(
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "make it more formal and save it as polished.txt" in user_message.lower():
             return {
@@ -4540,7 +4600,7 @@ def test_active_preview_shorter_refinement_uses_reply_text_over_builder_heuristi
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "make it shorter" in user_message.lower():
             return {
@@ -4587,7 +4647,7 @@ def test_active_note_refinement_reuses_existing_preview_when_builder_returns_non
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "more casual" in user_message.lower():
             return {
@@ -4603,7 +4663,7 @@ def test_active_note_refinement_reuses_existing_preview_when_builder_returns_non
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(
         vera_app_module,
-        "_generate_preview_builder_update_with_optional_artifacts",
+        "generate_preview_builder_update",
         _fake_builder_update,
     )
 
@@ -4658,7 +4718,7 @@ def test_code_preview_refinement_prompt_does_not_overwrite_code_content(tmp_path
         },
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = (turns, user_message)
         return {
             "answer": "Formal rewrite:\n\nThis script prints hello to standard output.",
@@ -4698,7 +4758,7 @@ def test_non_document_preview_refinement_does_not_write_prose_back(tmp_path, mon
         },
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "more formal" in user_message.lower():
             return {
@@ -4714,7 +4774,7 @@ def test_non_document_preview_refinement_does_not_write_prose_back(tmp_path, mon
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
     monkeypatch.setattr(
         vera_app_module,
-        "_generate_preview_builder_update_with_optional_artifacts",
+        "generate_preview_builder_update",
         _fake_builder_update,
     )
 
@@ -4749,7 +4809,7 @@ def test_code_preview_plain_english_save_as_updates_to_text_preview(tmp_path, mo
         },
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         _ = turns
         if "plain english" in user_message.lower():
             return {
@@ -5128,7 +5188,7 @@ def test_linked_read_only_success_auto_surfaces_once_per_completion(tmp_path, mo
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -5370,7 +5430,7 @@ def test_linked_approval_blocked_auto_surfaces_once(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -5452,7 +5512,7 @@ def test_linked_failed_auto_surfaces_once(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -5528,7 +5588,7 @@ def test_linked_mutating_success_auto_surfaces_once(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -5601,7 +5661,7 @@ def test_linked_mutating_success_intermediate_orchestration_is_suppressed(tmp_pa
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -5784,7 +5844,7 @@ def test_linked_live_delivery_not_duplicated_after_refresh_or_later_chat(tmp_pat
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -6201,7 +6261,7 @@ def test_diagnostics_invalid_service_target_fails_closed_in_web_chat(tmp_path, m
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -6231,7 +6291,7 @@ def test_service_status_request_prefers_diagnostics_preview_over_review(tmp_path
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -6329,7 +6389,7 @@ def test_diagnostics_system_mission_completion_surfaces_useful_values(tmp_path, 
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -6415,7 +6475,7 @@ def test_diagnostics_service_status_completion_surfaces_state(tmp_path, monkeypa
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -6475,7 +6535,7 @@ def test_diagnostics_recent_logs_completion_surfaces_line_count(tmp_path, monkey
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -6554,7 +6614,7 @@ def test_job_review_query_status_of_my_job_falls_through_without_context(tmp_pat
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -6604,7 +6664,7 @@ def test_python_script_request_creates_authoritative_preview(tmp_path, monkeypat
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's a Python script:\n\n```python\n{_PYTHON_CODE}\n```",
             "status": "ok:code_draft",
@@ -6633,7 +6693,7 @@ def test_bash_script_request_creates_authoritative_preview(tmp_path, monkeypatch
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's a bash script:\n\n```bash\n{_BASH_CODE}```",
             "status": "ok:code_draft",
@@ -6659,7 +6719,7 @@ def test_yaml_config_request_creates_authoritative_preview(tmp_path, monkeypatch
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's a YAML config:\n\n```yaml\n{_YAML_CODE}```",
             "status": "ok:code_draft",
@@ -6688,7 +6748,7 @@ def test_json_config_request_creates_authoritative_preview(tmp_path, monkeypatch
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's your JSON config:\n\n```json\n{_JSON_CODE}```",
             "status": "ok:code_draft",
@@ -6712,7 +6772,7 @@ def test_code_is_rendered_in_proper_fenced_code_block_in_reply(tmp_path, monkeyp
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's the script:\n\n```python\n{_PYTHON_CODE}\n```\n\nThis script is ready.",
             "status": "ok:code_draft",
@@ -6736,7 +6796,7 @@ def test_code_reply_not_suppressed_by_voxera_preview_flow_logic(tmp_path, monkey
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": "Here's a Python script:\n\n```python\nprint('hello')\n```\n\nEnjoy!",
             "status": "ok:code_draft",
@@ -6761,7 +6821,7 @@ def test_follow_up_save_it_submits_code_draft_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's the script:\n\n```python\n{_PYTHON_CODE}\n```",
             "status": "ok:code_draft",
@@ -6793,7 +6853,7 @@ def test_follow_up_save_this_submits_code_draft_preview(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's the script:\n\n```python\n{_PYTHON_CODE}\n```",
             "status": "ok:code_draft",
@@ -6820,7 +6880,7 @@ def test_code_draft_preview_has_real_content_not_empty_placeholder(tmp_path, mon
 
     code = "def scrape(url):\n    import requests\n    return requests.get(url).text"
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's a web scraper:\n\n```python\n{code}\n```",
             "status": "ok:code_draft",
@@ -6847,7 +6907,7 @@ def test_no_pseudo_preview_json_in_user_facing_chat_output(tmp_path, monkeypatch
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's your script:\n\n```python\n{_PYTHON_CODE}\n```",
             "status": "ok:code_draft",
@@ -6874,7 +6934,7 @@ def test_code_draft_when_llm_reply_has_no_code_fence_no_exception(tmp_path, monk
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": "I can help you write a Python script. What should it do?",
             "status": "ok:clarifying",
@@ -6897,7 +6957,7 @@ def test_existing_write_file_flows_still_work(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": "I prepared a write preview for hello.txt.", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -6922,7 +6982,7 @@ def test_code_draft_explicit_filename_is_used(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's scraper.py:\n\n```python\n{_PYTHON_CODE}\n```",
             "status": "ok:code_draft",
@@ -6948,7 +7008,7 @@ def test_code_draft_does_not_enqueue_without_explicit_submit(tmp_path, monkeypat
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's the script:\n\n```python\n{_PYTHON_CODE}\n```",
             "status": "ok:code_draft",
@@ -6977,7 +7037,7 @@ def test_code_draft_refinement_updates_preview_and_shows_reply(tmp_path, monkeyp
 
     call_count = 0
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -7029,7 +7089,7 @@ def test_code_draft_refinement_then_save_it_submits(tmp_path, monkeypatch):
 
     call_count = 0
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -7066,7 +7126,7 @@ def test_lets_save_it_with_apostrophe_submits(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": "```python\nprint('done')\n```",
             "status": "ok:code_draft",
@@ -7090,7 +7150,7 @@ def test_write_that_to_a_file_submits_when_preview_exists(tmp_path, monkeypatch)
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": "```bash\necho hello\n```",
             "status": "ok:code_draft",
@@ -7119,7 +7179,7 @@ def test_no_false_preview_claim_when_llm_has_no_fenced_code(tmp_path, monkeypatc
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         # LLM claims preview exists but never produces a fenced code block
         return {
             "answer": (
@@ -7157,7 +7217,13 @@ def test_no_false_preview_claim_when_builder_creates_empty_preview(tmp_path, mon
     _set_queue_root(monkeypatch, queue)
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         # Builder creates a preview with empty write_file content
         return {
@@ -7169,7 +7235,7 @@ def test_no_false_preview_claim_when_builder_creates_empty_preview(tmp_path, mon
             },
         }
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         # LLM reply has no fenced code block but falsely claims preview exists
         return {
             "answer": "I've prepared the script. Check the Preview Pane to review it.",
@@ -7255,7 +7321,7 @@ def test_submit_with_real_code_preview_succeeds(tmp_path, monkeypatch):
 
     code = "print('hello')"
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here's the script:\n\n```python\n{code}\n```",
             "status": "ok:code_draft",
@@ -7285,7 +7351,7 @@ def test_code_in_chat_without_preview_does_not_claim_preview_exists(tmp_path, mo
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         # LLM produces code in a fence AND claims preview exists
         return {
             "answer": (
@@ -7296,7 +7362,13 @@ def test_code_in_chat_without_preview_does_not_claim_preview_exists(tmp_path, mo
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         return None
 
@@ -7328,7 +7400,7 @@ def test_false_preview_claim_stripped_preserves_code_blocks(tmp_path, monkeypatc
 
     # Simulate a non-code-draft informational turn where the LLM hallucinated
     # a preview claim.  Use a message that is NOT a code draft request.
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": (
                 "Here is an example:\n\n```python\nprint('hello')\n```\n\n"
@@ -7338,7 +7410,13 @@ def test_false_preview_claim_stripped_preserves_code_blocks(tmp_path, monkeypatc
         }
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         return None
 
@@ -7371,7 +7449,7 @@ def test_existing_explicit_write_file_flow_not_regressed(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": "I prepared a write preview for hello.txt.", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
@@ -7412,7 +7490,7 @@ def test_explicit_filename_code_draft_populates_preview_content(tmp_path, monkey
         "print(soup.find('h1').text)"
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": (
                 f"Here is scraper.py:\n\n```python\n{expected_code}\n```\n\n"
@@ -7454,7 +7532,13 @@ def test_failed_code_draft_clears_empty_preview_shell(tmp_path, monkeypatch):
     _set_queue_root(monkeypatch, queue)
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         # Simulates the real hidden compiler creating a placeholder with the right path
         return {
@@ -7466,7 +7550,7 @@ def test_failed_code_draft_clears_empty_preview_shell(tmp_path, monkeypatch):
             },
         }
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         # LLM claims preview is ready but produces no fenced code block
         return {
             "answer": (
@@ -7516,7 +7600,13 @@ def test_code_draft_placeholder_survives_when_llm_makes_no_preview_claim(tmp_pat
     _set_queue_root(monkeypatch, queue)
 
     async def _fake_builder(
-        *, turns, user_message, active_preview, enrichment_context=None, investigation_context=None
+        *,
+        turns,
+        user_message,
+        active_preview,
+        enrichment_context=None,
+        investigation_context=None,
+        **_kw,
     ):
         return {
             "goal": "create script.ps1",
@@ -7527,7 +7617,7 @@ def test_code_draft_placeholder_survives_when_llm_makes_no_preview_claim(tmp_pat
             },
         }
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         # LLM acknowledges the request without claiming preview is visible
         return {
             "answer": "I'll create script.ps1. What content would you like inside it?",
@@ -7561,7 +7651,7 @@ def test_code_draft_with_trailing_space_on_fence_line_extracts_code(tmp_path, mo
 
     code = "print('scraped!')"
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         # LLM emits ```python<space> — trailing space after the language tag
         return {
             "answer": f"Here it is:\n\n```python \n{code}\n```\n\nDone.",
@@ -7595,18 +7685,20 @@ def test_code_draft_with_trailing_space_on_fence_line_extracts_code(tmp_path, mo
 
 
 def test_code_draft_hint_injected_into_user_message_for_code_draft(tmp_path, monkeypatch):
-    """The code-generation hint must be appended to user_message for code-draft requests.
+    """code_draft=True must be passed to generate_vera_reply for code-draft requests.
 
-    This verifies the LLM receives an explicit instruction to output code in a
-    fenced block, overriding Vera's default "not the payload drafter" stance.
+    This verifies the LLM will receive the code-generation hint (injected by
+    service.py's build_vera_messages) to output code in a fenced block,
+    overriding Vera's default "not the payload drafter" stance.
     """
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
     captured: dict = {}
 
-    async def _capture_reply(*, turns, user_message):
+    async def _capture_reply(*, turns, user_message, **_kw):
         captured["user_message"] = user_message
+        captured["code_draft"] = _kw.get("code_draft", False)
         return {
             "answer": "```python\nprint('hi')\n```",
             "status": "ok:code_draft",
@@ -7623,23 +7715,22 @@ def test_code_draft_hint_injected_into_user_message_for_code_draft(tmp_path, mon
     )
 
     assert "user_message" in captured, "generate_vera_reply must have been called"
-    assert "fenced code block" in captured["user_message"], (
-        "Code-draft hint must instruct LLM to use a fenced code block"
-    )
-    assert "write me a python script" in captured["user_message"], (
-        "Original user message must be preserved in the augmented message"
+    assert captured["code_draft"] is True, "code_draft=True must be passed for code-draft requests"
+    assert captured["user_message"] == "write me a python script", (
+        "Original user message must be preserved (hint injected by service layer)"
     )
 
 
 def test_code_draft_hint_not_injected_for_non_code_draft(tmp_path, monkeypatch):
-    """The code-generation hint must NOT be in user_message for non-code-draft requests."""
+    """code_draft must be False for non-code-draft requests."""
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
 
     captured: dict = {}
 
-    async def _capture_reply(*, turns, user_message):
+    async def _capture_reply(*, turns, user_message, **_kw):
         captured["user_message"] = user_message
+        captured["code_draft"] = _kw.get("code_draft", False)
         return {"answer": "Here is the status.", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _capture_reply)
@@ -7651,8 +7742,8 @@ def test_code_draft_hint_not_injected_for_non_code_draft(tmp_path, monkeypatch):
     client.post("/chat", data={"session_id": sid, "message": "tell me about yourself"})
 
     assert "user_message" in captured, "generate_vera_reply must have been called"
-    assert "fenced code block" not in captured["user_message"], (
-        "Code-draft hint must NOT be added to non-code-draft requests"
+    assert captured["code_draft"] is not True, (
+        "code_draft must NOT be True for non-code-draft requests"
     )
     assert captured["user_message"] == "tell me about yourself"
 
@@ -7678,7 +7769,7 @@ def test_real_world_python_url_fetch_script_creates_preview(tmp_path, monkeypatc
         "p = TitleParser()\np.parse(html)\nprint(p.title)"
     )
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here is the Python script:\n\n```python\n{code}\n```",
             "status": "ok:code_draft",
@@ -7719,7 +7810,7 @@ def test_real_world_scrape_any_website_creates_preview(tmp_path, monkeypatch):
 
     code = "import requests\nfrom bs4 import BeautifulSoup\n\nurl = input('URL: ')\nresp = requests.get(url)\nprint(BeautifulSoup(resp.text, 'html.parser').get_text())"
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"```python\n{code}\n```",
             "status": "ok:code_draft",
@@ -7755,7 +7846,7 @@ def test_real_world_bash_disk_memory_creates_preview_and_submit_works(tmp_path, 
 
     code = "#!/bin/bash\necho '=== Disk Usage ==='\ndf -h\necho '=== Memory Usage ==='\nfree -h"
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {
             "answer": f"Here is the bash script:\n\n```bash\n{code}\n```\n\nReady to submit.",
             "status": "ok:code_draft",
@@ -7864,17 +7955,21 @@ def test_near_miss_submit_with_active_preview_fails_closed_and_preserves_preview
 
 
 def test_active_preview_submit_intent_detection_keeps_rename_fail_closed_boundary():
-    assert vera_app_module._is_active_preview_submit_intent("submit it", preview_available=True)
-    assert vera_app_module._is_active_preview_submit_intent("save it", preview_available=True)
-    assert not vera_app_module._is_active_preview_submit_intent(
-        "save it as renamed.txt", preview_available=True
-    )
+    from voxera.vera.preview_submission import should_submit_active_preview
+
+    assert should_submit_active_preview("submit it", preview_available=True)
+    assert should_submit_active_preview("save it", preview_available=True)
+    assert not should_submit_active_preview("save it as renamed.txt", preview_available=True)
 
 
 def test_ambiguous_active_preview_replacement_detection_characterization():
-    assert vera_app_module._looks_like_ambiguous_active_preview_content_replacement_request(
+    from voxera.vera_web.execution_mode import (
+        _looks_like_ambiguous_active_preview_content_replacement_request,
+    )
+
+    assert _looks_like_ambiguous_active_preview_content_replacement_request(
         "replace that text in the file"
     )
-    assert not vera_app_module._looks_like_ambiguous_active_preview_content_replacement_request(
+    assert not _looks_like_ambiguous_active_preview_content_replacement_request(
         'replace that text in the file with "hello"'
     )

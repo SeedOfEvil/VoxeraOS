@@ -301,6 +301,7 @@ Any extraction PR following this roadmap must preserve these invariants:
   into `vera_web/conversational_checklist.py`.
 - Keep route orchestration and submit/handoff logic in place.
 - Preserve behavior via thin `app.py` wrappers/import aliases where needed.
+- Status: completed; thin delegation wrappers subsequently removed (see PR-3a).
 
 ### PR-3: Extract Vera execution-mode classifier helpers
 
@@ -310,6 +311,24 @@ Any extraction PR following this roadmap must preserve these invariants:
 - Status: completed by extracting execution-mode predicates/classifier helpers into
   `src/voxera/vera_web/execution_mode.py` with thin `app.py` delegation wrappers,
   while leaving submit/handoff/state-write truth-critical boundaries in `app.py`.
+  Thin delegation wrappers subsequently removed (see PR-3a).
+
+### PR-3a: Remove app.py compatibility shims and thin wrapper indirection
+
+- Removed `inspect.signature()` compatibility shims around `generate_vera_reply` and
+  `generate_preview_builder_update` — call signatures are now stable.
+- Removed 15 pure pass-through wrapper functions that only forwarded to imported
+  functions with no added logic.
+- Retained 4 dependency-binding wrappers that curry module-level dependencies
+  (`_is_voxera_control_turn`, `_is_refinable_prose_preview`,
+  `_looks_like_active_preview_content_generation_turn`, `_classify_execution_mode`).
+- Cleaned up `_cc_`/`_em_` alias imports that only existed to support removed wrappers.
+- **Hidden test coupling discovered**: the `inspect.signature()` shims adapted kwargs
+  at runtime for test fakes with narrow signatures. Removing the shims required adding
+  `**_kw` to ~170 test fake definitions and updating 2 code-draft hint tests to verify
+  `code_draft=True` kwarg instead of hint text baked into `user_message`.
+- Updated test patch targets to point at true function locations.
+- Status: completed.
 
 ### PR-4: Extract panel presentation formatting helpers
 

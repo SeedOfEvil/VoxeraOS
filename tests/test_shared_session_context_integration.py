@@ -23,7 +23,7 @@ def test_preview_creation_updates_context(tmp_path, monkeypatch):
     """When a preview is created via chat, context tracks active_draft_ref."""
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         if user_message == "What is 2 + 2?":
             return {"answer": "2 + 2 is 4.", "status": "ok:test"}
         return {"answer": "ok", "status": "ok:test"}
@@ -69,7 +69,7 @@ def test_context_preserved_across_normal_turns(tmp_path, monkeypatch):
     """Context survives across multiple chat turns."""
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _fake_reply(*, turns, user_message):
+    async def _fake_reply(*, turns, user_message, **_kw):
         return {"answer": "Sure!", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
