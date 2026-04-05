@@ -1488,18 +1488,18 @@ Vera now has a deterministic code/script/config draft lane that creates real `wr
 **Code extraction (`core/code_draft_intent.py`):**
 - `extract_code_from_reply(text)` uses `r"```[^\n]*\n(.*?)```"` (DOTALL) to match fenced blocks. The `[^\n]*` on the fence line tolerates trailing spaces, version strings, or other characters LLMs sometimes emit after the language tag (e.g. ` ```python ` with a trailing space). Code is stripped before returning.
 
-**Truthfulness guardrails (`vera_web/app.py`):**
-- `_text_outside_code_blocks(text)`: strips fenced code blocks from text before phrase-matching, preventing false positives when code content mentions "preview". Uses the same `[^\n]*` fence-line pattern.
-- `_looks_like_preview_pane_claim(text)`: detects phrases like "preview pane", "check the preview", "in your preview", "visible in preview", etc. in non-code text. Delegates to `_looks_like_preview_update_claim` for update-style claims.
-- `_guardrail_false_preview_claim(text, preview_exists)`: applied after `_guardrail_submission_claim`; when `preview_exists=False`, strips false preview-existence claims from the LLM reply — preserving any embedded code blocks with a truthful note, or replacing the whole reply with a plain "could not prepare preview" message.
+**Truthfulness guardrails (`vera_web/conversational_checklist.py`, `vera_web/response_shaping.py`, `vera_web/app.py`):**
+- `_text_outside_code_blocks(text)` (in `conversational_checklist.py`): strips fenced code blocks from text before phrase-matching, preventing false positives when code content mentions "preview". Uses the same `[^\n]*` fence-line pattern.
+- `_looks_like_preview_pane_claim(text)` (in `conversational_checklist.py`): detects phrases like "preview pane", "check the preview", "in your preview", "visible in preview", etc. in non-code text. Delegates to `looks_like_preview_update_claim` for update-style claims.
+- `guardrail_false_preview_claim(text, preview_exists)` (in `response_shaping.py`): applied after `_guardrail_submission_claim`; when `preview_exists=False`, strips false preview-existence claims from the LLM reply — preserving any embedded code blocks with a truthful note, or replacing the whole reply with a plain "could not prepare preview" message.
 - A `write_file` preview with empty `content` is treated as "no real preview" for claim-checking purposes.
-- **All-or-nothing enforcement:** when `_guardrail_false_preview_claim` strips a false claim, any empty-content `write_file` placeholder shell is immediately cleared. Failed code-draft attempts leave no orphaned empty preview. Placeholder previews created without a false claim (e.g. "write a file called script.ps1" where the LLM asks what content to add) are intentionally preserved for refinement flows.
+- **All-or-nothing enforcement:** when `guardrail_false_preview_claim` strips a false claim, any empty-content `write_file` placeholder shell is immediately cleared. Failed code-draft attempts leave no orphaned empty preview. Placeholder previews created without a false claim (e.g. "write a file called script.ps1" where the LLM asks what content to add) are intentionally preserved for refinement flows.
 
 **LLM persona override for code-draft turns (`vera/service.py`, `vera_web/app.py`):**
 - Vera's default system prompt declares "Not the payload drafter" and "Do not narrate hidden drafting mechanics." Without intervention the LLM never outputs code in fenced blocks; `extract_code_from_reply` always returns `None` and previews stay empty.
 - `_CODE_DRAFT_HINT` constant (in `service.py`): a bracketed system note appended to the user message on code-draft turns, explicitly instructing the LLM to write the complete, working code in a properly-fenced block for extraction and governed storage.
 - `build_vera_messages` accepts a `code_draft: bool = False` parameter; when `True`, the hint is appended to the user content in the messages list.
-- `app.py` pre-computes `is_code_draft_turn` before the LLM call and builds `_vera_user_message = message + _CODE_DRAFT_HINT if is_code_draft_turn else message`. The hint travels inside the user message so `generate_vera_reply`'s signature is unchanged (avoids breaking test infrastructure). Session history stores the original un-augmented message.
+- `app.py` pre-computes `is_code_draft_turn` before the LLM call and passes `code_draft=True` to `generate_vera_reply`, which delegates hint injection to `build_vera_messages`. Session history stores the original un-augmented message.
 
 ## Governed writing/document draft lane (PR #TBD)
 
