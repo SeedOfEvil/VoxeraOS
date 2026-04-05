@@ -1,7 +1,7 @@
 """Vera session persistence/state helpers extracted from service.py.
 
-This module owns stable session payload IO and field-level access/update helpers while
-`service.py` keeps compatibility aliases for existing call sites.
+This module owns stable session payload IO and field-level access/update helpers.
+All production callers import session helpers directly from this module.
 """
 
 from __future__ import annotations
