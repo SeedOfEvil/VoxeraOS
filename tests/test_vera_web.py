@@ -7695,7 +7695,7 @@ def test_code_draft_hint_injected_into_user_message_for_code_draft(tmp_path, mon
 
     captured: dict = {}
 
-    async def _capture_reply(*, turns, user_message):
+    async def _capture_reply(*, turns, user_message, **_kw):
         captured["user_message"] = user_message
         return {
             "answer": "```python\nprint('hi')\n```",
@@ -7728,7 +7728,7 @@ def test_code_draft_hint_not_injected_for_non_code_draft(tmp_path, monkeypatch):
 
     captured: dict = {}
 
-    async def _capture_reply(*, turns, user_message):
+    async def _capture_reply(*, turns, user_message, **_kw):
         captured["user_message"] = user_message
         return {"answer": "Here is the status.", "status": "ok:test"}
 
