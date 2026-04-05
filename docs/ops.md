@@ -98,6 +98,7 @@ Vera exposes a bounded operator-facing debug surface for session continuity and 
 - **JSON endpoint**: `GET /vera/debug/session.json?session_id=<id>` returns a combined snapshot of session debug info, shared context, and routing debug entries.  Read-only — does not alter session state.
 - **Routing debug entries**: each chat turn records which dispatch path fired (`early_exit_dispatch`, `submit_active_preview`, `llm_orchestration`, etc.), bounded to the last 8 entries.
 - **Trust model**: session context and routing debug are continuity aids only.  Preview truth, queue truth, and artifact/evidence truth remain the authoritative sources.
+- **Access control**: the debug endpoint has the same access posture as all Vera web routes — no additional auth beyond the Vera service binding to `127.0.0.1`.  If the Vera service is ever exposed beyond localhost, add authentication to the debug endpoint.
 
 ### Testing
 

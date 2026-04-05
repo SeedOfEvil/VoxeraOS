@@ -658,7 +658,11 @@ def append_routing_debug_entry(
     """Append a routing debug entry for the current turn.
 
     Bounded to the last ``_MAX_ROUTING_DEBUG_HISTORY`` entries.
+    ``turn_index`` is the total turn count after the assistant turn has been
+    appended — i.e., the number of turns in the session at the time of the
+    routing decision.
     """
+    now_ms = int(time.time() * 1000)
     current = read_session_routing_debug(queue_root, session_id)
     entries = current.get("entries", [])
     if not isinstance(entries, list):
@@ -669,11 +673,10 @@ def append_routing_debug_entry(
             "dispatch_source": str(dispatch_source).strip() or "unknown",
             "matched_early_exit": bool(matched_early_exit),
             "turn_index": turn_index,
-            "timestamp_ms": int(time.time() * 1000),
+            "timestamp_ms": now_ms,
         }
     )
     entries = entries[-_MAX_ROUTING_DEBUG_HISTORY:]
-    now_ms = int(time.time() * 1000)
     _write_session_field(
         queue_root,
         session_id,
