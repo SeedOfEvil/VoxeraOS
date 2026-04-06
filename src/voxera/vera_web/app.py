@@ -299,9 +299,28 @@ def _is_empty_code_preview_shell(preview: dict[str, object] | None) -> bool:
     )
 
 
+_NEW_QUERY_RE = re.compile(
+    r"^(?:what|who|where|when|why|how|is|are|can|could|does|do|will|should|tell)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_new_unrelated_query(message: str) -> bool:
+    """Return True when the message looks like a new question/request, not a clarification answer.
+
+    Clarification answers are typically short factual fragments like
+    "~/VoxeraOS/notes as source" or "use 5 seconds timeout".  New queries
+    start with question words or imperative verbs that signal a fresh topic.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    return bool(_NEW_QUERY_RE.match(text))
+
+
 _CODE_DRAFT_RECOVERY_RE = re.compile(
     r"\b(?:prepare|create|make|build|write|generate|draft)\b.*"
-    r"\b(?:script|code|program|file)\b",
+    r"\b(?:script|code|program)\b",
     re.IGNORECASE,
 )
 
@@ -813,9 +832,18 @@ async def chat(request: Request):
     # (leaving an empty-content code preview shell), treat this answer as
     # a code draft turn so the LLM receives the code generation hint and
     # the reply code can be injected into the existing shell.
-    _post_clarification_code_draft = _is_empty_code_preview_shell(
-        pending_preview
-    ) and not is_code_draft_request(message)
+    # Guard: do not fire when the message has a clear different intent
+    # (informational query, writing-draft, conversational-artifact, or a
+    # new question unrelated to the clarification exchange).
+    _post_clarification_code_draft = (
+        _is_empty_code_preview_shell(pending_preview)
+        and not is_code_draft_request(message)
+        and not is_info_query
+        and not is_explicit_writing_transform
+        and not conversational_answer_first_turn
+        and not _is_voxera_control_turn(message, active_preview=pending_preview)
+        and not _looks_like_new_unrelated_query(message)
+    )
     # ── Code draft recovery from conversation history ─────────────────────
     # When no preview exists but a recent user turn was a code draft request
     # and the current message references it (e.g. "please prepare that

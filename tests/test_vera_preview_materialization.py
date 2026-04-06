@@ -128,7 +128,6 @@ class TestCodeDraftRecoveryPattern:
             "draft the script for me",
             "prepare that code",
             "create the program",
-            "please prepare that file",
         ],
     )
     def test_recovery_phrases_match(self, msg: str) -> None:
@@ -143,6 +142,14 @@ class TestCodeDraftRecoveryPattern:
             "tell me about scripts",
             "save that to a note",
             "yes, use ~/notes as the source",
+            # "file" is deliberately excluded to avoid false positives
+            # like "create a file called notes.txt with my grocery list"
+            "please prepare that file",
+            "create a file called notes.txt",
+            "draft a file explaining the architecture",
+            # "program" as schedule should not match without code context,
+            # but "program" is included — the outer function gates on
+            # is_code_draft_request history, so this is acceptable.
         ],
     )
     def test_non_recovery_phrases_do_not_match(self, msg: str) -> None:
@@ -472,3 +479,61 @@ def test_workspace_rooted_script_path(tmp_path, monkeypatch):
     assert path.startswith("~/VoxeraOS/notes/"), (
         f"Script path must be workspace-rooted, got: {path!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. Regression: post-clarification does NOT hijack unrelated intents
+# ---------------------------------------------------------------------------
+
+
+def _setup_empty_code_shell(session, monkeypatch):
+    """Create an empty code preview shell by sending a script request with clarification."""
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _make_clarification_reply_fn())
+    monkeypatch.setattr(
+        vera_app_module, "generate_preview_builder_update", _make_builder_fn_from_message()
+    )
+    session.chat("Write me a python script that monitors a folder")
+    preview = session.preview()
+    assert preview is not None, "Shell should exist"
+    assert not str(preview.get("write_file", {}).get("content") or "").strip()
+
+
+def test_informational_query_not_hijacked_by_empty_shell(tmp_path, monkeypatch):
+    """An informational query while an empty code shell exists must NOT become a code draft."""
+    session = make_vera_session(monkeypatch, tmp_path)
+    _setup_empty_code_shell(session, monkeypatch)
+
+    async def _info_reply(**kwargs):
+        code_draft = kwargs.get("code_draft", False)
+        # The LLM should NOT receive the code draft hint for an info query
+        assert not code_draft, "Informational query must not be classified as code_draft"
+        return {"answer": "The weather is sunny.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _info_reply)
+
+    async def _passthrough_builder(**kwargs):
+        return kwargs.get("active_preview")
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+    resp = session.chat("what is the weather today?")
+    assert resp.status_code == 200
+
+
+def test_writing_draft_not_hijacked_by_empty_shell(tmp_path, monkeypatch):
+    """A writing-draft request while an empty code shell exists must NOT become a code draft."""
+    session = make_vera_session(monkeypatch, tmp_path)
+    _setup_empty_code_shell(session, monkeypatch)
+
+    async def _writing_reply(**kwargs):
+        code_draft = kwargs.get("code_draft", False)
+        assert not code_draft, "Writing draft must not be classified as code_draft"
+        return {"answer": "Here is your essay about volcanoes...", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _writing_reply)
+
+    async def _passthrough_builder(**kwargs):
+        return kwargs.get("active_preview")
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+    resp = session.chat("write me an essay about volcanoes")
+    assert resp.status_code == 200
