@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -10,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import load_config as load_runtime_config
 from ..core.code_draft_intent import (
+    classify_code_draft_intent,
     has_code_file_extension,
     is_code_draft_request,
 )
@@ -273,6 +275,260 @@ def _prefer_derived_followup_save(
         latest_assistant = str(turn.get("text") or "").strip()
         return latest_assistant == expected_answer
     return False
+
+
+def _is_empty_code_preview_shell(preview: dict[str, object] | None) -> bool:
+    """Return True when preview is an empty-content code/script file shell.
+
+    This detects the state created when Vera classifies a code-draft request
+    but the LLM asked for clarification instead of generating code — leaving
+    the preview with an authoritative path but no content.
+    """
+    if not isinstance(preview, dict):
+        return False
+    wf = preview.get("write_file")
+    if not isinstance(wf, dict):
+        return False
+    path = str(wf.get("path") or "").strip()
+    content = str(wf.get("content") or "").strip()
+    return (
+        bool(path)
+        and has_code_file_extension(path)
+        and not path.lower().endswith(".md")
+        and not content
+    )
+
+
+_NEW_QUERY_RE = re.compile(
+    r"^(?:what|who|where|when|why|how|is|are|can|could|does|do|will|should|tell)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_new_unrelated_query(message: str) -> bool:
+    """Return True when the message looks like a new question/request, not a clarification answer.
+
+    Clarification answers are typically short factual fragments like
+    "~/VoxeraOS/notes as source" or "use 5 seconds timeout".  New queries
+    start with question words or imperative verbs that signal a fresh topic.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    return bool(_NEW_QUERY_RE.match(text))
+
+
+_CODE_DRAFT_RECOVERY_RE = re.compile(
+    r"\b(?:prepare|create|make|build|write|generate|draft)\b.*"
+    r"\b(?:script|code|program)\b",
+    re.IGNORECASE,
+)
+
+
+def _recover_code_draft_from_history(
+    message: str,
+    *,
+    pending_preview: dict[str, object] | None,
+    turns: list[dict[str, str]],
+) -> dict[str, object] | None:
+    """Recover a code draft preview shell from conversation history.
+
+    Fires when no preview exists, the message references a prior code draft
+    (e.g. "please prepare that script"), and conversation history contains
+    an actual code draft request.  Returns a re-created preview shell so
+    the code draft flow can re-engage; returns None otherwise.
+    """
+    if pending_preview is not None:
+        return None
+    if is_code_draft_request(message):
+        return None
+    if not _CODE_DRAFT_RECOVERY_RE.search(message):
+        return None
+    for turn in reversed(turns[-8:]):
+        if str(turn.get("role") or "").strip().lower() != "user":
+            continue
+        prior_text = str(turn.get("text") or "").strip()
+        if prior_text == message.strip():
+            continue
+        if is_code_draft_request(prior_text):
+            draft = classify_code_draft_intent(prior_text)
+            if draft is not None:
+                try:
+                    return normalize_preview_payload(draft)
+                except Exception:
+                    pass
+    return None
+
+
+_AUTOMATION_INTENT_RE = re.compile(
+    r"\b(?:process|automation|workflow|automate|monitor|watch|detect)\b.*"
+    r"\b(?:folder|directory|file|files|path)\b",
+    re.IGNORECASE,
+)
+
+_AUTOMATION_CLARIFICATION_QUESTION_RE = re.compile(
+    r"\?|\b(?:source|destination|where|which folder|what should|what action|how often|what (?:trigger|condition))\b",
+    re.IGNORECASE,
+)
+
+_AUTOMATION_DETAIL_SIGNAL_RE = re.compile(
+    r"(?:[~./][\w./-]+|"  # path-like token
+    r"\b(?:source|destination|action|trigger|when|every|interval|timeout|stability)\s*[:=])",
+    re.IGNORECASE,
+)
+
+
+def _detect_automation_clarification_completion(
+    message: str,
+    *,
+    pending_preview: dict[str, object] | None,
+    turns: list[dict[str, str]],
+) -> dict[str, object] | None:
+    """Detect a clarification answer for an automation/process-style request.
+
+    The previous PR's code-draft recovery only fires when the original request
+    matches ``is_code_draft_request`` (requires explicit language keyword or
+    code filename).  Process/automation phrasing like "I want a process that
+    detects a new folder..." does not match, so a Python-script clarification
+    flow could not materialize a preview.
+
+    This helper closes that gap with a narrow detector:
+
+    1. No preview currently exists.
+    2. The current message is not a new informational/writing/control turn
+       (caller responsibility — these are gated upstream).
+    3. The most recent assistant turn looks like a clarification question.
+    4. A recent user turn contains automation/process intent (process/automate/
+       monitor/watch + folder/directory/file).
+    5. The current message provides specific clarification details (path tokens
+       or structured ``key: value`` clarification fields).
+
+    Returns a synthesized Python-script preview shell so the standard code-draft
+    flow can inject the actual generated code.  Returns None when any condition
+    is not met (fail-closed).
+    """
+    if pending_preview is not None:
+        return None
+    if is_code_draft_request(message):
+        return None
+    if not _AUTOMATION_DETAIL_SIGNAL_RE.search(message):
+        return None
+    if not turns:
+        return None
+    last_assistant: str | None = None
+    for turn in reversed(turns):
+        if str(turn.get("role") or "").strip().lower() == "assistant":
+            last_assistant = str(turn.get("text") or "").strip()
+            break
+    if not last_assistant:
+        return None
+    if not _AUTOMATION_CLARIFICATION_QUESTION_RE.search(last_assistant):
+        return None
+    has_automation_intent = False
+    for turn in reversed(turns[-8:]):
+        if str(turn.get("role") or "").strip().lower() != "user":
+            continue
+        prior_text = str(turn.get("text") or "").strip()
+        if prior_text == message.strip():
+            continue
+        if _AUTOMATION_INTENT_RE.search(prior_text):
+            has_automation_intent = True
+            break
+    if not has_automation_intent:
+        return None
+    shell = {
+        "goal": "draft a python script for the requested automation as automation.py",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/automation.py",
+            "content": "",
+            "mode": "overwrite",
+        },
+    }
+    try:
+        return normalize_preview_payload(shell)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Direct automation/script preview detection (no clarification required)
+# ---------------------------------------------------------------------------
+#
+# Handles fully specified single-turn requests like:
+#   "I need a process that continuously watches ./incoming. When a folder is
+#    fully copied in, add a status.txt file containing processed! and then
+#    move it to ./processed."
+#
+# The narrower clarification-recovery helpers above only fire after a prior
+# clarification exchange.  Direct requests must pass four structural gates
+# so the lane stays tight:
+#   (1) automation verb  — watch/monitor/detect/automate/poll (+ tense forms)
+#   (2) path token       — ~/X, ./X, or /X
+#   (3) action verb      — add/write/move/copy/create/append/rename/delete
+#   (4) file/dir subject — folder/directory/file/path (+ plurals)
+
+_DIRECT_AUTOMATION_VERB_RE = re.compile(
+    r"\b(?:watch|watches|watching|monitor|monitors|monitoring|"
+    r"detect|detects|detecting|automate|automates|automating|"
+    r"poll|polls|polling)\b",
+    re.IGNORECASE,
+)
+
+_DIRECT_AUTOMATION_PATH_TOKEN_RE = re.compile(r"(?:[~./][\w./-]*[\w/])")
+
+_DIRECT_AUTOMATION_ACTION_RE = re.compile(
+    r"\b(?:add(?:s|ing|ed)?|write|writes|writing|move|moves|moving|"
+    r"copy|copies|copying|create(?:s|d)?|creating|append(?:s|ing|ed)?|"
+    r"rename(?:s|d)?|renaming|delete(?:s|d)?|deleting)\b",
+    re.IGNORECASE,
+)
+
+_DIRECT_AUTOMATION_SUBJECT_RE = re.compile(
+    r"\b(?:folder|folders|directory|directories|file|files|path|paths)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_direct_automation_request(message: str) -> bool:
+    """Return True when the message is a fully specified automation/script request.
+
+    All four structural signals must be present to enter this lane:
+    automation verb, path token, action verb, and file/directory subject.
+    This is deliberately narrow — simple file ops ("move a.txt to b.txt"),
+    informational queries, writing drafts, and weather questions do not
+    match, so the detector only widens the code-draft lane for clearly
+    previewable automation requests.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    return (
+        bool(_DIRECT_AUTOMATION_VERB_RE.search(text))
+        and bool(_DIRECT_AUTOMATION_PATH_TOKEN_RE.search(text))
+        and bool(_DIRECT_AUTOMATION_ACTION_RE.search(text))
+        and bool(_DIRECT_AUTOMATION_SUBJECT_RE.search(text))
+    )
+
+
+def _synthesize_direct_automation_preview() -> dict[str, object] | None:
+    """Synthesize an empty Python-script preview shell for direct automation requests.
+
+    Returns a normalized preview payload or None on normalization failure.
+    The actual code content is injected by the standard code-draft flow after
+    the LLM reply is generated.
+    """
+    shell = {
+        "goal": "draft a python script for the requested automation as automation.py",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/automation.py",
+            "content": "",
+            "mode": "overwrite",
+        },
+    }
+    try:
+        return normalize_preview_payload(shell)
+    except Exception:
+        return None
 
 
 def _is_refinable_prose_preview(preview: dict[str, object] | None) -> bool:
@@ -742,8 +998,118 @@ async def chat(request: Request):
         message,
         active_preview=pending_preview,
     )
+    # ── Post-clarification code draft continuation ────────────────────────
+    # When the LLM asked for clarification on a prior code-draft request
+    # (leaving an empty-content code preview shell), treat this answer as
+    # a code draft turn so the LLM receives the code generation hint and
+    # the reply code can be injected into the existing shell.
+    # Guard: do not fire when the message has a clear different intent
+    # (informational query, writing-draft, conversational-artifact, or a
+    # new question unrelated to the clarification exchange).
+    _post_clarification_code_draft = (
+        _is_empty_code_preview_shell(pending_preview)
+        and not is_code_draft_request(message)
+        and not is_info_query
+        and not is_explicit_writing_transform
+        and not conversational_answer_first_turn
+        and not _is_voxera_control_turn(message, active_preview=pending_preview)
+        and not _looks_like_new_unrelated_query(message)
+    )
+    # ── Code draft recovery from conversation history ─────────────────────
+    # When no preview exists but a recent user turn was a code draft request
+    # and the current message references it (e.g. "please prepare that
+    # script"), re-create the preview shell from the historical intent.
+    _recovered_code_draft = _recover_code_draft_from_history(
+        message,
+        pending_preview=pending_preview,
+        turns=turns,
+    )
+    if _recovered_code_draft is not None:
+        pending_preview = _recovered_code_draft
+        write_session_preview(root, active_session, _recovered_code_draft)
+        write_session_handoff_state(
+            root,
+            active_session,
+            attempted=False,
+            queue_path=str(root),
+            status="preview_ready",
+            error=None,
+            job_id=None,
+        )
+        _post_clarification_code_draft = True
+    # ── Automation/process clarification completion ───────────────────────
+    # When the user answers a clarification question for an automation/
+    # process-style request (which does not match is_code_draft_request),
+    # synthesize a Python-script preview shell so the standard code-draft
+    # flow can inject the actual generated code.  Same false-positive guards
+    # as the post-clarification path.
+    if (
+        pending_preview is None
+        and not is_code_draft_request(message)
+        and not is_info_query
+        and not is_explicit_writing_transform
+        and not conversational_answer_first_turn
+        and not _is_voxera_control_turn(message, active_preview=None)
+        and not _looks_like_new_unrelated_query(message)
+    ):
+        _automation_shell = _detect_automation_clarification_completion(
+            message,
+            pending_preview=pending_preview,
+            turns=turns,
+        )
+        if _automation_shell is not None:
+            pending_preview = _automation_shell
+            write_session_preview(root, active_session, _automation_shell)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+            context_on_preview_created(
+                root, active_session, draft_ref="~/VoxeraOS/notes/automation.py"
+            )
+            _post_clarification_code_draft = True
+    # ── Direct automation/script request (no clarification required) ─────
+    # A fully specified single-turn request with all four structural
+    # signals (automation verb + path token + action verb + file/dir
+    # subject) synthesizes the Python-script preview shell directly so the
+    # code-draft flow can inject the generated code on the same turn.
+    if (
+        pending_preview is None
+        and not is_code_draft_request(message)
+        and not is_info_query
+        and not is_explicit_writing_transform
+        and not conversational_answer_first_turn
+        and not _is_voxera_control_turn(message, active_preview=None)
+        and _looks_like_direct_automation_request(message)
+    ):
+        _direct_automation_shell = _synthesize_direct_automation_preview()
+        if _direct_automation_shell is not None:
+            pending_preview = _direct_automation_shell
+            write_session_preview(root, active_session, _direct_automation_shell)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+            context_on_preview_created(
+                root, active_session, draft_ref="~/VoxeraOS/notes/automation.py"
+            )
+            _post_clarification_code_draft = True
     is_code_draft_turn = (
-        (is_code_draft_request(message) or explicit_targeted_content_refinement)
+        (
+            is_code_draft_request(message)
+            or explicit_targeted_content_refinement
+            or _post_clarification_code_draft
+        )
         and not informational_web_turn
         and not is_explicit_writing_transform
     )
