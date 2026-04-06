@@ -61,9 +61,9 @@ Any extraction PR following this roadmap must preserve these invariants:
    - Enforces artifact rendering and strips queue/preview language where inappropriate.
 
 5. **Vera service orchestration bridge**
-   - Calls into `vera.service`, `vera.session_store`, `vera.preview_submission`, `vera.preview_drafting`,
+   - Calls into `vera.service`, `vera.linked_completions`, `vera.session_store`, `vera.preview_submission`, `vera.preview_drafting`,
      `vera.investigation_derivations`, `vera.draft_revision`, `vera.evidence_review`, and related helpers.
-   - Also manages linked completion surfacing and session state writes.
+   - Linked completion surfacing now lives in `vera.linked_completions`; session state writes remain in `app.py`.
 
 6. **Voice-foundation input gating**
    - Input-origin normalization and guarded transcript ingestion behavior.

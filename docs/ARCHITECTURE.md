@@ -106,7 +106,8 @@ VoxeraOS/
 │   │   │   ├── capabilities_snapshot.py  — runtime skill/mission catalog + validation
 │   │   │   └── planner_context.py   — LLM prompt preamble assembly
 │   │   ├── vera/
-│   │   │   ├── service.py           — top-level Vera orchestration (LLM reply, preview builder, linked completion delivery)
+│   │   │   ├── service.py           — top-level Vera orchestration (LLM reply, preview builder)
+│   │   │   ├── linked_completions.py — linked completion delivery, autosurface, and ingestion subsystem
 │   │   │   ├── session_store.py     — session turns/preview/handoff/shared-context/routing-debug persistence
 │   │   │   ├── preview_drafting.py  — deterministic preview drafting + save-by-reference previews
 │   │   │   ├── draft_revision.py    — active preview rename/path/content refinement + active-draft content refresh parsing
@@ -217,7 +218,7 @@ The current codebase is intentionally more decomposed than earlier `v0.1.8`/`v0.
 
 ### Vera control layer
 
-- `vera/service.py` remains the **conversation orchestration root**: it builds model messages, routes into the extracted weather/investigation lanes, and manages linked-job completion delivery.  Session state helpers live in `vera/session_store.py`; all code imports from `session_store` directly.  Weather and investigation helpers are imported from their true source modules (`weather_flow.py` and `investigation_flow.py`) — no compatibility aliases remain.
+- `vera/service.py` remains the **conversation orchestration root**: it builds model messages and routes into the extracted weather/investigation lanes.  Linked-job completion delivery, autosurface, and ingestion now live in `vera/linked_completions.py`.  Session state helpers live in `vera/session_store.py`; all code imports from `session_store` directly.  Weather and investigation helpers are imported from their true source modules (`weather_flow.py` and `investigation_flow.py`) — no compatibility aliases remain.
 - `vera/handoff.py` is **deprecated and empty** — callers now import directly from `preview_drafting.py`, `preview_submission.py`, and `investigation_derivations.py`.
 - Conversational checklist/planning mode is a **chat artifact lane**: `vera_web/conversational_checklist.py` owns deterministic checklist sanitization/rendering helpers, while `vera_web/app.py` keeps classification and route-level wiring. In that lane, preview/draft/save/submit/queue wording must not surface unless a real governed preview flow is active.
 - Add or extend behavior in the dedicated modules first:

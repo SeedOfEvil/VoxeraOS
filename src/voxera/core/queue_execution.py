@@ -365,7 +365,7 @@ class QueueExecutionMixin:
 
     def _maybe_live_deliver_linked_completion(self: Any, *, job_ref: str) -> None:
         try:
-            from ..vera.service import maybe_deliver_linked_completion_live_for_job
+            from ..vera.linked_completions import maybe_deliver_linked_completion_live_for_job
 
             maybe_deliver_linked_completion_live_for_job(self.queue_root, job_ref=job_ref)
         except Exception:
