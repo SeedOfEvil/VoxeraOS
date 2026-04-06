@@ -1,3 +1,24 @@
+## 2026-04-06 — improve(vera): tighten evidence-grounded follow-up continuity
+
+- **Motivation**: Review-to-follow-up transitions were correct but stiff — replies used operator-heavy boilerplate like "grounded in canonical evidence from", bullet-prefix evidence details, and verbose fail-closed messages. The goal is smoother, more natural follow-up continuity while preserving canonical grounding and fail-closed behavior.
+- **Follow-up reply shape** (`vera_web/chat_early_exit_dispatch.py`):
+  - General follow-up (3c): "I've prepared a follow-up preview grounded in canonical evidence from..." → "Here's a follow-up preview based on..." with "Review or refine it — this is preview-only" closing.
+  - Revise from evidence (3a): "I've prepared a revised preview grounded in canonical evidence from..." → "Here's a revised preview based on..."
+  - Save follow-up (3b): "I've prepared a saveable follow-up draft grounded in canonical evidence from..." → "Here's a saveable follow-up based on..." with "It's ready as a file draft in the preview" closing.
+  - Evidence detail helper: "- Prior job outcome: succeeded — {summary}" → "Prior result: succeeded — {summary}" (no bullet prefix).
+- **Fail-closed messages** (`vera_web/chat_early_exit_dispatch.py`):
+  - Review missing job: shortened from 3 sentences with "canonical queue evidence" to 2 concise sentences.
+  - Follow-up missing evidence: shortened from 3 sentences with "canonical evidence to ground" to 2 concise sentences.
+- **Saveable follow-up content templates** (`vera/evidence_review.py`):
+  - Removed operator-heavy "(Operator: describe...)" placeholders in favor of natural "Describe the follow-up action..." prompts.
+  - Section headers: "Proposed next step" → "Next step", "Proposed correction" → "Correction".
+  - Labels: "Result summary" → "Result", "Failure summary" → "Failure".
+- **Presentation change only**: no changes to truth ownership, queue boundaries, evidence grounding logic, routing, or result surfacing. Preview truth, queue truth, and artifact/evidence truth remain distinct and authoritative. Bounded excerpting limits unchanged. Fail-closed behavior preserved — all paths that previously failed closed still fail closed.
+- **Files changed**: `src/voxera/vera_web/chat_early_exit_dispatch.py`, `src/voxera/vera/evidence_review.py`, `tests/test_linked_job_review_continuation.py`, `tests/test_chat_early_exit_dispatch.py`, `tests/test_vera_web.py`, `tests/test_vera_live_path_characterization.py`, `docs/CODEX_MEMORY.md`.
+- **Tests**: Updated existing assertions to match new wording. Added 12 new regression tests in `TestFollowupContinuityReplyShape`: general followup conversational shape, revise conversational shape, update-based-on-output shape, save followup shape, no redundant layering, fail-closed review no boilerplate, fail-closed followup no boilerplate, no hallucinated evidence, evidence detail for succeeded/failed jobs. Added 2 new tests in `TestSaveableFollowupContentShape`: succeeded/failed template naturalness.
+- **Import guidance**: no new exports. No signature changes.
+- **Recommended next PR**: consider adding "make that follow-up more operator-facing" as a recognized refinement pattern for active follow-up previews, or add disambiguation to reduce overbroad followup hint matching in fresh sessions.
+
 ## 2026-04-05 — improve(vera): condense evidence metadata in content-first review replies
 
 - **Motivation**: Content-first review replies (from the prior PR) correctly led with canonical output content, but the secondary evidence metadata section was still verbose — multiple bullets repeating lifecycle state, approval status, artifact families, refs, evidence trace, and execution capabilities. This made conversational review replies feel operator-heavy rather than conversational.
