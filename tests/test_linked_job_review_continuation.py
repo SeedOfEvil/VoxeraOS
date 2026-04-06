@@ -850,9 +850,11 @@ class TestFollowupContinuityReplyShape:
                 session_context=ctx,
             )
         text = result.assistant_text
-        # No line should repeat "preview" more than the expected boundary markers
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         preview_mentions = sum(1 for line in lines if "preview" in line.lower())
+        # Must mention preview at least once (boundary marker is present)
+        assert preview_mentions >= 1, "Reply must mention 'preview' at least once"
+        # But no more than 2 (title line + boundary line)
         assert preview_mentions <= 2, (
             f"Reply has {preview_mentions} lines mentioning 'preview', expected at most 2 "
             f"(title + boundary marker). Lines: {lines}"
@@ -887,7 +889,12 @@ class TestFollowupContinuityReplyShape:
         assert "resolvable voxeraos job outcome" not in text.lower()
 
     def test_no_hallucinated_evidence_in_followup_reply(self, tmp_path: Path) -> None:
-        """Follow-up replies must not invent evidence that doesn't exist."""
+        """Follow-up replies must not invent evidence that doesn't exist.
+
+        The reply must reference exactly the job ID from canonical evidence.
+        It must not contain job state or summary text not present in the
+        evidence object.
+        """
         mock_evidence = _mock_succeeded_evidence("job-20260405-nohalluc")
         ctx = {"last_completed_job_ref": "job-20260405-nohalluc"}
         with patch(
@@ -902,9 +909,17 @@ class TestFollowupContinuityReplyShape:
         text = result.assistant_text
         # Reply must reference the actual job ID from evidence
         assert "job-20260405-nohalluc" in text
-        # Reply must not invent job IDs
-        assert "job-unknown" not in text
-        assert "job-000" not in text
+        # Reply must only contain the summary that was in the evidence object
+        assert "Task completed successfully" in text
+        # Reply must not claim a different outcome than what evidence shows
+        assert "failed" not in text.lower().split("succeeded")[0]  # no failure before "succeeded"
+        # The only job ID in the reply must be the one from evidence
+        import re
+
+        job_ids_in_text = re.findall(r"job-\d{8}-\w+", text)
+        assert all(jid == "job-20260405-nohalluc" for jid in job_ids_in_text), (
+            f"Reply contains unexpected job IDs: {job_ids_in_text}"
+        )
 
     def test_evidence_detail_shows_succeeded_summary(self, tmp_path: Path) -> None:
         """Follow-up evidence detail should surface the actual result summary."""
