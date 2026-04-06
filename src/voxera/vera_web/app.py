@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -10,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import load_config as load_runtime_config
 from ..core.code_draft_intent import (
+    classify_code_draft_intent,
     has_code_file_extension,
     is_code_draft_request,
 )
@@ -273,6 +275,70 @@ def _prefer_derived_followup_save(
         latest_assistant = str(turn.get("text") or "").strip()
         return latest_assistant == expected_answer
     return False
+
+
+def _is_empty_code_preview_shell(preview: dict[str, object] | None) -> bool:
+    """Return True when preview is an empty-content code/script file shell.
+
+    This detects the state created when Vera classifies a code-draft request
+    but the LLM asked for clarification instead of generating code — leaving
+    the preview with an authoritative path but no content.
+    """
+    if not isinstance(preview, dict):
+        return False
+    wf = preview.get("write_file")
+    if not isinstance(wf, dict):
+        return False
+    path = str(wf.get("path") or "").strip()
+    content = str(wf.get("content") or "").strip()
+    return (
+        bool(path)
+        and has_code_file_extension(path)
+        and not path.lower().endswith(".md")
+        and not content
+    )
+
+
+_CODE_DRAFT_RECOVERY_RE = re.compile(
+    r"\b(?:prepare|create|make|build|write|generate|draft)\b.*"
+    r"\b(?:script|code|program|file)\b",
+    re.IGNORECASE,
+)
+
+
+def _recover_code_draft_from_history(
+    message: str,
+    *,
+    pending_preview: dict[str, object] | None,
+    turns: list[dict[str, str]],
+) -> dict[str, object] | None:
+    """Recover a code draft preview shell from conversation history.
+
+    Fires when no preview exists, the message references a prior code draft
+    (e.g. "please prepare that script"), and conversation history contains
+    an actual code draft request.  Returns a re-created preview shell so
+    the code draft flow can re-engage; returns None otherwise.
+    """
+    if pending_preview is not None:
+        return None
+    if is_code_draft_request(message):
+        return None
+    if not _CODE_DRAFT_RECOVERY_RE.search(message):
+        return None
+    for turn in reversed(turns[-8:]):
+        if str(turn.get("role") or "").strip().lower() != "user":
+            continue
+        prior_text = str(turn.get("text") or "").strip()
+        if prior_text == message.strip():
+            continue
+        if is_code_draft_request(prior_text):
+            draft = classify_code_draft_intent(prior_text)
+            if draft is not None:
+                try:
+                    return normalize_preview_payload(draft)
+                except Exception:
+                    pass
+    return None
 
 
 def _is_refinable_prose_preview(preview: dict[str, object] | None) -> bool:
@@ -742,8 +808,42 @@ async def chat(request: Request):
         message,
         active_preview=pending_preview,
     )
+    # ── Post-clarification code draft continuation ────────────────────────
+    # When the LLM asked for clarification on a prior code-draft request
+    # (leaving an empty-content code preview shell), treat this answer as
+    # a code draft turn so the LLM receives the code generation hint and
+    # the reply code can be injected into the existing shell.
+    _post_clarification_code_draft = _is_empty_code_preview_shell(
+        pending_preview
+    ) and not is_code_draft_request(message)
+    # ── Code draft recovery from conversation history ─────────────────────
+    # When no preview exists but a recent user turn was a code draft request
+    # and the current message references it (e.g. "please prepare that
+    # script"), re-create the preview shell from the historical intent.
+    _recovered_code_draft = _recover_code_draft_from_history(
+        message,
+        pending_preview=pending_preview,
+        turns=turns,
+    )
+    if _recovered_code_draft is not None:
+        pending_preview = _recovered_code_draft
+        write_session_preview(root, active_session, _recovered_code_draft)
+        write_session_handoff_state(
+            root,
+            active_session,
+            attempted=False,
+            queue_path=str(root),
+            status="preview_ready",
+            error=None,
+            job_id=None,
+        )
+        _post_clarification_code_draft = True
     is_code_draft_turn = (
-        (is_code_draft_request(message) or explicit_targeted_content_refinement)
+        (
+            is_code_draft_request(message)
+            or explicit_targeted_content_refinement
+            or _post_clarification_code_draft
+        )
         and not informational_web_turn
         and not is_explicit_writing_transform
     )
