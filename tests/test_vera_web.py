@@ -2830,7 +2830,7 @@ def test_review_missing_job_is_honest(tmp_path, monkeypatch):
     sid = client.cookies.get("vera_session_id") or ""
     res = client.post("/chat", data={"session_id": sid, "message": "what happened to job-404?"})
 
-    assert "could not resolve a VoxeraOS job" in res.text
+    assert "No job could be resolved" in res.text
 
 
 def test_review_missing_job_followups_stay_evidence_aware(tmp_path, monkeypatch):
@@ -2844,10 +2844,10 @@ def test_review_missing_job_followups_stay_evidence_aware(tmp_path, monkeypatch)
     sid = client.cookies.get("vera_session_id") or ""
     # Explicit job ID → review fires, fails closed.
     first = client.post("/chat", data={"session_id": sid, "message": "what happened to job-404?"})
-    assert "could not resolve a VoxeraOS job" in first.text
+    assert "No job could be resolved" in first.text
     # Hint-only match without job context → also fails closed honestly.
     second = client.post("/chat", data={"session_id": sid, "message": "did it work?"})
-    assert "could not resolve a VoxeraOS job" in second.text
+    assert "No job could be resolved" in second.text
 
 
 def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypatch):
@@ -2881,7 +2881,7 @@ def test_followup_preview_drafted_from_evidence_not_submitted(tmp_path, monkeypa
         "/chat", data={"session_id": "sid-follow", "message": "prepare the next step"}
     )
 
-    assert "prepared a follow-up preview" in res.text
+    assert "follow-up preview" in res.text.lower()
     assert "nothing has been submitted yet" in res.text.lower()
     assert not (queue / "inbox").exists() or not list((queue / "inbox").glob("*.json"))
     assert vera_session_store.read_session_preview(queue, "sid-follow") is not None
@@ -6305,7 +6305,7 @@ def test_service_status_request_prefers_diagnostics_preview_over_review(tmp_path
     )
 
     assert res.status_code == 200
-    assert "could not resolve a VoxeraOS job" not in res.text
+    assert "No job could be resolved" not in res.text
     preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["steps"][0]["skill_id"] == "system.service_status"
@@ -6327,7 +6327,7 @@ def test_job_review_query_fails_closed_without_job_context(tmp_path, monkeypatch
 
     assert res.status_code == 200
     # Without job context, fails closed with an honest message.
-    assert "could not resolve a VoxeraOS job" in res.text
+    assert "No job could be resolved" in res.text
 
 
 def test_what_was_the_output_surfaces_actual_written_content(tmp_path, monkeypatch):
@@ -6628,7 +6628,7 @@ def test_job_review_query_status_of_my_job_falls_through_without_context(tmp_pat
     )
 
     assert res.status_code == 200
-    assert "could not resolve a VoxeraOS job" not in res.text
+    assert "No job could be resolved" not in res.text
 
 
 def test_job_review_query_status_of_last_job_fails_closed_without_context(tmp_path, monkeypatch):
@@ -6646,7 +6646,7 @@ def test_job_review_query_status_of_last_job_fails_closed_without_context(tmp_pa
     )
 
     assert res.status_code == 200
-    assert "could not resolve a VoxeraOS job" in res.text
+    assert "No job could be resolved" in res.text
 
 
 # ---------------------------------------------------------------------------

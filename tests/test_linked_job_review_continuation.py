@@ -721,7 +721,7 @@ class TestKnownOverbroadBoundaries:
         )
         assert result.matched is True
         assert result.status == "followup_missing_evidence"
-        assert "follow-up preview" in result.assistant_text.lower()
+        assert "follow-up" in result.assistant_text.lower()
 
     def test_overbroad_review_still_fails_closed_in_fresh_session(self, tmp_path: Path) -> None:
         """Even when an overbroad phrase fires the review branch, a fresh
@@ -733,4 +733,306 @@ class TestKnownOverbroadBoundaries:
         )
         assert result.matched is True
         assert result.status == "review_missing_job"
-        assert "could not resolve" in result.assistant_text.lower()
+        assert "no job could be resolved" in result.assistant_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# 12. Follow-up continuity polish — reply shape and layering regression
+# ---------------------------------------------------------------------------
+
+
+class TestFollowupContinuityReplyShape:
+    """Follow-up reply text must be natural and not stiff/operator-heavy.
+
+    Verifies that:
+    - reply text is conversational (no 'grounded in canonical evidence' boilerplate)
+    - evidence detail is present but not bullet-point-heavy
+    - preview-only boundary is preserved
+    - no redundant stacked narration
+    """
+
+    def test_general_followup_reply_is_conversational(self, tmp_path: Path) -> None:
+        """'What should we do next?' reply should feel natural, not operator-heavy."""
+        mock_evidence = _mock_succeeded_evidence("job-20260405-conv")
+        ctx = {"last_completed_job_ref": "job-20260405-conv"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="what should we do next",
+                queue_root=tmp_path,
+                session_context=ctx,
+            )
+        assert result.matched is True
+        assert result.status == "followup_preview_ready"
+        text = result.assistant_text
+        # Should NOT contain stiff boilerplate
+        assert "grounded in canonical evidence" not in text.lower()
+        # Should contain natural phrasing
+        assert "here's a follow-up preview" in text.lower()
+        # Evidence detail should be present without bullet prefix
+        assert "prior result:" in text.lower()
+        # Preserve preview-only boundary
+        assert "preview-only" in text.lower()
+        assert "nothing has been submitted yet" in text.lower()
+
+    def test_revise_from_evidence_reply_is_conversational(self, tmp_path: Path) -> None:
+        """'Revise that based on the result' reply should be natural."""
+        mock_evidence = _mock_succeeded_evidence("job-20260405-rev")
+        ctx = {"last_completed_job_ref": "job-20260405-rev"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="revise that based on the result",
+                queue_root=tmp_path,
+                session_context=ctx,
+            )
+        assert result.matched is True
+        assert result.status == "revised_preview_ready"
+        text = result.assistant_text
+        assert "grounded in canonical evidence" not in text.lower()
+        assert "here's a revised preview" in text.lower()
+        assert "preview-only" in text.lower()
+
+    def test_update_based_on_output_reply_is_conversational(self, tmp_path: Path) -> None:
+        """'Update that based on the output' reply should be natural."""
+        mock_evidence = _mock_succeeded_evidence("job-20260405-upd")
+        ctx = {"last_completed_job_ref": "job-20260405-upd"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="update that based on the output",
+                queue_root=tmp_path,
+                session_context=ctx,
+            )
+        assert result.matched is True
+        assert result.status == "revised_preview_ready"
+        text = result.assistant_text
+        assert "grounded in canonical evidence" not in text.lower()
+        assert "here's a revised preview" in text.lower()
+
+    def test_save_followup_reply_is_conversational(self, tmp_path: Path) -> None:
+        """'Save that follow-up' reply should be natural."""
+        mock_evidence = _mock_succeeded_evidence("job-20260405-save")
+        ctx = {"last_completed_job_ref": "job-20260405-save"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="save that follow-up",
+                queue_root=tmp_path,
+                session_context=ctx,
+            )
+        assert result.matched is True
+        assert result.status == "save_followup_preview_ready"
+        text = result.assistant_text
+        assert "grounded in canonical evidence" not in text.lower()
+        assert "here's a saveable follow-up" in text.lower()
+        assert "nothing has been submitted yet" in text.lower()
+
+    def test_followup_reply_no_redundant_layering(self, tmp_path: Path) -> None:
+        """Follow-up reply should not have redundant stacked narration."""
+        mock_evidence = _mock_succeeded_evidence("job-20260405-layer")
+        ctx = {"last_completed_job_ref": "job-20260405-layer"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="what should we do next",
+                queue_root=tmp_path,
+                session_context=ctx,
+            )
+        text = result.assistant_text
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        preview_mentions = sum(1 for line in lines if "preview" in line.lower())
+        # Must mention preview at least once (boundary marker is present)
+        assert preview_mentions >= 1, "Reply must mention 'preview' at least once"
+        # But no more than 2 (title line + boundary line)
+        assert preview_mentions <= 2, (
+            f"Reply has {preview_mentions} lines mentioning 'preview', expected at most 2 "
+            f"(title + boundary marker). Lines: {lines}"
+        )
+
+    def test_fail_closed_review_no_boilerplate(self, tmp_path: Path) -> None:
+        """Review fail-closed message should be concise, not operator-heavy."""
+        result = _dispatch(
+            message="what was the output",
+            queue_root=tmp_path,
+            session_context={},
+        )
+        assert result.matched is True
+        assert result.status == "review_missing_job"
+        text = result.assistant_text
+        # Should be concise — no verbose canonical queue evidence language
+        assert "canonical queue evidence" not in text.lower()
+        assert "no job could be resolved" in text.lower()
+
+    def test_fail_closed_followup_no_boilerplate(self, tmp_path: Path) -> None:
+        """Follow-up fail-closed message should be concise, not operator-heavy."""
+        result = _dispatch(
+            message="what should we do next",
+            queue_root=tmp_path,
+            session_context={},
+        )
+        assert result.matched is True
+        assert result.status == "followup_missing_evidence"
+        text = result.assistant_text
+        # Should be concise — no verbose canonical evidence language
+        assert "canonical evidence" not in text.lower()
+        assert "resolvable voxeraos job outcome" not in text.lower()
+
+    def test_no_hallucinated_evidence_in_followup_reply(self, tmp_path: Path) -> None:
+        """Follow-up replies must not invent evidence that doesn't exist.
+
+        The reply must reference exactly the job ID from canonical evidence.
+        It must not contain job state or summary text not present in the
+        evidence object.
+        """
+        mock_evidence = _mock_succeeded_evidence("job-20260405-nohalluc")
+        ctx = {"last_completed_job_ref": "job-20260405-nohalluc"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="what should we do next",
+                queue_root=tmp_path,
+                session_context=ctx,
+            )
+        text = result.assistant_text
+        # Reply must reference the actual job ID from evidence
+        assert "job-20260405-nohalluc" in text
+        # Reply must only contain the summary that was in the evidence object
+        assert "Task completed successfully" in text
+        # Reply must not claim a different outcome than what evidence shows
+        assert "failed" not in text.lower().split("succeeded")[0]  # no failure before "succeeded"
+        # The only job ID in the reply must be the one from evidence
+        import re
+
+        job_ids_in_text = re.findall(r"job-\d{8}-\w+", text)
+        assert all(jid == "job-20260405-nohalluc" for jid in job_ids_in_text), (
+            f"Reply contains unexpected job IDs: {job_ids_in_text}"
+        )
+
+    def test_evidence_detail_shows_succeeded_summary(self, tmp_path: Path) -> None:
+        """Follow-up evidence detail should surface the actual result summary."""
+        mock_evidence = _mock_succeeded_evidence("job-20260405-sum")
+        ctx = {"last_completed_job_ref": "job-20260405-sum"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="what should we do next",
+                queue_root=tmp_path,
+                session_context=ctx,
+            )
+        text = result.assistant_text
+        # Evidence detail should contain the actual summary from the mock
+        assert "task completed successfully" in text.lower()
+        assert "succeeded" in text.lower()
+
+    def test_evidence_detail_for_failed_job(self, tmp_path: Path) -> None:
+        """Follow-up evidence detail for failed jobs should show failure summary."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        failed_evidence = ReviewedJobEvidence(
+            job_id="job-20260405-fail",
+            state="failed",
+            lifecycle_state="failed",
+            terminal_outcome="failed",
+            approval_status="",
+            latest_summary="",
+            failure_summary="Disk full during write.",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=("terminal_outcome=failed",),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="runtime_failure",
+            value_forward_text="",
+        )
+        ctx = {"last_completed_job_ref": "job-20260405-fail"}
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=failed_evidence,
+        ):
+            result = _dispatch(
+                message="what should we do next",
+                queue_root=tmp_path,
+                session_context=ctx,
+            )
+        text = result.assistant_text
+        assert "failed" in text.lower()
+        assert "disk full during write" in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# 13. Saveable follow-up content template shape
+# ---------------------------------------------------------------------------
+
+
+class TestSaveableFollowupContentShape:
+    """Saveable follow-up content templates should be clear and not operator-heavy."""
+
+    def test_succeeded_saveable_followup_content_is_natural(self) -> None:
+        from voxera.vera.evidence_review import draft_saveable_followup_preview
+
+        evidence = _mock_succeeded_evidence("job-20260405-tpl")
+        payload = draft_saveable_followup_preview(evidence)
+        wf = payload.get("write_file")
+        assert isinstance(wf, dict)
+        content = str(wf.get("content") or "")
+        # Should use natural phrasing, not "(Operator: ...)"
+        assert "(Operator:" not in content
+        # Should contain result reference
+        assert "job-20260405-tpl" in content
+        # Should have a next-step section
+        assert "Next step" in content
+
+    def test_failed_saveable_followup_content_is_natural(self) -> None:
+        from voxera.vera.evidence_review import (
+            ReviewedJobEvidence,
+            draft_saveable_followup_preview,
+        )
+
+        evidence = ReviewedJobEvidence(
+            job_id="job-20260405-ftpl",
+            state="failed",
+            lifecycle_state="failed",
+            terminal_outcome="failed",
+            approval_status="",
+            latest_summary="",
+            failure_summary="Permission denied.",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="runtime_failure",
+            value_forward_text="",
+        )
+        payload = draft_saveable_followup_preview(evidence)
+        wf = payload.get("write_file")
+        assert isinstance(wf, dict)
+        content = str(wf.get("content") or "")
+        assert "(Operator:" not in content
+        assert "Correction" in content
+        assert "Permission denied" in content

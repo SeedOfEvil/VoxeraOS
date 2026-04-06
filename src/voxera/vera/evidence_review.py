@@ -732,24 +732,22 @@ def draft_saveable_followup_preview(evidence: ReviewedJobEvidence) -> dict[str, 
     """
     summary = evidence.latest_summary or evidence.failure_summary or "the completed result"
     if evidence.state == "succeeded":
-        goal = (
-            f"save follow-up draft grounded in completed evidence from {evidence.job_id}: {summary}"
-        )
+        goal = f"save follow-up draft based on completed evidence from {evidence.job_id}: {summary}"
         content = (
             f"# Follow-up: {evidence.job_id}\n\n"
-            f"Prior job completed successfully.\n\n"
-            f"**Result summary**: {summary}\n\n"
-            f"## Proposed next step\n\n"
-            f"(Operator: describe the follow-up action grounded in the above result.)\n"
+            f"The prior job completed successfully.\n\n"
+            f"**Result**: {summary}\n\n"
+            f"## Next step\n\n"
+            f"Describe the follow-up action based on the result above.\n"
         )
     elif evidence.state == "failed":
         goal = f"save corrective follow-up for failed job {evidence.job_id}: {summary}"
         content = (
             f"# Corrective follow-up: {evidence.job_id}\n\n"
-            f"Prior job failed.\n\n"
-            f"**Failure summary**: {summary}\n\n"
-            f"## Proposed correction\n\n"
-            f"(Operator: describe the corrective action to address the failure above.)\n"
+            f"The prior job failed.\n\n"
+            f"**Failure**: {summary}\n\n"
+            f"## Correction\n\n"
+            f"Describe the corrective action to address the failure above.\n"
         )
     else:
         goal = f"save follow-up draft for {evidence.job_id} (state: {evidence.state})"
@@ -757,8 +755,8 @@ def draft_saveable_followup_preview(evidence: ReviewedJobEvidence) -> dict[str, 
             f"# Follow-up: {evidence.job_id}\n\n"
             f"Prior job state: {evidence.state}.\n\n"
             f"**Summary**: {summary}\n\n"
-            f"## Proposed next step\n\n"
-            f"(Operator: describe the follow-up action.)\n"
+            f"## Next step\n\n"
+            f"Describe the follow-up action.\n"
         )
     job_stem = evidence.job_id.replace(".json", "")
     return {

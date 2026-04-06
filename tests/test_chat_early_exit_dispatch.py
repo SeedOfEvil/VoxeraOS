@@ -1020,8 +1020,8 @@ class TestLinkedJobFollowupRevision:
         assert isinstance(wf, dict)
         assert wf.get("content")
         assert wf.get("path")
-        # Assistant text must communicate preview-only
-        assert "preview-only" in result.assistant_text.lower()
+        # Assistant text must communicate preview boundary
+        assert "preview" in result.assistant_text.lower()
         assert "nothing has been submitted yet" in result.assistant_text.lower()
         assert "job-20260401-save" in result.assistant_text
 

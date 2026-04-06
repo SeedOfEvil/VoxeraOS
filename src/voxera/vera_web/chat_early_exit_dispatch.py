@@ -118,15 +118,15 @@ def _followup_evidence_detail(evidence: ReviewedJobEvidence) -> str:
     """Return a short evidence-grounded detail line for the follow-up reply."""
     if evidence.state == "succeeded":
         summary = evidence.latest_summary or "completed successfully"
-        return f"- Prior job outcome: succeeded — {summary}"
+        return f"Prior result: succeeded — {summary}"
     if evidence.state == "failed":
         summary = evidence.failure_summary or evidence.latest_summary or "execution failed"
-        return f"- Prior job outcome: failed — {summary}"
+        return f"Prior result: failed — {summary}"
     if evidence.state == "awaiting_approval":
-        return "- Prior job state: awaiting operator approval"
+        return "Prior state: awaiting operator approval"
     if evidence.state == "canceled":
-        return "- Prior job state: canceled (not failed)"
-    return f"- Prior job state: {evidence.state}"
+        return "Prior state: canceled (not failed)"
+    return f"Prior state: {evidence.state}"
 
 
 _AUTHORED_DRAFTING_SIGNAL_RE = re.compile(
@@ -223,10 +223,9 @@ def dispatch_early_exit_intent(
             return EarlyExitResult(
                 matched=True,
                 assistant_text=(
-                    "I could not resolve a VoxeraOS job to review from canonical queue evidence. "
-                    "No completed or in-progress linked job was found for this session. "
-                    "Share a job id (for example `job-123.json`) or submit a job first so I can "
-                    "inspect real results."
+                    "No job could be resolved for review in this session. "
+                    "Share a job ID (e.g. `job-123.json`) or submit a job first "
+                    "so I can inspect real results."
                 ),
                 status="review_missing_job",
             )
@@ -263,9 +262,9 @@ def dispatch_early_exit_intent(
             return EarlyExitResult(
                 matched=True,
                 assistant_text=(
-                    "I can draft a follow-up preview once we have a resolvable VoxeraOS job outcome. "
-                    "No completed linked job could be resolved from this session. "
-                    "Please give me a job id or submit a job first so I have canonical evidence to ground the follow-up."
+                    "I can't draft a follow-up yet — no completed job could be resolved "
+                    "from this session. Share a job ID or submit a job first so I have "
+                    "evidence to ground it."
                 ),
                 status="followup_missing_evidence",
             )
@@ -277,7 +276,7 @@ def dispatch_early_exit_intent(
             return EarlyExitResult(
                 matched=True,
                 assistant_text=(
-                    f"I've prepared a revised preview grounded in canonical evidence from `{evidence.job_id}`.\n"
+                    f"Here's a revised preview based on `{evidence.job_id}`.\n"
                     f"{followup_detail}\n"
                     "This is preview-only — nothing has been submitted yet."
                 ),
@@ -294,10 +293,9 @@ def dispatch_early_exit_intent(
             return EarlyExitResult(
                 matched=True,
                 assistant_text=(
-                    f"I've prepared a saveable follow-up draft grounded in canonical evidence from `{evidence.job_id}`.\n"
+                    f"Here's a saveable follow-up based on `{evidence.job_id}`.\n"
                     f"{followup_detail}\n"
-                    "The follow-up has been placed in the preview as a file draft. "
-                    "This is preview-only — nothing has been submitted yet."
+                    "It's ready as a file draft in the preview — nothing has been submitted yet."
                 ),
                 status="save_followup_preview_ready",
                 preview_payload=payload,
@@ -311,9 +309,9 @@ def dispatch_early_exit_intent(
         return EarlyExitResult(
             matched=True,
             assistant_text=(
-                f"I've prepared a follow-up preview grounded in canonical evidence from `{evidence.job_id}`.\n"
+                f"Here's a follow-up preview based on `{evidence.job_id}`.\n"
                 f"{followup_detail}\n"
-                "This is preview-only — nothing has been submitted yet."
+                "Review or refine it — this is preview-only, nothing has been submitted yet."
             ),
             status="followup_preview_ready",
             preview_payload=payload,

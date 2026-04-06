@@ -716,7 +716,7 @@ class TestSessionLevelEvidenceReviewFollowUp:
 
         last_turn = session.turns()[-1]["text"].lower()
         # Without job context, the review branch fails closed with honest message
-        assert "could not resolve" in last_turn
+        assert "no job could be resolved" in last_turn
 
     def test_followup_with_no_linked_job_fails_closed_in_session(
         self, tmp_path, monkeypatch
@@ -729,7 +729,7 @@ class TestSessionLevelEvidenceReviewFollowUp:
 
         last_turn = session.turns()[-1]["text"].lower()
         # Without job context, the followup branch fails closed with honest message
-        assert "follow-up preview" in last_turn
+        assert "follow-up" in last_turn
 
 
 # ---------------------------------------------------------------------------
@@ -954,7 +954,7 @@ class TestSaveFollowUpLivePaths:
         assert result.write_handoff_ready is True
         assert result.preview_payload is not None
         assert "write_file" in result.preview_payload
-        assert "preview-only" in result.assistant_text.lower()
+        assert "preview" in result.assistant_text.lower()
         assert "nothing has been submitted yet" in result.assistant_text.lower()
 
     def test_save_followup_as_file_dispatch(self, tmp_path) -> None:
@@ -1016,8 +1016,8 @@ class TestSaveFollowUpLivePaths:
         content = str(result.preview_payload["write_file"]["content"])
         assert "job-20260401-salign" in content
         assert "Cleanup ran successfully." in content
-        # Chat says "saveable follow-up draft"
-        assert "saveable follow-up draft" in result.assistant_text.lower()
+        # Chat says "saveable follow-up"
+        assert "saveable follow-up" in result.assistant_text.lower()
 
     def test_save_followup_session_level_creates_write_file_preview(
         self, tmp_path, monkeypatch
@@ -1046,7 +1046,7 @@ class TestSaveFollowUpLivePaths:
         assert "Deployed to production." in content
 
         last_turn = session.turns()[-1]["text"].lower()
-        assert "preview-only" in last_turn
+        assert "preview" in last_turn
         assert "nothing has been submitted" in last_turn
         assert "fallback" not in last_turn
 
