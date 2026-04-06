@@ -450,6 +450,87 @@ def _detect_automation_clarification_completion(
         return None
 
 
+# ---------------------------------------------------------------------------
+# Direct automation/script preview detection (no clarification required)
+# ---------------------------------------------------------------------------
+#
+# Handles fully specified single-turn requests like:
+#   "I need a process that continuously watches ./incoming. When a folder is
+#    fully copied in, add a status.txt file containing processed! and then
+#    move it to ./processed."
+#
+# The narrower clarification-recovery helpers above only fire after a prior
+# clarification exchange.  Direct requests must pass four structural gates
+# so the lane stays tight:
+#   (1) automation verb  — watch/monitor/detect/automate/poll (+ tense forms)
+#   (2) path token       — ~/X, ./X, or /X
+#   (3) action verb      — add/write/move/copy/create/append/rename/delete
+#   (4) file/dir subject — folder/directory/file/path (+ plurals)
+
+_DIRECT_AUTOMATION_VERB_RE = re.compile(
+    r"\b(?:watch|watches|watching|monitor|monitors|monitoring|"
+    r"detect|detects|detecting|automate|automates|automating|"
+    r"poll|polls|polling)\b",
+    re.IGNORECASE,
+)
+
+_DIRECT_AUTOMATION_PATH_TOKEN_RE = re.compile(r"(?:[~./][\w./-]*[\w/])")
+
+_DIRECT_AUTOMATION_ACTION_RE = re.compile(
+    r"\b(?:add(?:s|ing|ed)?|write|writes|writing|move|moves|moving|"
+    r"copy|copies|copying|create(?:s|d)?|creating|append(?:s|ing|ed)?|"
+    r"rename(?:s|d)?|renaming|delete(?:s|d)?|deleting)\b",
+    re.IGNORECASE,
+)
+
+_DIRECT_AUTOMATION_SUBJECT_RE = re.compile(
+    r"\b(?:folder|folders|directory|directories|file|files|path|paths)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_direct_automation_request(message: str) -> bool:
+    """Return True when the message is a fully specified automation/script request.
+
+    All four structural signals must be present to enter this lane:
+    automation verb, path token, action verb, and file/directory subject.
+    This is deliberately narrow — simple file ops ("move a.txt to b.txt"),
+    informational queries, writing drafts, and weather questions do not
+    match, so the detector only widens the code-draft lane for clearly
+    previewable automation requests.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    return (
+        bool(_DIRECT_AUTOMATION_VERB_RE.search(text))
+        and bool(_DIRECT_AUTOMATION_PATH_TOKEN_RE.search(text))
+        and bool(_DIRECT_AUTOMATION_ACTION_RE.search(text))
+        and bool(_DIRECT_AUTOMATION_SUBJECT_RE.search(text))
+    )
+
+
+def _synthesize_direct_automation_preview() -> dict[str, object] | None:
+    """Synthesize an empty Python-script preview shell for direct automation requests.
+
+    Returns a normalized preview payload or None on normalization failure.
+    The actual code content is injected by the standard code-draft flow after
+    the LLM reply is generated.
+    """
+    shell = {
+        "goal": "draft a python script for the requested automation as automation.py",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/automation.py",
+            "content": "",
+            "mode": "overwrite",
+        },
+    }
+    try:
+        return normalize_preview_payload(shell)
+    except Exception:
+        return None
+
+
 def _is_refinable_prose_preview(preview: dict[str, object] | None) -> bool:
     return _em_is_refinable_prose_preview(preview, is_text_draft_preview=is_text_draft_preview)
 
@@ -979,6 +1060,37 @@ async def chat(request: Request):
         if _automation_shell is not None:
             pending_preview = _automation_shell
             write_session_preview(root, active_session, _automation_shell)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+            context_on_preview_created(
+                root, active_session, draft_ref="~/VoxeraOS/notes/automation.py"
+            )
+            _post_clarification_code_draft = True
+    # ── Direct automation/script request (no clarification required) ─────
+    # A fully specified single-turn request with all four structural
+    # signals (automation verb + path token + action verb + file/dir
+    # subject) synthesizes the Python-script preview shell directly so the
+    # code-draft flow can inject the generated code on the same turn.
+    if (
+        pending_preview is None
+        and not is_code_draft_request(message)
+        and not is_info_query
+        and not is_explicit_writing_transform
+        and not conversational_answer_first_turn
+        and not _is_voxera_control_turn(message, active_preview=None)
+        and _looks_like_direct_automation_request(message)
+    ):
+        _direct_automation_shell = _synthesize_direct_automation_preview()
+        if _direct_automation_shell is not None:
+            pending_preview = _direct_automation_shell
+            write_session_preview(root, active_session, _direct_automation_shell)
             write_session_handoff_state(
                 root,
                 active_session,

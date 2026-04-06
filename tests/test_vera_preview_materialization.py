@@ -31,6 +31,7 @@ from voxera.vera_web.app import (
     _CODE_DRAFT_RECOVERY_RE,
     _detect_automation_clarification_completion,
     _is_empty_code_preview_shell,
+    _looks_like_direct_automation_request,
     _recover_code_draft_from_history,
 )
 
@@ -828,4 +829,249 @@ def test_automation_underspecified_answer_fails_closed(tmp_path, monkeypatch):
         path = str(wf.get("path", ""))
         assert "automation.py" not in path, (
             f"Vague answer must not synthesize automation shell, got path: {path!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 9. Direct automation request — single-turn detection
+# ---------------------------------------------------------------------------
+
+
+class TestLooksLikeDirectAutomationRequest:
+    """Unit tests for the direct automation request detector (no clarification needed)."""
+
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            # The exact failing prompt from live validation
+            (
+                "I need a process that continuously watches ./incoming. "
+                "When a folder is fully copied in, add a status.txt file "
+                "containing processed! and then move it to ./processed."
+            ),
+            "watch ./inbox for new folders and move them to ./done after adding a status file",
+            (
+                "monitor ~/VoxeraOS/notes/staging for new directories, "
+                "write a marker file, then move them to ~/VoxeraOS/notes/archived"
+            ),
+            "poll ./uploads every 5 seconds and copy stable files to ./processed",
+            "automate detecting new files in ./drop and moving them to ./handled",
+        ],
+    )
+    def test_direct_automation_positives(self, msg: str) -> None:
+        assert _looks_like_direct_automation_request(msg), f"Expected True for: {msg!r}"
+
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            # Informational / conversational
+            "what is the weather today?",
+            "tell me a joke",
+            "explain photosynthesis",
+            "what time is it",
+            "how do I use python",
+            # Writing drafts
+            "write me an essay about volcanoes",
+            "draft a note about the meeting",
+            # Simple file operations (not automation)
+            "copy report.txt into receipts",
+            "move ./report.txt to ./archive",
+            "open ~/VoxeraOS/notes/readme.txt",
+            "read the file ./config.yaml",
+            "create a file called notes.txt with my grocery list",
+            # Saves / submits
+            "save that to a note",
+            "submit it",
+            "go ahead",
+            # Borderline: "watch" without file/dir subject
+            "watch the tutorial video at ~/Videos/tut.mp4",
+            # Borderline: missing path token
+            "monitor my folder for new files",
+            # Borderline: has monitor + path but no action verb + no folder noun
+            "show me the logs for ./service.log",
+        ],
+    )
+    def test_direct_automation_negatives(self, msg: str) -> None:
+        assert not _looks_like_direct_automation_request(msg), f"Expected False for: {msg!r}"
+
+
+_DIRECT_AUTOMATION_PROMPT = (
+    "I need a process that continuously watches ./incoming. "
+    "When a folder is fully copied in, add a status.txt file "
+    "containing processed! and then move it to ./processed."
+)
+
+_DIRECT_AUTOMATION_SCRIPT = """\
+import os
+import shutil
+import time
+
+SRC = os.path.expanduser("./incoming")
+DST = os.path.expanduser("./processed")
+
+while True:
+    for name in os.listdir(SRC):
+        src_path = os.path.join(SRC, name)
+        if os.path.isdir(src_path):
+            with open(os.path.join(src_path, "status.txt"), "w") as f:
+                f.write("processed!")
+            shutil.move(src_path, os.path.join(DST, name))
+    time.sleep(1)
+"""
+
+
+def test_direct_automation_request_creates_preview(tmp_path, monkeypatch):
+    """Single-turn fully specified automation request → real governed preview."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        vera_app_module, "generate_vera_reply", _make_code_reply_fn(_DIRECT_AUTOMATION_SCRIPT)
+    )
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+
+    resp = session.chat(_DIRECT_AUTOMATION_PROMPT)
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None, (
+        "A real preview must exist for a direct fully specified automation request"
+    )
+    wf = preview.get("write_file", {})
+    content = str(wf.get("content") or "").strip()
+    assert content, "Preview content must not be empty — code must be injected"
+    assert "shutil" in content or "status.txt" in content, (
+        "Generated script code must reach the preview"
+    )
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    assert "not able to prepare a governed preview" not in last_reply.lower(), (
+        f"Vera must not claim inability for a fully specified request: {last_reply!r}"
+    )
+
+
+def test_direct_automation_request_go_ahead_submits(tmp_path, monkeypatch):
+    """After a direct automation preview, 'go ahead' must submit."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        vera_app_module, "generate_vera_reply", _make_code_reply_fn(_DIRECT_AUTOMATION_SCRIPT)
+    )
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    session.chat(_DIRECT_AUTOMATION_PROMPT)
+
+    preview = session.preview()
+    assert preview is not None
+    assert str(preview.get("write_file", {}).get("content") or "").strip()
+
+    resp = session.chat("go ahead")
+    assert resp.status_code == 200
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    assert "no preview" not in last_reply.lower() or "submitted" in last_reply.lower()
+
+
+def test_direct_automation_does_not_hijack_weather(tmp_path, monkeypatch):
+    """Weather questions must not be hijacked into the direct automation lane."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _weather_reply(**kwargs):
+        code_draft = kwargs.get("code_draft", False)
+        assert not code_draft, "Weather question must not be classified as code_draft"
+        return {"answer": "It is sunny.", "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _weather_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    resp = session.chat("what is the weather today?")
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    if preview is not None:
+        path = str(preview.get("write_file", {}).get("path", ""))
+        assert "automation.py" not in path
+
+
+def test_direct_automation_does_not_hijack_simple_file_op(tmp_path, monkeypatch):
+    """Simple file operations ('copy report.txt to archive') must not be hijacked."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _reply(**kwargs):
+        code_draft = kwargs.get("code_draft", False)
+        assert not code_draft, "Simple file op must not be classified as code_draft"
+        return {"answer": "OK, I can prepare that.", "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    resp = session.chat("move ./report.txt to ./archive")
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    if preview is not None:
+        path = str(preview.get("write_file", {}).get("path", ""))
+        assert "automation.py" not in path, (
+            f"Simple file move must not synthesize automation shell, got: {path!r}"
+        )
+
+
+def test_direct_automation_does_not_hijack_writing_draft(tmp_path, monkeypatch):
+    """Writing draft requests must not be hijacked into the direct automation lane."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _writing_reply(**kwargs):
+        code_draft = kwargs.get("code_draft", False)
+        assert not code_draft, "Writing draft must not be classified as code_draft"
+        return {"answer": "Here is your essay...", "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _writing_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    resp = session.chat("write me an essay about volcanoes")
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    if preview is not None:
+        path = str(preview.get("write_file", {}).get("path", ""))
+        assert "automation.py" not in path
+
+
+def test_direct_automation_repeated_failure_does_not_occur(tmp_path, monkeypatch):
+    """Repeated attempts with the same fully specified prompt must not keep failing."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        vera_app_module, "generate_vera_reply", _make_code_reply_fn(_DIRECT_AUTOMATION_SCRIPT)
+    )
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+
+    # Attempt 1 must succeed
+    session.chat(_DIRECT_AUTOMATION_PROMPT)
+    preview_1 = session.preview()
+    assert preview_1 is not None
+
+    # Also verify the assistant never emitted the repeated-failure message
+    turns = session.turns()
+    assistant_replies = [t["text"] for t in turns if t["role"] == "assistant"]
+    for reply in assistant_replies:
+        assert "not able to prepare a governed preview" not in reply.lower(), (
+            f"Unexpected repeated-failure message: {reply!r}"
         )
