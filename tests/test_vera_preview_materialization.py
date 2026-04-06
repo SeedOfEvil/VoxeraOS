@@ -1189,16 +1189,25 @@ def test_first_turn_previewable_automation_with_full_detail_drafts_directly(tmp_
 
 
 def test_first_turn_previewable_automation_does_not_hijack_weather(tmp_path, monkeypatch):
-    """Weather questions must keep their normal reply — no clarification fallback."""
+    """Weather questions must not be substituted with the automation clarification.
+
+    Forces the false-preview-claim → blanket refusal path so the substitution
+    gate is actually exercised: the test verifies the gate's intent-detector
+    fails closed for weather queries even when the guardrail would otherwise
+    collapse the LLM reply.
+    """
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _weather_reply(**kwargs):
-        return {"answer": "It is sunny.", "status": "ok:test"}
+    async def _false_claim_reply(**kwargs):
+        return {
+            "answer": "I've prepared a preview of your request in the preview pane.",
+            "status": "ok:test",
+        }
 
     async def _no_builder(**kwargs):
         return None
 
-    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _weather_reply)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _false_claim_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
 
     resp = session.chat("what is the weather today?")
@@ -1206,28 +1215,40 @@ def test_first_turn_previewable_automation_does_not_hijack_weather(tmp_path, mon
 
     turns = session.turns()
     last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
-    assert "It is sunny." in last_reply
+    # Weather has no automation intent verb → substitution must not fire.
     assert _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY not in last_reply
+    # The original blanket refusal stays in place for genuinely unsupported
+    # weather phrasing — fail-closed is preserved here.
+    assert BLANKET_PREVIEW_REFUSAL_TEXT in last_reply
 
 
 def test_first_turn_previewable_automation_does_not_hijack_writing_request(tmp_path, monkeypatch):
-    """Writing draft requests must not be substituted with the automation clarification."""
+    """Writing draft requests must not be substituted with the automation clarification.
+
+    Forces the false-preview-claim → blanket refusal path so the substitution
+    gate is actually exercised for a writing request.
+    """
     session = make_vera_session(monkeypatch, tmp_path)
 
-    async def _writing_reply(**kwargs):
-        return {"answer": "Here is your essay about volcanoes...", "status": "ok:test"}
+    async def _false_claim_reply(**kwargs):
+        return {
+            "answer": "I've prepared a preview of your request in the preview pane.",
+            "status": "ok:test",
+        }
 
     async def _no_builder(**kwargs):
         return None
 
-    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _writing_reply)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _false_claim_reply)
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
 
-    resp = session.chat("write me an essay about volcanoes")
+    resp = session.chat("draft a short note about the meeting")
     assert resp.status_code == 200
 
     turns = session.turns()
     last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    # Writing draft message has no automation intent verb (process/script/etc.)
+    # plus action-on-arrival hint → substitution must not fire.
     assert _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY not in last_reply
 
 
