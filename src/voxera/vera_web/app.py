@@ -45,6 +45,10 @@ from ..vera.investigation_flow import (
     is_informational_web_query,
     run_web_enrichment,
 )
+from ..vera.linked_completions import (
+    ingest_linked_job_completions,
+    maybe_auto_surface_linked_completion,
+)
 from ..vera.preview_drafting import (
     diagnostics_service_or_logs_intent,
     drafting_guidance,
@@ -66,8 +70,6 @@ from ..vera.saveable_artifacts import (
 from ..vera.service import (
     generate_preview_builder_update,
     generate_vera_reply,
-    ingest_linked_job_completions,
-    maybe_auto_surface_linked_completion,
 )
 from ..vera.session_store import (
     append_routing_debug_entry,

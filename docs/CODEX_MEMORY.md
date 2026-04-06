@@ -1,3 +1,15 @@
+## 2026-04-06 — refactor(vera): extract linked completion delivery and autosurface subsystem from service
+
+- **Motivation**: `vera/service.py` combined top-level conversation orchestration (LLM reply, preview builder) with the full linked-completion delivery and autosurface subsystem (~600 lines). Extracting the cohesive completion subsystem improves navigability and ownership clarity without changing behavior.
+- **Extraction**: Created `src/voxera/vera/linked_completions.py` containing all linked-completion functions: `_completion_delivery_eligible`, `_is_true_terminal_completion`, `_classify_surfacing_policy`, `_normalize_result_highlights`, `_extract_step_machine_payload`, `_format_diagnostics_values`, `_format_completion_autosurface_message`, `_build_completion_notification`, `_upsert_completion_notification`, `_attempt_live_delivery`, `_is_terminal_queue_state`, `_build_completion_payload`, `ingest_linked_job_completions`, `maybe_auto_surface_linked_completion`, `maybe_deliver_linked_completion_live`, `maybe_deliver_linked_completion_live_for_job`.
+- **Callers updated**: `vera_web/app.py` and `core/queue_execution.py` now import from `vera.linked_completions` directly. `service.py` re-exports the 4 public functions for backward compatibility.
+- **No behavioral change**: all delivery eligibility, autosurface policy, formatting, ingestion, and live delivery logic is byte-for-byte identical. Truth boundaries, queue semantics, session semantics, and fail-closed behavior are preserved.
+- **Stale imports removed**: `time`, `Path`, `lookup_job`, `resolve_structured_execution`, `extract_value_forward_text` removed from `service.py` (only used by extracted functions). `_read_json_dict` moved to the new module.
+- **Files changed**: `src/voxera/vera/linked_completions.py` (new), `src/voxera/vera/service.py`, `src/voxera/vera_web/app.py`, `src/voxera/core/queue_execution.py`, `docs/ARCHITECTURE.md`, `docs/ops.md`, `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md`, `docs/CODEX_MEMORY.md`.
+- **Tests**: all existing tests pass unchanged — test files import `vera.service` as `vera_service` and the re-exports preserve compatibility.
+- **Import guidance for new code**: linked completion delivery → `vera.linked_completions`; conversation orchestration → `vera.service`; session state → `vera.session_store`. Do not re-introduce linked completion logic in `service.py`.
+- **Recommended next PR**: extract the preview builder subsystem (`generate_preview_builder_update`, `_build_preview_builder_messages`, `_extract_hidden_compiler_decision`, `_apply_preview_patch`, `HiddenCompilerDecision`) from `service.py` into a dedicated module, further reducing `service.py` to a thin orchestration root.
+
 ## 2026-04-06 — improve(vera): tighten evidence-grounded follow-up continuity
 
 - **Motivation**: Review-to-follow-up transitions were correct but stiff — replies used operator-heavy boilerplate like "grounded in canonical evidence from", bullet-prefix evidence details, and verbose fail-closed messages. The goal is smoother, more natural follow-up continuity while preserving canonical grounding and fail-closed behavior.

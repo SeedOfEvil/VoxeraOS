@@ -115,7 +115,7 @@ Current refactor ownership map for contributors/operators:
   - `src/voxera/vera/draft_revision.py` for active-preview rename/path/content follow-ups
   - `src/voxera/vera/preview_submission.py` for active-preview submit detection and queue handoff normalization
   - `src/voxera/vera/investigation_derivations.py` for compare/summarize/expand/save-derived follow-ups
-- `src/voxera/vera/service.py` remains the top-level Vera orchestrator (LLM reply, preview builder, linked completion delivery). Session state helpers live in `session_store.py`; all production and test code imports from `session_store` directly.
+- `src/voxera/vera/service.py` remains the top-level Vera orchestrator (LLM reply, preview builder). Linked completion delivery, autosurface, and ingestion now live in `src/voxera/vera/linked_completions.py`. Session state helpers live in `session_store.py`; all production and test code imports from `session_store` directly.
 - Queue lifecycle behavior is now intentionally split across `src/voxera/core/queue_execution.py`, `queue_approvals.py`, and `queue_recovery.py`, with `queue_daemon.py` acting as the runtime composition root.
 - Panel route ownership is split across `src/voxera/panel/routes_*.py`; prefer extending the route-family module first instead of adding new route behavior directly to `panel/app.py` unless the change is cross-cutting wiring/shared helper work.
 - Runtime/operator config (`config.json`, `load_config`) and app/provider config (`config.yml`, `load_app_config`) are distinct surfaces by design; keep docs and operational guidance explicit about which layer is being changed.
