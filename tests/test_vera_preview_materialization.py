@@ -29,11 +29,14 @@ from voxera.core.code_draft_intent import classify_code_draft_intent
 from voxera.vera_web import app as vera_app_module
 from voxera.vera_web.app import (
     _CODE_DRAFT_RECOVERY_RE,
+    _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY,
     _detect_automation_clarification_completion,
     _is_empty_code_preview_shell,
     _looks_like_direct_automation_request,
+    _looks_like_previewable_automation_intent,
     _recover_code_draft_from_history,
 )
+from voxera.vera_web.response_shaping import BLANKET_PREVIEW_REFUSAL_TEXT
 
 from .vera_session_helpers import make_vera_session
 
@@ -1048,6 +1051,213 @@ def test_direct_automation_does_not_hijack_writing_draft(tmp_path, monkeypatch):
     if preview is not None:
         path = str(preview.get("write_file", {}).get("path", ""))
         assert "automation.py" not in path
+
+
+# ---------------------------------------------------------------------------
+# 10. Previewable automation intent — first-turn refusal polish
+# ---------------------------------------------------------------------------
+#
+# Regression coverage for the first-turn over-conservative refusal seam:
+# clearly previewable automation/process requests must not get the blanket
+# "I was not able to prepare a governed preview" reply.  Either a focused
+# clarification question or a real preview is acceptable, but the blanket
+# refusal is not.
+
+
+class TestLooksLikePreviewableAutomationIntent:
+    """Unit tests for the broader previewable automation intent detector."""
+
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            # The exact failing live prompt from the task description
+            (
+                "I need a process that identifies a new folder copied into a "
+                "specific folder and it does something with it and then it "
+                "copies it to another folder can you help me?"
+            ),
+            # Variants without explicit path tokens
+            "I want a process that watches a folder and copies new files to another folder",
+            "automate detecting new directories and moving them somewhere else",
+            "I need a script that monitors a folder for new files and copies them",
+            "build a workflow that identifies folders and moves them to another folder",
+        ],
+    )
+    def test_previewable_automation_positives(self, msg: str) -> None:
+        assert _looks_like_previewable_automation_intent(msg), f"Expected True for: {msg!r}"
+
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            # Informational
+            "what is the weather today?",
+            "tell me a joke",
+            "explain photosynthesis",
+            "what time is it",
+            "how do i use python",
+            # Writing drafts (no automation intent verb)
+            "write me an essay about volcanoes",
+            "draft a note about the meeting",
+            # Simple file operations (no automation intent verb)
+            "copy report.txt into receipts",
+            "move ./report.txt to ./archive",
+            "open ~/VoxeraOS/notes/readme.txt",
+            "read the file ./config.yaml",
+            "create a file called notes.txt with my grocery list",
+            # Saves / submits
+            "save that to a note",
+            "submit it",
+            "go ahead",
+            # Has automation verb but no file/folder subject
+            "monitor the build pipeline performance",
+            "watch the tutorial video",
+            # Has subject but no automation intent verb
+            "what is in this folder",
+            "describe a directory tree",
+        ],
+    )
+    def test_previewable_automation_negatives(self, msg: str) -> None:
+        assert not _looks_like_previewable_automation_intent(msg), f"Expected False for: {msg!r}"
+
+
+_PREVIEWABLE_FIRST_TURN_PROMPT = (
+    "I need a process that identifies a new folder copied into a specific "
+    "folder and it does something with it and then it copies it to another "
+    "folder can you help me?"
+)
+
+
+def test_first_turn_previewable_automation_does_not_blanket_refuse(tmp_path, monkeypatch):
+    """A clearly previewable first-turn automation request must not hit the blanket refusal."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    # Simulate the live failure: LLM produces a preview-pane claim with no
+    # fenced code block, which the guardrail collapses to the blanket refusal.
+    async def _false_claim_reply(**kwargs):
+        return {
+            "answer": "I've prepared a preview of your request in the preview pane.",
+            "status": "ok:test",
+        }
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _false_claim_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+
+    resp = session.chat(_PREVIEWABLE_FIRST_TURN_PROMPT)
+    assert resp.status_code == 200
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+
+    # The blanket refusal must not be the first-turn outcome for this request.
+    assert BLANKET_PREVIEW_REFUSAL_TEXT not in last_reply, (
+        f"Blanket refusal must not fire for previewable automation request: {last_reply!r}"
+    )
+    # The substituted clarification must include the focused detail prompts.
+    assert "source folder" in last_reply.lower()
+    assert "destination folder" in last_reply.lower()
+
+
+def test_first_turn_previewable_automation_with_full_detail_drafts_directly(tmp_path, monkeypatch):
+    """When all four direct-automation signals are present, a real preview is materialized."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        vera_app_module, "generate_vera_reply", _make_code_reply_fn(_DIRECT_AUTOMATION_SCRIPT)
+    )
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+
+    resp = session.chat(_DIRECT_AUTOMATION_PROMPT)
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    content = str(preview.get("write_file", {}).get("content") or "").strip()
+    assert content, "Direct automation request must materialize a real preview"
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    assert BLANKET_PREVIEW_REFUSAL_TEXT not in last_reply
+    # The clarification fallback must NOT have fired — direct draft path won.
+    assert _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY not in last_reply
+
+
+def test_first_turn_previewable_automation_does_not_hijack_weather(tmp_path, monkeypatch):
+    """Weather questions must keep their normal reply — no clarification fallback."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _weather_reply(**kwargs):
+        return {"answer": "It is sunny.", "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _weather_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+
+    resp = session.chat("what is the weather today?")
+    assert resp.status_code == 200
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    assert "It is sunny." in last_reply
+    assert _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY not in last_reply
+
+
+def test_first_turn_previewable_automation_does_not_hijack_writing_request(tmp_path, monkeypatch):
+    """Writing draft requests must not be substituted with the automation clarification."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _writing_reply(**kwargs):
+        return {"answer": "Here is your essay about volcanoes...", "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _writing_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+
+    resp = session.chat("write me an essay about volcanoes")
+    assert resp.status_code == 200
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    assert _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY not in last_reply
+
+
+def test_first_turn_previewable_automation_does_not_hijack_simple_file_request(
+    tmp_path, monkeypatch
+):
+    """Simple file ops without automation intent must not get the clarification fallback."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    # Force the false-preview-claim → blanket refusal path so we can verify
+    # the substitution does NOT fire for simple file requests.
+    async def _false_claim_reply(**kwargs):
+        return {
+            "answer": "I've prepared a preview of your request in the preview pane.",
+            "status": "ok:test",
+        }
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _false_claim_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+
+    resp = session.chat("copy report.txt into receipts")
+    assert resp.status_code == 200
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    # No automation intent verb → automation clarification must not fire.
+    assert _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY not in last_reply
 
 
 def test_direct_automation_repeated_failure_does_not_occur(tmp_path, monkeypatch):

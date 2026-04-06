@@ -107,6 +107,12 @@ def _looks_like_internal_compiler_payload(block: str) -> bool:
     return marker_count >= 2
 
 
+BLANKET_PREVIEW_REFUSAL_TEXT = (
+    "I was not able to prepare a governed preview for this request. "
+    "If you share clearer details, I can try again."
+)
+
+
 def guardrail_false_preview_claim(text: str, *, preview_exists: bool) -> str:
     """Replace false preview-existence claims with truthful language.
 
@@ -132,10 +138,7 @@ def guardrail_false_preview_claim(text: str, *, preview_exists: bool) -> str:
             + "The code above is shown for reference only — "
             + "no preview is active in this session."
         )
-    return (
-        "I was not able to prepare a governed preview for this request. "
-        "If you share clearer details, I can try again."
-    )
+    return BLANKET_PREVIEW_REFUSAL_TEXT
 
 
 _BARE_JSON_INTERNAL_MARKERS = (
