@@ -29,6 +29,7 @@ from voxera.core.code_draft_intent import classify_code_draft_intent
 from voxera.vera_web import app as vera_app_module
 from voxera.vera_web.app import (
     _CODE_DRAFT_RECOVERY_RE,
+    _detect_automation_clarification_completion,
     _is_empty_code_preview_shell,
     _recover_code_draft_from_history,
 )
@@ -537,3 +538,294 @@ def test_writing_draft_not_hijacked_by_empty_shell(tmp_path, monkeypatch):
     monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
     resp = session.chat("write me an essay about volcanoes")
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# 7. Unit tests: _detect_automation_clarification_completion
+# ---------------------------------------------------------------------------
+
+
+class TestDetectAutomationClarificationCompletion:
+    """Unit tests for the broader automation/process clarification detector."""
+
+    def _automation_turns(self) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "user",
+                "text": (
+                    "I want a process that detects a new folder copied into a workspace "
+                    "location and does something with it, then moves it elsewhere"
+                ),
+            },
+            {
+                "role": "assistant",
+                "text": (
+                    "What is the source folder you want to monitor? Where should processed "
+                    "folders be moved? What action should I take when a new directory appears?"
+                ),
+            },
+        ]
+
+    def test_returns_none_when_preview_exists(self) -> None:
+        preview = {
+            "goal": "x",
+            "write_file": {"path": "x.py", "content": "y", "mode": "overwrite"},
+        }
+        result = _detect_automation_clarification_completion(
+            "source: ./incoming, destination: ./processed",
+            pending_preview=preview,
+            turns=self._automation_turns(),
+        )
+        assert result is None
+
+    def test_returns_none_when_no_turns(self) -> None:
+        result = _detect_automation_clarification_completion(
+            "source: ./incoming, destination: ./processed",
+            pending_preview=None,
+            turns=[],
+        )
+        assert result is None
+
+    def test_returns_none_when_no_clarification_question(self) -> None:
+        turns = [
+            {"role": "user", "text": "monitor a folder for new directories"},
+            {"role": "assistant", "text": "Sure, here's a general overview."},
+        ]
+        result = _detect_automation_clarification_completion(
+            "source: ./incoming",
+            pending_preview=None,
+            turns=turns,
+        )
+        assert result is None
+
+    def test_returns_none_when_no_automation_intent_in_history(self) -> None:
+        turns = [
+            {"role": "user", "text": "tell me about photosynthesis"},
+            {"role": "assistant", "text": "Could you say more about what you'd like?"},
+        ]
+        result = _detect_automation_clarification_completion(
+            "source: ./incoming, destination: ./processed",
+            pending_preview=None,
+            turns=turns,
+        )
+        assert result is None
+
+    def test_returns_none_when_no_detail_signal(self) -> None:
+        turns = self._automation_turns()
+        result = _detect_automation_clarification_completion(
+            "yes please go ahead",
+            pending_preview=None,
+            turns=turns,
+        )
+        assert result is None
+
+    def test_synthesizes_python_shell_for_clarification_completion(self) -> None:
+        turns = self._automation_turns()
+        result = _detect_automation_clarification_completion(
+            (
+                "source: ./incoming, destination: ./processed, action: add a "
+                "text file saying processed!"
+            ),
+            pending_preview=None,
+            turns=turns,
+        )
+        assert result is not None
+        assert isinstance(result, dict)
+        wf = result.get("write_file")
+        assert isinstance(wf, dict)
+        assert str(wf.get("path", "")).endswith(".py")
+        assert not str(wf.get("content") or "").strip(), "Synthesized shell must be empty content"
+
+    def test_returns_none_when_message_is_already_code_draft(self) -> None:
+        turns = self._automation_turns()
+        result = _detect_automation_clarification_completion(
+            "actually write me a python script that does something different",
+            pending_preview=None,
+            turns=turns,
+        )
+        assert result is None
+
+    def test_path_token_alone_is_sufficient_detail_signal(self) -> None:
+        turns = self._automation_turns()
+        result = _detect_automation_clarification_completion(
+            "use ~/VoxeraOS/notes/incoming and ~/VoxeraOS/notes/done",
+            pending_preview=None,
+            turns=turns,
+        )
+        assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# 8. Integration: process/automation clarification flow materializes preview
+# ---------------------------------------------------------------------------
+
+
+_AUTOMATION_REQUEST = (
+    "I want a process that detects a new folder copied into a workspace location "
+    "and does something with it, then moves it elsewhere"
+)
+
+_AUTOMATION_CLARIFICATION_QUESTION = (
+    "I'd be happy to help. What is the source folder you want to monitor? "
+    "Where should processed folders be moved? What action should I take "
+    "when a new directory appears?"
+)
+
+_AUTOMATION_CLARIFICATION_ANSWER = (
+    "source: ./incoming, destination: ./processed, action: add a text file saying processed!"
+)
+
+_AUTOMATION_SCRIPT_CODE = """\
+import os
+import shutil
+
+SRC = os.path.expanduser("./incoming")
+DST = os.path.expanduser("./processed")
+
+for name in os.listdir(SRC):
+    src_path = os.path.join(SRC, name)
+    if os.path.isdir(src_path):
+        with open(os.path.join(src_path, "success.txt"), "w") as f:
+            f.write("processed!")
+        shutil.move(src_path, os.path.join(DST, name))
+"""
+
+
+def test_automation_clarification_completion_creates_preview(tmp_path, monkeypatch):
+    """The exact failing flow from PR review: process/automation clarification → real preview."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    # Turn 1: process/automation request → clarification question
+    async def _clarification_reply(**kwargs):
+        return {"answer": _AUTOMATION_CLARIFICATION_QUESTION, "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _clarification_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    session.chat(_AUTOMATION_REQUEST)
+
+    # No preview should exist yet (process intent doesn't match is_code_draft_request)
+    assert session.preview() is None
+
+    # Turn 2: clarification answer → must materialize a real preview with code
+    monkeypatch.setattr(
+        vera_app_module, "generate_vera_reply", _make_code_reply_fn(_AUTOMATION_SCRIPT_CODE)
+    )
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    resp = session.chat(_AUTOMATION_CLARIFICATION_ANSWER)
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None, (
+        "A real preview must exist after automation clarification answer; "
+        "this is the exact failing flow PR #296 must fix."
+    )
+    wf = preview.get("write_file", {})
+    content = str(wf.get("content") or "").strip()
+    assert content, "Preview content must not be empty after clarification answer"
+    assert "shutil" in content or "success.txt" in content, "Generated code must reach the preview"
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    assert "not able to prepare a governed preview" not in last_reply.lower(), (
+        f"Vera must not falsely claim inability when clarification is sufficient: {last_reply!r}"
+    )
+
+
+def test_automation_clarification_go_ahead_submits(tmp_path, monkeypatch):
+    """After successful automation preview materialization, 'go ahead' must submit."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _clarification_reply(**kwargs):
+        return {"answer": _AUTOMATION_CLARIFICATION_QUESTION, "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _clarification_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    session.chat(_AUTOMATION_REQUEST)
+
+    monkeypatch.setattr(
+        vera_app_module, "generate_vera_reply", _make_code_reply_fn(_AUTOMATION_SCRIPT_CODE)
+    )
+    session.chat(_AUTOMATION_CLARIFICATION_ANSWER)
+
+    preview = session.preview()
+    assert preview is not None
+    assert str(preview.get("write_file", {}).get("content") or "").strip()
+
+    # Turn 3: go ahead → must not say "no preview"
+    resp = session.chat("go ahead")
+    assert resp.status_code == 200
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    assert "no preview" not in last_reply.lower() or "submitted" in last_reply.lower(), (
+        f"Expected submission, got: {last_reply!r}"
+    )
+
+
+def test_automation_clarification_does_not_hijack_unrelated_followup(tmp_path, monkeypatch):
+    """A non-clarification follow-up question must NOT trigger automation synthesis."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _clarification_reply(**kwargs):
+        return {"answer": _AUTOMATION_CLARIFICATION_QUESTION, "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _clarification_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    session.chat(_AUTOMATION_REQUEST)
+
+    # User changes topic with a question instead of answering — must not synthesize
+    async def _info_reply(**kwargs):
+        return {"answer": "The capital of France is Paris.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _info_reply)
+    resp = session.chat("what is the capital of France?")
+    assert resp.status_code == 200
+
+    # No automation preview should have been synthesized
+    preview = session.preview()
+    if preview is not None:
+        wf = preview.get("write_file", {})
+        path = str(wf.get("path", ""))
+        assert "automation.py" not in path, (
+            f"Automation shell must not be synthesized for unrelated query, got path: {path!r}"
+        )
+
+
+def test_automation_underspecified_answer_fails_closed(tmp_path, monkeypatch):
+    """A vague clarification answer with no detail signals must fail closed honestly."""
+    session = make_vera_session(monkeypatch, tmp_path)
+
+    async def _clarification_reply(**kwargs):
+        return {"answer": _AUTOMATION_CLARIFICATION_QUESTION, "status": "ok:test"}
+
+    async def _no_builder(**kwargs):
+        return None
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _clarification_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _no_builder)
+    session.chat(_AUTOMATION_REQUEST)
+
+    # Vague answer with no path token, no key:value details → must NOT synthesize
+    async def _vague_reply(**kwargs):
+        return {"answer": "I'm not sure, what do you recommend?", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _vague_reply)
+    resp = session.chat("just do whatever you think is best")
+    assert resp.status_code == 200
+
+    # No automation preview should be synthesized from a vague answer
+    preview = session.preview()
+    if preview is not None:
+        wf = preview.get("write_file", {})
+        path = str(wf.get("path", ""))
+        assert "automation.py" not in path, (
+            f"Vague answer must not synthesize automation shell, got path: {path!r}"
+        )

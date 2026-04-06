@@ -360,6 +360,96 @@ def _recover_code_draft_from_history(
     return None
 
 
+_AUTOMATION_INTENT_RE = re.compile(
+    r"\b(?:process|automation|workflow|automate|monitor|watch|detect)\b.*"
+    r"\b(?:folder|directory|file|files|path)\b",
+    re.IGNORECASE,
+)
+
+_AUTOMATION_CLARIFICATION_QUESTION_RE = re.compile(
+    r"\?|\b(?:source|destination|where|which folder|what should|what action|how often|what (?:trigger|condition))\b",
+    re.IGNORECASE,
+)
+
+_AUTOMATION_DETAIL_SIGNAL_RE = re.compile(
+    r"(?:[~./][\w./-]+|"  # path-like token
+    r"\b(?:source|destination|action|trigger|when|every|interval|timeout|stability)\s*[:=])",
+    re.IGNORECASE,
+)
+
+
+def _detect_automation_clarification_completion(
+    message: str,
+    *,
+    pending_preview: dict[str, object] | None,
+    turns: list[dict[str, str]],
+) -> dict[str, object] | None:
+    """Detect a clarification answer for an automation/process-style request.
+
+    The previous PR's code-draft recovery only fires when the original request
+    matches ``is_code_draft_request`` (requires explicit language keyword or
+    code filename).  Process/automation phrasing like "I want a process that
+    detects a new folder..." does not match, so a Python-script clarification
+    flow could not materialize a preview.
+
+    This helper closes that gap with a narrow detector:
+
+    1. No preview currently exists.
+    2. The current message is not a new informational/writing/control turn
+       (caller responsibility — these are gated upstream).
+    3. The most recent assistant turn looks like a clarification question.
+    4. A recent user turn contains automation/process intent (process/automate/
+       monitor/watch + folder/directory/file).
+    5. The current message provides specific clarification details (path tokens
+       or structured ``key: value`` clarification fields).
+
+    Returns a synthesized Python-script preview shell so the standard code-draft
+    flow can inject the actual generated code.  Returns None when any condition
+    is not met (fail-closed).
+    """
+    if pending_preview is not None:
+        return None
+    if is_code_draft_request(message):
+        return None
+    if not _AUTOMATION_DETAIL_SIGNAL_RE.search(message):
+        return None
+    if not turns:
+        return None
+    last_assistant: str | None = None
+    for turn in reversed(turns):
+        if str(turn.get("role") or "").strip().lower() == "assistant":
+            last_assistant = str(turn.get("text") or "").strip()
+            break
+    if not last_assistant:
+        return None
+    if not _AUTOMATION_CLARIFICATION_QUESTION_RE.search(last_assistant):
+        return None
+    has_automation_intent = False
+    for turn in reversed(turns[-8:]):
+        if str(turn.get("role") or "").strip().lower() != "user":
+            continue
+        prior_text = str(turn.get("text") or "").strip()
+        if prior_text == message.strip():
+            continue
+        if _AUTOMATION_INTENT_RE.search(prior_text):
+            has_automation_intent = True
+            break
+    if not has_automation_intent:
+        return None
+    shell = {
+        "goal": "draft a python script for the requested automation as automation.py",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/automation.py",
+            "content": "",
+            "mode": "overwrite",
+        },
+    }
+    try:
+        return normalize_preview_payload(shell)
+    except Exception:
+        return None
+
+
 def _is_refinable_prose_preview(preview: dict[str, object] | None) -> bool:
     return _em_is_refinable_prose_preview(preview, is_text_draft_preview=is_text_draft_preview)
 
@@ -866,6 +956,42 @@ async def chat(request: Request):
             job_id=None,
         )
         _post_clarification_code_draft = True
+    # ── Automation/process clarification completion ───────────────────────
+    # When the user answers a clarification question for an automation/
+    # process-style request (which does not match is_code_draft_request),
+    # synthesize a Python-script preview shell so the standard code-draft
+    # flow can inject the actual generated code.  Same false-positive guards
+    # as the post-clarification path.
+    if (
+        pending_preview is None
+        and not is_code_draft_request(message)
+        and not is_info_query
+        and not is_explicit_writing_transform
+        and not conversational_answer_first_turn
+        and not _is_voxera_control_turn(message, active_preview=None)
+        and not _looks_like_new_unrelated_query(message)
+    ):
+        _automation_shell = _detect_automation_clarification_completion(
+            message,
+            pending_preview=pending_preview,
+            turns=turns,
+        )
+        if _automation_shell is not None:
+            pending_preview = _automation_shell
+            write_session_preview(root, active_session, _automation_shell)
+            write_session_handoff_state(
+                root,
+                active_session,
+                attempted=False,
+                queue_path=str(root),
+                status="preview_ready",
+                error=None,
+                job_id=None,
+            )
+            context_on_preview_created(
+                root, active_session, draft_ref="~/VoxeraOS/notes/automation.py"
+            )
+            _post_clarification_code_draft = True
     is_code_draft_turn = (
         (
             is_code_draft_request(message)
