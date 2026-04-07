@@ -142,6 +142,7 @@ from .preview_content_binding import (
     preview_body_looks_like_control_narration,
 )
 from .response_shaping import (
+    BLANKET_PREVIEW_REFUSAL_TEXT,
     assemble_assistant_reply,
     derive_preview_has_content,
     guardrail_false_preview_claim,
@@ -508,6 +509,97 @@ def _looks_like_direct_automation_request(message: str) -> bool:
         and bool(_DIRECT_AUTOMATION_ACTION_RE.search(text))
         and bool(_DIRECT_AUTOMATION_SUBJECT_RE.search(text))
     )
+
+
+# ---------------------------------------------------------------------------
+# Previewable automation/process intent — broader, clarification-routing detector
+# ---------------------------------------------------------------------------
+#
+# Handles first-turn requests that clearly describe a previewable automation/
+# process/script (e.g. "I need a process that identifies a new folder copied
+# into a specific folder and then copies it to another folder") but lack the
+# explicit path token / narrow verb required by ``_looks_like_direct_automation
+# _request``.  These should never get a blanket first-turn refusal — the right
+# behavior is to ask a focused clarification.
+#
+# This detector is structural, not keyword-only.  All three signals must be
+# present so unrelated informational, writing, weather, or simple file-intent
+# requests do not match:
+#   (1) automation intent verb — process/automation/automate/script/workflow/
+#       monitor/watch/detect/identify/poll (+ tense forms)
+#   (2) file/folder/directory subject — folder/directory/file/path (+ plurals)
+#   (3) action-on-arrival/source-destination hint — copy/move/add/write/create/
+#       trigger/another folder/new folder/when phrasing
+#
+# Used to convert the blanket "I was not able to prepare a governed preview"
+# refusal into a focused clarification question — does NOT itself materialize
+# a preview or weaken the trust model.
+
+_PREVIEWABLE_AUTOMATION_INTENT_RE = re.compile(
+    r"\b(?:process|automation|automate|automating|automates|"
+    r"script|workflow|"
+    r"monitor|monitors|monitoring|"
+    r"watch|watches|watching|"
+    r"detect|detects|detecting|"
+    r"identify|identifies|identifying|"
+    r"poll|polls|polling)\b",
+    re.IGNORECASE,
+)
+
+_PREVIEWABLE_AUTOMATION_SUBJECT_RE = re.compile(
+    r"\b(?:folder|folders|directory|directories|file|files|path|paths)\b",
+    re.IGNORECASE,
+)
+
+_PREVIEWABLE_AUTOMATION_ACTION_HINT_RE = re.compile(
+    r"\b(?:copy|copies|copied|copying|"
+    r"move|moves|moved|moving|"
+    r"add|adds|added|adding|"
+    r"write|writes|wrote|writing|"
+    r"create|creates|created|creating|"
+    r"append|appends|appended|appending|"
+    r"rename|renames|renamed|renaming|"
+    r"delete|deletes|deleted|deleting|"
+    r"trigger|triggers|triggered|"
+    r"another\s+(?:folder|directory|file|path)|"
+    r"new\s+(?:folder|directory|file|path)|"
+    r"on\s+arrival|"
+    r"when\s+(?:a|an|new|something|it|they|the))\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_previewable_automation_intent(message: str) -> bool:
+    """Return True when the message clearly describes a previewable automation request.
+
+    Broader than ``_looks_like_direct_automation_request``: does not require an
+    explicit path token, so first-turn requests phrased in natural language
+    (without ``./incoming``-style paths) are still recognized as previewable.
+
+    All three structural signals must match — automation intent verb, file or
+    directory subject, and an action-on-arrival/source-destination hint — so
+    informational, weather, writing, and simple file-intent requests do not
+    match.  Used only to route blanket first-turn refusals into a focused
+    clarification question; never used to materialize a preview directly.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    if not _PREVIEWABLE_AUTOMATION_INTENT_RE.search(text):
+        return False
+    if not _PREVIEWABLE_AUTOMATION_SUBJECT_RE.search(text):
+        return False
+    return bool(_PREVIEWABLE_AUTOMATION_ACTION_HINT_RE.search(text))
+
+
+_PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY = (
+    "I can help with that. To prepare a governed preview I need a few details:\n\n"
+    "- Which source folder should be watched (full path, e.g. `~/VoxeraOS/notes/incoming`)?\n"
+    "- Which destination folder should receive the items (full path)?\n"
+    "- What should happen when a new folder is detected (for example: add a "
+    "marker file, then move the folder)?\n\n"
+    "Once I have those details I can draft a script for you to review."
+)
 
 
 def _synthesize_direct_automation_preview() -> dict[str, object] | None:
@@ -1403,6 +1495,21 @@ async def chat(request: Request):
             guarded_answer,
             preview_exists=effective_preview is not None and _preview_has_content,
         )
+        # First-turn previewable automation polish: when the guardrail collapsed
+        # the LLM reply into the blanket "I was not able to prepare a governed
+        # preview" refusal AND the user message clearly describes a previewable
+        # automation/process request, swap the refusal for a focused
+        # clarification question.  This narrows over-conservative first-turn
+        # refusals for requests Vera can clearly handle without weakening the
+        # trust model — no preview is materialized here, only the visible reply
+        # text is replaced.  Fail-closed for genuinely unsupported requests
+        # because the detector requires three structural signals.
+        if (
+            guarded_answer.strip() == BLANKET_PREVIEW_REFUSAL_TEXT
+            and effective_preview is None
+            and _looks_like_previewable_automation_intent(message)
+        ):
+            guarded_answer = _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY
         # All-or-nothing cleanup: when guardrail_false_preview_claim stripped a
         # false preview-existence claim, clear any empty write_file placeholder so
         # the session is clean — no orphaned shell, no accidental empty submission.
