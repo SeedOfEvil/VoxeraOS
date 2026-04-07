@@ -1,0 +1,24 @@
+[
+  {
+    "file": "missions/sandbox_net.json",
+    "id": "sandbox_net",
+    "title": "Sandbox Network Test",
+    "goal": "Run sandbox command with network enabled to exercise approval flow.",
+    "step_count": 1,
+    "skills_used": [
+      "sandbox.exec"
+    ],
+    "notes": "This mission requests network=true and should require approval under default policy."
+  },
+  {
+    "file": "missions/sandbox_smoke.json",
+    "id": "sandbox_smoke",
+    "title": "Sandbox Smoke",
+    "goal": "Run a basic sandbox execution smoke test with network disabled.",
+    "step_count": 1,
+    "skills_used": [
+      "sandbox.exec"
+    ],
+    "notes": "Validates command execution and writable /work artifacts."
+  }
+]

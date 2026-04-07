@@ -1,0 +1,153 @@
+VoxeraOS Engineering Report
+===========================
+
+Note: This file kept its date-stamped filename so external links keep
+resolving. The body has been fully rewritten from the current repo
+state (VoxeraOS 0.1.9 alpha). It is not a historical snapshot.
+
+1. Status
+---------
+
+- Package version: 0.1.9 (alpha) (`pyproject.toml`,
+  `src/voxera/version.py`).
+- Active branch for this regeneration: claude/regenerate-docs-index-XwAi3.
+- Repository surface: see docs/01_REPOSITORY_STRUCTURE_MAP.md and
+  docs/directory_tree.txt.
+
+2. What is in the repo today
+----------------------------
+
+Three long-running services backed by user-mode systemd units:
+
+- voxera-daemon.service  (queue + missions)
+- voxera-panel.service   (operator approval/audit UI on :8844)
+- voxera-vera.service    (Vera chat web app on :8790, uvicorn)
+
+A queue control plane rooted at ~/VoxeraOS/notes/queue/ with
+inbox / pending / pending/approvals / done / failed / canceled /
+artifacts / _archive / .daemon.lock layout.
+
+Vera split into two packages:
+
+- src/voxera/vera/      session state, drafting, handoff, evidence ingestion,
+                        investigation/weather/brave_search built-in tools,
+                        reference resolver, linked completions.
+- src/voxera/vera_web/  FastAPI chat app, early-exit dispatch, execution mode
+                        classifier, conversational checklist, draft content
+                        binding, response shaping (guardrails).
+
+A panel split into one route module per surface (home, jobs, missions,
+assistant, hygiene, recovery, bundle, queue_control, vera).
+
+A skills tree of 31 manifests under skills/ mapped 1:1 to entrypoints
+under src/voxera_builtin_skills/.
+
+A pytest suite of about 110 files plus tests/golden snapshot baselines.
+
+3. What changed vs the older bundle (deltas this regeneration found)
+--------------------------------------------------------------------
+
+- The Vera package is split (`vera/` and `vera_web/`). Older docs
+  assumed a single Vera surface.
+- The queue daemon is composed via mixins (`QueueApprovalMixin`,
+  `QueueRecoveryMixin`, `QueueExecutionMixin`).
+- Lifecycle vocabulary is centralized in `core/queue_object_model.py`
+  (was previously inferred from string literals across the codebase).
+- Intent classification is split into dedicated modules:
+  `simple_intent`, `file_intent`, `code_draft_intent`,
+  `writing_draft_intent`, `queue_job_intent`.
+- Capability semantics are centralized in
+  `core/capability_semantics.py` and projected onto manifests via
+  `manifest_capability_semantics()`.
+- The CLI is now composed via several `cli_queue_*` and `cli_*`
+  sub-modules registered onto a Typer root in `src/voxera/cli.py`.
+- Built-in skills live exclusively under `src/voxera_builtin_skills/`,
+  with manifests under `skills/`.
+- The panel route surface is split into one route module per surface
+  with templates under `panel/templates/`.
+- The Vera session JSON store now persists `shared_context`,
+  `linked_queue_jobs`, `routing_debug`, and
+  `recent_saveable_assistant_artifacts`. Older docs did not describe
+  these fields.
+
+4. Contracts that are intentionally stable
+------------------------------------------
+
+- Queue payload schema (core/queue_contracts.py): mission_id, goal,
+  title, steps, enqueue_child, write_file, file_organize,
+  approval_required, _simple_intent, lineage, job_intent.
+- Minimum executed-job artifact set: plan.json, actions.jsonl,
+  step_results.json, execution_envelope.json, execution_result.json,
+  job_intent.json.
+- Schema versions: EXECUTION_ENVELOPE=1, STEP_RESULT=1,
+  EXECUTION_RESULT=1, EVIDENCE_BUNDLE=1, REVIEW_SUMMARY=1.
+- Truth surface hierarchy: artifact_evidence > queue > preview >
+  conversation. Conflicts resolve in favor of the higher-rank surface;
+  ambiguous cases fail closed.
+
+5. Test gates
+-------------
+
+The Makefile gates relied on by CI:
+
+    make check                  fmt-check + lint + type + test
+    make validation-check       + golden + security + targeted contracts
+    make merge-readiness-check  quality + release + security
+    make full-validation-check  validation + merge-ready + failed sidecar
+                                + full pytest + scripts/e2e_golden4.sh
+
+`make security-check` runs `tests/test_security_redteam.py`.
+`make golden-check` runs `tools/golden_surfaces.py --check`.
+
+6. Operational notes
+--------------------
+
+- Daemon singleton: enforced by `~/VoxeraOS/notes/queue/.daemon.lock`.
+  `voxera queue lock status` reports the lock holder.
+- Hygiene operates only on terminal buckets and never touches
+  inbox/pending.
+- Recovery deterministically marks interrupted running jobs as failed
+  on startup, with a recorded reason.
+- Artifact retention is bounded by VOXERA_ARTIFACTS_RETENTION_DAYS and
+  VOXERA_ARTIFACTS_RETENTION_MAX_COUNT.
+- Direct CLI mutation is blocked unless VOXERA_DEV_MODE=1 plus
+  `--allow-direct-mutation`.
+
+7. Known shape constraints (for future work)
+--------------------------------------------
+
+- The queue payload contract is additive only. New top-level fields
+  must come with explicit normalization rules in
+  `core/queue_contracts.py` and matching contract tests.
+- Lifecycle vocabulary changes must update
+  `core/queue_object_model.py` and the contract tests in
+  `tests/test_queue_constitution_contracts.py` and
+  `tests/test_queue_daemon_contract_snapshot.py`.
+- Capability changes go through `core/capability_semantics.py` and
+  `tests/test_capability_semantics.py` /
+  `tests/test_capabilities_snapshot.py`.
+- Vera session schema changes require updating
+  `vera/context_lifecycle.py` and the
+  `tests/test_shared_session_context*.py` and
+  `tests/test_session_routing_debug.py` suites.
+- Skill additions need both a manifest under `skills/` and an
+  entrypoint under `src/voxera_builtin_skills/`, plus a registry test
+  to keep `tests/test_registry.py` honest.
+
+8. Reference
+------------
+
+- docs/00_MASTER_INDEX.md           bundle index
+- docs/01_REPOSITORY_STRUCTURE_MAP.md
+- docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md
+- docs/03_QUEUE_OBJECT_MODEL_AND_LIFECYCLE.md
+- docs/04_GOAL_MISSION_PLANNING_AND_EXECUTION.md
+- docs/05_VERA_CONTROL_LAYER_AND_HANDOFF.md
+- docs/06_SKILLS_CAPABILITIES_AND_BUILTINS.md
+- docs/07_ARTIFACTS_EVIDENCE_AND_REVIEW_MODEL.md
+- docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md
+- docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md
+- docs/10_INFORMATIONAL_FILES_MAP.md
+- docs/QUEUE_OBJECT_MODEL.md
+- docs/QUEUE_CONSTITUTION.md
+- docs/NORTH_STAR.md

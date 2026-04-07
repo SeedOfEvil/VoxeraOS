@@ -1,0 +1,4954 @@
+[
+  {
+    "path": "src/voxera/__init__.py",
+    "loc": 5,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/audio/__init__.py",
+    "loc": 1,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/audit.py",
+    "loc": 37,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "audit_path",
+      "log",
+      "tail"
+    ]
+  },
+  {
+    "path": "src/voxera/brain/__init__.py",
+    "loc": 6,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/brain/base.py",
+    "loc": 25,
+    "docstring": null,
+    "top_level_classes": [
+      "ToolSpec",
+      "BrainResponse",
+      "Brain"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/brain/fallback.py",
+    "loc": 127,
+    "docstring": "Stable fallback reason enum + classifier for brain fallback transitions.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "classify_fallback_reason",
+      "_is_timeout",
+      "_is_auth",
+      "_is_malformed",
+      "_is_network"
+    ]
+  },
+  {
+    "path": "src/voxera/brain/gemini.py",
+    "loc": 177,
+    "docstring": "Gemini adapter using the Gemini generateContent API.",
+    "top_level_classes": [
+      "GeminiBrain"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/brain/json_recovery.py",
+    "loc": 95,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "recover_json_object",
+      "_parse_json_object",
+      "_extract_markdown_fence_json",
+      "_extract_first_balanced_object"
+    ]
+  },
+  {
+    "path": "src/voxera/brain/openai_compat.py",
+    "loc": 173,
+    "docstring": null,
+    "top_level_classes": [
+      "OpenAICompatBrain"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/cli.py",
+    "loc": 434,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_git_sha",
+      "_version_string",
+      "_show_version",
+      "main",
+      "version_cmd",
+      "secrets_set",
+      "secrets_get",
+      "secrets_unset",
+      "config_show",
+      "config_show_legacy",
+      "config_snapshot",
+      "config_validate",
+      "setup",
+      "demo_cmd",
+      "status",
+      "skills_list",
+      "_approval_prompt",
+      "run",
+      "missions_list",
+      "missions_plan",
+      "missions_run",
+      "audit",
+      "panel",
+      "daemon",
+      "vera",
+      "ops_capabilities",
+      "ops_bundle_system",
+      "ops_bundle_job"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_common.py",
+    "loc": 33,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "now_ms",
+      "queue_dir_path"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_config.py",
+    "loc": 43,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "config_show_impl",
+      "config_snapshot_impl",
+      "config_validate_impl"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_doctor.py",
+    "loc": 21,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "register"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_ops.py",
+    "loc": 42,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "ops_capabilities_impl",
+      "ops_bundle_system_impl",
+      "ops_bundle_job_impl"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue.py",
+    "loc": 315,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "register",
+      "queue_init",
+      "queue_status",
+      "_render_lock_status",
+      "queue_lock_status"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue_approvals.py",
+    "loc": 89,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "queue_approvals_list",
+      "queue_approvals_approve",
+      "queue_approvals_deny"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue_bundle.py",
+    "loc": 37,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "queue_bundle"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue_files.py",
+    "loc": 242,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_enqueue_files_step",
+      "_print_files_enqueue_result",
+      "queue_files_find",
+      "queue_files_grep_text",
+      "queue_files_list_tree",
+      "queue_files_copy",
+      "queue_files_move",
+      "queue_files_rename"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue_health.py",
+    "loc": 293,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "queue_health",
+      "queue_health_reset"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue_hygiene.py",
+    "loc": 391,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "artifacts_prune",
+      "queue_prune",
+      "queue_reconcile"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue_inbox.py",
+    "loc": 62,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "inbox_add",
+      "inbox_list"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue_lifecycle.py",
+    "loc": 111,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "queue_cancel",
+      "queue_retry",
+      "queue_unlock",
+      "queue_pause",
+      "queue_resume"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_queue_payloads.py",
+    "loc": 124,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "build_files_queue_payload",
+      "build_files_find_args",
+      "build_files_grep_text_args",
+      "build_files_list_tree_args",
+      "build_files_copy_move_args",
+      "build_files_rename_args",
+      "build_health_reset_event_name",
+      "build_health_reset_log_payload"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_runtime.py",
+    "loc": 125,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "setup_impl",
+      "demo_cmd_impl",
+      "status_impl",
+      "audit_impl",
+      "panel_impl",
+      "daemon_impl",
+      "vera_impl"
+    ]
+  },
+  {
+    "path": "src/voxera/cli_skills_missions.py",
+    "loc": 251,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "approval_prompt_impl",
+      "skills_list_impl",
+      "_is_dev_mode",
+      "run_impl",
+      "_effect_classes_for",
+      "missions_list_impl",
+      "missions_plan_impl",
+      "missions_run_impl"
+    ]
+  },
+  {
+    "path": "src/voxera/config.py",
+    "loc": 401,
+    "docstring": null,
+    "top_level_classes": [
+      "VoxeraConfig"
+    ],
+    "top_level_functions": [
+      "resolve_config_path",
+      "load_config",
+      "_load_runtime_config_file",
+      "_queue_root_default",
+      "_parse_bool_value",
+      "_parse_int_value",
+      "_parse_float_value",
+      "_coerce",
+      "should_load_dotenv",
+      "load_env_file",
+      "load_runtime_env",
+      "config_fingerprint",
+      "write_config_fingerprint",
+      "write_config_snapshot",
+      "default_config_path",
+      "load_app_config",
+      "save_config",
+      "policy_path",
+      "load_policy",
+      "save_policy",
+      "capabilities_report_path"
+    ]
+  },
+  {
+    "path": "src/voxera/core/__init__.py",
+    "loc": 1,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/core/artifacts.py",
+    "loc": 188,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_entry_mtime",
+      "_entry_size",
+      "_is_safe",
+      "prune_artifacts",
+      "format_bytes"
+    ]
+  },
+  {
+    "path": "src/voxera/core/capabilities_snapshot.py",
+    "loc": 112,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_sorted_unique",
+      "generate_capabilities_snapshot",
+      "_closest_matches",
+      "_format_validation_error",
+      "validate_mission_id_against_snapshot",
+      "validate_mission_steps_against_snapshot"
+    ]
+  },
+  {
+    "path": "src/voxera/core/capability_semantics.py",
+    "loc": 168,
+    "docstring": null,
+    "top_level_classes": [
+      "CapabilitySemantic"
+    ],
+    "top_level_functions": [
+      "capability_semantic",
+      "manifest_capability_semantics"
+    ]
+  },
+  {
+    "path": "src/voxera/core/code_draft_intent.py",
+    "loc": 339,
+    "docstring": "Bounded code/script/config draft intent classifier for Vera.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "is_code_draft_request",
+      "classify_code_draft_intent",
+      "extract_code_from_reply",
+      "has_code_file_extension",
+      "code_fence_language",
+      "_normalize_lang_token",
+      "_extract_language_key",
+      "_extract_filename",
+      "_draft_kind_label"
+    ]
+  },
+  {
+    "path": "src/voxera/core/execution_capabilities.py",
+    "loc": 136,
+    "docstring": null,
+    "top_level_classes": [
+      "_StrEnum",
+      "SideEffectClass",
+      "FilesystemScope",
+      "NetworkScope",
+      "SandboxProfile",
+      "SecretRequirement",
+      "ExecutionCapabilityDeclaration"
+    ],
+    "top_level_functions": [
+      "normalize_manifest_capabilities",
+      "_derive_side_effect_class"
+    ]
+  },
+  {
+    "path": "src/voxera/core/execution_evaluator.py",
+    "loc": 114,
+    "docstring": null,
+    "top_level_classes": [
+      "EvaluationResult"
+    ],
+    "top_level_functions": [
+      "evaluate_run_result",
+      "replan_allowed_for_class",
+      "_last_step_result"
+    ]
+  },
+  {
+    "path": "src/voxera/core/file_intent.py",
+    "loc": 714,
+    "docstring": "Bounded file intent classifier for Vera/planner routing.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_contains_parent_traversal",
+      "is_safe_notes_path",
+      "_normalize_notes_path",
+      "_extract_path_from_text",
+      "_classify_exists",
+      "_classify_stat",
+      "_classify_read",
+      "_classify_mkdir",
+      "_classify_delete",
+      "_split_on_destination",
+      "_extract_scoped_root_path",
+      "_classify_find",
+      "_classify_grep_text",
+      "_classify_list_tree",
+      "_classify_copy_or_move",
+      "_classify_rename",
+      "_classify_archive_organize",
+      "detect_blocked_file_intent",
+      "classify_bounded_file_intent"
+    ]
+  },
+  {
+    "path": "src/voxera/core/inbox.py",
+    "loc": 102,
+    "docstring": null,
+    "top_level_classes": [
+      "InboxJob"
+    ],
+    "top_level_functions": [
+      "generate_inbox_id",
+      "add_inbox_job",
+      "add_inbox_payload",
+      "list_inbox_jobs"
+    ]
+  },
+  {
+    "path": "src/voxera/core/mission_planner.py",
+    "loc": 987,
+    "docstring": null,
+    "top_level_classes": [
+      "MissionPlannerError",
+      "_BrainCandidate"
+    ],
+    "top_level_functions": [
+      "_strip_ansi_escape_sequences",
+      "sanitize_goal_for_prompt",
+      "_classify_planner_error",
+      "_format_planner_failure_message",
+      "_expected_args_for_skill",
+      "_normalize_step_args",
+      "_strip_matching_quotes",
+      "_looks_like_append",
+      "_is_safe_notes_path",
+      "_goal_implies_allowed_notes_directory",
+      "_goal_mentions_explicit_path",
+      "_extract_allowed_notes_write_args",
+      "_extract_checkin_note_write_args",
+      "_parse_planner_json",
+      "_goal_requests_file_write",
+      "_goal_requests_file_read",
+      "_goal_explicitly_requests_shell_commands",
+      "_sandbox_step_uses_disallowed_tooling",
+      "_rewrite_non_explicit_sandbox_steps",
+      "_rewrite_non_explicit_file_writes",
+      "_rewrite_non_explicit_file_reads",
+      "_extract_simple_read_args",
+      "_extract_named_file_write_args",
+      "_extract_simple_write_args",
+      "_create_brain",
+      "_build_brain_candidates",
+      "_build_planner_user_prompt",
+      "_plan_payload",
+      "_normalize_write_step_for_allowed_notes_goal",
+      "_normalize_file_step_paths",
+      "_normalize_sandbox_exec_step",
+      "_truncate",
+      "_build_capabilities_prompt_block",
+      "plan_mission"
+    ]
+  },
+  {
+    "path": "src/voxera/core/missions.py",
+    "loc": 700,
+    "docstring": null,
+    "top_level_classes": [
+      "MissionStep",
+      "MissionTemplate",
+      "MissionRunner"
+    ],
+    "top_level_functions": [
+      "_repo_root",
+      "_mission_search_dirs",
+      "_known_skill_ids",
+      "_parse_mission_file",
+      "_resolve_file_mission",
+      "_iter_file_missions",
+      "list_missions",
+      "list_missions_best_effort",
+      "get_mission",
+      "_make_dryrun_deterministic"
+    ]
+  },
+  {
+    "path": "src/voxera/core/planner_context.py",
+    "loc": 57,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "get_planner_agent_name",
+      "_build_default_preamble",
+      "get_planner_preamble"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_approvals.py",
+    "loc": 843,
+    "docstring": null,
+    "top_level_classes": [
+      "QueueApprovalMixin"
+    ],
+    "top_level_functions": [
+      "_queue_daemon_module",
+      "_log",
+      "_subprocess_run",
+      "_capability_boundary_notes"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_assistant.py",
+    "loc": 466,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "assistant_response_artifact_path",
+      "_write_assistant_execution_envelope",
+      "evaluate_assistant_fast_lane_eligibility",
+      "create_assistant_brain",
+      "assistant_brain_candidates",
+      "assistant_answer_via_brain",
+      "process_assistant_job"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_contracts.py",
+    "loc": 922,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_sanitize_lineage_string",
+      "_sanitize_lineage_int",
+      "extract_lineage_metadata",
+      "extract_enqueue_child_request",
+      "extract_write_file_request",
+      "extract_file_organize_request",
+      "compute_child_lineage",
+      "detect_request_kind",
+      "normalize_canonical_queue_payload",
+      "build_execution_envelope",
+      "build_assistant_execution_envelope",
+      "build_structured_step_results",
+      "build_execution_result",
+      "_derive_blocked_metadata",
+      "_extract_execution_capabilities",
+      "_normalize_expected_artifacts",
+      "_compare_expected_artifacts",
+      "_build_artifact_contract",
+      "minimum_artifact_presence",
+      "refresh_execution_result_artifact_contract",
+      "_build_review_summary",
+      "_build_evidence_bundle"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_daemon.py",
+    "loc": 1369,
+    "docstring": null,
+    "top_level_classes": [
+      "QueueLockError",
+      "QueueStats",
+      "MissionQueueDaemon"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/core/queue_execution.py",
+    "loc": 1098,
+    "docstring": null,
+    "top_level_classes": [
+      "QueueExecutionMixin"
+    ],
+    "top_level_functions": [
+      "_queue_daemon_module"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_hygiene.py",
+    "loc": 283,
+    "docstring": null,
+    "top_level_classes": [
+      "JobEntry"
+    ],
+    "top_level_functions": [
+      "_file_size",
+      "_entry_mtime",
+      "_is_safe",
+      "_find_sidecars",
+      "list_jobs_in_bucket",
+      "select_union_prune",
+      "safe_delete_entry",
+      "prune_queue_buckets"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_inspect.py",
+    "loc": 229,
+    "docstring": null,
+    "top_level_classes": [
+      "JobLookup"
+    ],
+    "top_level_functions": [
+      "_normalize_job_id",
+      "_is_metadata_sidecar_name",
+      "_safe_json",
+      "lookup_job",
+      "list_jobs",
+      "queue_snapshot"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_job_intent.py",
+    "loc": 170,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_clean_text",
+      "_clean_list",
+      "_clean_step_summaries",
+      "_coerce_planning_payload",
+      "_default_expected_artifacts",
+      "build_queue_job_intent",
+      "enrich_queue_job_payload"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_object_model.py",
+    "loc": 96,
+    "docstring": "Canonical lightweight contracts for queue job/object-model semantics.",
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/core/queue_paths.py",
+    "loc": 51,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "move_job_with_sidecar",
+      "deterministic_target_path"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_reconcile.py",
+    "loc": 332,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_collect_primary_jobs",
+      "_detect_orphan_sidecars",
+      "_detect_orphan_approvals",
+      "_detect_orphan_artifact_candidates",
+      "_detect_duplicate_jobs",
+      "reconcile_queue",
+      "_default_quarantine_dir",
+      "_safe_relative",
+      "_quarantine_file",
+      "quarantine_reconcile_fixes"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_recovery.py",
+    "loc": 355,
+    "docstring": null,
+    "top_level_classes": [
+      "QueueRecoveryMixin"
+    ],
+    "top_level_functions": [
+      "_queue_daemon_module",
+      "_log",
+      "shutdown_reason_excerpt"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_result_consumers.py",
+    "loc": 638,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_read_json_dict",
+      "_read_json_list",
+      "_resolve_intent_route",
+      "_safe_int",
+      "_sanitize_lineage_string",
+      "_sanitize_lineage_int",
+      "_normalize_lineage",
+      "_resolve_lineage",
+      "_terminal_outcome_from_step_status",
+      "_normalize_terminal_outcome",
+      "_normalize_child_job_id",
+      "_child_lookup",
+      "_classify_child_state",
+      "_resolve_child_summary",
+      "resolve_structured_execution",
+      "_classify_outcome"
+    ]
+  },
+  {
+    "path": "src/voxera/core/queue_state.py",
+    "loc": 244,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "job_state_sidecar_path",
+      "read_job_state",
+      "write_job_state",
+      "update_job_state_snapshot"
+    ]
+  },
+  {
+    "path": "src/voxera/core/router.py",
+    "loc": 22,
+    "docstring": null,
+    "top_level_classes": [
+      "Route"
+    ],
+    "top_level_functions": [
+      "route_request"
+    ]
+  },
+  {
+    "path": "src/voxera/core/simple_intent.py",
+    "loc": 309,
+    "docstring": null,
+    "top_level_classes": [
+      "SimpleIntentResult"
+    ],
+    "top_level_functions": [
+      "_make_unknown",
+      "_normalize_goal",
+      "_contains_parent_traversal",
+      "_is_safe_read_extracted_target",
+      "_split_compound",
+      "_meta_or_explanatory",
+      "_classify_open_clause",
+      "classify_simple_operator_intent",
+      "check_skill_family_mismatch",
+      "sanitize_serialized_intent_route"
+    ]
+  },
+  {
+    "path": "src/voxera/core/writing_draft_intent.py",
+    "loc": 542,
+    "docstring": "Bounded prose/document draft intent classifier for Vera.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "is_writing_draft_request",
+      "is_writing_refinement_request",
+      "classify_writing_draft_intent",
+      "is_text_draft_preview",
+      "extract_text_draft_from_reply",
+      "_classify_kind",
+      "_extract_filename",
+      "_topic_slug",
+      "_normalize_markdown_spacing",
+      "_extract_prose_body",
+      "_looks_like_wrapper_block",
+      "_looks_like_trailing_wrapper_block",
+      "_strip_leading_preface_sentences",
+      "_looks_like_conversational_preamble_sentence",
+      "_looks_like_preface_setup_sentence",
+      "_looks_like_document_body_start",
+      "_is_heading_like",
+      "_extract_quoted_authored_content_from_wrapper"
+    ]
+  },
+  {
+    "path": "src/voxera/demo.py",
+    "loc": 157,
+    "docstring": null,
+    "top_level_classes": [
+      "ChecklistItem"
+    ],
+    "top_level_functions": [
+      "_ensure_queue_dirs",
+      "_write_demo_job",
+      "_provider_envs",
+      "run_demo"
+    ]
+  },
+  {
+    "path": "src/voxera/doctor.py",
+    "loc": 459,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_as_int",
+      "_compact_duration",
+      "run_self_test",
+      "_normalize_brain_result",
+      "_skill_health_summary",
+      "run_doctor",
+      "print_report",
+      "doctor_sync",
+      "run_quick_doctor",
+      "print_quick_report"
+    ]
+  },
+  {
+    "path": "src/voxera/golden_surfaces.py",
+    "loc": 244,
+    "docstring": null,
+    "top_level_classes": [
+      "GoldenSurface"
+    ],
+    "top_level_functions": [
+      "_repo_root",
+      "_golden_dir",
+      "_strip_ansi",
+      "normalize_help_text",
+      "_normalize_string_value",
+      "normalize_json_payload",
+      "_render_surface",
+      "update_golden_files",
+      "check_golden_files",
+      "main"
+    ]
+  },
+  {
+    "path": "src/voxera/health.py",
+    "loc": 385,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_safe_int",
+      "_read_env_int",
+      "compute_brain_backoff_s",
+      "_normalize_health_snapshot",
+      "_compact_reason",
+      "record_last_shutdown",
+      "update_degradation_state",
+      "_default_operator_queue_root",
+      "_health_snapshot_path",
+      "health_path",
+      "read_health_snapshot",
+      "write_health_snapshot",
+      "update_health_snapshot",
+      "record_brain_fallback_attempt",
+      "record_mission_success",
+      "record_brain_backoff_applied",
+      "increment_health_counter",
+      "record_health_ok",
+      "record_health_error",
+      "record_fallback_transition"
+    ]
+  },
+  {
+    "path": "src/voxera/health_reset.py",
+    "loc": 155,
+    "docstring": null,
+    "top_level_classes": [
+      "HealthResetError"
+    ],
+    "top_level_functions": [
+      "_dedupe",
+      "reset_health_snapshot"
+    ]
+  },
+  {
+    "path": "src/voxera/health_semantics.py",
+    "loc": 111,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_as_int",
+      "active_panel_auth_lockouts",
+      "build_health_semantic_sections"
+    ]
+  },
+  {
+    "path": "src/voxera/incident_bundle.py",
+    "loc": 227,
+    "docstring": null,
+    "top_level_classes": [
+      "BundleError"
+    ],
+    "top_level_functions": [
+      "_zip_writestr",
+      "_safe_read",
+      "_to_pretty_json",
+      "_add_file_with_caps",
+      "_job_lookup_or_raise",
+      "build_job_bundle",
+      "build_system_bundle"
+    ]
+  },
+  {
+    "path": "src/voxera/models.py",
+    "loc": 160,
+    "docstring": null,
+    "top_level_classes": [
+      "BrainConfig",
+      "PolicyApprovals",
+      "PrivacyConfig",
+      "WebInvestigationConfig",
+      "AppConfig",
+      "SkillManifest",
+      "PlanStep",
+      "PlanSimulation",
+      "Plan",
+      "RunResult"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/openrouter_catalog.py",
+    "loc": 207,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "infer_vendor",
+      "recommended_model_for_slot",
+      "load_curated_openrouter_catalog",
+      "grouped_catalog",
+      "_normalize_live_model",
+      "refresh_curated_catalog_from_live"
+    ]
+  },
+  {
+    "path": "src/voxera/operator_assistant.py",
+    "loc": 339,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_as_dict",
+      "_dict_list",
+      "new_thread_id",
+      "normalize_thread_id",
+      "_thread_history_path",
+      "read_assistant_thread",
+      "append_thread_turn",
+      "_count_jobs",
+      "_read_recent_jobs",
+      "_read_pending_approvals",
+      "build_operator_assistant_context",
+      "build_assistant_messages",
+      "_approval_reason_summary",
+      "_partner_opening",
+      "fallback_operator_answer"
+    ]
+  },
+  {
+    "path": "src/voxera/ops_bundle.py",
+    "loc": 382,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_git_sha",
+      "_archive_dir",
+      "_resolve_archive_dir",
+      "_write_zip",
+      "_zip_write_bytes",
+      "_zip_write_text",
+      "_read_truncated",
+      "_safe_json_dict",
+      "_manifest",
+      "_ensure_config_snapshot",
+      "build_system_bundle",
+      "build_job_bundle"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/__init__.py",
+    "loc": 1,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/panel/app.py",
+    "loc": 1414,
+    "docstring": null,
+    "top_level_classes": [
+      "_RequestUrlLike",
+      "_RequestClientLike",
+      "_PanelSecurityRequestLike"
+    ],
+    "top_level_functions": [
+      "_generate_degraded_assistant_answer_async",
+      "_generate_degraded_assistant_answer",
+      "_enqueue_assistant_question",
+      "_settings",
+      "_now_ms",
+      "_client_ip",
+      "_panel_auth_state_update",
+      "_panel_auth_state_prune",
+      "_active_lockout_until_ms",
+      "_queue_root",
+      "_health_queue_root",
+      "_missions_dir",
+      "_allow_get_mutations",
+      "_request_meta",
+      "_log_panel_security_event",
+      "_panel_security_counter_incr",
+      "_panel_security_snapshot",
+      "_auth_setup_banner",
+      "_format_ts",
+      "_format_ts_seconds",
+      "_format_age",
+      "_history_value",
+      "_history_pair",
+      "_daemon_health_view",
+      "_performance_stats_view",
+      "_operator_credentials",
+      "_require_operator_basic_auth",
+      "_require_mutation_guard",
+      "_require_operator_auth_from_request",
+      "_enforce_get_mutations_enabled",
+      "_write_queue_job",
+      "_write_panel_mission_job",
+      "_artifact_text",
+      "_safe_json",
+      "_load_actions",
+      "_read_generated_files",
+      "_payload_lineage",
+      "_trim_tail",
+      "_repo_root_for_panel_subprocess",
+      "_run_queue_hygiene_command",
+      "_write_hygiene_result",
+      "_job_detail_payload",
+      "_job_progress_payload",
+      "_job_artifact_flags",
+      "_last_activity",
+      "_job_ref_bucket",
+      "_build_activity"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/assistant.py",
+    "loc": 188,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "enqueue_assistant_question",
+      "read_assistant_result",
+      "read_assistant_thread_turns"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/auth_state_store.py",
+    "loc": 139,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_ip_key",
+      "_int_value",
+      "prune_panel_auth_maps",
+      "apply_panel_auth_state_prune",
+      "apply_panel_auth_state_update",
+      "active_lockout_until_ms",
+      "auth_failure_snapshot"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/helpers.py",
+    "loc": 52,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "coerce_int",
+      "request_value"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/job_detail_sections.py",
+    "loc": 67,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "build_job_detail_sections"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/job_presentation.py",
+    "loc": 466,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "job_context_summary",
+      "job_artifact_inventory",
+      "job_recent_timeline",
+      "operator_outcome_summary",
+      "policy_rationale_rows",
+      "evidence_summary_rows",
+      "why_stopped_rows"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_assistant.py",
+    "loc": 536,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_assistant_request_ts_ms",
+      "_assistant_stalled_degraded_reason",
+      "_create_panel_assistant_brain",
+      "_degraded_mode_disclosure",
+      "_generate_degraded_assistant_answer_async",
+      "_generate_degraded_assistant_answer",
+      "_persist_degraded_assistant_result",
+      "_coerce_int",
+      "register_assistant_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_bundle.py",
+    "loc": 101,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_incident_archive_dir",
+      "register_bundle_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_home.py",
+    "loc": 129,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "register_home_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_hygiene.py",
+    "loc": 177,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_hygiene_result_view",
+      "register_hygiene_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_jobs.py",
+    "loc": 199,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "register_job_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_missions.py",
+    "loc": 161,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_validate_mission_id",
+      "_missions_dir",
+      "_build_mission_payload",
+      "_create_mission_template_from_values",
+      "_create_panel_mission_from_values",
+      "register_mission_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_queue_control.py",
+    "loc": 67,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_safe_jobs_n",
+      "_jobs_redirect_local",
+      "register_queue_control_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_recovery.py",
+    "loc": 185,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "register_recovery_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/panel/routes_vera.py",
+    "loc": 89,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "register_vera_routes"
+    ]
+  },
+  {
+    "path": "src/voxera/paths.py",
+    "loc": 38,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "config_dir",
+      "data_dir",
+      "ensure_dirs",
+      "queue_root",
+      "queue_root_display"
+    ]
+  },
+  {
+    "path": "src/voxera/policy.py",
+    "loc": 70,
+    "docstring": null,
+    "top_level_classes": [
+      "PolicyDecision"
+    ],
+    "top_level_functions": [
+      "decide"
+    ]
+  },
+  {
+    "path": "src/voxera/prompts.py",
+    "loc": 109,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_repo_root",
+      "_prompt_docs_root",
+      "_resolve_prompt_path",
+      "load_prompt_doc",
+      "compose_prompt_docs",
+      "compose_prompt",
+      "compose_vera_prompt",
+      "compose_hidden_compiler_prompt",
+      "compose_planner_prompt",
+      "compose_verifier_prompt",
+      "compose_web_investigator_prompt"
+    ]
+  },
+  {
+    "path": "src/voxera/secrets.py",
+    "loc": 88,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_fallback_path",
+      "_read_fallback_entries",
+      "write_secret",
+      "set_secret",
+      "get_secret",
+      "unset_secret"
+    ]
+  },
+  {
+    "path": "src/voxera/setup_wizard.py",
+    "loc": 563,
+    "docstring": null,
+    "top_level_classes": [
+      "ProviderChoice",
+      "BrainSlotSpec"
+    ],
+    "top_level_functions": [
+      "_pick_mode",
+      "_pick_brain_type",
+      "_local_provider",
+      "_validated_brain_type",
+      "_policy_defaults",
+      "_provider_catalog",
+      "_apply_provider_key_choice",
+      "_provider_summary_table",
+      "_choose_numbered_option",
+      "_pick_openrouter_model",
+      "_configure_brain_slot",
+      "_configure_cloud_brains",
+      "_configure_web_investigation",
+      "_systemctl_user",
+      "_ensure_runtime_services_running",
+      "_confirm_write_config",
+      "_launch_choice",
+      "_print_what_next",
+      "run_setup"
+    ]
+  },
+  {
+    "path": "src/voxera/skills/__init__.py",
+    "loc": 1,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/skills/arg_normalizer.py",
+    "loc": 132,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_canonical_open_app",
+      "_canonical_set_volume",
+      "_canonical_write_text",
+      "canonicalize_argv",
+      "_canonical_sandbox_exec",
+      "canonicalize_args"
+    ]
+  },
+  {
+    "path": "src/voxera/skills/execution.py",
+    "loc": 401,
+    "docstring": null,
+    "top_level_classes": [
+      "JobPaths",
+      "ExecutionRunner",
+      "LocalRunner",
+      "SandboxRunner",
+      "PodmanSandboxRunner"
+    ],
+    "top_level_functions": [
+      "_voxera_root",
+      "ensure_job_paths",
+      "generate_job_id",
+      "_looks_secret_value",
+      "redact_value",
+      "sanitize_env",
+      "sanitize_command",
+      "_text_from_subprocess_output",
+      "sanitize_audit_value",
+      "select_runner"
+    ]
+  },
+  {
+    "path": "src/voxera/skills/path_boundaries.py",
+    "loc": 59,
+    "docstring": null,
+    "top_level_classes": [
+      "PathBoundaryError"
+    ],
+    "top_level_functions": [
+      "normalize_confined_path"
+    ]
+  },
+  {
+    "path": "src/voxera/skills/registry.py",
+    "loc": 280,
+    "docstring": null,
+    "top_level_classes": [
+      "SkillHealthIssue",
+      "SkillDiscoveryReport",
+      "SkillRegistry"
+    ],
+    "top_level_functions": [
+      "_semantic_manifest_issues",
+      "_classify_manifest_health"
+    ]
+  },
+  {
+    "path": "src/voxera/skills/result_contract.py",
+    "loc": 74,
+    "docstring": null,
+    "top_level_classes": [
+      "CanonicalSkillResult"
+    ],
+    "top_level_functions": [
+      "build_skill_result",
+      "extract_skill_result"
+    ]
+  },
+  {
+    "path": "src/voxera/skills/runner.py",
+    "loc": 441,
+    "docstring": null,
+    "top_level_classes": [
+      "CapabilityEnforcementResult",
+      "SkillRunner"
+    ],
+    "top_level_functions": [
+      "is_skill_read_only",
+      "_network_boundary_violation",
+      "_normalize_policy_decision",
+      "_enforce_runtime_capabilities"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/__init__.py",
+    "loc": 6,
+    "docstring": "Vera conversational surface modules.",
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/vera/brave_search.py",
+    "loc": 119,
+    "docstring": null,
+    "top_level_classes": [
+      "WebSearchResult",
+      "BraveSearchClient"
+    ],
+    "top_level_functions": [
+      "_parse_brave_web_results"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/context_lifecycle.py",
+    "loc": 190,
+    "docstring": "Explicit lifecycle update points for shared session context.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "context_on_preview_created",
+      "context_on_preview_cleared",
+      "context_on_handoff_submitted",
+      "context_on_completion_ingested",
+      "context_on_review_performed",
+      "context_on_followup_preview_prepared",
+      "context_on_session_cleared"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/draft_revision.py",
+    "loc": 737,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "extract_quoted_content",
+      "normalize_extracted_content_block",
+      "extract_content_after_markers",
+      "extract_named_target",
+      "filename_from_preview",
+      "normalize_refinement_content_candidate",
+      "extract_content_refinement",
+      "extract_semantic_content_request",
+      "refined_content_from_active_preview",
+      "_is_clear_content_refresh_request",
+      "_is_ambiguous_change_request",
+      "_detect_content_type_from_preview",
+      "_pick_different",
+      "_generate_refreshed_content",
+      "writing_kind_from_preview_goal",
+      "looks_like_preview_rename_or_save_as_request",
+      "interpret_active_preview_draft_revision"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/evidence_review.py",
+    "loc": 770,
+    "docstring": null,
+    "top_level_classes": [
+      "ReviewedJobEvidence"
+    ],
+    "top_level_functions": [
+      "_read_json_dict",
+      "maybe_extract_job_id",
+      "is_review_request",
+      "is_followup_preview_request",
+      "is_revise_from_evidence_request",
+      "is_save_followup_request",
+      "_classify_state",
+      "_normalize_artifact_refs",
+      "_normalize_families",
+      "_normalize_strings",
+      "_evidence_trace",
+      "_select_latest_summary",
+      "_select_failure_summary",
+      "review_job_outcome",
+      "_candidate_job_ids",
+      "_resolve_lookup_with_aliases",
+      "review_message",
+      "_condensed_evidence_lines",
+      "_verbose_evidence_lines",
+      "_artifact_observation_line",
+      "_next_step",
+      "draft_followup_preview",
+      "draft_revised_preview",
+      "draft_saveable_followup_preview"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/handoff.py",
+    "loc": 14,
+    "docstring": "Vera handoff facade \u2014 DEPRECATED.",
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/vera/investigation_derivations.py",
+    "loc": 465,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_generated_note_path",
+      "is_investigation_save_request",
+      "_mentions_investigation_results_or_findings",
+      "is_investigation_compare_request",
+      "is_investigation_summary_request",
+      "is_investigation_expand_request",
+      "is_investigation_derived_save_request",
+      "is_investigation_derived_followup_save_request",
+      "_extract_result_selection",
+      "select_investigation_results",
+      "_investigation_note_content",
+      "draft_investigation_save_preview",
+      "draft_investigation_derived_save_preview",
+      "_result_line",
+      "derive_investigation_comparison",
+      "derive_investigation_summary",
+      "derive_investigation_expansion"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/investigation_flow.py",
+    "loc": 407,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "is_informational_web_query",
+      "normalize_web_query",
+      "build_structured_investigation_results",
+      "format_web_investigation_answer",
+      "maybe_handle_investigation_turn",
+      "run_web_enrichment",
+      "_is_operational_open_request",
+      "_is_operational_side_effect_request",
+      "_is_explicit_internal_search_request",
+      "_source_from_url"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/linked_completions.py",
+    "loc": 734,
+    "docstring": "Linked completion delivery and autosurface subsystem.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_read_json_dict",
+      "_completion_delivery_eligible",
+      "_is_true_terminal_completion",
+      "_classify_surfacing_policy",
+      "_normalize_result_highlights",
+      "_extract_step_machine_payload",
+      "_format_diagnostics_values",
+      "_format_completion_autosurface_message",
+      "_build_completion_notification",
+      "_upsert_completion_notification",
+      "_attempt_live_delivery",
+      "_is_terminal_queue_state",
+      "_build_completion_payload",
+      "ingest_linked_job_completions",
+      "maybe_auto_surface_linked_completion",
+      "maybe_deliver_linked_completion_live",
+      "maybe_deliver_linked_completion_live_for_job"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/preview_drafting.py",
+    "loc": 771,
+    "docstring": null,
+    "top_level_classes": [
+      "DraftingGuidance"
+    ],
+    "top_level_functions": [
+      "_normalize_open_goal",
+      "_normalize_file_read_goal",
+      "diagnostics_service_or_logs_intent",
+      "diagnostics_request_refusal",
+      "_extract_safe_service",
+      "_normalize_diagnostics_preview",
+      "is_recent_assistant_content_save_request",
+      "_infer_content_from_message",
+      "_generated_note_path",
+      "_normalize_structured_file_write_payload",
+      "_normalize_structured_note_payload",
+      "_normalize_file_write_goal",
+      "_draft_revision_from_active_preview",
+      "drafting_guidance",
+      "_looks_like_contextual_refinement",
+      "_is_session_aware_authored_followup",
+      "_resolve_authored_followup_from_session_context",
+      "_draft_from_candidate_message",
+      "maybe_draft_job_payload"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/preview_submission.py",
+    "loc": 332,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "is_near_miss_submit_phrase",
+      "is_explicit_handoff_request",
+      "is_active_preview_submit_request",
+      "is_natural_preview_submission_confirmation",
+      "is_preview_submission_request",
+      "should_submit_active_preview",
+      "normalize_preview_payload",
+      "submit_preview",
+      "submit_active_preview_for_session"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/prompt.py",
+    "loc": 16,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "vera_queue_boundary_summary"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/reference_resolver.py",
+    "loc": 347,
+    "docstring": "Bounded session-scoped reference resolution for Vera.",
+    "top_level_classes": [
+      "ReferenceClass",
+      "ResolvedReference",
+      "UnresolvedReference"
+    ],
+    "top_level_functions": [
+      "classify_reference",
+      "_is_nonempty_ref",
+      "resolve_session_reference",
+      "_resolve_draft",
+      "_resolve_file",
+      "_resolve_job_result",
+      "_resolve_continuation",
+      "_looks_like_file_path",
+      "resolve_job_id_from_context"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/result_surfacing.py",
+    "loc": 594,
+    "docstring": "Evidence-grounded result surfacing layer.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "extract_value_forward_text",
+      "classify_result_family",
+      "_step_payload_for_skill",
+      "_step_summary_for_skill",
+      "_step_status_for_skill",
+      "_last_step_skill_id",
+      "_last_step_machine_payload",
+      "_truncate",
+      "_extract_file_read",
+      "_extract_file_write",
+      "_extract_file_exists",
+      "_extract_file_stat",
+      "_extract_list_dir",
+      "_extract_service_status",
+      "_extract_recent_logs",
+      "_extract_diagnostics_snapshot",
+      "_extract_process_list",
+      "_classify_file_read",
+      "_classify_file_write",
+      "_classify_file_exists",
+      "_classify_file_stat",
+      "_classify_list_dir",
+      "_classify_service_status",
+      "_classify_recent_logs",
+      "_classify_diagnostics_snapshot",
+      "_classify_process_list"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/saveable_artifacts.py",
+    "loc": 305,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "message_requests_referenced_content",
+      "looks_like_ambiguous_reference_only",
+      "looks_like_plural_reference_request",
+      "looks_like_non_authored_assistant_message",
+      "_looks_like_trivial_courtesy_assistant_message",
+      "_infer_saveable_assistant_artifact_type",
+      "build_saveable_assistant_artifact",
+      "collect_recent_saveable_assistant_artifacts",
+      "select_recent_saveable_assistant_artifact"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/service.py",
+    "loc": 534,
+    "docstring": null,
+    "top_level_classes": [
+      "HiddenCompilerDecision"
+    ],
+    "top_level_functions": [
+      "_service_weather_question",
+      "_service_extract_weather_location_from_message",
+      "_lookup_live_weather",
+      "build_vera_messages",
+      "_recent_assistant_authored_content",
+      "_build_preview_builder_messages",
+      "_extract_hidden_compiler_decision",
+      "_apply_preview_patch",
+      "generate_preview_builder_update",
+      "_create_brain",
+      "generate_vera_reply"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/session_store.py",
+    "loc": 736,
+    "docstring": "Vera session persistence/state helpers extracted from service.py.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_default_linked_job_registry",
+      "new_session_id",
+      "_session_path",
+      "_read_session_payload",
+      "_write_session_payload",
+      "_default_session_payload",
+      "_load_or_default_session_payload",
+      "read_session_turns",
+      "read_session_updated_at_ms",
+      "append_session_turn",
+      "read_session_last_user_input_origin",
+      "_write_session_field",
+      "read_session_preview",
+      "write_session_preview",
+      "write_session_handoff_state",
+      "read_session_handoff_state",
+      "clear_session_turns",
+      "read_session_enrichment",
+      "write_session_enrichment",
+      "read_session_investigation",
+      "read_session_weather_context",
+      "write_session_weather_context",
+      "write_session_investigation",
+      "read_session_derived_investigation_output",
+      "write_session_derived_investigation_output",
+      "read_session_saveable_assistant_artifacts",
+      "_write_session_saveable_assistant_artifacts",
+      "session_debug_info",
+      "_read_linked_job_registry",
+      "_write_linked_job_registry",
+      "register_session_linked_job",
+      "read_linked_job_completions",
+      "read_session_conversational_planning_active",
+      "write_session_conversational_planning_active",
+      "_empty_shared_context",
+      "_normalize_shared_context",
+      "read_session_context",
+      "write_session_context",
+      "update_session_context",
+      "clear_session_context",
+      "_empty_routing_debug",
+      "read_session_routing_debug",
+      "append_routing_debug_entry",
+      "clear_session_routing_debug",
+      "session_debug_snapshot"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/weather.py",
+    "loc": 411,
+    "docstring": null,
+    "top_level_classes": [
+      "WeatherLocation",
+      "WeatherSnapshot",
+      "OpenMeteoWeatherClient"
+    ],
+    "top_level_functions": [
+      "_weather_code_to_text",
+      "_coerce_float",
+      "_round_temp",
+      "_parse_iso_time",
+      "_safe_int",
+      "_build_hourly_entries",
+      "_build_daily_entries",
+      "format_current_weather_answer",
+      "format_hourly_weather_answer",
+      "format_daily_weather_answer",
+      "format_weekend_weather_answer"
+    ]
+  },
+  {
+    "path": "src/voxera/vera/weather_flow.py",
+    "loc": 336,
+    "docstring": null,
+    "top_level_classes": [
+      "WeatherFollowupAnswerBuilder"
+    ],
+    "top_level_functions": [
+      "is_weather_investigation_request",
+      "is_weather_question",
+      "normalize_weather_location_candidate",
+      "extract_weather_location_from_message",
+      "extract_weather_followup_kind",
+      "weather_followup_is_active",
+      "weather_context_has_pending_lookup",
+      "weather_context_is_waiting_for_location",
+      "should_accept_pending_weather_offer",
+      "weather_answer_for_followup",
+      "maybe_handle_weather_turn"
+    ]
+  },
+  {
+    "path": "src/voxera/vera_web/__init__.py",
+    "loc": 2,
+    "docstring": "Standalone Vera web app.",
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/vera_web/app.py",
+    "loc": 1676,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_active_queue_root",
+      "_submit_handoff",
+      "_looks_like_submission_claim",
+      "_guardrail_submission_claim",
+      "_is_voxera_control_turn",
+      "_prefer_derived_followup_save",
+      "_is_empty_code_preview_shell",
+      "_looks_like_new_unrelated_query",
+      "_recover_code_draft_from_history",
+      "_detect_automation_clarification_completion",
+      "_looks_like_direct_automation_request",
+      "_looks_like_previewable_automation_intent",
+      "_synthesize_direct_automation_preview",
+      "_is_refinable_prose_preview",
+      "_looks_like_active_preview_content_generation_turn",
+      "_classify_execution_mode",
+      "_render_page",
+      "_main_screen_guidance",
+      "index",
+      "chat",
+      "chat_updates",
+      "handoff",
+      "clear_chat",
+      "vera_debug_session_json"
+    ]
+  },
+  {
+    "path": "src/voxera/vera_web/chat_early_exit_dispatch.py",
+    "loc": 492,
+    "docstring": "Early-exit intent handler dispatch for the Vera web chat flow.",
+    "top_level_classes": [
+      "EarlyExitResult"
+    ],
+    "top_level_functions": [
+      "_followup_evidence_detail",
+      "_looks_like_authored_drafting_request",
+      "dispatch_early_exit_intent"
+    ]
+  },
+  {
+    "path": "src/voxera/vera_web/conversational_checklist.py",
+    "loc": 716,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "looks_like_voxera_preview_dump",
+      "looks_like_preview_update_claim",
+      "_looks_like_submission_claim",
+      "_text_outside_code_blocks",
+      "_looks_like_preview_pane_claim",
+      "looks_like_preview_pane_claim",
+      "has_save_write_file_signal",
+      "has_conversational_planning_signal",
+      "_is_list_item_line",
+      "_has_list_content",
+      "_extract_list_items",
+      "_render_plain_checklist",
+      "_normalize_extracted_item",
+      "_split_candidate_items",
+      "_clean_item_candidates",
+      "_extract_items_from_user_message",
+      "_extract_json_object_items",
+      "_fallback_conversational_checklist_for_message",
+      "sanitize_false_preview_claims_from_answer",
+      "enforce_conversational_checklist_output",
+      "is_conversational_answer_first_request",
+      "should_use_conversational_artifact_mode",
+      "conversational_preview_update_message"
+    ]
+  },
+  {
+    "path": "src/voxera/vera_web/draft_content_binding.py",
+    "loc": 583,
+    "docstring": "Draft content binding: post-LLM reply content extraction and preview binding.",
+    "top_level_classes": [
+      "ReplyDrafts",
+      "DraftContentBindingResult"
+    ],
+    "top_level_functions": [
+      "_is_refinable_prose_preview",
+      "_is_governed_writing_preview",
+      "_looks_like_active_preview_content_generation_turn",
+      "strip_internal_control_blocks",
+      "extract_reply_drafts",
+      "resolve_draft_content_binding"
+    ]
+  },
+  {
+    "path": "src/voxera/vera_web/execution_mode.py",
+    "loc": 209,
+    "docstring": null,
+    "top_level_classes": [
+      "ExecutionMode"
+    ],
+    "top_level_functions": [
+      "_is_voxera_control_turn",
+      "_is_governed_writing_preview",
+      "_is_refinable_prose_preview",
+      "_is_relative_writing_refinement_request",
+      "_looks_like_active_preview_content_generation_turn",
+      "_message_has_explicit_content_literal",
+      "_looks_like_ambiguous_active_preview_content_replacement_request",
+      "_extract_save_as_text_target",
+      "_classify_execution_mode",
+      "_is_explicit_json_content_request"
+    ]
+  },
+  {
+    "path": "src/voxera/vera_web/preview_content_binding.py",
+    "loc": 51,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "looks_like_builder_refinement_placeholder",
+      "preview_body_looks_like_control_narration",
+      "is_targeted_code_preview_refinement"
+    ]
+  },
+  {
+    "path": "src/voxera/vera_web/response_shaping.py",
+    "loc": 434,
+    "docstring": "Response shaping: post-guardrail assistant reply assembly.",
+    "top_level_classes": [
+      "AssistantReplyResult"
+    ],
+    "top_level_functions": [
+      "_conversational_preview_update_message",
+      "derive_preview_has_content",
+      "_looks_like_internal_compiler_payload",
+      "guardrail_false_preview_claim",
+      "_strip_bare_internal_json_objects",
+      "strip_internal_compiler_leakage",
+      "should_clear_stale_preview",
+      "_strip_llm_preview_narration",
+      "assemble_assistant_reply"
+    ]
+  },
+  {
+    "path": "src/voxera/version.py",
+    "loc": 34,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_version_from_pyproject",
+      "get_version"
+    ]
+  },
+  {
+    "path": "src/voxera/voice/__init__.py",
+    "loc": 16,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera/voice/flags.py",
+    "loc": 103,
+    "docstring": null,
+    "top_level_classes": [
+      "VoiceFoundationFlags"
+    ],
+    "top_level_functions": [
+      "_parse_bool",
+      "_load_runtime_json",
+      "load_voice_foundation_flags"
+    ]
+  },
+  {
+    "path": "src/voxera/voice/input.py",
+    "loc": 34,
+    "docstring": null,
+    "top_level_classes": [
+      "VoiceInputDisabledError",
+      "VoiceTranscriptIngest"
+    ],
+    "top_level_functions": [
+      "normalize_transcript_text",
+      "ingest_voice_transcript"
+    ]
+  },
+  {
+    "path": "src/voxera/voice/models.py",
+    "loc": 16,
+    "docstring": null,
+    "top_level_classes": [
+      "InputOrigin"
+    ],
+    "top_level_functions": [
+      "normalize_input_origin"
+    ]
+  },
+  {
+    "path": "src/voxera/voice/output.py",
+    "loc": 22,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "voice_output_status"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/__init__.py",
+    "loc": 1,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "src/voxera_builtin_skills/clipboard_copy.py",
+    "loc": 72,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/clipboard_paste.py",
+    "loc": 71,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/disk_usage.py",
+    "loc": 62,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_copy.py",
+    "loc": 153,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_existing_safe_path",
+      "_resolve_new_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_copy_file.py",
+    "loc": 153,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_existing_safe_path",
+      "_resolve_new_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_delete_file.py",
+    "loc": 166,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_exists.py",
+    "loc": 55,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_find.py",
+    "loc": 177,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_existing_safe_path",
+      "_walk_paths",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_grep_text.py",
+    "loc": 204,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_existing_safe_path",
+      "_walk_files",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_list_dir.py",
+    "loc": 127,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_list_tree.py",
+    "loc": 166,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_existing_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_mkdir.py",
+    "loc": 136,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_move.py",
+    "loc": 137,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_existing_safe_path",
+      "_resolve_new_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_move_file.py",
+    "loc": 137,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_existing_safe_path",
+      "_resolve_new_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_read_text.py",
+    "loc": 108,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_rename.py",
+    "loc": 163,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_existing_safe_path",
+      "_resolve_new_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_stat.py",
+    "loc": 103,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_safe_path",
+      "_as_utc_iso",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/files_write_text.py",
+    "loc": 112,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_resolve_safe_path",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/host_info.py",
+    "loc": 49,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_read_uptime_seconds",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/load_snapshot.py",
+    "loc": 59,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/memory_usage.py",
+    "loc": 97,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_parse_meminfo",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/open_app.py",
+    "loc": 95,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/open_url.py",
+    "loc": 119,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/process_list.py",
+    "loc": 106,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/recent_service_logs.py",
+    "loc": 300,
+    "docstring": null,
+    "top_level_classes": [
+      "_ScopeResult",
+      "_JournalResult"
+    ],
+    "top_level_functions": [
+      "_coerce_bounded_int",
+      "_reject",
+      "run",
+      "_run_journalctl",
+      "_query_journal"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/sandbox_exec.py",
+    "loc": 16,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/service_status.py",
+    "loc": 212,
+    "docstring": null,
+    "top_level_classes": [
+      "_ScopeResult"
+    ],
+    "top_level_functions": [
+      "_invalid_input_result",
+      "_query_scope",
+      "_is_active",
+      "_is_noteworthy",
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/set_volume.py",
+    "loc": 88,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/system_status.py",
+    "loc": 34,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/terminal_run_once.py",
+    "loc": 55,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "src/voxera_builtin_skills/window_list.py",
+    "loc": 67,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "run"
+    ]
+  },
+  {
+    "path": "tests/__init__.py",
+    "loc": 1,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/conftest.py",
+    "loc": 44,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_sanitize_voxera_env",
+      "_isolate_health_snapshot"
+    ]
+  },
+  {
+    "path": "tests/test_arg_normalizer.py",
+    "loc": 18,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_open_app_canonicalizes_aliases",
+      "test_set_volume_clamps_and_coerces"
+    ]
+  },
+  {
+    "path": "tests/test_authored_draft_body_fidelity.py",
+    "loc": 568,
+    "docstring": "Regression tests for authored draft body fidelity in preview content.",
+    "top_level_classes": [
+      "TestNormalizeMarkdownSpacing",
+      "TestAuthoredBodyFidelity",
+      "TestEdgeCases",
+      "TestInlineHeadingRegression",
+      "TestFiveSectionZeroSpaceExtraction",
+      "TestWrapperBodyExtraction"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/test_brain_fallback.py",
+    "loc": 512,
+    "docstring": "Deterministic tests for brain fallback reason classification, health counters, and doctor output.",
+    "top_level_classes": [
+      "TestClassifyFallbackReason",
+      "TestRecordFallbackTransition",
+      "TestDoctorQuickFallback",
+      "TestDegradationStateMachine",
+      "TestDegradationIntegration",
+      "TestHealthSnapshotDefaults",
+      "TestBrainBackoffComputation",
+      "TestBackoffSnapshotIntegration",
+      "TestBackoffLastAppliedSnapshot"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/test_builtin_skills_terminal_run_once.py",
+    "loc": 44,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_run_opens_plain_gnome_terminal_without_demo_script",
+      "test_keep_open_flag_does_not_inject_commands",
+      "test_run_fails_if_gnome_terminal_not_found"
+    ]
+  },
+  {
+    "path": "tests/test_capabilities_snapshot.py",
+    "loc": 53,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_generate_capabilities_snapshot_has_schema_and_deterministic_order",
+      "test_ops_capabilities_command_prints_stable_json",
+      "test_generate_capabilities_snapshot_skips_invalid_file_missions"
+    ]
+  },
+  {
+    "path": "tests/test_capability_semantics.py",
+    "loc": 38,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_manifest",
+      "test_capability_semantic_for_file_delete_is_destructive",
+      "test_manifest_capability_semantics_projects_boundaries_and_intent"
+    ]
+  },
+  {
+    "path": "tests/test_chat_early_exit_dispatch.py",
+    "loc": 1621,
+    "docstring": "Characterization tests for the early-exit intent handler dispatch extraction.",
+    "top_level_classes": [
+      "TestEarlyExitResultDefaults",
+      "TestDiagnosticsRefusal",
+      "TestJobReview",
+      "TestFollowupPreview",
+      "TestInvestigationDerivedSave",
+      "TestInvestigationCompare",
+      "TestInvestigationSummary",
+      "TestInvestigationExpand",
+      "TestInvestigationSave",
+      "TestNearMissSubmit",
+      "TestNoMatchFallthrough",
+      "TestFileCreationNotHijacked",
+      "TestWriteFlagIntegrity",
+      "TestLinkedJobReviewInspection",
+      "TestLinkedJobFollowupRevision",
+      "TestSessionContextJobResolution",
+      "TestStaleDraftReference",
+      "TestOutputReviewDispatch"
+    ],
+    "top_level_functions": [
+      "_dispatch",
+      "_sample_investigation"
+    ]
+  },
+  {
+    "path": "tests/test_cli_artifacts.py",
+    "loc": 232,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_seed_artifacts",
+      "test_prune_dry_run_default_no_deletion",
+      "test_prune_max_age_days_selects_old",
+      "test_prune_max_count_keeps_newest",
+      "test_prune_yes_deletes_and_reports_bytes",
+      "test_prune_missing_artifacts_dir_exits_zero",
+      "test_prune_no_rules_configured_exits_zero",
+      "test_prune_json_output",
+      "test_prune_yes_deletes_symlink_with_outside_target"
+    ]
+  },
+  {
+    "path": "tests/test_cli_config_snapshot.py",
+    "loc": 74,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_write_runtime_config",
+      "test_config_snapshot_default_writes_to_queue_root_without_queue_intake_side_effects",
+      "test_config_snapshot_respects_path_override"
+    ]
+  },
+  {
+    "path": "tests/test_cli_contract_snapshot.py",
+    "loc": 117,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_cli_public_command_surface_snapshot",
+      "_strip_ansi",
+      "test_cli_doctor_help_surface_snapshot",
+      "test_cli_queue_status_help_surface_snapshot",
+      "test_cli_compatibility_exports_remain_reachable"
+    ]
+  },
+  {
+    "path": "tests/test_cli_queue.py",
+    "loc": 1092,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_queue_init_creates_expected_directories",
+      "test_queue_init_is_idempotent",
+      "test_queue_status_shows_canceled_bucket_count",
+      "test_queue_status_shows_lifecycle_snapshot_from_state_sidecar",
+      "test_queue_status_lifecycle_prefers_structured_execution_result",
+      "test_queue_approval_list_job_value_can_be_used_with_approve",
+      "test_queue_status_renders_failed_metadata_counters",
+      "test_queue_approvals_list_shows_target_and_scope",
+      "test_queue_status_prints_artifacts_root",
+      "test_queue_status_prints_intake_and_inbox",
+      "test_queue_files_find_enqueues_inline_step_job",
+      "test_queue_files_copy_can_execute_via_daemon_once",
+      "test_queue_files_copy_missing_source_is_truthful_failure",
+      "test_queue_files_tree_blocked_scope_is_truthful_block",
+      "test_queue_cancel_retry_pause_resume_cli",
+      "test_queue_unlock_refuses_live_lock_without_force",
+      "test_queue_unlock_removes_stale_lock",
+      "test_queue_unlock_removes_dead_pid_lock",
+      "test_queue_unlock_force_removes_live_lock",
+      "test_queue_bundle_job_and_system",
+      "test_ops_bundle_system_and_job_commands",
+      "test_ops_bundle_system_and_job_with_explicit_dir",
+      "test_ops_bundle_queue_dir_ignores_env_archive_override",
+      "test_queue_lock_status_alias_renders_lock_fields",
+      "test_queue_help_lists_lock_status_command",
+      "test_queue_health_renders_observability_sections",
+      "test_queue_health_missing_history_renders_dash_not_none",
+      "test_queue_health_json_contains_section_parity",
+      "test_queue_health_watch_mode_refreshes_once",
+      "test_queue_health_prints_last_shutdown_block",
+      "test_queue_health_json_includes_last_shutdown_fields",
+      "test_queue_health_reset_current_and_recent_logs_audit",
+      "test_queue_health_reset_counter_group_json",
+      "test_queue_health_reset_json_reports_cleared_fallback_fields",
+      "test_queue_health_reset_default_queue_dir_uses_expanded_operator_path",
+      "test_queue_health_and_reset_share_effective_health_path",
+      "test_queue_files_grep_payload_stays_queue_backed_contract",
+      "test_queue_files_rename_payload_stays_queue_backed_contract",
+      "test_queue_health_reset_current_and_recent_json_contract",
+      "test_queue_health_reset_invalid_scope_fails_closed"
+    ]
+  },
+  {
+    "path": "tests/test_cli_queue_prune.py",
+    "loc": 378,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_make_job",
+      "_make_sidecar",
+      "_queue_dir",
+      "test_no_rules_configured_exits_zero",
+      "test_dry_run_does_not_delete",
+      "test_age_based_prune_selects_old_only",
+      "test_count_based_prune_per_bucket",
+      "test_yes_deletes_jobs_and_sidecars",
+      "test_missing_buckets_handled_gracefully",
+      "test_json_output_structure",
+      "test_inbox_and_pending_not_touched",
+      "test_sidecars_not_counted_as_primary_candidates",
+      "test_json_output_non_empty_and_panel_fields"
+    ]
+  },
+  {
+    "path": "tests/test_cli_queue_reconcile.py",
+    "loc": 613,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_make_job",
+      "_make_sidecar",
+      "_make_approval",
+      "_make_artifact_dir",
+      "_run_reconcile",
+      "test_empty_queue_no_issues",
+      "test_orphan_sidecar_detected",
+      "test_sidecar_with_primary_not_orphan",
+      "test_orphan_approval_detected",
+      "test_approval_with_pending_job_not_orphan",
+      "test_duplicate_job_detected",
+      "test_unique_job_per_bucket_not_duplicate",
+      "test_orphan_artifact_candidate_detected",
+      "test_artifact_with_existing_job_not_orphan",
+      "test_human_output_report_only_note",
+      "test_json_schema_fields_present",
+      "test_multiple_issues_combined",
+      "test_examples_are_sorted",
+      "test_missing_directories_no_error",
+      "_run_reconcile_fix",
+      "test_fix_preview_does_not_change_filesystem",
+      "test_fix_preview_human_output_indicates_preview",
+      "test_fix_yes_quarantines_orphan_sidecar_and_approval",
+      "test_fix_yes_does_not_quarantine_artifact_candidates",
+      "test_fix_yes_does_not_quarantine_duplicates",
+      "test_fix_yes_paired_sidecar_not_quarantined",
+      "test_quarantine_dir_default_under_queue_dir",
+      "test_quarantine_dir_custom_within_queue_dir",
+      "test_quarantine_dir_outside_queue_dir_rejected",
+      "test_json_fix_preview_schema",
+      "test_json_fix_applied_schema",
+      "test_json_report_mode_fix_counts_are_zero",
+      "test_fix_yes_quarantines_symlink_orphan_without_following_target",
+      "test_reconcile_json_output_non_empty_with_ts"
+    ]
+  },
+  {
+    "path": "tests/test_cli_queue_remaining_surfaces.py",
+    "loc": 255,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_queue_status_empty_shows_structural_sections",
+      "test_queue_status_with_approval_and_failed_job_surfaces_operator_truth",
+      "test_queue_lifecycle_commands_cover_success_and_fail_closed_paths",
+      "test_queue_pause_resume_and_unlock_contracts",
+      "test_queue_approvals_help_and_fail_closed_behavior",
+      "test_queue_approvals_approve_reports_still_pending_when_daemon_returns_false",
+      "test_queue_approvals_deny_moves_job_to_failed",
+      "test_inbox_help_shape_and_queue_backed_add_list",
+      "test_inbox_add_fail_closed_on_malformed_goal"
+    ]
+  },
+  {
+    "path": "tests/test_cli_run_args.py",
+    "loc": 45,
+    "docstring": null,
+    "top_level_classes": [
+      "_FakeRegistry",
+      "_FakeSimulation",
+      "_FakeRunner"
+    ],
+    "top_level_functions": [
+      "test_run_accepts_multiple_arg_options"
+    ]
+  },
+  {
+    "path": "tests/test_cli_secrets.py",
+    "loc": 82,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_secrets_set_uses_explicit_value_without_echo",
+      "test_secrets_set_prompts_hidden_input_when_missing_value",
+      "test_secrets_get_defaults_to_safe_presence_output",
+      "test_secrets_get_exists_only_missing_is_nonzero",
+      "test_secrets_get_show_value_requires_opt_in",
+      "test_secrets_unset_exit_codes"
+    ]
+  },
+  {
+    "path": "tests/test_cli_version.py",
+    "loc": 26,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_version_command_uses_shared_version_source",
+      "test_root_version_option_prints_and_exits"
+    ]
+  },
+  {
+    "path": "tests/test_code_draft_intent.py",
+    "loc": 344,
+    "docstring": "Unit tests for the bounded code/script/config draft intent classifier.",
+    "top_level_classes": [
+      "TestIsCodeDraftRequest",
+      "TestClassifyCodeDraftIntent",
+      "TestExtractCodeFromReply",
+      "TestCodeFenceLanguage",
+      "TestHasCodeFileExtension"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/test_config_settings.py",
+    "loc": 94,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_config_precedence_file_env_overrides",
+      "test_config_invalid_values_raise",
+      "test_config_redacts_sensitive_fields",
+      "test_load_env_file_parses_comments_and_blank_lines",
+      "test_load_env_file_rejects_invalid_lines"
+    ]
+  },
+  {
+    "path": "tests/test_config_snapshot.py",
+    "loc": 42,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_write_config_snapshot_creates_redacted_payload"
+    ]
+  },
+  {
+    "path": "tests/test_context_lifecycle.py",
+    "loc": 386,
+    "docstring": "Tests for the explicit lifecycle update points in context_lifecycle.py.",
+    "top_level_classes": [
+      "TestPreviewCreated",
+      "TestPreviewCleared",
+      "TestHandoffSubmitted",
+      "TestCompletionIngested",
+      "TestReviewPerformed",
+      "TestFollowupPreviewPrepared",
+      "TestSessionCleared",
+      "TestFullLifecycleSequence"
+    ],
+    "top_level_functions": [
+      "_make_session"
+    ]
+  },
+  {
+    "path": "tests/test_demo_cli.py",
+    "loc": 60,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_demo_creates_jobs_and_checklist",
+      "test_demo_online_missing_keys_skips_and_exits_zero"
+    ]
+  },
+  {
+    "path": "tests/test_dev_contract_config_integration.py",
+    "loc": 64,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_makefile_targets_require_dev_marker",
+      "test_queue_lock_stale_seconds_read_from_runtime_config",
+      "test_ops_bundle_archive_dir_env_and_explicit_override",
+      "test_panel_operator_defaults_to_admin_and_missing_password_raises"
+    ]
+  },
+  {
+    "path": "tests/test_diagnostics_pack.py",
+    "loc": 463,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_diagnostics_mission_exists_and_is_read_only",
+      "test_service_status_rejects_invalid_service_name_fail_closed",
+      "test_recent_service_logs_rejects_unsafe_query_bounds_fail_closed",
+      "test_service_status_happy_path_with_mocked_systemctl",
+      "test_service_status_user_scope_preferred_when_active",
+      "test_service_status_system_failed_preferred_over_user_inactive",
+      "test_service_status_timeout_error_class",
+      "test_service_status_query_failed_error_class",
+      "test_service_status_missing_dependency_only_for_file_not_found",
+      "test_service_status_scope_warning_when_one_scope_fails",
+      "test_recent_service_logs_scope_warning_when_system_fails",
+      "test_recent_service_logs_empty_user_warns_about_failed_system",
+      "test_recent_service_logs_timeout_error_class",
+      "test_recent_service_logs_query_failed_error_class",
+      "test_recent_service_logs_default_args",
+      "test_recent_service_logs_happy_path_with_mocked_journalctl",
+      "test_recent_service_logs_accepts_string_numeric_args",
+      "test_recent_service_logs_prefers_user_scope_with_content",
+      "test_recent_service_logs_no_entries_message",
+      "test_recent_service_logs_rejects_invalid_numeric_strings",
+      "test_recent_service_logs_rejects_invalid_service_name",
+      "test_diagnostics_mission_executes_through_queue_and_writes_evidence",
+      "test_simulate_system_diagnostics_requires_no_approvals"
+    ]
+  },
+  {
+    "path": "tests/test_direct_mutation_gate.py",
+    "loc": 277,
+    "docstring": "Tests for the queue-first direct CLI mutation gate.",
+    "top_level_classes": [
+      "TestIsSkillReadOnly",
+      "TestIsDevMode",
+      "TestRunImplMutationGate",
+      "TestBuiltinSkillClassification",
+      "TestEffectClassesFor"
+    ],
+    "top_level_functions": [
+      "_manifest",
+      "_noop_config",
+      "_stub_registry"
+    ]
+  },
+  {
+    "path": "tests/test_docs_consistency.py",
+    "loc": 68,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_docs_use_repository_root_phrasing_for_make_commands",
+      "test_core_operational_commands_are_documented",
+      "test_vera_service_contract_is_present",
+      "test_merge_readiness_workflow_exists",
+      "test_pre_push_hook_runs_merge_readiness"
+    ]
+  },
+  {
+    "path": "tests/test_doctor.py",
+    "loc": 526,
+    "docstring": null,
+    "top_level_classes": [
+      "_FakeBrain",
+      "_FakeResponse"
+    ],
+    "top_level_functions": [
+      "test_run_doctor_writes_empty_report_when_no_brains",
+      "test_print_report_warns_when_no_brains_configured",
+      "test_run_doctor_adds_fallback_note_and_audit_event",
+      "test_run_doctor_ignores_audit_oserror",
+      "test_openai_compat_capability_test_malformed_json",
+      "test_openai_compat_capability_test_strips_markdown_fence",
+      "test_openai_compat_capability_test_extracts_json_object",
+      "test_openai_compat_capability_test_http_error",
+      "test_openai_compat_capability_test_rate_limit",
+      "test_openai_compat_capability_test_timeout",
+      "test_gemini_capability_test_strips_markdown_fence",
+      "test_gemini_capability_test_extracts_json_object",
+      "test_gemini_capability_test_http_error",
+      "test_gemini_capability_test_rate_limit",
+      "test_gemini_capability_test_timeout",
+      "test_run_self_test_returns_fix_steps_when_artifacts_missing",
+      "test_doctor_quick_offline_does_not_call_brains",
+      "test_doctor_quick_marks_last_error_stale_when_last_ok_is_newer",
+      "test_doctor_quick_keeps_warning_when_last_error_is_newer",
+      "test_doctor_quick_keeps_warning_when_last_ok_missing",
+      "test_doctor_quick_handles_missing_last_error",
+      "test_doctor_quick_includes_last_shutdown_summary",
+      "test_doctor_quick_missing_history_uses_dash_placeholders",
+      "test_run_doctor_includes_skill_registry_summary",
+      "test_print_report_includes_skill_registry_note"
+    ]
+  },
+  {
+    "path": "tests/test_draft_content_binding.py",
+    "loc": 743,
+    "docstring": "Characterization tests for the draft content binding extraction.",
+    "top_level_classes": [
+      "TestStripInternalControlBlocks",
+      "TestExtractReplyDrafts",
+      "TestResolveDraftContentBindingBaseline",
+      "TestCodeDraftBinding",
+      "TestWritingDraftBinding",
+      "TestCreateAndSaveFallback",
+      "TestGenerationContentRefresh",
+      "TestPreviewWriteSignal",
+      "TestWritingDraftSystemTermContent",
+      "TestWritingDraftPreviewTruthGuardrail",
+      "TestExplicitLiteralContentBinding"
+    ],
+    "top_level_functions": [
+      "_default_binding_kwargs"
+    ]
+  },
+  {
+    "path": "tests/test_dry_run_contract.py",
+    "loc": 110,
+    "docstring": "Tests enforcing the dry-run output contract: determinism and capability/risk coherence.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_make_runner",
+      "test_dry_run_open_app_capability_and_risk",
+      "test_dry_run_multi_capability_skill_all_capabilities_in_used",
+      "test_dry_run_no_capability_skill_capability_is_null",
+      "test_dry_run_json_output_is_deterministic"
+    ]
+  },
+  {
+    "path": "tests/test_dryrun_determinism.py",
+    "loc": 116,
+    "docstring": "Tests for --deterministic dry-run mode (PR #72).",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_make_runner",
+      "test_deterministic_two_runs_byte_identical",
+      "test_deterministic_scrubs_generated_ts_ms",
+      "test_non_deterministic_mode_preserves_real_ts",
+      "test_deterministic_no_capability_skill",
+      "test_deterministic_without_dry_run_rejected",
+      "test_freeze_snapshot_without_dry_run_rejected"
+    ]
+  },
+  {
+    "path": "tests/test_e2e_smoke_script.py",
+    "loc": 16,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_e2e_smoke_script_exists_and_dry_mode_succeeds"
+    ]
+  },
+  {
+    "path": "tests/test_evidence_review.py",
+    "loc": 1257,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_write_job",
+      "test_review_outcome_prefers_normalized_review_summary_and_evidence_contract",
+      "test_review_outcome_classifies_lifecycle_states_for_next_step",
+      "test_review_outcome_awaiting_approval_reports_blocked_next_step",
+      "test_review_outcome_distinguishes_queued_from_submitted",
+      "test_review_outcome_prefers_normalized_failure_summary",
+      "test_review_outcome_surfaces_execution_capabilities_and_missing_expected_artifacts",
+      "test_review_outcome_succeeded_with_partial_expected_artifacts_is_state_aware",
+      "test_review_outcome_canceled_missing_expected_artifacts_frames_absence_honestly",
+      "test_review_outcome_missing_expected_artifacts_while_awaiting_approval_are_not_misframed",
+      "test_review_outcome_handles_jobs_without_declared_expected_artifacts",
+      "test_review_outcome_surfaces_path_boundary_class_and_next_step",
+      "test_review_outcome_surfaces_runtime_dependency_missing_guidance",
+      "test_review_message_surfaces_file_read_result",
+      "test_review_message_surfaces_file_exists_result",
+      "test_review_message_surfaces_service_status_result",
+      "test_review_message_surfaces_recent_logs_result",
+      "test_review_message_surfaces_diagnostics_snapshot",
+      "test_review_message_surfaces_write_path_for_file_write",
+      "test_review_message_no_value_forward_for_thin_status",
+      "test_existing_review_behavior_preserved",
+      "test_content_first_file_write_leads_with_written_content",
+      "test_content_first_does_not_hallucinate_alternate_content",
+      "test_content_first_fallback_when_content_unavailable",
+      "test_content_first_file_read_leads_with_file_content",
+      "test_content_first_preserves_next_step_and_compact_state",
+      "test_content_first_condensed_omits_latest_summary",
+      "test_content_first_condensed_omits_latest_summary_even_when_different",
+      "test_condensed_evidence_compact_state_line_format",
+      "test_condensed_evidence_omits_class_when_unknown",
+      "test_condensed_evidence_preserves_failure_and_violation_details",
+      "test_condensed_evidence_preserves_artifact_observation",
+      "test_fallback_verbose_mode_unchanged_when_no_content",
+      "test_no_behavior_drift_in_linked_job_review_routing"
+    ]
+  },
+  {
+    "path": "tests/test_execution.py",
+    "loc": 288,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_parse_network_setting_accepts_bool_and_string_values",
+      "test_parse_network_setting_rejects_non_boolean_like_values",
+      "_sandbox_manifest",
+      "_patch_successful_run",
+      "test_sandbox_exec_command_list_is_accepted",
+      "test_sandbox_exec_command_string_is_converted_via_shlex_split",
+      "test_sandbox_exec_empty_or_whitespace_command_string_returns_error",
+      "test_sandbox_exec_invalid_command_type_returns_error",
+      "test_sandbox_exec_argv_alias_is_accepted",
+      "test_sandbox_exec_cmd_alias_is_accepted",
+      "test_sandbox_exec_empty_tokens_in_list_are_rejected",
+      "test_sandbox_exec_all_empty_tokens_returns_error",
+      "test_sandbox_exec_shell_control_string_returns_structured_block",
+      "test_sandbox_exec_whitespace_and_empty_tokens_fail_with_actionable_message",
+      "test_sandbox_exec_argv_alias_end_to_end",
+      "test_sandbox_exec_cmd_alias_end_to_end",
+      "test_sandbox_exec_success_emits_canonical_skill_result"
+    ]
+  },
+  {
+    "path": "tests/test_execution_capabilities.py",
+    "loc": 64,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_manifest",
+      "test_normalize_manifest_capabilities_read_only_defaults",
+      "test_normalize_manifest_capabilities_high_risk_broader_network_and_sandbox",
+      "test_normalize_manifest_capabilities_maps_read_only_scope_to_none"
+    ]
+  },
+  {
+    "path": "tests/test_execution_evaluator.py",
+    "loc": 37,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_evaluator_success_no_replan",
+      "test_evaluator_approval_pauses_no_replan",
+      "test_evaluator_policy_block_no_replan",
+      "test_evaluator_retryable_goal_allows_replan"
+    ]
+  },
+  {
+    "path": "tests/test_file_intent.py",
+    "loc": 999,
+    "docstring": "Tests for bounded file intent classification and Vera handoff integration.",
+    "top_level_classes": [
+      "TestConversationalAnswerFirstClassifier"
+    ],
+    "top_level_functions": [
+      "test_exists_check_if_file_exists",
+      "test_exists_with_explicit_path",
+      "test_exists_rejects_queue_path",
+      "test_exists_with_workspace_relative_shorthand",
+      "test_exists_rejects_queue_shorthand",
+      "test_exists_rejects_parent_traversal",
+      "test_stat_show_info",
+      "test_stat_with_explicit_path",
+      "test_stat_with_workspace_relative_shorthand",
+      "test_stat_with_workspace_relative_shorthand_no_subdir",
+      "test_read_file",
+      "test_read_bare_filename",
+      "test_read_explicit_path",
+      "test_read_rejects_queue_path",
+      "test_read_rejects_parent_traversal",
+      "test_mkdir_make_folder",
+      "test_mkdir_rejects_queue_path",
+      "test_delete_file",
+      "test_delete_rejects_queue_path",
+      "test_copy_file_to_directory",
+      "test_copy_file_to_file",
+      "test_move_file",
+      "test_move_file_to_directory",
+      "test_rename_file",
+      "test_find_files",
+      "test_grep_text",
+      "test_tree_listing",
+      "test_archive_note_into_folder",
+      "test_archive_with_explicit_paths",
+      "test_ambiguous_returns_none",
+      "test_rename_to_path_like_target_fails_closed",
+      "test_outside_notes_scope_returns_none",
+      "test_blocked_queue_exists_returns_refusal",
+      "test_blocked_queue_read_returns_refusal",
+      "test_blocked_queue_stat_returns_refusal",
+      "test_blocked_queue_explicit_path_returns_refusal",
+      "test_blocked_returns_none_for_safe_path",
+      "test_blocked_returns_none_for_no_intent",
+      "test_blocked_parent_traversal_returns_refusal",
+      "test_handoff_routes_exists_check",
+      "test_handoff_routes_stat",
+      "test_handoff_routes_mkdir",
+      "test_handoff_routes_move",
+      "test_handoff_routes_archive",
+      "test_handoff_routes_copy",
+      "test_handoff_routes_delete",
+      "test_handoff_routes_read",
+      "test_handoff_routes_stat_workspace_relative",
+      "test_handoff_rejects_queue_shorthand",
+      "test_normalize_preview_payload_accepts_file_organize",
+      "test_normalize_preview_payload_accepts_steps",
+      "test_normalize_preview_payload_rejects_empty_steps",
+      "test_normalize_preview_payload_rejects_invalid_file_organize",
+      "test_end_to_end_exists_to_normalized_preview",
+      "test_end_to_end_read_workspace_relative_to_normalized_preview",
+      "test_end_to_end_stat_workspace_relative_to_normalized_preview",
+      "test_end_to_end_copy_to_normalized_preview",
+      "test_call_the_note_renames_active_preview",
+      "test_save_it_as_renames_active_preview",
+      "test_use_path_explicit_renames_active_preview",
+      "test_change_the_path_to_renames_active_preview",
+      "test_rename_preserves_content_and_mode",
+      "test_unsafe_path_rename_rejected",
+      "test_rename_to_queue_path_rejected",
+      "test_rename_it_to_with_bare_filename",
+      "test_no_active_preview_rename_does_nothing",
+      "test_rename_with_no_write_file_dict_goal_only",
+      "test_goal_text_reflects_new_display_name",
+      "test_idempotent_rename_same_name",
+      "test_false_positive_call_the_plumber_does_not_rename",
+      "test_call_this_file_renames_preview",
+      "test_normalize_rejects_traversal_path",
+      "test_normalize_rejects_queue_path",
+      "test_normalize_rejects_outside_workspace_path",
+      "test_normalize_accepts_safe_path",
+      "test_unsafe_path_rename_preserves_prior_preview",
+      "test_concise_factual_answer_is_saveable",
+      "test_capital_answer_is_saveable",
+      "test_courtesy_answer_still_not_saveable",
+      "test_low_info_ok_still_not_saveable",
+      "test_longer_explanation_still_saveable",
+      "test_very_short_fragment_not_saveable",
+      "test_single_word_not_saveable",
+      "test_select_recent_saveable_artifact_skips_courtesy_turn_history",
+      "test_select_recent_saveable_artifact_prefers_explanation_when_requested",
+      "test_save_that_as_a_note_counts_as_referenced_content_request",
+      "test_save_previous_content_counts_as_referenced_content_request",
+      "test_save_that_to_named_file_preserves_previous_assistant_content",
+      "test_save_previous_content_to_named_file_preserves_previous_assistant_content",
+      "test_save_previous_content_repairs_empty_active_preview_content"
+    ]
+  },
+  {
+    "path": "tests/test_files_control_plane_boundaries.py",
+    "loc": 169,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_error_class",
+      "test_read_text_rejects_queue_control_plane_path",
+      "test_write_text_rejects_queue_control_plane_path",
+      "test_list_dir_rejects_queue_control_plane_path",
+      "test_copy_file_rejects_control_plane_source_and_destination",
+      "test_move_file_rejects_control_plane_source_and_destination",
+      "test_wave2_file_skills_reject_queue_control_plane_path",
+      "test_files_workspace_expansion_skills_reject_queue_control_plane_path"
+    ]
+  },
+  {
+    "path": "tests/test_files_copy_file.py",
+    "loc": 61,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_copy_file_succeeds",
+      "test_copy_file_rejects_existing_destination_without_overwrite",
+      "test_copy_file_rejects_outside_allowlist",
+      "test_copy_file_flags_control_plane_scope_as_blocked"
+    ]
+  },
+  {
+    "path": "tests/test_files_delete_file.py",
+    "loc": 18,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_delete_file_flags_control_plane_scope_as_blocked"
+    ]
+  },
+  {
+    "path": "tests/test_files_list_dir.py",
+    "loc": 42,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_list_dir_allowed_path_succeeds",
+      "test_list_dir_include_hidden_includes_dotfiles",
+      "test_list_dir_rejects_traversal"
+    ]
+  },
+  {
+    "path": "tests/test_files_move_file.py",
+    "loc": 62,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_move_file_succeeds",
+      "test_move_file_rejects_existing_destination_without_overwrite",
+      "test_move_file_rejects_outside_allowlist",
+      "test_move_file_flags_control_plane_scope_as_blocked"
+    ]
+  },
+  {
+    "path": "tests/test_files_read_text.py",
+    "loc": 42,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_read_text_allowed_path_succeeds",
+      "test_read_text_rejects_traversal",
+      "test_read_text_rejects_symlink_escape"
+    ]
+  },
+  {
+    "path": "tests/test_files_wave2_skills.py",
+    "loc": 76,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_files_mkdir_creates_directory",
+      "test_files_exists_reports_file_presence",
+      "test_files_stat_returns_basic_metadata",
+      "test_files_delete_file_deletes_regular_file",
+      "test_files_delete_file_rejects_directory_target"
+    ]
+  },
+  {
+    "path": "tests/test_files_workspace_expansion.py",
+    "loc": 103,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_files_find_happy_path",
+      "test_files_grep_text_happy_path",
+      "test_files_list_tree_happy_path",
+      "test_files_copy_move_and_rename_happy_path",
+      "test_files_copy_missing_source_reports_not_found",
+      "test_files_rename_rejects_invalid_new_name"
+    ]
+  },
+  {
+    "path": "tests/test_files_write_text.py",
+    "loc": 106,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_write_text_absolute_allowed_path_succeeds",
+      "test_write_text_relative_path_writes_under_allowed_root",
+      "test_write_text_rejects_invalid_mode",
+      "test_write_text_rejects_outside_allowlist_with_requested_path_in_error",
+      "test_write_text_rejects_relative_traversal",
+      "test_write_text_result_includes_content_in_machine_payload",
+      "test_write_text_result_truncates_large_content"
+    ]
+  },
+  {
+    "path": "tests/test_golden_surfaces.py",
+    "loc": 59,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_normalize_help_text_rewrites_root_and_trims_padding",
+      "test_normalize_json_payload_masks_paths_and_timestamps",
+      "test_check_golden_files_reports_drift"
+    ]
+  },
+  {
+    "path": "tests/test_health.py",
+    "loc": 231,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_health_normalization_adds_last_shutdown_defaults",
+      "test_health_normalization_preserves_valid_last_shutdown_fields",
+      "test_record_last_shutdown_clean_and_failed",
+      "test_record_last_shutdown_reason_is_bounded",
+      "test_record_last_shutdown_invalid_outcome_falls_back_to_failed",
+      "test_health_normalization_deterministic_defaults_for_observability_fields",
+      "test_reset_health_snapshot_scopes_preserve_counters",
+      "test_reset_health_snapshot_counter_group_is_selective",
+      "test_reset_current_and_recent_clears_all_fallback_history_fields",
+      "test_reset_recent_history_clears_all_fallback_history_fields"
+    ]
+  },
+  {
+    "path": "tests/test_health_snapshot_isolation.py",
+    "loc": 160,
+    "docstring": "Regression tests: pytest must not modify the repo's notes/queue/health.json.",
+    "top_level_classes": [
+      "TestHealthSnapshotIsolation"
+    ],
+    "top_level_functions": [
+      "_file_hash",
+      "_file_mtime"
+    ]
+  },
+  {
+    "path": "tests/test_inbox.py",
+    "loc": 117,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_force_policy_ask",
+      "_stub_planner",
+      "test_inbox_add_writes_goal_and_id",
+      "test_inbox_add_payload_supports_structured_fields",
+      "test_inbox_add_rejects_duplicate_id_without_overwriting",
+      "test_inbox_add_cli_reports_duplicate_id_error",
+      "test_generate_inbox_id_is_stable_for_goal_and_timestamp",
+      "test_inbox_list_handles_missing_dirs_with_hints",
+      "test_inbox_add_job_is_processed_by_queue_daemon"
+    ]
+  },
+  {
+    "path": "tests/test_linked_job_review_continuation.py",
+    "loc": 1039,
+    "docstring": "Regression tests for linked-job review and evidence-grounded continuation.",
+    "top_level_classes": [
+      "TestOutputClassReviewPhrases",
+      "TestBareNextStepFollowupPhrases",
+      "TestReviseFromEvidenceOutputPhrases",
+      "TestOutputReferenceClassification",
+      "TestSessionContextJobResolution",
+      "TestMultiTurnReviewFollowupContinuity",
+      "TestFreshSessionFailClosed",
+      "TestPreviewWordingTruthfulness",
+      "TestEvidenceGroundingInvariant",
+      "TestAdjacentRegressionAnchors",
+      "TestKnownOverbroadBoundaries",
+      "TestFollowupContinuityReplyShape",
+      "TestSaveableFollowupContentShape"
+    ],
+    "top_level_functions": [
+      "_dispatch",
+      "_mock_succeeded_evidence"
+    ]
+  },
+  {
+    "path": "tests/test_mission_planner.py",
+    "loc": 1662,
+    "docstring": null,
+    "top_level_classes": [
+      "_CapturingBrain",
+      "_FakeBrain",
+      "_SlowBrain",
+      "_CaptureBrain"
+    ],
+    "top_level_functions": [
+      "test_parse_planner_json_accepts_raw_json",
+      "test_parse_planner_json_rejects_fenced_json_block",
+      "test_parse_planner_json_rejects_commentary_around_json",
+      "test_parse_planner_json_rejects_non_object_json",
+      "test_sanitize_goal_for_prompt_strips_control_chars_and_ansi_and_normalizes_whitespace",
+      "test_sanitize_goal_for_prompt_preserves_benign_bracketed_text",
+      "test_sanitize_goal_for_prompt_strips_real_ansi_only",
+      "test_sanitize_goal_for_prompt_strips_osc_sequences",
+      "test_plan_mission_rejects_overlength_goal_before_brain_call",
+      "test_build_planner_user_prompt_wraps_and_sanitizes_user_goal_data",
+      "test_plan_payload_includes_preamble_before_capabilities",
+      "test_plan_mission_from_cloud_json",
+      "test_plan_mission_rejects_unknown_skill",
+      "test_plan_mission_normalizes_single_arg_alias",
+      "test_plan_mission_checkin_note_goal_uses_deterministic_notes_write",
+      "test_plan_mission_rewrites_non_explicit_outside_allowlist_file_read",
+      "test_plan_mission_normalizes_outside_allowlist_file_write_path",
+      "test_plan_mission_primary_malformed_output_fallback_success",
+      "test_plan_mission_primary_timeout_fast_success",
+      "test_plan_mission_all_providers_fail_deterministic_error",
+      "test_plan_mission_primary_provider_error_then_fallback_selected",
+      "test_plan_mission_all_providers_fail_emits_plan_failed_event",
+      "test_plan_mission_classifies_malformed_provider_output",
+      "test_plan_mission_rejects_payload_with_unknown_top_level_keys",
+      "test_plan_mission_emits_correlated_plan_telemetry",
+      "test_plan_mission_emits_single_selected_per_attempt",
+      "test_plan_mission_keeps_write_text_body_alias",
+      "test_plan_mission_rewrites_non_explicit_files_write_to_clipboard",
+      "test_plan_mission_keeps_files_write_text_for_explicit_write_goal",
+      "test_plan_mission_rewrites_non_explicit_sandbox_gui_or_network_exec_to_clipboard",
+      "test_plan_mission_normalizes_sandbox_exec_string_command_to_argv",
+      "test_plan_mission_rejects_empty_sandbox_exec_string_command",
+      "test_plan_mission_rejects_whitespace_tokens_in_sandbox_exec_command_list",
+      "test_plan_mission_sandbox_exec_argv_alias_is_accepted",
+      "test_plan_mission_sandbox_exec_all_whitespace_list_raises_actionable_error",
+      "test_plan_mission_keeps_explicit_shell_intent_for_sandbox_exec",
+      "test_plan_mission_simple_write_fast_path_overwrite_default",
+      "test_plan_mission_simple_write_fast_path_append",
+      "test_plan_mission_simple_write_fast_path_handles_whitespace_newlines",
+      "test_plan_mission_simple_write_fast_path_never_adds_clipboard_steps",
+      "test_plan_mission_named_note_write_preserves_explicit_filename",
+      "test_plan_mission_named_file_write_preserves_explicit_filename",
+      "test_plan_mission_defaults_relative_ok_txt_for_allowed_notes_goal_without_path",
+      "test_plan_mission_rewrites_placeholder_notes_path_to_relative",
+      "test_plan_mission_telemetry_contract_retry_then_success",
+      "test_plan_mission_telemetry_contract_all_provider_failure_sequence",
+      "test_goal_requests_file_write_for_allowed_notes_goal",
+      "test_plan_payload_includes_capabilities_missions_and_allowed_apps"
+    ]
+  },
+  {
+    "path": "tests/test_missions.py",
+    "loc": 237,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_list_missions_contains_daily_cards_and_system_check",
+      "test_simulate_work_mode_requires_approval_for_system_settings",
+      "test_run_system_check_mission_succeeds",
+      "test_mission_runner_appends_redacted_log",
+      "test_mission_runner_appends_unredacted_log_details",
+      "test_get_mission_loads_file_based_json_mission",
+      "test_get_mission_prefers_hardcoded_template_over_file",
+      "test_list_missions_stable_order_hardcoded_then_file",
+      "test_get_mission_rejects_invalid_file_with_path",
+      "test_mission_runner_propagates_structured_skill_result_fields",
+      "test_mission_runner_marks_path_scope_blocked_as_terminal_blocked"
+    ]
+  },
+  {
+    "path": "tests/test_models_config_strictness.py",
+    "loc": 75,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_app_config_valid_payload_still_loads",
+      "test_app_config_rejects_unknown_top_level_key",
+      "test_app_config_rejects_unknown_nested_contract_keys",
+      "test_load_app_config_surfaces_unknown_key_error_with_operator_hint",
+      "test_internal_plan_payload_models_remain_permissive"
+    ]
+  },
+  {
+    "path": "tests/test_mypy_ratchet.py",
+    "loc": 58,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_load_module",
+      "test_parse_errors_only_collects_mypy_error_lines",
+      "test_parse_errors_handles_empty_or_success_output",
+      "test_write_baseline_refuses_nonstandard_mypy_exit"
+    ]
+  },
+  {
+    "path": "tests/test_open_app.py",
+    "loc": 21,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_open_app_launches_allowlisted_argv",
+      "test_open_app_rejects_unsafe_identifier"
+    ]
+  },
+  {
+    "path": "tests/test_openai_compat_headers.py",
+    "loc": 89,
+    "docstring": null,
+    "top_level_classes": [
+      "_FakeResponse",
+      "_CaptureClient"
+    ],
+    "top_level_functions": [
+      "_run_generate",
+      "test_openrouter_default_attribution_headers_applied",
+      "test_openrouter_user_override_headers_respected",
+      "test_non_openrouter_no_attribution_headers"
+    ]
+  },
+  {
+    "path": "tests/test_openrouter_catalog.py",
+    "loc": 71,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_load_curated_catalog_shape_and_recommendations",
+      "test_grouped_catalog_by_vendor_contains_major_groups",
+      "test_refresh_curated_catalog_from_live_normalizes_and_preserves_recommended"
+    ]
+  },
+  {
+    "path": "tests/test_operator_assistant_queue.py",
+    "loc": 269,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_write_assistant_job",
+      "_stub_answer",
+      "test_assistant_job_runs_through_queue_read_only",
+      "test_assistant_job_failure_persists_failed_state",
+      "test_assistant_result_reader_surfaces_answer_and_metadata",
+      "test_assistant_brain_candidates_prefers_fast_for_assistant_default",
+      "test_assistant_advisory_primary_success_metadata",
+      "test_assistant_advisory_primary_fail_fallback_success",
+      "test_assistant_advisory_total_failure_moves_to_failed",
+      "test_fallback_partner_voice_uses_varied_opening",
+      "test_assistant_thread_persists_multiturn_history",
+      "test_build_assistant_messages_includes_bounded_history"
+    ]
+  },
+  {
+    "path": "tests/test_operator_contract_guardrails.py",
+    "loc": 158,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_queue_health_json_contract_required_top_level_fields",
+      "test_assistant_response_artifact_contract_has_required_keys",
+      "test_ops_bundle_system_manifest_contract_fields",
+      "test_config_snapshot_contract_shape_required_fields"
+    ]
+  },
+  {
+    "path": "tests/test_ops_bundle.py",
+    "loc": 163,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_ops_bundle_system_contains_manifest_and_health",
+      "test_ops_bundle_job_includes_artifacts_and_truncates_large_streams",
+      "test_ops_bundle_job_writes_structured_execution_summary_note",
+      "test_ops_bundle_job_missing_primary_has_note",
+      "test_ops_bundle_respects_explicit_archive_dir",
+      "test_ops_bundle_uses_env_archive_dir_when_dir_not_passed",
+      "test_ops_bundle_default_archive_under_queue_archive",
+      "test_ops_bundle_job_uses_single_optional_note_for_absent_context_artifacts",
+      "test_ops_bundle_job_emits_anomaly_note_when_failed_sidecar_expected_but_missing"
+    ]
+  },
+  {
+    "path": "tests/test_ops_bundle_includes_config_snapshot.py",
+    "loc": 53,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_write_runtime_config",
+      "test_system_and_job_bundle_include_config_snapshot"
+    ]
+  },
+  {
+    "path": "tests/test_panel.py",
+    "loc": 3009,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_operator_headers",
+      "_authed_csrf_request",
+      "test_panel_home_renders_queue_and_mission_log",
+      "test_panel_home_shows_not_found_hints",
+      "test_home_renders_daemon_health_widget_with_empty_health",
+      "test_home_renders_daemon_health_widget_with_fields",
+      "test_home_renders_performance_stats_tab",
+      "test_home_performance_history_missing_shows_dash",
+      "test_panel_can_click_approve_pending_queue_job",
+      "test_panel_queue_create_goal_and_mission",
+      "test_panel_create_mission_template",
+      "test_panel_active_work_from_audit",
+      "test_panel_get_mutations_disabled_by_default",
+      "test_panel_get_mutations_compat_mode",
+      "test_panel_queue_create_validation_errors",
+      "test_panel_create_mission_validation_errors",
+      "test_panel_rejects_invalid_mission_id_values",
+      "test_panel_mission_id_validation_boundaries_and_message",
+      "test_panel_app_uses_shared_version_source",
+      "test_panel_job_detail_smoke",
+      "test_job_detail_renders_execution_state_fields",
+      "test_job_detail_artifact_inventory_missing_expected_is_soft_anomaly",
+      "test_job_detail_artifact_inventory_optional_missing_does_not_error",
+      "test_job_detail_operator_summary_distinguishes_approval_blocked_and_retryable_failure",
+      "test_job_detail_policy_rationale_handles_succeeded_and_denied",
+      "test_job_detail_renders_assistant_job_context",
+      "test_job_detail_prefers_structured_execution_artifacts",
+      "test_job_progress_success_omits_stale_failure_fields_and_events",
+      "test_assistant_progress_normalizes_empty_structured_fields",
+      "test_job_progress_preserves_intent_route_from_envelope_after_completion",
+      "test_job_progress_endpoint_surfaces_live_execution_fields",
+      "test_job_progress_endpoint_surfaces_terminal_failed_state",
+      "test_job_progress_endpoint_denied_approval_is_terminal_failed",
+      "test_assistant_progress_endpoint_surfaces_running_and_done",
+      "test_job_detail_renders_lineage_block_when_present",
+      "test_job_progress_endpoint_includes_lineage_metadata",
+      "test_job_detail_and_progress_include_child_refs",
+      "test_job_progress_without_child_refs_is_unchanged",
+      "test_job_bundle_export_contains_manifest_and_truncates",
+      "test_bundle_endpoints_require_auth",
+      "test_system_bundle_contains_manifest",
+      "test_panel_shows_setup_required_banner_when_operator_password_missing",
+      "test_panel_hides_setup_required_banner_when_operator_password_set",
+      "test_cancel_redirect_location_is_relative_for_proxy_safety",
+      "test_cancel_redirect_sanitizes_invalid_n_and_jobs_page_renders",
+      "test_cancel_moves_to_canceled_and_hidden_from_active_buckets",
+      "test_retry_from_failed_and_canceled_requeues_to_inbox",
+      "test_delete_only_terminal_jobs_and_confirm_match",
+      "test_jobs_page_flash_rendered_from_redirect_param",
+      "test_cancel_failed_job_redirects_with_flash_instead_of_500",
+      "test_cancel_missing_job_redirects_with_flash_instead_of_500",
+      "test_jobs_failed_bucket_does_not_render_cancel_button",
+      "test_panel_approve_accepts_pending_json_variant_ref",
+      "test_panel_approval_missing_ref_redirects_with_flash_instead_of_500",
+      "test_panel_auth_lockout_after_10_failures",
+      "test_panel_auth_lockout_blocks_subsequent_requests",
+      "test_panel_auth_lockout_resets_after_window",
+      "test_health_snapshot_contains_panel_auth_state",
+      "test_hygiene_page_renders_with_no_results",
+      "test_hygiene_prune_dry_run_endpoint_writes_health",
+      "test_hygiene_reconcile_endpoint_writes_health",
+      "test_hygiene_endpoints_require_auth",
+      "test_hygiene_prune_dry_run_failure_includes_debug_fields_and_writes_health",
+      "test_hygiene_reconcile_failure_includes_debug_fields_and_writes_health",
+      "test_hygiene_prune_rc0_empty_stdout_is_classified",
+      "test_hygiene_reconcile_rc0_invalid_json_is_classified",
+      "test_recovery_page_renders_empty_state",
+      "test_recovery_page_lists_sessions_and_sizes",
+      "test_download_zip_for_directory",
+      "test_download_rejects_path_traversal",
+      "test_panel_security_snapshot_reads_same_default_root_as_counter_writes",
+      "test_panel_security_snapshot_reads_same_isolated_root_as_counter_writes",
+      "test_panel_auth_failure_writes_to_isolated_health_path_when_config_uses_real_queue",
+      "test_hygiene_page_requires_admin_auth",
+      "test_panel_hygiene_health_reset_updates_snapshot_and_audits",
+      "test_panel_hygiene_health_reset_uses_isolated_health_path",
+      "test_hygiene_page_uses_url_for_action_paths",
+      "test_operator_assistant_page_requires_auth",
+      "test_operator_assistant_submit_renders_grounded_response",
+      "test_operator_assistant_submit_creates_queue_job",
+      "test_operator_assistant_question_required",
+      "test_operator_assistant_is_read_only_no_queue_mutation",
+      "test_operator_assistant_page_shows_fallback_metadata",
+      "test_operator_assistant_degraded_mode_when_queue_unavailable",
+      "test_degraded_assistant_prefers_fast_tier_for_assistant_default",
+      "test_degraded_assistant_prefers_model_backed_primary",
+      "test_degraded_assistant_uses_fallback_model_when_primary_fails",
+      "test_degraded_assistant_uses_deterministic_only_after_model_failures",
+      "test_operator_assistant_page_degrades_when_daemon_paused",
+      "test_operator_assistant_page_degrades_when_transport_stalled",
+      "test_operator_assistant_page_does_not_degrade_when_request_is_progressing",
+      "test_operator_assistant_page_shows_completed_queue_answer",
+      "test_operator_assistant_followup_uses_same_thread",
+      "test_operator_outcome_summary_semantics_precedence_characterization"
+    ]
+  },
+  {
+    "path": "tests/test_panel_contract_snapshot.py",
+    "loc": 58,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_panel_public_route_surface_snapshot"
+    ]
+  },
+  {
+    "path": "tests/test_planner_context.py",
+    "loc": 67,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_get_planner_agent_name_default_and_override",
+      "test_get_planner_preamble_default_uses_real_newlines",
+      "test_get_planner_preamble_uses_explicit_override",
+      "test_get_planner_preamble_uses_file_override",
+      "test_get_planner_preamble_override_precedence",
+      "test_get_planner_preamble_missing_file_falls_back_to_default"
+    ]
+  },
+  {
+    "path": "tests/test_policy.py",
+    "loc": 44,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_policy_ask_on_unknown_cap",
+      "test_policy_deny",
+      "test_policy_sandbox_network_request_requires_approval"
+    ]
+  },
+  {
+    "path": "tests/test_prompts.py",
+    "loc": 76,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_load_prompt_doc_reads_expected_markdown",
+      "test_compose_prompt_docs_uses_deterministic_order",
+      "test_load_prompt_doc_missing_path_fails_clearly",
+      "test_load_prompt_doc_path_escape_rejected",
+      "test_compose_hidden_compiler_prompt_includes_rich_capabilities",
+      "test_compose_hidden_compiler_prompt_order_is_deterministic",
+      "test_vera_prompts_are_doc_composed",
+      "test_planner_preamble_includes_prompt_docs",
+      "test_all_prompt_docs_exist_for_declared_roles"
+    ]
+  },
+  {
+    "path": "tests/test_queue_artifact_minimum_regression.py",
+    "loc": 67,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_action_event_refreshes_execution_result_minimum_artifacts_from_disk"
+    ]
+  },
+  {
+    "path": "tests/test_queue_constitution_contracts.py",
+    "loc": 217,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_detect_request_kind_normalizes_unknown_tokens_fail_closed",
+      "test_update_job_state_snapshot_normalizes_invalid_lifecycle_to_blocked",
+      "test_update_job_state_snapshot_derives_denied_terminal_outcome",
+      "test_update_job_state_snapshot_propagates_blocked_boundary_metadata",
+      "test_minimum_artifact_presence_reports_missing_contract_artifacts",
+      "test_build_execution_result_includes_minimum_artifacts_in_review_and_evidence",
+      "test_build_execution_result_propagates_blocked_boundary_metadata",
+      "test_refresh_execution_result_artifact_contract_uses_final_directory_listing",
+      "test_build_structured_step_results_marks_path_blocked_scope_as_blocked",
+      "test_resolve_structured_execution_normalizes_awaiting_approval_terminal_to_blocked"
+    ]
+  },
+  {
+    "path": "tests/test_queue_daemon.py",
+    "loc": 2693,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_assert_job_moved",
+      "_fake_generate_for_sandbox_argv",
+      "_force_policy_ask",
+      "_stub_planner",
+      "test_queue_daemon_processes_plan_goal_alias_to_done",
+      "test_queue_daemon_processes_goal_to_done",
+      "test_queue_daemon_planning_backoff_no_sleep_below_threshold",
+      "test_queue_daemon_planning_backoff_sleeps_once_and_updates_health",
+      "test_queue_daemon_backoff_sleep_occurs_once_per_plan_attempt",
+      "test_approval_required_hard_gate_blocks_before_execution",
+      "test_approval_required_false_runs_without_hard_gate",
+      "test_approval_required_hard_gate_is_idempotent_across_ticks",
+      "test_queue_daemon_rejects_invalid_schema_with_clear_error",
+      "test_queue_daemon_accepts_inline_steps_with_legacy_skill_key",
+      "test_queue_daemon_inline_steps_missing_skill_fails_loudly",
+      "test_queue_daemon_accepts_mission_alias",
+      "test_queue_daemon_ask_goes_to_pending_and_can_approve_or_deny",
+      "test_queue_daemon_dev_auto_approve_constraints",
+      "test_queue_goal_job_rewrites_default_write_steps_and_completes",
+      "test_queue_daemon_watchdog_mode_processes_existing_backlog",
+      "test_status_snapshot_counts_and_pending_parsing",
+      "test_status_snapshot_prefers_valid_failed_sidecar_and_excludes_sidecar_from_failed_count",
+      "test_status_snapshot_recent_failed_prefers_structured_execution_error",
+      "test_status_snapshot_failed_sidecar_health_counters",
+      "test_status_snapshot_invalid_sidecar_keeps_recent_failed_renderable",
+      "test_status_snapshot_invalid_sidecar_logs_once_per_snapshot",
+      "test_status_snapshot_includes_retention_and_last_prune_event",
+      "test_status_snapshot_fresh_install_without_queue_dirs",
+      "test_status_snapshot_excludes_state_sidecars_from_counts",
+      "test_process_pending_once_ignores_stray_state_sidecar",
+      "test_processing_job_creates_single_state_sidecar_without_recursive_growth",
+      "test_pending_approval_notification_success_and_failure_events",
+      "test_queue_status_and_approvals_list_include_artifacts_and_parse_failures",
+      "test_resolve_approval_accepts_job_and_approval_filename_variants",
+      "test_queue_daemon_retries_partial_json_and_stabilizes",
+      "test_queue_daemon_ignores_non_job_artifacts_in_inbox",
+      "test_queue_daemon_persistent_invalid_json_fails_after_retries",
+      "test_failed_sidecar_schema_for_parse_failure",
+      "test_failed_sidecar_schema_for_runtime_failure_with_payload",
+      "test_failed_sidecar_schema_for_approval_denied",
+      "test_failed_sidecar_schema_for_approval_resume_runtime_failure",
+      "test_failed_sidecar_schema_version_policy_rejects_unknown_future_version",
+      "test_queue_failure_lifecycle_smoke_sidecar_snapshot_then_prune",
+      "test_prune_failed_artifacts_with_pairs_and_orphans",
+      "test_process_job_file_missing_source_during_failed_move_is_non_fatal",
+      "test_resolve_approval_missing_source_during_done_move_is_non_fatal",
+      "test_move_job_collision_uses_timestamp_suffix_and_sidecar_matches_target_name",
+      "test_queue_job_named_note_write_preserves_filename_end_to_end",
+      "test_queue_job_write_notes_defaults_to_relative_ok_txt_end_to_end",
+      "test_queue_job_structured_write_file_writes_explicit_target_and_content",
+      "test_queue_job_sandbox_argv_goal_reaches_done",
+      "test_pending_approval_payload_includes_target_scope_and_policy_reason",
+      "test_approval_target_for_rename_includes_source_and_new_name",
+      "test_approval_always_grant_allows_matching_scope_only",
+      "test_job_artifacts_written_for_done_and_pending",
+      "test_pending_approvals_snapshot_scope_fallback_to_nested",
+      "test_resolve_approval_terminal_paths_trigger_live_delivery_attempt",
+      "test_queue_autorelocates_legacy_root_job",
+      "test_queue_autorelocates_misplaced_pending_job",
+      "test_cancel_retry_pause_flow",
+      "test_cancel_pending_approval_cleans_markers",
+      "test_retry_supports_failed_and_canceled",
+      "test_delete_terminal_job_guards_and_cleanup",
+      "test_run_acquires_and_releases_lock_in_once_mode",
+      "test_run_refuses_when_active_lock_exists",
+      "test_run_refuses_when_os_lock_is_held_by_other_process",
+      "test_shutdown_during_poll_does_not_wait_full_interval",
+      "test_run_watch_mode_exits_promptly_after_shutdown_request",
+      "test_idle_shutdown_records_clean_and_releases_lock",
+      "test_shutdown_request_stops_intake",
+      "test_shutdown_during_inflight_job_marks_failed_deterministically",
+      "test_current_job_ref_cleared_after_job_completion",
+      "test_clean_shutdown_does_not_reuse_stale_last_shutdown_job",
+      "test_startup_recovery_fails_inflight_pending_job",
+      "test_startup_recovery_quarantines_orphan_approvals",
+      "test_startup_recovery_quarantines_orphan_state_files",
+      "test_run_reclaims_stale_lock",
+      "test_try_unlock_stale_refuses_live_lock",
+      "test_try_unlock_stale_removes_dead_or_stale_lock",
+      "test_force_unlock_logs_dangerous_event",
+      "test_queue_daemon_rejects_unknown_mission_id_with_suggestions",
+      "test_queue_daemon_rejects_invalid_open_app_with_suggestions",
+      "test_resolve_approval_normalizes_pending_json_ref_variant",
+      "test_hard_gate_removes_duplicate_pending_variant_if_present"
+    ]
+  },
+  {
+    "path": "tests/test_queue_daemon_config_drift.py",
+    "loc": 74,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_force_app_config",
+      "_runtime_config",
+      "test_daemon_config_drift_emits_once_when_changed"
+    ]
+  },
+  {
+    "path": "tests/test_queue_daemon_contract_snapshot.py",
+    "loc": 98,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_force_policy_ask",
+      "test_queue_daemon_startup_recovery_contract_snapshot",
+      "test_queue_daemon_approval_state_transition_contract_snapshot"
+    ]
+  },
+  {
+    "path": "tests/test_queue_execution_contracts.py",
+    "loc": 1286,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_force_policy_ask",
+      "_stub_plan",
+      "test_execution_envelope_normalizes_goal_job",
+      "test_execution_envelope_normalizes_inline_steps_job",
+      "test_lineage_metadata_carried_into_execution_artifacts",
+      "test_malformed_lineage_metadata_is_safely_sanitized",
+      "test_step_results_and_execution_result_written_for_failure",
+      "test_execution_result_includes_normalized_artifact_refs",
+      "test_execution_result_includes_expected_artifact_observation",
+      "test_assistant_queue_writes_structured_execution_artifacts",
+      "test_assistant_non_eligible_payload_falls_back_to_normal_queue_lane",
+      "test_assistant_approval_flag_disables_fast_lane",
+      "test_assistant_request_kind_in_job_intent_routes_to_assistant_lane",
+      "test_assistant_mutating_action_hint_is_not_fast_lane_eligible",
+      "test_assistant_malformed_payload_is_not_fast_lane_eligible",
+      "test_step_results_include_structured_skill_result_fields",
+      "test_runtime_capability_block_halts_subsequent_steps_and_writes_artifacts",
+      "test_retryable_failure_triggers_single_bounded_replan",
+      "test_retryable_failure_stops_when_max_replans_reached",
+      "test_approval_outcome_records_attempt_without_replan",
+      "test_policy_block_records_non_retryable_evaluation",
+      "test_goal_unknown_skill_planning_failure_replans_once_and_keeps_artifacts",
+      "test_inline_unknown_skill_fails_structured_without_daemon_crash",
+      "test_goal_plus_inline_unknown_skill_triggers_one_bounded_replan",
+      "test_enqueue_child_creates_single_child_with_lineage_and_evidence",
+      "test_enqueue_child_inherits_parent_root_and_depth",
+      "test_malformed_enqueue_child_fails_closed_without_child_job",
+      "test_enqueue_child_does_not_auto_execute_or_spawn_grandchildren",
+      "test_child_job_enters_normal_approval_flow_when_executed",
+      "test_structured_write_file_payload_preserves_path_and_content_end_to_end",
+      "test_structured_write_file_requires_object_shape",
+      "test_execution_envelope_normalizes_file_organize_job",
+      "test_file_organize_control_plane_path_fails_closed"
+    ]
+  },
+  {
+    "path": "tests/test_queue_job_intent.py",
+    "loc": 102,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_build_queue_job_intent_derives_fields_from_legacy_payload",
+      "test_build_queue_job_intent_preserves_existing_structured_hints",
+      "test_enrich_queue_job_payload_is_additive",
+      "test_build_queue_job_intent_sets_expected_artifact_defaults_for_goal_jobs",
+      "test_build_queue_job_intent_sets_expected_artifact_defaults_for_assistant_jobs",
+      "test_build_queue_job_intent_sets_expected_artifact_defaults_for_file_organize_jobs"
+    ]
+  },
+  {
+    "path": "tests/test_queue_result_consumers.py",
+    "loc": 433,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_resolve_structured_execution_prefers_execution_result",
+      "test_resolve_structured_execution_falls_back_to_legacy_inputs",
+      "test_resolve_structured_execution_surfaces_lineage_from_execution_result",
+      "test_resolve_structured_execution_sanitizes_malformed_lineage",
+      "test_resolve_structured_execution_child_summary_succeeded_child",
+      "test_resolve_structured_execution_child_summary_awaiting_approval",
+      "test_resolve_structured_execution_child_summary_mixed_and_missing",
+      "test_resolve_structured_execution_denied_approval_is_not_pending",
+      "test_resolve_structured_execution_classifies_capability_boundary_mismatch",
+      "test_resolve_structured_execution_classifies_runtime_dependency_missing",
+      "test_resolve_structured_execution_classifies_partial_artifact_gap",
+      "test_resolve_structured_execution_surfaces_blocked_path_scope_metadata",
+      "test_resolve_structured_execution_exposes_normalized_artifact_contract_fields",
+      "test_resolve_structured_execution_exposes_expected_artifact_observation_fields"
+    ]
+  },
+  {
+    "path": "tests/test_reference_resolver.py",
+    "loc": 336,
+    "docstring": "Tests for the bounded session-scoped reference resolution layer.",
+    "top_level_classes": [
+      "TestClassifyReference",
+      "TestResolveSessionReferenceHappy",
+      "TestResolveSessionReferenceFailClosed",
+      "TestResolveJobIdFromContext",
+      "TestTruthBoundaryInvariants"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/test_registry.py",
+    "loc": 140,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_discover_skills",
+      "test_discover_with_report_classifies_incomplete_manifest",
+      "test_discover_with_report_flags_malformed_capabilities",
+      "test_discover_malformed_manifest_raises",
+      "test_discover_with_report_mixed_valid_and_invalid_is_stable",
+      "test_discover_with_report_flags_network_semantics_mismatch"
+    ]
+  },
+  {
+    "path": "tests/test_response_shaping.py",
+    "loc": 718,
+    "docstring": "Characterization tests for the response shaping extraction.",
+    "top_level_classes": [
+      "TestDerivePreviewHasContent",
+      "TestGuardrailFalsePreviewClaim",
+      "TestShouldClearStalePreview",
+      "TestAssembleAssistantReply",
+      "TestPreviewStateWordingClarity",
+      "TestNoDuplicatePreviewNarration"
+    ],
+    "top_level_functions": [
+      "_base_assemble_kwargs"
+    ]
+  },
+  {
+    "path": "tests/test_result_surfacing.py",
+    "loc": 1011,
+    "docstring": "Tests for evidence-grounded result surfacing layer.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_structured_with_step",
+      "test_file_read_surfaces_path_and_size_without_content",
+      "test_file_read_surfaces_content_excerpt_when_latest_summary_has_content",
+      "test_file_read_truncates_large_content",
+      "test_file_read_classifies_as_text_content",
+      "test_file_exists_surfaces_exists",
+      "test_file_exists_surfaces_missing",
+      "test_file_exists_classifies_correctly",
+      "test_file_stat_surfaces_key_metadata",
+      "test_list_dir_surfaces_entries",
+      "test_service_status_surfaces_actual_state",
+      "test_service_status_classifies_correctly",
+      "test_recent_logs_surfaces_bounded_excerpt",
+      "test_recent_logs_no_entries_clear_statement",
+      "test_recent_logs_truncation_flag_shown",
+      "test_recent_logs_classifies_correctly",
+      "test_diagnostics_snapshot_surfaces_compact_values",
+      "test_diagnostics_classifies_correctly",
+      "test_diagnostics_not_triggered_without_mission_id",
+      "test_process_list_surfaces_top_processes",
+      "test_fallback_returns_none_when_no_useful_value",
+      "test_file_write_surfaces_path_only_when_no_content",
+      "test_fallback_returns_none_for_empty_structured",
+      "test_fallback_returns_none_for_no_step_summaries",
+      "test_log_excerpt_bounded_to_max_lines",
+      "test_step_payload_returns_last_match_for_repeated_skill",
+      "test_file_read_no_content_excerpt_when_read_is_not_last_step",
+      "test_file_read_no_success_text_when_step_failed",
+      "test_process_list_uses_payload_count_over_len",
+      "test_list_dir_bounded_to_max_entries",
+      "test_file_read_surfaces_actual_content_from_payload",
+      "test_file_read_small_file_surfaces_full_content",
+      "test_file_read_large_content_shows_truncated_flag",
+      "test_file_read_empty_file_surfaces_correctly",
+      "test_service_status_surfaces_scope",
+      "test_service_status_surfaces_cross_scope_difference",
+      "test_service_status_no_scope_still_works",
+      "test_service_status_surfaces_scope_warning",
+      "test_recent_logs_surfaces_scope",
+      "test_recent_logs_surfaces_scope_warning",
+      "test_recent_logs_count_without_log_lines_shows_context",
+      "test_diagnostics_snapshot_still_works_with_partial_data",
+      "test_file_exists_still_works_for_directory",
+      "test_fallback_thin_status_for_unknown_skill",
+      "test_file_write_surfaces_actual_written_content",
+      "test_file_write_does_not_hallucinate_different_content",
+      "test_file_write_classifies_as_written_content",
+      "test_file_write_with_bytes_no_content_surfaces_metadata",
+      "test_file_write_empty_content_surfaces_correctly",
+      "test_file_write_truncates_large_content",
+      "test_file_write_failed_step_returns_none"
+    ]
+  },
+  {
+    "path": "tests/test_runner.py",
+    "loc": 191,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_manifest",
+      "test_simulate_allow_low_risk",
+      "test_simulate_approval_required_for_ask_policy",
+      "test_simulate_blocked_when_policy_denies",
+      "test_simulate_canonicalizes_open_app_args",
+      "test_simulate_canonicalizes_write_text_aliases",
+      "test_run_redacts_sensitive_args_in_audit_log",
+      "test_run_fail_closed_when_capability_metadata_missing",
+      "test_run_fail_closed_when_capability_metadata_malformed",
+      "test_run_fail_closed_when_capability_metadata_unknown",
+      "test_run_returns_pending_approval_with_capability_evidence",
+      "test_run_fail_closed_on_runtime_network_boundary_mismatch"
+    ]
+  },
+  {
+    "path": "tests/test_sandbox_exec_args.py",
+    "loc": 209,
+    "docstring": "Unit tests for canonicalize_argv \u2014 the single source of truth for",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_canonicalize_argv_simple_string",
+      "test_canonicalize_argv_string_with_single_quotes",
+      "test_canonicalize_argv_string_with_double_quotes",
+      "test_canonicalize_argv_string_bash_lc_form",
+      "test_canonicalize_argv_string_strips_surrounding_whitespace",
+      "test_canonicalize_argv_argv_alias_list",
+      "test_canonicalize_argv_cmd_alias_list",
+      "test_canonicalize_argv_argv_alias_string",
+      "test_canonicalize_argv_cmd_alias_string",
+      "test_canonicalize_argv_command_priority_over_argv",
+      "test_canonicalize_argv_argv_priority_over_cmd",
+      "test_canonicalize_argv_list_passthrough",
+      "test_canonicalize_argv_empty_string_raises",
+      "test_canonicalize_argv_whitespace_only_string_raises",
+      "test_canonicalize_argv_newline_tab_string_raises",
+      "test_canonicalize_argv_empty_list_raises",
+      "test_canonicalize_argv_all_empty_tokens_raises",
+      "test_canonicalize_argv_no_recognised_key_raises",
+      "test_canonicalize_argv_empty_dict_raises",
+      "test_canonicalize_argv_int_token_raises",
+      "test_canonicalize_argv_none_token_raises",
+      "test_canonicalize_argv_mixed_types_raises",
+      "test_canonicalize_argv_int_value_raises",
+      "test_canonicalize_argv_dict_value_raises",
+      "test_canonicalize_argv_none_value_raises",
+      "test_canonicalize_argv_empty_tokens_rejected",
+      "test_canonicalize_argv_whitespace_tokens_rejected",
+      "test_canonicalize_argv_string_shell_control_rejected",
+      "test_canonicalize_argv_inner_whitespace_preserved",
+      "test_canonicalize_argv_error_message_is_actionable"
+    ]
+  },
+  {
+    "path": "tests/test_sandbox_exec_integration.py",
+    "loc": 53,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_sandbox_exec_runs_in_podman",
+      "test_sandbox_exec_network_blocked_default"
+    ]
+  },
+  {
+    "path": "tests/test_secrets.py",
+    "loc": 49,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_write_get_unset_secret_file_fallback",
+      "test_unset_secret_returns_false_when_missing"
+    ]
+  },
+  {
+    "path": "tests/test_security_redteam.py",
+    "loc": 447,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_force_policy_ask",
+      "test_redteam_classifier_hijack_and_meta_phrasing_stays_non_side_effecting",
+      "test_redteam_classifier_compound_smuggling_is_constrained_to_first_step",
+      "test_redteam_classifier_ambiguous_open_phrase_remains_unknown",
+      "test_redteam_planner_mismatch_fail_closed_matrix",
+      "test_redteam_planner_mismatch_rejection_is_terminal_failure",
+      "test_redteam_classifier_legit_notes_read_keeps_deterministic_extracted_target",
+      "test_redteam_legit_read_goal_preserves_extracted_target_in_fail_closed_artifacts",
+      "test_redteam_classifier_exact_traversal_cases_have_no_extracted_target",
+      "test_redteam_traversal_goal_metadata_has_no_deterministic_path_shortcut",
+      "test_redteam_path_traversal_and_escape_phrases_do_not_get_safe_shortcuts",
+      "test_redteam_open_url_requires_approval_and_stays_pending_before_approval",
+      "test_redteam_progress_surface_avoids_stale_failure_for_success",
+      "test_redteam_traversal_variants_omit_extracted_target_in_all_artifacts",
+      "test_redteam_injected_payload_simple_intent_is_sanitized_in_envelope",
+      "test_redteam_enqueue_child_lineage_override_and_nested_keys_are_rejected"
+    ]
+  },
+  {
+    "path": "tests/test_session_aware_authored_drafting.py",
+    "loc": 656,
+    "docstring": "Regression tests for session-aware authored drafting and planning continuity.",
+    "top_level_classes": [
+      "TestRefinedContentTransformations",
+      "TestSessionAwareAuthoredFollowupDetection",
+      "TestResolveAuthoredFollowupFromSessionContext",
+      "TestMaybeDraftJobPayloadSessionContext",
+      "TestContextualRefinementPatterns",
+      "TestDetectionResolutionHonesty",
+      "TestTrustBoundaryInvariants",
+      "TestPreviewIdentityPreservation",
+      "TestExtractNamedTargetTransformationSafety"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/test_session_routing_debug.py",
+    "loc": 853,
+    "docstring": "Tests for the session context and routing debug surfaces.",
+    "top_level_classes": [
+      "TestRoutingDebugPersistence",
+      "TestRoutingDebugNormalization",
+      "TestRoutingDebugPreservedAcrossTurns",
+      "TestSessionDebugSnapshot",
+      "TestDebugJsonEndpoint",
+      "TestChatFlowRoutingDebug",
+      "TestNoBehaviorDrift",
+      "TestBoundedOutputShape",
+      "TestLifecycleFreshness"
+    ],
+    "top_level_functions": [
+      "_make_session"
+    ]
+  },
+  {
+    "path": "tests/test_setup_wizard.py",
+    "loc": 296,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_provider",
+      "test_provider_key_choice_keep_returns_existing",
+      "test_provider_key_choice_skip_clears_existing",
+      "test_provider_key_choice_replace_uses_new_reference",
+      "test_provider_key_choice_set_when_missing",
+      "test_pick_openrouter_model_prefers_recommended",
+      "test_pick_openrouter_model_manual_path",
+      "test_configure_cloud_brains_runs_sequential_slots",
+      "test_launch_choice_opens_selected_panels",
+      "test_ensure_runtime_services_running_success",
+      "test_ensure_runtime_services_running_reports_failures",
+      "test_launch_choice_skips_unavailable_service",
+      "test_confirm_write_config_defaults_to_keep_existing",
+      "test_confirm_write_config_true_when_missing",
+      "test_run_setup_finish_path_ensures_services_before_launch",
+      "test_configure_web_investigation_disabled",
+      "test_configure_web_investigation_persists_secret_ref_and_max_results"
+    ]
+  },
+  {
+    "path": "tests/test_shared_session_context.py",
+    "loc": 458,
+    "docstring": "Tests for the shared session context model.",
+    "top_level_classes": [
+      "TestEmptyContextSchema",
+      "TestNormalization",
+      "TestPersistence",
+      "TestTurnPreservation",
+      "TestTruthPrecedence",
+      "TestConservativeBehavior",
+      "TestLifecycleUpdatePoints"
+    ],
+    "top_level_functions": [
+      "_make_session"
+    ]
+  },
+  {
+    "path": "tests/test_shared_session_context_integration.py",
+    "loc": 311,
+    "docstring": "Integration tests: shared session context updates through the Vera web layer.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_preview_creation_updates_context",
+      "test_session_clear_resets_context",
+      "test_context_preserved_across_normal_turns",
+      "test_context_empty_for_fresh_session",
+      "test_lifecycle_rename_then_handoff",
+      "test_lifecycle_handoff_completion_review",
+      "test_lifecycle_review_updates_context_for_later_resolution",
+      "test_fresh_session_fail_closed_resolution",
+      "test_session_clear_then_fail_closed",
+      "test_failed_followup_draft_reference_fails_closed",
+      "test_surfaced_runtime_output_not_saveable_as_draft",
+      "test_active_authored_preview_rename_save_as_works"
+    ]
+  },
+  {
+    "path": "tests/test_simple_intent.py",
+    "loc": 101,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_open_terminal_direct_deterministic",
+      "test_open_terminal_compound_preserves_remainder",
+      "test_open_terminal_meta_not_actionable",
+      "test_open_url_rules",
+      "test_open_app_rules",
+      "test_read_write_regression_preserved",
+      "test_first_step_mismatch_fail_closed_for_open_url_and_open_app",
+      "test_first_step_match_for_compound_open_terminal"
+    ]
+  },
+  {
+    "path": "tests/test_skill_metadata_and_runners.py",
+    "loc": 114,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_skill_manifest_defaults",
+      "test_registry_parses_exec_metadata",
+      "test_runner_selection_by_exec_mode",
+      "test_job_paths_creation",
+      "test_builtin_skill_metadata_has_foundational_governance_fields"
+    ]
+  },
+  {
+    "path": "tests/test_skill_result_payloads.py",
+    "loc": 95,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_open_url_invalid_scheme_returns_canonical_skill_result",
+      "test_terminal_run_once_missing_launcher_returns_canonical_skill_result",
+      "test_open_url_success_includes_machine_payload_launcher",
+      "test_files_read_text_missing_file_sets_retryable_not_found",
+      "test_files_write_text_invalid_mode_has_structured_contract",
+      "test_clipboard_copy_missing_dependency_returns_structured_error",
+      "test_clipboard_paste_missing_dependency_returns_structured_error",
+      "test_system_status_returns_structured_success_payload"
+    ]
+  },
+  {
+    "path": "tests/test_system_inspect.py",
+    "loc": 247,
+    "docstring": "Focused tests for the system_inspect read-only inspection workflow.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_mock_check_output_wmctrl",
+      "_run_inspect_mission",
+      "test_disk_usage_returns_structured_success",
+      "test_disk_usage_machine_payload_has_expected_fields",
+      "test_process_list_returns_structured_success",
+      "test_process_list_truncates_at_50",
+      "test_process_list_missing_ps_returns_structured_error",
+      "test_system_inspect_in_mission_list",
+      "test_system_inspect_mission_is_read_only",
+      "test_system_inspect_mission_has_four_steps",
+      "test_simulate_system_inspect_requires_no_approvals",
+      "test_run_system_inspect_mission_succeeds",
+      "test_system_inspect_produces_step_outcomes",
+      "test_system_inspect_results_contain_summaries_and_payloads",
+      "test_system_inspect_lifecycle_state_is_done",
+      "test_detect_request_kind_for_system_inspect",
+      "test_build_queue_job_intent_for_system_inspect",
+      "test_disk_usage_skill_manifest_is_read_only",
+      "test_process_list_skill_manifest_is_read_only"
+    ]
+  },
+  {
+    "path": "tests/test_update_script.py",
+    "loc": 8,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_update_script_uses_repo_root_as_project_dir"
+    ]
+  },
+  {
+    "path": "tests/test_vera_brave_search.py",
+    "loc": 466,
+    "docstring": null,
+    "top_level_classes": [
+      "_DummyResponse",
+      "_DummyAsyncClient"
+    ],
+    "top_level_functions": [
+      "test_brave_client_sends_subscription_header",
+      "test_brave_client_missing_key_fails_honestly",
+      "test_brave_response_parser_shapes_results",
+      "test_vera_informational_query_uses_brave_lane",
+      "test_vera_operational_open_request_skips_brave_lane",
+      "test_vera_web_lane_without_key_is_honest",
+      "test_open_meteo_weather_client_returns_structured_weather_snapshot",
+      "test_informational_query_classifier",
+      "test_conversational_explanation_prompt_stays_out_of_web_investigation",
+      "test_vera_finance_query_routes_to_brave",
+      "test_service_level_investigation_hooks_still_control_delegated_flow",
+      "test_normalize_web_query",
+      "test_web_investigation_answer_avoids_voxera_execution_language",
+      "test_informational_query_without_web_config_is_honest"
+    ]
+  },
+  {
+    "path": "tests/test_vera_chat_reliability.py",
+    "loc": 1240,
+    "docstring": "Characterization tests for Vera chat reliability improvements.",
+    "top_level_classes": [
+      "TestWritingDraftRecognitionExpanded",
+      "TestFollowupPhrasingExpanded",
+      "TestWrapperStrippingExpanded",
+      "TestNaturalDraftingSessionFlows",
+      "TestContentShapeSignalExpanded",
+      "TestPreviewTruthBinding",
+      "TestDraftingAndRefinementPreviewStateWording",
+      "TestRefinementContentExtraction",
+      "TestLinkedJobReviewPhraseRecognition",
+      "TestLinkedJobReviseFromEvidence",
+      "TestFollowupPreviewGoalText",
+      "TestPreviewTruthQueueTruthNote"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/test_vera_compiler_leakage.py",
+    "loc": 436,
+    "docstring": "Regression tests for internal compiler/JSON payload leakage prevention.",
+    "top_level_classes": [
+      "TestPlanningSignalExpansion",
+      "TestInternalCompilerPayloadDetection",
+      "TestGuardrailCompilerPayloadStripping",
+      "TestStripInternalCompilerLeakage",
+      "TestConversationalSanitizerCatchesPayloads",
+      "TestLiveReproAnchors",
+      "TestPreviewTruthAlignment"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/test_vera_contextual_flows.py",
+    "loc": 453,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_weather_missing_location_then_followup_hourly_stays_in_weather_lane",
+      "test_weather_current_answer_then_save_that_as_a_note_creates_preview",
+      "test_weather_hourly_answer_then_save_that_as_a_note_creates_preview",
+      "test_weather_weekend_answer_then_save_that_as_a_note_creates_preview",
+      "test_weather_followup_7_day_and_weekend_stay_in_weather_lane",
+      "test_service_level_weather_followup_hook_still_controls_delegated_flow",
+      "test_service_level_investigation_detector_hook_still_controls_weather_question",
+      "test_service_level_location_normalizer_hook_still_controls_inline_weather_location",
+      "test_service_level_pending_lookup_hook_still_controls_weather_confirmation_reply",
+      "test_invalid_weather_location_fails_closed_without_guessing",
+      "test_investigation_compare_summarize_expand_save_and_submit_preserve_lane_truth",
+      "test_explicit_weather_investigation_stays_in_brave_lane",
+      "test_regression_pack_code_save_submit_handoff_smoke",
+      "test_regression_pack_courtesy_turn_previous_explanation_save_submit_smoke",
+      "test_regression_pack_no_preview_submit_fails_truthfully_without_queue_handoff",
+      "test_filesystem_tree_blocked_scope_fails_closed_without_preview",
+      "test_filesystem_rename_preview_then_submit_creates_queue_job"
+    ]
+  },
+  {
+    "path": "tests/test_vera_draft_bug_fix.py",
+    "loc": 309,
+    "docstring": "Characterization tests for the Vera pre-handoff draft-creation bug.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_is_writing_draft_request_true_for_clear_drafts",
+      "test_is_writing_draft_request_false_for_non_drafts",
+      "_base_reply_kwargs",
+      "test_naming_mutation_override_skipped_for_writing_draft_turn",
+      "test_naming_mutation_override_still_fires_for_non_writing_draft_turn",
+      "_make_writing_reply_fn",
+      "_make_builder_fn",
+      "test_draft_short_markdown_note_creates_preview",
+      "test_create_draft_explanation_as_txt_creates_preview",
+      "test_write_short_markdown_file_does_not_produce_submission_language",
+      "test_draft_note_with_save_as_creates_content_not_just_path"
+    ]
+  },
+  {
+    "path": "tests/test_vera_draft_revision.py",
+    "loc": 119,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_interpret_active_preview_draft_revision_renames_note_preview",
+      "test_interpret_active_preview_draft_revision_updates_safe_explicit_path",
+      "test_interpret_active_preview_draft_revision_rejects_unsafe_path",
+      "test_interpret_active_preview_draft_revision_refines_content_in_place",
+      "test_content_refinement_with_called_phrase_does_not_rename_target",
+      "test_interpret_active_preview_draft_revision_can_use_recent_artifact_content"
+    ]
+  },
+  {
+    "path": "tests/test_vera_hidden_compiler.py",
+    "loc": 544,
+    "docstring": null,
+    "top_level_classes": [
+      "_FakeResponse"
+    ],
+    "top_level_functions": [
+      "_mock_config_with_brain",
+      "test_extract_hidden_compiler_decision_replace_preview",
+      "test_extract_hidden_compiler_decision_rejects_invalid_contract",
+      "test_generate_preview_builder_update_applies_patch_refinement",
+      "test_generate_preview_builder_update_no_change_preserves_preview",
+      "test_generate_preview_builder_update_invalid_model_output_falls_back_to_deterministic",
+      "test_generate_preview_builder_update_refinement_from_pronoun_patch",
+      "test_generate_preview_builder_update_no_change_uses_safe_deterministic_refinement",
+      "test_generate_preview_builder_update_no_change_uses_semantic_news_content_refinement",
+      "test_generate_preview_builder_update_append_instead_switches_mode",
+      "test_generate_preview_builder_update_no_change_put_that_into_file_is_fail_closed",
+      "test_generate_preview_builder_update_enrichment_context_resolves_that_into_content",
+      "test_generate_preview_builder_update_resolves_that_joke_to_recent_assistant_content",
+      "test_generate_preview_builder_update_resolves_that_summary_to_recent_assistant_content",
+      "test_generate_preview_builder_update_vague_that_reference_uses_single_recent_assistant_text",
+      "test_generate_preview_builder_update_vague_that_prefers_latest_assistant_content",
+      "test_generate_preview_builder_update_plural_reference_fails_closed",
+      "test_generate_preview_builder_update_ignores_queue_status_messages_for_that_content"
+    ]
+  },
+  {
+    "path": "tests/test_vera_investigation_derivations.py",
+    "loc": 55,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_compare_derivation_selects_requested_results_only",
+      "test_expand_derivation_preserves_result_metadata_in_markdown",
+      "test_derived_save_preview_uses_authoritative_derived_markdown"
+    ]
+  },
+  {
+    "path": "tests/test_vera_live_path_characterization.py",
+    "loc": 1080,
+    "docstring": "Live-path characterization tests for Vera evidence-grounded workflows.",
+    "top_level_classes": [
+      "TestNaturalDraftingPreviewTruth",
+      "TestPreviewWordingLivePaths",
+      "TestLinkedJobReviewLivePaths",
+      "TestFollowUpPreviewLivePaths",
+      "TestFailClosedNoResolvableJob",
+      "TestSessionLevelEvidenceReviewFollowUp",
+      "TestReviseFromEvidenceLivePaths",
+      "TestSaveFollowUpLivePaths"
+    ],
+    "top_level_functions": [
+      "_base_assemble_kwargs",
+      "_dispatch",
+      "_make_evidence"
+    ]
+  },
+  {
+    "path": "tests/test_vera_panel.py",
+    "loc": 10,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_panel_does_not_host_vera_routes"
+    ]
+  },
+  {
+    "path": "tests/test_vera_preview_materialization.py",
+    "loc": 1309,
+    "docstring": "Regression tests for clarification-to-preview materialization.",
+    "top_level_classes": [
+      "TestIsEmptyCodePreviewShell",
+      "TestCodeDraftRecoveryPattern",
+      "TestRecoverCodeDraftFromHistory",
+      "TestDetectAutomationClarificationCompletion",
+      "TestLooksLikeDirectAutomationRequest",
+      "TestLooksLikePreviewableAutomationIntent"
+    ],
+    "top_level_functions": [
+      "_make_code_reply_fn",
+      "_make_clarification_reply_fn",
+      "_make_builder_fn_from_message",
+      "test_post_clarification_creates_real_preview",
+      "test_post_clarification_go_ahead_submits",
+      "test_no_false_preview_claim_without_real_preview",
+      "test_honest_fail_closed_when_no_code_generated",
+      "test_recovery_prepare_that_script",
+      "test_workspace_rooted_script_path",
+      "_setup_empty_code_shell",
+      "test_informational_query_not_hijacked_by_empty_shell",
+      "test_writing_draft_not_hijacked_by_empty_shell",
+      "test_automation_clarification_completion_creates_preview",
+      "test_automation_clarification_go_ahead_submits",
+      "test_automation_clarification_does_not_hijack_unrelated_followup",
+      "test_automation_underspecified_answer_fails_closed",
+      "test_direct_automation_request_creates_preview",
+      "test_direct_automation_request_go_ahead_submits",
+      "test_direct_automation_does_not_hijack_weather",
+      "test_direct_automation_does_not_hijack_simple_file_op",
+      "test_direct_automation_does_not_hijack_writing_draft",
+      "test_first_turn_previewable_automation_does_not_blanket_refuse",
+      "test_first_turn_previewable_automation_with_full_detail_drafts_directly",
+      "test_first_turn_previewable_automation_does_not_hijack_weather",
+      "test_first_turn_previewable_automation_does_not_hijack_writing_request",
+      "test_first_turn_previewable_automation_does_not_hijack_simple_file_request",
+      "test_direct_automation_repeated_failure_does_not_occur"
+    ]
+  },
+  {
+    "path": "tests/test_vera_preview_submission.py",
+    "loc": 115,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_preview_submit_detection_preserves_save_as_boundary",
+      "test_submit_detection_fails_closed_on_mixed_rename_and_submit",
+      "test_submit_active_preview_without_preview_is_truthful",
+      "test_submit_active_preview_uses_authoritative_preview_and_clears_it",
+      "test_submit_active_preview_fails_closed_on_stale_provided_preview"
+    ]
+  },
+  {
+    "path": "tests/test_vera_runtime_validation_fixes.py",
+    "loc": 752,
+    "docstring": "Regression tests for the three runtime validation bugs:",
+    "top_level_classes": [
+      "TestSummaryPreviewBodyPurity",
+      "TestSubmitIntentStrictness",
+      "TestPostPreviewRenameMutation",
+      "TestPreservationOfPassingFlows",
+      "TestActiveDraftContentRefresh"
+    ],
+    "top_level_functions": []
+  },
+  {
+    "path": "tests/test_vera_session_characterization.py",
+    "loc": 2698,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_concise_answer_then_save_that_creates_preview",
+      "test_concise_answer_then_thanks_then_save_that_keeps_meaningful_answer",
+      "test_explanation_then_save_that_creates_preview",
+      "test_concise_answer_then_save_that_as_named_file_preserves_content",
+      "test_save_previous_content_repairs_empty_preview_content",
+      "test_active_preview_rename_path_revision_and_submit_remain_truthful",
+      "test_save_as_flow_ignores_prior_linked_completion_status_text",
+      "test_active_text_preview_content_updates_on_clear_generation_followup",
+      "test_ambiguous_active_preview_content_replacement_fails_closed",
+      "test_combined_generation_save_named_note_uses_actual_joke_not_control_ack",
+      "test_combined_generation_save_filters_wrapper_text_and_keeps_only_joke_content",
+      "test_followup_tell_another_joke_and_add_as_content_refreshes_preview_content",
+      "test_active_draft_refresh_with_wrapper_reply_replaces_body_with_pure_new_joke",
+      "test_active_draft_refresh_unquoted_wrapper_with_contractions_keeps_full_joke",
+      "test_single_turn_generate_save_poem_uses_same_turn_authored_body",
+      "test_single_turn_generate_save_poem_strips_if_happy_helper_tail",
+      "test_single_turn_generate_save_mauna_loa_summary_keeps_full_body_and_submit_truth",
+      "test_single_turn_generate_save_summary_ignores_preview_pane_meta_narration",
+      "test_single_turn_generate_save_joke_strips_explanatory_tail_and_submit_truthful",
+      "test_single_turn_generate_save_volcano_fact_does_not_require_prior_artifact",
+      "test_combined_generate_save_content_type_matrix_prefers_authored_body_not_control_text",
+      "test_checklist_request_returns_conversational_answer_not_preview_error",
+      "test_checklist_answer_then_save_that_creates_preview",
+      "test_planning_request_returns_conversational_answer",
+      "test_checklist_with_preview_claim_language_not_blocked",
+      "test_brainstorm_request_returns_conversational_answer",
+      "test_save_checklist_to_file_does_not_bypass_preview",
+      "test_checklist_request_with_active_preview_does_not_bypass",
+      "test_unsafe_path_revision_fails_closed_and_preserves_preview",
+      "test_checklist_answer_with_preview_pane_claim_is_sanitized",
+      "test_checklist_answer_without_preview_claim_passes_through",
+      "test_multi_turn_checklist_clarification_then_details_stays_answer_first",
+      "test_multi_turn_planning_then_save_that_creates_preview",
+      "_assert_conversational_checklist_contract",
+      "test_wedding_checklist_determinism_with_meta_only_or_json_outputs",
+      "test_grocery_checklist_determinism_repeated",
+      "test_two_turn_planning_determinism_blocks_preview_language_and_json",
+      "test_wedding_checklist_preserves_user_items_over_generic_fallback",
+      "test_grocery_checklist_preserves_requested_items_not_generic_boilerplate",
+      "test_two_turn_planning_preserves_second_turn_user_details",
+      "test_conversational_mode_strips_file_residue_markers",
+      "test_checklist_answer_then_send_without_save_is_truthful",
+      "test_planning_continuation_clears_when_save_intent_detected",
+      "test_checklist_answer_with_submission_claim_is_sanitized",
+      "test_checklist_answer_with_preview_update_claim_is_sanitized",
+      "test_checklist_answer_with_json_blob_is_sanitized",
+      "test_send_it_without_preview_after_checklist_is_truthful",
+      "test_checklist_output_is_plain_text_not_json",
+      "test_checklist_answer_with_take_a_look_at_preview_is_sanitized",
+      "test_checklist_answer_with_ill_submit_is_sanitized",
+      "test_multi_turn_planning_with_draft_language_is_sanitized",
+      "test_save_checklist_to_note_creates_preview",
+      "_assert_clean_conversational",
+      "test_deterministic_checklist_10_runs",
+      "test_grocery_list_conversational",
+      "test_wedding_checklist_grouped",
+      "test_explicit_save_intent_creates_preview",
+      "test_save_after_checklist_creates_preview",
+      "test_multi_turn_planning_stays_conversational",
+      "test_send_without_preview_is_truthful",
+      "test_hard_sanitizer_strips_novel_preview_phrasing",
+      "test_hard_sanitizer_preserves_list_items_with_draft_word",
+      "test_execution_mode_classification_is_deterministic",
+      "test_checklist_with_save_when_ready_language_stripped",
+      "test_checklist_with_does_this_look_right_stripped",
+      "test_checklist_with_take_a_look_stripped",
+      "test_checklist_with_meta_commentary_stripped",
+      "test_checklist_with_whenever_ready_and_shall_i_save_stripped",
+      "test_checklist_without_workflow_narration_passes_through",
+      "test_meta_commentary_only_renders_deterministic_checklist",
+      "test_two_turn_checklist_produces_actual_content",
+      "test_deterministic_one_turn_10_runs_no_workflow",
+      "test_checklist_with_unfenced_json_payload_stripped",
+      "test_checklist_with_bare_goal_json_stripped",
+      "test_checklist_with_multiline_unfenced_json_stripped",
+      "test_broader_meta_commentary_stripped",
+      "test_deterministic_final_render_10_runs",
+      "test_sanitizer_empty_fallback_does_not_restore_banned_content",
+      "test_sanitizer_empty_fallback_extracts_items_from_mixed_output",
+      "test_grocery_checklist_with_preview_language_deterministic",
+      "test_two_turn_planning_with_json_payload_stripped",
+      "test_wedding_checklist_repeated_5_runs_deterministic",
+      "test_enforcement_layer_catches_sanitizer_edge_case",
+      "test_enforcement_layer_handles_empty_text"
+    ]
+  },
+  {
+    "path": "tests/test_vera_web.py",
+    "loc": 7976,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "_set_queue_root",
+      "_write_job_artifacts",
+      "_sample_weather_snapshot",
+      "_brave_enabled_config",
+      "test_vera_web_page_renders_single_pane",
+      "test_vera_web_page_renders_when_voice_runtime_flags_fail_to_load",
+      "test_vera_web_template_handles_missing_voice_runtime_field",
+      "test_vera_web_chat_returns_assistant_response",
+      "test_vera_web_voice_transcript_fails_closed_when_disabled",
+      "test_vera_web_voice_transcript_origin_is_persisted_and_visible",
+      "test_vera_empty_state_guidance_renders_prompt_groups",
+      "test_vera_web_context_is_preserved_and_capped",
+      "test_vera_clear_chat_and_context",
+      "test_guidance_is_hidden_once_chat_has_turns",
+      "test_vera_prompt_boundary_text_present",
+      "test_vera_backend_unavailable_degrades_cleanly",
+      "test_vera_chat_does_not_enqueue_jobs",
+      "test_informational_web_query_does_not_auto_prepare_voxera_preview",
+      "test_finance_informational_query_does_not_auto_prepare_voxera_preview",
+      "test_news_query_skips_preview_builder_and_stays_informational",
+      "_sample_investigation_payload",
+      "test_structured_investigation_is_stored_and_numbered",
+      "test_save_single_investigation_result_creates_governed_preview",
+      "test_save_multiple_investigation_results_creates_expected_preview",
+      "test_save_all_investigation_results_to_markdown_file",
+      "test_invalid_investigation_reference_fails_closed_with_clear_message",
+      "test_save_investigation_without_active_result_set_fails_closed",
+      "test_compare_selected_investigation_results_stores_derived_output",
+      "test_summarize_selected_investigation_results_stores_derived_output",
+      "test_summarize_all_findings_uses_all_results",
+      "test_expand_result_stores_saveable_derived_output_and_save_it_works",
+      "test_expand_result_then_save_it_as_named_markdown_file_works",
+      "test_save_derived_summary_creates_governed_preview_only",
+      "test_investigation_transform_prompts_are_not_classified_as_derived_save_requests",
+      "test_compare_then_save_that_to_note_uses_derived_output_precedence",
+      "test_compare_then_save_that_without_note_target_uses_derived_output_precedence",
+      "test_summarize_then_save_that_to_markdown_uses_derived_output_precedence",
+      "test_summarize_then_save_that_without_note_target_uses_derived_output_precedence",
+      "test_derived_output_does_not_override_newer_conversational_answer_for_save_that",
+      "test_save_derived_output_without_existing_derivation_fails_closed",
+      "test_expand_result_save_it_then_create_it_submits_preview",
+      "test_invalid_reference_for_summary_fails_closed",
+      "test_mode_refinement_append_instead_updates_active_preview",
+      "test_put_that_into_file_after_informational_turn_does_not_claim_phantom_preview",
+      "test_informational_query_then_send_it_does_not_enqueue",
+      "test_missing_key_informational_query_is_honest_and_no_preview",
+      "test_explicit_internal_search_request_stays_no_preview",
+      "test_action_request_creates_preview_only_until_explicit_handoff",
+      "test_explicit_submit_phrase_without_preview_is_honest_non_submission",
+      "test_prepare_preview_sets_preview_available_true_for_natural_open_phrase",
+      "test_open_up_domain_phrase_prepares_preview_and_renders_authoritative_pane",
+      "test_yes_please_with_active_preview_submits_only_on_real_ack",
+      "test_file_write_question_uses_authoritative_preview_pane_not_visible_json",
+      "test_yes_please_submits_file_write_preview_when_present",
+      "test_note_write_and_file_read_requests_render_preview_pane_without_voxera_json",
+      "test_blocked_queue_path_returns_clean_refusal_no_preview",
+      "test_filesystem_find_request_creates_governed_preview",
+      "test_filesystem_copy_preview_then_submit_is_truthful_and_queue_backed",
+      "test_yes_please_without_preview_fails_closed_even_if_model_claims_submission",
+      "test_submit_now_uses_persisted_structured_preview_state",
+      "test_explicit_handoff_creates_real_queue_job_and_ack",
+      "test_submit_success_wording_requires_real_job_creation",
+      "test_handoff_failure_reports_honestly",
+      "test_contentful_natural_file_creation_phrase_produces_canonical_preview",
+      "test_content_refinement_phrase_add_content_updates_active_preview",
+      "test_content_refinement_phrase_script_text_updates_active_preview",
+      "test_targeted_code_preview_refinement_uses_code_draft_hint",
+      "test_targeted_code_preview_refinement_uses_generated_script_reply_as_preview_truth",
+      "test_targeted_code_preview_refinement_submit_uses_authoritative_preview_truth",
+      "test_latest_content_refinement_wins_for_handoff_payload",
+      "test_backend_builder_updates_active_preview_without_json_dumping_in_chat",
+      "test_submit_after_model_preview_replacement_uses_latest_payload",
+      "test_invalid_builder_payload_is_ignored",
+      "test_clear_resets_preview_and_new_preview_reinitializes_authoritative_state",
+      "test_structured_write_file_preview_submits_exact_payload",
+      "test_builder_drops_extra_keys_and_keeps_supported_preview_shape",
+      "test_builder_multiple_preview_replacements_latest_wins_in_pane",
+      "test_builder_can_set_preview_without_changing_vera_voice",
+      "test_chat_model_cannot_bypass_handoff_with_fake_submission_language",
+      "test_context_intact_across_preview_to_submit_flow",
+      "test_preview_survives_into_handoff_submit_action",
+      "test_dev_diagnostics_expose_safe_handoff_state",
+      "test_active_queue_root_uses_runtime_config",
+      "test_rolling_turn_cap_does_not_drop_pending_preview",
+      "test_structured_job_drafting_helper_examples_are_valid",
+      "test_web_navigation_phrases_prepare_preview",
+      "test_informational_domain_phrases_do_not_auto_prepare_preview",
+      "test_file_read_variants_prepare_preview",
+      "test_note_write_variants_prepare_preview",
+      "test_contentful_file_write_phrase_prepares_structured_preview",
+      "test_named_note_preview_and_submitted_payload_stay_consistent",
+      "test_filename_refinement_replaces_active_preview",
+      "test_name_the_note_updates_preview_path_with_explicit_confirmation",
+      "test_ambiguous_note_naming_fails_closed_with_specific_message",
+      "test_repeated_note_naming_keeps_latest_canonical_preview_path",
+      "test_content_refinement_replaces_active_preview",
+      "test_submit_clears_preview_only_after_confirmed_success",
+      "test_failed_submit_keeps_active_preview",
+      "test_preview_replacement_uses_latest_payload_for_submit",
+      "test_preview_persists_across_followup_turn_before_submit",
+      "test_preview_pane_submit_button_submits_active_preview",
+      "test_natural_preview_submit_phrase_uses_active_preview",
+      "test_natural_preview_submit_phrase_without_preview_fails_closed",
+      "test_preview_replacement_updates_authoritative_pane_payload",
+      "test_handoff_submit_clears_authoritative_preview_pane",
+      "test_review_latest_submitted_job_succeeded",
+      "test_review_latest_submitted_job_short_handoff_id_resolves_inbox_filename",
+      "test_review_explicit_short_handoff_job_id_works",
+      "test_review_explicit_full_queue_filename_works",
+      "test_review_specific_job_id_failed",
+      "test_review_awaiting_approval_job",
+      "test_review_missing_job_is_honest",
+      "test_review_missing_job_followups_stay_evidence_aware",
+      "test_followup_preview_drafted_from_evidence_not_submitted",
+      "test_voxera_refinement_hides_visible_json_dump_and_updates_preview",
+      "test_ordinary_voxera_turn_hides_prepared_proposal_wording_in_chat",
+      "test_chat_does_not_claim_preview_updated_when_builder_update_invalid",
+      "test_json_config_request_creates_preview_and_shows_fenced_code",
+      "test_append_file_intent_compiles_structured_append_preview",
+      "test_open_target_without_tld_is_naturally_inferred_as_web_intent",
+      "test_contextual_refinement_can_build_preview_from_recent_user_messages",
+      "test_natural_append_mode_refinement_updates_active_preview",
+      "test_natural_file_drafting_with_joke_infers_structured_preview",
+      "test_file_drafting_with_called_typo_still_builds_preview",
+      "test_minimal_file_drafting_defaults_to_empty_content",
+      "test_filename_refinement_call_it_updates_path",
+      "test_content_style_refinement_dad_joke_updates_content",
+      "test_note_for_later_creates_structured_note_preview",
+      "test_active_preview_natural_content_refinement_updates_write_file_content",
+      "test_active_preview_news_summary_refinement_updates_content",
+      "test_active_preview_put_that_into_file_is_fail_closed_without_grounded_content",
+      "test_save_previous_summary_creates_governed_write_preview",
+      "test_save_previous_answer_to_markdown_creates_preview",
+      "test_black_hole_explanation_then_save_previous_answer_creates_preview",
+      "test_black_hole_explanation_then_essay_followup_creates_authoritative_preview",
+      "test_roman_empire_rewrite_then_formalize_and_save_as_updates_preview",
+      "test_investigation_summary_then_article_followup_creates_preview",
+      "test_investigation_summary_then_article_save_as_named_file_keeps_article_body",
+      "test_extract_text_draft_from_reply_keeps_heading_but_strips_preface",
+      "test_extract_text_draft_from_reply_strips_explanation_preface_but_keeps_body",
+      "test_extract_text_draft_from_reply_keeps_legitimate_explanation_opening_paragraph",
+      "test_direct_essay_request_creates_preview",
+      "test_black_hole_essay_submit_saves_clean_body_only",
+      "test_direct_essay_submit_saves_clean_body_only",
+      "test_writing_draft_hides_internal_control_block_but_keeps_authoritative_preview",
+      "test_writing_draft_submit_after_control_block_strip_uses_clean_preview",
+      "test_code_draft_rendering_still_shows_fenced_code_with_control_sanitizer_present",
+      "test_entropy_explanation_then_save_that_to_note_creates_preview",
+      "test_weather_answer_then_save_that_to_note_creates_preview",
+      "test_weather_question_without_location_prompts_for_location",
+      "test_weather_location_reply_returns_concise_live_answer_not_result_dump",
+      "test_weather_lookup_failure_refuses_to_guess_live_conditions",
+      "test_weather_lookup_still_works_without_brave_web_investigation_config",
+      "test_weather_followup_hourly_routes_naturally",
+      "test_explicit_weather_investigation_still_uses_generic_result_list_flow",
+      "test_pending_weather_offer_acceptance_executes_lookup",
+      "test_concise_information_answer_then_save_it_creates_note_preview",
+      "test_previous_explanation_survives_trivial_thanks_turn_for_save_reference",
+      "test_previous_explanation_without_courtesy_turn_uses_latest_explanation",
+      "test_code_explanation_then_save_explanation_creates_text_preview",
+      "test_ordinary_compare_prompt_stays_conversational_not_investigation",
+      "test_two_recent_assistant_answers_save_that_prefers_latest",
+      "test_plural_save_reference_fails_closed",
+      "test_recent_assistant_reference_failure_is_clear_when_no_content",
+      "test_active_preview_formal_refinement_updates_content",
+      "test_active_preview_formal_refinement_and_save_as_updates_path_and_content",
+      "test_active_preview_shorter_refinement_uses_reply_text_over_builder_heuristic",
+      "test_active_note_refinement_reuses_existing_preview_when_builder_returns_none",
+      "test_code_preview_refinement_prompt_does_not_overwrite_code_content",
+      "test_non_document_preview_refinement_does_not_write_prose_back",
+      "test_code_preview_plain_english_save_as_updates_to_text_preview",
+      "test_active_preview_content_becomes_multiline_replaces_body_exactly",
+      "test_active_preview_replace_content_with_multiline_replaces_body_exactly",
+      "test_active_preview_explicit_multiline_replacement_drops_stale_lines",
+      "test_latest_preview_wins_across_multiple_natural_content_refinements",
+      "test_update_content_refinement_and_submit_uses_latest_mutated_payload",
+      "test_builder_prompt_describes_voxera_compiler_contract",
+      "test_vera_prompt_keeps_control_json_off_chat_surface_by_default",
+      "test_enrichment_stored_for_info_query_with_active_preview",
+      "test_enrichment_backed_put_that_into_file_updates_preview_content",
+      "test_standalone_info_query_does_not_store_enrichment",
+      "test_put_that_into_file_without_enrichment_no_active_preview_fails_closed",
+      "test_handoff_registers_linked_job_tracking",
+      "test_linked_job_terminal_completion_is_ingested_with_policy",
+      "test_linked_read_only_success_auto_surfaces_once_per_completion",
+      "test_auto_surface_prefers_latest_submitted_linked_job_completion",
+      "test_submit_turn_suppresses_stale_linked_completion_autosurface",
+      "test_auto_surface_waits_for_latest_submitted_job_instead_of_older_completion",
+      "test_linked_approval_blocked_auto_surfaces_once",
+      "test_linked_failed_auto_surfaces_once",
+      "test_linked_mutating_success_auto_surfaces_once",
+      "test_linked_mutating_success_intermediate_orchestration_is_suppressed",
+      "test_linked_terminal_completion_live_delivery_posts_immediately",
+      "test_linked_live_delivery_surfaces_subsequent_completions_in_same_session",
+      "test_linked_live_delivery_not_duplicated_after_refresh_or_later_chat",
+      "test_linked_live_delivery_unavailable_persists_pending_for_fallback",
+      "test_live_delivered_linked_completion_not_reposted_by_fallback",
+      "test_uncertain_mutating_completion_is_not_live_delivered_as_final",
+      "test_non_linked_terminal_jobs_do_not_attach_to_session",
+      "test_chat_updates_endpoint_reports_changes_for_active_session",
+      "test_chat_updates_detects_new_turn_when_session_window_is_full",
+      "test_index_includes_active_chat_polling_hook",
+      "test_single_line_write_content_preserved_in_preview",
+      "test_multiline_write_content_preserved_in_preview",
+      "test_multiline_content_keeps_first_line",
+      "test_overwrite_update_phrasing_preserves_multiline_content",
+      "test_preview_remains_submit_ready_when_multiline_content_present",
+      "test_existing_quoted_write_behavior_unchanged",
+      "test_diagnostics_broad_health_routes_to_system_diagnostics_preview",
+      "test_diagnostics_disk_usage_routes_to_system_diagnostics_preview",
+      "test_diagnostics_service_status_routes_to_bounded_skill_preview",
+      "test_diagnostics_recent_logs_routes_to_bounded_skill_preview",
+      "test_diagnostics_invalid_service_target_fails_closed_in_web_chat",
+      "test_unrelated_write_preview_flow_remains_unchanged",
+      "test_service_status_request_prefers_diagnostics_preview_over_review",
+      "test_job_review_query_fails_closed_without_job_context",
+      "test_what_was_the_output_surfaces_actual_written_content",
+      "test_diagnostics_system_mission_completion_surfaces_useful_values",
+      "test_diagnostics_service_status_completion_surfaces_state",
+      "test_diagnostics_recent_logs_completion_surfaces_line_count",
+      "test_diagnostics_refusal_does_not_override_non_service_job_status_queries",
+      "test_diagnostics_refusal_still_blocks_path_like_service_targets",
+      "test_job_review_query_status_of_my_job_falls_through_without_context",
+      "test_job_review_query_status_of_last_job_fails_closed_without_context",
+      "test_python_script_request_creates_authoritative_preview",
+      "test_bash_script_request_creates_authoritative_preview",
+      "test_yaml_config_request_creates_authoritative_preview",
+      "test_json_config_request_creates_authoritative_preview",
+      "test_code_is_rendered_in_proper_fenced_code_block_in_reply",
+      "test_code_reply_not_suppressed_by_voxera_preview_flow_logic",
+      "test_follow_up_save_it_submits_code_draft_preview",
+      "test_follow_up_save_this_submits_code_draft_preview",
+      "test_code_draft_preview_has_real_content_not_empty_placeholder",
+      "test_no_pseudo_preview_json_in_user_facing_chat_output",
+      "test_code_draft_when_llm_reply_has_no_code_fence_no_exception",
+      "test_existing_write_file_flows_still_work",
+      "test_code_draft_explicit_filename_is_used",
+      "test_code_draft_does_not_enqueue_without_explicit_submit",
+      "test_code_draft_refinement_updates_preview_and_shows_reply",
+      "test_code_draft_refinement_then_save_it_submits",
+      "test_lets_save_it_with_apostrophe_submits",
+      "test_write_that_to_a_file_submits_when_preview_exists",
+      "test_no_false_preview_claim_when_llm_has_no_fenced_code",
+      "test_no_false_preview_claim_when_builder_creates_empty_preview",
+      "test_submit_with_no_preview_fails_truthfully",
+      "test_go_ahead_with_no_preview_fails_truthfully",
+      "test_submit_with_real_code_preview_succeeds",
+      "test_code_in_chat_without_preview_does_not_claim_preview_exists",
+      "test_false_preview_claim_stripped_preserves_code_blocks",
+      "test_existing_explicit_write_file_flow_not_regressed",
+      "test_explicit_filename_code_draft_populates_preview_content",
+      "test_failed_code_draft_clears_empty_preview_shell",
+      "test_code_draft_placeholder_survives_when_llm_makes_no_preview_claim",
+      "test_code_draft_with_trailing_space_on_fence_line_extracts_code",
+      "test_code_draft_hint_injected_into_user_message_for_code_draft",
+      "test_code_draft_hint_not_injected_for_non_code_draft",
+      "test_real_world_python_url_fetch_script_creates_preview",
+      "test_real_world_scrape_any_website_creates_preview",
+      "test_real_world_bash_disk_memory_creates_preview_and_submit_works",
+      "test_build_vera_messages_includes_code_draft_hint_when_flag_set",
+      "test_build_vera_messages_no_hint_when_flag_not_set",
+      "test_build_vera_messages_includes_writing_draft_hint_when_flag_set",
+      "test_build_vera_messages_rejects_conflicting_draft_hints",
+      "test_near_miss_submit_with_active_preview_fails_closed_and_preserves_preview",
+      "test_active_preview_submit_intent_detection_keeps_rename_fail_closed_boundary",
+      "test_ambiguous_active_preview_replacement_detection_characterization"
+    ]
+  },
+  {
+    "path": "tests/test_version_source.py",
+    "loc": 41,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_dunder_version_matches_shared_source",
+      "test_get_version_falls_back_to_pyproject",
+      "test_pyproject_declares_tomli_for_python_lt_311",
+      "test_project_version_truth_is_0_1_9_and_documented"
+    ]
+  },
+  {
+    "path": "tests/test_voice_foundation.py",
+    "loc": 52,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "test_voice_flags_load_from_runtime_config",
+      "test_voice_input_requires_enabled_flag",
+      "test_voice_output_status_reports_placeholder_when_backend_missing"
+    ]
+  },
+  {
+    "path": "tests/vera_session_helpers.py",
+    "loc": 203,
+    "docstring": null,
+    "top_level_classes": [
+      "VeraSessionHarness"
+    ],
+    "top_level_functions": [
+      "set_vera_queue_root",
+      "make_vera_session",
+      "sample_weather_snapshot",
+      "sample_investigation_payload"
+    ]
+  },
+  {
+    "path": "scripts/mypy_ratchet.py",
+    "loc": 129,
+    "docstring": "Fail when mypy reports errors not present in the committed baseline.",
+    "top_level_classes": [],
+    "top_level_functions": [
+      "parse_errors",
+      "read_baseline",
+      "run_mypy",
+      "main"
+    ]
+  },
+  {
+    "path": "scripts/refresh_openrouter_catalog.py",
+    "loc": 32,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": [
+      "main"
+    ]
+  },
+  {
+    "path": "tools/golden_surfaces.py",
+    "loc": 5,
+    "docstring": null,
+    "top_level_classes": [],
+    "top_level_functions": []
+  }
+]

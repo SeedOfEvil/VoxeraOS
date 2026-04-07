@@ -1,0 +1,3342 @@
+[
+  {
+    "module": "src/voxera/brain/base.py",
+    "name": "ToolSpec",
+    "lineno": 8,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/brain/base.py",
+    "name": "BrainResponse",
+    "lineno": 15,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/brain/base.py",
+    "name": "Brain",
+    "lineno": 20,
+    "bases": [
+      "Protocol"
+    ],
+    "methods": [
+      "generate",
+      "capability_test"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/brain/gemini.py",
+    "name": "GeminiBrain",
+    "lineno": 15,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "_resolve_api_key",
+      "_convert_messages_to_contents",
+      "_extract_text",
+      "generate",
+      "capability_test"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/brain/openai_compat.py",
+    "name": "OpenAICompatBrain",
+    "lineno": 16,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "_resolve_api_key",
+      "_headers",
+      "_is_openrouter_request",
+      "generate",
+      "capability_test"
+    ],
+    "docstring": "Works with any OpenAI-compatible endpoint (local or cloud)."
+  },
+  {
+    "module": "src/voxera/config.py",
+    "name": "VoxeraConfig",
+    "lineno": 27,
+    "bases": [],
+    "methods": [
+      "to_safe_dict"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/capability_semantics.py",
+    "name": "CapabilitySemantic",
+    "lineno": 14,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/execution_capabilities.py",
+    "name": "_StrEnum",
+    "lineno": 10,
+    "bases": [
+      "str",
+      "Enum"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/execution_capabilities.py",
+    "name": "SideEffectClass",
+    "lineno": 14,
+    "bases": [
+      "_StrEnum"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/execution_capabilities.py",
+    "name": "FilesystemScope",
+    "lineno": 20,
+    "bases": [
+      "_StrEnum"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/execution_capabilities.py",
+    "name": "NetworkScope",
+    "lineno": 26,
+    "bases": [
+      "_StrEnum"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/execution_capabilities.py",
+    "name": "SandboxProfile",
+    "lineno": 32,
+    "bases": [
+      "_StrEnum"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/execution_capabilities.py",
+    "name": "SecretRequirement",
+    "lineno": 39,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/execution_capabilities.py",
+    "name": "ExecutionCapabilityDeclaration",
+    "lineno": 46,
+    "bases": [],
+    "methods": [
+      "as_dict"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/execution_evaluator.py",
+    "name": "EvaluationResult",
+    "lineno": 37,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/inbox.py",
+    "name": "InboxJob",
+    "lineno": 14,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/mission_planner.py",
+    "name": "MissionPlannerError",
+    "lineno": 28,
+    "bases": [
+      "RuntimeError"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/mission_planner.py",
+    "name": "_BrainCandidate",
+    "lineno": 61,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/missions.py",
+    "name": "MissionStep",
+    "lineno": 20,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/missions.py",
+    "name": "MissionTemplate",
+    "lineno": 26,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/missions.py",
+    "name": "MissionRunner",
+    "lineno": 338,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "_append_mission_log",
+      "simulate",
+      "run"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/queue_approvals.py",
+    "name": "QueueApprovalMixin",
+    "lineno": 65,
+    "bases": [],
+    "methods": [
+      "_decision_capability",
+      "_queue_approval_prompt",
+      "_approval_target",
+      "_grants_path",
+      "_read_grants",
+      "_write_grants",
+      "grant_approval_scope",
+      "_has_approval_grant",
+      "_write_pending_artifacts",
+      "_is_hard_approval_required",
+      "_ensure_hard_approval_gate",
+      "_notify_pending_approval",
+      "_approval_ref_variants",
+      "_canonical_job_name",
+      "_iter_approval_artifacts",
+      "_approval_scope_from_artifact",
+      "_read_approval_artifact",
+      "pending_approvals_snapshot",
+      "_approval_ref_candidates",
+      "canonicalize_approval_ref",
+      "_resolve_pending_approval_paths",
+      "approvals_list",
+      "resolve_approval"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/queue_daemon.py",
+    "name": "QueueLockError",
+    "lineno": 60,
+    "bases": [
+      "RuntimeError"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/queue_daemon.py",
+    "name": "QueueStats",
+    "lineno": 65,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/queue_daemon.py",
+    "name": "MissionQueueDaemon",
+    "lineno": 70,
+    "bases": [
+      "QueueApprovalMixin",
+      "QueueRecoveryMixin",
+      "QueueExecutionMixin"
+    ],
+    "methods": [
+      "__init__",
+      "_redact_args",
+      "ensure_dirs",
+      "_lock_payload",
+      "_log_lock_event",
+      "_increment_health_counter",
+      "_update_daemon_health_state",
+      "lock_counters_snapshot",
+      "_read_lock_payload",
+      "_pid_is_alive",
+      "_acquire_daemon_lock",
+      "release_daemon_lock",
+      "try_unlock_stale",
+      "force_unlock",
+      "is_paused",
+      "pause",
+      "resume",
+      "_auto_relocate_legacy_jobs",
+      "_auto_relocate_misplaced_pending_jobs",
+      "_job_artifacts_dir",
+      "_write_action_event",
+      "_read_job_state",
+      "_write_job_state",
+      "_sanitize_payload_intent_route",
+      "_update_job_state",
+      "_write_plan_artifact",
+      "_write_execution_result_artifacts",
+      "_write_run_streams",
+      "_next_child_sequence_index",
+      "_enqueue_child_job_from_parent",
+      "_move_job",
+      "_archive_sidecar",
+      "_failed_error_sidecar",
+      "_validate_failed_error_sidecar",
+      "_read_failed_error_sidecar",
+      "_validate_failed_sidecar_schema_version",
+      "_write_failed_error_sidecar",
+      "prune_failed_artifacts",
+      "_is_snapshot_artifact",
+      "_count_files",
+      "_failed_job_files_snapshot",
+      "_failed_sidecar_snapshot",
+      "recent_failed_jobs_snapshot",
+      "_latest_failed_prune_snapshot",
+      "status_snapshot",
+      "_resolve_job_ref_in_dirs",
+      "cancel_job",
+      "retry_job",
+      "delete_terminal_job",
+      "_assistant_response_artifact_path",
+      "_create_assistant_brain",
+      "_assistant_brain_candidates",
+      "_assistant_answer_via_brain",
+      "_process_assistant_job",
+      "_config_snapshot_path",
+      "_config_last_snapshot_path",
+      "_config_last_fingerprint_path",
+      "_config_drift_note_path",
+      "_write_text_atomic",
+      "_wait_for_poll_interval",
+      "_snapshot_and_check_config_drift",
+      "run"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/queue_execution.py",
+    "name": "QueueExecutionMixin",
+    "lineno": 47,
+    "bases": [],
+    "methods": [
+      "_normalize_payload",
+      "_build_inline_mission",
+      "_apply_brain_backoff_before_plan_attempt",
+      "_build_mission_for_payload",
+      "_is_ready_job_file",
+      "_load_job_payload_with_retry",
+      "_is_job_state_sidecar",
+      "_is_metadata_sidecar",
+      "_is_primary_job_json",
+      "_primary_jobs_in_bucket",
+      "_pending_primary_jobs",
+      "_request_kind",
+      "_is_assistant_request",
+      "_max_replan_attempts",
+      "_maybe_live_deliver_linked_completion",
+      "_plan_delta",
+      "_planning_error_metadata",
+      "_classify_goal_intent",
+      "_write_simple_intent_mismatch_artifact",
+      "_write_planning_failure_attempt_artifact",
+      "process_job_file",
+      "process_pending_once"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/queue_hygiene.py",
+    "name": "JobEntry",
+    "lineno": 20,
+    "bases": [],
+    "methods": [
+      "size"
+    ],
+    "docstring": "Represents a primary job file plus any associated sidecars."
+  },
+  {
+    "module": "src/voxera/core/queue_inspect.py",
+    "name": "JobLookup",
+    "lineno": 15,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/queue_recovery.py",
+    "name": "QueueRecoveryMixin",
+    "lineno": 33,
+    "bases": [],
+    "methods": [
+      "request_shutdown",
+      "_record_clean_shutdown",
+      "_record_failed_shutdown",
+      "_deterministic_target_path",
+      "_safe_relative_to_queue",
+      "_quarantine_startup_recovery_path",
+      "_detected_inflight_pending_jobs",
+      "_collect_orphan_approval_files",
+      "_collect_orphan_state_files",
+      "recover_on_startup",
+      "_shutdown_failure_payload",
+      "_finalize_job_shutdown_failure"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/router.py",
+    "name": "Route",
+    "lineno": 8,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/core/simple_intent.py",
+    "name": "SimpleIntentResult",
+    "lineno": 107,
+    "bases": [],
+    "methods": [
+      "to_dict"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/demo.py",
+    "name": "ChecklistItem",
+    "lineno": 16,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/golden_surfaces.py",
+    "name": "GoldenSurface",
+    "lineno": 27,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/health_reset.py",
+    "name": "HealthResetError",
+    "lineno": 74,
+    "bases": [
+      "ValueError"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/incident_bundle.py",
+    "name": "BundleError",
+    "lineno": 18,
+    "bases": [
+      "RuntimeError"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "BrainConfig",
+    "lineno": 8,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "PolicyApprovals",
+    "lineno": 20,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "PrivacyConfig",
+    "lineno": 30,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "WebInvestigationConfig",
+    "lineno": 37,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "AppConfig",
+    "lineno": 46,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "SkillManifest",
+    "lineno": 62,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [
+      "_non_empty_text",
+      "_entrypoint_shape",
+      "_capabilities_must_be_non_empty_strings",
+      "_output_artifacts_must_be_unique_non_empty_strings",
+      "_output_schema_non_empty_if_present"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "PlanStep",
+    "lineno": 125,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "PlanSimulation",
+    "lineno": 136,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "Plan",
+    "lineno": 149,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/models.py",
+    "name": "RunResult",
+    "lineno": 155,
+    "bases": [
+      "BaseModel"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/panel/app.py",
+    "name": "_RequestUrlLike",
+    "lineno": 139,
+    "bases": [
+      "Protocol"
+    ],
+    "methods": [
+      "path"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/panel/app.py",
+    "name": "_RequestClientLike",
+    "lineno": 144,
+    "bases": [
+      "Protocol"
+    ],
+    "methods": [
+      "host"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/panel/app.py",
+    "name": "_PanelSecurityRequestLike",
+    "lineno": 149,
+    "bases": [
+      "Protocol"
+    ],
+    "methods": [
+      "url",
+      "method",
+      "client"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/policy.py",
+    "name": "PolicyDecision",
+    "lineno": 15,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/setup_wizard.py",
+    "name": "ProviderChoice",
+    "lineno": 36,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/setup_wizard.py",
+    "name": "BrainSlotSpec",
+    "lineno": 46,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/execution.py",
+    "name": "JobPaths",
+    "lineno": 36,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/execution.py",
+    "name": "ExecutionRunner",
+    "lineno": 113,
+    "bases": [
+      "ABC"
+    ],
+    "methods": [
+      "run"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/execution.py",
+    "name": "LocalRunner",
+    "lineno": 129,
+    "bases": [
+      "ExecutionRunner"
+    ],
+    "methods": [
+      "run"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/execution.py",
+    "name": "SandboxRunner",
+    "lineno": 148,
+    "bases": [
+      "ExecutionRunner",
+      "ABC"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/execution.py",
+    "name": "PodmanSandboxRunner",
+    "lineno": 152,
+    "bases": [
+      "SandboxRunner"
+    ],
+    "methods": [
+      "_blocked_result",
+      "_parse_network_setting",
+      "_assert_available",
+      "run"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/path_boundaries.py",
+    "name": "PathBoundaryError",
+    "lineno": 8,
+    "bases": [
+      "ValueError"
+    ],
+    "methods": [
+      "__str__"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/registry.py",
+    "name": "SkillHealthIssue",
+    "lineno": 20,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "as_dict"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/registry.py",
+    "name": "SkillDiscoveryReport",
+    "lineno": 49,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "counts",
+      "blocks_runtime"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/registry.py",
+    "name": "SkillRegistry",
+    "lineno": 77,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "discover",
+      "discover_with_report",
+      "last_report",
+      "get",
+      "load_entrypoint"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/result_contract.py",
+    "name": "CanonicalSkillResult",
+    "lineno": 8,
+    "bases": [
+      "TypedDict"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/runner.py",
+    "name": "CapabilityEnforcementResult",
+    "lineno": 38,
+    "bases": [],
+    "methods": [
+      "__init__"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/skills/runner.py",
+    "name": "SkillRunner",
+    "lineno": 196,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "simulate",
+      "run"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/brave_search.py",
+    "name": "WebSearchResult",
+    "lineno": 14,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/brave_search.py",
+    "name": "BraveSearchClient",
+    "lineno": 21,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "_resolve_api_key",
+      "_headers",
+      "search"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/evidence_review.py",
+    "name": "ReviewedJobEvidence",
+    "lineno": 119,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/preview_drafting.py",
+    "name": "DraftingGuidance",
+    "lineno": 70,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/reference_resolver.py",
+    "name": "ReferenceClass",
+    "lineno": 37,
+    "bases": [
+      "Enum"
+    ],
+    "methods": [],
+    "docstring": "Bounded set of in-session reference classes."
+  },
+  {
+    "module": "src/voxera/vera/reference_resolver.py",
+    "name": "ResolvedReference",
+    "lineno": 52,
+    "bases": [],
+    "methods": [],
+    "docstring": "A successfully resolved session-scoped reference."
+  },
+  {
+    "module": "src/voxera/vera/reference_resolver.py",
+    "name": "UnresolvedReference",
+    "lineno": 61,
+    "bases": [],
+    "methods": [],
+    "docstring": "A reference that could not be resolved \u2014 fail-closed result."
+  },
+  {
+    "module": "src/voxera/vera/service.py",
+    "name": "HiddenCompilerDecision",
+    "lineno": 49,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "from_payload"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/weather.py",
+    "name": "WeatherLocation",
+    "lineno": 15,
+    "bases": [],
+    "methods": [
+      "label",
+      "full_label"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/weather.py",
+    "name": "WeatherSnapshot",
+    "lineno": 44,
+    "bases": [],
+    "methods": [
+      "to_session_payload"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/weather.py",
+    "name": "OpenMeteoWeatherClient",
+    "lineno": 143,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "resolve_location",
+      "fetch_snapshot"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera/weather_flow.py",
+    "name": "WeatherFollowupAnswerBuilder",
+    "lineno": 31,
+    "bases": [
+      "Protocol"
+    ],
+    "methods": [
+      "__call__"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/vera_web/chat_early_exit_dispatch.py",
+    "name": "EarlyExitResult",
+    "lineno": 80,
+    "bases": [],
+    "methods": [],
+    "docstring": "Result returned by :func:`dispatch_early_exit_intent`."
+  },
+  {
+    "module": "src/voxera/vera_web/draft_content_binding.py",
+    "name": "ReplyDrafts",
+    "lineno": 113,
+    "bases": [],
+    "methods": [],
+    "docstring": "Extracted draft content from an LLM reply."
+  },
+  {
+    "module": "src/voxera/vera_web/draft_content_binding.py",
+    "name": "DraftContentBindingResult",
+    "lineno": 190,
+    "bases": [],
+    "methods": [],
+    "docstring": "Result of the post-LLM draft content binding derivation."
+  },
+  {
+    "module": "src/voxera/vera_web/execution_mode.py",
+    "name": "ExecutionMode",
+    "lineno": 8,
+    "bases": [
+      "enum.Enum"
+    ],
+    "methods": [],
+    "docstring": "Execution mode for a Vera chat turn."
+  },
+  {
+    "module": "src/voxera/vera_web/response_shaping.py",
+    "name": "AssistantReplyResult",
+    "lineno": 286,
+    "bases": [],
+    "methods": [],
+    "docstring": "Result of the post-guardrail assistant reply assembly."
+  },
+  {
+    "module": "src/voxera/voice/flags.py",
+    "name": "VoiceFoundationFlags",
+    "lineno": 13,
+    "bases": [],
+    "methods": [
+      "voice_input_enabled",
+      "voice_output_enabled"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/voice/input.py",
+    "name": "VoiceInputDisabledError",
+    "lineno": 8,
+    "bases": [
+      "RuntimeError"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/voice/input.py",
+    "name": "VoiceTranscriptIngest",
+    "lineno": 13,
+    "bases": [],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera/voice/models.py",
+    "name": "InputOrigin",
+    "lineno": 6,
+    "bases": [
+      "str",
+      "enum.Enum"
+    ],
+    "methods": [],
+    "docstring": null
+  },
+  {
+    "module": "src/voxera_builtin_skills/recent_service_logs.py",
+    "name": "_ScopeResult",
+    "lineno": 154,
+    "bases": [],
+    "methods": [
+      "__init__"
+    ],
+    "docstring": "Outcome of querying a single journalctl scope."
+  },
+  {
+    "module": "src/voxera_builtin_skills/recent_service_logs.py",
+    "name": "_JournalResult",
+    "lineno": 164,
+    "bases": [],
+    "methods": [
+      "__init__"
+    ],
+    "docstring": "Aggregated outcome from querying both scopes."
+  },
+  {
+    "module": "src/voxera_builtin_skills/service_status.py",
+    "name": "_ScopeResult",
+    "lineno": 34,
+    "bases": [],
+    "methods": [
+      "__init__"
+    ],
+    "docstring": "Outcome of querying a single systemctl scope."
+  },
+  {
+    "module": "tests/test_authored_draft_body_fidelity.py",
+    "name": "TestNormalizeMarkdownSpacing",
+    "lineno": 31,
+    "bases": [],
+    "methods": [
+      "test_heading_preceded_by_text_gets_blank_line",
+      "test_heading_followed_by_text_gets_blank_line",
+      "test_already_spaced_heading_not_double_spaced",
+      "test_h1_h2_h3_all_normalized",
+      "test_empty_text_passthrough",
+      "test_no_headings_passthrough",
+      "test_inline_heading_split_onto_own_line",
+      "test_inline_heading_after_colon",
+      "test_inline_heading_after_exclamation",
+      "test_hash_in_non_heading_context_preserved",
+      "test_zero_space_inline_heading_after_period",
+      "test_zero_space_inline_heading_no_punctuation",
+      "test_single_hash_after_word_not_split",
+      "test_bullets_not_treated_as_headings"
+    ],
+    "docstring": "Ensure headings are surrounded by blank lines after normalization."
+  },
+  {
+    "module": "tests/test_authored_draft_body_fidelity.py",
+    "name": "TestAuthoredBodyFidelity",
+    "lineno": 137,
+    "bases": [],
+    "methods": [
+      "compact_markdown_reply",
+      "well_formatted_reply",
+      "test_compact_markdown_headings_preserved",
+      "test_compact_markdown_bullets_preserved",
+      "test_compact_markdown_wrapper_stripped",
+      "test_compact_markdown_trailing_stripped",
+      "test_compact_markdown_no_truncation",
+      "test_compact_markdown_headings_spaced",
+      "test_well_formatted_headings_preserved",
+      "test_well_formatted_wrapper_stripped",
+      "test_well_formatted_trailing_stripped",
+      "test_well_formatted_no_truncation"
+    ],
+    "docstring": "Regression tests for the live bug where preview content drifted from"
+  },
+  {
+    "module": "tests/test_authored_draft_body_fidelity.py",
+    "name": "TestEdgeCases",
+    "lineno": 262,
+    "bases": [],
+    "methods": [
+      "test_no_headings_plain_prose",
+      "test_single_heading_note",
+      "test_heading_inline_with_wrapper_now_split"
+    ],
+    "docstring": "Edge cases for authored body extraction."
+  },
+  {
+    "module": "tests/test_authored_draft_body_fidelity.py",
+    "name": "TestInlineHeadingRegression",
+    "lineno": 304,
+    "bases": [],
+    "methods": [
+      "test_inline_heading_after_sentence_end",
+      "test_multiple_inline_headings",
+      "test_no_content_truncation_with_inline_headings",
+      "test_various_punctuation_before_inline_heading"
+    ],
+    "docstring": "Regression tests for the live bug where inline headings caused preview"
+  },
+  {
+    "module": "tests/test_authored_draft_body_fidelity.py",
+    "name": "TestFiveSectionZeroSpaceExtraction",
+    "lineno": 412,
+    "bases": [],
+    "methods": [
+      "five_section_zero_space_reply",
+      "test_all_five_sections_present",
+      "test_no_collapsed_heading_boundaries",
+      "test_headings_on_own_lines",
+      "test_no_truncation_after_section_2",
+      "test_bullets_preserved",
+      "test_wrapper_and_trailer_removed"
+    ],
+    "docstring": "End-to-end test for a 5-section markdown note where ALL headings are"
+  },
+  {
+    "module": "tests/test_authored_draft_body_fidelity.py",
+    "name": "TestWrapperBodyExtraction",
+    "lineno": 501,
+    "bases": [],
+    "methods": [
+      "test_single_newline_wrapper_stripped",
+      "test_inline_colon_wrapper_stripped",
+      "test_double_newline_wrapper_stripped",
+      "test_wrapper_only_returns_none",
+      "test_no_wrapper_body_survives",
+      "test_here_is_note_variant_stripped",
+      "test_here_is_summary_variant_stripped"
+    ],
+    "docstring": "Regression: \"Write me a short note about what happened at the meeting.\""
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestClassifyFallbackReason",
+    "lineno": 36,
+    "bases": [],
+    "methods": [
+      "test_asyncio_timeout_error",
+      "test_builtin_timeout_error",
+      "test_httpx_timeout_exception",
+      "test_message_contains_timed_out",
+      "test_429_rate_limit",
+      "test_rate_limit_message",
+      "test_401_auth",
+      "test_403_auth",
+      "test_unauthorized_message",
+      "test_json_decode_malformed",
+      "test_malformed_provider_output",
+      "test_non_json_output",
+      "test_connection_error_network",
+      "test_httpx_connect_error",
+      "test_dns_resolution_message",
+      "test_connection_reset_message",
+      "test_unknown_generic_error",
+      "test_unknown_value_error",
+      "test_all_reasons_is_complete"
+    ],
+    "docstring": "Each reason category maps from representative exceptions."
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestRecordFallbackTransition",
+    "lineno": 123,
+    "bases": [],
+    "methods": [
+      "test_increments_counters",
+      "test_multiple_increments",
+      "test_updates_last_fallback_fields",
+      "test_last_fallback_reflects_most_recent",
+      "test_preserves_existing_health_fields"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestDoctorQuickFallback",
+    "lineno": 203,
+    "bases": [],
+    "methods": [
+      "_make_queue",
+      "test_doctor_quick_shows_fallback_when_present",
+      "test_doctor_quick_shows_none_when_no_fallback",
+      "test_doctor_quick_shows_hint_for_known_reasons"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestDegradationStateMachine",
+    "lineno": 280,
+    "bases": [],
+    "methods": [
+      "test_fallback_three_times_sets_degraded",
+      "test_two_fallbacks_then_success_resets_healthy",
+      "test_degraded_persists_for_fourth_and_fifth_fallback",
+      "test_degraded_since_set_once_on_transition"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestDegradationIntegration",
+    "lineno": 339,
+    "bases": [],
+    "methods": [
+      "test_three_fallback_events_write_degraded_health_snapshot",
+      "test_success_resets_degraded_state"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestHealthSnapshotDefaults",
+    "lineno": 366,
+    "bases": [],
+    "methods": [
+      "test_health_snapshot_always_contains_degradation_fields"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestBrainBackoffComputation",
+    "lineno": 379,
+    "bases": [],
+    "methods": [
+      "test_default_ladder_mapping",
+      "test_cap_applies_from_env_max",
+      "test_env_overrides_valid_ints",
+      "test_invalid_env_values_fallback_to_defaults",
+      "test_negative_env_values_clamp_to_zero"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestBackoffSnapshotIntegration",
+    "lineno": 423,
+    "bases": [],
+    "methods": [
+      "test_normalized_snapshot_always_contains_backoff_field",
+      "test_backoff_field_matches_consecutive_failure_count",
+      "test_older_snapshot_missing_backoff_field_normalizes",
+      "test_older_snapshot_missing_backoff_active_normalizes"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_brain_fallback.py",
+    "name": "TestBackoffLastAppliedSnapshot",
+    "lineno": 482,
+    "bases": [],
+    "methods": [
+      "test_defaults_present_with_deterministic_values",
+      "test_record_backoff_applied_updates_last_applied_fields",
+      "test_no_sleep_path_keeps_last_applied_values"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestEarlyExitResultDefaults",
+    "lineno": 110,
+    "bases": [],
+    "methods": [
+      "test_matched_false_has_empty_fields",
+      "test_matched_true_defaults"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestDiagnosticsRefusal",
+    "lineno": 133,
+    "bases": [],
+    "methods": [
+      "test_diagnostics_request_is_blocked",
+      "test_diagnostics_refusal_text_is_non_empty",
+      "test_normal_message_does_not_trigger_diagnostics"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestJobReview",
+    "lineno": 167,
+    "bases": [],
+    "methods": [
+      "test_review_request_without_job_context_fails_closed",
+      "test_explicit_job_id_returns_review_missing_when_no_artifacts",
+      "test_review_request_with_diagnostics_service_turn_does_not_match_review",
+      "test_review_request_with_resolvable_evidence"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestFollowupPreview",
+    "lineno": 246,
+    "bases": [],
+    "methods": [
+      "test_followup_without_job_context_fails_closed",
+      "test_followup_with_evidence_returns_preview_ready",
+      "test_draft_a_followup_based_on_job_result_regression",
+      "test_followup_hint_variants_fail_closed_without_job_context"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestInvestigationDerivedSave",
+    "lineno": 384,
+    "bases": [],
+    "methods": [
+      "test_derived_save_with_no_derived_output_returns_missing",
+      "test_derived_save_with_valid_output_returns_prepared_preview",
+      "test_derived_save_flag_false_does_not_match"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestInvestigationCompare",
+    "lineno": 435,
+    "bases": [],
+    "methods": [
+      "test_compare_without_investigation_returns_invalid",
+      "test_compare_with_valid_investigation_returns_comparison",
+      "test_compare_result_carries_answer_text"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestInvestigationSummary",
+    "lineno": 477,
+    "bases": [],
+    "methods": [
+      "test_summary_without_investigation_returns_invalid",
+      "test_summary_with_valid_investigation_returns_summary",
+      "test_summary_result_carries_derived_output"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestInvestigationExpand",
+    "lineno": 517,
+    "bases": [],
+    "methods": [
+      "test_expand_without_investigation_returns_invalid",
+      "test_expand_ambiguous_reference_returns_invalid",
+      "test_expand_valid_single_reference_does_not_early_exit"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestInvestigationSave",
+    "lineno": 559,
+    "bases": [],
+    "methods": [
+      "test_save_without_investigation_returns_invalid",
+      "test_save_with_valid_investigation_returns_prepared_preview",
+      "test_save_all_findings_returns_prepared_preview"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestNearMissSubmit",
+    "lineno": 602,
+    "bases": [],
+    "methods": [
+      "test_near_miss_phrases_are_blocked",
+      "test_canonical_submit_phrase_is_not_near_miss",
+      "test_send_it_is_not_near_miss"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestNoMatchFallthrough",
+    "lineno": 640,
+    "bases": [],
+    "methods": [
+      "test_plain_question_returns_no_match",
+      "test_write_draft_request_returns_no_match",
+      "test_code_request_returns_no_match",
+      "test_conversational_request_returns_no_match"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestFileCreationNotHijacked",
+    "lineno": 681,
+    "bases": [],
+    "methods": [
+      "test_create_file_with_why_did_in_content",
+      "test_drafting_prompts_not_hijacked_without_job_context"
+    ],
+    "docstring": "Regression for PR #283 live bug: authored file-creation prompts must not"
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestWriteFlagIntegrity",
+    "lineno": 730,
+    "bases": [],
+    "methods": [
+      "test_write_preview_always_comes_with_payload",
+      "test_write_handoff_ready_only_when_preview_also_written",
+      "test_write_derived_output_always_comes_with_derived_data",
+      "test_no_match_has_no_write_flags_set",
+      "test_review_without_context_has_no_write_flags"
+    ],
+    "docstring": "Verify that write flags are only set with consistent payloads."
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestLinkedJobReviewInspection",
+    "lineno": 786,
+    "bases": [],
+    "methods": [
+      "test_review_inspection_phrases_fail_closed_without_job_context",
+      "test_inspect_output_details_with_evidence_returns_reviewed",
+      "test_summarize_the_result_with_evidence_returns_reviewed"
+    ],
+    "docstring": "Regression: natural result-inspection phrases must reach the review branch."
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestLinkedJobFollowupRevision",
+    "lineno": 902,
+    "bases": [],
+    "methods": [
+      "test_revision_phrases_fail_closed_without_job_context",
+      "test_revise_based_on_result_with_evidence_returns_revised_preview",
+      "test_save_followup_with_evidence_returns_saveable_preview",
+      "test_save_followup_as_file_produces_write_file_preview",
+      "test_followup_preview_includes_evidence_detail",
+      "test_followup_goal_for_succeeded_job_is_follow_up_not_inspect",
+      "test_revise_from_evidence_for_failed_job_references_failure",
+      "test_save_followup_for_failed_job_includes_failure_in_content"
+    ],
+    "docstring": "Regression: revise-from-evidence and save-follow-up phrases must reach the followup branch."
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestSessionContextJobResolution",
+    "lineno": 1241,
+    "bases": [],
+    "methods": [
+      "test_review_uses_session_context_when_handoff_empty",
+      "test_review_sets_last_reviewed_job_ref_in_context_updates",
+      "test_followup_uses_session_context_when_handoff_empty",
+      "test_review_fails_closed_with_no_context",
+      "test_context_updates_none_by_default",
+      "test_explicit_job_id_takes_precedence_over_context"
+    ],
+    "docstring": "Session context provides fallback job-ID resolution for review/follow-up."
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestStaleDraftReference",
+    "lineno": 1457,
+    "bases": [],
+    "methods": [
+      "test_save_that_draft_no_active_draft_fails_closed",
+      "test_save_the_draft_no_active_draft_fails_closed",
+      "test_the_draft_no_active_draft_fails_closed",
+      "test_save_that_draft_with_active_draft_passes_through",
+      "test_save_that_draft_with_only_preview_ref_passes_through",
+      "test_after_handoff_no_draft_context_fails_closed",
+      "test_no_session_context_fails_closed",
+      "test_non_draft_reference_not_blocked",
+      "test_no_reference_phrase_not_blocked"
+    ],
+    "docstring": "Verify stale draft references fail closed instead of reaching builder."
+  },
+  {
+    "module": "tests/test_chat_early_exit_dispatch.py",
+    "name": "TestOutputReviewDispatch",
+    "lineno": 1523,
+    "bases": [],
+    "methods": [
+      "test_what_was_the_output_matches_review_with_context",
+      "test_what_was_the_output_fails_closed_without_context",
+      "test_show_me_the_output_matches_review"
+    ],
+    "docstring": "Regression tests for output-review grounding."
+  },
+  {
+    "module": "tests/test_cli_run_args.py",
+    "name": "_FakeRegistry",
+    "lineno": 6,
+    "bases": [],
+    "methods": [
+      "discover",
+      "get"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_cli_run_args.py",
+    "name": "_FakeSimulation",
+    "lineno": 14,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "model_dump"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_cli_run_args.py",
+    "name": "_FakeRunner",
+    "lineno": 22,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "simulate"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_code_draft_intent.py",
+    "name": "TestIsCodeDraftRequest",
+    "lineno": 18,
+    "bases": [],
+    "methods": [
+      "test_python_script_request",
+      "test_python_script_need_phrasing",
+      "test_bash_script_request",
+      "test_yaml_config_request",
+      "test_json_config_request",
+      "test_markdown_doc_request",
+      "test_javascript_script",
+      "test_typescript_script",
+      "test_shell_script",
+      "test_dockerfile_request",
+      "test_golang_script",
+      "test_rust_script",
+      "test_sql_file",
+      "test_filename_with_extension",
+      "test_filename_py_in_message",
+      "test_not_code_draft_no_verb",
+      "test_not_code_draft_no_language",
+      "test_not_code_draft_save_that",
+      "test_not_code_draft_write_that",
+      "test_not_code_draft_put_that",
+      "test_not_code_draft_empty",
+      "test_not_code_draft_informational",
+      "test_not_code_draft_open_file",
+      "test_generate_python_script",
+      "test_give_me_bash_script",
+      "test_i_need_python",
+      "test_build_yaml_config"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_code_draft_intent.py",
+    "name": "TestClassifyCodeDraftIntent",
+    "lineno": 106,
+    "bases": [],
+    "methods": [
+      "test_python_script_basic",
+      "test_python_script_default_filename",
+      "test_bash_script_default_filename",
+      "test_yaml_config_default_filename",
+      "test_json_config_default_filename",
+      "test_markdown_doc_default_filename",
+      "test_explicit_filename_preserved",
+      "test_named_filename_gets_extension",
+      "test_content_is_empty_placeholder",
+      "test_shell_normalizes_to_bash",
+      "test_not_code_draft_returns_none",
+      "test_no_language_returns_none",
+      "test_javascript_script",
+      "test_yaml_goal_label",
+      "test_markdown_goal_label",
+      "test_write_file_contract_has_required_keys",
+      "test_i_need_python_script",
+      "test_generate_bash_script"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_code_draft_intent.py",
+    "name": "TestExtractCodeFromReply",
+    "lineno": 207,
+    "bases": [],
+    "methods": [
+      "test_extracts_fenced_python",
+      "test_extracts_fenced_bash",
+      "test_extracts_fenced_yaml",
+      "test_extracts_fence_without_language",
+      "test_returns_none_when_no_fence",
+      "test_returns_none_for_empty_string",
+      "test_returns_none_for_empty_fence",
+      "test_returns_first_fence_when_multiple",
+      "test_multiline_code",
+      "test_returns_none_for_none_input",
+      "test_extracts_fence_with_trailing_space_after_language",
+      "test_extracts_fence_with_multiple_trailing_spaces",
+      "test_extracts_fence_with_version_in_language_tag"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_code_draft_intent.py",
+    "name": "TestCodeFenceLanguage",
+    "lineno": 277,
+    "bases": [],
+    "methods": [
+      "test_python",
+      "test_bash",
+      "test_shell_normalizes_to_bash",
+      "test_yaml",
+      "test_json",
+      "test_javascript",
+      "test_no_language_returns_none",
+      "test_empty_returns_none"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_code_draft_intent.py",
+    "name": "TestHasCodeFileExtension",
+    "lineno": 308,
+    "bases": [],
+    "methods": [
+      "test_python",
+      "test_bash",
+      "test_yaml",
+      "test_json",
+      "test_markdown",
+      "test_dockerfile",
+      "test_dockerfile_with_path",
+      "test_txt_is_not_code",
+      "test_empty",
+      "test_no_extension",
+      "test_javascript",
+      "test_typescript"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_context_lifecycle.py",
+    "name": "TestPreviewCreated",
+    "lineno": 50,
+    "bases": [],
+    "methods": [
+      "test_sets_draft_and_preview_refs",
+      "test_default_draft_ref_is_preview",
+      "test_preserves_unrelated_fields",
+      "test_revision_updates_draft_ref",
+      "test_rename_save_as_updates_draft_ref"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_context_lifecycle.py",
+    "name": "TestPreviewCleared",
+    "lineno": 85,
+    "bases": [],
+    "methods": [
+      "test_clears_preview_refs",
+      "test_preserves_job_refs",
+      "test_preserves_topic"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_context_lifecycle.py",
+    "name": "TestHandoffSubmitted",
+    "lineno": 114,
+    "bases": [],
+    "methods": [
+      "test_clears_preview_and_sets_job",
+      "test_tracks_saved_file_ref",
+      "test_no_saved_file_when_not_provided",
+      "test_preserves_topic"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_context_lifecycle.py",
+    "name": "TestCompletionIngested",
+    "lineno": 147,
+    "bases": [],
+    "methods": [
+      "test_sets_completed_job_ref",
+      "test_preserves_submitted_ref"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_context_lifecycle.py",
+    "name": "TestReviewPerformed",
+    "lineno": 166,
+    "bases": [],
+    "methods": [
+      "test_sets_reviewed_job_ref",
+      "test_preserves_completed_ref"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_context_lifecycle.py",
+    "name": "TestFollowupPreviewPrepared",
+    "lineno": 185,
+    "bases": [],
+    "methods": [
+      "test_sets_preview_refs",
+      "test_custom_draft_ref",
+      "test_records_source_job_as_reviewed",
+      "test_no_source_job_does_not_overwrite_reviewed"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_context_lifecycle.py",
+    "name": "TestSessionCleared",
+    "lineno": 214,
+    "bases": [],
+    "methods": [
+      "test_resets_all_fields"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_context_lifecycle.py",
+    "name": "TestFullLifecycleSequence",
+    "lineno": 231,
+    "bases": [],
+    "methods": [
+      "test_draft_to_review_sequence",
+      "test_followup_from_evidence_sequence",
+      "test_save_followup_sequence",
+      "test_stale_preview_cleanup_then_new_draft",
+      "test_repeated_completions_stay_stable",
+      "test_session_clear_then_fresh_chat_fail_closed",
+      "test_failed_followup_leaves_no_stale_draft"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_direct_mutation_gate.py",
+    "name": "TestIsSkillReadOnly",
+    "lineno": 34,
+    "bases": [],
+    "methods": [
+      "test_read_only_single_cap",
+      "test_read_only_multiple_caps",
+      "test_mutating_write_cap",
+      "test_mutating_execute_cap",
+      "test_mixed_read_and_write",
+      "test_empty_capabilities_fail_closed",
+      "test_unknown_capability_fail_closed"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_direct_mutation_gate.py",
+    "name": "TestIsDevMode",
+    "lineno": 60,
+    "bases": [],
+    "methods": [
+      "test_unset",
+      "test_empty",
+      "test_truthy_1",
+      "test_truthy_true",
+      "test_truthy_yes",
+      "test_falsy_0",
+      "test_falsy_no"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_direct_mutation_gate.py",
+    "name": "TestRunImplMutationGate",
+    "lineno": 106,
+    "bases": [],
+    "methods": [
+      "test_read_only_skill_runs_directly",
+      "test_mutating_skill_blocked_by_default",
+      "test_mutating_skill_blocked_with_flag_but_no_dev_mode",
+      "test_mutating_skill_allowed_with_dev_mode_and_flag",
+      "test_dry_run_bypasses_mutation_gate"
+    ],
+    "docstring": "Integration tests for the mutation gate in run_impl."
+  },
+  {
+    "module": "tests/test_direct_mutation_gate.py",
+    "name": "TestBuiltinSkillClassification",
+    "lineno": 215,
+    "bases": [],
+    "methods": [
+      "_get_manifest",
+      "test_system_status_is_read_only",
+      "test_files_list_dir_is_read_only",
+      "test_files_exists_is_read_only",
+      "test_files_stat_is_read_only",
+      "test_window_list_is_read_only",
+      "test_clipboard_paste_is_read_only",
+      "test_files_write_text_is_mutating",
+      "test_files_delete_file_is_mutating",
+      "test_sandbox_exec_is_mutating",
+      "test_system_open_app_is_mutating",
+      "test_clipboard_copy_is_mutating",
+      "test_files_copy_file_is_mutating",
+      "test_system_set_volume_is_mutating"
+    ],
+    "docstring": "Verify that real built-in skills are classified correctly."
+  },
+  {
+    "module": "tests/test_direct_mutation_gate.py",
+    "name": "TestEffectClassesFor",
+    "lineno": 266,
+    "bases": [],
+    "methods": [
+      "test_read_only_skill",
+      "test_write_skill",
+      "test_mixed_skill"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_doctor.py",
+    "name": "_FakeBrain",
+    "lineno": 13,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "capability_test"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_doctor.py",
+    "name": "_FakeResponse",
+    "lineno": 96,
+    "bases": [],
+    "methods": [
+      "__init__"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestStripInternalControlBlocks",
+    "lineno": 24,
+    "bases": [],
+    "methods": [
+      "test_empty_text_returns_empty",
+      "test_no_control_blocks_unchanged",
+      "test_fenced_control_block_stripped",
+      "test_unfenced_control_block_stripped",
+      "test_excess_newlines_collapsed"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestExtractReplyDrafts",
+    "lineno": 62,
+    "bases": [],
+    "methods": [
+      "test_extracts_code_from_fenced_block",
+      "test_sanitized_answer_strips_control_blocks",
+      "test_no_code_returns_none_code_content",
+      "test_returns_text_draft_when_present"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestResolveDraftContentBindingBaseline",
+    "lineno": 117,
+    "bases": [],
+    "methods": [
+      "test_no_op_when_no_drafts",
+      "test_no_op_for_informational_web_turn"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestCodeDraftBinding",
+    "lineno": 141,
+    "bases": [],
+    "methods": [
+      "test_code_draft_injects_into_builder_payload",
+      "test_code_draft_falls_back_to_pending_preview",
+      "test_late_code_draft_detection_from_active_code_preview"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestWritingDraftBinding",
+    "lineno": 194,
+    "bases": [],
+    "methods": [
+      "test_writing_draft_injects_into_builder_payload",
+      "test_late_writing_draft_detection_from_refinable_prose",
+      "test_writing_draft_skipped_on_degraded_status"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestCreateAndSaveFallback",
+    "lineno": 250,
+    "bases": [],
+    "methods": [
+      "test_create_and_save_generates_preview_from_reply",
+      "test_create_and_save_skipped_in_conversational_mode"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestGenerationContentRefresh",
+    "lineno": 280,
+    "bases": [],
+    "methods": [
+      "test_generation_refresh_fails_closed_with_no_text_draft_and_active_preview",
+      "test_generation_refresh_flag_false_when_no_generation_intent",
+      "test_generation_refresh_flag_false_when_draft_present"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestPreviewWriteSignal",
+    "lineno": 317,
+    "bases": [],
+    "methods": [
+      "test_no_write_when_nothing_matches",
+      "test_enrichment_turn_blocks_late_code_draft_detection",
+      "test_write_signal_only_on_actual_update"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestWritingDraftSystemTermContent",
+    "lineno": 358,
+    "bases": [],
+    "methods": [
+      "test_writeup_mentioning_queue_state_is_extracted",
+      "test_note_mentioning_expected_artifacts_is_extracted",
+      "test_non_writing_draft_still_filtered",
+      "test_writeup_binds_into_preview_over_junk_builder_content",
+      "test_note_binds_into_empty_preview_content"
+    ],
+    "docstring": "Regression: authored prose that mentions system terms like 'queue state'"
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestWritingDraftPreviewTruthGuardrail",
+    "lineno": 490,
+    "bases": [],
+    "methods": [
+      "test_builder_fragment_overridden_by_guardrail",
+      "test_substantial_builder_content_preserved",
+      "test_guardrail_does_not_fire_for_non_writing_turns",
+      "test_guardrail_uses_sanitized_answer_when_reply_text_draft_is_none",
+      "test_guardrail_does_not_fire_when_sanitized_answer_also_short"
+    ],
+    "docstring": "Regression: when the builder produces a short fragment from the authored"
+  },
+  {
+    "module": "tests/test_draft_content_binding.py",
+    "name": "TestExplicitLiteralContentBinding",
+    "lineno": 691,
+    "bases": [],
+    "methods": [
+      "test_containing_exactly_binds_content_into_builder",
+      "test_containing_exactly_detected_as_explicit_literal",
+      "test_generation_binding_skipped_for_explicit_literal"
+    ],
+    "docstring": "Explicit literal content provided via 'containing exactly:' must be"
+  },
+  {
+    "module": "tests/test_file_intent.py",
+    "name": "TestConversationalAnswerFirstClassifier",
+    "lineno": 937,
+    "bases": [],
+    "methods": [
+      "test_planning_requests_are_answer_first",
+      "test_save_write_intent_is_not_answer_first",
+      "test_unrelated_requests_are_not_answer_first"
+    ],
+    "docstring": "Checklist/planning/structured reasoning requests should be classified"
+  },
+  {
+    "module": "tests/test_health_snapshot_isolation.py",
+    "name": "TestHealthSnapshotIsolation",
+    "lineno": 40,
+    "bases": [],
+    "methods": [
+      "test_repo_health_json_not_written_by_fallback_records",
+      "test_voxera_health_path_env_var_is_set",
+      "test_explicit_queue_root_wins_over_voxera_health_path",
+      "test_record_fallback_with_none_queue_root_does_not_touch_repo_file",
+      "test_default_path_flow_uses_voxera_health_path",
+      "test_isolation_is_independent_across_tests"
+    ],
+    "docstring": "Health snapshot writes during tests must not touch the repo file."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestOutputClassReviewPhrases",
+    "lineno": 111,
+    "bases": [],
+    "methods": [
+      "test_output_review_phrases_are_recognized",
+      "test_output_review_phrases_reach_review_branch",
+      "test_what_was_the_output_with_evidence_returns_reviewed"
+    ],
+    "docstring": "Natural review phrases using 'output' must reach the review branch."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestBareNextStepFollowupPhrases",
+    "lineno": 160,
+    "bases": [],
+    "methods": [
+      "test_bare_next_step_phrases_are_recognized",
+      "test_bare_next_step_phrases_reach_followup_branch"
+    ],
+    "docstring": "Bare 'what should we do next' and 'what's the next step' must reach followup."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestReviseFromEvidenceOutputPhrases",
+    "lineno": 199,
+    "bases": [],
+    "methods": [
+      "test_output_revise_phrases_are_recognized",
+      "test_update_based_on_output_with_evidence_returns_revised_preview"
+    ],
+    "docstring": "Revise/update based on 'the output' must reach the revise-from-evidence path."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestOutputReferenceClassification",
+    "lineno": 246,
+    "bases": [],
+    "methods": [
+      "test_output_phrases_classify_as_job_result",
+      "test_output_resolves_from_completed_job_context",
+      "test_output_fails_closed_on_empty_context"
+    ],
+    "docstring": "'that output' / 'the output' must classify as JOB_RESULT."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestSessionContextJobResolution",
+    "lineno": 282,
+    "bases": [],
+    "methods": [
+      "test_review_resolves_from_session_context_completed_job",
+      "test_followup_resolves_from_session_context_completed_job",
+      "test_review_resolves_from_session_context_reviewed_job",
+      "test_no_session_context_returns_review_missing"
+    ],
+    "docstring": "Review and followup must resolve job ID from session context when"
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestMultiTurnReviewFollowupContinuity",
+    "lineno": 351,
+    "bases": [],
+    "methods": [
+      "test_review_then_followup_uses_reviewed_job_ref",
+      "test_followup_preview_then_continuation_reference",
+      "test_handoff_then_completion_then_review_then_save_followup"
+    ],
+    "docstring": "After review, session context should support natural followup resolution."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestFreshSessionFailClosed",
+    "lineno": 439,
+    "bases": [],
+    "methods": [
+      "test_fresh_session_review_fails_closed",
+      "test_fresh_session_followup_fails_closed",
+      "test_fresh_session_revise_from_evidence_fails_closed",
+      "test_fresh_session_save_followup_fails_closed",
+      "test_fresh_session_output_reference_fails_closed",
+      "test_fresh_session_followup_reference_fails_closed"
+    ],
+    "docstring": "Fresh sessions with no context must fail closed for all phrase families."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestPreviewWordingTruthfulness",
+    "lineno": 492,
+    "bases": [],
+    "methods": [
+      "test_followup_reply_says_preview_only",
+      "test_revised_reply_says_preview_only",
+      "test_save_followup_reply_says_nothing_submitted"
+    ],
+    "docstring": "Follow-up and revision replies must use truthful preview-only wording."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestEvidenceGroundingInvariant",
+    "lineno": 550,
+    "bases": [],
+    "methods": [
+      "test_review_context_updates_track_reviewed_job",
+      "test_followup_context_updates_track_reviewed_job",
+      "test_resolver_returns_string_ref_not_evidence_object"
+    ],
+    "docstring": "Session context must never override canonical evidence."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestAdjacentRegressionAnchors",
+    "lineno": 594,
+    "bases": [],
+    "methods": [
+      "test_existing_review_phrases_still_work",
+      "test_existing_followup_phrases_still_work",
+      "test_existing_job_result_reference_phrases_still_work",
+      "test_plain_question_does_not_match_review_or_followup",
+      "test_write_request_does_not_match_review_or_followup"
+    ],
+    "docstring": "Existing phrases must continue to work with the new additions."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestKnownOverbroadBoundaries",
+    "lineno": 650,
+    "bases": [],
+    "methods": [
+      "test_bare_next_step_matches_broader_planning_phrases",
+      "test_output_review_hints_match_broader_output_phrases",
+      "test_output_reference_resolver_is_benign_in_dispatch",
+      "test_overbroad_followup_still_fails_closed_in_fresh_session",
+      "test_overbroad_review_still_fails_closed_in_fresh_session"
+    ],
+    "docstring": "Document known overbroad substring matches introduced by this PR."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestFollowupContinuityReplyShape",
+    "lineno": 744,
+    "bases": [],
+    "methods": [
+      "test_general_followup_reply_is_conversational",
+      "test_revise_from_evidence_reply_is_conversational",
+      "test_update_based_on_output_reply_is_conversational",
+      "test_save_followup_reply_is_conversational",
+      "test_followup_reply_no_redundant_layering",
+      "test_fail_closed_review_no_boilerplate",
+      "test_fail_closed_followup_no_boilerplate",
+      "test_no_hallucinated_evidence_in_followup_reply",
+      "test_evidence_detail_shows_succeeded_summary",
+      "test_evidence_detail_for_failed_job"
+    ],
+    "docstring": "Follow-up reply text must be natural and not stiff/operator-heavy."
+  },
+  {
+    "module": "tests/test_linked_job_review_continuation.py",
+    "name": "TestSaveableFollowupContentShape",
+    "lineno": 987,
+    "bases": [],
+    "methods": [
+      "test_succeeded_saveable_followup_content_is_natural",
+      "test_failed_saveable_followup_content_is_natural"
+    ],
+    "docstring": "Saveable follow-up content templates should be clear and not operator-heavy."
+  },
+  {
+    "module": "tests/test_mission_planner.py",
+    "name": "_CapturingBrain",
+    "lineno": 65,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "generate"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_mission_planner.py",
+    "name": "_FakeBrain",
+    "lineno": 188,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "generate"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_mission_planner.py",
+    "name": "_SlowBrain",
+    "lineno": 460,
+    "bases": [],
+    "methods": [
+      "generate"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_mission_planner.py",
+    "name": "_CaptureBrain",
+    "lineno": 1636,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "generate"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_openai_compat_headers.py",
+    "name": "_FakeResponse",
+    "lineno": 8,
+    "bases": [],
+    "methods": [
+      "raise_for_status",
+      "json"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_openai_compat_headers.py",
+    "name": "_CaptureClient",
+    "lineno": 16,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "__aenter__",
+      "__aexit__",
+      "post"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_reference_resolver.py",
+    "name": "TestClassifyReference",
+    "lineno": 36,
+    "bases": [],
+    "methods": [
+      "test_draft_phrases",
+      "test_file_phrases",
+      "test_job_result_phrases",
+      "test_continuation_phrases",
+      "test_no_recognizable_phrase",
+      "test_empty_message",
+      "test_whitespace_only",
+      "test_case_insensitive",
+      "test_continuation_takes_priority_over_draft"
+    ],
+    "docstring": "Phrase \u2192 reference class mapping."
+  },
+  {
+    "module": "tests/test_reference_resolver.py",
+    "name": "TestResolveSessionReferenceHappy",
+    "lineno": 114,
+    "bases": [],
+    "methods": [
+      "test_draft_from_active_draft_ref",
+      "test_draft_falls_back_to_preview_ref",
+      "test_file_from_last_saved_file_ref",
+      "test_file_falls_back_to_draft_ref_when_path_like",
+      "test_file_no_fallback_when_draft_ref_is_not_path_like",
+      "test_job_result_from_completed_job",
+      "test_job_result_priority_order",
+      "test_job_result_falls_to_reviewed",
+      "test_job_result_falls_to_submitted",
+      "test_continuation_from_active_preview",
+      "test_continuation_falls_to_completed_job"
+    ],
+    "docstring": "Successful resolution when context provides a clear referent."
+  },
+  {
+    "module": "tests/test_reference_resolver.py",
+    "name": "TestResolveSessionReferenceFailClosed",
+    "lineno": 215,
+    "bases": [],
+    "methods": [
+      "test_no_reference_phrase",
+      "test_draft_no_active_context",
+      "test_file_no_saved_context",
+      "test_job_result_no_job_context",
+      "test_continuation_no_context",
+      "test_empty_string_refs_treated_as_missing",
+      "test_none_context_treated_as_empty",
+      "test_fresh_session_follow_up_fails_closed"
+    ],
+    "docstring": "Missing or ambiguous references fail closed."
+  },
+  {
+    "module": "tests/test_reference_resolver.py",
+    "name": "TestResolveJobIdFromContext",
+    "lineno": 270,
+    "bases": [],
+    "methods": [
+      "test_completed_first",
+      "test_reviewed_second",
+      "test_submitted_third",
+      "test_none_when_empty",
+      "test_none_when_all_blank",
+      "test_non_dict_returns_none"
+    ],
+    "docstring": "Job-ID fallback resolution for early-exit dispatch."
+  },
+  {
+    "module": "tests/test_reference_resolver.py",
+    "name": "TestTruthBoundaryInvariants",
+    "lineno": 317,
+    "bases": [],
+    "methods": [
+      "test_resolver_returns_ref_value_only",
+      "test_result_references_are_evidence_grounded_strings"
+    ],
+    "docstring": "Session-scoped references must never override canonical truth."
+  },
+  {
+    "module": "tests/test_response_shaping.py",
+    "name": "TestDerivePreviewHasContent",
+    "lineno": 73,
+    "bases": [],
+    "methods": [
+      "test_none_preview_returns_false",
+      "test_non_dict_returns_false",
+      "test_prose_preview_with_content_returns_true",
+      "test_code_preview_with_content_returns_true",
+      "test_empty_content_code_file_returns_false",
+      "test_empty_content_prose_file_txt_returns_true",
+      "test_empty_content_md_file_returns_false",
+      "test_preview_without_write_file_key_returns_true",
+      "test_write_file_key_present_but_non_dict_returns_false"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_response_shaping.py",
+    "name": "TestGuardrailFalsePreviewClaim",
+    "lineno": 120,
+    "bases": [],
+    "methods": [
+      "test_preview_exists_returns_text_unchanged",
+      "test_no_claim_text_returned_unchanged",
+      "test_false_preview_claim_stripped_when_no_preview",
+      "test_code_block_preserved_when_claim_stripped",
+      "test_empty_text_returned_unchanged"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_response_shaping.py",
+    "name": "TestShouldClearStalePreview",
+    "lineno": 156,
+    "bases": [],
+    "methods": [
+      "test_answers_equal_returns_false",
+      "test_no_effective_preview_returns_false",
+      "test_stale_empty_shell_returns_true",
+      "test_preview_with_content_returns_false",
+      "test_non_dict_write_file_returns_false",
+      "test_preview_without_write_file_returns_false"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_response_shaping.py",
+    "name": "TestAssembleAssistantReply",
+    "lineno": 187,
+    "bases": [],
+    "methods": [
+      "test_returns_assistant_reply_result",
+      "test_plain_conversational_reply_passes_through",
+      "test_status_is_prepared_preview_when_builder_payload_set",
+      "test_status_is_reply_status_when_no_builder_payload",
+      "test_generation_refresh_failed_closed_appends_message",
+      "test_ambiguous_change_request_replaces_text",
+      "test_naming_mutation_with_pending_preview_uses_control_message",
+      "test_code_draft_turn_not_suppressed_by_control_reply",
+      "test_empty_assistant_text_falls_back_to_control_message",
+      "test_explicit_targeted_refinement_uses_control_message",
+      "test_voxera_control_turn_non_json_uses_control_message",
+      "test_json_content_request_does_not_suppress_reply"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_response_shaping.py",
+    "name": "TestPreviewStateWordingClarity",
+    "lineno": 345,
+    "bases": [],
+    "methods": [
+      "test_new_preview_prepared_says_prepared",
+      "test_existing_preview_updated_says_updated",
+      "test_prepared_vs_updated_wording_differs",
+      "test_preview_only_no_submit_when_no_builder_payload",
+      "test_stale_empty_preview_gets_honest_reply",
+      "test_rename_with_update_mentions_path_and_preview_only",
+      "test_save_as_with_update_does_not_say_submitted",
+      "test_explicit_refinement_with_existing_preview_says_updated",
+      "test_no_preview_no_builder_gives_clear_failure",
+      "test_status_is_prepared_preview_only_with_builder_payload",
+      "test_writing_draft_new_preview_appends_prepared_notice",
+      "test_writing_draft_updated_preview_appends_updated_notice",
+      "test_writing_draft_no_builder_payload_no_notice",
+      "test_writing_draft_prepared_vs_updated_notice_differs"
+    ],
+    "docstring": "Verify that assistant replies use clear, distinct wording for each"
+  },
+  {
+    "module": "tests/test_response_shaping.py",
+    "name": "TestNoDuplicatePreviewNarration",
+    "lineno": 620,
+    "bases": [],
+    "methods": [
+      "test_contentful_draft_with_llm_narration_strips_duplicate",
+      "test_contentful_draft_without_narration_gets_stock_notice",
+      "test_pure_narration_reply_still_gets_stock_notice",
+      "test_update_turn_with_llm_narration_strips_duplicate"
+    ],
+    "docstring": "Successful authored drafting turns must not stack preview narration."
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestRefinedContentTransformations",
+    "lineno": 37,
+    "bases": [],
+    "methods": [
+      "sample_content",
+      "test_make_that_more_concise_compresses",
+      "test_more_concise_with_single_sentence",
+      "test_more_concise_with_empty_content_returns_none",
+      "test_turn_into_checklist",
+      "test_convert_into_bullet_list",
+      "test_into_a_checklist_shorthand",
+      "test_checklist_with_empty_content_returns_none",
+      "test_more_operator_facing",
+      "test_more_user_facing",
+      "test_keep_same_tone_preserves_content",
+      "test_keep_same_tone_with_empty_content_returns_none"
+    ],
+    "docstring": "Tests for new transformation patterns in refined_content_from_active_preview."
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestSessionAwareAuthoredFollowupDetection",
+    "lineno": 154,
+    "bases": [],
+    "methods": [
+      "test_recognizes_authored_followup_patterns",
+      "test_rejects_non_followup_patterns"
+    ],
+    "docstring": "Tests for _is_session_aware_authored_followup pattern matching."
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestResolveAuthoredFollowupFromSessionContext",
+    "lineno": 201,
+    "bases": [],
+    "methods": [
+      "active_context",
+      "artifacts",
+      "test_resolves_concise_with_active_context",
+      "test_resolves_checklist_with_active_context",
+      "test_preserves_draft_ref_path_when_file_like",
+      "test_fail_closed_no_session_context",
+      "test_fail_closed_no_active_draft_ref",
+      "test_fail_closed_empty_draft_ref",
+      "test_fail_closed_no_artifacts",
+      "test_fail_closed_empty_artifact_content",
+      "test_fail_closed_non_followup_message",
+      "test_generates_path_for_non_file_draft_ref"
+    ],
+    "docstring": "Tests for _resolve_authored_followup_from_session_context."
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestMaybeDraftJobPayloadSessionContext",
+    "lineno": 314,
+    "bases": [],
+    "methods": [
+      "test_session_context_followup_creates_preview_when_no_active_preview",
+      "test_active_preview_takes_precedence_over_session_context",
+      "test_session_context_none_is_safe",
+      "test_fresh_session_fail_closed",
+      "test_ambiguous_change_request_still_fails_closed"
+    ],
+    "docstring": "Tests for session_context parameter in maybe_draft_job_payload."
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestContextualRefinementPatterns",
+    "lineno": 395,
+    "bases": [],
+    "methods": [
+      "test_keep_same_tone_is_contextual_refinement",
+      "test_more_concise_is_contextual_refinement",
+      "test_into_a_checklist_is_contextual_refinement",
+      "test_more_formal_is_contextual_refinement",
+      "test_continue_that_plan_is_not_contextual_refinement"
+    ],
+    "docstring": "Tests that session-aware phrases are recognized as contextual refinement."
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestDetectionResolutionHonesty",
+    "lineno": 431,
+    "bases": [],
+    "methods": [
+      "test_detected_patterns_actually_resolve"
+    ],
+    "docstring": "Every pattern detected by _is_session_aware_authored_followup must resolve."
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestTrustBoundaryInvariants",
+    "lineno": 463,
+    "bases": [],
+    "methods": [
+      "test_session_context_does_not_claim_submission",
+      "test_runtime_text_not_promoted_to_authored",
+      "test_mode_field_is_always_overwrite"
+    ],
+    "docstring": "Regression anchors ensuring session context does not become a truth surface."
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestPreviewIdentityPreservation",
+    "lineno": 509,
+    "bases": [],
+    "methods": [
+      "authored_preview",
+      "test_make_that_more_concise_preserves_path",
+      "test_make_that_more_concise_preserves_goal_shape",
+      "test_turn_into_checklist_preserves_path",
+      "test_turn_into_checklist_produces_list_content",
+      "test_make_that_more_operator_facing_preserves_path",
+      "test_keep_same_tone_preserves_path",
+      "test_no_path_like_notes_more",
+      "test_no_goal_like_draft_a_explanation_as_more",
+      "test_actual_rename_still_works"
+    ],
+    "docstring": "Regression tests for the live bug where transformation words like 'more'"
+  },
+  {
+    "module": "tests/test_session_aware_authored_drafting.py",
+    "name": "TestExtractNamedTargetTransformationSafety",
+    "lineno": 632,
+    "bases": [],
+    "methods": [
+      "test_transformation_words_not_extracted_as_names"
+    ],
+    "docstring": "Regression: extract_named_target must not extract transformation words."
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestRoutingDebugPersistence",
+    "lineno": 51,
+    "bases": [],
+    "methods": [
+      "test_empty_routing_debug_on_fresh_session",
+      "test_append_single_entry",
+      "test_append_multiple_entries",
+      "test_bounded_history",
+      "test_clear_routing_debug"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestRoutingDebugNormalization",
+    "lineno": 134,
+    "bases": [],
+    "methods": [
+      "test_malformed_entries_dropped",
+      "test_missing_dispatch_source_defaults_to_unknown",
+      "test_non_dict_routing_debug_returns_empty"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestRoutingDebugPreservedAcrossTurns",
+    "lineno": 199,
+    "bases": [],
+    "methods": [
+      "test_routing_debug_survives_turn_append"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestSessionDebugSnapshot",
+    "lineno": 220,
+    "bases": [],
+    "methods": [
+      "test_snapshot_includes_base_debug_info",
+      "test_snapshot_includes_context_refs",
+      "test_snapshot_includes_routing_debug",
+      "test_snapshot_empty_session_has_safe_defaults"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestDebugJsonEndpoint",
+    "lineno": 282,
+    "bases": [],
+    "methods": [
+      "test_returns_400_without_session_id",
+      "test_returns_snapshot_for_valid_session",
+      "test_endpoint_reads_session_cookie",
+      "test_endpoint_does_not_mutate_state"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestChatFlowRoutingDebug",
+    "lineno": 329,
+    "bases": [],
+    "methods": [
+      "test_normal_chat_produces_routing_debug_entry",
+      "test_early_exit_produces_routing_debug_entry",
+      "test_session_clear_resets_routing_debug"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestNoBehaviorDrift",
+    "lineno": 392,
+    "bases": [],
+    "methods": [
+      "test_normal_reply_content_unchanged",
+      "test_preview_flow_unchanged"
+    ],
+    "docstring": "Verify that adding routing debug does not change observable chat behavior."
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestBoundedOutputShape",
+    "lineno": 438,
+    "bases": [],
+    "methods": [
+      "test_snapshot_keys_are_bounded",
+      "test_routing_entries_have_bounded_fields",
+      "test_json_endpoint_is_json_serializable"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_session_routing_debug.py",
+    "name": "TestLifecycleFreshness",
+    "lineno": 501,
+    "bases": [],
+    "methods": [
+      "test_submit_updates_last_submitted_job_ref_in_debug_surface",
+      "test_submit_clears_active_preview_ref_even_when_preview_gone",
+      "test_review_updates_last_reviewed_job_ref_in_debug_surface",
+      "test_completion_ingestion_updates_last_completed_job_ref",
+      "test_full_lifecycle_draft_submit_review_refs_fresh",
+      "test_completion_ingested_after_daemon_moves_job_to_done",
+      "test_review_of_terminal_job_sets_last_completed_job_ref",
+      "test_review_of_non_terminal_job_does_not_set_completed_ref"
+    ],
+    "docstring": "Regression tests for the debug surface reflecting lifecycle transitions."
+  },
+  {
+    "module": "tests/test_shared_session_context.py",
+    "name": "TestEmptyContextSchema",
+    "lineno": 44,
+    "bases": [],
+    "methods": [
+      "test_empty_context_has_canonical_keys",
+      "test_empty_context_ref_fields_are_none",
+      "test_empty_context_ambiguity_flags_is_empty_list",
+      "test_empty_context_timestamp_is_zero"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_shared_session_context.py",
+    "name": "TestNormalization",
+    "lineno": 84,
+    "bases": [],
+    "methods": [
+      "test_normalize_non_dict_returns_empty",
+      "test_normalize_preserves_valid_refs",
+      "test_normalize_strips_whitespace",
+      "test_normalize_clears_empty_strings",
+      "test_normalize_clears_non_string_refs",
+      "test_normalize_drops_unknown_keys",
+      "test_normalize_ambiguity_flags_bounded",
+      "test_normalize_ambiguity_flags_strips_empty",
+      "test_normalize_ambiguity_flags_non_list",
+      "test_normalize_timestamp_negative",
+      "test_normalize_timestamp_valid"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_shared_session_context.py",
+    "name": "TestPersistence",
+    "lineno": 150,
+    "bases": [],
+    "methods": [
+      "test_read_empty_session_returns_empty_context",
+      "test_write_then_read_roundtrip",
+      "test_update_merges_not_replaces",
+      "test_update_ignores_unknown_keys",
+      "test_update_cannot_set_timestamp_directly",
+      "test_clear_resets_to_none",
+      "test_write_normalizes_before_persist"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_shared_session_context.py",
+    "name": "TestTurnPreservation",
+    "lineno": 215,
+    "bases": [],
+    "methods": [
+      "test_context_survives_user_turn",
+      "test_context_survives_assistant_turn",
+      "test_context_survives_multiple_turns"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_shared_session_context.py",
+    "name": "TestTruthPrecedence",
+    "lineno": 258,
+    "bases": [],
+    "methods": [
+      "test_context_does_not_affect_preview_read",
+      "test_preview_truth_independent_of_context",
+      "test_context_and_preview_coexist_independently"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_shared_session_context.py",
+    "name": "TestConservativeBehavior",
+    "lineno": 305,
+    "bases": [],
+    "methods": [
+      "test_read_from_nonexistent_session_file",
+      "test_corrupt_context_field_returns_empty",
+      "test_partial_context_fills_missing_with_defaults",
+      "test_ambiguity_flags_are_bounded",
+      "test_update_returns_normalized_result"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_shared_session_context.py",
+    "name": "TestLifecycleUpdatePoints",
+    "lineno": 357,
+    "bases": [],
+    "methods": [
+      "test_preview_write_does_not_auto_update_context",
+      "test_context_update_at_preview_creation",
+      "test_context_update_at_submit",
+      "test_context_update_at_completion",
+      "test_context_update_at_review",
+      "test_context_survives_full_lifecycle_sequence"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_vera_brave_search.py",
+    "name": "_DummyResponse",
+    "lineno": 14,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "raise_for_status",
+      "json"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_vera_brave_search.py",
+    "name": "_DummyAsyncClient",
+    "lineno": 31,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "__aenter__",
+      "__aexit__",
+      "get"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestWritingDraftRecognitionExpanded",
+    "lineno": 38,
+    "bases": [],
+    "methods": [
+      "test_natural_drafting_phrases_recognized",
+      "test_non_drafting_phrases_not_matched"
+    ],
+    "docstring": "Verify that natural drafting phrasings are classified as writing-draft requests."
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestFollowupPhrasingExpanded",
+    "lineno": 87,
+    "bases": [],
+    "methods": [
+      "test_followup_hints_recognized",
+      "test_non_followup_phrases_not_matched",
+      "test_expanded_followup_hints_fail_closed_without_job_context",
+      "test_expanded_followup_with_evidence_returns_preview_ready"
+    ],
+    "docstring": "Verify that natural post-job follow-up phrasings reach the follow-up branch."
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestWrapperStrippingExpanded",
+    "lineno": 212,
+    "bases": [],
+    "methods": [
+      "test_heres_what_i_came_up_with_stripped",
+      "test_ive_put_together_stripped",
+      "test_let_me_know_if_youd_like_any_changes_stripped",
+      "test_would_you_like_me_to_save_stripped"
+    ],
+    "docstring": "Verify that new wrapper patterns are stripped from LLM replies."
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestNaturalDraftingSessionFlows",
+    "lineno": 263,
+    "bases": [],
+    "methods": [
+      "test_write_me_a_note_creates_preview",
+      "test_draft_a_brief_summary_creates_preview",
+      "test_put_together_a_writeup_creates_preview",
+      "test_write_up_an_explanation_creates_preview",
+      "test_natural_draft_with_save_as_uses_specified_filename"
+    ],
+    "docstring": "End-to-end session tests for natural drafting phrasings."
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestContentShapeSignalExpanded",
+    "lineno": 374,
+    "bases": [],
+    "methods": [
+      "test_tell_me_a_note_about_refreshes_active_preview"
+    ],
+    "docstring": "Verify that 'note' and 'writeup' are recognized as content shape signals."
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestPreviewTruthBinding",
+    "lineno": 406,
+    "bases": [],
+    "methods": [
+      "test_writeup_about_operator_truth_surfaces_binds_to_preview",
+      "test_note_about_artifact_evidence_model_binds_to_preview",
+      "test_preview_content_and_assistant_reply_stay_aligned"
+    ],
+    "docstring": "Regression: authored prose must be bound into the authoritative preview"
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestDraftingAndRefinementPreviewStateWording",
+    "lineno": 539,
+    "bases": [],
+    "methods": [
+      "test_initial_draft_creates_preview_with_correct_content_and_wording",
+      "test_refinement_updates_preview_content_and_wording",
+      "test_draft_preview_content_matches_chat_not_builder_placeholder"
+    ],
+    "docstring": "Regression tests for the exact two-prompt live failure sequence:"
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestRefinementContentExtraction",
+    "lineno": 712,
+    "bases": [],
+    "methods": [
+      "test_refinement_with_system_terms_preserves_reply_text_draft",
+      "test_refinement_without_system_terms_works_either_way",
+      "test_non_refinement_message_not_affected"
+    ],
+    "docstring": "Regression: refinement turns on active prose previews must not have"
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestLinkedJobReviewPhraseRecognition",
+    "lineno": 767,
+    "bases": [],
+    "methods": [
+      "test_review_inspection_phrases_recognized",
+      "test_non_review_inspection_phrases_not_matched"
+    ],
+    "docstring": "Verify that result-inspection phrases are recognized as review requests."
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestLinkedJobReviseFromEvidence",
+    "lineno": 818,
+    "bases": [],
+    "methods": [
+      "test_revision_phrases_recognized_as_followup",
+      "test_non_revision_phrases_not_matched",
+      "test_revision_phrases_fail_closed_without_job_context",
+      "test_revision_with_evidence_returns_preview_ready"
+    ],
+    "docstring": "Verify that revise-from-evidence phrases reach the follow-up branch."
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestFollowupPreviewGoalText",
+    "lineno": 928,
+    "bases": [],
+    "methods": [
+      "test_succeeded_job_goal_says_follow_up_not_inspect",
+      "test_failed_job_goal_mentions_corrected_retry",
+      "test_canceled_job_goal_mentions_replacement"
+    ],
+    "docstring": "Verify that follow-up preview goals are evidence-grounded, not vague."
+  },
+  {
+    "module": "tests/test_vera_chat_reliability.py",
+    "name": "TestPreviewTruthQueueTruthNote",
+    "lineno": 1024,
+    "bases": [],
+    "methods": [
+      "test_queue_truth_note_preview_has_substantial_content",
+      "test_queue_truth_note_builder_fragment_overridden",
+      "test_queue_truth_note_assistant_wording_correct",
+      "test_preview_content_aligned_with_chat",
+      "test_builder_fragment_overridden_even_when_extraction_fails"
+    ],
+    "docstring": "Regression: 'write me a short note about queue truth' must produce a"
+  },
+  {
+    "module": "tests/test_vera_compiler_leakage.py",
+    "name": "TestPlanningSignalExpansion",
+    "lineno": 37,
+    "bases": [],
+    "methods": [
+      "test_planning_signal_matches_authored_planning_requests",
+      "test_authored_planning_classified_as_answer_first",
+      "test_should_use_conversational_artifact_mode",
+      "test_prior_planning_keeps_followup_conversational",
+      "test_non_planning_messages_stay_false"
+    ],
+    "docstring": "Verify that workout/training/routine planning requests trigger the"
+  },
+  {
+    "module": "tests/test_vera_compiler_leakage.py",
+    "name": "TestInternalCompilerPayloadDetection",
+    "lineno": 127,
+    "bases": [],
+    "methods": [
+      "test_detects_intent_and_write_file",
+      "test_detects_reasoning_and_decisions",
+      "test_detects_intent_and_tool",
+      "test_normal_code_not_flagged",
+      "test_normal_json_not_flagged",
+      "test_single_marker_not_flagged"
+    ],
+    "docstring": "Verify that _looks_like_internal_compiler_payload correctly identifies"
+  },
+  {
+    "module": "tests/test_vera_compiler_leakage.py",
+    "name": "TestGuardrailCompilerPayloadStripping",
+    "lineno": 162,
+    "bases": [],
+    "methods": [
+      "test_compiler_payload_in_code_block_stripped",
+      "test_normal_code_block_preserved",
+      "test_mixed_blocks_only_compiler_stripped",
+      "test_preview_exists_passes_through"
+    ],
+    "docstring": "Verify that guardrail_false_preview_claim strips internal compiler"
+  },
+  {
+    "module": "tests/test_vera_compiler_leakage.py",
+    "name": "TestStripInternalCompilerLeakage",
+    "lineno": 216,
+    "bases": [],
+    "methods": [
+      "test_strips_fenced_compiler_payload",
+      "test_strips_bare_json_payload",
+      "test_preserves_normal_content",
+      "test_preserves_normal_code_blocks",
+      "test_strips_nested_bare_json_no_trailing_brace",
+      "test_strips_multiline_bare_json",
+      "test_empty_input"
+    ],
+    "docstring": "Verify the defense-in-depth guardrail that runs in GOVERNED_PREVIEW"
+  },
+  {
+    "module": "tests/test_vera_compiler_leakage.py",
+    "name": "TestConversationalSanitizerCatchesPayloads",
+    "lineno": 290,
+    "bases": [],
+    "methods": [
+      "test_json_payload_stripped_by_sanitizer",
+      "test_bare_json_stripped_by_defense_in_depth"
+    ],
+    "docstring": "When correctly routed to CONVERSATIONAL_ARTIFACT mode, the nuclear"
+  },
+  {
+    "module": "tests/test_vera_compiler_leakage.py",
+    "name": "TestLiveReproAnchors",
+    "lineno": 318,
+    "bases": [],
+    "methods": [
+      "test_initial_workout_request_is_planning",
+      "test_detail_followup_stays_conversational_via_prior_planning",
+      "test_clearer_restatement_stays_conversational",
+      "test_observed_leak_payload_stripped_by_guardrail",
+      "test_observed_leak_stripped_by_defense_in_depth"
+    ],
+    "docstring": "Exact repro anchors from the observed live failure sequence."
+  },
+  {
+    "module": "tests/test_vera_compiler_leakage.py",
+    "name": "TestPreviewTruthAlignment",
+    "lineno": 422,
+    "bases": [],
+    "methods": [
+      "test_no_preview_no_claim",
+      "test_real_preview_claim_passes"
+    ],
+    "docstring": "When a preview is created, the reply should reference it truthfully."
+  },
+  {
+    "module": "tests/test_vera_hidden_compiler.py",
+    "name": "_FakeResponse",
+    "lineno": 9,
+    "bases": [],
+    "methods": [
+      "__init__"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_vera_live_path_characterization.py",
+    "name": "TestNaturalDraftingPreviewTruth",
+    "lineno": 138,
+    "bases": [],
+    "methods": [
+      "test_write_me_a_note_about_artifact_evidence_creates_preview",
+      "test_make_it_shorter_updates_preview_content",
+      "test_save_as_named_file_preserves_content_and_path"
+    ],
+    "docstring": "Verify that natural drafting flows bind authored content to preview truth."
+  },
+  {
+    "module": "tests/test_vera_live_path_characterization.py",
+    "name": "TestPreviewWordingLivePaths",
+    "lineno": 248,
+    "bases": [],
+    "methods": [
+      "test_first_draft_says_prepared_and_preview_only",
+      "test_refinement_says_updated_and_preview_only",
+      "test_unchanged_preview_does_not_claim_update",
+      "test_explicit_handoff_wording_after_submit"
+    ],
+    "docstring": "Verify that preview-state wording is truthful for each transition."
+  },
+  {
+    "module": "tests/test_vera_live_path_characterization.py",
+    "name": "TestLinkedJobReviewLivePaths",
+    "lineno": 345,
+    "bases": [],
+    "methods": [
+      "test_review_phrases_are_recognized",
+      "test_review_with_evidence_returns_grounded_message",
+      "test_review_message_surfaces_canonical_fields",
+      "test_review_failed_job_surfaces_failure_summary",
+      "test_inspect_output_details_via_dispatch"
+    ],
+    "docstring": "Verify that linked-job review is evidence-grounded, not LLM-fabricated."
+  },
+  {
+    "module": "tests/test_vera_live_path_characterization.py",
+    "name": "TestFollowUpPreviewLivePaths",
+    "lineno": 437,
+    "bases": [],
+    "methods": [
+      "test_followup_phrases_are_recognized",
+      "test_followup_with_succeeded_evidence_prepares_grounded_preview",
+      "test_followup_preview_goal_references_prior_job",
+      "test_followup_for_failed_job_references_failure",
+      "test_what_should_we_do_next_based_on_that_reaches_followup"
+    ],
+    "docstring": "Verify follow-up preview preparation is grounded in real evidence."
+  },
+  {
+    "module": "tests/test_vera_live_path_characterization.py",
+    "name": "TestFailClosedNoResolvableJob",
+    "lineno": 534,
+    "bases": [],
+    "methods": [
+      "test_review_fails_closed_with_no_linked_job",
+      "test_followup_fails_closed_with_no_linked_job",
+      "test_inspect_output_details_fails_closed_with_no_job",
+      "test_what_should_we_do_next_fails_closed_with_no_job",
+      "test_review_fails_closed_without_job_context",
+      "test_followup_fails_closed_without_job_context"
+    ],
+    "docstring": "Verify fail-closed behavior when evidence cannot be resolved."
+  },
+  {
+    "module": "tests/test_vera_live_path_characterization.py",
+    "name": "TestSessionLevelEvidenceReviewFollowUp",
+    "lineno": 608,
+    "bases": [],
+    "methods": [
+      "_seed_completed_job",
+      "test_review_request_in_session_returns_evidence_grounded_reply",
+      "test_followup_request_in_session_creates_preview_from_evidence",
+      "test_review_request_with_no_linked_job_fails_closed_in_session",
+      "test_followup_with_no_linked_job_fails_closed_in_session"
+    ],
+    "docstring": "Session-level tests verifying the full chat \u2192 dispatch \u2192 reply path"
+  },
+  {
+    "module": "tests/test_vera_live_path_characterization.py",
+    "name": "TestReviseFromEvidenceLivePaths",
+    "lineno": 740,
+    "bases": [],
+    "methods": [
+      "test_revise_phrases_are_recognized",
+      "test_revise_produces_revision_oriented_goal",
+      "test_revise_failed_job_references_failure",
+      "test_revise_dispatch_with_evidence_returns_revised_status",
+      "test_update_dispatch_with_evidence_returns_revised_status",
+      "test_revise_fails_closed_with_no_job",
+      "test_revise_preview_payload_is_coherent",
+      "test_revise_chat_and_preview_truth_alignment"
+    ],
+    "docstring": "Verify revise/update workflows produce revision-oriented previews grounded in evidence."
+  },
+  {
+    "module": "tests/test_vera_live_path_characterization.py",
+    "name": "TestSaveFollowUpLivePaths",
+    "lineno": 885,
+    "bases": [],
+    "methods": [
+      "test_save_followup_phrases_are_recognized",
+      "test_saveable_preview_has_write_file_with_content",
+      "test_saveable_preview_for_failed_job_includes_failure",
+      "test_save_followup_dispatch_returns_saveable_status",
+      "test_save_followup_as_file_dispatch",
+      "test_save_followup_fails_closed_with_no_job",
+      "test_save_followup_chat_and_preview_truth_alignment",
+      "test_save_followup_session_level_creates_write_file_preview",
+      "test_revise_session_level_creates_revision_preview"
+    ],
+    "docstring": "Verify save-follow-up workflows produce saveable previews with write_file."
+  },
+  {
+    "module": "tests/test_vera_preview_materialization.py",
+    "name": "TestIsEmptyCodePreviewShell",
+    "lineno": 48,
+    "bases": [],
+    "methods": [
+      "test_none_returns_false",
+      "test_empty_dict_returns_false",
+      "test_no_write_file_returns_false",
+      "test_non_code_extension_returns_false",
+      "test_markdown_extension_returns_false",
+      "test_code_shell_with_content_returns_false",
+      "test_empty_python_shell_returns_true",
+      "test_empty_bash_shell_returns_true",
+      "test_empty_yaml_shell_returns_true"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_vera_preview_materialization.py",
+    "name": "TestCodeDraftRecoveryPattern",
+    "lineno": 122,
+    "bases": [],
+    "methods": [
+      "test_recovery_phrases_match",
+      "test_non_recovery_phrases_do_not_match"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_vera_preview_materialization.py",
+    "name": "TestRecoverCodeDraftFromHistory",
+    "lineno": 169,
+    "bases": [],
+    "methods": [
+      "test_returns_none_when_preview_exists",
+      "test_returns_none_when_message_is_code_draft",
+      "test_returns_none_when_no_matching_history",
+      "test_recovers_from_history_with_code_draft"
+    ],
+    "docstring": null
+  },
+  {
+    "module": "tests/test_vera_preview_materialization.py",
+    "name": "TestDetectAutomationClarificationCompletion",
+    "lineno": 552,
+    "bases": [],
+    "methods": [
+      "_automation_turns",
+      "test_returns_none_when_preview_exists",
+      "test_returns_none_when_no_turns",
+      "test_returns_none_when_no_clarification_question",
+      "test_returns_none_when_no_automation_intent_in_history",
+      "test_returns_none_when_no_detail_signal",
+      "test_synthesizes_python_shell_for_clarification_completion",
+      "test_returns_none_when_message_is_already_code_draft",
+      "test_path_token_alone_is_sufficient_detail_signal"
+    ],
+    "docstring": "Unit tests for the broader automation/process clarification detector."
+  },
+  {
+    "module": "tests/test_vera_preview_materialization.py",
+    "name": "TestLooksLikeDirectAutomationRequest",
+    "lineno": 843,
+    "bases": [],
+    "methods": [
+      "test_direct_automation_positives",
+      "test_direct_automation_negatives"
+    ],
+    "docstring": "Unit tests for the direct automation request detector (no clarification needed)."
+  },
+  {
+    "module": "tests/test_vera_preview_materialization.py",
+    "name": "TestLooksLikePreviewableAutomationIntent",
+    "lineno": 1067,
+    "bases": [],
+    "methods": [
+      "test_previewable_automation_positives",
+      "test_previewable_automation_negatives"
+    ],
+    "docstring": "Unit tests for the broader previewable automation intent detector."
+  },
+  {
+    "module": "tests/test_vera_runtime_validation_fixes.py",
+    "name": "TestSummaryPreviewBodyPurity",
+    "lineno": 35,
+    "bases": [],
+    "methods": [
+      "test_strip_you_can_review_prefix",
+      "test_strip_please_review_prefix",
+      "test_strip_trailing_review_wrapper",
+      "test_summary_generate_save_produces_pure_body",
+      "test_summary_with_please_review_prefix_produces_pure_body"
+    ],
+    "docstring": "Preview content must not contain helper/control narration."
+  },
+  {
+    "module": "tests/test_vera_runtime_validation_fixes.py",
+    "name": "TestSubmitIntentStrictness",
+    "lineno": 136,
+    "bases": [],
+    "methods": [
+      "test_send_iit_is_near_miss",
+      "test_send_it_is_not_near_miss",
+      "test_submit_it_is_not_near_miss",
+      "test_sned_it_is_near_miss",
+      "test_sendit_is_near_miss",
+      "test_send_iiit_is_near_miss",
+      "test_normal_text_is_not_near_miss",
+      "test_near_miss_does_not_trigger_canonical_submit",
+      "test_near_miss_submit_fails_closed_in_session",
+      "test_near_miss_submit_without_preview_also_fails_closed",
+      "test_real_submit_still_works_after_near_miss"
+    ],
+    "docstring": "Typo-like near-submit phrases must fail closed or route canonically."
+  },
+  {
+    "module": "tests/test_vera_runtime_validation_fixes.py",
+    "name": "TestPostPreviewRenameMutation",
+    "lineno": 233,
+    "bases": [],
+    "methods": [
+      "test_call_it_renames_preview_deterministic",
+      "test_name_it_renames_preview_deterministic",
+      "test_rename_it_renames_preview_deterministic",
+      "test_rename_preserves_content_in_session",
+      "test_name_it_variant_renames_in_session",
+      "test_rename_it_to_variant_renames_in_session",
+      "test_rename_does_not_leave_stale_auto_filename"
+    ],
+    "docstring": "Clear rename instructions after preview must update the canonical path."
+  },
+  {
+    "module": "tests/test_vera_runtime_validation_fixes.py",
+    "name": "TestPreservationOfPassingFlows",
+    "lineno": 381,
+    "bases": [],
+    "methods": [
+      "test_poem_flow_preview_path_correct",
+      "test_joke_flow_clean_preview_body",
+      "test_fact_flow_clean_preview_body",
+      "test_submit_after_preview_handoff_produces_queue_job"
+    ],
+    "docstring": "Characterization tests confirming joke/fact/poem flows are not regressed."
+  },
+  {
+    "module": "tests/test_vera_runtime_validation_fixes.py",
+    "name": "TestActiveDraftContentRefresh",
+    "lineno": 473,
+    "bases": [],
+    "methods": [
+      "test_clear_refresh_detected_for_generate_different_poem",
+      "test_clear_refresh_detected_for_tell_me_different_joke",
+      "test_clear_refresh_detected_for_give_me_shorter_summary",
+      "test_clear_refresh_detected_for_give_me_different_fact",
+      "test_clear_refresh_detected_for_change_the_poem",
+      "test_clear_refresh_not_detected_for_change_it",
+      "test_clear_refresh_not_detected_for_make_it_better",
+      "test_generate_refreshed_poem_produces_content",
+      "test_generate_refreshed_joke_produces_content",
+      "test_generate_refreshed_fact_produces_content",
+      "test_generate_refreshed_summary_compresses",
+      "test_detect_content_type_poem",
+      "test_detect_content_type_joke",
+      "test_refreshed_poem_has_no_helper_text",
+      "test_refreshed_joke_has_no_helper_text",
+      "test_change_it_fails_closed",
+      "test_make_it_better_fails_closed",
+      "test_fix_it_fails_closed",
+      "test_ambiguous_change_it_detected",
+      "test_ambiguous_make_it_better_detected",
+      "test_ambiguous_fix_it_detected",
+      "test_specific_type_not_ambiguous",
+      "test_poem_refresh_in_session",
+      "test_joke_refresh_in_session",
+      "test_fact_refresh_in_session",
+      "test_ambiguous_request_fails_closed_in_session",
+      "test_submit_after_refresh_uses_refreshed_body"
+    ],
+    "docstring": "Clear content-refresh requests on an active preview must replace the body."
+  },
+  {
+    "module": "tests/vera_session_helpers.py",
+    "name": "VeraSessionHarness",
+    "lineno": 17,
+    "bases": [],
+    "methods": [
+      "__init__",
+      "chat",
+      "preview",
+      "turns",
+      "weather_context",
+      "derived_output",
+      "write_investigation",
+      "session_context"
+    ],
+    "docstring": "Shared narrow-session helper for Vera characterization tests."
+  }
+]

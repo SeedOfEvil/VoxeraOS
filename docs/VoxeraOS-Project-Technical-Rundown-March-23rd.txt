@@ -1,0 +1,275 @@
+VoxeraOS — Project Technical Rundown
+====================================
+
+Note: This file kept its date-stamped filename so external links keep
+resolving. The body has been fully rewritten from the current repo
+state (VoxeraOS 0.1.9 alpha). It is not historical.
+
+1. What VoxeraOS is
+-------------------
+
+VoxeraOS is an open-source, queue-driven AI control plane for Linux. It
+sits above the substrate OS (Ubuntu, audio stack, filesystem, network,
+systemd, optional rootless Podman) and routes operator goals through a
+planning -> policy -> execution -> audit pipeline.
+
+The trust model is simple and strict:
+
+- Vera (the conversational layer) reasons freely.
+- Voxera (the control layer) is the only thing allowed to mutate state.
+- Every mutating action goes through a capability-gated, policy-evaluated
+  queue job that produces evidence artifacts.
+
+2. Top-level layout
+-------------------
+
+    src/voxera/                 main control plane package
+    src/voxera_builtin_skills/  built-in skill entrypoints
+    skills/                     skill manifest tree (31 manifests)
+    missions/                   JSON missions (sandbox_smoke, sandbox_net)
+    deploy/systemd/user/        three voxera-* user units
+    docs/                       long-form docs and this regenerated bundle
+    tests/                      ~110 pytest files + tests/golden
+    scripts/                    e2e + maintenance scripts
+    tools/                      golden_surfaces.py, mypy-baseline.txt
+    Makefile                    venv/install/dev/lint/type/test/e2e gates
+    pyproject.toml              project metadata (version 0.1.9)
+
+3. Long-running processes
+-------------------------
+
+    voxera-daemon.service   ->  voxera daemon
+    voxera-panel.service    ->  voxera panel --host 127.0.0.1 --port 8844
+    voxera-vera.service     ->  uvicorn voxera.vera_web.app:app
+                                --host 127.0.0.1 --port 8790
+
+`make services-install` templates the abs repo path into each unit and
+enables them under `systemctl --user`.
+
+4. Queue object model
+---------------------
+
+The canonical lifecycle vocabulary is in
+`src/voxera/core/queue_object_model.py`:
+
+States:
+    queued, planning, running, awaiting_approval, resumed,
+    advisory_running, done, failed, step_failed, blocked, canceled
+
+Terminal lifecycle states:
+    done, failed, step_failed, blocked, canceled
+
+Terminal outcomes:
+    succeeded, failed, blocked, denied, canceled
+
+Truth surfaces (highest authority first):
+    artifact_evidence  -> queue  -> preview  -> conversation
+
+On disk:
+    ~/VoxeraOS/notes/queue/
+        inbox/                jobs awaiting planning
+        pending/              active planning/running jobs
+        pending/approvals/    approval payloads
+        done/ failed/ canceled/    terminal buckets
+        artifacts/<job>/      per-job artifact bundles
+        artifacts/vera_sessions/   Vera session JSON store
+        _archive/             recovery/archive bucket
+        .daemon.lock          singleton daemon lock
+
+5. Queue daemon
+---------------
+
+`src/voxera/core/queue_daemon.py` defines `MissionQueueDaemon`. It is
+composed via mixins:
+
+- QueueApprovalMixin   (core/queue_approvals.py)
+- QueueRecoveryMixin   (core/queue_recovery.py)
+- QueueExecutionMixin  (core/queue_execution.py)
+
+The daemon enforces a singleton via the `.daemon.lock` file, recovers
+interrupted running jobs to `failed` deterministically on startup, and
+emits clean-shutdown reasons.
+
+6. Mission planning
+-------------------
+
+`core/mission_planner.py` is the LLM-backed planner. It builds a
+deterministic capabilities prompt block from
+`core/capabilities_snapshot.py`, then runs the operator goal through an
+ordered list of brain candidates with deterministic error
+classification. Output is normalized via a family of
+`_normalize_*_step` helpers and explicit-goal extractors so the planner
+cannot silently extend operator intent.
+
+Built-in mission templates (in `core/missions.py`):
+    work_mode, focus_mode, daily_checkin, incident_mode, wrap_up,
+    notes_archive_flow, system_check, system_inspect, system_diagnostics
+
+On-disk JSON missions:
+    missions/sandbox_smoke.json
+    missions/sandbox_net.json
+
+7. Intent classifiers
+---------------------
+
+Goals first pass through bounded classifiers before any LLM plan:
+
+- core/simple_intent.py        (assistant_question, run_command, ...)
+- core/file_intent.py          (notes-bounded file intent)
+- core/code_draft_intent.py    (code drafts)
+- core/writing_draft_intent.py (prose drafts)
+- core/queue_job_intent.py     (job_intent artifact derivation)
+
+All file intents are bounded to ~/VoxeraOS/notes/ excluding the queue
+control plane subtree, with parent-traversal guards.
+
+8. Skills subsystem
+-------------------
+
+`src/voxera/skills/`:
+    registry.py       discovers manifests; SkillRegistry / SkillDiscoveryReport
+    runner.py         resolves entrypoints; runs and persists results
+    execution.py      JobPaths, secret redaction, command/env sanitizers
+    arg_normalizer.py canonicalize_argv()
+    path_boundaries.py workspace + read-only enforcement
+    result_contract.py SKILL_RESULT_KEY, build_skill_result(...)
+
+Built-in entrypoints live in `src/voxera_builtin_skills/`. Categories:
+files (15), clipboard (2), system/host (12), app/url (2), sandbox (1),
+plus `load_snapshot`. The current skill manifest tree ships 31 manifests.
+
+9. Vera control layer
+---------------------
+
+`src/voxera/vera/`:
+    service.py             top-level Vera service
+    prompt.py              prompt construction
+    session_store.py       per-session JSON store
+    context_lifecycle.py   shared_context update points
+    reference_resolver.py  bounded session-scoped reference resolution
+    preview_drafting.py    canonical preview builder
+    draft_revision.py      in-place revision flows
+    preview_submission.py  submit_active_preview_for_session()
+    handoff.py             higher-level handoff orchestration
+    linked_completions.py  ingest terminal jobs back into the session
+    evidence_review.py     evidence review surfaces
+    result_surfacing.py    decides how a result is presented
+    investigation_flow.py  Brave Search investigation flow
+    investigation_derivations.py
+    brave_search.py        Brave Search HTTP client
+    weather.py             Open-Meteo client
+    weather_flow.py        weather flow classifier
+    saveable_artifacts.py  authored content extraction
+
+`src/voxera/vera_web/`:
+    app.py                       FastAPI app
+    chat_early_exit_dispatch.py  pre-LLM short-circuits
+    execution_mode.py            CONVERSATIONAL_ARTIFACT vs GOVERNED_PREVIEW
+    conversational_checklist.py  checklist enforcement
+    draft_content_binding.py     authored draft binding to preview
+    preview_content_binding.py
+    response_shaping.py          guardrails (compiler leakage, false claims)
+
+Routes:
+    GET  /
+    POST /chat
+    GET  /chat/updates
+    POST /handoff
+    POST /clear
+    GET  /vera/debug/session.json
+
+Sessions are persisted at
+~/VoxeraOS/notes/queue/artifacts/vera_sessions/<session_id>.json with
+`session_id = vera-<24 hex>`.
+
+10. Panel
+---------
+
+`src/voxera/panel/app.py` mounts FastAPI routes in one module per
+surface:
+
+    routes_home.py            /, /queue/create
+    routes_jobs.py            /jobs, approvals approve/deny/...
+    routes_missions.py        /missions/create, /missions/templates/create
+    routes_assistant.py       /assistant, /assistant/ask, progress
+    routes_hygiene.py         /hygiene, prune-dry-run, reconcile, health-reset
+    routes_recovery.py        /recovery, /recovery/download/{bucket}/{name}
+    routes_bundle.py          /jobs/{id}/bundle, /bundle/system
+    routes_queue_control.py   delete/pause/resume
+    routes_vera.py            /vera, /vera/chat
+
+Templates are in `panel/templates/` (home, jobs, job_detail, assistant,
+vera, hygiene, recovery, _daemon_health_widget).
+
+11. Artifacts and evidence
+--------------------------
+
+Canonical families (core/queue_object_model.ARTIFACT_FAMILIES):
+    plan, actions, stdout, stderr, review_summary, approval,
+    evidence_bundle, execution_envelope, execution_result,
+    step_results, assistant_advisory, job_intent
+
+Schema versions (core/queue_contracts.py): all currently `1`.
+
+Minimum required artifacts per executed job:
+    plan.json, actions.jsonl, step_results.json, execution_envelope.json,
+    execution_result.json, job_intent.json
+
+`core/queue_result_consumers.resolve_structured_execution(...)` is the
+single function that translates queue state + sidecars + artifacts into
+a normalized payload (terminal_outcome, normalized_outcome_class,
+artifact_refs, evidence_bundle.trace).
+
+12. CLI surface
+---------------
+
+`voxera` (entry point: `voxera = "voxera.cli:app"`) exposes:
+
+    version, setup, demo, status, run, audit, doctor, panel, daemon, vera
+    config show|snapshot|validate
+    secrets set|get|unset
+    skills list
+    missions list|plan|run
+    queue init|status|bundle|health|health-reset|cancel|retry|unlock|
+          pause|resume|prune|reconcile
+    queue approvals list|approve|deny
+    queue lock status
+    queue files find|grep|tree|copy|move|rename
+    artifacts prune
+    inbox add|list
+    ops capabilities
+    ops bundle system|job
+
+13. Tests and gates
+-------------------
+
+About 110 pytest files cover queue daemon contracts, CLI surfaces, Vera
+control layer + Vera web, skills, panel, doctor/health, planner,
+intent, secrets, golden surfaces, and a security red team. Make targets:
+
+    make check                  fmt-check + lint + type + test
+    make validation-check       adds golden + security + targeted contracts
+    make full-validation-check  + e2e_golden4 smoke
+    make security-check         pytest tests/test_security_redteam.py
+    make golden-check           tools/golden_surfaces.py --check
+
+14. Configuration
+-----------------
+
+`AppConfig` (Pydantic, extra=forbid) carries `mode`, `max_replan_attempts`,
+brain map, `PolicyApprovals`, `PrivacyConfig`, optional
+`WebInvestigationConfig`, `skills_path`, sandbox image/limits.
+
+Runtime knobs come from `~/.config/voxera/env` (loaded unless
+VOXERA_LOAD_DOTENV=0). The full env surface is documented in
+docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md.
+
+15. Where to go next
+--------------------
+
+- docs/00_MASTER_INDEX.md            bundle index
+- docs/03_QUEUE_OBJECT_MODEL_AND_LIFECYCLE.md
+- docs/05_VERA_CONTROL_LAYER_AND_HANDOFF.md
+- docs/06_SKILLS_CAPABILITIES_AND_BUILTINS.md
+- docs/QUEUE_CONSTITUTION.md
+- docs/NORTH_STAR.md

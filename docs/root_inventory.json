@@ -1,0 +1,132 @@
+[
+  {
+    "name": ".env.example",
+    "type": "file",
+    "size_bytes": 885
+  },
+  {
+    "name": ".github",
+    "type": "directory",
+    "file_count": 4
+  },
+  {
+    "name": ".gitignore",
+    "type": "file",
+    "size_bytes": 189
+  },
+  {
+    "name": ".pre-commit-config.yaml",
+    "type": "file",
+    "size_bytes": 228
+  },
+  {
+    "name": "AGENT.md",
+    "type": "file",
+    "size_bytes": 4676
+  },
+  {
+    "name": "CHANGELOG.md",
+    "type": "file",
+    "size_bytes": 2607
+  },
+  {
+    "name": "CODEX.md",
+    "type": "file",
+    "size_bytes": 2879
+  },
+  {
+    "name": "CONTRIBUTING.md",
+    "type": "file",
+    "size_bytes": 2838
+  },
+  {
+    "name": "LICENSE",
+    "type": "file",
+    "size_bytes": 9648
+  },
+  {
+    "name": "Makefile",
+    "type": "file",
+    "size_bytes": 5384
+  },
+  {
+    "name": "NOTICE",
+    "type": "file",
+    "size_bytes": 44
+  },
+  {
+    "name": "README.md",
+    "type": "file",
+    "size_bytes": 16470
+  },
+  {
+    "name": "SECURITY.md",
+    "type": "file",
+    "size_bytes": 1531
+  },
+  {
+    "name": "config-templates",
+    "type": "directory",
+    "file_count": 2
+  },
+  {
+    "name": "deploy",
+    "type": "directory",
+    "file_count": 3
+  },
+  {
+    "name": "docs",
+    "type": "directory",
+    "file_count": 40
+  },
+  {
+    "name": "missions",
+    "type": "directory",
+    "file_count": 3
+  },
+  {
+    "name": "mypy.ini",
+    "type": "file",
+    "size_bytes": 172
+  },
+  {
+    "name": "pyproject.toml",
+    "type": "file",
+    "size_bytes": 1005
+  },
+  {
+    "name": "scripts",
+    "type": "directory",
+    "file_count": 6
+  },
+  {
+    "name": "skills",
+    "type": "directory",
+    "file_count": 31
+  },
+  {
+    "name": "src",
+    "type": "directory",
+    "file_count": 172
+  },
+  {
+    "name": "systemd",
+    "type": "directory",
+    "file_count": 2
+  },
+  {
+    "name": "tests",
+    "type": "directory",
+    "file_count": 122
+  },
+  {
+    "name": "tools",
+    "type": "directory",
+    "file_count": 2
+  },
+  {
+    "name": "uv.lock",
+    "type": "file",
+    "size_bytes": 205962
+  }
+]

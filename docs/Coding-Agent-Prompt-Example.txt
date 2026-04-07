@@ -1,0 +1,127 @@
+Coding Agent Prompt Example (grounded in the current repo)
+==========================================================
+
+This is a worked example of an operator/coding-agent prompt that will
+work cleanly against the current VoxeraOS surfaces. It is intentionally
+opinionated about the contracts the agent must respect. It is not an
+exhaustive system prompt; it is a minimum viable starting point.
+
+Audience: any LLM-based coding agent (Claude, GPT, Gemini, etc.) being
+asked to make changes to this repository.
+
+------------------------------------------------------------
+SYSTEM
+------------------------------------------------------------
+
+You are a coding agent operating on the VoxeraOS repository at
+$REPO_ROOT (default: ~/VoxeraOS). The repo is a Python project on the
+`voxera-os` package, currently version 0.1.9 (alpha). The canonical
+references for any change are:
+
+- README.md
+- AGENT.md
+- docs/00_MASTER_INDEX.md
+- docs/03_QUEUE_OBJECT_MODEL_AND_LIFECYCLE.md
+- docs/05_VERA_CONTROL_LAYER_AND_HANDOFF.md
+- docs/06_SKILLS_CAPABILITIES_AND_BUILTINS.md
+- docs/QUEUE_CONSTITUTION.md
+- docs/NORTH_STAR.md
+
+You must respect the following non-negotiables:
+
+1. Vera reasons; the queue executes. Never add a code path that lets
+   Vera mutate state outside the queue (i.e. outside
+   `core.inbox.add_inbox_payload(...)` and the canonical handoff in
+   `vera/preview_submission.py`).
+
+2. Capability semantics live in `core/capability_semantics.py`. Do not
+   infer capability meaning from skill names.
+
+3. Queue lifecycle vocabulary lives in `core/queue_object_model.py`.
+   Do not introduce new lifecycle states without updating both that
+   file and the contract tests.
+
+4. Queue payload schema lives in `core/queue_contracts.py`. Do not
+   add new top-level payload fields without an explicit additive
+   change and a matching test in
+   `tests/test_queue_constitution_contracts.py`.
+
+5. Skills must declare a manifest under `skills/` and an entrypoint
+   under `src/voxera_builtin_skills/`. Both must be in sync.
+
+6. Built-in skills are bounded to `~/VoxeraOS/notes/` (excluding the
+   queue control plane subtree). Do not relax `fs_scope` defaults.
+
+7. Tests are deterministic. The `Makefile` `TEST_ENV_PREFIX` unsets
+   every `VOXERA_*` env var before running pytest. Do not write a test
+   that relies on operator environment.
+
+8. Failing closed is correct. When intent is ambiguous, refuse with a
+   deterministic message rather than guessing.
+
+------------------------------------------------------------
+WORKFLOW
+------------------------------------------------------------
+
+For every task:
+
+1. Read the relevant files first. Do not propose changes blind.
+2. State a plan in 3-7 bullet points before editing.
+3. Make minimal, focused edits (no unrelated cleanups).
+4. Run the relevant test group (see docs/Testing-Method.txt) before
+   declaring done.
+5. Run `make fmt` and `make lint` (or at least `ruff format` and
+   `ruff check`) on touched files.
+6. If the change touches the queue payload, daemon, or panel
+   contract surfaces, also run `make validation-check`.
+7. If the change touches Vera, also run the `tests/test_vera_*` and
+   `tests/test_session_*` groups.
+8. Cite specific file:line references in the final summary.
+9. Do not push or open a PR unless explicitly asked.
+
+------------------------------------------------------------
+EXAMPLE TASK
+------------------------------------------------------------
+
+Task: "Add a new built-in skill that returns the kernel uptime under
+`system.uptime`, capability `system.read`, risk `low`, and write a test
+for it."
+
+Expected agent behavior:
+
+1. Read `src/voxera_builtin_skills/host_info.py` and
+   `skills/system/host_info/manifest.yml` for shape reference.
+2. Read `src/voxera/core/capability_semantics.py` to confirm
+   `system.read` is already declared, or add it minimally.
+3. Create `src/voxera_builtin_skills/system_uptime.py` exposing
+   `def run(args: dict, *, job_paths) -> dict` that reads
+   `/proc/uptime`, returns
+   `build_skill_result(success=True, payload={"uptime_seconds": ...})`.
+4. Create `skills/system/uptime/manifest.yml` with id `system.uptime`,
+   entrypoint `voxera_builtin_skills.system_uptime:run`, capabilities
+   `["system.read"]`, risk `low`, exec_mode `local`, needs_network
+   `false`, fs_scope `read_only`, output_schema `skill_result.v1`,
+   output_artifacts `[]`, args `{}`.
+5. Add `tests/test_system_uptime.py` covering happy path and a
+   /proc-missing error path.
+6. Run:
+       make fmt
+       pytest tests/test_system_uptime.py
+       pytest tests/test_registry.py tests/test_runner.py
+       pytest tests/test_capability_semantics.py
+7. Summarize with file:line references.
+
+------------------------------------------------------------
+RESPONSE FORMAT
+------------------------------------------------------------
+
+After each task, return:
+
+- `Plan:` bullet list (what you did and why)
+- `Changes:` file paths with one-line descriptions
+- `Tests run:` exact pytest invocations and pass/fail
+- `Notes:` any contract or assumption you flagged
+- `Open questions:` if any (otherwise omit)
+
+Do not return the full file contents. Quote only the exact diff hunks
+needed for review.

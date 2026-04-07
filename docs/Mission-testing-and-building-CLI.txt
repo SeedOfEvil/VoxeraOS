@@ -1,0 +1,175 @@
+Mission Testing and CLI Authoring
+=================================
+
+This document covers the current operator workflows for authoring,
+testing, and submitting missions and skills. It is grounded in the
+current cli.py command tree, src/voxera/core/missions.py, and the
+JSON missions under missions/.
+
+1. Concepts
+-----------
+
+A "mission" in VoxeraOS is one of:
+
+a) A built-in MissionTemplate registered in src/voxera/core/missions.py.
+   Current built-ins: work_mode, focus_mode, daily_checkin, incident_mode,
+   wrap_up, notes_archive_flow, system_check, system_inspect,
+   system_diagnostics.
+
+b) An on-disk JSON file under missions/ (currently sandbox_smoke.json
+   and sandbox_net.json).
+
+c) A free-text goal that the planner converts into a step list at
+   submit time.
+
+A queue job is the canonical unit of execution truth after submit. See
+docs/03_QUEUE_OBJECT_MODEL_AND_LIFECYCLE.md.
+
+2. Listing missions and skills
+------------------------------
+
+    voxera missions list
+    voxera skills list
+
+`missions list` includes both built-ins and discovered JSON missions.
+`skills list` reports the registry view; invalid manifests are reported
+without crashing the daemon.
+
+3. Building a mission JSON
+--------------------------
+
+A minimal JSON mission has this shape (cf. missions/sandbox_smoke.json):
+
+    {
+      "id": "sandbox_smoke",
+      "title": "Sandbox Smoke",
+      "goal": "Run a basic sandbox execution smoke test with network disabled.",
+      "notes": "Validates command execution and writable /work artifacts.",
+      "steps": [
+        {
+          "skill_id": "sandbox.exec",
+          "args": {
+            "command": ["bash", "-lc", "echo hi; touch /work/ok; ls -la /work"]
+          }
+        }
+      ]
+    }
+
+A mission with a network gate (cf. missions/sandbox_net.json):
+
+    {
+      "id": "sandbox_net",
+      "title": "Sandbox Network Test",
+      "goal": "Run sandbox command with network enabled to exercise approval flow.",
+      "steps": [
+        {
+          "skill_id": "sandbox.exec",
+          "args": {
+            "network": true,
+            "command": ["bash", "-lc", "wget -qO- https://example.com | head -n1"]
+          }
+        }
+      ]
+    }
+
+Place the file in missions/ in the repo root or in the queue mission
+search path. The discovery code is `_iter_file_missions(...)` in
+core/missions.py.
+
+4. Dry-run plan a free-text goal
+--------------------------------
+
+    voxera missions plan "summarize my notes from this week"
+    voxera missions plan "summarize my notes" --dry-run --deterministic
+
+`--freeze-capabilities-snapshot` pins the capabilities snapshot to a
+single value through the planner pass. `--deterministic` scrubs
+timestamps so output is byte-stable for golden tests.
+
+5. Run a mission directly
+-------------------------
+
+    voxera missions run sandbox_smoke
+    voxera missions run sandbox_smoke --dry-run
+
+This calls the canonical mission planner / runner pipeline; output
+artifacts land under ~/VoxeraOS/notes/queue/artifacts/<job>/.
+
+6. Run a single skill directly
+------------------------------
+
+    voxera run files.list_dir --arg path=$HOME/VoxeraOS/notes
+    voxera run files.read_text --arg path=$HOME/VoxeraOS/notes/scratch.txt
+
+Mutating skills are blocked unless VOXERA_DEV_MODE=1 and you pass
+`--allow-direct-mutation`. This guard exists because direct CLI runs
+bypass the queue lifecycle.
+
+7. Submit through the inbox
+---------------------------
+
+    voxera inbox add path/to/payload.json
+    voxera inbox list
+
+This is the canonical way to submit a payload outside Vera. The payload
+must be a valid queue payload (see core/queue_contracts.py for fields).
+The daemon will pick the file up from notes/queue/inbox/ and move it
+through buckets.
+
+8. Approve / cancel / retry
+---------------------------
+
+    voxera queue approvals list
+    voxera queue approvals approve <ref>
+    voxera queue approvals deny    <ref>
+    voxera queue cancel <ref>
+    voxera queue retry  <ref>
+    voxera queue pause
+    voxera queue resume
+    voxera queue unlock        # only if a stale .daemon.lock is confirmed
+
+9. Inspect job artifacts
+------------------------
+
+    voxera queue status
+    voxera queue health
+    voxera queue files tree --root $HOME/VoxeraOS/notes
+    voxera ops bundle job <job_id>
+
+The per-job artifact directory is at ~/VoxeraOS/notes/queue/artifacts/<job>/.
+The minimum artifact set is plan.json, actions.jsonl, step_results.json,
+execution_envelope.json, execution_result.json, job_intent.json.
+
+10. Authoring a new built-in skill
+----------------------------------
+
+1) Create the entrypoint module:
+       src/voxera_builtin_skills/<entry>.py
+   exposing `def run(args: dict, *, job_paths) -> dict` returning a
+   `build_skill_result(...)` envelope.
+
+2) Create the manifest:
+       skills/<group>/<id>/manifest.yml
+   matching the schema in models.SkillManifest (id, name, description,
+   entrypoint=`voxera_builtin_skills.<entry>:run`, capabilities, risk,
+   exec_mode, fs_scope, output_schema=`skill_result.v1`,
+   output_artifacts, args).
+
+3) Add capability semantics if a new capability is introduced
+   (core/capability_semantics.py).
+
+4) Add a test under tests/test_<skill>.py.
+
+5) Refresh golden surfaces if the operator-facing surface changed:
+       make golden-update
+
+11. Reference
+-------------
+
+- Mission templates code:    src/voxera/core/missions.py
+- Mission planner:           src/voxera/core/mission_planner.py
+- Skill registry:            src/voxera/skills/registry.py
+- Skill runner:              src/voxera/skills/runner.py
+- Capability semantics:      src/voxera/core/capability_semantics.py
+- Queue contracts:           src/voxera/core/queue_contracts.py
+- Queue object model:        src/voxera/core/queue_object_model.py

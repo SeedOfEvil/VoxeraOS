@@ -1,0 +1,602 @@
+[
+  {
+    "path": "skills/clipboard/copy/manifest.yml",
+    "id": "clipboard.copy",
+    "name": "Clipboard Copy",
+    "description": "Copy provided text into the OS clipboard.",
+    "entrypoint": "voxera_builtin_skills.clipboard_copy:run",
+    "capabilities": [
+      "clipboard.write"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/clipboard/paste/manifest.yml",
+    "id": "clipboard.paste",
+    "name": "Clipboard Paste",
+    "description": "Read text currently stored in the OS clipboard.",
+    "entrypoint": "voxera_builtin_skills.clipboard_paste:run",
+    "capabilities": [
+      "clipboard.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/files/copy/manifest.yml",
+    "id": "files.copy",
+    "name": "Copy File",
+    "description": "Copy a file between allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_copy:run",
+    "capabilities": [
+      "files.write"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "source_path",
+      "destination_path",
+      "overwrite"
+    ]
+  },
+  {
+    "path": "skills/files/copy_file/manifest.yml",
+    "id": "files.copy_file",
+    "name": "Copy File",
+    "description": "Copy a file between allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_copy_file:run",
+    "capabilities": [
+      "files.write"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "source_path",
+      "destination_path",
+      "overwrite"
+    ]
+  },
+  {
+    "path": "skills/files/delete_file/manifest.yml",
+    "id": "files.delete_file",
+    "name": "Delete File",
+    "description": "Delete a regular file within allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_delete_file:run",
+    "capabilities": [
+      "files.write",
+      "file.delete"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "path",
+      "missing_ok"
+    ]
+  },
+  {
+    "path": "skills/files/exists/manifest.yml",
+    "id": "files.exists",
+    "name": "Check Path Exists",
+    "description": "Check whether a path exists within allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_exists:run",
+    "capabilities": [
+      "files.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "path"
+    ]
+  },
+  {
+    "path": "skills/files/find/manifest.yml",
+    "id": "files.find",
+    "name": "Find Files",
+    "description": "Discover files and directories recursively under allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_find:run",
+    "capabilities": [
+      "files.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "root_path",
+      "glob",
+      "name_contains",
+      "max_depth",
+      "include_hidden",
+      "max_results"
+    ]
+  },
+  {
+    "path": "skills/files/grep_text/manifest.yml",
+    "id": "files.grep_text",
+    "name": "Grep Text",
+    "description": "Search text content recursively under allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_grep_text:run",
+    "capabilities": [
+      "files.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "root_path",
+      "pattern",
+      "case_sensitive",
+      "max_depth",
+      "include_hidden",
+      "max_matches",
+      "max_file_bytes"
+    ]
+  },
+  {
+    "path": "skills/files/list_dir/manifest.yml",
+    "id": "files.list_dir",
+    "name": "List Directory",
+    "description": "List directory entries from allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_list_dir:run",
+    "capabilities": [
+      "files.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "path",
+      "include_hidden"
+    ]
+  },
+  {
+    "path": "skills/files/list_tree/manifest.yml",
+    "id": "files.list_tree",
+    "name": "List Tree",
+    "description": "Recursively list a bounded directory tree under allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_list_tree:run",
+    "capabilities": [
+      "files.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "root_path",
+      "max_depth",
+      "include_hidden",
+      "max_entries"
+    ]
+  },
+  {
+    "path": "skills/files/mkdir/manifest.yml",
+    "id": "files.mkdir",
+    "name": "Make Directory",
+    "description": "Create a directory within allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_mkdir:run",
+    "capabilities": [
+      "files.write"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "path",
+      "parents",
+      "exist_ok"
+    ]
+  },
+  {
+    "path": "skills/files/move/manifest.yml",
+    "id": "files.move",
+    "name": "Move Path",
+    "description": "Move or relocate a path within allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_move:run",
+    "capabilities": [
+      "files.write"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "source_path",
+      "destination_path",
+      "overwrite"
+    ]
+  },
+  {
+    "path": "skills/files/move_file/manifest.yml",
+    "id": "files.move_file",
+    "name": "Move File",
+    "description": "Move or rename a file within allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_move_file:run",
+    "capabilities": [
+      "files.write"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "source_path",
+      "destination_path",
+      "overwrite"
+    ]
+  },
+  {
+    "path": "skills/files/read_text/manifest.yml",
+    "id": "files.read_text",
+    "name": "Read Text File",
+    "description": "Read UTF-8 text from allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_read_text:run",
+    "capabilities": [
+      "files.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/files/rename/manifest.yml",
+    "id": "files.rename",
+    "name": "Rename Path",
+    "description": "Rename a file or directory within its current parent directory.",
+    "entrypoint": "voxera_builtin_skills.files_rename:run",
+    "capabilities": [
+      "files.write"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "path",
+      "new_name",
+      "overwrite"
+    ]
+  },
+  {
+    "path": "skills/files/stat/manifest.yml",
+    "id": "files.stat",
+    "name": "Stat Path",
+    "description": "Read basic metadata for a path within allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_stat:run",
+    "capabilities": [
+      "files.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "path"
+    ]
+  },
+  {
+    "path": "skills/files/write_text/manifest.yml",
+    "id": "files.write_text",
+    "name": "Write Text File",
+    "description": "Write or append UTF-8 text to allowlisted notes paths.",
+    "entrypoint": "voxera_builtin_skills.files_write_text:run",
+    "capabilities": [
+      "files.write"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "path",
+      "text",
+      "mode"
+    ]
+  },
+  {
+    "path": "skills/sandbox/exec/manifest.yml",
+    "id": "sandbox.exec",
+    "name": "Sandbox Execute",
+    "description": "Execute a command (argv list or shell string) in a rootless Podman sandbox.",
+    "entrypoint": "voxera_builtin_skills.sandbox_exec:run",
+    "capabilities": [
+      "sandbox.exec"
+    ],
+    "risk": "medium",
+    "exec_mode": "sandbox",
+    "needs_network": false,
+    "fs_scope": "workspace_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [
+      "stdout.txt",
+      "stderr.txt",
+      "runner.json",
+      "command.txt"
+    ],
+    "args": []
+  },
+  {
+    "path": "skills/system/disk_usage/manifest.yml",
+    "id": "system.disk_usage",
+    "name": "Disk Usage",
+    "description": "Show disk usage snapshot for the home partition.",
+    "entrypoint": "voxera_builtin_skills.disk_usage:run",
+    "capabilities": [
+      "state.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/host_info/manifest.yml",
+    "id": "system.host_info",
+    "name": "Host Info",
+    "description": "Collect bounded host identity, kernel, and uptime metadata.",
+    "entrypoint": "voxera_builtin_skills.host_info:run",
+    "capabilities": [
+      "state.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/load_snapshot/manifest.yml",
+    "id": "system.load_snapshot",
+    "name": "Load Snapshot",
+    "description": "Capture host load averages and CPU count.",
+    "entrypoint": "voxera_builtin_skills.load_snapshot:run",
+    "capabilities": [
+      "state.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/memory_usage/manifest.yml",
+    "id": "system.memory_usage",
+    "name": "Memory Usage",
+    "description": "Capture a bounded snapshot of host memory usage.",
+    "entrypoint": "voxera_builtin_skills.memory_usage:run",
+    "capabilities": [
+      "state.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/open_app/manifest.yml",
+    "id": "system.open_app",
+    "name": "Open App",
+    "description": "Launch an application by name (MVP allowlist).",
+    "entrypoint": "voxera_builtin_skills.open_app:run",
+    "capabilities": [
+      "apps.open"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/open_url/manifest.yml",
+    "id": "system.open_url",
+    "name": "Open URL",
+    "description": "Open an HTTP/HTTPS URL in Firefox or default browser.",
+    "entrypoint": "voxera_builtin_skills.open_url:run",
+    "capabilities": [
+      "apps.open",
+      "network.change"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": true,
+    "fs_scope": "broader",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/process_list/manifest.yml",
+    "id": "system.process_list",
+    "name": "Process List",
+    "description": "List running processes with CPU and memory usage.",
+    "entrypoint": "voxera_builtin_skills.process_list:run",
+    "capabilities": [
+      "state.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/recent_service_logs/manifest.yml",
+    "id": "system.recent_service_logs",
+    "name": "Recent Service Logs",
+    "description": "Read bounded recent journal lines for a named .service unit.",
+    "entrypoint": "voxera_builtin_skills.recent_service_logs:run",
+    "capabilities": [
+      "state.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "service",
+      "lines",
+      "since_minutes"
+    ]
+  },
+  {
+    "path": "skills/system/service_status/manifest.yml",
+    "id": "system.service_status",
+    "name": "Service Status",
+    "description": "Read systemd service status for a named .service unit.",
+    "entrypoint": "voxera_builtin_skills.service_status:run",
+    "capabilities": [
+      "state.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "service"
+    ]
+  },
+  {
+    "path": "skills/system/set_volume/manifest.yml",
+    "id": "system.set_volume",
+    "name": "Set Volume",
+    "description": "Set system volume percentage (Linux 'pactl' if available).",
+    "entrypoint": "voxera_builtin_skills.set_volume:run",
+    "capabilities": [
+      "system.settings"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/status/manifest.yml",
+    "id": "system.status",
+    "name": "System Status",
+    "description": "Show basic system info (CPU/RAM/Disk placeholders).",
+    "entrypoint": "voxera_builtin_skills.system_status:run",
+    "capabilities": [
+      "state.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  },
+  {
+    "path": "skills/system/terminal_run_once/manifest.yml",
+    "id": "system.terminal_run_once",
+    "name": "Terminal Run Once (Hello World)",
+    "description": "Opens a terminal window and runs a safe hello-world command (prints command then executes).",
+    "entrypoint": "voxera_builtin_skills.terminal_run_once:run",
+    "capabilities": [
+      "apps.open"
+    ],
+    "risk": "medium",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": [
+      "keep_open"
+    ]
+  },
+  {
+    "path": "skills/system/window_list/manifest.yml",
+    "id": "system.window_list",
+    "name": "Window List",
+    "description": "List currently open desktop windows.",
+    "entrypoint": "voxera_builtin_skills.window_list:run",
+    "capabilities": [
+      "window.read"
+    ],
+    "risk": "low",
+    "exec_mode": "local",
+    "needs_network": false,
+    "fs_scope": "read_only",
+    "output_schema": "skill_result.v1",
+    "output_artifacts": [],
+    "args": []
+  }
+]

@@ -1,0 +1,138 @@
+VoxeraOS Testing Method
+=======================
+
+This document records how the test surface is organized and what to run
+when. It is grounded in the current Makefile, scripts/, and tests/.
+
+1. Where tests live
+-------------------
+
+- tests/                 Pytest test files (~110), no nested package.
+- tests/conftest.py      Shared fixtures.
+- tests/golden/          Golden snapshot baselines.
+- tests/vera_session_helpers.py  Helpers shared by Vera tests.
+- tools/golden_surfaces.py       Driver for the golden surface snapshot.
+- tools/mypy-baseline.txt        Mypy ratchet baseline.
+- scripts/e2e_smoke.sh           Minimal e2e smoke.
+- scripts/e2e_opsconsole.sh      Operator console smoke (`make e2e`).
+- scripts/e2e_golden4.sh         Golden bundle smoke
+                                 (`make full-validation-check`).
+- scripts/mypy_ratchet.py        Drives the mypy ratchet baseline.
+
+2. Running the suite locally
+----------------------------
+
+Recommended sequence (most-to-least frequent):
+
+    make fmt            # apply ruff format
+    make lint           # ruff check
+    make type-check     # mypy ratchet (baseline-driven)
+    make test           # full pytest (deterministic env)
+
+Composite gates:
+
+    make check                  # fmt-check + lint + type + test
+    make validation-check       # adds golden + security + targeted contracts
+    make merge-readiness-check  # quality + release + security
+    make full-validation-check  # everything + e2e_golden4
+
+The `make test` and the various validation targets prefix every pytest
+invocation with `TEST_ENV_PREFIX`, which unsets every VOXERA_* env var
+and forces VOXERA_LOAD_DOTENV=0 so tests are deterministic.
+
+3. Test groups (what to run when)
+---------------------------------
+
+Queue / daemon work:
+    pytest tests/test_queue_daemon.py \
+           tests/test_queue_daemon_contract_snapshot.py \
+           tests/test_queue_constitution_contracts.py \
+           tests/test_queue_execution_contracts.py \
+           tests/test_queue_artifact_minimum_regression.py \
+           tests/test_queue_result_consumers.py
+
+CLI changes:
+    pytest tests/test_cli_queue.py \
+           tests/test_cli_contract_snapshot.py \
+           tests/test_cli_run_args.py
+
+Vera control layer / Vera web changes:
+    pytest tests/test_vera_*.py \
+           tests/test_session_routing_debug.py \
+           tests/test_shared_session_context*.py \
+           tests/test_response_shaping.py \
+           tests/test_chat_early_exit_dispatch.py \
+           tests/test_draft_content_binding.py \
+           tests/test_authored_draft_body_fidelity.py \
+           tests/test_evidence_review.py \
+           tests/test_linked_job_review_continuation.py
+
+Skill / runtime changes:
+    pytest tests/test_registry.py tests/test_runner.py \
+           tests/test_execution.py tests/test_arg_normalizer.py \
+           tests/test_skill_metadata_and_runners.py \
+           tests/test_skill_result_payloads.py \
+           tests/test_files_*.py tests/test_sandbox_exec_*.py \
+           tests/test_open_app.py tests/test_builtin_skills_terminal_run_once.py
+
+Panel changes:
+    pytest tests/test_panel.py tests/test_panel_contract_snapshot.py
+
+Capability / policy / planner / mission changes:
+    pytest tests/test_capability_semantics.py \
+           tests/test_capabilities_snapshot.py \
+           tests/test_execution_evaluator.py \
+           tests/test_execution_capabilities.py \
+           tests/test_policy.py tests/test_planner_context.py \
+           tests/test_mission_planner.py tests/test_missions.py
+
+Doctor / health / docs / config:
+    pytest tests/test_doctor.py tests/test_health.py \
+           tests/test_health_snapshot_isolation.py \
+           tests/test_docs_consistency.py \
+           tests/test_config_settings.py tests/test_config_snapshot.py \
+           tests/test_models_config_strictness.py
+
+Security red team:
+    make security-check
+    # or
+    pytest tests/test_security_redteam.py
+
+Golden surfaces:
+    make golden-check       # verify
+    make golden-update      # rewrite (only when surfaces have intentionally changed)
+
+4. End-to-end smoke
+-------------------
+
+    bash scripts/e2e_smoke.sh         # quickest sanity smoke
+    bash scripts/e2e_opsconsole.sh    # operator console loop
+    bash scripts/e2e_golden4.sh       # golden bundle smoke (CI gate)
+
+5. Failed sidecar regression
+----------------------------
+
+Two specific tests guard the failed-sidecar contract:
+
+    make test-failed-sidecar
+
+(Equivalent to running the two named tests inside `tests/test_queue_daemon.py`.)
+
+6. Mypy ratchet
+---------------
+
+    make type-check            # ratchet against tools/mypy-baseline.txt
+    make type-check-strict     # full strict run (no baseline)
+    make update-mypy-baseline  # rewrite baseline after fixing
+
+7. Pre-merge checklist
+----------------------
+
+Before pushing a branch / opening a PR:
+
+1. `make fmt`
+2. `make check`            (or `make validation-check` for queue/daemon work)
+3. `make security-check`
+4. `make full-validation-check` for high-risk changes
+5. Confirm no stray VOXERA_* env vars are needed at runtime
+6. Confirm no new direct CLI mutation paths bypass the queue lifecycle

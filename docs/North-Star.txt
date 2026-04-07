@@ -1,0 +1,127 @@
+VoxeraOS North Star (plain text projection)
+===========================================
+
+This is the plain-text projection of docs/NORTH_STAR.md, kept here so the
+text-only bundle is self-contained. The canonical version lives in
+docs/NORTH_STAR.md.
+
+The vision
+----------
+
+Build a voice-first AI operating system that feels alive: an AI you can
+actually talk to, that can think with you, explore ideas, test
+possibilities, and help you move fast. That feels less like a tool and
+more like a real teammate.
+
+That is Vera.
+
+For Vera to matter in the real world it cannot just be clever. It has
+to be trustworthy. That is what Voxera OS is for.
+
+Vera is the intelligence. Voxera OS is the trust layer.
+
+Vera reasons freely. Voxera OS controls execution.
+
+Vera thinks wildly; Voxera acts carefully.
+Vera explores; Voxera enforces.
+Vera improvises; Voxera makes sure nothing important happens silently,
+unsafely, or without proof.
+
+The boundary
+------------
+
+If something can affect the real world -- a config change, a service
+restart, a file mutation, a privileged action, an API call with side
+effects -- it must go through Voxera OS first.
+
+Voxera OS is the capability gateway. It is the control layer. It is the
+audit spine.
+
+All real-world side effects are capability-gated, policy-evaluated, and
+evidence-backed.
+
+How Vera proposes work
+----------------------
+
+When it is time to actually change something, Vera does not freestyle.
+It submits a structured request through Voxera OS that says:
+
+- what it wants to do
+- what capability it needs
+- what it plans to touch
+- what outcome it expects
+- how success will be verified
+
+Voxera OS evaluates that request against policy, scope, and runtime
+safety. The answer is always one of:
+
+- Allow  -- safe and in scope
+- Ask    -- needs human approval
+- Deny   -- unsafe, out of scope, or not trusted
+
+When the system is unsure it does not guess. It fails closed.
+
+Why this matters
+----------------
+
+A lot of AI systems chase autonomy. We are chasing something more useful:
+deployability. Not an AI that "can do anything," but an AI that can do
+meaningful things safely, visibly, and under control.
+
+That means:
+
+- no silent side effects
+- no hidden mutation paths
+- no policy bypass through prompt tricks
+- no unaudited "helpful" execution
+- no direct real-world changes outside Voxera OS
+
+If something important happened, there should be evidence. Real,
+replayable, inspectable evidence -- not vague logs buried somewhere, not
+"we think this is what the model did." A record of:
+
+- what Vera requested
+- what Voxera decided, and why
+- what actually executed
+- what changed
+- what succeeded or failed
+- what artifacts prove it
+
+That is what makes the system operational. That is what makes it
+trustworthy at 2 AM during an incident.
+
+Non-negotiables
+---------------
+
+- No silent side effects
+- No direct mutation paths outside Voxera OS
+- No policy bypass through prompts or metadata drift
+- No un-audited execution
+- No privileged real-world changes without going through the gateway
+- When uncertain, fail closed
+
+What success looks like in v1
+-----------------------------
+
+- 100% of mutating actions go through the capability gateway
+- 0 privileged mutations happen outside the gate
+- 100% of executed jobs produce an inspectable evidence bundle
+- Read-only and interactive flows remain fast
+- Recovery and replay work cleanly after interruption, without
+  duplicate side effects
+
+What we are not building
+------------------------
+
+- just another chatbot
+- a reckless shell-running agent
+- opaque autonomy with weak traceability
+- "AI magic" that becomes impossible to trust under pressure
+
+Final thought
+-------------
+
+Keep the magic free. Keep execution controlled. Make everything important
+become evidence.
+
+That is Vera. That is Voxera OS. That is the North Star.

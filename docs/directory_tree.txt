@@ -1,0 +1,474 @@
+VoxeraOS/
+├── .env.example
+├── .github/
+│   ├── CODEOWNERS
+│   └── workflows/
+│       ├── ci.yml
+│       ├── merge-readiness.yml
+│       └── queue-failed-sidecar.yml
+├── .gitignore
+├── .pre-commit-config.yaml
+├── AGENT.md
+├── CHANGELOG.md
+├── CODEX.md
+├── CONTRIBUTING.md
+├── LICENSE
+├── Makefile
+├── NOTICE
+├── README.md
+├── SECURITY.md
+├── config-templates/
+│   ├── config.example.yml
+│   └── policy.example.yml
+├── deploy/
+│   └── systemd/
+│       └── user/
+│           ├── voxera-daemon.service
+│           ├── voxera-panel.service
+│           └── voxera-vera.service
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── BOOTSTRAP.md
+│   ├── CODEX_MEMORY.md
+│   ├── EXECUTION_SECURITY_MODEL.md
+│   ├── HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md
+│   ├── LOCAL_MODELS.md
+│   ├── NORTH_STAR.md
+│   ├── QUEUE_CONSTITUTION.md
+│   ├── QUEUE_OBJECT_MODEL.md
+│   ├── ROADMAP.md
+│   ├── ROADMAP_0.1.4.md
+│   ├── ROADMAP_0.1.5.md
+│   ├── ROADMAP_0.1.6.md
+│   ├── SECURITY.md
+│   ├── UBUNTU_TESTING.md
+│   ├── ops.md
+│   ├── prompts/
+│   │   ├── 00-system-overview.md
+│   │   ├── 01-platform-boundaries.md
+│   │   ├── 02-role-map.md
+│   │   ├── 03-runtime-technical-overview.md
+│   │   ├── capabilities/
+│   │   │   ├── artifacts-and-evidence.md
+│   │   │   ├── execution-security-model.md
+│   │   │   ├── handoff-and-submit-rules.md
+│   │   │   ├── hidden-compiler-payload-guidance.md
+│   │   │   ├── preview-payload-schema.md
+│   │   │   ├── queue-lifecycle.md
+│   │   │   ├── queue-object-model.md
+│   │   │   └── web-investigation-rules.md
+│   │   └── roles/
+│   │       ├── hidden-compiler.md
+│   │       ├── planner.md
+│   │       ├── vera.md
+│   │       ├── verifier.md
+│   │       └── web-investigator.md
+│   ├── root_inventory.json
+│   └── testing/
+│       ├── RUNTIME_VALIDATION_PLAYBOOK.md
+│       ├── VERA_REGRESSION_PACK.md
+│       └── payloads/
+│           ├── blocked-list-dir.json
+│           ├── delete-approval-test.json
+│           ├── inline-exists-test.json
+│           ├── missing-source-copy.json
+│           └── system-inspect.json
+├── missions/
+│   ├── README.md
+│   ├── sandbox_net.json
+│   └── sandbox_smoke.json
+├── mypy.ini
+├── pyproject.toml
+├── scripts/
+│   ├── e2e_golden4.sh
+│   ├── e2e_opsconsole.sh
+│   ├── e2e_smoke.sh
+│   ├── mypy_ratchet.py
+│   ├── refresh_openrouter_catalog.py
+│   └── update.sh
+├── skills/
+│   ├── clipboard/
+│   │   ├── copy/
+│   │   │   └── manifest.yml
+│   │   └── paste/
+│   │       └── manifest.yml
+│   ├── files/
+│   │   ├── copy/
+│   │   │   └── manifest.yml
+│   │   ├── copy_file/
+│   │   │   └── manifest.yml
+│   │   ├── delete_file/
+│   │   │   └── manifest.yml
+│   │   ├── exists/
+│   │   │   └── manifest.yml
+│   │   ├── find/
+│   │   │   └── manifest.yml
+│   │   ├── grep_text/
+│   │   │   └── manifest.yml
+│   │   ├── list_dir/
+│   │   │   └── manifest.yml
+│   │   ├── list_tree/
+│   │   │   └── manifest.yml
+│   │   ├── mkdir/
+│   │   │   └── manifest.yml
+│   │   ├── move/
+│   │   │   └── manifest.yml
+│   │   ├── move_file/
+│   │   │   └── manifest.yml
+│   │   ├── read_text/
+│   │   │   └── manifest.yml
+│   │   ├── rename/
+│   │   │   └── manifest.yml
+│   │   ├── stat/
+│   │   │   └── manifest.yml
+│   │   └── write_text/
+│   │       └── manifest.yml
+│   ├── sandbox/
+│   │   └── exec/
+│   │       └── manifest.yml
+│   └── system/
+│       ├── disk_usage/
+│       │   └── manifest.yml
+│       ├── host_info/
+│       │   └── manifest.yml
+│       ├── load_snapshot/
+│       │   └── manifest.yml
+│       ├── memory_usage/
+│       │   └── manifest.yml
+│       ├── open_app/
+│       │   └── manifest.yml
+│       ├── open_url/
+│       │   └── manifest.yml
+│       ├── process_list/
+│       │   └── manifest.yml
+│       ├── recent_service_logs/
+│       │   └── manifest.yml
+│       ├── service_status/
+│       │   └── manifest.yml
+│       ├── set_volume/
+│       │   └── manifest.yml
+│       ├── status/
+│       │   └── manifest.yml
+│       ├── terminal_run_once/
+│       │   └── manifest.yml
+│       └── window_list/
+│           └── manifest.yml
+├── src/
+│   ├── voxera/
+│   │   ├── __init__.py
+│   │   ├── audio/
+│   │   │   ├── README.md
+│   │   │   └── __init__.py
+│   │   ├── audit.py
+│   │   ├── brain/
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py
+│   │   │   ├── fallback.py
+│   │   │   ├── gemini.py
+│   │   │   ├── json_recovery.py
+│   │   │   └── openai_compat.py
+│   │   ├── cli.py
+│   │   ├── cli_common.py
+│   │   ├── cli_config.py
+│   │   ├── cli_doctor.py
+│   │   ├── cli_ops.py
+│   │   ├── cli_queue.py
+│   │   ├── cli_queue_approvals.py
+│   │   ├── cli_queue_bundle.py
+│   │   ├── cli_queue_files.py
+│   │   ├── cli_queue_health.py
+│   │   ├── cli_queue_hygiene.py
+│   │   ├── cli_queue_inbox.py
+│   │   ├── cli_queue_lifecycle.py
+│   │   ├── cli_queue_payloads.py
+│   │   ├── cli_runtime.py
+│   │   ├── cli_skills_missions.py
+│   │   ├── config.py
+│   │   ├── core/
+│   │   │   ├── __init__.py
+│   │   │   ├── artifacts.py
+│   │   │   ├── capabilities_snapshot.py
+│   │   │   ├── capability_semantics.py
+│   │   │   ├── code_draft_intent.py
+│   │   │   ├── execution_capabilities.py
+│   │   │   ├── execution_evaluator.py
+│   │   │   ├── file_intent.py
+│   │   │   ├── inbox.py
+│   │   │   ├── mission_planner.py
+│   │   │   ├── missions.py
+│   │   │   ├── planner_context.py
+│   │   │   ├── queue_approvals.py
+│   │   │   ├── queue_assistant.py
+│   │   │   ├── queue_contracts.py
+│   │   │   ├── queue_daemon.py
+│   │   │   ├── queue_execution.py
+│   │   │   ├── queue_hygiene.py
+│   │   │   ├── queue_inspect.py
+│   │   │   ├── queue_job_intent.py
+│   │   │   ├── queue_object_model.py
+│   │   │   ├── queue_paths.py
+│   │   │   ├── queue_reconcile.py
+│   │   │   ├── queue_recovery.py
+│   │   │   ├── queue_result_consumers.py
+│   │   │   ├── queue_state.py
+│   │   │   ├── router.py
+│   │   │   ├── simple_intent.py
+│   │   │   └── writing_draft_intent.py
+│   │   ├── data/
+│   │   │   └── openrouter_catalog.json
+│   │   ├── demo.py
+│   │   ├── doctor.py
+│   │   ├── golden_surfaces.py
+│   │   ├── health.py
+│   │   ├── health_reset.py
+│   │   ├── health_semantics.py
+│   │   ├── incident_bundle.py
+│   │   ├── models.py
+│   │   ├── openrouter_catalog.py
+│   │   ├── operator_assistant.py
+│   │   ├── ops_bundle.py
+│   │   ├── panel/
+│   │   │   ├── __init__.py
+│   │   │   ├── app.py
+│   │   │   ├── assistant.py
+│   │   │   ├── auth_state_store.py
+│   │   │   ├── helpers.py
+│   │   │   ├── job_detail_sections.py
+│   │   │   ├── job_presentation.py
+│   │   │   ├── routes_assistant.py
+│   │   │   ├── routes_bundle.py
+│   │   │   ├── routes_home.py
+│   │   │   ├── routes_hygiene.py
+│   │   │   ├── routes_jobs.py
+│   │   │   ├── routes_missions.py
+│   │   │   ├── routes_queue_control.py
+│   │   │   ├── routes_recovery.py
+│   │   │   ├── routes_vera.py
+│   │   │   ├── static/
+│   │   │   │   └── panel.css
+│   │   │   └── templates/
+│   │   │       ├── _daemon_health_widget.html
+│   │   │       ├── assistant.html
+│   │   │       ├── home.html
+│   │   │       ├── hygiene.html
+│   │   │       ├── job_detail.html
+│   │   │       ├── jobs.html
+│   │   │       ├── recovery.html
+│   │   │       └── vera.html
+│   │   ├── paths.py
+│   │   ├── policy.py
+│   │   ├── prompts.py
+│   │   ├── secrets.py
+│   │   ├── setup_wizard.py
+│   │   ├── skills/
+│   │   │   ├── __init__.py
+│   │   │   ├── arg_normalizer.py
+│   │   │   ├── execution.py
+│   │   │   ├── path_boundaries.py
+│   │   │   ├── registry.py
+│   │   │   ├── result_contract.py
+│   │   │   └── runner.py
+│   │   ├── vera/
+│   │   │   ├── __init__.py
+│   │   │   ├── brave_search.py
+│   │   │   ├── context_lifecycle.py
+│   │   │   ├── draft_revision.py
+│   │   │   ├── evidence_review.py
+│   │   │   ├── handoff.py
+│   │   │   ├── investigation_derivations.py
+│   │   │   ├── investigation_flow.py
+│   │   │   ├── linked_completions.py
+│   │   │   ├── preview_drafting.py
+│   │   │   ├── preview_submission.py
+│   │   │   ├── prompt.py
+│   │   │   ├── reference_resolver.py
+│   │   │   ├── result_surfacing.py
+│   │   │   ├── saveable_artifacts.py
+│   │   │   ├── service.py
+│   │   │   ├── session_store.py
+│   │   │   ├── weather.py
+│   │   │   └── weather_flow.py
+│   │   ├── vera_web/
+│   │   │   ├── __init__.py
+│   │   │   ├── app.py
+│   │   │   ├── chat_early_exit_dispatch.py
+│   │   │   ├── conversational_checklist.py
+│   │   │   ├── draft_content_binding.py
+│   │   │   ├── execution_mode.py
+│   │   │   ├── preview_content_binding.py
+│   │   │   ├── response_shaping.py
+│   │   │   ├── static/
+│   │   │   │   └── vera.css
+│   │   │   └── templates/
+│   │   │       └── index.html
+│   │   ├── version.py
+│   │   └── voice/
+│   │       ├── __init__.py
+│   │       ├── flags.py
+│   │       ├── input.py
+│   │       ├── models.py
+│   │       └── output.py
+│   └── voxera_builtin_skills/
+│       ├── __init__.py
+│       ├── clipboard_copy.py
+│       ├── clipboard_paste.py
+│       ├── disk_usage.py
+│       ├── files_copy.py
+│       ├── files_copy_file.py
+│       ├── files_delete_file.py
+│       ├── files_exists.py
+│       ├── files_find.py
+│       ├── files_grep_text.py
+│       ├── files_list_dir.py
+│       ├── files_list_tree.py
+│       ├── files_mkdir.py
+│       ├── files_move.py
+│       ├── files_move_file.py
+│       ├── files_read_text.py
+│       ├── files_rename.py
+│       ├── files_stat.py
+│       ├── files_write_text.py
+│       ├── host_info.py
+│       ├── load_snapshot.py
+│       ├── memory_usage.py
+│       ├── open_app.py
+│       ├── open_url.py
+│       ├── process_list.py
+│       ├── recent_service_logs.py
+│       ├── sandbox_exec.py
+│       ├── service_status.py
+│       ├── set_volume.py
+│       ├── system_status.py
+│       ├── terminal_run_once.py
+│       └── window_list.py
+├── systemd/
+│   ├── voxera-core.service
+│   └── voxera-panel.service
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── golden/
+│   │   ├── queue_health_empty.json
+│   │   ├── voxera_doctor_help.txt
+│   │   ├── voxera_help.txt
+│   │   ├── voxera_queue_approvals_help.txt
+│   │   ├── voxera_queue_health_help.txt
+│   │   ├── voxera_queue_help.txt
+│   │   ├── voxera_queue_prune_help.txt
+│   │   ├── voxera_queue_reconcile_help.txt
+│   │   └── voxera_queue_status_help.txt
+│   ├── test_arg_normalizer.py
+│   ├── test_authored_draft_body_fidelity.py
+│   ├── test_brain_fallback.py
+│   ├── test_builtin_skills_terminal_run_once.py
+│   ├── test_capabilities_snapshot.py
+│   ├── test_capability_semantics.py
+│   ├── test_chat_early_exit_dispatch.py
+│   ├── test_cli_artifacts.py
+│   ├── test_cli_config_snapshot.py
+│   ├── test_cli_contract_snapshot.py
+│   ├── test_cli_queue.py
+│   ├── test_cli_queue_prune.py
+│   ├── test_cli_queue_reconcile.py
+│   ├── test_cli_queue_remaining_surfaces.py
+│   ├── test_cli_run_args.py
+│   ├── test_cli_secrets.py
+│   ├── test_cli_version.py
+│   ├── test_code_draft_intent.py
+│   ├── test_config_settings.py
+│   ├── test_config_snapshot.py
+│   ├── test_context_lifecycle.py
+│   ├── test_demo_cli.py
+│   ├── test_dev_contract_config_integration.py
+│   ├── test_diagnostics_pack.py
+│   ├── test_direct_mutation_gate.py
+│   ├── test_docs_consistency.py
+│   ├── test_doctor.py
+│   ├── test_draft_content_binding.py
+│   ├── test_dry_run_contract.py
+│   ├── test_dryrun_determinism.py
+│   ├── test_e2e_smoke_script.py
+│   ├── test_evidence_review.py
+│   ├── test_execution.py
+│   ├── test_execution_capabilities.py
+│   ├── test_execution_evaluator.py
+│   ├── test_file_intent.py
+│   ├── test_files_control_plane_boundaries.py
+│   ├── test_files_copy_file.py
+│   ├── test_files_delete_file.py
+│   ├── test_files_list_dir.py
+│   ├── test_files_move_file.py
+│   ├── test_files_read_text.py
+│   ├── test_files_wave2_skills.py
+│   ├── test_files_workspace_expansion.py
+│   ├── test_files_write_text.py
+│   ├── test_golden_surfaces.py
+│   ├── test_health.py
+│   ├── test_health_snapshot_isolation.py
+│   ├── test_inbox.py
+│   ├── test_linked_job_review_continuation.py
+│   ├── test_mission_planner.py
+│   ├── test_missions.py
+│   ├── test_models_config_strictness.py
+│   ├── test_mypy_ratchet.py
+│   ├── test_open_app.py
+│   ├── test_openai_compat_headers.py
+│   ├── test_openrouter_catalog.py
+│   ├── test_operator_assistant_queue.py
+│   ├── test_operator_contract_guardrails.py
+│   ├── test_ops_bundle.py
+│   ├── test_ops_bundle_includes_config_snapshot.py
+│   ├── test_panel.py
+│   ├── test_panel_contract_snapshot.py
+│   ├── test_planner_context.py
+│   ├── test_policy.py
+│   ├── test_prompts.py
+│   ├── test_queue_artifact_minimum_regression.py
+│   ├── test_queue_constitution_contracts.py
+│   ├── test_queue_daemon.py
+│   ├── test_queue_daemon_config_drift.py
+│   ├── test_queue_daemon_contract_snapshot.py
+│   ├── test_queue_execution_contracts.py
+│   ├── test_queue_job_intent.py
+│   ├── test_queue_result_consumers.py
+│   ├── test_reference_resolver.py
+│   ├── test_registry.py
+│   ├── test_response_shaping.py
+│   ├── test_result_surfacing.py
+│   ├── test_runner.py
+│   ├── test_sandbox_exec_args.py
+│   ├── test_sandbox_exec_integration.py
+│   ├── test_secrets.py
+│   ├── test_security_redteam.py
+│   ├── test_session_aware_authored_drafting.py
+│   ├── test_session_routing_debug.py
+│   ├── test_setup_wizard.py
+│   ├── test_shared_session_context.py
+│   ├── test_shared_session_context_integration.py
+│   ├── test_simple_intent.py
+│   ├── test_skill_metadata_and_runners.py
+│   ├── test_skill_result_payloads.py
+│   ├── test_system_inspect.py
+│   ├── test_update_script.py
+│   ├── test_vera_brave_search.py
+│   ├── test_vera_chat_reliability.py
+│   ├── test_vera_compiler_leakage.py
+│   ├── test_vera_contextual_flows.py
+│   ├── test_vera_draft_bug_fix.py
+│   ├── test_vera_draft_revision.py
+│   ├── test_vera_hidden_compiler.py
+│   ├── test_vera_investigation_derivations.py
+│   ├── test_vera_live_path_characterization.py
+│   ├── test_vera_panel.py
+│   ├── test_vera_preview_materialization.py
+│   ├── test_vera_preview_submission.py
+│   ├── test_vera_runtime_validation_fixes.py
+│   ├── test_vera_session_characterization.py
+│   ├── test_vera_web.py
+│   ├── test_version_source.py
+│   ├── test_voice_foundation.py
+│   └── vera_session_helpers.py
+├── tools/
+│   ├── golden_surfaces.py
+│   └── mypy-baseline.txt
+└── uv.lock

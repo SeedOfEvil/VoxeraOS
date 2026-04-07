@@ -1,0 +1,139 @@
+VoxeraOS Quick Start
+====================
+
+This is the current quick-start for VoxeraOS 0.1.9 (alpha). It is grounded
+in the actual repository: Makefile targets, deploy/systemd/user/* units,
+and the cli.py command tree.
+
+1. Prerequisites
+----------------
+
+- Linux (Ubuntu tested)
+- Python 3.10 or newer
+- A user account that can run `systemctl --user`
+- For sandboxed skills only: rootless Podman
+
+2. Clone and bootstrap
+----------------------
+
+    git clone <repo-url> VoxeraOS
+    cd VoxeraOS
+    make dev
+
+`make dev` creates `.venv/`, runs `pip install -e ".[dev]"`, and installs
+the pre-commit hook.
+
+3. First-run wizard (optional but recommended)
+----------------------------------------------
+
+    .venv/bin/voxera setup
+
+The wizard walks through brain provider slots, OpenRouter model picking,
+and an optional finish step that launches services.
+
+4. Configure environment
+------------------------
+
+Copy `.env.example` to `~/.config/voxera/env` and edit:
+
+    cp .env.example ~/.config/voxera/env
+    chmod 600 ~/.config/voxera/env
+
+Set at least:
+    VOXERA_QUEUE_ROOT=$HOME/VoxeraOS/notes/queue
+    VOXERA_PANEL_HOST=127.0.0.1
+    VOXERA_PANEL_PORT=8844
+    VOXERA_PANEL_OPERATOR_USER=admin
+    VOXERA_PANEL_OPERATOR_PASSWORD=<choose a strong one>
+
+For panel password handling under systemd, see
+`deploy/systemd/user/voxera-panel.service` and use a drop-in:
+
+    systemctl --user edit voxera-panel.service
+    [Service]
+    Environment=VOXERA_PANEL_OPERATOR_PASSWORD=<set-a-strong-password>
+
+5. Install user services
+------------------------
+
+    make services-install
+
+This templates `@VOXERA_PROJECT_DIR@` to the absolute repo path, copies
+three units to `~/.config/systemd/user/`, then enables and starts:
+
+    voxera-daemon.service   ->  voxera daemon
+    voxera-panel.service    ->  voxera panel --host 127.0.0.1 --port 8844
+    voxera-vera.service     ->  uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790
+
+Useful follow-ups:
+    make services-status
+    make services-restart
+    make daemon-restart
+
+6. Open the surfaces
+--------------------
+
+- Panel:    http://127.0.0.1:8844/
+- Vera:     http://127.0.0.1:8790/
+
+The panel exposes /jobs, /missions/create, /assistant, /vera, /hygiene,
+/recovery, and the bundle endpoints. Vera exposes /, /chat, /handoff,
+/clear, and /vera/debug/session.json.
+
+7. CLI cheatsheet
+-----------------
+
+    voxera version
+    voxera doctor
+    voxera config show
+    voxera ops capabilities
+    voxera skills list
+    voxera missions list
+    voxera missions plan "summarize my notes"
+    voxera missions run sandbox_smoke
+    voxera run files.list_dir --arg path=$HOME/VoxeraOS/notes
+    voxera queue init
+    voxera queue status
+    voxera queue health
+    voxera queue prune
+    voxera queue reconcile
+    voxera queue approvals list
+    voxera queue approvals approve <ref>
+    voxera queue files tree --root $HOME/VoxeraOS/notes
+    voxera artifacts prune
+    voxera inbox add path/to/payload.json
+    voxera ops bundle system
+    voxera ops bundle job <job_id>
+    voxera audit --n 50
+
+8. Day-zero smoke
+-----------------
+
+    make test
+    bash scripts/e2e_smoke.sh
+
+For the operator console smoke (full read/write loop):
+
+    make e2e
+
+9. Where things live
+--------------------
+
+- Source:                src/voxera/, src/voxera_builtin_skills/
+- Skill manifests:       skills/
+- Mission JSON:          missions/
+- Tests:                 tests/
+- Long-form docs:        docs/
+- Queue root on disk:    ~/VoxeraOS/notes/queue/
+- Vera session store:    ~/VoxeraOS/notes/queue/artifacts/vera_sessions/
+- Audit log:             ~/.local/share/voxera/audit/
+- Config:                ~/.config/voxera/config.yml + ~/.config/voxera/env
+
+10. Read next
+-------------
+
+- docs/00_MASTER_INDEX.md           bundle index
+- docs/03_QUEUE_OBJECT_MODEL_AND_LIFECYCLE.md
+- docs/05_VERA_CONTROL_LAYER_AND_HANDOFF.md
+- docs/06_SKILLS_CAPABILITIES_AND_BUILTINS.md
+- docs/NORTH_STAR.md
