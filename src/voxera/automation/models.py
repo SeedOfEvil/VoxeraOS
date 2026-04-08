@@ -13,17 +13,22 @@ from saved definitions; this PR is the object model foundation only.
 Validation rules (fail-closed by design):
 
 - ``trigger_kind`` must be one of the supported kinds.
-- ``trigger_config`` must be a dict whose shape matches ``trigger_kind``.
+- ``trigger_config`` must be a dict whose shape matches ``trigger_kind``. Unknown
+  keys are rejected, required keys must be present, and numeric fields must be
+  strictly positive integers (no floats, no bool coercion).
 - ``payload_template`` must be a non-empty dict that carries at least one
   canonical top-level queue request family field (``mission_id``, ``goal``,
   ``steps``, ``file_organize``, ``write_file``) and must validate against the
   existing queue contract helpers for any of those fields that are present.
+- ``id`` must match ``AUTOMATION_ID_PATTERN`` so the on-disk filename is
+  deterministic and filesystem-safe.
 - Unknown trigger kinds, malformed trigger config, or payload templates that
   do not look like canonical queue requests are rejected.
 """
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Final, Literal
 
@@ -77,9 +82,20 @@ AUTOMATION_CANONICAL_REQUEST_FIELDS: Final[frozenset[str]] = frozenset(
 
 WATCH_PATH_ALLOWED_EVENTS: Final[frozenset[str]] = frozenset({"created", "modified", "deleted"})
 
+# Deterministic, filesystem-safe id shape. The store uses this same pattern so
+# the model validation and any caller-provided lookup id (CLI / HTTP path
+# param) are enforced through one rule.
+AUTOMATION_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _is_strict_positive_int(value: Any) -> bool:
+    # ``bool`` is a subclass of ``int`` in Python; reject it explicitly so
+    # ``True`` / ``False`` do not sneak through as 1 / 0.
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def _clean_str(value: Any) -> str | None:
@@ -89,52 +105,39 @@ def _clean_str(value: Any) -> str | None:
     return stripped or None
 
 
+def _reject_unknown_keys(kind: str, config: dict[str, Any], allowed: set[str]) -> None:
+    unknown = sorted(set(config.keys()) - allowed)
+    if unknown:
+        raise ValueError(
+            f"trigger_config for {kind} contains unsupported keys: {', '.join(unknown)}"
+        )
+
+
 def _validate_trigger_config(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     """Per-trigger-kind config validation. Fails closed on anything unexpected."""
     if kind == "once_at":
-        allowed = {"run_at_ms"}
-        unknown = sorted(set(config.keys()) - allowed)
-        if unknown:
-            raise ValueError(
-                f"trigger_config for once_at contains unsupported keys: {', '.join(unknown)}"
-            )
+        _reject_unknown_keys(kind, config, {"run_at_ms"})
         raw = config.get("run_at_ms")
-        if not isinstance(raw, int) or isinstance(raw, bool) or raw <= 0:
+        if not _is_strict_positive_int(raw):
             raise ValueError("trigger_config.run_at_ms must be a positive int epoch-ms")
         return {"run_at_ms": raw}
 
     if kind == "delay":
-        allowed = {"delay_ms"}
-        unknown = sorted(set(config.keys()) - allowed)
-        if unknown:
-            raise ValueError(
-                f"trigger_config for delay contains unsupported keys: {', '.join(unknown)}"
-            )
+        _reject_unknown_keys(kind, config, {"delay_ms"})
         raw = config.get("delay_ms")
-        if not isinstance(raw, int) or isinstance(raw, bool) or raw <= 0:
+        if not _is_strict_positive_int(raw):
             raise ValueError("trigger_config.delay_ms must be a positive int millisecond value")
         return {"delay_ms": raw}
 
     if kind == "recurring_interval":
-        allowed = {"interval_ms"}
-        unknown = sorted(set(config.keys()) - allowed)
-        if unknown:
-            raise ValueError(
-                "trigger_config for recurring_interval contains unsupported keys: "
-                f"{', '.join(unknown)}"
-            )
+        _reject_unknown_keys(kind, config, {"interval_ms"})
         raw = config.get("interval_ms")
-        if not isinstance(raw, int) or isinstance(raw, bool) or raw <= 0:
+        if not _is_strict_positive_int(raw):
             raise ValueError("trigger_config.interval_ms must be a positive int millisecond value")
         return {"interval_ms": raw}
 
     if kind == "recurring_cron":
-        allowed = {"cron"}
-        unknown = sorted(set(config.keys()) - allowed)
-        if unknown:
-            raise ValueError(
-                f"trigger_config for recurring_cron contains unsupported keys: {', '.join(unknown)}"
-            )
+        _reject_unknown_keys(kind, config, {"cron"})
         cron = _clean_str(config.get("cron"))
         if cron is None:
             raise ValueError("trigger_config.cron must be a non-empty string")
@@ -144,12 +147,7 @@ def _validate_trigger_config(kind: str, config: dict[str, Any]) -> dict[str, Any
         return {"cron": cron}
 
     if kind == "watch_path":
-        allowed = {"path", "event"}
-        unknown = sorted(set(config.keys()) - allowed)
-        if unknown:
-            raise ValueError(
-                f"trigger_config for watch_path contains unsupported keys: {', '.join(unknown)}"
-            )
+        _reject_unknown_keys(kind, config, {"path", "event"})
         path = _clean_str(config.get("path"))
         if path is None:
             raise ValueError("trigger_config.path must be a non-empty string")
@@ -159,8 +157,9 @@ def _validate_trigger_config(kind: str, config: dict[str, Any]) -> dict[str, Any
             raise ValueError(f"trigger_config.event must be one of: {allowed_events}")
         return {"path": path, "event": event}
 
-    # Unknown trigger kinds are already rejected earlier in the model; this
-    # branch exists so ``_validate_trigger_config`` itself is fail-closed.
+    # Unknown trigger kinds are already rejected by the Pydantic Literal field
+    # validator; this branch is a belt-and-suspenders fail-closed path for any
+    # caller that invokes ``_validate_trigger_config`` outside the model.
     raise ValueError(f"unknown trigger_kind: {kind}")
 
 
@@ -241,16 +240,15 @@ class AutomationDefinition(BaseModel):
     @field_validator("id")
     @classmethod
     def _id_shape(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError("id must be a string")
         stripped = value.strip()
-        if not stripped:
-            raise ValueError("id must be a non-empty string")
-        # Deterministic, filesystem-safe id. We keep this narrow on purpose so
-        # the on-disk filename is simply ``<id>.json``.
-        allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
-        if any(ch not in allowed_chars for ch in stripped):
-            raise ValueError("id may only contain ASCII letters, digits, underscores, and hyphens")
-        if len(stripped) > 128:
-            raise ValueError("id must be at most 128 characters")
+        if not AUTOMATION_ID_PATTERN.match(stripped):
+            raise ValueError(
+                "id must match "
+                f"{AUTOMATION_ID_PATTERN.pattern} (ASCII alphanumerics plus '_' / '-', "
+                "must start with an alphanumeric, 1–128 chars)"
+            )
         return stripped
 
     @field_validator("title")
@@ -263,13 +261,15 @@ class AutomationDefinition(BaseModel):
 
     @field_validator("description")
     @classmethod
-    def _description_is_string(cls, value: str) -> str:
-        return value if isinstance(value, str) else ""
+    def _description_strip(cls, value: str) -> str:
+        # ``description`` is allowed to be empty. We strip so round-trip
+        # saves do not flip between "  " and "" depending on caller input.
+        return value.strip() if isinstance(value, str) else ""
 
     @field_validator("created_at_ms", "updated_at_ms")
     @classmethod
     def _timestamp_positive(cls, value: int) -> int:
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        if not _is_strict_positive_int(value):
             raise ValueError("timestamp must be a positive int epoch-ms")
         return value
 
@@ -278,9 +278,21 @@ class AutomationDefinition(BaseModel):
     def _optional_timestamp(cls, value: int | None) -> int | None:
         if value is None:
             return None
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        if not _is_strict_positive_int(value):
             raise ValueError("timestamp must be a positive int epoch-ms when provided")
         return value
+
+    @field_validator("last_job_ref")
+    @classmethod
+    def _last_job_ref_non_empty_when_set(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("last_job_ref must be a string when provided")
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("last_job_ref must be a non-empty string when provided")
+        return stripped
 
     @field_validator("run_history_refs")
     @classmethod
@@ -297,18 +309,12 @@ class AutomationDefinition(BaseModel):
 
     @model_validator(mode="after")
     def _cross_field_validation(self) -> AutomationDefinition:
-        if self.trigger_kind not in AUTOMATION_TRIGGER_KINDS:
-            raise ValueError(f"unknown trigger_kind: {self.trigger_kind!r}")
-
         if not isinstance(self.trigger_config, dict):
             raise ValueError("trigger_config must be an object/dict")
 
         # Normalize / validate per kind. We replace the stored dict with the
         # validated (narrowed) shape so downstream consumers do not re-parse.
-        normalized_trigger_config = _validate_trigger_config(
-            self.trigger_kind, dict(self.trigger_config)
-        )
-        object.__setattr__(self, "trigger_config", normalized_trigger_config)
+        self.trigger_config = _validate_trigger_config(self.trigger_kind, dict(self.trigger_config))
 
         _validate_payload_template(self.payload_template)
 
@@ -323,16 +329,25 @@ class AutomationDefinition(BaseModel):
         We return a copy rather than mutating in place so callers that hold a
         prior reference still see the original snapshot — this matches the
         immutable-feeling style used elsewhere in the repo for queue records.
+
+        The refreshed stamp is clamped so it never goes backward relative to
+        either ``created_at_ms`` or the current ``updated_at_ms``. That means
+        a clock skew cannot accidentally regress an automation's update time.
         """
-        stamp = int(now_ms) if now_ms is not None else _now_ms()
-        if stamp < self.created_at_ms:
-            stamp = self.created_at_ms
+        if now_ms is None:
+            stamp = _now_ms()
+        else:
+            if not _is_strict_positive_int(now_ms):
+                raise ValueError("now_ms must be a positive int epoch-ms when provided")
+            stamp = int(now_ms)
+        stamp = max(stamp, self.created_at_ms, self.updated_at_ms)
         return self.model_copy(update={"updated_at_ms": stamp})
 
 
 __all__ = [
     "AUTOMATION_CANONICAL_REQUEST_FIELDS",
     "AUTOMATION_CREATED_FROM_VALUES",
+    "AUTOMATION_ID_PATTERN",
     "AUTOMATION_POLICY_POSTURES",
     "AUTOMATION_TRIGGER_KINDS",
     "AutomationCreatedFrom",

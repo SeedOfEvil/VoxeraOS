@@ -15,10 +15,12 @@ from pydantic import ValidationError
 
 from voxera.automation import (
     AUTOMATION_CANONICAL_REQUEST_FIELDS,
+    AUTOMATION_ID_PATTERN,
     AUTOMATION_TRIGGER_KINDS,
     AutomationDefinition,
     AutomationNotFoundError,
     AutomationStoreError,
+    automations_root,
     definition_path,
     definitions_dir,
     delete_automation_definition,
@@ -203,6 +205,104 @@ def test_touch_updated_advances_timestamp_and_returns_copy() -> None:
     assert clamped.updated_at_ms == definition.created_at_ms
 
 
+def test_touch_updated_never_regresses_past_current_updated_at() -> None:
+    # Clock skew must not pull updated_at_ms backward: an automation that was
+    # last updated at t=1500 should still report at least 1500 even if a
+    # later touch says "now is 1200".
+    definition = AutomationDefinition(
+        **_valid_kwargs(
+            created_at_ms=1_000,
+            updated_at_ms=1_500,
+        )  # type: ignore[arg-type]
+    )
+    refreshed = definition.touch_updated(now_ms=1_200)
+    assert refreshed.updated_at_ms == 1_500
+
+
+def test_touch_updated_rejects_non_positive_now_ms() -> None:
+    definition = AutomationDefinition(**_valid_kwargs())  # type: ignore[arg-type]
+    for bad in (0, -1, True, False, "1700000000000", 1.5):
+        with pytest.raises(ValueError):
+            definition.touch_updated(now_ms=bad)  # type: ignore[arg-type]
+
+
+def test_description_is_stripped() -> None:
+    definition = AutomationDefinition(
+        **_valid_kwargs(description="   trimmed body  \n")  # type: ignore[arg-type]
+    )
+    assert definition.description == "trimmed body"
+
+
+def test_last_job_ref_round_trip_and_empty_string_rejected() -> None:
+    definition = AutomationDefinition(
+        **_valid_kwargs(last_job_ref="inbox-goal-42")  # type: ignore[arg-type]
+    )
+    assert definition.last_job_ref == "inbox-goal-42"
+    with pytest.raises(ValidationError):
+        AutomationDefinition(**_valid_kwargs(last_job_ref="   "))  # type: ignore[arg-type]
+
+
+def test_run_history_refs_round_trip_and_invalid_items_rejected() -> None:
+    definition = AutomationDefinition(
+        **_valid_kwargs(run_history_refs=["one", "two"])  # type: ignore[arg-type]
+    )
+    assert definition.run_history_refs == ["one", "two"]
+    with pytest.raises(ValidationError):
+        AutomationDefinition(**_valid_kwargs(run_history_refs=["ok", ""]))  # type: ignore[arg-type]
+
+
+def test_trigger_config_numeric_fields_reject_bool_and_float() -> None:
+    # Pydantic treats ``True`` as an int (value 1) unless we reject it
+    # explicitly. A bool trigger_config value is almost certainly a bug, so
+    # fail closed.
+    with pytest.raises(ValidationError):
+        AutomationDefinition(
+            **_valid_kwargs(
+                trigger_kind="delay",
+                trigger_config={"delay_ms": True},
+            )  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValidationError):
+        AutomationDefinition(
+            **_valid_kwargs(
+                trigger_kind="once_at",
+                trigger_config={"run_at_ms": 1_700_000_000_000.0},
+            )  # type: ignore[arg-type]
+        )
+
+
+def test_watch_path_defaults_event_to_created_when_omitted() -> None:
+    definition = AutomationDefinition(
+        **_valid_kwargs(
+            trigger_kind="watch_path",
+            trigger_config={"path": "~/VoxeraOS/notes/incoming"},
+        )  # type: ignore[arg-type]
+    )
+    assert definition.trigger_config == {
+        "path": "~/VoxeraOS/notes/incoming",
+        "event": "created",
+    }
+
+
+def test_automation_id_pattern_accepts_valid_ids_and_rejects_others() -> None:
+    for good in ("demo-1", "A", "mission_abc", "job-123", "x" * 128):
+        assert AUTOMATION_ID_PATTERN.match(good) is not None
+    for bad in (
+        "",
+        " ",
+        "-leading-hyphen",
+        "_leading-underscore",
+        "x" * 129,
+        "with space",
+        "with/slash",
+        "..",
+        ".hidden",
+        "with\nnewline",
+        "with\x00null",
+    ):
+        assert AUTOMATION_ID_PATTERN.match(bad) is None
+
+
 # ---------------------------------------------------------------------------
 # Storage
 # ---------------------------------------------------------------------------
@@ -333,9 +433,115 @@ def test_delete_removes_file_and_then_raises(tmp_path: Path) -> None:
 
 def test_definition_path_rejects_traversal_like_ids(tmp_path: Path) -> None:
     queue_root = tmp_path / "queue"
-    for bad in ("../escape", "..", "./relative", "with/slash", ""):
+    for bad in (
+        "../escape",
+        "..",
+        "./relative",
+        "with/slash",
+        "",
+        ".hidden",
+        "with\x00null",
+        "with space",
+        "-leading-hyphen",
+        "_leading-underscore",
+    ):
         with pytest.raises(AutomationStoreError):
             definition_path(queue_root, bad)
+
+
+def test_definition_path_accepts_valid_ids(tmp_path: Path) -> None:
+    queue_root = tmp_path / "queue"
+    target = definition_path(queue_root, "demo-automation")
+    assert target == definitions_dir(queue_root) / "demo-automation.json"
+    # Leading/trailing whitespace is accepted but stripped, so the on-disk
+    # filename matches the validated model id.
+    assert (
+        definition_path(queue_root, "  demo-automation  ")
+        == definitions_dir(queue_root) / "demo-automation.json"
+    )
+
+
+def test_automations_root_is_queue_root_scoped(tmp_path: Path) -> None:
+    queue_root = tmp_path / "queue"
+    root = automations_root(queue_root)
+    assert root == queue_root / "automations"
+    assert definitions_dir(queue_root) == root / "definitions"
+    assert history_dir(queue_root) == root / "history"
+
+
+def test_save_overwrites_existing_definition_idempotently(tmp_path: Path) -> None:
+    queue_root = tmp_path / "queue"
+    first = AutomationDefinition(
+        **_valid_kwargs(
+            id="idem-1",
+            title="first title",
+            created_at_ms=1_700_000_000_000,
+            updated_at_ms=1_700_000_000_000,
+        )  # type: ignore[arg-type]
+    )
+    save_automation_definition(first, queue_root, touch_updated=False)
+    # Same id, different content.
+    second = AutomationDefinition(
+        **_valid_kwargs(
+            id="idem-1",
+            title="second title",
+            created_at_ms=1_700_000_000_000,
+            updated_at_ms=1_800_000_000_000,
+        )  # type: ignore[arg-type]
+    )
+    save_automation_definition(second, queue_root, touch_updated=False)
+
+    loaded = load_automation_definition("idem-1", queue_root)
+    assert loaded.title == "second title"
+    assert loaded.updated_at_ms == 1_800_000_000_000
+    # Only one file should exist for this id.
+    matches = sorted(definitions_dir(queue_root).glob("idem-1*"))
+    assert [p.name for p in matches] == ["idem-1.json"]
+
+
+def test_list_ignores_tmp_sibling_left_behind_by_interrupted_save(tmp_path: Path) -> None:
+    queue_root = tmp_path / "queue"
+    save_automation_definition(
+        AutomationDefinition(**_valid_kwargs(id="good-3")),  # type: ignore[arg-type]
+        queue_root,
+    )
+    # Simulate an interrupted save that left a ``.json.tmp`` sidecar.
+    leftover = definitions_dir(queue_root) / "mid-write.json.tmp"
+    leftover.write_text("{not json", encoding="utf-8")
+
+    listing = list_automation_definitions(queue_root)
+    assert [item.id for item in listing] == ["good-3"]
+    # Strict mode also ignores the .tmp file (glob is *.json, not *.json.tmp).
+    assert [item.id for item in list_automation_definitions(queue_root, strict=True)] == ["good-3"]
+
+
+def test_save_refreshes_updated_at_to_wall_clock_when_now_ms_omitted(
+    tmp_path: Path,
+) -> None:
+    queue_root = tmp_path / "queue"
+    # Deliberately old created_at/updated_at so the wall-clock refresh is
+    # guaranteed to move the timestamp forward.
+    definition = AutomationDefinition(
+        **_valid_kwargs(
+            created_at_ms=1_000,
+            updated_at_ms=1_000,
+        )  # type: ignore[arg-type]
+    )
+    save_automation_definition(definition, queue_root)
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.updated_at_ms > 1_000
+    assert loaded.created_at_ms == 1_000
+
+
+def test_load_raises_on_id_shape_before_touching_filesystem(tmp_path: Path) -> None:
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    with pytest.raises(AutomationStoreError):
+        load_automation_definition("../escape", queue_root)
+    with pytest.raises(AutomationStoreError):
+        load_automation_definition("with/slash", queue_root)
+    with pytest.raises(AutomationStoreError):
+        load_automation_definition("", queue_root)
 
 
 def test_saved_file_is_deterministic_json(tmp_path: Path) -> None:

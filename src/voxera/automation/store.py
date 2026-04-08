@@ -13,6 +13,9 @@ Fail-closed semantics:
   on disk is skipped (not raised) so one bad file cannot hide the rest of
   the automation inventory from operators. Strict mode is available for
   tests and tooling that want to surface every problem.
+- ``definition_path`` enforces ``AUTOMATION_ID_PATTERN`` so caller input
+  (CLI / HTTP path param) cannot escape the definitions directory, even
+  before an ``AutomationDefinition`` has been constructed.
 """
 
 from __future__ import annotations
@@ -23,11 +26,13 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .models import AutomationDefinition
+from .models import AUTOMATION_ID_PATTERN, AutomationDefinition
 
 AUTOMATIONS_DIRNAME = "automations"
 DEFINITIONS_DIRNAME = "definitions"
 HISTORY_DIRNAME = "history"
+
+_TMP_SUFFIX = ".tmp"
 
 
 class AutomationStoreError(RuntimeError):
@@ -63,21 +68,31 @@ def ensure_automation_dirs(queue_root: Path) -> Path:
     return root
 
 
+def _validated_id(automation_id: str) -> str:
+    """Return ``automation_id`` if it matches ``AUTOMATION_ID_PATTERN``.
+
+    Raises ``AutomationStoreError`` otherwise. This is intentionally stricter
+    than a simple path-traversal check so the set of legal on-disk filenames
+    is identical to the set of legal ``AutomationDefinition.id`` values.
+    """
+    if not isinstance(automation_id, str):
+        raise AutomationStoreError("automation id must be a string")
+    stripped = automation_id.strip()
+    if not stripped:
+        raise AutomationStoreError("automation id must be a non-empty string")
+    if not AUTOMATION_ID_PATTERN.match(stripped):
+        raise AutomationStoreError(f"invalid automation id: {automation_id!r}")
+    return stripped
+
+
 def definition_path(queue_root: Path, automation_id: str) -> Path:
     """Return the on-disk path for a given automation id.
 
-    The id format is enforced by ``AutomationDefinition._id_shape`` — ASCII
-    letters, digits, underscores, and hyphens only — so it is already
-    filesystem-safe. We still defensively reject traversal-looking ids here
-    because ``definition_path`` can be called with an arbitrary caller input
-    (e.g. a CLI or HTTP path param) before the model has validated it.
+    The id is validated against ``AUTOMATION_ID_PATTERN`` before it is joined
+    to the definitions directory, so traversal segments, path separators,
+    null bytes, and leading dots are all rejected fail-closed.
     """
-    stripped = str(automation_id or "").strip()
-    if not stripped:
-        raise AutomationStoreError("automation id must be a non-empty string")
-    if "/" in stripped or "\\" in stripped or stripped in {".", ".."}:
-        raise AutomationStoreError(f"invalid automation id: {automation_id!r}")
-    return definitions_dir(queue_root) / f"{stripped}.json"
+    return definitions_dir(queue_root) / f"{_validated_id(automation_id)}.json"
 
 
 def save_automation_definition(
@@ -93,13 +108,20 @@ def save_automation_definition(
     refreshed to the current time before writing so repeated saves reflect
     the latest edit. Set it to False when callers want to preserve an
     existing ``updated_at_ms`` (e.g. an import/migration path).
+
+    The write is atomic: we serialize to a ``.tmp`` sibling and then
+    ``Path.replace`` onto the final target, so a crashed writer can never
+    leave a half-written JSON file where a reader would see it. The
+    ``.tmp`` sidecar lives in the definitions directory but is excluded
+    from ``list_automation_definitions`` because the glob matches
+    ``*.json``, not ``*.json.tmp``.
     """
     ensure_automation_dirs(queue_root)
     target = definition_path(queue_root, definition.id)
 
     to_write = definition.touch_updated(now_ms=now_ms) if touch_updated else definition
     payload = to_write.model_dump(mode="json")
-    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp = target.with_suffix(target.suffix + _TMP_SUFFIX)
     tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     tmp.replace(target)
     return target
@@ -112,9 +134,9 @@ def load_automation_definition(
     """Load and validate an automation definition by id.
 
     Raises:
-        AutomationNotFoundError: if the file does not exist.
-        AutomationStoreError: if the file is present but unreadable or
-            fails validation.
+        AutomationStoreError: if the id is not legal or the file is
+            present but unreadable or fails validation.
+        AutomationNotFoundError: if the id is legal but the file is absent.
     """
     path = definition_path(queue_root, automation_id)
     if not path.exists():
@@ -146,7 +168,8 @@ def list_automation_definitions(
     skipped so one bad file cannot hide the rest of the inventory. In
     ``strict`` mode, the first malformed file raises ``AutomationStoreError``.
 
-    Results are sorted by ``id`` for deterministic output.
+    Results are sorted by ``id`` for deterministic output. Temporary
+    ``*.json.tmp`` files left behind by an interrupted save are excluded.
     """
     directory = definitions_dir(queue_root)
     if not directory.exists():

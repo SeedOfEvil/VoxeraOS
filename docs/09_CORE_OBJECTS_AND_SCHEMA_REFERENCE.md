@@ -237,6 +237,44 @@ Used by:
 
 Any payload with extra keys or mismatched action/payload combinations is rejected fail-closed.
 
+## `AutomationDefinition`
+
+`src/voxera/automation/models.py::AutomationDefinition` (Pydantic, `extra="forbid"`). Durable, definition-only record that describes a *future* governed queue submission. PR1 only adds the data model and file-backed storage — there is no runner, no scheduler, no submitter yet. If a future runner acts on one of these, it must do so by emitting a normal canonical queue job into `inbox/`; the queue stays the execution boundary.
+
+```jsonc
+{
+  "id": "demo-automation",                 // ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+  "title": "Demo automation",              // non-empty, stripped
+  "description": "",                        // stripped; may be empty
+  "enabled": true,                          // default true
+  "trigger_kind": "once_at",               // one of the supported kinds below
+  "trigger_config": { "run_at_ms": 0 },    // per-kind strict shape
+  "payload_template": { "goal": "..." },   // canonical queue payload shape
+  "created_at_ms": 0,                       // positive int epoch-ms
+  "updated_at_ms": 0,                       // >= created_at_ms
+  "last_run_at_ms": null,                   // positive int epoch-ms | null
+  "next_run_at_ms": null,                   // positive int epoch-ms | null
+  "last_job_ref": null,                     // non-empty string | null
+  "run_history_refs": [],                   // list of non-empty strings
+  "policy_posture": "standard",            // "standard" | "strict_review"
+  "created_from": "cli"                    // "vera" | "panel" | "cli"
+}
+```
+
+Supported `trigger_kind` values and their strict `trigger_config` shapes:
+
+| Kind | Required shape | Notes |
+|---|---|---|
+| `once_at` | `{"run_at_ms": <positive int>}` | Single future epoch-ms target. |
+| `delay` | `{"delay_ms": <positive int>}` | Relative delay in ms. |
+| `recurring_interval` | `{"interval_ms": <positive int>}` | Fixed interval. |
+| `recurring_cron` | `{"cron": <non-empty str>}` | String is accepted as-is at definition time; cron parsing is deferred to the future runner. |
+| `watch_path` | `{"path": <non-empty str>, "event": "created"\|"modified"\|"deleted"}` | `event` defaults to `"created"` when omitted. |
+
+`payload_template` must carry at least one canonical queue request field (`mission_id`, `goal`, `steps`, `file_organize`, or `write_file`). The `write_file` and `file_organize` shapes are validated via the same extractors the queue daemon uses at intake (`core/queue_contracts.py::extract_write_file_request` / `extract_file_organize_request`), so an automation definition that validates here would also survive queue intake verbatim. Unknown trigger kinds, unknown `trigger_config` keys, malformed or empty `payload_template`, non-int timestamps, `bool` / `float` leaking into int fields, and id shapes outside `AUTOMATION_ID_PATTERN` are all rejected fail-closed.
+
+Storage lives under `<queue_root>/automations/definitions/<id>.json` via `src/voxera/automation/store.py`. Saves are atomic (`.json.tmp` → `Path.replace`), JSON is sorted for deterministic diffs, and `list_automation_definitions(...)` is best-effort by default so a single malformed file cannot hide the rest of the inventory (`strict=True` surfaces every failure for tooling). A sibling `history/` directory is created now but not written in PR1 — it is reserved for a future runner.
+
 ## `job` refs, stems, and ids
 
 - Canonical job id is the queue filename stem (`<job>.json` → `<job>`).

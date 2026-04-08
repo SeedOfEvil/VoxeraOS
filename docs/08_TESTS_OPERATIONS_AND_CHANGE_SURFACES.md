@@ -169,6 +169,9 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 ### Voice foundation
 - `test_voice_foundation.py`
 
+### Automation object model (definition-layer foundation)
+- `test_automation_object_model.py` — covers the Pydantic model in `src/voxera/automation/models.py` and the file-backed store in `src/voxera/automation/store.py`. No runner, daemon, or queue submission is exercised — PR1 is the definition layer only.
+
 ### Misc
 - `test_inbox.py`
 - `test_demo_cli.py`
@@ -233,6 +236,7 @@ The "sync, test, validate" method used for meaningful PRs (see `Testing-Method.t
 | CLI surface / golden | `test_cli_*.py`, `test_golden_surfaces.py`, `tests/golden/*` |
 | Config / runtime / secrets | `test_config_settings.py`, `test_dev_contract_config_integration.py`, `test_secrets.py`, `test_setup_wizard.py` |
 | Ops / incident bundle | `test_ops_bundle.py`, `test_ops_bundle_includes_config_snapshot.py`, `test_diagnostics_pack.py` |
+| Automation object model / storage | `test_automation_object_model.py` |
 | Docs consistency | `test_docs_consistency.py` |
 
 ## E2E scripts
