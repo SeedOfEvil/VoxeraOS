@@ -1,0 +1,3100 @@
+{
+  "note": "Public top-level functions discovered under src/voxera via AST. Private (underscore-prefixed) functions are omitted. This inventory is for navigation only, not for API stability.",
+  "function_count": 442,
+  "functions": [
+    {
+      "module": "src/voxera/audit.py",
+      "function_name": "audit_path",
+      "line": 11,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/audit.py",
+      "function_name": "log",
+      "line": 17,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/audit.py",
+      "function_name": "tail",
+      "line": 25,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/brain/fallback.py",
+      "function_name": "classify_fallback_reason",
+      "line": 20,
+      "doc": "Map a brain provider exception to a stable fallback reason string.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/brain/json_recovery.py",
+      "function_name": "recover_json_object",
+      "line": 8,
+      "doc": "Recover a JSON object from model output.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "main",
+      "line": 84,
+      "doc": "Voxera CLI root command group.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "version_cmd",
+      "line": 100,
+      "doc": "Show Voxera version.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "secrets_set",
+      "line": 124,
+      "doc": "Store a secret via keyring (with secure file fallback).",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "secrets_get",
+      "line": 141,
+      "doc": "Read secret metadata safely (raw value hidden by default).",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "secrets_unset",
+      "line": 172,
+      "doc": "Remove a stored secret from keyring/file fallback.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "config_show",
+      "line": 185,
+      "doc": "Show resolved runtime config (redacted).",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "config_show_legacy",
+      "line": 191,
+      "doc": "Backward-compatible alias for `voxera config show`.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "config_snapshot",
+      "line": 197,
+      "doc": "Write a redacted runtime config snapshot and print its absolute path.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "config_validate",
+      "line": 208,
+      "doc": "Validate runtime config and exit non-zero on errors.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "setup",
+      "line": 217,
+      "doc": "Run first-run typed setup wizard.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "demo_cmd",
+      "line": 223,
+      "doc": "Run a safe 5-minute guided demo checklist.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "status",
+      "line": 242,
+      "doc": "Show current configuration summary.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "skills_list",
+      "line": 248,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "run",
+      "line": 257,
+      "doc": "Run a skill by ID (MVP).",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "missions_list",
+      "line": 285,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "missions_plan",
+      "line": 290,
+      "doc": "Use the configured cloud brain to create and run a mission plan.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "missions_run",
+      "line": 326,
+      "doc": "Run a built-in multi-step mission by ID.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "audit",
+      "line": 344,
+      "doc": "Show last N audit events.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "panel",
+      "line": 350,
+      "doc": "Run the minimal approvals/audit panel.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "daemon",
+      "line": 359,
+      "doc": "Run mission queue daemon watching for JSON jobs.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "vera",
+      "line": 388,
+      "doc": "Run the standalone Vera web app.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "ops_capabilities",
+      "line": 397,
+      "doc": "Print runtime capabilities snapshot JSON.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "ops_bundle_system",
+      "line": 406,
+      "doc": "Export a system ops bundle.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli.py",
+      "function_name": "ops_bundle_job",
+      "line": 419,
+      "doc": "Export a per-job ops bundle.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_common.py",
+      "function_name": "now_ms",
+      "line": 27,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_common.py",
+      "function_name": "queue_dir_path",
+      "line": 31,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_config.py",
+      "function_name": "config_show_impl",
+      "line": 13,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_config.py",
+      "function_name": "config_snapshot_impl",
+      "line": 18,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_config.py",
+      "function_name": "config_validate_impl",
+      "line": 36,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_doctor.py",
+      "function_name": "register",
+      "line": 8,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_ops.py",
+      "function_name": "ops_capabilities_impl",
+      "line": 15,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_ops.py",
+      "function_name": "ops_bundle_system_impl",
+      "line": 23,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_ops.py",
+      "function_name": "ops_bundle_job_impl",
+      "line": 33,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue.py",
+      "function_name": "register",
+      "line": 42,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue.py",
+      "function_name": "queue_init",
+      "line": 72,
+      "doc": "Create queue directories (safe mkdir -p; does not delete data).",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue.py",
+      "function_name": "queue_status",
+      "line": 93,
+      "doc": "Show queue health, pending approvals, and recent failures.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue.py",
+      "function_name": "queue_lock_status",
+      "line": 294,
+      "doc": "Show queue daemon lock status table.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_approvals.py",
+      "function_name": "queue_approvals_list",
+      "line": 11,
+      "doc": "List pending queue approvals.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_approvals.py",
+      "function_name": "queue_approvals_approve",
+      "line": 50,
+      "doc": "Approve a pending queue job by filename or id.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_approvals.py",
+      "function_name": "queue_approvals_deny",
+      "line": 73,
+      "doc": "Deny a pending queue job by filename or id.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_bundle.py",
+      "function_name": "queue_bundle",
+      "line": 12,
+      "doc": "Export a deterministic incident bundle for a job or the whole system.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_files.py",
+      "function_name": "queue_files_find",
+      "line": 59,
+      "doc": "Enqueue files.find as a governed queue job.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_files.py",
+      "function_name": "queue_files_grep_text",
+      "line": 97,
+      "doc": "Enqueue files.grep_text as a governed queue job.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_files.py",
+      "function_name": "queue_files_list_tree",
+      "line": 139,
+      "doc": "Enqueue files.list_tree as a governed queue job.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_files.py",
+      "function_name": "queue_files_copy",
+      "line": 171,
+      "doc": "Enqueue files.copy as a governed queue job.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_files.py",
+      "function_name": "queue_files_move",
+      "line": 197,
+      "doc": "Enqueue files.move as a governed queue job.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_files.py",
+      "function_name": "queue_files_rename",
+      "line": 223,
+      "doc": "Enqueue files.rename as a governed queue job.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_health.py",
+      "function_name": "queue_health",
+      "line": 21,
+      "doc": "Show queue/daemon health grouped by current state, recent history, and historical counters.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_health.py",
+      "function_name": "queue_health_reset",
+      "line": 227,
+      "doc": "Safely reset operator health current-state/recent-history fields.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_hygiene.py",
+      "function_name": "artifacts_prune",
+      "line": 21,
+      "doc": "Prune job artifacts. Dry-run by default; use --yes to delete.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_hygiene.py",
+      "function_name": "queue_prune",
+      "line": 121,
+      "doc": "Prune terminal queue buckets. Dry-run by default; use --yes to delete.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_hygiene.py",
+      "function_name": "queue_reconcile",
+      "line": 226,
+      "doc": "Scan queue directory and report hygiene issues. Report-only by default; no changes made.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_inbox.py",
+      "function_name": "inbox_add",
+      "line": 13,
+      "doc": "Create an inbox queue job from plain goal text.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_inbox.py",
+      "function_name": "inbox_list",
+      "line": 37,
+      "doc": "List inbox-created jobs across queue states.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_lifecycle.py",
+      "function_name": "queue_cancel",
+      "line": 10,
+      "doc": "Cancel a queue job by id or filename.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_lifecycle.py",
+      "function_name": "queue_retry",
+      "line": 28,
+      "doc": "Retry a failed queue job by id or filename.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_lifecycle.py",
+      "function_name": "queue_unlock",
+      "line": 46,
+      "doc": "Remove stale/dead daemon lock, or force-remove with --force.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_lifecycle.py",
+      "function_name": "queue_pause",
+      "line": 87,
+      "doc": "Pause queue processing.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_lifecycle.py",
+      "function_name": "queue_resume",
+      "line": 100,
+      "doc": "Resume queue processing.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_payloads.py",
+      "function_name": "build_files_queue_payload",
+      "line": 6,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_payloads.py",
+      "function_name": "build_files_find_args",
+      "line": 19,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_payloads.py",
+      "function_name": "build_files_grep_text_args",
+      "line": 40,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_payloads.py",
+      "function_name": "build_files_list_tree_args",
+      "line": 61,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_payloads.py",
+      "function_name": "build_files_copy_move_args",
+      "line": 76,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_payloads.py",
+      "function_name": "build_files_rename_args",
+      "line": 89,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_payloads.py",
+      "function_name": "build_health_reset_event_name",
+      "line": 97,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_queue_payloads.py",
+      "function_name": "build_health_reset_log_payload",
+      "line": 108,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_runtime.py",
+      "function_name": "setup_impl",
+      "line": 17,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_runtime.py",
+      "function_name": "demo_cmd_impl",
+      "line": 21,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_runtime.py",
+      "function_name": "status_impl",
+      "line": 58,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_runtime.py",
+      "function_name": "audit_impl",
+      "line": 70,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_runtime.py",
+      "function_name": "panel_impl",
+      "line": 76,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_runtime.py",
+      "function_name": "daemon_impl",
+      "line": 93,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_runtime.py",
+      "function_name": "vera_impl",
+      "line": 116,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_skills_missions.py",
+      "function_name": "approval_prompt_impl",
+      "line": 24,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_skills_missions.py",
+      "function_name": "skills_list_impl",
+      "line": 30,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_skills_missions.py",
+      "function_name": "run_impl",
+      "line": 59,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_skills_missions.py",
+      "function_name": "missions_list_impl",
+      "line": 139,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_skills_missions.py",
+      "function_name": "missions_plan_impl",
+      "line": 150,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/cli_skills_missions.py",
+      "function_name": "missions_run_impl",
+      "line": 210,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "resolve_config_path",
+      "line": 80,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "load_config",
+      "line": 84,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "should_load_dotenv",
+      "line": 271,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "load_env_file",
+      "line": 277,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "load_runtime_env",
+      "line": 295,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "config_fingerprint",
+      "line": 303,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "write_config_fingerprint",
+      "line": 308,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "write_config_snapshot",
+      "line": 326,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "default_config_path",
+      "line": 353,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "load_app_config",
+      "line": 357,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "save_config",
+      "line": 373,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "policy_path",
+      "line": 379,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "load_policy",
+      "line": 384,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "save_policy",
+      "line": 392,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/config.py",
+      "function_name": "capabilities_report_path",
+      "line": 398,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/artifacts.py",
+      "function_name": "prune_artifacts",
+      "line": 59,
+      "doc": "Prune top-level entries in artifacts_root according to retention rules.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/artifacts.py",
+      "function_name": "format_bytes",
+      "line": 178,
+      "doc": "Human-readable byte count.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/capabilities_snapshot.py",
+      "function_name": "generate_capabilities_snapshot",
+      "line": 21,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/capabilities_snapshot.py",
+      "function_name": "validate_mission_id_against_snapshot",
+      "line": 86,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/capabilities_snapshot.py",
+      "function_name": "validate_mission_steps_against_snapshot",
+      "line": 94,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/capability_semantics.py",
+      "function_name": "capability_semantic",
+      "line": 128,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/capability_semantics.py",
+      "function_name": "manifest_capability_semantics",
+      "line": 132,
+      "doc": "Centralized, inspectable semantics projection for a skill manifest.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/code_draft_intent.py",
+      "function_name": "is_code_draft_request",
+      "line": 136,
+      "doc": "Return True if the message clearly requests a code/script/config file draft.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/code_draft_intent.py",
+      "function_name": "classify_code_draft_intent",
+      "line": 169,
+      "doc": "Classify a message as a code/script/config draft request.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/code_draft_intent.py",
+      "function_name": "extract_code_from_reply",
+      "line": 206,
+      "doc": "Extract the first substantial fenced code block from an LLM reply.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/code_draft_intent.py",
+      "function_name": "has_code_file_extension",
+      "line": 227,
+      "doc": "Return True if path ends with a known code/script/config file extension.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/code_draft_intent.py",
+      "function_name": "code_fence_language",
+      "line": 245,
+      "doc": "Return the fence language tag for the language detected in message.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/execution_capabilities.py",
+      "function_name": "normalize_manifest_capabilities",
+      "line": 74,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/execution_evaluator.py",
+      "function_name": "evaluate_run_result",
+      "line": 43,
+      "doc": "Classify runtime outcomes for queue lifecycle handling.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/execution_evaluator.py",
+      "function_name": "replan_allowed_for_class",
+      "line": 102,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/file_intent.py",
+      "function_name": "is_safe_notes_path",
+      "line": 41,
+      "doc": "Return True if path is safely within ~/VoxeraOS/notes/ and not in queue.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/file_intent.py",
+      "function_name": "detect_blocked_file_intent",
+      "line": 589,
+      "doc": "Detect when a file intent pattern matches but the path is blocked.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/file_intent.py",
+      "function_name": "classify_bounded_file_intent",
+      "line": 654,
+      "doc": "Classify a user message into a bounded file intent if clear.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/inbox.py",
+      "function_name": "generate_inbox_id",
+      "line": 23,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/inbox.py",
+      "function_name": "add_inbox_job",
+      "line": 29,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/inbox.py",
+      "function_name": "add_inbox_payload",
+      "line": 33,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/inbox.py",
+      "function_name": "list_inbox_jobs",
+      "line": 63,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/mission_planner.py",
+      "function_name": "sanitize_goal_for_prompt",
+      "line": 53,
+      "doc": "Remove control chars + ESC-prefixed ANSI escapes while preserving benign bracketed text.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/mission_planner.py",
+      "function_name": "plan_mission",
+      "line": 681,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/core/missions.py",
+      "function_name": "list_missions",
+      "line": 308,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/missions.py",
+      "function_name": "list_missions_best_effort",
+      "line": 312,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/missions.py",
+      "function_name": "get_mission",
+      "line": 316,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/planner_context.py",
+      "function_name": "get_planner_agent_name",
+      "line": 16,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/planner_context.py",
+      "function_name": "get_planner_preamble",
+      "line": 33,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_assistant.py",
+      "function_name": "assistant_response_artifact_path",
+      "line": 29,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_assistant.py",
+      "function_name": "evaluate_assistant_fast_lane_eligibility",
+      "line": 55,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_assistant.py",
+      "function_name": "create_assistant_brain",
+      "line": 83,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_assistant.py",
+      "function_name": "assistant_brain_candidates",
+      "line": 96,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_assistant.py",
+      "function_name": "assistant_answer_via_brain",
+      "line": 107,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_assistant.py",
+      "function_name": "process_assistant_job",
+      "line": 190,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "extract_lineage_metadata",
+      "line": 90,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "extract_enqueue_child_request",
+      "line": 128,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "extract_write_file_request",
+      "line": 149,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "extract_file_organize_request",
+      "line": 178,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "compute_child_lineage",
+      "line": 228,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "detect_request_kind",
+      "line": 254,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "normalize_canonical_queue_payload",
+      "line": 284,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "build_execution_envelope",
+      "line": 293,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "build_assistant_execution_envelope",
+      "line": 371,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "build_structured_step_results",
+      "line": 444,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "build_execution_result",
+      "line": 537,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "minimum_artifact_presence",
+      "line": 792,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_contracts.py",
+      "function_name": "refresh_execution_result_artifact_contract",
+      "line": 809,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_hygiene.py",
+      "function_name": "list_jobs_in_bucket",
+      "line": 90,
+      "doc": "Return job entries in *bucket* under *queue_dir*, sorted newest-first.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_hygiene.py",
+      "function_name": "select_union_prune",
+      "line": 128,
+      "doc": "Select entries to prune from *entries* using union policy.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_hygiene.py",
+      "function_name": "safe_delete_entry",
+      "line": 166,
+      "doc": "Delete *path* only if it safely resides within *root*.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_hygiene.py",
+      "function_name": "prune_queue_buckets",
+      "line": 188,
+      "doc": "Prune terminal bucket job files according to retention rules.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_inspect.py",
+      "function_name": "lookup_job",
+      "line": 52,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_inspect.py",
+      "function_name": "list_jobs",
+      "line": 97,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_inspect.py",
+      "function_name": "queue_snapshot",
+      "line": 226,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_job_intent.py",
+      "function_name": "build_queue_job_intent",
+      "line": 79,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_job_intent.py",
+      "function_name": "enrich_queue_job_payload",
+      "line": 158,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_paths.py",
+      "function_name": "move_job_with_sidecar",
+      "line": 9,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_paths.py",
+      "function_name": "deterministic_target_path",
+      "line": 34,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_reconcile.py",
+      "function_name": "reconcile_queue",
+      "line": 139,
+      "doc": "Run queue hygiene diagnostics.  **Read-only \u2014 no mutations.**",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_reconcile.py",
+      "function_name": "quarantine_reconcile_fixes",
+      "line": 244,
+      "doc": "Quarantine safe orphan files found by re-scanning the queue directory.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_recovery.py",
+      "function_name": "shutdown_reason_excerpt",
+      "line": 29,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_result_consumers.py",
+      "function_name": "resolve_structured_execution",
+      "line": 273,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_state.py",
+      "function_name": "job_state_sidecar_path",
+      "line": 25,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_state.py",
+      "function_name": "read_job_state",
+      "line": 46,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_state.py",
+      "function_name": "write_job_state",
+      "line": 72,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/queue_state.py",
+      "function_name": "update_job_state_snapshot",
+      "line": 94,
+      "doc": "Build a queue-owned lifecycle snapshot for a submitted job.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/router.py",
+      "function_name": "route_request",
+      "line": 13,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/simple_intent.py",
+      "function_name": "classify_simple_operator_intent",
+      "line": 195,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/simple_intent.py",
+      "function_name": "check_skill_family_mismatch",
+      "line": 276,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/simple_intent.py",
+      "function_name": "sanitize_serialized_intent_route",
+      "line": 290,
+      "doc": "Return a defensive copy of serialized intent metadata.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/writing_draft_intent.py",
+      "function_name": "is_writing_draft_request",
+      "line": 81,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/writing_draft_intent.py",
+      "function_name": "is_writing_refinement_request",
+      "line": 99,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/writing_draft_intent.py",
+      "function_name": "classify_writing_draft_intent",
+      "line": 116,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/writing_draft_intent.py",
+      "function_name": "is_text_draft_preview",
+      "line": 133,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/core/writing_draft_intent.py",
+      "function_name": "extract_text_draft_from_reply",
+      "line": 145,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/demo.py",
+      "function_name": "run_demo",
+      "line": 59,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/doctor.py",
+      "function_name": "run_self_test",
+      "line": 46,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/doctor.py",
+      "function_name": "run_doctor",
+      "line": 150,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/doctor.py",
+      "function_name": "print_report",
+      "line": 191,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/doctor.py",
+      "function_name": "doctor_sync",
+      "line": 239,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/doctor.py",
+      "function_name": "run_quick_doctor",
+      "line": 262,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/doctor.py",
+      "function_name": "print_quick_report",
+      "line": 449,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/golden_surfaces.py",
+      "function_name": "normalize_help_text",
+      "line": 80,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/golden_surfaces.py",
+      "function_name": "normalize_json_payload",
+      "line": 110,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/golden_surfaces.py",
+      "function_name": "update_golden_files",
+      "line": 189,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/golden_surfaces.py",
+      "function_name": "check_golden_files",
+      "line": 197,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/golden_surfaces.py",
+      "function_name": "main",
+      "line": 224,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "compute_brain_backoff_s",
+      "line": 31,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "record_last_shutdown",
+      "line": 142,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "update_degradation_state",
+      "line": 162,
+      "doc": "Update health degradation fields from fallback/success events.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "health_path",
+      "line": 222,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "read_health_snapshot",
+      "line": 226,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "write_health_snapshot",
+      "line": 239,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "update_health_snapshot",
+      "line": 250,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "record_brain_fallback_attempt",
+      "line": 261,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "record_mission_success",
+      "line": 281,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "record_brain_backoff_applied",
+      "line": 292,
+      "doc": "Persist the last applied planning backoff delay for operators.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "increment_health_counter",
+      "line": 308,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "record_health_ok",
+      "line": 331,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "record_health_error",
+      "line": 344,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health.py",
+      "function_name": "record_fallback_transition",
+      "line": 357,
+      "doc": "Record a brain fallback transition in health counters + snapshot.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health_reset.py",
+      "function_name": "reset_health_snapshot",
+      "line": 86,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health_semantics.py",
+      "function_name": "active_panel_auth_lockouts",
+      "line": 14,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/health_semantics.py",
+      "function_name": "build_health_semantic_sections",
+      "line": 35,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/incident_bundle.py",
+      "function_name": "build_job_bundle",
+      "line": 79,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/incident_bundle.py",
+      "function_name": "build_system_bundle",
+      "line": 173,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/openrouter_catalog.py",
+      "function_name": "infer_vendor",
+      "line": 36,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/openrouter_catalog.py",
+      "function_name": "recommended_model_for_slot",
+      "line": 60,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/openrouter_catalog.py",
+      "function_name": "load_curated_openrouter_catalog",
+      "line": 64,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/openrouter_catalog.py",
+      "function_name": "grouped_catalog",
+      "line": 95,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/openrouter_catalog.py",
+      "function_name": "refresh_curated_catalog_from_live",
+      "line": 139,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/operator_assistant.py",
+      "function_name": "new_thread_id",
+      "line": 30,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/operator_assistant.py",
+      "function_name": "normalize_thread_id",
+      "line": 34,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/operator_assistant.py",
+      "function_name": "read_assistant_thread",
+      "line": 45,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/operator_assistant.py",
+      "function_name": "append_thread_turn",
+      "line": 60,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/operator_assistant.py",
+      "function_name": "build_operator_assistant_context",
+      "line": 133,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/operator_assistant.py",
+      "function_name": "build_assistant_messages",
+      "line": 201,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/operator_assistant.py",
+      "function_name": "fallback_operator_answer",
+      "line": 271,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/ops_bundle.py",
+      "function_name": "build_system_bundle",
+      "line": 126,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/ops_bundle.py",
+      "function_name": "build_job_bundle",
+      "line": 218,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/assistant.py",
+      "function_name": "enqueue_assistant_question",
+      "line": 20,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/assistant.py",
+      "function_name": "read_assistant_result",
+      "line": 59,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/assistant.py",
+      "function_name": "read_assistant_thread_turns",
+      "line": 182,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/auth_state_store.py",
+      "function_name": "prune_panel_auth_maps",
+      "line": 20,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/auth_state_store.py",
+      "function_name": "apply_panel_auth_state_prune",
+      "line": 57,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/auth_state_store.py",
+      "function_name": "apply_panel_auth_state_update",
+      "line": 66,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/auth_state_store.py",
+      "function_name": "active_lockout_until_ms",
+      "line": 115,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/auth_state_store.py",
+      "function_name": "auth_failure_snapshot",
+      "line": 125,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/helpers.py",
+      "function_name": "coerce_int",
+      "line": 9,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/helpers.py",
+      "function_name": "request_value",
+      "line": 29,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/panel/job_detail_sections.py",
+      "function_name": "build_job_detail_sections",
+      "line": 16,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/job_presentation.py",
+      "function_name": "job_context_summary",
+      "line": 7,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/job_presentation.py",
+      "function_name": "job_artifact_inventory",
+      "line": 61,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/job_presentation.py",
+      "function_name": "job_recent_timeline",
+      "line": 134,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/job_presentation.py",
+      "function_name": "operator_outcome_summary",
+      "line": 157,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/job_presentation.py",
+      "function_name": "policy_rationale_rows",
+      "line": 277,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/job_presentation.py",
+      "function_name": "evidence_summary_rows",
+      "line": 359,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/job_presentation.py",
+      "function_name": "why_stopped_rows",
+      "line": 426,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_assistant.py",
+      "function_name": "register_assistant_routes",
+      "line": 304,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_bundle.py",
+      "function_name": "register_bundle_routes",
+      "line": 22,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_home.py",
+      "function_name": "register_home_routes",
+      "line": 18,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_hygiene.py",
+      "function_name": "register_hygiene_routes",
+      "line": 46,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_jobs.py",
+      "function_name": "register_job_routes",
+      "line": 16,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_missions.py",
+      "function_name": "register_mission_routes",
+      "line": 103,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_queue_control.py",
+      "function_name": "register_queue_control_routes",
+      "line": 35,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_recovery.py",
+      "function_name": "register_recovery_routes",
+      "line": 17,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/panel/routes_vera.py",
+      "function_name": "register_vera_routes",
+      "line": 22,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/paths.py",
+      "function_name": "config_dir",
+      "line": 10,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/paths.py",
+      "function_name": "data_dir",
+      "line": 14,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/paths.py",
+      "function_name": "ensure_dirs",
+      "line": 18,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/paths.py",
+      "function_name": "queue_root",
+      "line": 27,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/paths.py",
+      "function_name": "queue_root_display",
+      "line": 31,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/policy.py",
+      "function_name": "decide",
+      "line": 20,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/prompts.py",
+      "function_name": "load_prompt_doc",
+      "line": 68,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/prompts.py",
+      "function_name": "compose_prompt_docs",
+      "line": 76,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/prompts.py",
+      "function_name": "compose_prompt",
+      "line": 81,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/prompts.py",
+      "function_name": "compose_vera_prompt",
+      "line": 91,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/prompts.py",
+      "function_name": "compose_hidden_compiler_prompt",
+      "line": 95,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/prompts.py",
+      "function_name": "compose_planner_prompt",
+      "line": 99,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/prompts.py",
+      "function_name": "compose_verifier_prompt",
+      "line": 103,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/prompts.py",
+      "function_name": "compose_web_investigator_prompt",
+      "line": 107,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/secrets.py",
+      "function_name": "write_secret",
+      "line": 30,
+      "doc": "Store secret in keyring if possible; otherwise fallback to a 0600 file.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/secrets.py",
+      "function_name": "set_secret",
+      "line": 45,
+      "doc": "Backward-compatible alias for write_secret.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/secrets.py",
+      "function_name": "get_secret",
+      "line": 50,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/secrets.py",
+      "function_name": "unset_secret",
+      "line": 62,
+      "doc": "Remove a stored secret from both keyring and fallback file when present.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/setup_wizard.py",
+      "function_name": "run_setup",
+      "line": 494,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/skills/arg_normalizer.py",
+      "function_name": "canonicalize_argv",
+      "line": 71,
+      "doc": "Resolve and normalise sandbox command argv from an args dict.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/arg_normalizer.py",
+      "function_name": "canonicalize_args",
+      "line": 122,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "function_name": "ensure_job_paths",
+      "line": 46,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "function_name": "generate_job_id",
+      "line": 57,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "function_name": "redact_value",
+      "line": 73,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "function_name": "sanitize_env",
+      "line": 79,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "function_name": "sanitize_command",
+      "line": 83,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "function_name": "sanitize_audit_value",
+      "line": 101,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "function_name": "select_runner",
+      "line": 397,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/path_boundaries.py",
+      "function_name": "normalize_confined_path",
+      "line": 16,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/result_contract.py",
+      "function_name": "build_skill_result",
+      "line": 21,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/result_contract.py",
+      "function_name": "extract_skill_result",
+      "line": 48,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/skills/runner.py",
+      "function_name": "is_skill_read_only",
+      "line": 21,
+      "doc": "Return True when every declared capability has a known read-only semantic.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/context_lifecycle.py",
+      "function_name": "context_on_preview_created",
+      "line": 36,
+      "doc": "Update context when a new preview is created or an existing one is revised.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/context_lifecycle.py",
+      "function_name": "context_on_preview_cleared",
+      "line": 56,
+      "doc": "Update context when the active preview is cleared or cleaned up.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/context_lifecycle.py",
+      "function_name": "context_on_handoff_submitted",
+      "line": 79,
+      "doc": "Update context when a preview is successfully submitted to the queue.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/context_lifecycle.py",
+      "function_name": "context_on_completion_ingested",
+      "line": 107,
+      "doc": "Update context when a linked job completion is ingested.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/context_lifecycle.py",
+      "function_name": "context_on_review_performed",
+      "line": 130,
+      "doc": "Update context when a job review is performed.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/context_lifecycle.py",
+      "function_name": "context_on_followup_preview_prepared",
+      "line": 153,
+      "doc": "Update context when a follow-up preview is prepared from evidence.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/context_lifecycle.py",
+      "function_name": "context_on_session_cleared",
+      "line": 180,
+      "doc": "Reset context when the session is cleared.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "extract_quoted_content",
+      "line": 15,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "normalize_extracted_content_block",
+      "line": 25,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "extract_content_after_markers",
+      "line": 47,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "extract_named_target",
+      "line": 58,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "filename_from_preview",
+      "line": 116,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "normalize_refinement_content_candidate",
+      "line": 129,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "extract_content_refinement",
+      "line": 144,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "extract_semantic_content_request",
+      "line": 194,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "refined_content_from_active_preview",
+      "line": 210,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "writing_kind_from_preview_goal",
+      "line": 489,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "looks_like_preview_rename_or_save_as_request",
+      "line": 499,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/draft_revision.py",
+      "function_name": "interpret_active_preview_draft_revision",
+      "line": 517,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "maybe_extract_job_id",
+      "line": 151,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "is_review_request",
+      "line": 172,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "is_followup_preview_request",
+      "line": 177,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "is_revise_from_evidence_request",
+      "line": 182,
+      "doc": "Return True when the message asks to revise/update prior output based on job evidence.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "is_save_followup_request",
+      "line": 188,
+      "doc": "Return True when the message asks to save the follow-up as a file or preview.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "review_job_outcome",
+      "line": 335,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "review_message",
+      "line": 464,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "draft_followup_preview",
+      "line": 686,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "draft_revised_preview",
+      "line": 705,
+      "doc": "Produce a revision-oriented preview goal grounded in completed job evidence.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "function_name": "draft_saveable_followup_preview",
+      "line": 725,
+      "doc": "Produce a saveable follow-up preview with a write_file payload.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "is_investigation_save_request",
+      "line": 12,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "is_investigation_compare_request",
+      "line": 33,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "is_investigation_summary_request",
+      "line": 46,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "is_investigation_expand_request",
+      "line": 56,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "is_investigation_derived_save_request",
+      "line": 69,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "is_investigation_derived_followup_save_request",
+      "line": 83,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "select_investigation_results",
+      "line": 117,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "draft_investigation_save_preview",
+      "line": 172,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "draft_investigation_derived_save_preview",
+      "line": 206,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "derive_investigation_comparison",
+      "line": 257,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "derive_investigation_summary",
+      "line": 344,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_derivations.py",
+      "function_name": "derive_investigation_expansion",
+      "line": 406,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_flow.py",
+      "function_name": "is_informational_web_query",
+      "line": 13,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_flow.py",
+      "function_name": "normalize_web_query",
+      "line": 116,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_flow.py",
+      "function_name": "build_structured_investigation_results",
+      "line": 162,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_flow.py",
+      "function_name": "format_web_investigation_answer",
+      "line": 190,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/investigation_flow.py",
+      "function_name": "maybe_handle_investigation_turn",
+      "line": 229,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/vera/investigation_flow.py",
+      "function_name": "run_web_enrichment",
+      "line": 289,
+      "doc": "Perform a read-only web search and return structured enrichment suitable for preview authoring.",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/vera/linked_completions.py",
+      "function_name": "ingest_linked_job_completions",
+      "line": 507,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/linked_completions.py",
+      "function_name": "maybe_auto_surface_linked_completion",
+      "line": 592,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/linked_completions.py",
+      "function_name": "maybe_deliver_linked_completion_live",
+      "line": 673,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/linked_completions.py",
+      "function_name": "maybe_deliver_linked_completion_live_for_job",
+      "line": 711,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_drafting.py",
+      "function_name": "diagnostics_service_or_logs_intent",
+      "line": 113,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_drafting.py",
+      "function_name": "diagnostics_request_refusal",
+      "line": 120,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_drafting.py",
+      "function_name": "is_recent_assistant_content_save_request",
+      "line": 210,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_drafting.py",
+      "function_name": "drafting_guidance",
+      "line": 471,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_drafting.py",
+      "function_name": "maybe_draft_job_payload",
+      "line": 692,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "is_near_miss_submit_phrase",
+      "line": 85,
+      "doc": "Detect typo-like near-submit phrases that do NOT match any canonical",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "is_explicit_handoff_request",
+      "line": 98,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "is_active_preview_submit_request",
+      "line": 105,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "is_natural_preview_submission_confirmation",
+      "line": 114,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "is_preview_submission_request",
+      "line": 121,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "should_submit_active_preview",
+      "line": 129,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "normalize_preview_payload",
+      "line": 140,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "submit_preview",
+      "line": 245,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/preview_submission.py",
+      "function_name": "submit_active_preview_for_session",
+      "line": 263,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/prompt.py",
+      "function_name": "vera_queue_boundary_summary",
+      "line": 8,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/reference_resolver.py",
+      "function_name": "classify_reference",
+      "line": 132,
+      "doc": "Classify which reference class a user message targets, if any.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/reference_resolver.py",
+      "function_name": "resolve_session_reference",
+      "line": 169,
+      "doc": "Resolve a session-scoped reference from the user message.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/reference_resolver.py",
+      "function_name": "resolve_job_id_from_context",
+      "line": 325,
+      "doc": "Return the best job-ID referent from session context, or None.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/result_surfacing.py",
+      "function_name": "extract_value_forward_text",
+      "line": 45,
+      "doc": "Try to produce a concise, evidence-grounded result string.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/result_surfacing.py",
+      "function_name": "classify_result_family",
+      "line": 63,
+      "doc": "Return the result class string if a value-forward extraction is possible.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/saveable_artifacts.py",
+      "function_name": "message_requests_referenced_content",
+      "line": 13,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/saveable_artifacts.py",
+      "function_name": "looks_like_ambiguous_reference_only",
+      "line": 48,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/saveable_artifacts.py",
+      "function_name": "looks_like_plural_reference_request",
+      "line": 66,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/saveable_artifacts.py",
+      "function_name": "looks_like_non_authored_assistant_message",
+      "line": 78,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/saveable_artifacts.py",
+      "function_name": "build_saveable_assistant_artifact",
+      "line": 203,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/saveable_artifacts.py",
+      "function_name": "collect_recent_saveable_assistant_artifacts",
+      "line": 233,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/saveable_artifacts.py",
+      "function_name": "select_recent_saveable_assistant_artifact",
+      "line": 247,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/service.py",
+      "function_name": "build_vera_messages",
+      "line": 153,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/service.py",
+      "function_name": "generate_preview_builder_update",
+      "line": 317,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/vera/service.py",
+      "function_name": "generate_vera_reply",
+      "line": 443,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "new_session_id",
+      "line": 31,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_turns",
+      "line": 69,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_updated_at_ms",
+      "line": 89,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "append_session_turn",
+      "line": 104,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_last_user_input_origin",
+      "line": 170,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_preview",
+      "line": 195,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "write_session_preview",
+      "line": 201,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "write_session_handoff_state",
+      "line": 212,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_handoff_state",
+      "line": 237,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "clear_session_turns",
+      "line": 243,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_enrichment",
+      "line": 249,
+      "doc": "Return the most recent read-only enrichment stored for this session, or None.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "write_session_enrichment",
+      "line": 256,
+      "doc": "Persist read-only enrichment state into the session for preview-authoring use.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_investigation",
+      "line": 263,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_weather_context",
+      "line": 269,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "write_session_weather_context",
+      "line": 275,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "write_session_investigation",
+      "line": 286,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_derived_investigation_output",
+      "line": 297,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "write_session_derived_investigation_output",
+      "line": 305,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_saveable_assistant_artifacts",
+      "line": 316,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "session_debug_info",
+      "line": 349,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "register_session_linked_job",
+      "line": 408,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_linked_job_completions",
+      "line": 450,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_conversational_planning_active",
+      "line": 458,
+      "doc": "Return True if the previous turn was a conversational answer-first planning turn.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "write_session_conversational_planning_active",
+      "line": 464,
+      "doc": "Persist whether the most recent turn was conversational answer-first.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_context",
+      "line": 556,
+      "doc": "Read the shared session context, returning a normalized copy.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "write_session_context",
+      "line": 563,
+      "doc": "Persist a full shared session context (normalized before write).",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "update_session_context",
+      "line": 570,
+      "doc": "Merge *updates* into the existing shared session context and persist.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "clear_session_context",
+      "line": 593,
+      "doc": "Reset the shared session context to the empty default.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "read_session_routing_debug",
+      "line": 616,
+      "doc": "Read the routing debug state for operator inspection.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "append_routing_debug_entry",
+      "line": 649,
+      "doc": "Append a routing debug entry for the current turn.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "clear_session_routing_debug",
+      "line": 688,
+      "doc": "Reset the routing debug state.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/session_store.py",
+      "function_name": "session_debug_snapshot",
+      "line": 699,
+      "doc": "Build a comprehensive operator-facing debug snapshot.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather.py",
+      "function_name": "format_current_weather_answer",
+      "line": 338,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather.py",
+      "function_name": "format_hourly_weather_answer",
+      "line": 360,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather.py",
+      "function_name": "format_daily_weather_answer",
+      "line": 378,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather.py",
+      "function_name": "format_weekend_weather_answer",
+      "line": 394,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "is_weather_investigation_request",
+      "line": 35,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "is_weather_question",
+      "line": 57,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "normalize_weather_location_candidate",
+      "line": 78,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "extract_weather_location_from_message",
+      "line": 89,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "extract_weather_followup_kind",
+      "line": 126,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "weather_followup_is_active",
+      "line": 157,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "weather_context_has_pending_lookup",
+      "line": 168,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "weather_context_is_waiting_for_location",
+      "line": 177,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "should_accept_pending_weather_offer",
+      "line": 181,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "weather_answer_for_followup",
+      "line": 185,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "function_name": "maybe_handle_weather_turn",
+      "line": 211,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/vera_web/app.py",
+      "function_name": "index",
+      "line": 771,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/app.py",
+      "function_name": "chat",
+      "line": 782,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/vera_web/app.py",
+      "function_name": "chat_updates",
+      "line": 1566,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/app.py",
+      "function_name": "handoff",
+      "line": 1605,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/vera_web/app.py",
+      "function_name": "clear_chat",
+      "line": 1631,
+      "doc": "",
+      "is_async": true
+    },
+    {
+      "module": "src/voxera/vera_web/app.py",
+      "function_name": "vera_debug_session_json",
+      "line": 1651,
+      "doc": "Operator-facing JSON debug endpoint for session context and routing state.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/chat_early_exit_dispatch.py",
+      "function_name": "dispatch_early_exit_intent",
+      "line": 150,
+      "doc": "Evaluate message against all early-exit intent conditions in chat() order.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "looks_like_voxera_preview_dump",
+      "line": 9,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "looks_like_preview_update_claim",
+      "line": 30,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "looks_like_preview_pane_claim",
+      "line": 112,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "has_save_write_file_signal",
+      "line": 300,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "has_conversational_planning_signal",
+      "line": 304,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "sanitize_false_preview_claims_from_answer",
+      "line": 512,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "enforce_conversational_checklist_output",
+      "line": 586,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "is_conversational_answer_first_request",
+      "line": 636,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "should_use_conversational_artifact_mode",
+      "line": 645,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/conversational_checklist.py",
+      "function_name": "conversational_preview_update_message",
+      "line": 660,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/draft_content_binding.py",
+      "function_name": "strip_internal_control_blocks",
+      "line": 86,
+      "doc": "Remove internal Voxera control markup from user-visible assistant text.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/draft_content_binding.py",
+      "function_name": "extract_reply_drafts",
+      "line": 121,
+      "doc": "Extract code and text draft content from an LLM reply.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/draft_content_binding.py",
+      "function_name": "resolve_draft_content_binding",
+      "line": 209,
+      "doc": "Derive draft content binding from LLM reply and existing preview state.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/preview_content_binding.py",
+      "function_name": "looks_like_builder_refinement_placeholder",
+      "line": 10,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/preview_content_binding.py",
+      "function_name": "preview_body_looks_like_control_narration",
+      "line": 23,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/preview_content_binding.py",
+      "function_name": "is_targeted_code_preview_refinement",
+      "line": 35,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/response_shaping.py",
+      "function_name": "derive_preview_has_content",
+      "line": 69,
+      "doc": "Return True when ``effective_preview`` contains real authored content.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/response_shaping.py",
+      "function_name": "guardrail_false_preview_claim",
+      "line": 116,
+      "doc": "Replace false preview-existence claims with truthful language.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/response_shaping.py",
+      "function_name": "strip_internal_compiler_leakage",
+      "line": 194,
+      "doc": "Strip internal compiler/JSON payloads from assistant-visible text.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/response_shaping.py",
+      "function_name": "should_clear_stale_preview",
+      "line": 221,
+      "doc": "Return True when a stale empty ``write_file`` shell should be cleared.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/vera_web/response_shaping.py",
+      "function_name": "assemble_assistant_reply",
+      "line": 297,
+      "doc": "Assemble the final assistant reply text and status string.",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/version.py",
+      "function_name": "get_version",
+      "line": 29,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/voice/flags.py",
+      "function_name": "load_voice_foundation_flags",
+      "line": 49,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/voice/input.py",
+      "function_name": "normalize_transcript_text",
+      "line": 18,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/voice/input.py",
+      "function_name": "ingest_voice_transcript",
+      "line": 22,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/voice/models.py",
+      "function_name": "normalize_input_origin",
+      "line": 11,
+      "doc": "",
+      "is_async": false
+    },
+    {
+      "module": "src/voxera/voice/output.py",
+      "function_name": "voice_output_status",
+      "line": 6,
+      "doc": "",
+      "is_async": false
+    }
+  ]
+}

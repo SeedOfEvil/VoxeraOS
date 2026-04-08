@@ -1,0 +1,137 @@
+{
+  "repo_name": "VoxeraOS",
+  "generated_for_docs_bundle": true,
+  "note": "Top-level files and directories at the repo root. Descriptions are grounded in current repo reality, not the older bundle.",
+  "entries": [
+    {
+      "name": ".env.example",
+      "kind": "file",
+      "description": "example environment file for local dev (never loaded in tests)"
+    },
+    {
+      "name": ".github",
+      "kind": "dir",
+      "description": "GitHub workflows (CI) directory"
+    },
+    {
+      "name": ".gitignore",
+      "kind": "file",
+      "description": "git ignore rules for the repo"
+    },
+    {
+      "name": ".pre-commit-config.yaml",
+      "kind": "file",
+      "description": "pre-commit hook configuration (ruff/lint/format)"
+    },
+    {
+      "name": "AGENT.md",
+      "kind": "file",
+      "description": "operational memory index for agent-style development"
+    },
+    {
+      "name": "CHANGELOG.md",
+      "kind": "file",
+      "description": "human-facing release changelog"
+    },
+    {
+      "name": "CODEX.md",
+      "kind": "file",
+      "description": "Codex / AI-assistant handoff notes"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "kind": "file",
+      "description": "contribution guide"
+    },
+    {
+      "name": "LICENSE",
+      "kind": "file",
+      "description": "Apache 2.0 license text"
+    },
+    {
+      "name": "Makefile",
+      "kind": "file",
+      "description": "canonical build/test/validation/services Make targets"
+    },
+    {
+      "name": "NOTICE",
+      "kind": "file",
+      "description": "NOTICE file for the Apache 2.0 distribution"
+    },
+    {
+      "name": "README.md",
+      "kind": "file",
+      "description": "project readme (what VoxeraOS is, quick start, architecture)"
+    },
+    {
+      "name": "SECURITY.md",
+      "kind": "file",
+      "description": "security reporting guidance"
+    },
+    {
+      "name": "config-templates",
+      "kind": "dir",
+      "description": "example config.yml / policy.yml templates"
+    },
+    {
+      "name": "deploy",
+      "kind": "dir",
+      "description": "deployment artifacts (systemd user units etc.)"
+    },
+    {
+      "name": "docs",
+      "kind": "dir",
+      "description": "architecture, ops, security, roadmap, and this index bundle"
+    },
+    {
+      "name": "missions",
+      "kind": "dir",
+      "description": "file-based mission templates (JSON/YAML loaded at runtime)"
+    },
+    {
+      "name": "mypy.ini",
+      "kind": "file",
+      "description": "mypy configuration"
+    },
+    {
+      "name": "pyproject.toml",
+      "kind": "file",
+      "description": "project metadata and Python tooling config (ruff/pytest/build)"
+    },
+    {
+      "name": "scripts",
+      "kind": "dir",
+      "description": "helper scripts (e2e smoke scripts, mypy ratchet, update)"
+    },
+    {
+      "name": "skills",
+      "kind": "dir",
+      "description": "skill manifest directory (manifest.yml per skill)"
+    },
+    {
+      "name": "src",
+      "kind": "dir",
+      "description": "Python source root (voxera package)"
+    },
+    {
+      "name": "systemd",
+      "kind": "dir",
+      "description": "legacy top-level systemd units kept for reference"
+    },
+    {
+      "name": "tests",
+      "kind": "dir",
+      "description": "pytest suite (unit, contract, golden, red-team)"
+    },
+    {
+      "name": "tools",
+      "kind": "dir",
+      "description": "repo tooling (golden_surfaces.py, mypy-baseline.txt)"
+    },
+    {
+      "name": "uv.lock",
+      "kind": "file",
+      "description": "uv lockfile (dependency pinning)"
+    }
+  ]
+}

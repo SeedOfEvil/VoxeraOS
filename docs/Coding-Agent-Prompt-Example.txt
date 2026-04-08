@@ -1,0 +1,170 @@
+Coding Agent Prompt Example — VoxeraOS
+
+This is a reference prompt shape for sessions where you delegate a VoxeraOS
+code change to a coding agent (Claude Code, Codex, or similar). It is
+intentionally opinionated: VoxeraOS has strong architectural invariants,
+and prompts that do not name them tend to produce drift.
+
+Use this as a starting template. Edit the TASK block for the specific
+change; leave the REPO PRIMER, INVARIANTS, and WORKFLOW blocks mostly
+intact.
+
+
+============================================================
+REPO PRIMER
+============================================================
+
+You are working inside the VoxeraOS repository.
+
+- VoxeraOS is an open-source alpha (v0.1.9) queue-driven AI control plane
+  for Linux. Vera is the conversational intelligence layer; VoxeraOS is
+  the trust, policy, execution, and evidence layer.
+- The queue is the canonical execution boundary. After submit, queue
+  lifecycle state and canonical artifacts are authoritative.
+- Operator surfaces: CLI (`voxera`), web panel (`voxera panel` on 8844),
+  and Vera web app (`voxera vera` on 8790).
+- Canonical validation: `make merge-readiness-check` (CI gate).
+- Key docs to consult before making changes:
+    docs/00_MASTER_INDEX.md                — bundle entrypoint
+    docs/01_REPOSITORY_STRUCTURE_MAP.md    — module ownership
+    docs/03_QUEUE_OBJECT_MODEL_AND_LIFECYCLE.md
+    docs/05_VERA_CONTROL_LAYER_AND_HANDOFF.md
+    docs/QUEUE_OBJECT_MODEL.md             — canonical queue contract
+    docs/QUEUE_CONSTITUTION.md             — frozen queue contracts
+    docs/EXECUTION_SECURITY_MODEL.md       — execution security model
+    docs/NORTH_STAR.md                     — product direction
+- Provider support: OpenRouter is the only officially tested provider
+  path. Minimum supported: Gemini 3 Flash. Other providers are
+  architecturally supported via brain/openai_compat.py.
+
+
+============================================================
+INVARIANTS (do not break)
+============================================================
+
+- Vera is NOT the execution runtime. She drafts previews, submits through
+  the queue, and reviews evidence. Never add code that lets Vera mutate
+  the host directly.
+- All real-world side effects must flow through the queue. No silent
+  mutation paths.
+- Preview is authoritative only before submit. Queue lifecycle state is
+  authoritative after submit. Artifacts/evidence are authoritative for
+  outcome review.
+- Policy and approvals are not bypassable via metadata, lineage, or
+  child enqueue payloads.
+- When uncertain, fail closed. No degraded-but-executing mode.
+- The merge gate name is `merge-readiness / merge-readiness`. Do not
+  rename it in the CI workflow.
+- Filesystem boundary: files skills operate only within the allowlisted
+  notes-root path. Queue subtree (~/VoxeraOS/notes/queue/**) is always
+  rejected fail-closed. Parent traversal is rejected.
+- Direct CLI mutation gate: `voxera run <mutating_skill>` is blocked by
+  default. Dev-mode override requires BOTH `VOXERA_DEV_MODE=1` AND
+  `--allow-direct-mutation`. Do not weaken this gate.
+
+
+============================================================
+WORKFLOW (always)
+============================================================
+
+1. Read the relevant modules BEFORE making changes. Do not propose
+   changes to code you have not read.
+
+2. Follow the ownership boundaries in 01_REPOSITORY_STRUCTURE_MAP.md.
+   Prefer adding code to the dedicated ownership module first instead of
+   re-growing compatibility façades (especially `vera/handoff.py`,
+   `vera/service.py`, `panel/app.py`, and `cli_queue.py`).
+
+3. For any change that touches a public surface (CLI help, queue
+   contract, panel routes, capability semantics), also consider:
+   - golden surface baselines: `tests/golden/`, update via
+     `make golden-update` (intentional only)
+   - contract snapshot tests: `test_queue_daemon_contract_snapshot`,
+     `test_cli_contract_snapshot`, `test_panel_contract_snapshot`
+   - mypy ratchet: run `make type-check` and update
+     `tools/mypy-baseline.txt` only intentionally via
+     `make update-mypy-baseline`
+   - docs consistency: `tests/test_docs_consistency.py`
+
+4. Run the canonical validation ladder BEFORE finishing:
+
+       make fmt-check
+       make lint
+       make type
+       make test
+       make golden-check
+       make security-check
+       make merge-readiness-check
+
+   Any failure in `make security-check` (the 17-test red-team suite)
+   blocks merge.
+
+5. For feature work, also run the multi-layer STV method in
+   docs/Testing-Method.txt:
+   - restart services, verify `voxera doctor --quick` and
+     `voxera queue health`
+   - exercise CLI primitive
+   - exercise Vera or panel flow
+   - drop raw JSON into the inbox and inspect bucket + sidecars +
+     artifacts
+   - run one fail-closed variant
+
+6. Commit messages: follow the repo's existing style (imperative,
+   prefixed with the area — for example `queue:`, `vera:`, `panel:`,
+   `cli:`, `skills:`, `docs:`, `tests:`). Do not bypass pre-commit
+   hooks or mypy.
+
+7. Do not create pull requests unless the user explicitly asks for
+   one.
+
+
+============================================================
+TASK
+============================================================
+
+[EDIT THIS BLOCK FOR THE SPECIFIC CHANGE]
+
+Goal: (what are we trying to accomplish?)
+
+Context: (what have you already learned, ruled out, or decided?)
+
+Scope: (what files should change; what should NOT change)
+
+Constraints:
+- (any specific invariants to preserve)
+- (any specific tests that must still pass)
+- (any specific UX / naming decisions to keep)
+
+Deliverables:
+- (code change under src/voxera/...)
+- (tests under tests/...)
+- (if applicable, doc updates under docs/...)
+
+Validation:
+- (which make targets must pass)
+- (which specific tests are the critical regression surface)
+- (which operator surface must be exercised end-to-end)
+
+
+============================================================
+SAFETY
+============================================================
+
+- If a requested change would weaken a documented invariant, push back
+  and ask the user to reconsider.
+- If a test fails and the root cause is unclear, investigate before
+  "fixing" the test. Do not mask symptoms.
+- Never skip hooks (`--no-verify`), disable ratchets, or weaken gates
+  without explicit user approval.
+- Never force-push to main or to a shared branch.
+- When uncertain, fail closed and ask.
+
+
+============================================================
+NOTES
+============================================================
+
+This template is intentionally verbose. Once you have done a few of
+these and your agent is reliably respecting the invariants, you can
+shorten the REPO PRIMER and WORKFLOW blocks. The INVARIANTS block should
+stay intact — it is the contract VoxeraOS runs on.

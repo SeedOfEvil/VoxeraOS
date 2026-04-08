@@ -1,0 +1,678 @@
+# VoxeraOS Multi-Layer Test Method as of 03/14/2026 best effort. Adapt.
+
+## CLI, Vera, Queue, Panel, Artifacts, and Review
+
+## 1. Purpose
+
+This document defines the **usual test method** we use to validate VoxeraOS changes across the full product stack, not just at the unit-test level.
+
+The core rule is:
+
+**We do not trust a feature until we test it across the layers that make it real.**
+
+Those layers are:
+
+* **CLI / operator surface**
+* **Vera web / conversational control surface**
+* **queue / daemon / lifecycle surface**
+* **panel / operator console**
+* **artifacts / evidence / review surface**
+* **filesystem/runtime reality**
+
+This matters because VoxeraOS is intentionally split into control-plane domains rather than behaving like a single script or chatbot wrapper. The repo itself treats queue execution, Vera, panel, skills, and runtime state as separate but connected subsystems.
+
+---
+
+# 2. Core architectural rule behind the test method
+
+Vera is the reasoning and drafting layer.
+The queue is the execution boundary.
+Artifacts and evidence are the proof of what actually happened.
+
+That means our test method must verify all of the following:
+
+* **intent shaping** is correct
+* **submission** is truthful
+* **runtime execution** is governed
+* **operator surfaces** reflect the truth
+* **artifacts** exist and match the job
+* **review** is grounded in canonical evidence
+* **chat behavior** does not drift away from queue truth
+
+This is why we repeatedly test more than just “did the code run.”
+
+---
+
+# 3. The testing ladder we usually use
+
+For most meaningful PRs, we run the same ladder in this order.
+
+## Layer 1 — Static and repo-wide validation
+
+This proves the change did not break the codebase structurally.
+
+Usual commands:
+
+```bash
+ruff format --check .
+ruff check .
+mypy src/voxera
+pytest -q
+make security-check
+make golden-check
+make validation-check
+make merge-readiness-check
+```
+
+Why:
+
+* the repo explicitly has validation-oriented Make targets, golden-surface tooling, mypy ratchets, and a broad suite covering queue, panel, policy, Vera, skills, and security/red-team behavior.
+
+---
+
+## Layer 2 — Service/runtime bring-up
+
+This proves the actual running stack is healthy.
+
+Usual commands:
+
+```bash
+systemctl --user stop voxera-vera.service || true
+systemctl --user stop voxera-panel.service || true
+systemctl --user stop voxera-daemon.service || true
+
+systemctl --user start voxera-daemon.service
+systemctl --user start voxera-panel.service
+systemctl --user start voxera-vera.service
+
+systemctl --user --no-pager status \
+  voxera-daemon.service \
+  voxera-panel.service \
+  voxera-vera.service
+
+voxera doctor --quick
+voxera queue status
+voxera queue health
+```
+
+Why:
+
+* the stack has three main operator/runtime surfaces plus Vera web as the conversational control plane.
+* service lifecycle and queue health are first-class operational surfaces in the repo.
+
+---
+
+## Layer 3 — CLI/operator surface
+
+This proves the raw capability works independently of chat.
+
+We use this for:
+
+* direct skill sanity
+* policy gates
+* dry-run checks
+* mission listing/simulation
+* queue management commands
+
+Typical examples:
+
+* `voxera skills list`
+* `voxera missions list`
+* `voxera run ...`
+* `voxera missions run ... --dry-run`
+* `voxera queue status`
+* `voxera queue health`
+
+Why:
+
+* CLI is one of the primary operator surfaces.
+* it lets us verify the primitive behavior before involving Vera.
+
+---
+
+## Layer 4 — Vera chat/control-layer surface
+
+This proves the conversational side can:
+
+* understand the request
+* prepare the right preview
+* submit truthfully
+* review truthfully
+* auto-surface or follow up correctly when expected
+
+We use Vera to test:
+
+* natural language routing
+* preview creation
+* explicit handoff behavior
+* review flows
+* linked completion behavior
+
+Why:
+
+* Vera is not the execution runtime; it is the conversational control surface with its own session state, preview model, linked job tracking, and evidence review path.
+
+---
+
+## Layer 5 — Queue lifecycle / daemon truth
+
+This proves the queue contract and runtime truth are correct.
+
+We check:
+
+* inbox submission
+* pending / approvals / done / failed / canceled behavior
+* mission_id / request_kind propagation
+* health updates
+* lifecycle state transitions
+
+This may be tested by:
+
+* Vera-originated jobs
+* panel-created jobs
+* raw JSON dropped into `notes/queue/inbox/`
+* mission jobs like `{ "mission_id": "system_inspect" }`
+
+Why:
+
+* the queue is the canonical execution boundary and lifecycle truth surface.
+
+---
+
+## Layer 6 — Panel / operator console surface
+
+This proves the operator view matches queue truth.
+
+We use the panel to check:
+
+* job detail correctness
+* approval status
+* step progress
+* canonical summaries
+* artifact presence
+* operator hints / next step hints
+* lifecycle visibility
+
+Why:
+
+* the panel is a first-class operator surface, not cosmetic UI.
+
+---
+
+## Layer 7 — Artifact / evidence / review surface
+
+This proves the system produced inspectable proof, not just console output.
+
+We check for:
+
+* `execution_envelope.json`
+* `execution_result.json`
+* `step_results.json`
+* `plan.json`
+* `job_intent.json`
+* `review_summary`-style output where relevant
+* `.state.json` sidecars
+* failure sidecars for failed jobs
+
+Why:
+
+* canonical artifacts are one of the core trust guarantees of VoxeraOS.
+
+---
+
+## Layer 8 — Real runtime / filesystem outcome
+
+This proves the actual side effect or read-only result is true in the environment.
+
+Examples:
+
+* file exists or not
+* directory created
+* file moved/copied
+* URL really opened
+* queue path really blocked
+* read-only inspection values match the host reality
+
+Why:
+
+* artifacts are proof of execution, but for operator confidence we also confirm the real-world result when practical.
+
+---
+
+# 4. The standard STV pattern we’ve been using
+
+For meaningful product work, our normal method has become:
+
+## A. Sync and reinstall
+
+```bash
+git fetch origin --prune
+git switch <branch>
+git pull --ff-only
+source .venv/bin/activate
+pip install -e .
+```
+
+## B. Run full validation
+
+```bash
+ruff format --check .
+ruff check .
+mypy src/voxera
+pytest -q
+make security-check
+make golden-check
+make validation-check
+make merge-readiness-check
+```
+
+## C. Restart services and confirm health
+
+```bash
+systemctl --user restart voxera-daemon.service
+systemctl --user restart voxera-panel.service
+systemctl --user restart voxera-vera.service
+
+voxera doctor --quick
+voxera queue status
+voxera queue health
+```
+
+## D. Test one fresh happy-path flow
+
+Preferably in a **fresh Vera chat** if chat is involved.
+
+## E. Test the matching CLI/operator path
+
+Use:
+
+* direct skill
+* direct mission
+* dry-run
+* queue CLI
+  depending on the feature
+
+## F. Test the queue truth directly
+
+Sometimes by:
+
+* inspecting the panel
+* inspecting queue bucket placement
+* dropping raw JSON into inbox
+
+## G. Inspect artifacts
+
+Use `rg`, `cat`, and job detail pages to verify truth surfaces.
+
+## H. Test one blocked/failure path
+
+We almost always try at least one fail-closed or denied case.
+
+This is especially important for:
+
+* path boundaries
+* approvals
+* policy denials
+* missing dependencies
+* failed file operations
+
+---
+
+# 5. The four-layer capability integration model we ended up using
+
+A capability is not “done” when the skill exists.
+
+We now usually test capabilities across these **four product layers**:
+
+## 1. Skill layer
+
+Questions:
+
+* does the skill exist?
+* is the manifest right?
+* do capabilities, fs_scope, network flags, output schema make sense?
+* does direct CLI behave correctly?
+
+## 2. Mission/workflow layer
+
+Questions:
+
+* is there a real reusable workflow?
+* are steps ordered correctly?
+* is the workflow useful, not just a demo?
+
+## 3. Queue/contract layer
+
+Questions:
+
+* can the workflow be expressed as a real queue payload?
+* does request_kind / mission_id / job_intent propagate?
+* does queue lifecycle remain canonical?
+
+## 4. Vera/routing layer
+
+Questions:
+
+* can Vera recognize the natural request?
+* does it create the right preview?
+* does it submit truthfully?
+* does it review and follow up truthfully?
+
+That pattern directly reflects the repo’s real module split: skills catalog + built-ins, missions, queue contracts/state, and Vera control layer.
+
+---
+
+# 6. When we use CLI tests vs Vera tests vs raw queue tests
+
+## Use CLI tests when:
+
+* validating primitive skill behavior
+* checking policy gate behavior
+* validating read-only vs mutating classification
+* testing dry-run behavior
+* checking mission composition quickly
+
+CLI is fastest for low-level truth.
+
+## Use Vera tests when:
+
+* validating natural-language routing
+* validating preview creation
+* validating handoff correctness
+* validating chat review/follow-up behavior
+* validating linked completion auto-surfacing
+
+Vera is required when the feature is about product UX, not just runtime execution.
+
+## Use raw queue tests when:
+
+* validating canonical payload shape
+* validating mission/contract execution independent of chat
+* validating queue isolation
+* validating panel/evidence behavior
+* validating a product workflow directly
+
+This became especially important for `file_organize` and later mission flows, where inbox JSON became one of the most reliable end-to-end test methods.
+
+---
+
+# 7. Why we often use fresh Vera chats
+
+Fresh Vera chats matter because session artifacts now track:
+
+* turns
+* handoff state
+* linked jobs
+* completion ingestion
+* auto-surfacing state
+
+If you reuse an old session, old linked completions can contaminate the test.
+So our current best practice is:
+
+## Use a fresh chat when testing:
+
+* linked completion ingestion
+* auto-surfacing
+* approval-blocked notifications
+* failed/success notifications
+* anything session-scoped
+
+---
+
+# 8. What we always verify for Vera-originated jobs
+
+For any Vera-originated queue test, we usually verify:
+
+## Before submit
+
+* preview exists
+* preview shape is correct
+* no false claim of execution
+
+## At submit
+
+* Vera only claims submission after queue acknowledgment
+* job id is present
+
+## After queue completion
+
+* panel/job detail matches reality
+* review path matches artifacts
+* linked session state updates correctly
+* auto-surfacing happens only if the policy says it should
+
+This is exactly in line with Vera’s documented design:
+
+* preview is authoritative pre-submit
+* submit goes through queue
+* evidence review is grounded in queue outcomes
+* linked jobs can later ingest terminal results.
+
+---
+
+# 9. What counts as a pass
+
+A PR is usually considered technically solid when all of these are true:
+
+## Validation pass
+
+* full test and lint/type/security ladder passes
+
+## Runtime pass
+
+* services restart cleanly
+* doctor and queue health are healthy
+
+## Product-layer pass
+
+* the feature works in the intended operator/chat surface
+
+## Queue-truth pass
+
+* job state, request kind, mission id, and lifecycle match expectations
+
+## Evidence pass
+
+* artifacts exist and are coherent
+
+## Negative-path pass
+
+* blocked/failure case behaves truthfully and fail-closed
+
+## Non-regression pass
+
+* at least one previously working adjacent behavior still works
+
+---
+
+# 10. Common negative-path tests we deliberately include
+
+We intentionally test failure or blocked cases because the trust model depends on them.
+
+Typical examples:
+
+## Filesystem
+
+* try queue/control-plane paths under `~/VoxeraOS/notes/queue/**`
+* expect fail-closed
+
+## Approval
+
+* submit something that requires approval
+* verify it surfaces as pending approval, not fake success
+
+## Missing inputs
+
+* copy/move a missing file
+* expect canonical failure with next step hint
+
+## CLI mutation gate
+
+* direct mutating run should be blocked by default
+* only explicit dev override should work
+
+## Vera blocked path
+
+* Vera should refuse blocked queue paths without pseudo-action garbage
+
+This is all consistent with the repo’s fail-closed posture in the North Star and execution boundary documents.
+
+---
+
+# 11. The current preferred test order for a meaningful PR
+
+If the PR changes product behavior, this is the order I recommend.
+
+## Step 1
+
+Full static validation.
+
+## Step 2
+
+Restart services and verify queue/panel/Vera health.
+
+## Step 3
+
+Check relevant skills and missions exist:
+
+* `voxera skills list`
+* `voxera missions list`
+
+## Step 4
+
+Test primitive behavior from CLI.
+
+## Step 5
+
+Test the intended chat or panel flow.
+
+## Step 6
+
+Inspect panel/job detail.
+
+## Step 7
+
+Inspect artifacts on disk.
+
+## Step 8
+
+Run a fail-closed or failure case.
+
+## Step 9
+
+Run one adjacent regression check.
+
+---
+
+# 12. Special rules for the newer Vera completion loop
+
+Now that Vera supports:
+
+* linked job tracking
+* completion ingestion
+* auto-surfacing for several classes
+
+we should test completion behavior carefully.
+
+## For read-only success
+
+Expected:
+
+* next chat cycle surfaces one concise success message
+* not reposted later
+
+## For approval-blocked
+
+Expected:
+
+* concise “waiting for approval” message
+* not reposted later
+
+## For failed
+
+Expected:
+
+* concise failure summary
+* maybe next action hint
+* not reposted later
+
+## For mutating success
+
+Expected:
+
+* concise success confirmation
+* only if truly terminal
+* not reposted later
+
+## Session file checks
+
+Inspect the relevant `artifacts/vera_sessions/<session>.json` file and verify:
+
+* linked job recorded
+* completion ingested
+* `surfacing_policy`
+* `surfaced_in_chat`
+* `surfaced_at_ms`
+
+---
+
+# 13. Special rule for future chained/orchestrated jobs
+
+One of the newer design constraints is:
+
+## Do not announce final success too early
+
+If a job:
+
+* delegates child jobs
+* is part of orchestration
+* is an intermediate queue node
+
+then success/failure auto-surface should be conservative.
+
+This matters because future jobs may not be truly “done” just because one queue record entered `done`.
+
+So for those future workflows, test must verify:
+
+* whether the terminality guard suppresses premature completion claims
+* whether user-facing completion happens only when the real task is final
+
+---
+
+# 14. Short version
+
+Our normal technical test method is:
+
+## Validate
+
+Run lint/type/tests/security/golden/merge-readiness.
+
+## Bring up runtime
+
+Restart services and verify doctor + queue health.
+
+## Test raw capability
+
+Use CLI.
+
+## Test product UX
+
+Use Vera or panel.
+
+## Test queue truth
+
+Use queue status, panel job detail, or raw inbox JSON.
+
+## Test evidence
+
+Inspect artifacts and state sidecars.
+
+## Test failure path
+
+Prove it fails closed or fails truthfully.
+
+## Test regression
+
+Make sure adjacent previously working behavior still works.
+
+That is the method that has been giving you reliable, high-signal confidence across the whole stack.

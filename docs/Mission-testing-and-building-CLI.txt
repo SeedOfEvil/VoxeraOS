@@ -1,0 +1,752 @@
+# VoxeraOS Direct Queue JSON Test Method
+
+## Testing missions and workflows directly through the queue via CLI and raw JSON
+
+## 1. Purpose
+
+This document defines the usual **direct queue JSON** test method for VoxeraOS: creating a full job payload yourself, writing it into the queue intake path, and letting the daemon process it end to end. This is the most reliable way to test a mission, a new skill family, or a new queue contract without depending on Vera chat shaping first. In VoxeraOS, once a request is submitted, the queue becomes the authoritative execution contract, and queue files, sidecars, buckets, and artifacts become the operational truth.
+
+This method is especially useful for:
+
+* testing new skills before Vera routing exists
+* testing a mission or workflow directly
+* testing queue contracts like `mission_id`, `steps`, `goal`, `file_organize`, and `enqueue_child`
+* validating artifacts, state sidecars, approvals, and failure behavior
+* proving a feature works from high-level workflow down to low-level execution details. The queue accepts bounded top-level job shapes including `mission_id`, `goal`, `title`, `steps`, `enqueue_child`, `write_file`, `file_organize`, `approval_required`, `job_intent`, and `lineage`.
+
+## 2. Architectural rule
+
+Use this method when you want to test the real execution plane directly.
+
+The core split is:
+
+* Vera is the conversational control surface
+* preview is the authoritative pre-submit draft
+* the queue is the authoritative execution boundary after submit
+* artifacts/evidence are the proof of what actually happened.
+
+That means raw queue JSON testing is not a hack. It is one of the cleanest possible product tests.
+
+## 3. Queue paths you will use
+
+The default queue root is typically `~/VoxeraOS/notes/queue`. Important directories include:
+
+* `inbox/`
+* `pending/`
+* `pending/approvals/`
+* `done/`
+* `failed/`
+* `canceled/`
+* `artifacts/`
+* `recovery/`
+* `quarantine/`
+* `.daemon.lock`
+* `health.json`
+
+Producer-facing job files are written into:
+
+* `~/VoxeraOS/notes/queue/inbox/inbox-<id>.json` for normal API/submit paths
+* but for manual testing you can safely drop your own `*.json` files into `inbox/`, which the daemon will process as queue jobs. The daemon’s inbox/queue workflow is a first-class operational surface.
+
+## 4. Before you test
+
+Start from a healthy runtime.
+
+```bash
+cd ~/VoxeraOS
+source .venv/bin/activate
+python -m pip install -e .
+
+systemctl --user restart voxera-daemon.service
+systemctl --user restart voxera-panel.service
+systemctl --user restart voxera-vera.service
+
+voxera doctor --quick
+voxera queue status
+voxera queue health
+```
+
+This matches the normal multi-layer STV method: validate runtime bring-up, then test queue truth directly.
+
+If you want a totally clean queue state first:
+
+```bash
+rm -f notes/queue/.daemon.lock
+rm -f notes/queue/health.json notes/queue/health.json.tmp
+rm -rf notes/queue/inbox/* notes/queue/pending/* notes/queue/done/* notes/queue/failed/* notes/queue/canceled/*
+rm -rf notes/queue/pending/approvals/* notes/queue/recovery/* notes/queue/quarantine/*
+mkdir -p notes/queue/{inbox,pending,pending/approvals,done,failed,canceled,artifacts,recovery,quarantine}
+```
+
+That is the documented clean reset path for runtime queue state.
+
+## 5. The minimum objects the queue will create for you
+
+You do **not** need to manually create execution artifacts. The daemon writes them.
+
+For a normal job, expect canonical per-job artifacts such as:
+
+* `plan.json`
+* `actions.jsonl`
+* `stdout.txt`
+* `stderr.txt`
+* `execution_envelope.json`
+* `execution_result.json`
+* `step_results.json`
+* `job_intent.json`
+* optionally `review_summary.json`
+* optionally `evidence_bundle.json`
+
+You should also expect a durable `*.state.json` sidecar containing lifecycle state, current step index, terminal outcome, summaries, approval status, and step outcomes.
+
+So the direct-queue rule is:
+
+**you provide the intake JSON; VoxeraOS provides the lifecycle, state, and evidence.**
+
+## 6. Supported direct queue job shapes
+
+The queue daemon can build executable work from these main sources:
+
+* `mission_id`
+* `steps`
+* `file_organize`
+* `goal`
+
+It also supports additive fields like:
+
+* `title`
+* `approval_required`
+* `enqueue_child`
+* `job_intent`
+* `lineage`
+
+Below is the practical testing guide for each one.
+
+---
+
+# 7. Pattern A — test a built-in mission by `mission_id`
+
+This is the cleanest high-level mission test.
+
+## Example: run `system_inspect`
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/system-inspect-test.json <<'EOF'
+{
+  "mission_id": "system_inspect"
+}
+EOF
+```
+
+Watch it process:
+
+```bash
+voxera queue status
+voxera queue health
+```
+
+Inspect result locations:
+
+```bash
+ls -la ~/VoxeraOS/notes/queue/done
+ls -la ~/VoxeraOS/notes/queue/artifacts/system-inspect-test
+cat ~/VoxeraOS/notes/queue/done/system-inspect-test.state.json
+```
+
+Why this works:
+
+* `mission_id` is a first-class queue request kind
+* built-in mission templates include `system_inspect`, `system_check`, `notes_archive_flow`, and others.
+
+## What to verify
+
+* queue lifecycle reaches `done`
+* terminal outcome is `succeeded`
+* correct mission id is present in the state/artifacts
+* step count and step results match the mission
+* artifacts exist and are coherent.
+
+## Other good mission examples
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/system-check-test.json <<'EOF'
+{
+  "mission_id": "system_check"
+}
+EOF
+```
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/notes-archive-flow-test.json <<'EOF'
+{
+  "mission_id": "notes_archive_flow"
+}
+EOF
+```
+
+Mission files can also come from the repo `missions/` directory and the user mission directory under `~/.config/voxera/missions`.
+
+---
+
+# 8. Pattern B — test an explicit inline mission via `steps`
+
+This is the best low-level workflow test.
+
+Use it when:
+
+* a new skill exists but no mission exists yet
+* you want to compose the exact steps yourself
+* you want to validate capabilities, policy, and artifacting without Vera or planner behavior.
+
+## Example: one-step read-only file check
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/inline-exists-test.json <<'EOF'
+{
+  "goal": "Check whether a.txt exists",
+  "title": "Inline exists test",
+  "steps": [
+    {
+      "skill_id": "files.exists",
+      "args": {
+        "path": "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+      }
+    }
+  ]
+}
+EOF
+```
+
+## Example: one-step mutating directory creation
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/inline-mkdir-test.json <<'EOF'
+{
+  "goal": "Create a test directory directly through queue",
+  "title": "Inline mkdir test",
+  "steps": [
+    {
+      "skill_id": "files.mkdir",
+      "args": {
+        "path": "~/VoxeraOS/notes/queue-json-testdir",
+        "parents": true,
+        "exist_ok": true
+      }
+    }
+  ]
+}
+EOF
+```
+
+## Example: multi-step custom workflow
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/inline-custom-workflow.json <<'EOF'
+{
+  "goal": "Create a folder and then stat it",
+  "title": "Inline custom workflow",
+  "steps": [
+    {
+      "skill_id": "files.mkdir",
+      "args": {
+        "path": "~/VoxeraOS/notes/inline-demo-dir",
+        "parents": true,
+        "exist_ok": true
+      }
+    },
+    {
+      "skill_id": "files.stat",
+      "args": {
+        "path": "~/VoxeraOS/notes/inline-demo-dir"
+      }
+    }
+  ]
+}
+EOF
+```
+
+## What to verify
+
+* request kind becomes `inline_steps`
+* step count matches your JSON
+* each step appears in `step_results.json`
+* approvals are inserted if a step needs them
+* final outcome matches the real runtime result.
+
+---
+
+# 9. Pattern C — test a bounded file workflow via `file_organize`
+
+This is the best contract-level test for file workflow composition.
+
+`file_organize` is a first-class structured queue contract that expands into a deterministic multi-step mission.
+
+## Example: copy mode
+
+```bash
+mkdir -p ~/VoxeraOS/notes/file-organize-queue/archive
+printf 'hello archive flow\n' > ~/VoxeraOS/notes/file-organize-queue/input.txt
+
+cat > ~/VoxeraOS/notes/queue/inbox/file-organize-copy.json <<'EOF'
+{
+  "file_organize": {
+    "source_path": "~/VoxeraOS/notes/file-organize-queue/input.txt",
+    "destination_dir": "~/VoxeraOS/notes/file-organize-queue/archive",
+    "mode": "copy",
+    "overwrite": false,
+    "delete_original": false
+  }
+}
+EOF
+```
+
+## Example: move-like behavior with delete original
+
+```bash
+printf 'move me\n' > ~/VoxeraOS/notes/file-organize-queue/move-me.txt
+
+cat > ~/VoxeraOS/notes/queue/inbox/file-organize-move.json <<'EOF'
+{
+  "file_organize": {
+    "source_path": "~/VoxeraOS/notes/file-organize-queue/move-me.txt",
+    "destination_dir": "~/VoxeraOS/notes/file-organize-queue/archive",
+    "mode": "copy",
+    "overwrite": false,
+    "delete_original": true
+  }
+}
+EOF
+```
+
+## Example: fail-closed queue destination
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/file-organize-blocked.json <<'EOF'
+{
+  "file_organize": {
+    "source_path": "~/VoxeraOS/notes/file-organize-queue/input.txt",
+    "destination_dir": "~/VoxeraOS/notes/queue",
+    "mode": "copy",
+    "overwrite": false,
+    "delete_original": false
+  }
+}
+EOF
+```
+
+## What to verify
+
+* request kind becomes `file_organize`
+* mission expands to the expected bounded steps
+* queue/control-plane paths fail closed
+* failure summary and next action hint are canonical if it fails
+* actual source/destination file state on disk matches the result. The file intent and file workflow lane are explicitly bounded to `~/VoxeraOS/notes`, reject queue subtree access, and reject parent traversal.
+
+---
+
+# 10. Pattern D — test planner/governed shaping via `goal`
+
+Use `goal` when you want to test:
+
+* deterministic simple intent
+* planner shaping
+* mission planning
+* guardrails between intent kind and allowed skill family. Goal routing uses deterministic helpers first and cloud planning only when needed; planner output is still downstream-gated by capabilities and policy.
+
+## Example: simple read-only goal
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/goal-read-test.json <<'EOF'
+{
+  "goal": "read the file ~/VoxeraOS/notes/skillpack-wave2/a.txt"
+}
+EOF
+```
+
+## Example: mutating goal
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/goal-mkdir-test.json <<'EOF'
+{
+  "goal": "make a folder called direct-queue-goal-test in my notes"
+}
+EOF
+```
+
+## Example: known failure
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/goal-missing-copy.json <<'EOF'
+{
+  "goal": "copy report.txt into receipts"
+}
+EOF
+```
+
+## What to verify
+
+* planner does not drift outside allowed skill family
+* request kind becomes `goal`
+* `job_intent.json` exists and reflects intake meaning
+* `plan.json` matches what actually executed
+* mismatch/blocked cases fail closed. The simple-intent guardrail will fail a job closed if planner output’s first step doesn’t match the allowed family for the detected intent kind.
+
+---
+
+# 11. Pattern E — test child queue chaining via `enqueue_child`
+
+Use this for future orchestration testing.
+
+The queue contract supports one governed child enqueue request. The child is written as a normal queue job with its own lifecycle, policy, approvals, artifacts, and lineage metadata. Recognized lineage fields include `parent_job_id`, `root_job_id`, `orchestration_depth`, `sequence_index`, and `lineage_role`.
+
+## Example shape
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/enqueue-child-test.json <<'EOF'
+{
+  "goal": "Parent job test with child enqueue",
+  "steps": [
+    {
+      "skill_id": "files.exists",
+      "args": {
+        "path": "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+      }
+    }
+  ],
+  "enqueue_child": {
+    "goal": "check if ~/VoxeraOS/notes/skillpack-wave2/b.txt exists"
+  }
+}
+EOF
+```
+
+## What to verify
+
+* child job is actually created in queue
+* parent and child both have separate artifacts/state
+* lineage metadata is present
+* parent is not treated as final success too early if downstream work matters. This matters especially for future terminality-guard tests.
+
+---
+
+# 12. Optional metadata fields you can add directly
+
+These are useful for richer direct tests.
+
+## `title`
+
+Helpful for panel readability and artifact clarity.
+
+```json
+{
+  "title": "Custom queue JSON test"
+}
+```
+
+## `approval_required`
+
+Useful when you want to force harder operator gating semantics at intake.
+
+```json
+{
+  "approval_required": true
+}
+```
+
+## `job_intent`
+
+Usually generated or enriched for you, but can be useful when testing intake semantics.
+
+```json
+{
+  "job_intent": {
+    "request_kind": "goal",
+    "goal": "check if file exists",
+    "schema_version": 1
+  }
+}
+```
+
+## `lineage`
+
+Useful for advanced parent/child and orchestration tests.
+
+```json
+{
+  "lineage": {
+    "parent_job_id": "abc",
+    "root_job_id": "abc",
+    "orchestration_depth": 1,
+    "sequence_index": 0,
+    "lineage_role": "child"
+  }
+}
+```
+
+These are all recognized in the normalized queue payload model.
+
+---
+
+# 13. How to inject the JSON
+
+There are three main ways.
+
+## A. Here-doc file write into inbox
+
+Best for repeatable testing.
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/my-test.json <<'EOF'
+{
+  "mission_id": "system_check"
+}
+EOF
+```
+
+## B. Generate with shell variables
+
+```bash
+JOB=~/VoxeraOS/notes/queue/inbox/test-$(date +%s).json
+cat > "$JOB" <<EOF
+{
+  "goal": "Check whether a.txt exists",
+  "steps": [
+    {
+      "skill_id": "files.exists",
+      "args": {
+        "path": "~/VoxeraOS/notes/skillpack-wave2/a.txt"
+      }
+    }
+  ]
+}
+EOF
+```
+
+## C. Use `jq` for templating
+
+Best when testing lots of variants.
+
+```bash
+jq -n \
+  --arg path "~/VoxeraOS/notes/skillpack-wave2/a.txt" \
+  '{
+    goal: "Check via jq payload",
+    steps: [
+      {skill_id:"files.exists", args:{path:$path}}
+    ]
+  }' > ~/VoxeraOS/notes/queue/inbox/jq-exists-test.json
+```
+
+---
+
+# 14. How to watch the job through the stack
+
+## Queue
+
+```bash
+voxera queue status
+voxera queue health
+```
+
+## Done/failed buckets
+
+```bash
+ls -la ~/VoxeraOS/notes/queue/done
+ls -la ~/VoxeraOS/notes/queue/failed
+```
+
+## State sidecar
+
+```bash
+cat ~/VoxeraOS/notes/queue/done/<job>.state.json
+```
+
+## Artifacts
+
+```bash
+ls -la ~/VoxeraOS/notes/queue/artifacts/<job-stem>
+cat ~/VoxeraOS/notes/queue/artifacts/<job-stem>/execution_envelope.json
+cat ~/VoxeraOS/notes/queue/artifacts/<job-stem>/step_results.json
+cat ~/VoxeraOS/notes/queue/artifacts/<job-stem>/execution_result.json
+```
+
+## Panel
+
+Use the panel as the operator console to inspect:
+
+* job detail
+* lifecycle
+* approvals
+* canonical summaries
+* artifact inventory. The panel is a first-class operator surface, not cosmetic UI.
+
+---
+
+# 15. What to verify for each direct-queue test
+
+For every queue JSON test, verify these layers.
+
+## Skill layer
+
+* correct skill IDs
+* correct args
+* capability family makes sense
+* manifest/risk/fs/network expectations match what happened. Skills are manifest-governed, and capabilities/effect classes drive runtime policy and read vs write semantics.
+
+## Mission/workflow layer
+
+* mission shape is correct
+* step ordering is correct
+* workflow does real useful work, not demo noise
+
+## Queue/contract layer
+
+* request kind detected correctly
+* lifecycle is correct
+* approvals are inserted truthfully
+* lineage/child behavior is correct where used.
+
+## Evidence layer
+
+* all expected artifacts exist
+* summaries match runtime reality
+* failure sidecar exists when failed
+* state sidecar is coherent. Canonical evidence files include `execution_envelope.json`, `step_results.json`, `execution_result.json`, and `job_intent.json`, with `review_summary.json` and `evidence_bundle.json` as higher-order interpretation/proof surfaces.
+
+## Real runtime layer
+
+* file created/moved/deleted
+* directory exists
+* URL actually opened
+* queue path actually blocked
+* host state matches inspection output
+
+---
+
+# 16. Standard negative-path examples
+
+These are high-value direct JSON tests.
+
+## Queue/control-plane path should fail closed
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/blocked-list-dir.json <<'EOF'
+{
+  "steps": [
+    {
+      "skill_id": "files.list_dir",
+      "args": {
+        "path": "~/VoxeraOS/notes/queue"
+      }
+    }
+  ]
+}
+EOF
+```
+
+Expected:
+
+* fail or blocked
+* summary mentions path blocked scope
+* no queue mutation happens through file lane
+
+## Approval-required action
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/delete-approval-test.json <<'EOF'
+{
+  "steps": [
+    {
+      "skill_id": "files.delete_file",
+      "args": {
+        "path": "~/VoxeraOS/notes/pr195-testdir/somefile.txt",
+        "missing_ok": false
+      }
+    }
+  ]
+}
+EOF
+```
+
+Expected:
+
+* job pauses in `pending/approvals/`
+* lifecycle becomes `awaiting_approval`
+* approval artifact exists
+* state/artifacts capture approval status rather than fake completion.
+
+## Missing source path
+
+```bash
+cat > ~/VoxeraOS/notes/queue/inbox/missing-source-copy.json <<'EOF'
+{
+  "file_organize": {
+    "source_path": "~/VoxeraOS/notes/nope.txt",
+    "destination_dir": "~/VoxeraOS/notes/archive",
+    "mode": "copy",
+    "overwrite": false,
+    "delete_original": false
+  }
+}
+EOF
+```
+
+Expected:
+
+* failed lifecycle
+* canonical failure summary
+* next action hint if available
+
+---
+
+# 17. Best practice for building new features with this method
+
+When adding a new skill or workflow, the preferred build-and-test order is:
+
+1. verify the skill exists and works directly
+2. build a direct `steps` queue test
+3. build a higher-level mission or structured queue contract
+4. test that mission/contract directly via inbox JSON
+5. inspect panel + artifacts
+6. test one fail-closed case
+7. only then wire Vera routing or higher-level chat UX. This reflects the usual four-layer capability integration method: skill, mission/workflow, queue/contract, Vera/routing.
+
+---
+
+# 18. Recommended reusable examples set
+
+Keep a little library of test files like:
+
+* `queue-tests/system-inspect.json`
+* `queue-tests/system-check.json`
+* `queue-tests/file-organize-copy.json`
+* `queue-tests/file-organize-blocked.json`
+* `queue-tests/inline-mkdir.json`
+* `queue-tests/inline-exists.json`
+* `queue-tests/goal-read-file.json`
+* `queue-tests/enqueue-child.json`
+
+Then copy them into inbox during STV:
+
+```bash
+cp queue-tests/system-inspect.json ~/VoxeraOS/notes/queue/inbox/
+```
+
+That gives you deterministic, reusable contract tests.
+
+The repo already carries a reusable set of these under `docs/testing/payloads/` — for example `system-inspect.json`, `inline-exists-test.json`, `blocked-list-dir.json`, `delete-approval-test.json`, and `missing-source-copy.json`. Use that directory as the canonical starting point and copy from it during STV runs.
+
+---
+
+# 19. Short version
+
+If you want the shortest reliable path:
+
+1. write a full JSON payload into `~/VoxeraOS/notes/queue/inbox/`
+2. let the daemon process it
+3. verify bucket movement and `.state.json`
+4. inspect `execution_envelope.json`, `step_results.json`, `execution_result.json`, `job_intent.json`
+5. confirm the real side effect or real read-only result
+6. run a blocked/failure variant too
+
+That is the most direct way to test VoxeraOS “from high-level workflow down to low-level truth” while staying faithful to its queue-first architecture and evidence-first trust model.

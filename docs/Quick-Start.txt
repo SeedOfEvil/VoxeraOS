@@ -1,0 +1,194 @@
+VoxeraOS Quick Start
+
+Best effort. Grounded in the current repo (pyproject.toml v0.1.9, Makefile, deploy/systemd/user/, README.md).
+VoxeraOS is an alpha. The officially supported workspace path is ~/VoxeraOS.
+
+
+1. Clone and install
+
+    cd ~
+    git clone https://github.com/SeedOfEvil/VoxeraOS.git
+    cd ~/VoxeraOS
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -U pip
+    pip install -e ".[dev]"
+
+The "[dev]" extras pull ruff, pytest, pytest-asyncio, mypy, types-PyYAML, and pre-commit (see pyproject.toml).
+
+
+2. First-run setup
+
+    voxera setup
+    voxera queue init
+
+voxera setup is a typed wizard. It walks you through the four brain slots
+(primary, fast, reasoning, fallback) using the curated OpenRouter model
+catalog under src/voxera/data/openrouter_catalog.json. After setup it can
+start the services and open the panel and Vera for you.
+
+OpenRouter is the only officially tested and fully built provider path.
+The current minimum supported slot is Gemini 3 Flash
+(google/gemini-3-flash-preview). Ollama and other OpenAI-compatible
+endpoints are architecturally supported via brain/openai_compat.py but
+have not been extensively validated.
+
+Provider key setup (via keyring with file fallback):
+
+    voxera secrets set OPENROUTER_API_KEY
+    voxera secrets set BRAVE_API_KEY            # optional, web investigation
+    voxera secrets get OPENROUTER_API_KEY --exists-only
+
+
+3. Run the stack locally (no systemd)
+
+Three terminals (or tmux panes):
+
+    # terminal 1 — queue daemon
+    voxera daemon
+
+    # terminal 2 — operator panel (http://127.0.0.1:8844)
+    voxera panel --host 127.0.0.1 --port 8844
+
+    # terminal 3 — Vera chat web app (http://127.0.0.1:8790)
+    make vera
+    # or: voxera vera
+
+Alternative dev panel port (8787) exists via `make panel`.
+
+
+4. Install as systemd user services
+
+    make services-install
+    make services-status
+
+Unit names:
+
+    voxera-daemon.service
+    voxera-panel.service
+    voxera-vera.service
+
+These live under deploy/systemd/user/. make services-install rewrites
+@VOXERA_PROJECT_DIR@ to your absolute project path before copying them
+into ~/.config/systemd/user/ and enabling them.
+
+Common service commands:
+
+    make services-restart
+    make services-status
+    make services-stop
+    make services-disable
+
+    make vera-status
+    make vera-logs
+    make vera-restart
+
+
+5. Sanity-check the stack
+
+    voxera doctor --quick
+    voxera queue status
+    voxera queue health
+
+Open the panel:
+
+    http://127.0.0.1:8844/
+    http://127.0.0.1:8844/jobs
+    http://127.0.0.1:8844/hygiene
+    http://127.0.0.1:8844/recovery
+
+Open Vera:
+
+    http://127.0.0.1:8790/
+
+
+6. Your first queue job (read-only)
+
+Easiest option — drop a mission_id payload directly into the inbox:
+
+    cat > ~/VoxeraOS/notes/queue/inbox/system-inspect-test.json <<'EOF'
+    { "mission_id": "system_inspect" }
+    EOF
+
+Watch it run:
+
+    voxera queue status
+    ls -la ~/VoxeraOS/notes/queue/done
+    ls -la ~/VoxeraOS/notes/queue/artifacts/system-inspect-test
+
+What you should see:
+
+    - job transitions queued -> planning -> running -> done
+    - artifacts/<job>/plan.json
+    - artifacts/<job>/step_results.json
+    - artifacts/<job>/execution_result.json
+    - artifacts/<job>/execution_envelope.json
+    - artifacts/<job>/job_intent.json
+    - .state.json sidecar in the done/ bucket
+
+This mission runs four read-only system skills (system.status,
+system.disk_usage, system.process_list, system.window_list) and produces
+canonical evidence without mutations or approvals.
+
+
+7. Your first mutating job (approval-gated)
+
+Mutating work flows through the queue. Easiest test surfaces:
+
+    voxera inbox add "Run a quick system check"
+    voxera daemon --once
+
+Or use the governed filesystem queue helpers:
+
+    voxera queue files find --root-path ~/VoxeraOS/notes --glob "*.md"
+    voxera queue files tree --root-path ~/VoxeraOS/notes --max-depth 3
+    voxera queue files copy \
+      --source-path ~/VoxeraOS/notes/a.txt \
+      --destination-path ~/VoxeraOS/notes/b.txt
+    voxera daemon --once
+
+Approvals:
+
+    voxera queue approvals list
+    voxera queue approvals approve <job_ref>
+    voxera queue approvals deny <job_ref>
+
+
+8. Run the canonical validation ladder
+
+For a meaningful change, run:
+
+    make fmt-check
+    make lint
+    make type
+    make test
+    make golden-check
+    make security-check
+    make validation-check
+    make merge-readiness-check
+
+The CI required merge gate is:
+
+    merge-readiness / merge-readiness
+
+See docs/Testing-Method.txt for the full multi-layer STV ladder.
+
+
+9. Where to read next
+
+    docs/00_MASTER_INDEX.md                        — bundle entry point
+    docs/01_REPOSITORY_STRUCTURE_MAP.md            — repo layout
+    docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md  — config + services
+    docs/03_QUEUE_OBJECT_MODEL_AND_LIFECYCLE.md    — queue + lifecycle
+    docs/04_GOAL_MISSION_PLANNING_AND_EXECUTION.md — missions + planner
+    docs/05_VERA_CONTROL_LAYER_AND_HANDOFF.md      — Vera internals
+    docs/06_SKILLS_CAPABILITIES_AND_BUILTINS.md    — skills + capabilities
+    docs/07_ARTIFACTS_EVIDENCE_AND_REVIEW_MODEL.md — artifacts + evidence
+    docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md — tests + change surfaces
+    docs/North-Star.txt                            — product direction
+    docs/Testing-Method.txt                        — test ladder
+    docs/Mission-testing-and-building-CLI.txt      — direct queue JSON method
+    docs/ARCHITECTURE.md                           — long-form architecture
+    docs/QUEUE_OBJECT_MODEL.md                     — canonical queue object model
+    docs/QUEUE_CONSTITUTION.md                     — frozen queue contracts
+    docs/EXECUTION_SECURITY_MODEL.md               — execution security contract
