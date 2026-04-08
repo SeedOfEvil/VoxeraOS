@@ -1,0 +1,734 @@
+{
+  "note": "Public top-level classes discovered under src/voxera via AST. Private (underscore-prefixed) classes are omitted.",
+  "class_count": 79,
+  "classes": [
+    {
+      "module": "src/voxera/brain/base.py",
+      "class_name": "ToolSpec",
+      "line": 8,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/brain/base.py",
+      "class_name": "BrainResponse",
+      "line": 15,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/brain/base.py",
+      "class_name": "Brain",
+      "line": 20,
+      "doc": "",
+      "method_count": 2,
+      "methods": [
+        "generate",
+        "capability_test"
+      ]
+    },
+    {
+      "module": "src/voxera/brain/gemini.py",
+      "class_name": "GeminiBrain",
+      "line": 15,
+      "doc": "",
+      "method_count": 3,
+      "methods": [
+        "__init__",
+        "generate",
+        "capability_test"
+      ]
+    },
+    {
+      "module": "src/voxera/brain/openai_compat.py",
+      "class_name": "OpenAICompatBrain",
+      "line": 16,
+      "doc": "Works with any OpenAI-compatible endpoint (local or cloud).",
+      "method_count": 3,
+      "methods": [
+        "__init__",
+        "generate",
+        "capability_test"
+      ]
+    },
+    {
+      "module": "src/voxera/config.py",
+      "class_name": "VoxeraConfig",
+      "line": 27,
+      "doc": "",
+      "method_count": 1,
+      "methods": [
+        "to_safe_dict"
+      ]
+    },
+    {
+      "module": "src/voxera/core/capability_semantics.py",
+      "class_name": "CapabilitySemantic",
+      "line": 14,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/execution_capabilities.py",
+      "class_name": "SideEffectClass",
+      "line": 14,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/execution_capabilities.py",
+      "class_name": "FilesystemScope",
+      "line": 20,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/execution_capabilities.py",
+      "class_name": "NetworkScope",
+      "line": 26,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/execution_capabilities.py",
+      "class_name": "SandboxProfile",
+      "line": 32,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/execution_capabilities.py",
+      "class_name": "SecretRequirement",
+      "line": 39,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/execution_capabilities.py",
+      "class_name": "ExecutionCapabilityDeclaration",
+      "line": 46,
+      "doc": "",
+      "method_count": 1,
+      "methods": [
+        "as_dict"
+      ]
+    },
+    {
+      "module": "src/voxera/core/execution_evaluator.py",
+      "class_name": "EvaluationResult",
+      "line": 37,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/inbox.py",
+      "class_name": "InboxJob",
+      "line": 14,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/mission_planner.py",
+      "class_name": "MissionPlannerError",
+      "line": 28,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/missions.py",
+      "class_name": "MissionStep",
+      "line": 20,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/missions.py",
+      "class_name": "MissionTemplate",
+      "line": 26,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/missions.py",
+      "class_name": "MissionRunner",
+      "line": 338,
+      "doc": "",
+      "method_count": 3,
+      "methods": [
+        "__init__",
+        "simulate",
+        "run"
+      ]
+    },
+    {
+      "module": "src/voxera/core/queue_approvals.py",
+      "class_name": "QueueApprovalMixin",
+      "line": 65,
+      "doc": "",
+      "method_count": 5,
+      "methods": [
+        "grant_approval_scope",
+        "pending_approvals_snapshot",
+        "canonicalize_approval_ref",
+        "approvals_list",
+        "resolve_approval"
+      ]
+    },
+    {
+      "module": "src/voxera/core/queue_daemon.py",
+      "class_name": "QueueLockError",
+      "line": 60,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/queue_daemon.py",
+      "class_name": "QueueStats",
+      "line": 65,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/queue_daemon.py",
+      "class_name": "MissionQueueDaemon",
+      "line": 70,
+      "doc": "",
+      "method_count": 16,
+      "methods": [
+        "__init__",
+        "ensure_dirs",
+        "lock_counters_snapshot",
+        "release_daemon_lock",
+        "try_unlock_stale",
+        "force_unlock",
+        "is_paused",
+        "pause",
+        "resume",
+        "prune_failed_artifacts",
+        "recent_failed_jobs_snapshot",
+        "status_snapshot",
+        "cancel_job",
+        "retry_job",
+        "delete_terminal_job",
+        "run"
+      ]
+    },
+    {
+      "module": "src/voxera/core/queue_execution.py",
+      "class_name": "QueueExecutionMixin",
+      "line": 47,
+      "doc": "",
+      "method_count": 2,
+      "methods": [
+        "process_job_file",
+        "process_pending_once"
+      ]
+    },
+    {
+      "module": "src/voxera/core/queue_hygiene.py",
+      "class_name": "JobEntry",
+      "line": 20,
+      "doc": "Represents a primary job file plus any associated sidecars.",
+      "method_count": 1,
+      "methods": [
+        "size"
+      ]
+    },
+    {
+      "module": "src/voxera/core/queue_inspect.py",
+      "class_name": "JobLookup",
+      "line": 15,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/queue_recovery.py",
+      "class_name": "QueueRecoveryMixin",
+      "line": 33,
+      "doc": "",
+      "method_count": 2,
+      "methods": [
+        "request_shutdown",
+        "recover_on_startup"
+      ]
+    },
+    {
+      "module": "src/voxera/core/router.py",
+      "class_name": "Route",
+      "line": 8,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/core/simple_intent.py",
+      "class_name": "SimpleIntentResult",
+      "line": 107,
+      "doc": "",
+      "method_count": 1,
+      "methods": [
+        "to_dict"
+      ]
+    },
+    {
+      "module": "src/voxera/demo.py",
+      "class_name": "ChecklistItem",
+      "line": 16,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/golden_surfaces.py",
+      "class_name": "GoldenSurface",
+      "line": 27,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/health_reset.py",
+      "class_name": "HealthResetError",
+      "line": 74,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/incident_bundle.py",
+      "class_name": "BundleError",
+      "line": 18,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "BrainConfig",
+      "line": 8,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "PolicyApprovals",
+      "line": 20,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "PrivacyConfig",
+      "line": 30,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "WebInvestigationConfig",
+      "line": 37,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "AppConfig",
+      "line": 46,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "SkillManifest",
+      "line": 62,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "PlanStep",
+      "line": 125,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "PlanSimulation",
+      "line": 136,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "Plan",
+      "line": 149,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/models.py",
+      "class_name": "RunResult",
+      "line": 155,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/policy.py",
+      "class_name": "PolicyDecision",
+      "line": 15,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/setup_wizard.py",
+      "class_name": "ProviderChoice",
+      "line": 36,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/setup_wizard.py",
+      "class_name": "BrainSlotSpec",
+      "line": 46,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "class_name": "JobPaths",
+      "line": 36,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "class_name": "ExecutionRunner",
+      "line": 113,
+      "doc": "",
+      "method_count": 1,
+      "methods": [
+        "run"
+      ]
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "class_name": "LocalRunner",
+      "line": 129,
+      "doc": "",
+      "method_count": 1,
+      "methods": [
+        "run"
+      ]
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "class_name": "SandboxRunner",
+      "line": 148,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/skills/execution.py",
+      "class_name": "PodmanSandboxRunner",
+      "line": 152,
+      "doc": "",
+      "method_count": 1,
+      "methods": [
+        "run"
+      ]
+    },
+    {
+      "module": "src/voxera/skills/path_boundaries.py",
+      "class_name": "PathBoundaryError",
+      "line": 8,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/skills/registry.py",
+      "class_name": "SkillHealthIssue",
+      "line": 20,
+      "doc": "",
+      "method_count": 2,
+      "methods": [
+        "__init__",
+        "as_dict"
+      ]
+    },
+    {
+      "module": "src/voxera/skills/registry.py",
+      "class_name": "SkillDiscoveryReport",
+      "line": 49,
+      "doc": "",
+      "method_count": 3,
+      "methods": [
+        "__init__",
+        "counts",
+        "blocks_runtime"
+      ]
+    },
+    {
+      "module": "src/voxera/skills/registry.py",
+      "class_name": "SkillRegistry",
+      "line": 77,
+      "doc": "",
+      "method_count": 6,
+      "methods": [
+        "__init__",
+        "discover",
+        "discover_with_report",
+        "last_report",
+        "get",
+        "load_entrypoint"
+      ]
+    },
+    {
+      "module": "src/voxera/skills/result_contract.py",
+      "class_name": "CanonicalSkillResult",
+      "line": 8,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/skills/runner.py",
+      "class_name": "CapabilityEnforcementResult",
+      "line": 38,
+      "doc": "",
+      "method_count": 1,
+      "methods": [
+        "__init__"
+      ]
+    },
+    {
+      "module": "src/voxera/skills/runner.py",
+      "class_name": "SkillRunner",
+      "line": 196,
+      "doc": "",
+      "method_count": 3,
+      "methods": [
+        "__init__",
+        "simulate",
+        "run"
+      ]
+    },
+    {
+      "module": "src/voxera/vera/brave_search.py",
+      "class_name": "WebSearchResult",
+      "line": 14,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera/brave_search.py",
+      "class_name": "BraveSearchClient",
+      "line": 21,
+      "doc": "",
+      "method_count": 2,
+      "methods": [
+        "__init__",
+        "search"
+      ]
+    },
+    {
+      "module": "src/voxera/vera/evidence_review.py",
+      "class_name": "ReviewedJobEvidence",
+      "line": 119,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera/preview_drafting.py",
+      "class_name": "DraftingGuidance",
+      "line": 70,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera/reference_resolver.py",
+      "class_name": "ReferenceClass",
+      "line": 37,
+      "doc": "Bounded set of in-session reference classes.",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera/reference_resolver.py",
+      "class_name": "ResolvedReference",
+      "line": 52,
+      "doc": "A successfully resolved session-scoped reference.",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera/reference_resolver.py",
+      "class_name": "UnresolvedReference",
+      "line": 61,
+      "doc": "A reference that could not be resolved \u2014 fail-closed result.",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera/service.py",
+      "class_name": "HiddenCompilerDecision",
+      "line": 49,
+      "doc": "",
+      "method_count": 2,
+      "methods": [
+        "__init__",
+        "from_payload"
+      ]
+    },
+    {
+      "module": "src/voxera/vera/weather.py",
+      "class_name": "WeatherLocation",
+      "line": 15,
+      "doc": "",
+      "method_count": 2,
+      "methods": [
+        "label",
+        "full_label"
+      ]
+    },
+    {
+      "module": "src/voxera/vera/weather.py",
+      "class_name": "WeatherSnapshot",
+      "line": 44,
+      "doc": "",
+      "method_count": 1,
+      "methods": [
+        "to_session_payload"
+      ]
+    },
+    {
+      "module": "src/voxera/vera/weather.py",
+      "class_name": "OpenMeteoWeatherClient",
+      "line": 143,
+      "doc": "",
+      "method_count": 3,
+      "methods": [
+        "__init__",
+        "resolve_location",
+        "fetch_snapshot"
+      ]
+    },
+    {
+      "module": "src/voxera/vera/weather_flow.py",
+      "class_name": "WeatherFollowupAnswerBuilder",
+      "line": 31,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera_web/chat_early_exit_dispatch.py",
+      "class_name": "EarlyExitResult",
+      "line": 80,
+      "doc": "Result returned by :func:`dispatch_early_exit_intent`.",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera_web/draft_content_binding.py",
+      "class_name": "ReplyDrafts",
+      "line": 113,
+      "doc": "Extracted draft content from an LLM reply.",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera_web/draft_content_binding.py",
+      "class_name": "DraftContentBindingResult",
+      "line": 190,
+      "doc": "Result of the post-LLM draft content binding derivation.",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera_web/execution_mode.py",
+      "class_name": "ExecutionMode",
+      "line": 8,
+      "doc": "Execution mode for a Vera chat turn.",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/vera_web/response_shaping.py",
+      "class_name": "AssistantReplyResult",
+      "line": 286,
+      "doc": "Result of the post-guardrail assistant reply assembly.",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/voice/flags.py",
+      "class_name": "VoiceFoundationFlags",
+      "line": 13,
+      "doc": "",
+      "method_count": 2,
+      "methods": [
+        "voice_input_enabled",
+        "voice_output_enabled"
+      ]
+    },
+    {
+      "module": "src/voxera/voice/input.py",
+      "class_name": "VoiceInputDisabledError",
+      "line": 8,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/voice/input.py",
+      "class_name": "VoiceTranscriptIngest",
+      "line": 13,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    },
+    {
+      "module": "src/voxera/voice/models.py",
+      "class_name": "InputOrigin",
+      "line": 6,
+      "doc": "",
+      "method_count": 0,
+      "methods": []
+    }
+  ]
+}

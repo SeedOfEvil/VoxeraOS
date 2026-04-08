@@ -1,0 +1,276 @@
+VoxeraOS — Engineering Report
+
+(Filename preserved from the older bundle for continuity; body rewritten
+against the current repo state. This is a snapshot-style engineering
+status, not a roadmap. For roadmap content see docs/ROADMAP.md.)
+
+
+1. Release line
+
+    - Active: alpha v0.1.9 (pyproject.toml). Theme: Governed Capability
+      Expansion — Vera chat orchestration decomposition, evidence-
+      grounded review workflows, preview UX reliability, plus system
+      inspection/diagnostics, read-only investigation lanes, richer
+      file helpers, and capability-semantics contracts.
+    - Next milestone framing: v0.2.0 — platform polish and integration
+      depth (session/planning maturity, operator-console refinement,
+      continued voice-foundation-to-UX progression).
+    - Merge gate: `merge-readiness / merge-readiness`.
+
+
+2. What is working today (grounded in current repo)
+
+Queue + daemon
+    - Single-writer file lock (`~/VoxeraOS/notes/queue/.daemon.lock`).
+    - Deterministic lifecycle buckets (inbox, pending,
+      pending/approvals, done, failed, canceled, recovery, quarantine,
+      _archive, artifacts).
+    - Canonical payload contract with strict normalization in
+      `core/queue_contracts.py`.
+    - Canonical artifact minimum: plan.json, actions.jsonl,
+      step_results.json, execution_envelope.json, execution_result.json,
+      job_intent.json. Conditional: stdout/stderr, review_summary.json,
+      evidence_bundle.json, child_job_refs.json.
+    - Canonical outcome resolver in
+      `core/queue_result_consumers.py::resolve_structured_execution`.
+    - Structured step results and execution result carry additive
+      artifact_families, artifact_refs, review_summary, evidence_bundle,
+      and normalized_outcome_class.
+    - Graceful SIGTERM shutdown with structured sidecar.
+    - Startup recovery: in-flight pending jobs quarantined to failed/
+      with sidecar; orphan approvals quarantined to
+      recovery/startup-<ts>/.
+    - Single `enqueue_child` supported with server-computed lineage
+      and full policy/approval/fail-closed semantics.
+
+Operator surfaces
+    - CLI (`voxera`) — Typer app with config, skills, missions, queue,
+      ops, inbox, secrets, artifacts sub-apps; queue family covers
+      status, health, cancel/retry, unlock, pause/resume, prune,
+      reconcile, bundle, init, approvals, lock, files.
+    - Panel (FastAPI, 8844) — routes split across routes_home,
+      routes_jobs, routes_queue_control, routes_missions,
+      routes_hygiene, routes_recovery, routes_bundle, routes_assistant.
+      Live job progress via `GET /jobs/{id}/progress` and
+      `GET /queue/jobs/{job}/progress`.
+    - Vera web (FastAPI, 8790) — `POST /chat`, `GET /chat/updates`,
+      `POST /handoff`, `POST /clear`, `GET /vera/debug/session.json`.
+
+Vera chat layer
+    - Top-level orchestration in `vera/service.py`.
+    - Session persistence in `vera/session_store.py` with bounded limits
+      (MAX_SESSION_TURNS=8, linked jobs=64, completions=64,
+      notifications=128, saveable artifacts=8).
+    - Deterministic preview drafting, draft revision, submit detection,
+      and handoff ack split into dedicated modules
+      (preview_drafting, draft_revision, preview_submission).
+    - Evidence-grounded review via `vera/evidence_review.py` sourced
+      from the canonical resolver.
+    - Linked-job tracking + auto-surfacing in
+      `vera/linked_completions.py`.
+    - Shared context lifecycle update points in
+      `vera/context_lifecycle.py`.
+    - Bounded reference resolution in `vera/reference_resolver.py`.
+    - Read-only web investigation via `vera/investigation_flow.py` and
+      `vera/investigation_derivations.py`, backed by the Brave Search
+      client.
+    - Live weather flow via `vera/weather_flow.py` + `vera/weather.py`.
+    - Hidden compiler decision schema (`replace_preview`,
+      `patch_preview`, `no_change`; intent `new_intent`, `refinement`,
+      `unclear`).
+
+Skills + capabilities
+    - 31 manifests on disk (see `docs/skill_manifest_inventory.json`):
+      clipboard (2), files (15), sandbox (1), system (13).
+    - Capability semantics normalized in
+      `core/capability_semantics.py::manifest_capability_semantics(...)`.
+    - Direct-CLI mutation gate enforced (`voxera run` blocks mutating
+      skills unless `VOXERA_DEV_MODE=1` and `--allow-direct-mutation`).
+    - Filesystem boundary enforced by `skills/path_boundaries.py` and
+      `core/file_intent.py`; queue subtree rejection is fail-closed.
+    - Built-in mission catalog (9): work_mode, focus_mode,
+      daily_checkin, incident_mode, wrap_up, notes_archive_flow,
+      system_check, system_inspect, system_diagnostics.
+    - File-based missions in `missions/` (sandbox_net, sandbox_smoke).
+
+Intent routing
+    - Deterministic `core/simple_intent.py` classification with
+      mismatch guard (fail-closed before skill execution).
+    - Cloud planner path (`core/mission_planner.py`) used only when
+      deterministic routing cannot classify the request; planner output
+      downstream-gated by capability semantics and policy.
+
+Health, doctor, ops
+    - Canonical queue health snapshot.
+    - `voxera doctor --quick` / `--self-test`.
+    - Brain fallback reason classification
+      (TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN)
+      surfaced through health and doctor.
+    - Deterministic ops bundles via `voxera ops bundle system|job`.
+
+Security
+    - 17-test red-team regression suite at
+      `tests/test_security_redteam.py` covering intent hijack,
+      planner mismatch, traversal metadata, approval-state integrity,
+      progress-evidence consistency, hidden-compiler leakage, path
+      allowlists, and the direct-mutation gate. Included in
+      `make merge-readiness-check`.
+
+Configuration
+    - Runtime config (`config.json`) and app/provider config
+      (`config.yml`) via `src/voxera/config.py`.
+    - First-run typed wizard at `voxera setup` with curated OpenRouter
+      brain slot defaults.
+    - Secrets via `voxera secrets` (keyring with file fallback).
+    - Curated OpenRouter model catalog at
+      `src/voxera/data/openrouter_catalog.json`.
+
+
+3. Validation confidence (as of this bundle regeneration)
+
+    - Full validation ladder runs cleanly (`make merge-readiness-check`
+      and `make full-validation-check`).
+    - Red-team regression suite passes.
+    - Golden-surface baselines (`tests/golden/`) in sync with CLI help
+      output.
+    - Docs consistency gate (`test_docs_consistency`) enforced.
+    - mypy ratchet is in effect (`scripts/mypy_ratchet.py`,
+      `tools/mypy-baseline.txt`).
+    - Contract snapshot tests exist for queue daemon, CLI, and panel.
+
+These are the operator-level confidence surfaces; per-feature
+confidence is documented in AGENT.md and `docs/CODEX_MEMORY.md`.
+
+
+4. Open / transitional areas (honest list)
+
+    - Voice-first interaction UX
+        - Foundation exists as a bounded seam under `src/voxera/voice/`
+          (`flags.py`, `input.py`, `output.py`, `models.py`) and
+          `src/voxera/audio/` (README placeholder).
+        - A full duplex voice loop has not been built.
+    - Mission catalog breadth
+        - 9 in-code built-ins today. A broader community catalog
+          remains future work.
+    - Provider support beyond OpenRouter
+        - Ollama and other OpenAI-compatible endpoints are
+          architecturally supported via `brain/openai_compat.py` but
+          have not been extensively validated.
+    - Multi-step orchestration maturity
+        - `enqueue_child` is live with lineage; multi-level chained or
+          orchestrated flows still need terminality-guard work so that
+          intermediate queue completions do not announce final success
+          too early.
+    - Panel UX polish
+        - First-class operator console, not cosmetic UI, but several
+          surfaces (approvals UX, hygiene detail, recovery views) are
+          still maturing.
+    - Setup / onboarding smoothness
+        - `voxera setup` is typed and curated, but first-run edge
+          cases around provider key handling and service installation
+          can still feel rough.
+    - Panel `/vera` route family
+        - `src/voxera/panel/routes_vera.py` defines a `GET /vera` +
+          `POST /vera/chat` surface, but its `register_vera_routes(...)`
+          entrypoint is not wired into `panel/app.py` today. Vera is
+          served by its dedicated web app. Either wire this module or
+          remove the dead code in a future PR.
+
+
+5. Notable refactors since the older bundle
+
+The following refactors intentionally reduced concentration in hotspot
+files and introduced cleaner ownership boundaries:
+
+    - Vera reply orchestration decomposed
+        - `vera/service.py` now delegates to `preview_drafting`,
+          `draft_revision`, `preview_submission`, `evidence_review`,
+          `linked_completions`, `saveable_artifacts`, `context_lifecycle`,
+          `reference_resolver`, `investigation_flow`,
+          `investigation_derivations`, and `weather_flow`.
+        - `vera/handoff.py` remains as a thin compatibility façade.
+    - Queue decomposed into mixins
+        - `MissionQueueDaemon` composed from `QueueApprovalMixin`,
+          `QueueRecoveryMixin`, and `QueueExecutionMixin`; payload
+          shaping and result consumers moved into `queue_contracts.py`
+          and `queue_result_consumers.py`.
+    - Panel composition split
+        - `panel/app.py` composes `routes_*.py` modules that each own
+          one route family.
+    - Capability semantics centralized
+        - `core/capability_semantics.py::manifest_capability_semantics`
+          is now the single source for effect class, intent class,
+          resource boundaries, and policy mapping. Approval, review,
+          and operator summaries derive from this, not from skill-name
+          heuristics.
+    - Filesystem productivity pack (waves 1–2)
+        - Read-only inspection: `files.list_dir`, `files.exists`,
+          `files.stat`.
+        - Confined mutation: `files.copy_file`, `files.move_file`,
+          `files.mkdir`, `files.delete_file`.
+    - System inspection pack
+        - `system.status`, `system.disk_usage`, `system.process_list`,
+          `system.window_list`, plus the `system_inspect` mission.
+    - Diagnostics pack (additive)
+        - `system.host_info`, `system.memory_usage`,
+          `system.load_snapshot`, `system.service_status`,
+          `system.recent_service_logs`, plus `system_diagnostics`
+          mission.
+    - Evidence contract upgrade
+        - `execution_result.json` now carries `artifact_families`,
+          `artifact_refs`, `review_summary`, `evidence_bundle`, and
+          `normalized_outcome_class` through the resolver.
+    - Hotspot audit roadmap
+        - `docs/HOTSPOT_AUDIT_EXTRACTION_ROADMAP.md` documents the
+          bounded PR-by-PR extraction sequence for `vera_web/app.py`,
+          `panel/app.py`, and `cli_queue.py`.
+
+
+6. Risk surfaces the engineering group watches
+
+    - Any change that could let a Vera or CLI surface bypass the queue
+      for a side-effecting skill.
+    - Any change that could let a path-boundary check be short-
+      circuited. The queue subtree rejection is specifically targeted.
+    - Any change that could let an approval-gated action report success
+      before the operator resolves the approval.
+    - Any change that could let a hidden-compiler decision carry extra
+      keys or mismatched action/payload pairs.
+    - Any change that could let the planner's first step drift outside
+      the allowed skill family for a detected simple intent.
+    - Any change to `execution_result.json` that would make
+      `resolve_structured_execution(...)` inconsistent with panel,
+      CLI, and Vera consumers.
+
+These are the risks the 17-test red-team suite is designed to catch.
+
+
+7. Immediate engineering priorities
+
+The near-term focus is consolidation and depth rather than new surface
+area:
+
+    - Keep the decomposition work going — resist re-growing
+      `vera/service.py`, `vera_web/app.py`, `panel/app.py`, and
+      `cli_queue.py`. New code should land in the dedicated ownership
+      module first.
+    - Continue tightening evidence semantics so that every canonical
+      queue lane populates `expected_artifacts` at submission or
+      during daemon normalization.
+    - Keep the direct-mutation gate loud and explicit; never quiet
+      the warning or weaken the dev-mode override.
+    - Prepare terminality-guard hooks for future chained/orchestrated
+      jobs so that intermediate queue completions do not prematurely
+      surface success in Vera.
+    - Document every intentional ratchet bump (mypy baseline, golden
+      surface baseline, contract snapshot) in the PR that makes the
+      change.
+
+
+8. One-line summary
+
+The engineering shape today is: one queue daemon, three operator
+surfaces, a conversational Vera layer that cannot execute, a manifest-
+governed skill catalog, a centralized capability-semantics contract,
+and an evidence-first review path — with a red-team regression suite
+as the merge gate.

@@ -1,0 +1,895 @@
+{
+  "note": "One entry per Python module under src/voxera. Class and function counts cover public top-level definitions.",
+  "module_count": 127,
+  "modules": [
+    {
+      "path": "src/voxera/__init__.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/audio/__init__.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/audit.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/brain/__init__.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/brain/base.py",
+      "docstring": "",
+      "class_count": 3,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/brain/fallback.py",
+      "docstring": "Stable fallback reason enum + classifier for brain fallback transitions.",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/brain/gemini.py",
+      "docstring": "Gemini adapter using the Gemini generateContent API.",
+      "class_count": 1,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/brain/json_recovery.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/brain/openai_compat.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 24,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_common.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_config.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_doctor.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_ops.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 4,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue_approvals.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue_bundle.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue_files.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 6,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue_health.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue_hygiene.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue_inbox.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue_lifecycle.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_queue_payloads.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 8,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_runtime.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 7,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/cli_skills_missions.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 6,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/config.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 15,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/__init__.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/artifacts.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/capabilities_snapshot.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/capability_semantics.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/code_draft_intent.py",
+      "docstring": "Bounded code/script/config draft intent classifier for Vera.",
+      "class_count": 0,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/execution_capabilities.py",
+      "docstring": "",
+      "class_count": 6,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/execution_evaluator.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/file_intent.py",
+      "docstring": "Bounded file intent classifier for Vera/planner routing.",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/inbox.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 4,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/mission_planner.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/missions.py",
+      "docstring": "",
+      "class_count": 3,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/planner_context.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_approvals.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_assistant.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 6,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_contracts.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 13,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_daemon.py",
+      "docstring": "",
+      "class_count": 3,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_execution.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_hygiene.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 4,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_inspect.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_job_intent.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_object_model.py",
+      "docstring": "Canonical lightweight contracts for queue job/object-model semantics.",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_paths.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_reconcile.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_recovery.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_result_consumers.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/queue_state.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 4,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/router.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/simple_intent.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/core/writing_draft_intent.py",
+      "docstring": "Bounded prose/document draft intent classifier for Vera.",
+      "class_count": 0,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/demo.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/doctor.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 6,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/golden_surfaces.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/health.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 14,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/health_reset.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/health_semantics.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/incident_bundle.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/models.py",
+      "docstring": "",
+      "class_count": 10,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/openrouter_catalog.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/operator_assistant.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 7,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/ops_bundle.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/__init__.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/app.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/assistant.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/auth_state_store.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/helpers.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/job_detail_sections.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/job_presentation.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 7,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_assistant.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_bundle.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_home.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_hygiene.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_jobs.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_missions.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_queue_control.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_recovery.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/panel/routes_vera.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/paths.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/policy.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/prompts.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 8,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/secrets.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 4,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/setup_wizard.py",
+      "docstring": "",
+      "class_count": 2,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/skills/__init__.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/skills/arg_normalizer.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/skills/execution.py",
+      "docstring": "",
+      "class_count": 5,
+      "function_count": 7,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/skills/path_boundaries.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/skills/registry.py",
+      "docstring": "",
+      "class_count": 3,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/skills/result_contract.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/skills/runner.py",
+      "docstring": "",
+      "class_count": 2,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/__init__.py",
+      "docstring": "Vera conversational surface modules.",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/brave_search.py",
+      "docstring": "",
+      "class_count": 2,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/context_lifecycle.py",
+      "docstring": "Explicit lifecycle update points for shared session context.",
+      "class_count": 0,
+      "function_count": 7,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/draft_revision.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 12,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/evidence_review.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 10,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/handoff.py",
+      "docstring": "Vera handoff facade \u2014 DEPRECATED.",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/investigation_derivations.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 12,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/investigation_flow.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 6,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/linked_completions.py",
+      "docstring": "Linked completion delivery and autosurface subsystem.",
+      "class_count": 0,
+      "function_count": 4,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/preview_drafting.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/preview_submission.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 9,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/prompt.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/reference_resolver.py",
+      "docstring": "Bounded session-scoped reference resolution for Vera.",
+      "class_count": 3,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/result_surfacing.py",
+      "docstring": "Evidence-grounded result surfacing layer.",
+      "class_count": 0,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/saveable_artifacts.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 7,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/service.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/session_store.py",
+      "docstring": "Vera session persistence/state helpers extracted from service.py.",
+      "class_count": 0,
+      "function_count": 32,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/weather.py",
+      "docstring": "",
+      "class_count": 3,
+      "function_count": 4,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera/weather_flow.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 11,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera_web/__init__.py",
+      "docstring": "Standalone Vera web app.",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera_web/app.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 6,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera_web/chat_early_exit_dispatch.py",
+      "docstring": "Early-exit intent handler dispatch for the Vera web chat flow.",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera_web/conversational_checklist.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 10,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera_web/draft_content_binding.py",
+      "docstring": "Draft content binding: post-LLM reply content extraction and preview binding.",
+      "class_count": 2,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera_web/execution_mode.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera_web/preview_content_binding.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 3,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/vera_web/response_shaping.py",
+      "docstring": "Response shaping: post-guardrail assistant reply assembly.",
+      "class_count": 1,
+      "function_count": 5,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/version.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/voice/__init__.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 0,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/voice/flags.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/voice/input.py",
+      "docstring": "",
+      "class_count": 2,
+      "function_count": 2,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/voice/models.py",
+      "docstring": "",
+      "class_count": 1,
+      "function_count": 1,
+      "parse_error": false
+    },
+    {
+      "path": "src/voxera/voice/output.py",
+      "docstring": "",
+      "class_count": 0,
+      "function_count": 1,
+      "parse_error": false
+    }
+  ]
+}

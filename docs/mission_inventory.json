@@ -1,0 +1,156 @@
+{
+  "note": "All in-code MISSION_TEMPLATES under src/voxera/core/missions.py plus file-based missions under the repo-level missions/ directory. User-level file missions under ~/.config/voxera/missions are not scanned here because they live outside the repo.",
+  "builtin_mission_count": 9,
+  "file_mission_count": 2,
+  "builtin_missions": [
+    {
+      "id": "work_mode",
+      "title": "Start Work Mode",
+      "goal": "Prepare a focused workstation baseline",
+      "notes": "Open core work apps and set baseline volume.",
+      "step_count": 3,
+      "step_skills": [
+        "system.open_app",
+        "system.open_app",
+        "system.set_volume"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    },
+    {
+      "id": "focus_mode",
+      "title": "Focus Mode",
+      "goal": "Reduce distractions and keep only essentials active",
+      "notes": "Lower volume, keep browser active, and verify open windows.",
+      "step_count": 3,
+      "step_skills": [
+        "system.set_volume",
+        "system.open_app",
+        "system.window_list"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    },
+    {
+      "id": "daily_checkin",
+      "title": "Daily Check-in",
+      "goal": "Open status surfaces and prefill notes for a daily update",
+      "notes": "Creates a daily check-in note and opens calendar.",
+      "step_count": 4,
+      "step_skills": [
+        "system.status",
+        "system.open_url",
+        "files.write_text",
+        "system.open_app"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    },
+    {
+      "id": "incident_mode",
+      "title": "Incident Mode",
+      "goal": "Bring up troubleshooting tools quickly",
+      "notes": "Open dashboard and terminal, increase alert audibility.",
+      "step_count": 4,
+      "step_skills": [
+        "system.open_url",
+        "system.open_app",
+        "system.set_volume",
+        "system.window_list"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    },
+    {
+      "id": "wrap_up",
+      "title": "Wrap Up",
+      "goal": "Capture end-of-day notes and lower noise",
+      "notes": "Review notes, copy summary text, and lower volume.",
+      "step_count": 3,
+      "step_skills": [
+        "files.read_text",
+        "clipboard.copy",
+        "system.set_volume"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    },
+    {
+      "id": "notes_archive_flow",
+      "title": "Notes Archive Flow",
+      "goal": "Archive an inbox note into organized notes archive with bounded file skills",
+      "notes": "Uses bounded notes-scope file skills end-to-end: preflight existence and metadata, ensure destination directory, copy into archive, then delete original (delete requires approval policy).",
+      "step_count": 5,
+      "step_skills": [
+        "files.exists",
+        "files.stat",
+        "files.mkdir",
+        "files.copy_file",
+        "files.delete_file"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    },
+    {
+      "id": "system_check",
+      "title": "System Check",
+      "goal": "Collect baseline status and verify command path",
+      "notes": "Low-risk health check mission.",
+      "step_count": 2,
+      "step_skills": [
+        "system.status",
+        "files.write_text"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    },
+    {
+      "id": "system_inspect",
+      "title": "System Inspection",
+      "goal": "Collect a bounded read-only snapshot of local workstation state for audit evidence",
+      "notes": "Read-only local health inspection workflow. Composes system status, disk usage, process listing, and open windows into a single bounded diagnostic snapshot. All skills are state.read / window.read only \u2014 no mutations, no network, no approval required. Executes through the queue for canonical audit trail and evidence production.",
+      "step_count": 4,
+      "step_skills": [
+        "system.status",
+        "system.disk_usage",
+        "system.process_list",
+        "system.window_list"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    },
+    {
+      "id": "system_diagnostics",
+      "title": "System Diagnostics",
+      "goal": "Collect bounded read-only host diagnostics for queue-backed triage evidence",
+      "notes": "First bounded diagnostics pack for operator triage. Read-only only: host info, memory, CPU/load, disk usage, and process snapshot. Designed for deterministic queue execution with canonical artifacts/evidence (execution_result + step_results). Service-specific inspection is supported through system.service_status and system.recent_service_logs skills using explicit args and bounded limits.",
+      "step_count": 5,
+      "step_skills": [
+        "system.host_info",
+        "system.memory_usage",
+        "system.load_snapshot",
+        "system.disk_usage",
+        "system.process_list"
+      ],
+      "source": "src/voxera/core/missions.py:MISSION_TEMPLATES"
+    }
+  ],
+  "file_missions": [
+    {
+      "file": "missions/sandbox_net.json",
+      "id": "sandbox_net",
+      "title": "Sandbox Network Test",
+      "goal": "Run sandbox command with network enabled to exercise approval flow.",
+      "notes": "This mission requests network=true and should require approval under default policy.",
+      "step_count": 1,
+      "step_skills": [
+        "sandbox.exec"
+      ],
+      "source": "missions/"
+    },
+    {
+      "file": "missions/sandbox_smoke.json",
+      "id": "sandbox_smoke",
+      "title": "Sandbox Smoke",
+      "goal": "Run a basic sandbox execution smoke test with network disabled.",
+      "notes": "Validates command execution and writable /work artifacts.",
+      "step_count": 1,
+      "step_skills": [
+        "sandbox.exec"
+      ],
+      "source": "missions/"
+    }
+  ]
+}

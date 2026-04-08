@@ -1,0 +1,379 @@
+VoxeraOS — Project Technical Rundown
+
+(Filename preserved from the older bundle for continuity; body rewritten
+against the current repo state.)
+
+This document is a compact technical overview of what VoxeraOS actually
+is today, grounded in the current branch. For a full bundle see
+docs/00_MASTER_INDEX.md.
+
+
+1. What VoxeraOS is
+
+VoxeraOS is a queue-driven AI control plane for Linux. It has two names
+for a reason:
+
+    - Vera is the conversational intelligence layer — the part you talk
+      to. Vera drafts previews, reasons about intent, asks questions,
+      and submits governed payloads to the queue.
+    - VoxeraOS is the trust layer — the queue, the policy engine, the
+      skill registry, the approval pipeline, the audit log, and the
+      artifact/evidence contract.
+
+The split is intentional and enforced in code. Vera cannot mutate the
+host directly. Everything that has a real-world side effect must flow
+through the queue, where it is capability-gated, policy-evaluated,
+approval-gated when needed, and evidence-tracked.
+
+Project metadata (pyproject.toml): `voxera-os`, version 0.1.9, Python
+>= 3.10. CLI entrypoint `voxera = "voxera.cli:app"`. License Apache 2.0.
+
+
+2. Three operator surfaces
+
+1. CLI (`voxera`) — Typer app rooted at `src/voxera/cli.py`. Top-level
+   commands include `version`, `config-show`, `doctor`, `setup`, `demo`,
+   `status`, `run`, `audit`, `panel`, `daemon`, `vera`. Sub-apps:
+   `config`, `artifacts`, `skills`, `missions`, `queue`, `ops`, `inbox`,
+   `secrets`. The queue family is the largest: `status`, `health`,
+   `health-reset`, `cancel`, `retry`, `unlock`, `pause`, `resume`,
+   `prune`, `reconcile`, `bundle`, `init`, plus `approvals`
+   (list/approve/deny), `lock` (status/release), and `files`
+   (find/grep/tree/copy/move/rename).
+
+2. Web panel — `voxera panel` runs `src/voxera/panel/app.py`, a FastAPI
+   app. Default bind 127.0.0.1:8844. Route families are split under
+   `src/voxera/panel/routes_*.py`:
+     routes_home, routes_jobs, routes_queue_control, routes_missions,
+     routes_hygiene, routes_recovery, routes_bundle, routes_assistant.
+   Auth, CSRF, and mutation guards live in `panel/app.py` and are
+   passed into each `register_*_routes(...)` call.
+
+3. Vera web — `voxera vera` (or `make vera`, or the
+   `voxera-vera.service` user unit) runs `src/voxera/vera_web/app.py`
+   via uvicorn on 127.0.0.1:8790. Routes: `GET /`, `POST /chat`,
+   `GET /chat/updates`, `POST /handoff`, `POST /clear`,
+   `GET /vera/debug/session.json`.
+
+All three surfaces are producers. None of them execute skills directly
+in the trust path — execution happens inside the queue daemon.
+
+
+3. The queue daemon
+
+`src/voxera/core/queue_daemon.py::MissionQueueDaemon`. Composed from:
+
+    - QueueApprovalMixin    (src/voxera/core/queue_approvals.py)
+    - QueueRecoveryMixin    (src/voxera/core/queue_recovery.py)
+    - QueueExecutionMixin   (src/voxera/core/queue_execution.py)
+
+Key behaviors (all observable in code):
+
+    - Single-writer file lock at `~/VoxeraOS/notes/queue/.daemon.lock`.
+    - Hard-coded queue root `~/VoxeraOS/notes/queue` (paths.py).
+    - Directory contract: inbox, pending, pending/approvals, done,
+      failed, canceled, recovery, quarantine, _archive, artifacts,
+      plus health.json and the lock file.
+    - Polls `inbox/` and drains one job at a time.
+    - Normalizes the payload through the canonical contract
+      (queue_contracts.py) and derives a request kind:
+      mission_id | file_organize | goal | inline_steps | unknown.
+    - Expands the request to a mission, runs it under the skill runner
+      and policy gate, and writes per-step artifacts into
+      `artifacts/<job>/`.
+    - Handles approvals fail-closed: the job pauses in
+      `pending/approvals/` until an operator approves or denies.
+    - Writes `.state.json` lifecycle sidecars next to the job file in
+      its current bucket.
+    - Finalizes placement into `done/`, `failed/`, or `canceled/` with
+      an error sidecar on failure.
+    - On startup, quarantines orphaned pending jobs and approvals into
+      `recovery/startup-<ts>/`.
+    - On SIGTERM, drains the current job, writes a shutdown sidecar,
+      and exits within the systemd TimeoutStopSec window (10s).
+
+Canonical artifacts per job (queue_contracts.py):
+
+    plan.json, actions.jsonl, step_results.json,
+    execution_envelope.json, execution_result.json, job_intent.json
+
+Conditionally also:
+
+    stdout.txt, stderr.txt, child_job_refs.json, review_summary.json,
+    evidence_bundle.json
+
+Canonical outcome resolver:
+`core/queue_result_consumers.py::resolve_structured_execution(...)`.
+Priority order: execution_result.json → step_results.json →
+.state.json → approval/failure sidecars. Missing minimum artifacts
+degrade a claimed success to `incomplete_evidence`.
+
+
+4. Missions, planner, intent routing
+
+`src/voxera/core/missions.py` holds 9 built-in MISSION_TEMPLATES:
+
+    work_mode, focus_mode, daily_checkin, incident_mode, wrap_up,
+    notes_archive_flow, system_check, system_inspect,
+    system_diagnostics
+
+Plus file-based missions under `missions/` (sandbox_net, sandbox_smoke)
+and `~/.config/voxera/missions/` (user-level). In-code templates take
+precedence on id collisions.
+
+`core/mission_planner.py::plan_mission(...)` is the cloud-planning
+path. Deterministic helpers (`core/simple_intent.py`) run first for
+goal-kind jobs; the cloud planner is only used when deterministic
+routing cannot classify the request. Planner output is then downstream-
+gated by capability semantics and policy. The simple-intent guardrail
+fails a job closed if the planner's first step does not match the
+allowed skill family for the detected intent kind.
+
+Intent kinds recognized by simple_intent:
+
+    open_terminal, open_url, open_app, write_file, read_file,
+    run_command, assistant_question, unknown_or_ambiguous
+
+
+5. Skills and capability semantics
+
+`src/voxera/skills/` is the registry + runner subsystem. Manifests live
+under the repo-level `skills/` tree (31 manifests at regeneration time).
+The current families:
+
+    clipboard   : copy, paste
+    files       : copy, copy_file, delete_file, exists, find, grep_text,
+                  list_dir, list_tree, mkdir, move, move_file, read_text,
+                  rename, stat, write_text
+    sandbox     : exec
+    system      : disk_usage, host_info, load_snapshot, memory_usage,
+                  open_app, open_url, process_list, recent_service_logs,
+                  service_status, set_volume, status, terminal_run_once,
+                  window_list
+
+Capability semantics are normalized centrally in
+`core/capability_semantics.py::manifest_capability_semantics(...)`.
+Every capability projects to:
+
+    effect_class      : read | write | execute
+    intent_class      : read_only | mutating | destructive
+    resource_boundaries : {filesystem, network, secrets, system}
+    policy_mapping    : capability → policy field
+
+`CAPABILITY_EFFECT_CLASS` (re-exported through `policy.py`) is the
+source for the direct-CLI mutation gate classification: a skill is
+read-only only when every declared capability maps to `read`.
+
+Filesystem productivity pack (waves 1–2):
+
+    - read-only inspection: files.list_dir, files.exists, files.stat
+      (fs_scope=read_only, local-only, no network)
+    - confined mutation: files.copy_file, files.move_file, files.mkdir,
+      files.delete_file (fs_scope=workspace_only, local-only, no
+      network)
+
+System inspection pack:
+
+    - system.status, system.disk_usage, system.process_list,
+      system.window_list are read-only (state.read / window.read,
+      fs_scope=read_only, no network). system.disk_usage uses
+      `shutil.disk_usage` directly; system.process_list uses
+      `ps -eo pid,user,%cpu,%mem,comm` truncated to 50 entries.
+    - The `system_inspect` mission composes these four into a single
+      bounded queue-backed diagnostic workflow.
+
+
+6. Vera's internal split
+
+`src/voxera/vera/` holds the conversational control layer. Ownership
+(see docs/05_VERA_CONTROL_LAYER_AND_HANDOFF.md for the full map):
+
+    service.py              — generate_vera_reply, provider selection,
+                              linked-job completion delivery
+    prompt.py               — VERA_SYSTEM_PROMPT, preview builder prompt,
+                              queue-boundary summary
+    session_store.py        — bounded session persistence, active
+                              preview, saveable artifacts registry
+    preview_drafting.py     — deterministic preview drafting, drafting
+                              guidance, save-by-reference shaping
+    draft_revision.py       — active preview rename/path/content
+                              follow-up
+    preview_submission.py   — submit detection, payload normalization,
+                              queue handoff ack
+    handoff.py              — thin compatibility façade
+    evidence_review.py      — evidence-grounded review flow
+    linked_completions.py   — linked-job tracking and auto-surfacing
+    result_surfacing.py     — result-forward text extraction
+    saveable_artifacts.py   — recent assistant-content save selection
+    context_lifecycle.py    — shared-context update points
+    reference_resolver.py   — bounded reference resolution
+    investigation_flow.py   — explicit read-only web investigation
+    investigation_derivations.py — compare/summarize/expand/save
+    weather_flow.py, weather.py  — live weather lookup
+    brave_search.py         — Brave Search API client
+
+Key invariant (from README):
+
+    "Visible preview state is authoritative pre-submit and is the
+     exact source for queued payload serialization; ambiguous preview
+     state fails closed; accepted naming mutations explicitly confirm
+     the new destination path; linked completion surfacing prioritizes
+     the latest linked submit in-session; clear single-turn generate+
+     save requests can bind same-turn authored content without
+     requiring prior artifacts; linked-completion status text and
+     draft-management/explanatory wrapper narration are not eligible
+     default note-body content."
+
+Vera sessions persist at
+`~/VoxeraOS/notes/queue/artifacts/vera_sessions/<session_id>.json` via
+`session_store.py`. Bounded limits:
+
+    MAX_SESSION_TURNS             = 8
+    linked job track              = 64
+    linked completions            = 64
+    linked notifications          = 128
+    saveable assistant artifacts  = 8
+
+
+7. Policy, approvals, audit
+
+    - policy.py wraps the capability → effect-class mapping and
+      evaluates allow / ask / deny decisions.
+    - core/queue_approvals.py handles approval artifacts, pause/resume,
+      and approve/deny resolution. `approve-always` is a session grant
+      applied through the same governance pipeline, not a policy bypass.
+    - audit.py writes a JSONL audit stream under the data dir. Every
+      lifecycle transition, policy decision, approval resolution, and
+      skill invocation emits an audit event. `voxera audit` tails this
+      stream.
+
+
+8. Health, doctor, ops bundles
+
+    - health.py / health_semantics.py produce the canonical queue
+      health snapshot written to `health.json`.
+    - cli_doctor.py + doctor.py provide `voxera doctor --quick` and
+      `--self-test`.
+    - ops_bundle.py + incident_bundle.py build deterministic incident
+      archives via `voxera ops bundle system|job`.
+    - Brain fallback reason is classified in brain/fallback.py
+      (TIMEOUT | AUTH | RATE_LIMIT | MALFORMED | NETWORK | UNKNOWN)
+      and surfaced in health and doctor output.
+
+
+9. Provider support
+
+OpenRouter is the only officially tested provider path. Minimum
+supported model slot: Gemini 3 Flash (`google/gemini-3-flash-preview`).
+Four brain slots: primary, fast, reasoning, fallback. The curated model
+catalog lives at `src/voxera/data/openrouter_catalog.json`. Ollama and
+other OpenAI-compatible endpoints are architecturally supported via
+`brain/openai_compat.py` but have not been extensively validated.
+
+
+10. Services and ports
+
+`deploy/systemd/user/`:
+
+    voxera-daemon.service   — `voxera daemon` (queue + missions)
+    voxera-panel.service    — `voxera panel --host 127.0.0.1 --port 8844`
+    voxera-vera.service     — `python -m uvicorn voxera.vera_web.app:app
+                               --host 127.0.0.1 --port 8790`
+
+`make services-install` rewrites the `@VOXERA_PROJECT_DIR@` token to
+your absolute project path, copies the units into
+`$HOME/.config/systemd/user/`, reloads, enables, and starts them.
+
+`Makefile` dev ports: panel dev shortcut uses 8787; Vera dev uses
+VERA_HOST / VERA_PORT (defaults 127.0.0.1 / 8790).
+
+
+11. Validation and merge gate
+
+Canonical ladder:
+
+    make fmt-check lint type test
+    make golden-check
+    make security-check
+    make validation-check
+    make merge-readiness-check
+    make full-validation-check   # for release-grade confidence
+
+The CI required merge gate is `merge-readiness / merge-readiness`. Its
+name is fixed in the workflow — do not rename.
+
+The red-team suite at `tests/test_security_redteam.py` is part of the
+merge gate. A security regression blocks merge.
+
+
+12. Test suite themes
+
+110 test files at regeneration time. Major themes:
+
+    - queue daemon + contracts (test_queue_daemon*, test_queue_*)
+    - CLI surfaces (test_cli_*) + golden surfaces (test_golden_surfaces)
+    - skills + runner (test_registry, test_runner, test_execution*,
+      test_skill_*, test_sandbox_exec_*)
+    - files skill family + path boundaries (test_files_*,
+      test_file_intent)
+    - missions + planner (test_missions, test_mission_planner,
+      test_simple_intent, test_planner_context)
+    - panel (test_panel, test_panel_contract_snapshot)
+    - Vera chat/session/preview/submit (test_vera_*, test_draft_*,
+      test_shared_session_context*)
+    - evidence review + linked completions (test_evidence_review,
+      test_linked_job_review_continuation, test_result_surfacing)
+    - hidden compiler + investigation (test_vera_hidden_compiler,
+      test_vera_compiler_leakage, test_vera_investigation_derivations,
+      test_vera_brave_search)
+    - health + doctor + ops bundle (test_health, test_doctor,
+      test_ops_bundle*, test_diagnostics_pack)
+    - security red-team (test_security_redteam)
+    - docs consistency (test_docs_consistency)
+
+Golden baselines live at `tests/golden/`.
+
+
+13. Informational docs to keep in sync
+
+The canonical long-form architecture and security docs:
+
+    docs/ARCHITECTURE.md
+    docs/QUEUE_OBJECT_MODEL.md
+    docs/QUEUE_CONSTITUTION.md
+    docs/EXECUTION_SECURITY_MODEL.md
+    docs/NORTH_STAR.md
+    docs/ops.md
+    docs/SECURITY.md
+    docs/ROADMAP.md
+    docs/CODEX_MEMORY.md
+
+The bundle under docs/00_*.md through docs/10_*.md + the JSON
+inventories is a derived surface meant for navigation and cross-
+reference. If you change the code, re-run the bundle regeneration
+rather than hand-editing the inventories.
+
+
+14. What is still early
+
+Honest alpha caveats from the README and the code:
+
+    - Voice-first UX: the voice foundation exists as a bounded seam
+      under `src/voxera/voice/` and `src/voxera/audio/`, but a full
+      duplex voice loop has not been built.
+    - Mission catalog breadth: 9 in-code templates today. Broader
+      community catalog remains future work.
+    - Provider compatibility beyond OpenRouter is architectural only.
+    - Multi-step orchestration maturity is still growing; terminality
+      guards for future chained jobs are explicitly called out as a
+      design-in-progress area.
+    - Panel UX polish and mobile responsiveness.
+    - Setup / onboarding smoothness.
+
+
+15. One-line summary
+
+VoxeraOS is a local-first queue-driven control plane where Vera reasons
+freely and every real action is policy-gated, approval-gated where
+needed, and backed by canonical runtime evidence — no silent side
+effects, no mutation outside the queue, fail closed when uncertain.
