@@ -31,11 +31,16 @@ recovery/               startup recovery quarantine
 quarantine/             reconcile quarantine
 _archive/               optional archive space
 artifacts/<job>/        per-job runtime outputs
+automations/            durable automation definition storage (PR1 foundation)
+  definitions/          one JSON file per AutomationDefinition, id-based filename
+  history/              reserved for a future runner; not written in PR1
 .daemon.lock            single-writer lock
 health.json             queue health snapshot
 ```
 
 The daemon (`MissionQueueDaemon` in `core/queue_daemon.py`) holds the lock, drains `inbox/`, advances lifecycle states, writes artifacts and sidecars, and finalizes placement into a terminal bucket.
+
+The `automations/` subtree is **owned by the automation object model layer** (`src/voxera/automation/`), not by the daemon. It stores durable definitions that describe *deferred or triggered queue submission*. A definition is not a second execution path — if a future runner ever acts on a saved definition, it must do so by emitting a normal canonical queue job into `inbox/`. The queue remains the execution boundary. PR1 contains only the model and storage helpers; no runner, scheduler, or submitter behavior exists yet.
 
 ## Canonical payload schema
 

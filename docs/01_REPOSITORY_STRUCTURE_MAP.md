@@ -101,6 +101,22 @@ Canonical composition of queue daemon, mission runtime, planner, and queue contr
 - `router.py` — minimal router shim.
 - `artifacts.py` — artifact helpers.
 
+**Automation object model (`src/voxera/automation/`)**
+Durable automation definition layer. This is a *definition* surface only: it
+does not run anything, does not execute skills, and does not submit queue
+jobs. A future runner may emit normal queue jobs from these saved definitions;
+until then, automation definitions are inert governed records.
+- `models.py` — `AutomationDefinition` Pydantic model, supported trigger kinds
+  (`once_at`, `delay`, `recurring_interval`, `recurring_cron`, `watch_path`),
+  per-kind trigger-config validation, canonical `payload_template` gating via
+  the queue contract helpers in `core/queue_contracts.py`.
+- `store.py` — file-backed CRUD helpers
+  (`ensure_automation_dirs`, `save_automation_definition`,
+  `load_automation_definition`, `list_automation_definitions`,
+  `delete_automation_definition`) rooted under
+  `~/VoxeraOS/notes/queue/automations/definitions/` with a sibling
+  `history/` directory reserved for future runner use.
+
 **Skills subsystem (`src/voxera/skills/`)**
 - `registry.py` — `SkillRegistry`, `SkillDiscoveryReport`, manifest validation.
 - `runner.py` — `SkillRunner`, policy-aware simulation and execution.
@@ -229,5 +245,6 @@ See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for the themed breakdown. At a 
 | Vera web routes (chat UI) | `src/voxera/vera_web/app.py` |
 | Panel route families | `src/voxera/panel/routes_*.py` |
 | CLI new subcommand | the appropriate `src/voxera/cli_*.py`, wired from `cli.py` |
+| Automation definition model / storage | `src/voxera/automation/models.py`, `src/voxera/automation/store.py` |
 | Systemd units | `deploy/systemd/user/` |
 | CLI help baselines | `tests/golden/` via `tools/golden_surfaces.py` |
