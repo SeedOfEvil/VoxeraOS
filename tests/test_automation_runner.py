@@ -798,3 +798,301 @@ def test_run_id_format_matches_automation_id_pattern() -> None:
     other = generate_run_id("other-automation", now_ms=1_700_000_000_000)
     assert run_id != other
     assert AUTOMATION_ID_PATTERN.match(other) is not None
+
+
+# ---------------------------------------------------------------------------
+# Canonical payload-family regression coverage (PR2 bug fix)
+#
+# An earlier version of ``add_inbox_payload`` hard-required a non-empty
+# ``goal`` field on every submission, which meant the automation runner
+# could only ever fire ``goal``-kind payloads. A valid automation
+# definition with e.g. ``{"mission_id": "system_inspect"}`` was rejected
+# at emit time with ``job payload requires a non-empty goal`` even though
+# the queue execution layer itself accepts mission_id-only, steps-only,
+# write_file-only, and file_organize-only payloads.
+#
+# These tests pin the fix: every canonical request anchor documented in
+# ``core/queue_execution.py`` (``mission_id``, ``goal``, inline ``steps``,
+# ``write_file``, ``file_organize``) must fire cleanly through the
+# runner, emit exactly one canonical queue job, record history, and
+# advance the one-shot definition state.
+# ---------------------------------------------------------------------------
+
+
+def _emit_and_assert_canonical(
+    tmp_path: Path,
+    *,
+    automation_id: str,
+    payload_template: dict[str, object],
+    expected_request_kind: str,
+) -> None:
+    """Fire one due automation definition and assert canonical linkage.
+
+    Shared body for the per-family regression tests. Each test
+    constructs a once_at definition with the canonical shape under
+    test, runs it through ``process_automation_definition``, and
+    verifies that:
+
+    - the outcome is ``submitted``
+    - exactly one inbox file exists
+    - the emitted payload's ``job_intent.source_lane`` is
+      ``automation_runner`` (proving it went through the canonical
+      inbox path and not a private file drop)
+    - the emitted payload's ``job_intent.request_kind`` matches the
+      shape the test asserts on (the queue's own request-kind
+      detection classifies it correctly)
+    - the saved definition is advanced with ``enabled=False``,
+      ``last_run_at_ms``, ``last_job_ref``, and one history ref
+    - the payload template is preserved verbatim on disk
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_once_at(
+        id=automation_id,
+        trigger_config={"run_at_ms": 1_700_000_000_000},
+        payload_template=payload_template,
+    )
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_000_500)
+    assert result.outcome == "submitted", result.message
+    assert result.queue_job_ref is not None
+    assert result.history_ref is not None
+
+    inbox_files = _inbox_files(queue_root)
+    assert len(inbox_files) == 1
+    emitted = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert isinstance(emitted.get("job_intent"), dict)
+    assert emitted["job_intent"].get("source_lane") == AUTOMATION_SOURCE_LANE
+    assert emitted["job_intent"].get("request_kind") == expected_request_kind
+
+    # Each top-level key from the saved template must survive to the
+    # inbox file verbatim — the inbox helper is allowed to add the
+    # canonical ``id`` and ``job_intent`` but not rewrite template fields.
+    for key, value in payload_template.items():
+        assert emitted.get(key) == value, f"template field {key!r} drifted: {emitted.get(key)!r}"
+
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.enabled is False
+    assert loaded.last_run_at_ms == 1_700_000_000_500
+    assert loaded.last_job_ref == result.queue_job_ref
+    assert loaded.run_history_refs == [result.history_ref]
+    assert loaded.payload_template == payload_template
+
+    history_files = _history_files(queue_root)
+    assert len(history_files) == 1
+    record = json.loads(history_files[0].read_text(encoding="utf-8"))
+    assert record["outcome"] == "submitted"
+    assert record["queue_job_ref"] == result.queue_job_ref
+
+
+def test_mission_id_payload_template_fires_through_runner(tmp_path: Path) -> None:
+    """Regression: PR #301 bug — mission_id-only payloads were rejected.
+
+    Exact shape from the task description. Must submit cleanly.
+    """
+    _emit_and_assert_canonical(
+        tmp_path,
+        automation_id="mission-id-auto",
+        payload_template={"mission_id": "system_inspect"},
+        expected_request_kind="mission_id",
+    )
+
+
+def test_goal_payload_template_still_fires_through_runner(tmp_path: Path) -> None:
+    """The goal path must continue to work after the broadening fix."""
+    _emit_and_assert_canonical(
+        tmp_path,
+        automation_id="goal-auto",
+        payload_template={"goal": "collect a read-only diagnostic snapshot of the current system"},
+        expected_request_kind="goal",
+    )
+
+
+def test_write_file_payload_template_fires_through_runner(tmp_path: Path) -> None:
+    """Regression: write_file-only payloads were rejected before the fix.
+
+    The queue execution layer accepts ``write_file`` at intake; the
+    inbox helper must accept it too. Note that the queue's own
+    ``detect_request_kind`` returns ``"unknown"`` for a bare write_file
+    payload because write_file is not in the canonical request-kind
+    set — that's a separate intentional shape in the queue object
+    model. What matters for PR2 is that the runner can successfully
+    submit the payload and the queue will pick it up; this test
+    asserts the submission path, not the request-kind name.
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    payload_template: dict[str, object] = {
+        "write_file": {
+            "path": "~/VoxeraOS/notes/automation-runner-test.txt",
+            "content": "hello from runner",
+            "mode": "overwrite",
+        }
+    }
+    definition = _make_once_at(
+        id="write-file-auto",
+        trigger_config={"run_at_ms": 1_700_000_000_000},
+        payload_template=payload_template,
+    )
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_000_500)
+    assert result.outcome == "submitted", result.message
+    assert result.queue_job_ref is not None
+
+    inbox_files = _inbox_files(queue_root)
+    assert len(inbox_files) == 1
+    emitted = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert emitted["job_intent"]["source_lane"] == AUTOMATION_SOURCE_LANE
+    assert emitted.get("write_file") == payload_template["write_file"]
+
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.enabled is False
+    assert loaded.last_run_at_ms == 1_700_000_000_500
+    assert loaded.last_job_ref == result.queue_job_ref
+
+
+def test_inline_steps_payload_template_fires_through_runner(tmp_path: Path) -> None:
+    """Regression: inline-steps-only payloads were rejected before the fix."""
+    _emit_and_assert_canonical(
+        tmp_path,
+        automation_id="inline-steps-auto",
+        payload_template={
+            "steps": [
+                {"skill_id": "system.status", "args": {}},
+                {"skill_id": "system.disk_usage", "args": {}},
+            ]
+        },
+        expected_request_kind="inline_steps",
+    )
+
+
+def test_file_organize_payload_template_fires_through_runner(tmp_path: Path) -> None:
+    """Regression: file_organize-only payloads were rejected before the fix."""
+    _emit_and_assert_canonical(
+        tmp_path,
+        automation_id="file-organize-auto",
+        payload_template={
+            "file_organize": {
+                "source_path": "~/VoxeraOS/notes/source.txt",
+                "destination_dir": "~/VoxeraOS/notes/archive",
+                "mode": "copy",
+                "overwrite": False,
+                "delete_original": False,
+            }
+        },
+        expected_request_kind="file_organize",
+    )
+
+
+def test_mission_id_one_shot_does_not_double_submit(tmp_path: Path) -> None:
+    """A mission_id-only automation must still honor one-shot semantics.
+
+    This is a deeper regression check: the earlier bug blocked the
+    first submit, so one-shot semantics for non-goal payloads had
+    never been exercised end-to-end before PR #301. A second runner
+    pass must skip with "already fired".
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_once_at(
+        id="mission-id-one-shot",
+        trigger_config={"run_at_ms": 1_700_000_000_000},
+        payload_template={"mission_id": "system_inspect"},
+    )
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    first = run_due_automations(queue_root, now_ms=1_700_000_000_500)
+    assert [r.outcome for r in first] == ["submitted"]
+    assert len(_inbox_files(queue_root)) == 1
+    assert len(_history_files(queue_root)) == 1
+
+    second = run_due_automations(queue_root, now_ms=1_700_000_000_900)
+    assert [r.outcome for r in second] == ["skipped"]
+    # Either reason is fine: after a successful submit the definition is
+    # saved with both ``enabled=False`` *and* ``last_run_at_ms`` set, and
+    # ``evaluate_due_automation`` checks ``enabled`` first, so the skipped
+    # reason is "definition is disabled". The important invariant is that
+    # a second pass produces no additional inbox job and no additional
+    # history row — the double-submit guard holds.
+    assert "disabled" in second[0].message or "already fired" in second[0].message
+    assert len(_inbox_files(queue_root)) == 1
+    assert len(_history_files(queue_root)) == 1
+
+
+def test_add_inbox_payload_rejects_payload_with_no_canonical_anchor(tmp_path: Path) -> None:
+    """``add_inbox_payload`` must still fail closed for junk payloads.
+
+    Broadening the helper must not turn it into a write-anything-to-inbox
+    backdoor. A payload with none of the canonical anchor fields has
+    no canonical request kind, and the daemon would reject it
+    downstream anyway, so we reject it here with a clear message.
+    """
+    from voxera.core.inbox import add_inbox_payload
+
+    queue_root = tmp_path / "queue"
+
+    junk_payloads = (
+        {},
+        {"title": "only a title"},
+        {"notes": "hello"},
+        {"mission_id": ""},  # present but empty
+        {"goal": "   "},  # present but whitespace
+        {"steps": []},  # empty list is not a valid anchor
+        {"write_file": {"content": "no path"}},
+        {"file_organize": {"mode": "copy"}},
+    )
+    for junk in junk_payloads:
+        with pytest.raises(ValueError, match="canonical request anchor"):
+            add_inbox_payload(queue_root, junk)
+
+
+def test_add_inbox_payload_accepts_every_canonical_anchor(tmp_path: Path) -> None:
+    """Per-family smoke at the inbox helper level.
+
+    Each canonical anchor must produce an ``inbox-*.json`` file with
+    the canonical ``id`` and ``job_intent`` enrichment applied. This
+    locks in the helper-level contract independently of the runner
+    tests above so a future refactor of the runner cannot accidentally
+    mask a helper-layer regression.
+    """
+    from voxera.core.inbox import add_inbox_payload
+
+    cases: tuple[tuple[str, dict[str, object]], ...] = (
+        ("mission-id", {"mission_id": "system_inspect"}),
+        ("goal", {"goal": "open the dashboard"}),
+        ("steps", {"steps": [{"skill_id": "system.status", "args": {}}]}),
+        (
+            "write-file",
+            {"write_file": {"path": "~/notes/x.txt", "content": "hi", "mode": "overwrite"}},
+        ),
+        (
+            "file-organize",
+            {
+                "file_organize": {
+                    "source_path": "~/notes/a.txt",
+                    "destination_dir": "~/notes/archive",
+                    "mode": "copy",
+                    "overwrite": False,
+                    "delete_original": False,
+                }
+            },
+        ),
+    )
+    for label, payload in cases:
+        queue_root = tmp_path / label
+        created = add_inbox_payload(
+            queue_root,
+            payload,
+            job_id=f"canonical-{label}",
+            source_lane="automation_runner",
+        )
+        assert created.name == f"inbox-canonical-{label}.json"
+        emitted = json.loads(created.read_text(encoding="utf-8"))
+        assert emitted["id"] == f"canonical-{label}"
+        assert isinstance(emitted.get("job_intent"), dict)
+        assert emitted["job_intent"]["source_lane"] == "automation_runner"
+        # Every top-level key from the input payload survives verbatim.
+        for key, value in payload.items():
+            assert emitted.get(key) == value
