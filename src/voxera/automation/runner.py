@@ -12,9 +12,8 @@ The runner is deliberately tiny:
    ``run_history_refs``, and the one-shot ``enabled=False`` + cleared
    ``next_run_at_ms``).
 4. Unsupported trigger kinds are skipped with an explicit ``skipped``
-   history outcome so an operator can tell the difference between "nothing
-   was due" and "a real definition exists but PR2 refuses to act on it
-   yet".
+   outcome so an operator can tell the difference between "nothing was
+   due" and "a real definition exists but PR2 refuses to act on it yet".
 
 Architectural rule (do not break):
 
@@ -35,9 +34,30 @@ Fail-closed semantics:
   definition is caught, recorded as an ``error`` history entry, and the
   definition's state is *not* advanced — so a transient failure cannot
   leave a one-shot definition stuck in a "half-fired" state.
+- If the queue job is emitted successfully but the follow-up save of the
+  updated definition fails (e.g. disk full, permission error), a second
+  ``error`` history record is written that references the successful
+  ``queue_job_ref`` and describes the save failure. The runner returns
+  an ``error`` result for the definition so a reviewer can see that the
+  queue side of the fire succeeded but the durable definition state is
+  now stale — the operator is expected to reconcile manually.
 - Supported-but-not-due definitions and already-fired one-shots are
   silently left alone: no queue job, no history entry, no definition
   mutation.
+- No history record is written for ordinary ``skipped`` passes. History
+  is an audit trail of actual fires and errors, not a log of every
+  runner pass that found nothing to do.
+
+Concurrency note:
+
+PR2 has no background daemon. The runner is meant to be invoked
+synchronously (library call or ``voxera automation run-due-once``). It
+does not take a lock on the definitions directory, so two concurrent
+invocations against the same queue root can race and both see a
+definition as "not yet fired" and both emit. This is an explicit
+non-goal for PR2; any real scheduler layer (cron / interval / watch)
+added by a future PR will need to serialize through the queue daemon
+lock or a dedicated automation lock.
 """
 
 from __future__ import annotations
@@ -227,16 +247,23 @@ def process_automation_definition(
 ) -> AutomationRunResult:
     """Process one definition: evaluate, emit if due, persist history.
 
-    Returns an ``AutomationRunResult`` summarizing what happened. On
-    ``submitted``, the updated definition (with refreshed ``last_run_at_ms``
-    / ``last_job_ref`` / ``run_history_refs`` / ``enabled=False``) has
-    already been saved back through the PR1 storage layer before this
-    function returns.
+    Returns an ``AutomationRunResult`` summarizing what happened.
 
-    On ``skipped`` or ``error``, the stored definition is left untouched
-    *except* that an ``error`` outcome may still persist a history record
-    so an operator can see that the runner saw the definition and declined
-    to emit.
+    On ``submitted``, the updated definition (with refreshed
+    ``last_run_at_ms`` / ``last_job_ref`` / ``run_history_refs`` /
+    ``enabled=False`` / ``next_run_at_ms=None``) has already been saved
+    back through the PR1 storage layer before this function returns.
+
+    On ``skipped``, the stored definition is left untouched and no
+    history record is written — history is an audit trail of actual
+    fires, not of every "nothing to do" runner pass.
+
+    On ``error``, the stored definition is left untouched and a single
+    ``error`` history record is persisted describing what went wrong. If
+    the queue emission succeeded but the follow-up definition save
+    failed, a second ``error`` history record is persisted that carries
+    the successful ``queue_job_ref`` so a reviewer can see the mixed
+    state explicitly.
     """
     stamp = int(now_ms) if now_ms is not None else _now_ms()
     due, reason = evaluate_due_automation(definition, now_ms=stamp)
@@ -254,6 +281,7 @@ def process_automation_definition(
     try:
         inbox_target = _emit_queue_job(queue_root, definition, run_id=run_id)
     except Exception as exc:  # noqa: BLE001 - fail-closed audit path
+        emit_error_message = f"failed to emit queue job: {exc}"
         history_ref = _persist_history(
             queue_root,
             automation_id=definition.id,
@@ -262,13 +290,13 @@ def process_automation_definition(
             trigger_kind=definition.trigger_kind,
             outcome="error",
             queue_job_ref=None,
-            message=f"failed to emit queue job: {exc}",
+            message=emit_error_message,
             payload_template=definition.payload_template,
         )
         return AutomationRunResult(
             automation_id=definition.id,
             outcome="error",
-            message=f"failed to emit queue job: {exc}",
+            message=emit_error_message,
             history_ref=history_ref,
             run_id=run_id,
             trigger_kind=definition.trigger_kind,
@@ -296,7 +324,42 @@ def process_automation_definition(
             "next_run_at_ms": None,
         }
     )
-    save_automation_definition(updated, queue_root, now_ms=stamp)
+    try:
+        save_automation_definition(updated, queue_root, now_ms=stamp)
+    except Exception as exc:  # noqa: BLE001 - fail-closed audit path
+        # The queue job was successfully emitted and the initial submit
+        # history record was written, but the follow-up save of the
+        # updated definition failed. Write a second history record that
+        # carries the successful queue_job_ref and the save error text
+        # so a reviewer can see the mixed state explicitly. The caller
+        # sees an ``error`` outcome — not a success — because the
+        # definition is now durable-stale and the operator will need to
+        # reconcile (either disable it manually or accept a double fire
+        # on the next runner pass).
+        save_error_message = (
+            f"queue job {queue_job_ref} was emitted but definition state save failed: {exc}"
+        )
+        save_error_run_id = generate_run_id(definition.id, now_ms=stamp + 1)
+        save_error_history_ref = _persist_history(
+            queue_root,
+            automation_id=definition.id,
+            run_id=save_error_run_id,
+            triggered_at_ms=stamp,
+            trigger_kind=definition.trigger_kind,
+            outcome="error",
+            queue_job_ref=queue_job_ref,
+            message=save_error_message,
+            payload_template=definition.payload_template,
+        )
+        return AutomationRunResult(
+            automation_id=definition.id,
+            outcome="error",
+            message=save_error_message,
+            queue_job_ref=queue_job_ref,
+            history_ref=save_error_history_ref,
+            run_id=save_error_run_id,
+            trigger_kind=definition.trigger_kind,
+        )
 
     return AutomationRunResult(
         automation_id=definition.id,

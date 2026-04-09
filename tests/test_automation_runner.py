@@ -488,3 +488,313 @@ def test_run_automation_once_loads_by_id_and_submits(tmp_path: Path) -> None:
     assert result.outcome == "submitted"
     assert result.automation_id == "solo"
     assert len(_inbox_files(queue_root)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Fail-closed edge cases (emit + save failures, dict mutation, history
+# defense-in-depth, CLI entrypoint)
+# ---------------------------------------------------------------------------
+
+
+def test_skipped_runs_do_not_write_history_records(tmp_path: Path) -> None:
+    """History is an audit trail of actual fires, not of idle passes.
+
+    A runner pass over a non-due or disabled definition should leave the
+    history directory empty. Only ``submitted`` and ``error`` outcomes
+    are durable audit rows.
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_once_at(
+            id="future-1",
+            trigger_config={"run_at_ms": 2_000_000_000_000},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    save_automation_definition(
+        _make_once_at(id="disabled-1", enabled=False),
+        queue_root,
+        touch_updated=False,
+    )
+    save_automation_definition(
+        _make_once_at(
+            id="unsupported-1",
+            trigger_kind="recurring_cron",
+            trigger_config={"cron": "*/5 * * * *"},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+
+    results = run_due_automations(queue_root, now_ms=1_700_000_000_500)
+    assert {r.outcome for r in results} == {"skipped"}
+    assert _history_files(queue_root) == []
+    assert _inbox_files(queue_root) == []
+
+
+def test_emit_failure_writes_error_history_and_leaves_definition_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When ``add_inbox_payload`` raises, the runner records an error.
+
+    The stored definition must not be advanced (``last_run_at_ms`` stays
+    None, ``enabled`` stays True), so a subsequent pass after the
+    underlying problem is fixed can still fire the automation normally.
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_once_at(trigger_config={"run_at_ms": 1_700_000_000_000})
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    from voxera.automation import runner as runner_module
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("simulated inbox write failure")
+
+    monkeypatch.setattr(runner_module, "add_inbox_payload", _boom)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_000_500)
+    assert result.outcome == "error"
+    assert result.queue_job_ref is None
+    assert "simulated inbox write failure" in result.message
+    assert result.history_ref is not None
+
+    # Inbox is empty; the queue side was never touched.
+    assert _inbox_files(queue_root) == []
+
+    # Exactly one error history row exists and it points at no queue job.
+    history_files = _history_files(queue_root)
+    assert len(history_files) == 1
+    record = json.loads(history_files[0].read_text(encoding="utf-8"))
+    assert record["outcome"] == "error"
+    assert record["queue_job_ref"] is None
+    assert "simulated inbox write failure" in record["message"]
+
+    # Definition on disk is unchanged — the next runner pass can still fire.
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.enabled is True
+    assert loaded.last_run_at_ms is None
+    assert loaded.last_job_ref is None
+    assert loaded.run_history_refs == []
+
+
+def test_save_failure_after_emit_records_mixed_state_and_returns_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the queue job is emitted but the follow-up save fails.
+
+    This is the mixed-state path: the inbox file and the submit history
+    record already exist on disk, but the durable definition cannot be
+    updated. The runner must (a) return an ``error`` result that still
+    carries the real ``queue_job_ref``, and (b) write a second history
+    record that references the successful queue job plus the save error
+    so a reviewer can reconcile the mixed state.
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_once_at(trigger_config={"run_at_ms": 1_700_000_000_000})
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    from voxera.automation import runner as runner_module
+
+    real_save = runner_module.save_automation_definition
+    call_count = {"n": 0}
+
+    def _fail_only_post_emit(*args: object, **kwargs: object) -> object:
+        # The fixture save (above) is not intercepted because we install
+        # the monkeypatch AFTER it. The first call under the patch is
+        # the runner's post-emit save, which we force to fail.
+        call_count["n"] += 1
+        raise OSError("simulated disk full")
+
+    monkeypatch.setattr(runner_module, "save_automation_definition", _fail_only_post_emit)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_000_500)
+    assert call_count["n"] == 1
+    assert result.outcome == "error"
+    assert result.queue_job_ref is not None
+    assert "simulated disk full" in result.message
+    assert "was emitted but definition state save failed" in result.message
+
+    # The queue job really was emitted and the submit history was
+    # written before the save failure was noticed.
+    inbox_files = _inbox_files(queue_root)
+    assert len(inbox_files) == 1
+    assert inbox_files[0].name == result.queue_job_ref
+
+    # Two history records on disk: the initial ``submitted`` row plus
+    # the follow-up ``error`` row that references the same queue_job_ref.
+    history_files = _history_files(queue_root)
+    assert len(history_files) == 2
+    records = [json.loads(p.read_text(encoding="utf-8")) for p in history_files]
+    outcomes = sorted(r["outcome"] for r in records)
+    assert outcomes == ["error", "submitted"]
+    submitted_record = next(r for r in records if r["outcome"] == "submitted")
+    error_record = next(r for r in records if r["outcome"] == "error")
+    assert submitted_record["queue_job_ref"] == result.queue_job_ref
+    assert error_record["queue_job_ref"] == result.queue_job_ref
+    assert "simulated disk full" in error_record["message"]
+
+    # Re-enable real save behavior and confirm the stored definition was
+    # never advanced (this is the mixed-state the operator must reconcile).
+    monkeypatch.setattr(runner_module, "save_automation_definition", real_save)
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.enabled is True
+    assert loaded.last_run_at_ms is None
+    assert loaded.last_job_ref is None
+    assert loaded.run_history_refs == []
+
+
+def test_payload_template_is_not_mutated_by_runner(tmp_path: Path) -> None:
+    """Submitting through the runner must not mutate the in-memory template.
+
+    ``add_inbox_payload`` enriches the payload with ``job_intent``, ``id``,
+    and friends. The runner already copies the template with ``dict(...)``
+    before handing it off, so the durable definition object (and the
+    file on disk) must survive the submit untouched.
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    template = {
+        "goal": "open the dashboard",
+        "steps": [{"skill_id": "builtin.noop"}],
+    }
+    definition = _make_once_at(payload_template=template)
+    save_automation_definition(definition, queue_root, touch_updated=False)
+    template_snapshot = json.loads(json.dumps(definition.payload_template))
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_000_500)
+    assert result.outcome == "submitted"
+
+    # In-memory definition's payload_template is unchanged.
+    assert definition.payload_template == template_snapshot
+    # Reloaded definition from disk also unchanged (aside from the runner
+    # state fields which are updated on submit).
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.payload_template == template_snapshot
+
+
+def test_write_history_record_rejects_traversal_ids(tmp_path: Path) -> None:
+    """Defense-in-depth: the history module validates both ids itself.
+
+    The runner never constructs records with bad ids, but a direct caller
+    of ``write_history_record`` must not be able to escape the history
+    directory by supplying a traversal-looking ``automation_id`` or
+    ``run_id`` on a hand-built record.
+    """
+    from voxera.automation import build_history_record, history_record_ref, write_history_record
+
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+
+    bad_automation_ids = (
+        "../escape",
+        "with/slash",
+        ".hidden",
+        "with\x00null",
+        "",
+        " ",
+        "-leading-hyphen",
+    )
+    for bad_id in bad_automation_ids:
+        with pytest.raises(ValueError):
+            history_record_ref(bad_id, "1700000000000-deadbeef")
+        record = {
+            "schema_version": 1,
+            "automation_id": bad_id,
+            "run_id": "1700000000000-deadbeef",
+            "triggered_at_ms": 1_700_000_000_000,
+            "trigger_kind": "once_at",
+            "outcome": "submitted",
+            "queue_job_ref": "inbox-x.json",
+            "message": "ok",
+            "payload_summary": {},
+            "payload_hash": None,
+        }
+        with pytest.raises(ValueError):
+            write_history_record(queue_root, record)
+
+    bad_run_ids = ("../escape", "with/slash", "", " ", ".hidden")
+    for bad_run_id in bad_run_ids:
+        with pytest.raises(ValueError):
+            history_record_ref("demo", bad_run_id)
+
+    # Positive: a well-formed record writes successfully.
+    good = build_history_record(
+        automation_id="demo",
+        run_id="1700000000000-deadbeef",
+        triggered_at_ms=1_700_000_000_000,
+        trigger_kind="once_at",
+        outcome="submitted",
+        queue_job_ref="inbox-1700000000000-deadbeef.json",
+        message="ok",
+        payload_template={"goal": "x"},
+    )
+    target = write_history_record(queue_root, good)
+    assert target.parent == history_dir(queue_root)
+    assert target.name == "auto-demo-1700000000000-deadbeef.json"
+
+
+def test_cli_run_due_once_outputs_table_and_emits(tmp_path: Path) -> None:
+    """The minimal ``voxera automation run-due-once`` entrypoint works end-to-end."""
+    from typer.testing import CliRunner
+
+    from voxera.cli import app
+
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_once_at(id="cli-auto", trigger_config={"run_at_ms": 1_700_000_000_000}),
+        queue_root,
+        touch_updated=False,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["automation", "run-due-once", "--queue-dir", str(queue_root)],
+        color=False,
+    )
+    assert result.exit_code == 0
+    assert "cli-auto" in result.stdout
+    assert "submitted" in result.stdout
+    assert len(_inbox_files(queue_root)) == 1
+
+
+def test_cli_run_due_once_with_missing_id_exits_nonzero(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from voxera.cli import app
+
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "automation",
+            "run-due-once",
+            "--queue-dir",
+            str(queue_root),
+            "--id",
+            "does-not-exist",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 1
+    assert "automation not found" in result.stdout.lower()
+
+
+def test_run_id_format_matches_automation_id_pattern() -> None:
+    """Runner run_ids must pass the same id validation used for filenames."""
+    from voxera.automation import AUTOMATION_ID_PATTERN, generate_run_id
+
+    run_id = generate_run_id("demo-automation", now_ms=1_700_000_000_000)
+    assert AUTOMATION_ID_PATTERN.match(run_id) is not None
+    # Two different automation ids at the same ms still differ in the digest.
+    other = generate_run_id("other-automation", now_ms=1_700_000_000_000)
+    assert run_id != other
+    assert AUTOMATION_ID_PATTERN.match(other) is not None

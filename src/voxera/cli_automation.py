@@ -10,7 +10,7 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
-from .automation.runner import run_automation_once, run_due_automations
+from .automation.runner import AutomationRunResult, run_automation_once, run_due_automations
 from .automation.store import AutomationNotFoundError, AutomationStoreError
 from .cli_common import console, queue_dir_path
 from .paths import queue_root_display
@@ -23,7 +23,7 @@ automation_app = typer.Typer(
 )
 
 
-def _render_results_table(results: list) -> None:
+def _render_results_table(results: list[AutomationRunResult]) -> None:
     table = Table(title="Automation Runner Results")
     table.add_column("Automation ID")
     table.add_column("Trigger")
