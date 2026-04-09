@@ -169,8 +169,9 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 ### Voice foundation
 - `test_voice_foundation.py`
 
-### Automation object model (definition-layer foundation)
-- `test_automation_object_model.py` — covers the Pydantic model in `src/voxera/automation/models.py` and the file-backed store in `src/voxera/automation/store.py`. No runner, daemon, or queue submission is exercised — PR1 is the definition layer only.
+### Automation object model and runner (definition layer + PR2 runner)
+- `test_automation_object_model.py` — covers the Pydantic model in `src/voxera/automation/models.py` and the file-backed store in `src/voxera/automation/store.py`.
+- `test_automation_runner.py` — covers the PR2 runner surface in `src/voxera/automation/runner.py` and the history records in `src/voxera/automation/history.py`: due `once_at` and `delay` definitions emit one normal canonical queue job each via the existing inbox path; non-due / disabled / malformed / unsupported-trigger-kind definitions are skipped; history records carry queue job linkage; updated definition fields (`last_run_at_ms`, `last_job_ref`, `run_history_refs`, `enabled`, `next_run_at_ms`) are saved; one-shot semantics prevent double-submit on repeated runner passes; emitted payload matches the saved `payload_template`.
 
 ### Misc
 - `test_inbox.py`
@@ -237,6 +238,7 @@ The "sync, test, validate" method used for meaningful PRs (see `Testing-Method.t
 | Config / runtime / secrets | `test_config_settings.py`, `test_dev_contract_config_integration.py`, `test_secrets.py`, `test_setup_wizard.py` |
 | Ops / incident bundle | `test_ops_bundle.py`, `test_ops_bundle_includes_config_snapshot.py`, `test_diagnostics_pack.py` |
 | Automation object model / storage | `test_automation_object_model.py` |
+| Automation runner / history (PR2) | `test_automation_runner.py` |
 | Docs consistency | `test_docs_consistency.py` |
 
 ## E2E scripts

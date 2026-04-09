@@ -31,16 +31,16 @@ recovery/               startup recovery quarantine
 quarantine/             reconcile quarantine
 _archive/               optional archive space
 artifacts/<job>/        per-job runtime outputs
-automations/            durable automation definition storage (PR1 foundation)
+automations/            durable automation definition storage + PR2 runner history
   definitions/          one JSON file per AutomationDefinition, id-based filename
-  history/              reserved for a future runner; not written in PR1
+  history/              one JSON file per PR2 runner run event
 .daemon.lock            single-writer lock
 health.json             queue health snapshot
 ```
 
 The daemon (`MissionQueueDaemon` in `core/queue_daemon.py`) holds the lock, drains `inbox/`, advances lifecycle states, writes artifacts and sidecars, and finalizes placement into a terminal bucket.
 
-The `automations/` subtree is **owned by the automation object model layer** (`src/voxera/automation/`), not by the daemon. It stores durable definitions that describe *deferred or triggered queue submission*. A definition is not a second execution path — if a future runner ever acts on a saved definition, it must do so by emitting a normal canonical queue job into `inbox/`. The queue remains the execution boundary. PR1 contains only the model and storage helpers; no runner, scheduler, or submitter behavior exists yet.
+The `automations/` subtree is **owned by the automation object model layer** (`src/voxera/automation/`), not by the daemon. It stores durable definitions that describe *deferred or triggered queue submission*. A definition is not a second execution path — when the PR2 runner (`src/voxera/automation/runner.py`) acts on a saved definition, it does so by emitting a normal canonical queue job into `inbox/` via `core/inbox.add_inbox_payload` on the `automation_runner` source lane. The queue remains the execution boundary. PR2 only actively runs the `once_at` and `delay` trigger kinds; `recurring_interval`, `recurring_cron`, and `watch_path` definitions are persisted but explicitly skipped by the runner and recorded as `skipped` history rows so the divergence between "saved" and "acted on" is auditable. Each runner submit writes a single JSON history record under `automations/history/auto-<automation_id>-<run_id>.json` with the linked queue job ref, and updates the definition with `last_run_at_ms`, `last_job_ref`, an appended `run_history_refs` entry, and `enabled=False` (one-shot semantics).
 
 ## Canonical payload schema
 

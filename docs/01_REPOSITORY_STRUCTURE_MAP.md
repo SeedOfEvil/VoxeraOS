@@ -101,11 +101,13 @@ Canonical composition of queue daemon, mission runtime, planner, and queue contr
 - `router.py` — minimal router shim.
 - `artifacts.py` — artifact helpers.
 
-**Automation object model (`src/voxera/automation/`)**
-Durable automation definition layer. This is a *definition* surface only: it
-does not run anything, does not execute skills, and does not submit queue
-jobs. A future runner may emit normal queue jobs from these saved definitions;
-until then, automation definitions are inert governed records.
+**Automation object model and runner (`src/voxera/automation/`)**
+Durable automation definition layer plus a minimal PR2 runner. The runner
+is scoped: it only fires ``once_at`` and ``delay`` triggers, it never
+executes skills directly, and it submits work through the same canonical
+inbox path the CLI/panel/Vera use so the queue remains the execution
+boundary. Unsupported trigger kinds (``recurring_interval``,
+``recurring_cron``, ``watch_path``) are explicitly skipped.
 - `models.py` — `AutomationDefinition` Pydantic model, supported trigger kinds
   (`once_at`, `delay`, `recurring_interval`, `recurring_cron`, `watch_path`),
   per-kind trigger-config validation, canonical `payload_template` gating via
@@ -115,7 +117,20 @@ until then, automation definitions are inert governed records.
   `load_automation_definition`, `list_automation_definitions`,
   `delete_automation_definition`) rooted under
   `~/VoxeraOS/notes/queue/automations/definitions/` with a sibling
-  `history/` directory reserved for future runner use.
+  `history/` directory that the PR2 runner writes run records into.
+- `runner.py` — minimal runner surface
+  (`evaluate_due_automation`, `process_automation_definition`,
+  `run_automation_once`, `run_due_automations`). Emits normal canonical
+  queue payloads via `core/inbox.add_inbox_payload` using the
+  `automation_runner` source lane. One-shot semantics: a fired ``once_at``
+  or ``delay`` definition is saved back with `enabled=False`,
+  `last_run_at_ms`, `last_job_ref`, and an appended `run_history_refs`
+  entry, so repeated runner passes cannot double-submit.
+- `history.py` — durable run-history records
+  (`build_history_record`, `write_history_record`, `generate_run_id`,
+  `history_record_ref`). One JSON file per run event under
+  `~/VoxeraOS/notes/queue/automations/history/`, atomically written via
+  a `.tmp` sidecar and `Path.replace`.
 
 **Skills subsystem (`src/voxera/skills/`)**
 - `registry.py` — `SkillRegistry`, `SkillDiscoveryReport`, manifest validation.
@@ -246,5 +261,6 @@ See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for the themed breakdown. At a 
 | Panel route families | `src/voxera/panel/routes_*.py` |
 | CLI new subcommand | the appropriate `src/voxera/cli_*.py`, wired from `cli.py` |
 | Automation definition model / storage | `src/voxera/automation/models.py`, `src/voxera/automation/store.py` |
+| Automation runner (PR2: once_at / delay) | `src/voxera/automation/runner.py`, `src/voxera/automation/history.py`, `src/voxera/cli_automation.py` |
 | Systemd units | `deploy/systemd/user/` |
 | CLI help baselines | `tests/golden/` via `tools/golden_surfaces.py` |
