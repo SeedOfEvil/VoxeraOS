@@ -176,5 +176,6 @@ From the README and the curated catalog under `src/voxera/data/openrouter_catalo
 - `voxera doctor --self-test` — fuller self test.
 - `voxera ops capabilities` — prints the deterministic capabilities snapshot (`core/capabilities_snapshot.py`).
 - `voxera ops bundle system` / `voxera ops bundle job <ref>` — incident bundles, archived by default under the data dir.
+- `voxera automation run-due-once` — minimal PR2 runner entrypoint. Evaluates saved automation definitions under `<queue_root>/automations/definitions/` and emits a normal canonical queue payload via the existing inbox path for every *enabled*, *supported* (`once_at` / `delay`), due, not-yet-fired definition. One-shot semantics: a fired definition is saved back with `enabled=false` so repeated runs cannot double-submit. `--id <automation_id>` restricts the evaluation to a single definition. This is operator-oriented; there is no daemon or watch loop in PR2.
 
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.

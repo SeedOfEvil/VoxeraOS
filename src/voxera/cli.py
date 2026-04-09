@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from . import audit as _audit
+from .cli_automation import automation_app
 from .cli_common import (
     DEMO_QUEUE_DIR_OPTION,
     OPS_BUNDLE_ARCHIVE_DIR_OPTION,
@@ -117,6 +118,7 @@ app.add_typer(queue_app, name="queue")
 app.add_typer(ops_app, name="ops")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(secrets_app, name="secrets")
+app.add_typer(automation_app, name="automation")
 ops_app.add_typer(ops_bundle_app, name="bundle")
 
 
