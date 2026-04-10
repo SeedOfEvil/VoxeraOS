@@ -241,7 +241,7 @@ Recent refactors intentionally reduced the amount of Vera, queue, and panel beha
 
 - **Panel composition**
   - `src/voxera/panel/app.py` — FastAPI wiring root, shared auth/security helpers, health/job view helpers, and route registration
-  - `src/voxera/panel/routes_*.py` — route-family ownership split across home, jobs, queue control, missions, hygiene, recovery, bundle, and assistant surfaces
+  - `src/voxera/panel/routes_*.py` — route-family ownership split across home, jobs, queue control, missions, hygiene, recovery, bundle, assistant, and automations surfaces
   - `src/voxera/panel/assistant.py` — assistant-thread persistence helpers used by the operator advisory lane
 
 - **Config and path layers**

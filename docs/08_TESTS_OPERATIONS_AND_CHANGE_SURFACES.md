@@ -106,6 +106,7 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 
 ### Panel + panel contract snapshot
 - `test_panel.py`
+- `test_panel_automations.py` — automation dashboard routes: list page, detail page, enable/disable, run-now (queue-submitting only), history display, missing/malformed handling, auth/mutation guard.
 - `test_panel_contract_snapshot.py`
 - `test_operator_assistant_queue.py`
 - `test_operator_contract_guardrails.py`
@@ -230,7 +231,7 @@ The "sync, test, validate" method used for meaningful PRs (see `Testing-Method.t
 | Skill registry / manifest | `test_registry.py`, `test_skill_metadata_and_runners.py`, `test_skill_result_payloads.py` |
 | Path boundaries | `test_files_control_plane_boundaries.py`, `test_file_intent.py`, `test_security_redteam.py` |
 | Policy / mutation gate | `test_policy.py`, `test_direct_mutation_gate.py`, `test_execution_evaluator.py`, `test_capability_semantics.py` |
-| Panel routes | `test_panel.py`, `test_panel_contract_snapshot.py` |
+| Panel routes | `test_panel.py`, `test_panel_automations.py`, `test_panel_contract_snapshot.py` |
 | Vera reply surface | `test_vera_chat_reliability.py`, `test_vera_contextual_flows.py`, `test_vera_runtime_validation_fixes.py` |
 | Vera preview / submit | `test_vera_preview_materialization.py`, `test_vera_preview_submission.py`, `test_vera_draft_revision.py`, `test_draft_content_binding.py` |
 | Vera review / linked completions | `test_evidence_review.py`, `test_linked_job_review_continuation.py`, `test_result_surfacing.py` |

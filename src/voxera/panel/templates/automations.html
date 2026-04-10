@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Voxera Panel &middot; Automations</title>
+  <link rel="stylesheet" href="/static/panel.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <div>
+        <h1 class="title">Automations</h1>
+        <p class="subtitle">Saved automation definitions &mdash; inspect, enable/disable, run now.</p>
+      </div>
+      <a class="btn" href="/">&larr; Back to Panel</a>
+    </header>
+
+    {% if auth_setup_banner %}
+      <div class="alert alert-info">
+        <div>
+          <b>{{auth_setup_banner.title}}</b><br/>
+          {{auth_setup_banner.detail}}<br/>
+          <span class="mono">{{auth_setup_banner.path_hint}}</span>
+          <pre style="margin-top:6px;">{{auth_setup_banner.commands}}</pre>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if flash %}
+      <div class="alert alert-success">{{flash}}</div>
+    {% endif %}
+
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Title</th>
+            <th>Enabled</th>
+            <th>Trigger Kind</th>
+            <th>Next Run</th>
+            <th>Last Run</th>
+            <th>Last Job Ref</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows|length == 0 %}
+            <tr><td colspan="8"><div class="empty-state">No automation definitions found.</div></td></tr>
+          {% else %}
+            {% for row in rows %}
+              <tr>
+                <td><a href="/automations/{{row.id}}" class="mono text-sm">{{row.id}}</a></td>
+                <td>{{row.title}}</td>
+                <td>
+                  <span class="badge {% if row.enabled %}badge-done{% else %}badge-failed{% endif %}">
+                    {{row.enabled}}
+                  </span>
+                </td>
+                <td class="mono text-sm">{{row.trigger_kind}}</td>
+                <td class="text-sm">{{row.next_run_at}}</td>
+                <td class="text-sm">{{row.last_run_at}}</td>
+                <td class="mono text-sm">{{row.last_job_ref}}</td>
+                <td>
+                  <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                    <a class="btn btn-sm" href="/automations/{{row.id}}">Detail</a>
+                    {% if row.enabled %}
+                      <form method="post" action="/automations/{{row.id}}/disable" style="margin:0;">
+                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                        <button class="btn btn-sm" type="submit">Disable</button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="/automations/{{row.id}}/enable" style="margin:0;">
+                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                        <button class="btn btn-sm" type="submit">Enable</button>
+                      </form>
+                    {% endif %}
+                    <form method="post" action="/automations/{{row.id}}/run-now" style="margin:0;">
+                      <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                      <button class="btn btn-sm btn-primary" type="submit">Run Now</button>
+                    </form>
+                    <form method="post" action="/automations/{{row.id}}/delete" style="margin:0;"
+                          onsubmit="return confirm('Delete automation {{row.id}}?');">
+                      <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                      <button class="btn btn-sm" type="submit" style="color:var(--color-danger,#c00);">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

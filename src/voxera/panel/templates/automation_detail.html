@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Voxera Panel &middot; Automation: {{detail.id}}</title>
+  <link rel="stylesheet" href="/static/panel.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <div>
+        <h1 class="title">Automation: {{detail.id}}</h1>
+        <p class="subtitle">{{detail.title}}</p>
+      </div>
+      <a class="btn" href="/automations">&larr; Back to Automations</a>
+    </header>
+
+    {% if auth_setup_banner %}
+      <div class="alert alert-info">
+        <div>
+          <b>{{auth_setup_banner.title}}</b><br/>
+          {{auth_setup_banner.detail}}<br/>
+          <span class="mono">{{auth_setup_banner.path_hint}}</span>
+          <pre style="margin-top:6px;">{{auth_setup_banner.commands}}</pre>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if flash %}
+      <div class="alert alert-success">{{flash}}</div>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="card mb" style="padding:var(--space-3) var(--space-4); display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      {% if detail.enabled %}
+        <form method="post" action="/automations/{{detail.id}}/disable" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <button class="btn" type="submit">Disable</button>
+        </form>
+      {% else %}
+        <form method="post" action="/automations/{{detail.id}}/enable" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <button class="btn" type="submit">Enable</button>
+        </form>
+      {% endif %}
+      <form method="post" action="/automations/{{detail.id}}/run-now" style="margin:0;">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <button class="btn btn-primary" type="submit">Run Now</button>
+      </form>
+      <span style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+        Status:
+        <span class="badge {% if detail.enabled %}badge-done{% else %}badge-failed{% endif %}">
+          {% if detail.enabled %}enabled{% else %}disabled{% endif %}
+        </span>
+        <form method="post" action="/automations/{{detail.id}}/delete" style="margin:0;"
+              onsubmit="return confirm('Delete automation {{detail.id}}? History records will be preserved.');">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <button class="btn btn-sm" type="submit" style="color:var(--color-danger,#c00);">Delete</button>
+        </form>
+      </span>
+    </div>
+
+    <!-- Definition details -->
+    <div class="card mb">
+      <table>
+        <tbody>
+          <tr><th style="width:180px;">ID</th><td class="mono">{{detail.id}}</td></tr>
+          <tr><th>Title</th><td>{{detail.title}}</td></tr>
+          {% if detail.description %}
+            <tr><th>Description</th><td>{{detail.description}}</td></tr>
+          {% endif %}
+          <tr><th>Enabled</th><td>{{detail.enabled}}</td></tr>
+          <tr><th>Trigger Kind</th><td class="mono">{{detail.trigger_kind}}</td></tr>
+          <tr><th>Trigger Config</th><td><pre class="mono text-sm" style="margin:0;">{{detail.trigger_config_json}}</pre></td></tr>
+          <tr><th>Payload Template</th><td><pre class="mono text-sm" style="margin:0;">{{detail.payload_template_json}}</pre></td></tr>
+          <tr><th>Created At</th><td>{{detail.created_at}}</td></tr>
+          <tr><th>Updated At</th><td>{{detail.updated_at}}</td></tr>
+          <tr><th>Next Run At</th><td>{{detail.next_run_at}}</td></tr>
+          <tr><th>Last Run At</th><td>{{detail.last_run_at}}</td></tr>
+          <tr><th>Last Job Ref</th><td class="mono">{{detail.last_job_ref}}</td></tr>
+          <tr><th>Policy Posture</th><td>{{detail.policy_posture}}</td></tr>
+          <tr><th>Created From</th><td>{{detail.created_from}}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Run history -->
+    <h2>Run History</h2>
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Run ID</th>
+            <th>Triggered At</th>
+            <th>Outcome</th>
+            <th>Queue Job Ref</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if history|length == 0 %}
+            <tr><td colspan="5"><div class="empty-state">No run history records.</div></td></tr>
+          {% else %}
+            {% for rec in history %}
+              <tr>
+                <td class="mono text-sm">{{rec.run_id}}</td>
+                <td class="text-sm">{{rec.triggered_at}}</td>
+                <td>
+                  <span class="badge
+                    {% if rec.outcome == 'submitted' %}badge-done
+                    {% elif rec.outcome == 'error' %}badge-failed
+                    {% else %}badge-pending{% endif %}">
+                    {{rec.outcome}}
+                  </span>
+                </td>
+                <td class="mono text-sm">{{rec.queue_job_ref}}</td>
+                <td class="text-sm">{{rec.message}}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

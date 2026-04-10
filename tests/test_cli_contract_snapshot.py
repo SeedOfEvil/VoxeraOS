@@ -37,6 +37,7 @@ def test_cli_public_command_surface_snapshot():
     assert sorted(root.commands["ops"].commands.keys()) == ["bundle", "capabilities"]
     assert sorted(root.commands["secrets"].commands.keys()) == ["get", "set", "unset"]
     assert sorted(root.commands["automation"].commands.keys()) == [
+        "delete",
         "disable",
         "enable",
         "history",
