@@ -35,7 +35,8 @@ def test_core_operational_commands_are_documented():
 def test_vera_service_contract_is_present():
     makefile = Path("Makefile").read_text(encoding="utf-8")
     assert (
-        "VOXERA_UNITS := voxera-daemon.service voxera-panel.service voxera-vera.service" in makefile
+        "VOXERA_UNITS := voxera-daemon.service voxera-panel.service voxera-vera.service voxera-automation.service voxera-automation.timer"
+        in makefile
     )
     for target in (
         "vera:",

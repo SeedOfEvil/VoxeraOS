@@ -32,6 +32,12 @@ from .history import (
     list_history_records,
     write_history_record,
 )
+from .lock import (
+    RUNNER_LOCK_FILENAME,
+    RunnerLockResult,
+    acquire_runner_lock,
+    release_runner_lock,
+)
 from .models import (
     AUTOMATION_CANONICAL_REQUEST_FIELDS,
     AUTOMATION_CREATED_FROM_VALUES,
@@ -49,10 +55,12 @@ from .runner import (
     ONE_SHOT_TRIGGER_KINDS,
     SUPPORTED_TRIGGER_KINDS,
     AutomationRunResult,
+    RunnerPassResult,
     evaluate_due_automation,
     process_automation_definition,
     run_automation_once,
     run_due_automations,
+    run_due_automations_locked,
 )
 from .store import (
     AUTOMATIONS_DIRNAME,
@@ -84,6 +92,7 @@ __all__ = [
     "DEFINITIONS_DIRNAME",
     "HISTORY_DIRNAME",
     "ONE_SHOT_TRIGGER_KINDS",
+    "RUNNER_LOCK_FILENAME",
     "SUPPORTED_TRIGGER_KINDS",
     "WATCH_PATH_ALLOWED_EVENTS",
     "AutomationCreatedFrom",
@@ -94,6 +103,9 @@ __all__ = [
     "AutomationRunResult",
     "AutomationStoreError",
     "AutomationTriggerKind",
+    "RunnerLockResult",
+    "RunnerPassResult",
+    "acquire_runner_lock",
     "automations_root",
     "build_history_record",
     "definition_path",
@@ -108,8 +120,10 @@ __all__ = [
     "list_history_records",
     "load_automation_definition",
     "process_automation_definition",
+    "release_runner_lock",
     "run_automation_once",
     "run_due_automations",
+    "run_due_automations_locked",
     "save_automation_definition",
     "write_history_record",
 ]

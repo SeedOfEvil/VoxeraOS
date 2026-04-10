@@ -322,9 +322,37 @@ voxera automation enable <id>                            # set enabled=true and 
 voxera automation disable <id>                           # set enabled=false and persist
 voxera automation history <id>                           # show run history records for a definition
 voxera automation run-now <id>                           # force immediate run, bypassing due-time check (queue-submitting only)
-voxera automation run-due-once                          # drain due once_at/delay/recurring_interval automations into inbox
-voxera automation run-due-once --id <automation_id>     # same, restricted to a single definition
+voxera automation run-due-once                          # drain due once_at/delay/recurring_interval automations into inbox (locked)
+voxera automation run-due-once --id <automation_id>     # same, restricted to a single definition (no lock)
 ```
+
+### Automation timer/service
+
+The `voxera-automation.timer` systemd unit invokes `voxera automation run-due-once` every minute. The runner acquires a single-writer lock (`<queue_root>/automations/.runner.lock`) before evaluating definitions. If the lock is already held (e.g. by a concurrent manual invocation), the runner exits cleanly with a `BUSY` message — no definitions are loaded and no queue jobs are submitted.
+
+The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory), so it is directly valid without the `make services-install` sed render step. You can install it manually or via `make services-install`:
+
+```bash
+# install via make (copies + enables all units including the automation timer)
+make services-install
+
+# or install manually
+cp deploy/systemd/user/voxera-automation.service ~/.config/systemd/user/
+cp deploy/systemd/user/voxera-automation.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now voxera-automation.timer
+
+# check timer status
+systemctl --user status voxera-automation.timer
+
+# check most recent one-shot run
+systemctl --user status voxera-automation.service
+
+# view automation runner logs
+journalctl --user -u voxera-automation.service --no-pager -n 20
+```
+
+The timer uses `Persistent=true`, so missed ticks after a sleep or reboot are caught up on the next wake. `recurring_cron` and `watch_path` trigger kinds remain deferred — the runner skips them with an explicit `skipped` status.
 
 `voxera queue files ...` commands are queue-producing helpers, not direct execution:
 - they enqueue one-step governed jobs into `inbox/`,

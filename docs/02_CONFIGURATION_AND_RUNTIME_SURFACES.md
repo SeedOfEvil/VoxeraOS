@@ -72,8 +72,10 @@ From `src/voxera/core/queue_daemon.py` and the queue modules under `core/`:
 ├── quarantine/            reconcile quarantine
 ├── _archive/              optional archive space
 ├── artifacts/             per-job runtime artifacts (plan.json, step_results.json, ...)
-├── .daemon.lock           single-writer lock
-└── health.json            queue health snapshot
+├── .daemon.lock           queue daemon single-writer lock
+├── health.json            queue health snapshot
+└── automations/
+    └── .runner.lock       automation runner single-writer lock
 ```
 
 Each job lives as `<bucket>/<job>.json` with an adjacent `<job>.state.json` lifecycle sidecar (managed by `queue_state.py`). Per-job runtime outputs live under `artifacts/<job>/`.
@@ -98,10 +100,19 @@ Canonical units live under `deploy/systemd/user/`:
   ```
   ExecStart=@VOXERA_PROJECT_DIR@/.venv/bin/python -m uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790
   ```
+- `voxera-automation.service` (one-shot, directly valid — uses `%h/VoxeraOS`)
+  ```
+  ExecStart=%h/VoxeraOS/.venv/bin/voxera automation run-due-once
+  ```
+- `voxera-automation.timer`
+  ```
+  OnCalendar=minutely
+  Persistent=true
+  ```
 
-All three declare `Restart=on-failure`, a 2-second restart backoff, and `WantedBy=default.target`. The daemon unit additionally caps `TimeoutStopSec=10` so graceful SIGTERM shutdown has room to write its shutdown sidecar.
+The three long-running services declare `Restart=on-failure`, a 2-second restart backoff, and `WantedBy=default.target`. The daemon unit additionally caps `TimeoutStopSec=10` so graceful SIGTERM shutdown has room to write its shutdown sidecar. The automation service is `Type=oneshot` — it evaluates due definitions once per timer tick and exits. The timer fires every minute with `Persistent=true` so missed ticks after a sleep/reboot are caught up on the next wake.
 
-`make services-install` rewrites `@VOXERA_PROJECT_DIR@` to the absolute project path, copies the units into `$HOME/.config/systemd/user/`, runs `daemon-reload`, and enables + starts them with `systemctl --user`.
+`make services-install` rewrites `@VOXERA_PROJECT_DIR@` to the absolute project path, copies the units into `$HOME/.config/systemd/user/`, runs `daemon-reload`, and enables + starts them with `systemctl --user`. The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory) so it loads without the sed render step; `make services-install` still copies and enables it alongside the other units.
 
 The top-level `systemd/` folder still carries `voxera-core.service` and `voxera-panel.service` as legacy references (they use `%h/VoxeraOS` directly). The supported path is `deploy/systemd/user/`.
 
@@ -183,6 +194,6 @@ From the README and the curated catalog under `src/voxera/data/openrouter_catalo
 - `voxera automation delete <id>` — delete the saved definition file only. History records under `automations/history/` are preserved as audit trail.
 - `voxera automation history <id>` — show run history records for a definition, newest first. Uses the existing history file naming/linkage.
 - `voxera automation run-now <id>` — force an immediate run of a single definition through the existing runner, bypassing the due-time check. Disabled definitions and unsupported trigger kinds are still rejected. Submits through the canonical inbox path — the queue remains the execution boundary.
-- `voxera automation run-due-once` — automation runner entrypoint. Evaluates saved automation definitions under `<queue_root>/automations/definitions/` and emits a normal canonical queue payload via the existing inbox path for every *enabled*, *supported* (`once_at`, `delay`, `recurring_interval`), due definition. One-shot triggers (`once_at`, `delay`) disable the definition after firing. Recurring triggers (`recurring_interval`) stay enabled and re-arm `next_run_at_ms` for the next interval. `--id <automation_id>` restricts the evaluation to a single definition. `recurring_cron` and `watch_path` are persisted but skipped by the runner.
+- `voxera automation run-due-once` — automation runner entrypoint. Acquires the automation runner single-writer lock (`<queue_root>/automations/.runner.lock`) before evaluating definitions; if the lock is already held the command exits cleanly with a `BUSY` message and exit code 0. Evaluates saved automation definitions under `<queue_root>/automations/definitions/` and emits a normal canonical queue payload via the existing inbox path for every *enabled*, *supported* (`once_at`, `delay`, `recurring_interval`), due definition. One-shot triggers (`once_at`, `delay`) disable the definition after firing. Recurring triggers (`recurring_interval`) stay enabled and re-arm `next_run_at_ms` for the next interval. `--id <automation_id>` restricts the evaluation to a single definition (without lock). `recurring_cron` and `watch_path` are persisted but skipped by the runner. The `voxera-automation.timer` systemd unit invokes this command every minute.
 
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.

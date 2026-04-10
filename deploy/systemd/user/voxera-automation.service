@@ -1,0 +1,11 @@
+[Unit]
+Description=Voxera Automation Runner (one-shot evaluation)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/VoxeraOS
+ExecStart=%h/VoxeraOS/.venv/bin/voxera automation run-due-once
+
+[Install]
+WantedBy=default.target

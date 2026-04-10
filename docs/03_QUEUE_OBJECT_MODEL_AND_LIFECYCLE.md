@@ -31,10 +31,11 @@ recovery/               startup recovery quarantine
 quarantine/             reconcile quarantine
 _archive/               optional archive space
 artifacts/<job>/        per-job runtime outputs
-automations/            durable automation definition storage + PR2 runner history
+automations/            durable automation definition storage + runner history
   definitions/          one JSON file per AutomationDefinition, id-based filename
-  history/              one JSON file per PR2 runner run event
-.daemon.lock            single-writer lock
+  history/              one JSON file per runner run event
+  .runner.lock          automation runner single-writer lock (distinct from .daemon.lock)
+.daemon.lock            queue daemon single-writer lock
 health.json             queue health snapshot
 ```
 

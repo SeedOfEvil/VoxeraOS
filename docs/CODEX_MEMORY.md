@@ -1,3 +1,18 @@
+## 2026-04-10 — fix(automation): harden runner execution with single-writer lock and periodic systemd scheduling (PR8)
+
+- **Motivation**: saved delay/recurring automations only fire if something explicitly invokes `voxera automation run-due-once`. Without a lock, concurrent invocations can race and double-submit queue jobs or corrupt definition state. This PR closes both operational gaps.
+- **Architectural rule preserved**: automation remains *deferred queue submission*, not alternate execution. The periodic systemd timer invokes the existing automation runner; the runner submits queue jobs via the existing inbox path. The queue remains the execution boundary. No second execution path is introduced.
+- **New module** (`src/voxera/automation/lock.py`): single-writer POSIX advisory lock using `fcntl.flock(LOCK_EX | LOCK_NB)`. Lockfile at `<queue_root>/automations/.runner.lock`, distinct from the queue daemon lock (`.daemon.lock`). Non-blocking: if the lock is already held, the caller gets an immediate `busy` status, not a hang.
+- **Runner changes** (`src/voxera/automation/runner.py`): added `RunnerPassResult` dataclass and `run_due_automations_locked()` wrapper that acquires the runner lock before evaluation. Returns `status="busy"` with empty results if the lock is held, `status="ok"` with a summary message otherwise.
+- **CLI changes** (`src/voxera/cli_automation.py`): `run-due-once` (without `--id`) now uses the locked wrapper. If busy, prints a `BUSY` message and exits cleanly (code 0) so the systemd timer does not treat a concurrent-skip as a failure. Single-id mode (`--id`) remains unlocked.
+- **Systemd units** (`deploy/systemd/user/`):
+  - `voxera-automation.service` — `Type=oneshot`, runs `voxera automation run-due-once`. Uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory) so the unit is directly valid without the `make services-install` sed render step. The other three services still use `@VOXERA_PROJECT_DIR@` placeholder substitution.
+  - `voxera-automation.timer` — `OnCalendar=minutely`, `Persistent=true`, `WantedBy=timers.target`.
+- **Makefile**: `VOXERA_UNITS` updated to include `voxera-automation.service` and `voxera-automation.timer`.
+- **Tests** (`tests/test_automation_lock.py`): lock acquisition succeeds, second concurrent attempt returns busy, release allows reacquisition, locked runner returns busy when held, locked runner submits normally when available, summary message reflects outcomes, empty queue returns ok, systemd unit files exist with correct shape/cadence.
+- **Docs updated**: `01_REPOSITORY_STRUCTURE_MAP.md`, `02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `03_QUEUE_OBJECT_MODEL_AND_LIFECYCLE.md`, `docs/ops.md` — lock semantics, systemd timer/service, queue directory layout.
+- **Non-goals for PR8**: no `recurring_cron` runtime, no `watch_path` runtime, no new panel/Vera features, no Vera automation parsing rewrite, no automation scheduling folded into the queue daemon.
+
 ## 2026-04-10 — feat(vera): add conversational lifecycle management for saved automation definitions (PR7)
 
 - **Motivation**: PR6 shipped Vera automation preview drafting and submit. The next smallest useful step is letting Vera inspect and manage already-saved automation definitions conversationally — "show me that automation", "disable it", "did it run?" — so operators can manage their automations through the same chat interface they use for everything else, without switching to the CLI or panel.

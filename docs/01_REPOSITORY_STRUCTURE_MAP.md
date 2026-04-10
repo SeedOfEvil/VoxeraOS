@@ -19,7 +19,7 @@ VoxeraOS/
 ├── config-templates/        Example config.yml and policy.yml
 ├── deploy/
 │   └── systemd/
-│       └── user/            voxera-daemon.service, voxera-panel.service, voxera-vera.service
+│       └── user/            voxera-daemon.service, voxera-panel.service, voxera-vera.service, voxera-automation.service, voxera-automation.timer
 ├── docs/                    Architecture, ops, security, this index bundle
 ├── missions/                File-based mission templates (JSON/YAML)
 ├── mypy.ini                 mypy config
@@ -118,11 +118,16 @@ the execution boundary. Unsupported trigger kinds (``recurring_cron``,
   `delete_automation_definition`) rooted under
   `~/VoxeraOS/notes/queue/automations/definitions/` with a sibling
   `history/` directory that the runner writes run records into.
+- `lock.py` — single-writer POSIX advisory lock for the automation runner
+  (`acquire_runner_lock`, `release_runner_lock`). Lockfile at
+  `<queue_root>/automations/.runner.lock`, distinct from the queue daemon lock.
 - `runner.py` — minimal runner surface
   (`evaluate_due_automation`, `process_automation_definition`,
-  `run_automation_once`, `run_due_automations`). Emits normal canonical
+  `run_automation_once`, `run_due_automations`, `run_due_automations_locked`). Emits normal canonical
   queue payloads via `core/inbox.add_inbox_payload` using the
-  `automation_runner` source lane. One-shot semantics: a fired ``once_at``
+  `automation_runner` source lane. `run_due_automations_locked` acquires
+  the runner lock before evaluation; returns `busy` immediately if held.
+  One-shot semantics: a fired ``once_at``
   or ``delay`` definition is saved back with `enabled=False`,
   `last_run_at_ms`, `last_job_ref`, and an appended `run_history_refs`
   entry, so repeated runner passes cannot double-submit. Recurring
@@ -216,11 +221,13 @@ File-based missions are merged with in-code `MISSION_TEMPLATES`. In-code templat
 
 ## `deploy/systemd/user/` — user services
 
-All three units under `deploy/systemd/user/` use a token `@VOXERA_PROJECT_DIR@` that `make services-install` rewrites to the absolute project directory:
+The daemon, panel, and Vera units use a token `@VOXERA_PROJECT_DIR@` that `make services-install` rewrites to the absolute project directory. The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory) so it is directly valid without the sed render step:
 
 - `voxera-daemon.service` — `voxera daemon` (queue + missions).
 - `voxera-panel.service` — `voxera panel --host 127.0.0.1 --port 8844`.
 - `voxera-vera.service` — `python -m uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`.
+- `voxera-automation.service` — `voxera automation run-due-once` (one-shot, `%h/VoxeraOS`).
+- `voxera-automation.timer` — fires `voxera-automation.service` every minute (`OnCalendar=minutely`, `Persistent=true`).
 
 The top-level `systemd/` directory still carries `voxera-core.service` and `voxera-panel.service` as legacy references. `services-install` uses the `deploy/` path.
 
@@ -267,7 +274,7 @@ See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for the themed breakdown. At a 
 | Panel route families | `src/voxera/panel/routes_*.py` |
 | CLI new subcommand | the appropriate `src/voxera/cli_*.py`, wired from `cli.py` |
 | Automation definition model / storage | `src/voxera/automation/models.py`, `src/voxera/automation/store.py` |
-| Automation runner (once_at / delay / recurring_interval) | `src/voxera/automation/runner.py`, `src/voxera/automation/history.py` |
+| Automation runner (once_at / delay / recurring_interval) | `src/voxera/automation/runner.py`, `src/voxera/automation/history.py`, `src/voxera/automation/lock.py` |
 | Automation operator CLI (list / show / enable / disable / history / run-now) | `src/voxera/cli_automation.py` |
 | Vera automation lifecycle (show / enable / disable / delete / run-now / history) | `src/voxera/vera/automation_lifecycle.py` |
 | Systemd units | `deploy/systemd/user/` |

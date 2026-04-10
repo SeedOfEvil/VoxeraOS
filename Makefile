@@ -4,7 +4,7 @@
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
 SYSTEMD_SRC_DIR := deploy/systemd/user
-VOXERA_UNITS := voxera-daemon.service voxera-panel.service voxera-vera.service
+VOXERA_UNITS := voxera-daemon.service voxera-panel.service voxera-vera.service voxera-automation.service voxera-automation.timer
 VERA_SERVICE := voxera-vera.service
 VERA_HOST ?= 127.0.0.1
 VERA_PORT ?= 8790

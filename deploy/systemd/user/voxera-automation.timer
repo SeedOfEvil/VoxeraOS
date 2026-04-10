@@ -1,0 +1,9 @@
+[Unit]
+Description=Voxera Automation Runner Timer (periodic evaluation)
+
+[Timer]
+OnCalendar=minutely
+Persistent=true
+
+[Install]
+WantedBy=timers.target
