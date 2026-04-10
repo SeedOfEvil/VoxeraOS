@@ -39,6 +39,7 @@ Reviewer/verifier “what happened?” shaping should:
 - Conversation can summarize; it does not establish execution truth.
 - Verifier/reviewer conclusions must ground on queue lifecycle + artifacts/evidence.
 - “Succeeded” requires evidence-backed runtime completion, not planner confidence.
+- For automation-originated jobs, the automation definition and trigger schedule are context, not evidence. Only the queue job's own artifacts and evidence prove what happened.
 
 - For canonical future job lanes, forward-declare deterministic expected artifacts at queue creation/normalization so review can compare declared intent vs observed evidence without guessing.
 

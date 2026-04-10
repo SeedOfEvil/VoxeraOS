@@ -22,6 +22,7 @@ _ROLE_CAPABILITY_DOCS: dict[str, tuple[str, ...]] = {
         "capabilities/handoff-and-submit-rules.md",
         "capabilities/queue-object-model.md",
         "capabilities/web-investigation-rules.md",
+        "capabilities/output-quality-defaults.md",
     ),
     "hidden_compiler": (
         "capabilities/preview-payload-schema.md",
@@ -31,20 +32,26 @@ _ROLE_CAPABILITY_DOCS: dict[str, tuple[str, ...]] = {
         "capabilities/artifacts-and-evidence.md",
         "capabilities/execution-security-model.md",
         "capabilities/hidden-compiler-payload-guidance.md",
+        "capabilities/output-quality-defaults.md",
     ),
     "planner": (
         "capabilities/queue-object-model.md",
         "capabilities/queue-lifecycle.md",
         "capabilities/artifacts-and-evidence.md",
         "capabilities/execution-security-model.md",
+        "capabilities/output-quality-defaults.md",
     ),
     "verifier": (
         "capabilities/queue-object-model.md",
         "capabilities/artifacts-and-evidence.md",
         "capabilities/execution-security-model.md",
         "capabilities/queue-lifecycle.md",
+        "capabilities/output-quality-defaults.md",
     ),
-    "web_investigator": ("capabilities/web-investigation-rules.md",),
+    "web_investigator": (
+        "capabilities/web-investigation-rules.md",
+        "capabilities/output-quality-defaults.md",
+    ),
 }
 
 

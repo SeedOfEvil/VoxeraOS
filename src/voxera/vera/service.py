@@ -138,7 +138,10 @@ _CODE_DRAFT_HINT = (
     "script file. Write the complete, working code directly in your response "
     "inside a properly-fenced code block (e.g. ```python\\n...\\n```). "
     "The fenced block will be automatically extracted and stored as a governed "
-    "preview file for the user to review and submit.]"
+    "preview file for the user to review and submit. "
+    "Produce complete, runnable code with necessary imports and idiomatic style. "
+    "Include error handling for expected failure modes. "
+    "If the user asked for a specific language or framework, follow its conventions.]"
 )
 
 _WRITING_DRAFT_HINT = (
@@ -146,7 +149,11 @@ _WRITING_DRAFT_HINT = (
     "artifact. Write the actual essay/article/writeup/explanation body directly in your "
     "response. Avoid hidden control markup. If you include a short conversational wrapper, "
     "place the full draft body after a blank line so it can be extracted into the governed "
-    "preview file.]"
+    "preview file. "
+    "Honor the requested length and depth — if the user asked for a detailed or long piece, "
+    "produce substantive content, not a skeletal outline. "
+    "Use clear section structure for longer pieces. "
+    "Respect the requested tone (formal, casual, technical, narrative).]"
 )
 
 

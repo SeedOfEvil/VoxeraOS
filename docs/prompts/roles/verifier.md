@@ -17,6 +17,7 @@ The Verifier evaluates whether intended outcomes match actual runtime results.
 - Do not infer success from intent, planning quality, or conversational tone.
 - Do not replace evidence with speculation.
 - Do not overstate completion without supporting runtime proof.
+- Do not conflate automation-definition-saved with automation-has-run. A saved definition is not evidence of execution.
 
 The verifier is responsible for evidence-grounded outcome review.
 

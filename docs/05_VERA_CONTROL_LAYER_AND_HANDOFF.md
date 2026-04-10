@@ -176,3 +176,15 @@ When extending Vera, prefer adding to one of the dedicated modules above rather 
 > Visible preview state is authoritative pre-submit and is the exact source for queued payload serialization; ambiguous preview state fails closed; accepted naming mutations explicitly confirm the new destination path; linked completion surfacing prioritizes the latest linked submit in-session; clear single-turn generate+save requests can bind same-turn authored content without requiring prior artifacts; linked-completion status text and draft-management/explanatory wrapper narration are not eligible default note-body content.
 
 That sentence is the condensed contract. When making changes to Vera, preserve it.
+
+## AI instruction surfaces
+
+Vera's system prompt is composed from structured markdown documents under `docs/prompts/`. The composition engine (`src/voxera/prompts.py`) assembles shared system docs, role-specific docs, and capability docs into a single prompt per model role. Prompt surfaces refreshed as of the current version:
+
+- **Shared system docs** (`00-system-overview.md` through `03-runtime-technical-overview.md`) — automation subsystem awareness, truth model updated for automation definitions.
+- **Role docs** (`roles/vera.md`, `roles/planner.md`, etc.) — automation lifecycle management, output quality expectations, plan quality guidance.
+- **Capability docs** (`capabilities/output-quality-defaults.md`, etc.) — cross-surface output quality defaults, automation-aware lifecycle and evidence docs.
+- **Code-level hints** (`vera/service.py` `_CODE_DRAFT_HINT`, `_WRITING_DRAFT_HINT`) — expanded guidance for code completeness and writing depth.
+- **Operator assistant prompt** (`operator_assistant.py`) — automation awareness, precise lifecycle terms, depth-responsive advisory tone.
+
+The prompt composition system wires `capabilities/output-quality-defaults.md` to all five model roles so that output quality guidance applies consistently across Vera, the hidden compiler, the planner, the verifier, and the web investigator.

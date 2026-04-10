@@ -21,6 +21,8 @@ Conversational claims must never override queue truth.
 
 Assistant/recovery variants may appear, but queue state sidecars and terminal bucket placement remain canonical submitted lifecycle truth.
 
+Automation-originated jobs enter through the same inbox path as user-submitted jobs. The automation runner submits them; the queue processes them identically. Automation definitions themselves live in a separate store and have their own lifecycle (saved, enabled/disabled, due/not-due) that is independent of queue lifecycle.
+
 ## Truth Boundaries
 - Preview truth ends at submit acknowledgment.
 - Queue truth begins once accepted in `inbox/`.
