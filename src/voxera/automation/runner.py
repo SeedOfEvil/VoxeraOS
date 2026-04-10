@@ -65,11 +65,18 @@ Fail-closed semantics:
 Concurrency note:
 
 The runner is meant to be invoked synchronously (library call or
-``voxera automation run-due-once``). It does not take a lock on the
-definitions directory, so two concurrent invocations against the same
-queue root can race. This is an explicit non-goal for now; any real
-scheduler layer will need to serialize through the queue daemon lock or
-a dedicated automation lock.
+``voxera automation run-due-once``). The ``run_due_automations_locked``
+wrapper acquires a dedicated POSIX advisory lock
+(``<queue_root>/automations/.runner.lock``) before evaluating
+definitions.  If the lock is already held the wrapper returns
+immediately with a ``busy`` status — no definitions are loaded and no
+queue jobs are submitted.  This prevents double-submit races when
+multiple invocations overlap (e.g. a systemd timer firing while an
+operator runs ``run-due-once`` manually).
+
+The runner lock is distinct from the queue daemon lock
+(``<queue_root>/.daemon.lock``): the daemon serializes queue execution;
+the runner lock serializes automation evaluation/submission only.
 """
 
 from __future__ import annotations
@@ -475,13 +482,77 @@ def run_due_automations(
     return results
 
 
+@dataclass(frozen=True)
+class RunnerPassResult:
+    """Summary of a complete runner pass (all definitions, with lock status).
+
+    This is the top-level result returned by ``run_due_automations_locked``.
+    It wraps the per-definition results from ``run_due_automations`` together
+    with the lock acquisition outcome so callers and operators can tell:
+
+    - ``status="busy"`` — lock was held, nothing evaluated.
+    - ``status="ok"``   — lock acquired, definitions evaluated.
+    """
+
+    status: str
+    message: str
+    results: list[AutomationRunResult]
+
+
+def run_due_automations_locked(
+    queue_root: Path,
+    *,
+    now_ms: int | None = None,
+) -> RunnerPassResult:
+    """Locked wrapper around ``run_due_automations``.
+
+    Acquires the automation runner single-writer lock before evaluating
+    definitions.  If the lock is already held (another runner is active),
+    returns immediately with ``status="busy"`` and an empty results list —
+    no definitions are loaded and no queue jobs are submitted.
+    """
+    from .lock import acquire_runner_lock, release_runner_lock
+
+    lock = acquire_runner_lock(queue_root)
+    if not lock.acquired:
+        return RunnerPassResult(
+            status="busy",
+            message=lock.message,
+            results=[],
+        )
+    try:
+        results = run_due_automations(queue_root, now_ms=now_ms)
+    finally:
+        release_runner_lock(lock)
+
+    submitted = sum(1 for r in results if r.outcome == "submitted")
+    skipped = sum(1 for r in results if r.outcome == "skipped")
+    errors = sum(1 for r in results if r.outcome == "error")
+    summary_parts: list[str] = []
+    if submitted:
+        summary_parts.append(f"{submitted} submitted")
+    if skipped:
+        summary_parts.append(f"{skipped} skipped")
+    if errors:
+        summary_parts.append(f"{errors} errors")
+    summary = ", ".join(summary_parts) if summary_parts else "no definitions found"
+
+    return RunnerPassResult(
+        status="ok",
+        message=summary,
+        results=results,
+    )
+
+
 __all__ = [
     "AUTOMATION_SOURCE_LANE",
     "AutomationRunResult",
     "ONE_SHOT_TRIGGER_KINDS",
+    "RunnerPassResult",
     "SUPPORTED_TRIGGER_KINDS",
     "evaluate_due_automation",
     "process_automation_definition",
     "run_automation_once",
     "run_due_automations",
+    "run_due_automations_locked",
 ]

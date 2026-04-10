@@ -28,7 +28,7 @@ from .automation.runner import (
     AutomationRunResult,
     process_automation_definition,
     run_automation_once,
-    run_due_automations,
+    run_due_automations_locked,
 )
 from .automation.store import (
     AutomationNotFoundError,
@@ -341,7 +341,14 @@ def automation_run_due_once(
         ),
     ),
 ) -> None:
-    """Evaluate due automation definitions once and emit queue jobs."""
+    """Evaluate due automation definitions once and emit queue jobs.
+
+    Acquires the automation runner single-writer lock before evaluating
+    definitions. If the lock is already held (another runner is active),
+    exits cleanly with an operator-facing message and exit code 0 so
+    periodic schedulers (e.g. the systemd timer) do not treat a busy
+    skip as a failure.
+    """
     queue_root = queue_dir_path(queue_dir)
     if automation_id is not None:
         try:
@@ -355,5 +362,8 @@ def automation_run_due_once(
         _render_results_table([result])
         return
 
-    results = run_due_automations(queue_root)
-    _render_results_table(results)
+    pass_result = run_due_automations_locked(queue_root)
+    if pass_result.status == "busy":
+        console.print(f"[yellow]BUSY:[/yellow] {pass_result.message}")
+        return
+    _render_results_table(pass_result.results)
