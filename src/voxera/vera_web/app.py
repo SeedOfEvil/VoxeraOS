@@ -153,6 +153,7 @@ from .execution_mode import (
 from .execution_mode import (
     _looks_like_active_preview_content_generation_turn as _em_looks_like_active_preview_content_generation_turn,
 )
+from .markdown_render import render_assistant_markdown
 from .preview_content_binding import (
     is_targeted_code_preview_refinement,
     looks_like_builder_refinement_placeholder,
@@ -174,6 +175,7 @@ templates = Environment(
     loader=FileSystemLoader(str(HERE / "templates")),
     autoescape=select_autoescape(["html", "xml"]),
 )
+templates.filters["render_markdown"] = render_assistant_markdown
 app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
 

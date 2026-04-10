@@ -132,6 +132,7 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 - `test_context_lifecycle.py`
 - `test_response_shaping.py`
 - `test_chat_early_exit_dispatch.py`
+- `test_vera_web_markdown_render.py` — safe bounded markdown renderer for assistant messages: headings, bold, inline code, lists, fenced code blocks, blockquotes, paragraph breaks, XSS prevention, combined realistic samples.
 - `test_reference_resolver.py`
 - `test_evidence_review.py`
 - `test_result_surfacing.py`
@@ -241,6 +242,7 @@ The "sync, test, validate" method used for meaningful PRs (see `Testing-Method.t
 | Vera preview / submit | `test_vera_preview_materialization.py`, `test_vera_preview_submission.py`, `test_vera_draft_revision.py`, `test_draft_content_binding.py` |
 | Vera review / linked completions | `test_evidence_review.py`, `test_linked_job_review_continuation.py`, `test_result_surfacing.py` |
 | Vera investigation / hidden compiler | `test_vera_investigation_derivations.py`, `test_vera_hidden_compiler.py`, `test_vera_compiler_leakage.py`, `test_vera_brave_search.py` |
+| Vera web markdown rendering | `test_vera_web_markdown_render.py` |
 | CLI surface / golden | `test_cli_*.py`, `test_golden_surfaces.py`, `tests/golden/*` |
 | Config / runtime / secrets | `test_config_settings.py`, `test_dev_contract_config_integration.py`, `test_secrets.py`, `test_setup_wizard.py` |
 | Ops / incident bundle | `test_ops_bundle.py`, `test_ops_bundle_includes_config_snapshot.py`, `test_diagnostics_pack.py` |

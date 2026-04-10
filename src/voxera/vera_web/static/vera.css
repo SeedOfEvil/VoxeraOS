@@ -215,6 +215,72 @@ body {
   color: var(--text);
 }
 
+/* ─── Rendered markdown (assistant messages) ──────────────────── */
+.text.md-rendered {
+  white-space: normal;
+}
+.text.md-rendered h3,
+.text.md-rendered h4,
+.text.md-rendered h5 {
+  margin: 0.4em 0 0.15em;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.text.md-rendered h3 { font-size: 1.1em; }
+.text.md-rendered h4 { font-size: 1.05em; }
+.text.md-rendered h5 { font-size: 1.0em; }
+.text.md-rendered p {
+  margin: 0.25em 0;
+}
+.text.md-rendered ul,
+.text.md-rendered ol {
+  margin: 0.2em 0;
+  padding-left: 1.5em;
+}
+.text.md-rendered li {
+  margin: 0.1em 0;
+}
+.text.md-rendered code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  padding: 0.15em 0.3em;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.text.md-rendered pre {
+  margin: 0.3em 0;
+  padding: 0.5em 0.8em;
+  border-radius: var(--radius-xs);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line-strong);
+  overflow-x: auto;
+  white-space: pre;
+  word-break: normal;
+}
+.text.md-rendered pre code {
+  display: block;
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 0.84em;
+  line-height: 1.5;
+}
+.text.md-rendered strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.text.md-rendered blockquote {
+  margin: 0.25em 0;
+  padding: 0.25em 0.6em 0.25em 0.7em;
+  border-left: 3px solid rgba(45, 140, 240, 0.3);
+  border-radius: 0 4px 4px 0;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+}
+.text.md-rendered > :first-child { margin-top: 0; }
+.text.md-rendered > :last-child { margin-bottom: 0; }
+
 /* ─── Empty state ──────────────────────────────────────────────── */
 .empty {
   color: var(--muted);
