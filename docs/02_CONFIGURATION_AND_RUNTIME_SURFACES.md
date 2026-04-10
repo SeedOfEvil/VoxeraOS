@@ -13,7 +13,7 @@ VoxeraOS exposes three operator surfaces, all backed by the same queue.
    - Sub-apps registered on the root:
      `config`, `artifacts`, `skills`, `missions`, `queue`, `ops`, `inbox`, `secrets`.
 2. **Web panel — `voxera panel`** (`src/voxera/panel/app.py`)
-   - FastAPI app with `title="Voxera Panel"`. Default bind `127.0.0.1:8844`. Route families split into `routes_home`, `routes_jobs`, `routes_queue_control`, `routes_missions`, `routes_hygiene`, `routes_recovery`, `routes_bundle`, `routes_assistant`.
+   - FastAPI app with `title="Voxera Panel"`. Default bind `127.0.0.1:8844`. Route families split into `routes_home`, `routes_jobs`, `routes_queue_control`, `routes_missions`, `routes_hygiene`, `routes_recovery`, `routes_bundle`, `routes_assistant`, `routes_automations`.
    - Shared auth/CSRF/mutation-guard plumbing lives in `panel/app.py` and is passed into each `register_*_routes(...)` call.
 3. **Vera web — `voxera vera` / `make vera` / `voxera-vera.service`** (`src/voxera/vera_web/app.py`)
    - FastAPI app with `POST /chat`, `GET /chat/updates`, `POST /handoff`, `POST /clear`, `GET /vera/debug/session.json`. Default bind `127.0.0.1:8790`.

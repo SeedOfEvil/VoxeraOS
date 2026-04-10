@@ -37,6 +37,7 @@ from .helpers import request_value as _request_value
 from .job_detail_sections import build_job_detail_sections as _build_job_detail_sections
 from .job_presentation import job_artifact_inventory as _job_artifact_inventory
 from .job_presentation import operator_outcome_summary as _operator_outcome_summary
+from .routes_automations import register_automation_routes
 from .routes_bundle import register_bundle_routes
 from .routes_home import register_home_routes
 from .routes_hygiene import register_hygiene_routes
@@ -1410,4 +1411,15 @@ register_queue_control_routes(
     app,
     queue_root=_queue_root,
     require_mutation_guard=_require_mutation_guard,
+)
+
+register_automation_routes(
+    app,
+    templates=templates,
+    csrf_cookie=CSRF_COOKIE,
+    queue_root=_queue_root,
+    require_mutation_guard=_require_mutation_guard,
+    panel_security_counter_incr=_panel_security_counter_incr,
+    auth_setup_banner=_auth_setup_banner,
+    format_ts_ms=_format_ts,
 )
