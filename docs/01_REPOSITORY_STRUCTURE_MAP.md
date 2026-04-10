@@ -159,6 +159,7 @@ Conversational control surface — reasoning, preview, submit, review. Vera is n
 - `context_lifecycle.py` — shared-context update points (preview create/revise/clear, handoff, completion ingest, review, automation save, clear).
 - `reference_resolver.py` — bounded reference-resolution layer (draft/file/job/continuation).
 - `automation_preview.py` — automation definition preview drafting, revision, and submit-to-store flow. Vera can now author automation previews conversationally and save them as durable automation definitions. Submit saves a definition — it does NOT emit a queue job. Execution remains through the automation runner and queue.
+- `automation_lifecycle.py` — conversational lifecycle management for saved automation definitions: show, enable, disable, delete, run-now, history/status. Resolves natural references ("that automation", "the reminder automation") fail-closed. All actions use the existing automation store, runner, and history — Vera does not execute payloads directly. The queue remains the execution boundary.
 - `investigation_flow.py`, `investigation_derivations.py` — read-only web investigation and derived follow-ups.
 - `weather.py`, `weather_flow.py` — live weather lookup flow.
 - `brave_search.py` — Brave Search API client used by the investigation flow.
@@ -268,5 +269,6 @@ See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for the themed breakdown. At a 
 | Automation definition model / storage | `src/voxera/automation/models.py`, `src/voxera/automation/store.py` |
 | Automation runner (once_at / delay / recurring_interval) | `src/voxera/automation/runner.py`, `src/voxera/automation/history.py` |
 | Automation operator CLI (list / show / enable / disable / history / run-now) | `src/voxera/cli_automation.py` |
+| Vera automation lifecycle (show / enable / disable / delete / run-now / history) | `src/voxera/vera/automation_lifecycle.py` |
 | Systemd units | `deploy/systemd/user/` |
 | CLI help baselines | `tests/golden/` via `tools/golden_surfaces.py` |

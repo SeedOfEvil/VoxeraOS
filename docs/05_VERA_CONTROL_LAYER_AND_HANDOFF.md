@@ -65,6 +65,7 @@ Preview shapes come from `vera/preview_drafting.py`:
 - **Draft revision** — rename / save-as / content rewrite of an active preview (`vera/draft_revision.py`).
 - **Saveable assistant artifact** — save a recent assistant content block under a governed path (`vera/saveable_artifacts.py`).
 - **Automation definition** — governed automation preview shape drafted by `vera/automation_preview.py`. Includes title, trigger_kind, trigger_config, payload_template, enabled flag, and an operator-facing explanation. Submit saves a durable automation definition via the automation store — it does NOT emit a queue job. Execution happens only through the automation runner → queue path. Supported authoring triggers: `delay`, `recurring_interval`, `once_at`. Preview clearly communicates that saving is distinct from executing.
+- **Automation lifecycle management** — conversational management of saved automation definitions via `vera/automation_lifecycle.py`. Vera can show, enable, disable, delete, force-run, and surface history for saved automations through natural conversation ("show me that automation", "disable it", "did it run?"). Reference resolution is fail-closed: ambiguous or missing references prompt for clarification. Enable/disable mutate the saved definition. Delete removes the definition but preserves history. Run-now uses the existing automation runner → queue path — Vera does not execute payloads directly.
 
 Key rules observable in the code:
 
@@ -136,7 +137,7 @@ From `src/voxera/vera_web/app.py`:
 - `GET /` — chat UI shell.
 - `POST /chat` — main chat turn handler.
 - `GET /chat/updates` — pull updates / linked completion delivery.
-- `POST /handoff` — explicit handoff/submit path.
+- `POST /handoff` — explicit handoff/submit path. Routes through the correct preview-type-specific submit path: automation definition previews save a durable definition (no queue job); normal action previews submit a queue job.
 - `POST /clear` — clear the session.
 - `GET /vera/debug/session.json` — debug snapshot of the current session.
 
@@ -161,6 +162,8 @@ The refactors that preceded this bundle split Vera's reply orchestration into na
 | Saveable recent assistant content | `vera/saveable_artifacts.py` |
 | Shared session context lifecycle points | `vera/context_lifecycle.py` |
 | Bounded reference resolution (draft/file/job/continuation) | `vera/reference_resolver.py` |
+| Automation definition preview drafting, revision, submit-to-store | `vera/automation_preview.py` |
+| Conversational lifecycle management for saved automations | `vera/automation_lifecycle.py` |
 | Explicit read-only web investigation | `vera/investigation_flow.py` |
 | Derived follow-up handling for investigation | `vera/investigation_derivations.py` |
 | Live weather routing + continuity | `vera/weather_flow.py` + `vera/weather.py` |

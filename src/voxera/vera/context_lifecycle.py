@@ -200,6 +200,37 @@ def context_on_automation_saved(
     )
 
 
+def context_on_automation_lifecycle_action(
+    queue_root: Path,
+    session_id: str,
+    *,
+    automation_id: str | None,
+    deleted: bool = False,
+) -> dict[str, Any]:
+    """Update context after a lifecycle action on a saved automation.
+
+    When a definition is inspected or mutated (show/enable/disable/run-now/
+    history), the active topic is pointed at that automation so follow-up
+    references resolve to it.
+
+    When a definition is deleted, the active topic is cleared since the
+    referent no longer exists.
+    """
+    if deleted:
+        return update_session_context(
+            queue_root,
+            session_id,
+            active_topic=None,
+        )
+    if automation_id:
+        return update_session_context(
+            queue_root,
+            session_id,
+            active_topic=f"automation:{automation_id}",
+        )
+    return update_session_context(queue_root, session_id)
+
+
 def context_on_session_cleared(
     queue_root: Path,
     session_id: str,
