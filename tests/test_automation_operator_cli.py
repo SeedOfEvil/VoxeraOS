@@ -827,3 +827,33 @@ def test_delete_missing_id_fails(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1  # type: ignore[union-attr]
     assert "not found" in result.output.lower()  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# run-due-once locked / busy behavior
+# ---------------------------------------------------------------------------
+
+
+def test_run_due_once_shows_busy_when_lock_held(tmp_path: Path) -> None:
+    """run-due-once exits cleanly with BUSY when the runner lock is held."""
+    from voxera.automation.lock import acquire_runner_lock, release_runner_lock
+
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_defn(id="busy-test", trigger_config={"run_at_ms": 1_700_000_000_000}),
+        queue_root,
+        touch_updated=False,
+    )
+
+    held = acquire_runner_lock(queue_root)
+    assert held.acquired is True
+    try:
+        result = _invoke(["automation", "run-due-once", "--queue-dir", str(queue_root)], tmp_path)
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        out = result.stdout  # type: ignore[union-attr]
+        assert "busy" in out.lower()
+        # No inbox job was submitted.
+        assert _inbox_files(queue_root) == []
+    finally:
+        release_runner_lock(held)

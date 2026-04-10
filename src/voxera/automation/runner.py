@@ -94,6 +94,7 @@ from .history import (
     history_record_ref,
     write_history_record,
 )
+from .lock import acquire_runner_lock, release_runner_lock
 from .models import AutomationDefinition
 from .store import (
     AutomationStoreError,
@@ -511,8 +512,6 @@ def run_due_automations_locked(
     returns immediately with ``status="busy"`` and an empty results list —
     no definitions are loaded and no queue jobs are submitted.
     """
-    from .lock import acquire_runner_lock, release_runner_lock
-
     lock = acquire_runner_lock(queue_root)
     if not lock.acquired:
         return RunnerPassResult(

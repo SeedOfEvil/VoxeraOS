@@ -11,6 +11,7 @@ Coverage:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from voxera.automation import (
@@ -104,6 +105,36 @@ def test_lock_release_allows_reacquisition(tmp_path: Path) -> None:
         assert second.acquired is True
     finally:
         release_runner_lock(second)
+
+
+def test_lock_file_contains_valid_json_with_pid(tmp_path: Path) -> None:
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+
+    result = acquire_runner_lock(queue_root)
+    try:
+        assert result.acquired is True
+        content = result.lock_path.read_text(encoding="utf-8")
+        payload = json.loads(content)
+        assert "pid" in payload
+        assert isinstance(payload["pid"], int)
+        assert "ts" in payload
+        assert isinstance(payload["ts"], float)
+    finally:
+        release_runner_lock(result)
+
+
+def test_release_is_idempotent(tmp_path: Path) -> None:
+    """Calling release twice does not raise."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+
+    result = acquire_runner_lock(queue_root)
+    assert result.acquired is True
+    release_runner_lock(result)
+    # Second release should be a no-op (fd already None).
+    release_runner_lock(result)
+    assert result._fd is None
 
 
 # ---------------------------------------------------------------------------

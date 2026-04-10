@@ -37,6 +37,7 @@ Usage::
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import time
 from dataclasses import dataclass
@@ -83,7 +84,7 @@ def acquire_runner_lock(queue_root: Path) -> RunnerLockResult:
         )
 
     # Write a small payload so operators can inspect the lock file.
-    payload = f'{{"pid": {os.getpid()}, "ts": {time.time()}}}\n'
+    payload = json.dumps({"pid": os.getpid(), "ts": time.time()})
     os.ftruncate(fd, 0)
     os.lseek(fd, 0, os.SEEK_SET)
     os.write(fd, payload.encode())
