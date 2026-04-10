@@ -82,6 +82,23 @@ def _make_definition(queue_root: Path, **overrides) -> AutomationDefinition:
 
 
 # -----------------------------------------------------------------------
+# 0. Panel home navigation includes Automations link
+# -----------------------------------------------------------------------
+
+
+def test_panel_home_has_automations_nav_link(tmp_path, monkeypatch):
+    _setup_queue(tmp_path, monkeypatch)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/")
+
+    assert res.status_code == 200
+    body = res.text
+    assert 'href="/automations"' in body
+    assert "Automations" in body
+
+
+# -----------------------------------------------------------------------
 # 1. List page renders saved definitions
 # -----------------------------------------------------------------------
 
