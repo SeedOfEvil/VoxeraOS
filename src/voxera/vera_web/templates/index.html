@@ -90,7 +90,11 @@
                 {{turn.role}}
               {% endif %}
             </div>
-            <div class="text">{{turn.text}}</div>
+            {% if turn.role == 'assistant' %}
+              <div class="text md-rendered">{{turn.text | render_markdown}}</div>
+            {% else %}
+              <div class="text">{{turn.text}}</div>
+            {% endif %}
           </article>
         {% endfor %}
       {% else %}
@@ -302,6 +306,87 @@
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;');
 
+    // ── Safe bounded markdown renderer (assistant messages only) ──────
+    const renderAssistantMarkdown = (raw) => {
+      if (!raw) return '';
+      const esc = escapeHtml(raw);
+      const lines = esc.split('\n');
+      const parts = [];
+      let i = 0;
+      const n = lines.length;
+
+      const renderInline = (text) => {
+        const codeSpans = [];
+        text = text.replace(/`([^`]+)`/g, (_, c) => {
+          codeSpans.push(c);
+          return '\x00CODE' + (codeSpans.length - 1) + '\x00';
+        });
+        text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        codeSpans.forEach((c, idx) => {
+          text = text.replace('\x00CODE' + idx + '\x00', '<code>' + c + '</code>');
+        });
+        return text;
+      };
+
+      const collectList = (itemRe, startRe) => {
+        const items = [];
+        while (i < n) {
+          const s = lines[i].trim();
+          const lm = s.match(itemRe);
+          if (lm) { items.push('<li>' + renderInline(lm[1]) + '</li>'); i++; }
+          else if (s === '') {
+            let j = i + 1;
+            while (j < n && lines[j].trim() === '') j++;
+            if (j < n && startRe.test(lines[j].trim())) i++;
+            else break;
+          } else break;
+        }
+        return items;
+      };
+
+      while (i < n) {
+        const stripped = lines[i].trim();
+
+        // Fenced code block
+        if (stripped.startsWith('```')) {
+          const cl = []; i++;
+          while (i < n) { if (lines[i].trim().startsWith('```')) { i++; break; } cl.push(lines[i]); i++; }
+          parts.push('<pre><code>' + cl.join('\n') + '</code></pre>');
+          continue;
+        }
+        // Heading
+        const hm = stripped.match(/^(#{1,3})\s+(.+)$/);
+        if (hm) { const lvl = hm[1].length + 2; parts.push('<h' + lvl + '>' + renderInline(hm[2]) + '</h' + lvl + '>'); i++; continue; }
+        // Unordered list
+        if (/^[-*]\s+/.test(stripped)) { const items = collectList(/^[-*]\s+(.+)$/, /^[-*]\s+/); parts.push('<ul>' + items.join('') + '</ul>'); continue; }
+        // Ordered list
+        if (/^\d+\.\s+/.test(stripped)) { const items = collectList(/^\d+\.\s+(.+)$/, /^\d+\.\s+/); parts.push('<ol>' + items.join('') + '</ol>'); continue; }
+        // Blockquote (&gt; after escaping)
+        if (stripped.startsWith('&gt; ') || stripped === '&gt;') {
+          const ql = [];
+          while (i < n) {
+            const s = lines[i].trim();
+            if (s.startsWith('&gt; ')) { ql.push(renderInline(s.slice(5))); i++; }
+            else if (s === '&gt;') { ql.push(''); i++; }
+            else break;
+          }
+          parts.push('<blockquote>' + ql.join('<br>') + '</blockquote>');
+          continue;
+        }
+        // Blank
+        if (stripped === '') { i++; continue; }
+        // Paragraph
+        const pl = [];
+        while (i < n) {
+          const s = lines[i].trim();
+          if (s === '' || /^#{1,3}\s+/.test(s) || /^[-*]\s+/.test(s) || /^\d+\.\s+/.test(s) || s.startsWith('```') || s.startsWith('&gt; ') || s === '&gt;') break;
+          pl.push(renderInline(s)); i++;
+        }
+        parts.push('<p>' + pl.join('<br>') + '</p>');
+      }
+      return parts.join('\n');
+    };
+
     const roleLabel = (role) => {
       if (role === 'user') return 'You';
       if (role === 'assistant') return 'Vera';
@@ -316,10 +401,13 @@
       const html = turns.map((turn) => {
         const role = String(turn.role || 'assistant');
         const text = String(turn.text || '');
+        const isAssistant = role === 'assistant';
+        const textCls = isAssistant ? 'text md-rendered' : 'text';
+        const textHtml = isAssistant ? renderAssistantMarkdown(text) : escapeHtml(text);
         return `
           <article class="bubble ${escapeHtml(role)}">
             <div class="role">${escapeHtml(roleLabel(role))}</div>
-            <div class="text">${escapeHtml(text)}</div>
+            <div class="${textCls}">${textHtml}</div>
           </article>
         `;
       }).join('');

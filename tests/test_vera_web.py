@@ -2662,7 +2662,7 @@ def test_review_latest_submitted_job_succeeded(tmp_path, monkeypatch):
     res = client.post("/chat", data={"session_id": "sid", "message": "what happened to that job?"})
 
     assert "I reviewed canonical VoxeraOS evidence" in res.text
-    assert "`succeeded`" in res.text
+    assert "<code>succeeded</code>" in res.text
     assert "Opened page" in res.text
 
 
@@ -2706,7 +2706,7 @@ def test_review_latest_submitted_job_short_handoff_id_resolves_inbox_filename(
     )
 
     assert "I reviewed canonical VoxeraOS evidence" in res.text
-    assert "`awaiting_approval`" in res.text
+    assert "<code>awaiting_approval</code>" in res.text
     assert "open https://example.com" in res.text
 
 
@@ -2736,7 +2736,7 @@ def test_review_explicit_short_handoff_job_id_works(tmp_path, monkeypatch):
     )
 
     assert "I reviewed canonical VoxeraOS evidence" in res.text
-    assert "`awaiting_approval`" in res.text
+    assert "<code>awaiting_approval</code>" in res.text
 
 
 def test_review_explicit_full_queue_filename_works(tmp_path, monkeypatch):
@@ -2766,7 +2766,7 @@ def test_review_explicit_full_queue_filename_works(tmp_path, monkeypatch):
     )
 
     assert "I reviewed canonical VoxeraOS evidence" in res.text
-    assert "`awaiting_approval`" in res.text
+    assert "<code>awaiting_approval</code>" in res.text
 
 
 def test_review_specific_job_id_failed(tmp_path, monkeypatch):
@@ -2818,7 +2818,7 @@ def test_review_awaiting_approval_job(tmp_path, monkeypatch):
         "/chat", data={"session_id": sid, "message": "what's the status of job-await-1?"}
     )
 
-    assert "`awaiting_approval`" in res.text
+    assert "<code>awaiting_approval</code>" in res.text
     assert "blocked on operator approval" in res.text
 
 
@@ -3044,8 +3044,8 @@ def test_json_config_request_creates_preview_and_shows_fenced_code(tmp_path, mon
         data={"session_id": sid, "message": "make me a JSON config for my app"},
     )
 
-    # Fenced JSON content must appear in chat
-    assert "```json" in res.text
+    # Fenced JSON content must appear in chat (rendered as <pre><code> by markdown)
+    assert "<pre><code>" in res.text
     assert "demo" in res.text
     # A governed write_file preview must also be created (code draft lane)
     preview = vera_session_store.read_session_preview(queue, sid)
@@ -3941,7 +3941,7 @@ def test_code_draft_rendering_still_shows_fenced_code_with_control_sanitizer_pre
 
     preview = vera_session_store.read_session_preview(queue, sid)
     assert res.status_code == 200
-    assert "```python" in res.text
+    assert "<pre><code>" in res.text
     assert "still visible" in res.text
     assert preview is not None
     assert "print('still visible')" in preview["write_file"]["content"]
@@ -6786,8 +6786,8 @@ def test_code_is_rendered_in_proper_fenced_code_block_in_reply(tmp_path, monkeyp
     res = client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
 
     assert res.status_code == 200
-    # The fenced code block must appear in the rendered response, not be suppressed
-    assert "```python" in res.text
+    # The fenced code block must appear in the rendered response (as <pre><code>)
+    assert "<pre><code>" in res.text
     assert _PYTHON_CODE[:30] in res.text
 
 
@@ -6810,8 +6810,8 @@ def test_code_reply_not_suppressed_by_voxera_preview_flow_logic(tmp_path, monkey
     res = client.post("/chat", data={"session_id": sid, "message": "write me a python script"})
 
     assert res.status_code == 200
-    # The actual code reply should appear, not the generic "Understood" suppression
-    assert "```python" in res.text
+    # The actual code reply should appear (rendered as <pre><code>), not suppressed
+    assert "<pre><code>" in res.text
     # Generic suppression messages should NOT appear instead
     assert "Nothing has been submitted or executed yet. I can send it whenever" not in res.text
 

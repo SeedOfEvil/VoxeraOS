@@ -1,3 +1,16 @@
+## 2026-04-10 — fix(vera-web): render markdown-style assistant formatting correctly in chat
+
+- **Motivation**: Vera assistant responses containing markdown-style formatting (headings, bold, lists, inline code) were displayed as raw symbols (`###`, `**`, `- `, `` ` ``), making structured answers hard to read.
+- **Scope**: rendering-only change in the Vera chat UI. No prompt, queue, runtime, or AI capability changes. Assistant messages only — user messages are unaffected.
+- **New module** (`src/voxera/vera_web/markdown_render.py`): safe bounded markdown-to-HTML renderer. HTML-escapes the full input first (fundamental XSS protection), then converts a fixed subset of markdown patterns to safe HTML elements. Supports: headings (`#`/`##`/`###` → `h3`/`h4`/`h5`), bold (`**text**`), inline code (`` `text` ``), fenced code blocks, unordered lists (`-`/`*`), ordered lists (`1.`), blockquotes (`>`), and paragraph breaks. Returns `markupsafe.Markup` to avoid Jinja2 double-escaping.
+- **Jinja2 integration** (`src/voxera/vera_web/app.py`): registered `render_markdown` template filter. Template applies it to assistant messages only via `{% if turn.role == 'assistant' %}`.
+- **Client-side parity** (`templates/index.html`): mirrored the renderer in JavaScript for the polling `renderTurns` path. Assistant turns use `renderAssistantMarkdown()`, user turns continue to use plain `escapeHtml()`.
+- **CSS** (`static/vera.css`): added `.text.md-rendered` styles for headings, bold, lists, inline code, fenced code blocks, blockquotes, and paragraphs. Scoped to assistant bubbles. Overrides `white-space: pre-wrap` to `normal` for rendered content.
+- **Safety**: escape-first architecture ensures no raw HTML from assistant content can reach the DOM. Inline code spans are extracted before bold processing to prevent cross-pattern interference. No new dependencies — uses `markupsafe` already present via Jinja2.
+- **Tests** (`tests/test_vera_web_markdown_render.py`): 48 focused tests covering plain text, headings, bold, inline code, unordered/ordered lists, fenced code blocks, blockquotes, paragraph breaks, XSS prevention (script tags, HTML attributes, injections in headings/bold/code/lists), ampersand escaping, combined realistic sample from the PR spec, and return type verification.
+- **Files changed**: `src/voxera/vera_web/markdown_render.py` (new), `src/voxera/vera_web/app.py`, `src/voxera/vera_web/templates/index.html`, `src/voxera/vera_web/static/vera.css`, `tests/test_vera_web_markdown_render.py` (new), `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`.
+- **Supported formatting subset** (assistant messages only): headings, bold, inline code, fenced code blocks, unordered lists, ordered lists, blockquotes, paragraph breaks. Italic, strikethrough, tables, and images are not supported.
+
 ## 2026-04-10 — refactor(ai): refresh system prompts and instruction surfaces for current capabilities and higher-quality outputs
 
 - **Motivation**: AI instruction surfaces across VoxeraOS had drifted from the current product reality. Automation subsystem capabilities were not reflected in shared prompts. Output quality guidance was absent from the prompt composition system. Code/writing draft hints were minimal. The operator assistant system prompt lacked automation awareness and depth-responsive advisory guidance.
