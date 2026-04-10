@@ -36,6 +36,7 @@ from ..vera.automation_preview import (
     submit_automation_preview,
 )
 from ..vera.context_lifecycle import (
+    context_on_automation_lifecycle_action,
     context_on_automation_saved,
     context_on_completion_ingested,
     context_on_followup_preview_prepared,
@@ -1221,20 +1222,15 @@ async def chat(request: Request):
             last_automation_preview=_last_auto_preview,
         )
         if _lifecycle.matched:
-            # Update session context for the lifecycle action
-            if _lifecycle.automation_id and not _lifecycle.definition_deleted:
-                update_session_context(
-                    root,
-                    active_session,
-                    active_topic=f"automation:{_lifecycle.automation_id}",
-                )
-            elif _lifecycle.definition_deleted:
-                update_session_context(
-                    root,
-                    active_session,
-                    active_topic=None,
-                )
-                # Clear stashed preview since the definition was deleted
+            # Update session context via the dedicated lifecycle function.
+            context_on_automation_lifecycle_action(
+                root,
+                active_session,
+                automation_id=_lifecycle.automation_id,
+                deleted=_lifecycle.definition_deleted,
+            )
+            if _lifecycle.definition_deleted:
+                # Clear stashed preview since the definition was deleted.
                 write_session_last_automation_preview(root, active_session, None)
             append_session_turn(
                 root, active_session, role="assistant", text=_lifecycle.assistant_text

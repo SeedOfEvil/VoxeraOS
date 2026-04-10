@@ -62,20 +62,33 @@ class LifecycleIntent(Enum):
 
 # Patterns are evaluated in priority order; first match wins.
 # Each tuple: (compiled_regex, intent).
+#
+# IMPORTANT (fail-closed design):
+# - Patterns with "the" as determiner MUST require "automation" or
+#   "definition" after it.  Bare "delete the" matches "delete the file"
+#   which is a destructive false positive.
+# - Patterns with bare pronouns (it/that/this) MUST require the pronoun
+#   to be the final word (optionally followed by punctuation) so they
+#   only fire as back-references, not as "stop the daemon".
+# - Phrases that are inherently automation-specific ("run history",
+#   "force run", "did it run") are fine without extra gating.
+
+# Bare pronoun at end of sentence — safe as back-reference.
+_BARE_PRONOUN_END = r"(?:it|that|this)\s*[.!?]*$"
 
 _LIFECYCLE_PATTERNS: list[tuple[re.Pattern[str], LifecycleIntent]] = [
     # --- history / status ---
     (
         re.compile(
             r"\b(?:show\s+(?:me\s+)?(?:the\s+)?(?:run\s+)?history"
-            r"|what\s+happened\s+(?:last\s+time|with\s+(?:that|the)\s+automation)"
+            r"|what\s+happened\s+(?:with\s+(?:that|the)\s+automation)"
             r"|(?:did|has)\s+it\s+run"
             r"|(?:did|has)\s+(?:that|the)\s+automation\s+run"
             r"|when\s+did\s+it\s+(?:last\s+)?run"
-            r"|show\s+(?:the\s+)?(?:last\s+)?(?:run|execution)"
+            r"|show\s+(?:the\s+)?(?:last\s+)?(?:run|execution)\s+history"
             r"|run\s+history"
-            r"|last\s+run"
             r"|execution\s+history"
+            r"|(?:show|check)\s+(?:the\s+)?(?:automation\s+)?history"
             r")\b",
             re.IGNORECASE,
         ),
@@ -85,10 +98,10 @@ _LIFECYCLE_PATTERNS: list[tuple[re.Pattern[str], LifecycleIntent]] = [
     (
         re.compile(
             r"\b(?:run\s+it\s+now"
-            r"|trigger\s+(?:that|it|the)\s+(?:automation\s+)?now"
+            r"|trigger\s+(?:that|it)\s+(?:automation\s+)?now"
+            r"|trigger\s+the\s+automation\s+now"
             r"|run\s+(?:that|the)\s+automation\s+now"
             r"|force\s+run"
-            r"|run\s+now"
             r"|execute\s+it\s+now"
             r"|fire\s+it\s+now"
             r")\b",
@@ -99,13 +112,12 @@ _LIFECYCLE_PATTERNS: list[tuple[re.Pattern[str], LifecycleIntent]] = [
     # --- delete ---
     (
         re.compile(
-            r"\b(?:delete\s+(?:that|the|this|it)"
-            r"|remove\s+(?:that|the|this|it)"
-            r"|delete\s+(?:the\s+)?\w+\s+automation"
-            r"|remove\s+(?:the\s+)?\w+\s+automation"
-            r"|delete\s+automation"
-            r"|remove\s+automation"
-            r")\b",
+            # bare pronoun at end: "delete it", "delete that."
+            r"(?:delete|remove)\s+"
+            + _BARE_PRONOUN_END
+            # explicit: "delete the automation", "delete the reminder automation"
+            + r"|\b(?:delete|remove)\s+(?:the\s+)?(?:saved\s+)?(?:automation|definition)\b"
+            + r"|\b(?:delete|remove)\s+(?:the\s+)?\w+\s+automation\b",
             re.IGNORECASE,
         ),
         LifecycleIntent.DELETE,
@@ -113,14 +125,16 @@ _LIFECYCLE_PATTERNS: list[tuple[re.Pattern[str], LifecycleIntent]] = [
     # --- disable ---
     (
         re.compile(
-            r"\b(?:disable\s+(?:that|the|this|it)"
-            r"|turn\s+off\s+(?:that|the|this|it)"
-            r"|disable\s+(?:the\s+)?\w+\s+automation"
-            r"|turn\s+off\s+(?:the\s+)?\w+\s+automation"
-            r"|disable\s+automation"
-            r"|pause\s+(?:that|the|this|it)"
-            r"|stop\s+(?:that|the|this|it)"
-            r")\b",
+            # bare pronoun at end: "disable it", "turn off that."
+            r"(?:disable|pause|stop)\s+"
+            + _BARE_PRONOUN_END
+            + r"|(?:turn\s+off)\s+"
+            + _BARE_PRONOUN_END
+            # explicit: "disable the automation", "turn off the reminder automation"
+            + r"|\b(?:disable|pause|stop)\s+(?:the\s+)?(?:saved\s+)?(?:automation|definition)\b"
+            + r"|\b(?:disable|pause|stop)\s+(?:the\s+)?\w+\s+automation\b"
+            + r"|\bturn\s+off\s+(?:the\s+)?(?:saved\s+)?(?:automation|definition)\b"
+            + r"|\bturn\s+off\s+(?:the\s+)?\w+\s+automation\b",
             re.IGNORECASE,
         ),
         LifecycleIntent.DISABLE,
@@ -128,15 +142,20 @@ _LIFECYCLE_PATTERNS: list[tuple[re.Pattern[str], LifecycleIntent]] = [
     # --- enable ---
     (
         re.compile(
-            r"\b(?:enable\s+(?:that|the|this|it)"
-            r"|turn\s+on\s+(?:that|the|this|it)"
-            r"|enable\s+(?:the\s+)?\w+\s+automation"
-            r"|turn\s+on\s+(?:the\s+)?\w+\s+automation"
-            r"|enable\s+automation"
-            r"|enable\s+it\s+again"
-            r"|re-?enable\s+(?:that|the|this|it)"
-            r"|activate\s+(?:that|the|this|it)"
-            r")\b",
+            # bare pronoun at end: "enable it", "turn on that."
+            r"(?:enable|activate)\s+"
+            + _BARE_PRONOUN_END
+            + r"|(?:turn\s+on)\s+"
+            + _BARE_PRONOUN_END
+            # "enable it again" — special bare pronoun form
+            + r"|\benable\s+it\s+again\b"
+            + r"|\bre-?enable\s+"
+            + _BARE_PRONOUN_END
+            # explicit: "enable the automation", "turn on the reminder automation"
+            + r"|\b(?:enable|activate)\s+(?:the\s+)?(?:saved\s+)?(?:automation|definition)\b"
+            + r"|\b(?:enable|activate)\s+(?:the\s+)?\w+\s+automation\b"
+            + r"|\bturn\s+on\s+(?:the\s+)?(?:saved\s+)?(?:automation|definition)\b"
+            + r"|\bturn\s+on\s+(?:the\s+)?\w+\s+automation\b",
             re.IGNORECASE,
         ),
         LifecycleIntent.ENABLE,
@@ -144,17 +163,20 @@ _LIFECYCLE_PATTERNS: list[tuple[re.Pattern[str], LifecycleIntent]] = [
     # --- show ---
     (
         re.compile(
+            # explicit automation/definition references
             r"\b(?:show\s+(?:me\s+)?(?:that|the|this)\s+(?:saved\s+)?(?:automation|definition)"
             r"|show\s+(?:me\s+)?(?:that|the|this)\s+[\w\s-]+\s+automation"
             r"|what\s+did\s+you\s+save"
             r"|what\s+will\s+it\s+do"
             r"|when\s+will\s+it\s+run"
-            r"|describe\s+(?:that|the|this|it)\s*(?:automation)?"
+            r"|describe\s+(?:that|the|this)\s+(?:saved\s+)?(?:automation|definition)"
+            r"|describe\s+(?:the\s+)?[\w\s-]+\s+automation"
             r"|show\s+(?:me\s+)?(?:that|the)\s+(?:saved\s+)?definition"
             r"|what\s+(?:is|was)\s+(?:that|the)\s+automation"
             r"|what\s+does\s+(?:that|the)\s+automation\s+do"
             r"|tell\s+me\s+about\s+(?:that|the)\s+automation"
-            r")\b",
+            r")\b" + r"|(?:describe)\s+" + _BARE_PRONOUN_END,
+            # bare pronoun at end: "describe it.", "describe that."
             re.IGNORECASE,
         ),
         LifecycleIntent.SHOW,

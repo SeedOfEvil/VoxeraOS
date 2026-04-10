@@ -157,8 +157,15 @@ class TestLifecycleIntentClassification:
     def test_show_the_history(self) -> None:
         assert classify_lifecycle_intent("Show me the history.") is LifecycleIntent.HISTORY
 
-    def test_what_happened_last_time(self) -> None:
-        assert classify_lifecycle_intent("What happened last time?") is LifecycleIntent.HISTORY
+    def test_what_happened_with_the_automation(self) -> None:
+        assert (
+            classify_lifecycle_intent("What happened with that automation?")
+            is LifecycleIntent.HISTORY
+        )
+
+    def test_what_happened_last_time_bare_is_not_lifecycle(self) -> None:
+        """Bare 'what happened last time' is too generic without automation context."""
+        assert classify_lifecycle_intent("What happened last time?") is None
 
     def test_not_lifecycle_hello(self) -> None:
         assert classify_lifecycle_intent("Hello, how are you?") is None
@@ -551,6 +558,144 @@ class TestNonAutomationFlowsUnchanged:
 
     def test_submit_confirmation_not_lifecycle(self) -> None:
         assert not is_automation_lifecycle_intent("Go ahead.")
+
+
+# ---------------------------------------------------------------------------
+# 12. False positive prevention — intent must not hijack non-automation turns
+# ---------------------------------------------------------------------------
+
+
+class TestFalsePositivePrevention:
+    """Ensure intent classification does not match non-automation requests.
+
+    These are the critical fail-closed tests: messages that contain action
+    verbs (delete, stop, enable, describe) but target non-automation objects
+    must NOT match lifecycle intent.  A false positive here would cause Vera
+    to silently delete/disable an automation when the user meant something
+    entirely different.
+    """
+
+    def test_delete_the_file_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Delete the file.") is None
+
+    def test_delete_the_note_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Delete the note.") is None
+
+    def test_remove_the_file_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Remove the file.") is None
+
+    def test_stop_the_daemon_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Stop the daemon.") is None
+
+    def test_stop_the_service_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Stop the service.") is None
+
+    def test_pause_the_job_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Pause the job.") is None
+
+    def test_disable_notifications_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Disable notifications.") is None
+
+    def test_enable_dark_mode_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Enable dark mode.") is None
+
+    def test_describe_the_weather_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Describe the weather.") is None
+
+    def test_turn_off_the_lights_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Turn off the lights.") is None
+
+    def test_what_happened_with_the_server_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("What happened last time with the server?") is None
+
+    def test_remove_the_old_logs_not_lifecycle(self) -> None:
+        assert classify_lifecycle_intent("Remove the old logs.") is None
+
+    def test_bare_pronoun_at_end_still_works(self) -> None:
+        """Bare 'delete it' / 'stop it' are valid lifecycle intents."""
+        assert classify_lifecycle_intent("Delete it.") is LifecycleIntent.DELETE
+        assert classify_lifecycle_intent("Stop it.") is LifecycleIntent.DISABLE
+        assert classify_lifecycle_intent("Enable it.") is LifecycleIntent.ENABLE
+        assert classify_lifecycle_intent("Describe it.") is LifecycleIntent.SHOW
+
+    def test_explicit_automation_word_still_works(self) -> None:
+        """'Delete the automation' / 'stop the automation' are valid."""
+        assert classify_lifecycle_intent("Delete the automation.") is LifecycleIntent.DELETE
+        assert classify_lifecycle_intent("Stop the automation.") is LifecycleIntent.DISABLE
+        assert classify_lifecycle_intent("Describe the automation.") is LifecycleIntent.SHOW
+
+    def test_named_automation_still_works(self) -> None:
+        """'Delete the reminder automation' is valid."""
+        assert (
+            classify_lifecycle_intent("Delete the reminder automation.") is LifecycleIntent.DELETE
+        )
+        assert (
+            classify_lifecycle_intent("Turn off the reminder automation.")
+            is LifecycleIntent.DISABLE
+        )
+
+    def test_dispatch_does_not_act_on_false_positive(self, tmp_path: Path) -> None:
+        """Even if a definition exists, non-lifecycle messages must not match."""
+        _make_definition(
+            tmp_path,
+            automation_id="auto-fp-test1",
+            title="My Automation",
+        )
+        # These should not even match lifecycle intent
+        result = dispatch_lifecycle_action(
+            "Delete the note.",
+            queue_root=tmp_path,
+            session_context={"active_topic": "automation:auto-fp-test1"},
+        )
+        assert result.matched is False
+
+        result = dispatch_lifecycle_action(
+            "Stop the daemon.",
+            queue_root=tmp_path,
+            session_context={"active_topic": "automation:auto-fp-test1"},
+        )
+        assert result.matched is False
+
+
+# ---------------------------------------------------------------------------
+# 13. handle_show does not imply unsupported trigger kinds are runnable
+# ---------------------------------------------------------------------------
+
+
+class TestTriggerKindTruthfulness:
+    def test_show_recurring_cron_notes_unsupported(self, tmp_path: Path) -> None:
+        """recurring_cron should be noted as not yet active in show output."""
+        defn = AutomationDefinition(
+            id="auto-cron-test1",
+            title="Cron Test",
+            enabled=True,
+            trigger_kind="recurring_cron",
+            trigger_config={"cron": "*/5 * * * *"},
+            payload_template={"goal": "run diagnostics"},
+            created_from="cli",
+            created_at_ms=_NOW_MS,
+            updated_at_ms=_NOW_MS,
+        )
+        save_automation_definition(defn, tmp_path, touch_updated=False)
+        text = handle_show(defn, tmp_path)
+        assert "not yet active" in text.lower()
+
+    def test_show_watch_path_notes_unsupported(self, tmp_path: Path) -> None:
+        """watch_path should be noted as not yet active in show output."""
+        defn = AutomationDefinition(
+            id="auto-watch-test1",
+            title="Watch Test",
+            enabled=True,
+            trigger_kind="watch_path",
+            trigger_config={"path": "~/incoming", "event": "created"},
+            payload_template={"goal": "process files"},
+            created_from="cli",
+            created_at_ms=_NOW_MS,
+            updated_at_ms=_NOW_MS,
+        )
+        save_automation_definition(defn, tmp_path, touch_updated=False)
+        text = handle_show(defn, tmp_path)
+        assert "not yet active" in text.lower()
 
 
 # ---------------------------------------------------------------------------
