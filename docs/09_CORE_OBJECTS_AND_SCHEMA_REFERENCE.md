@@ -275,6 +275,26 @@ Supported `trigger_kind` values and their strict `trigger_config` shapes. `once_
 
 Storage lives under `<queue_root>/automations/definitions/<id>.json` via `src/voxera/automation/store.py`. Saves are atomic (`.json.tmp` → `Path.replace`), JSON is sorted for deterministic diffs, and `list_automation_definitions(...)` is best-effort by default so a single malformed file cannot hide the rest of the inventory (`strict=True` surfaces every failure for tooling).
 
+### Vera automation preview shape
+
+Vera can now draft automation definitions conversationally via `vera/automation_preview.py`. The preview shape is:
+
+```jsonc
+{
+  "preview_type": "automation_definition",    // distinguishes from other preview types
+  "title": "Run Diagnostics (every 1 hour)", // inferred from user intent
+  "description": "",                          // optional
+  "trigger_kind": "recurring_interval",       // one of the supported trigger kinds
+  "trigger_config": { "interval_ms": 3600000 }, // per-kind strict shape
+  "payload_template": { "goal": "run diagnostics" }, // canonical queue payload shape
+  "enabled": true,
+  "created_from": "vera",
+  "explanation": "..."                        // operator-facing explanation of what will happen
+}
+```
+
+Submit converts this preview into a durable `AutomationDefinition` and saves it to the automation store. Submit does NOT emit a queue job. Execution happens only through the automation runner → queue path. The submit acknowledgment is truthful: it says the definition was saved, not that it was executed.
+
 The runner writes one JSON file per run event into the sibling `<queue_root>/automations/history/` directory: `auto-<automation_id>-<run_id>.json`. Each record is schema_version 1 and carries `automation_id`, `run_id`, `triggered_at_ms`, `trigger_kind`, `outcome` (`submitted` | `skipped` | `error`), `queue_job_ref` (the `inbox-*.json` filename when submitted), a short `message`, and a `payload_summary` + sha256 `payload_hash` of the saved `payload_template`. History records are write-once. `list_history_records(queue_root, automation_id)` returns all records for a given automation id, newest first, skipping malformed files. After a successful fire the definition is updated with `last_run_at_ms`, `last_job_ref`, and an appended `run_history_refs` entry. One-shot triggers (`once_at`, `delay`) set `enabled=false` and `next_run_at_ms=null`. Recurring triggers (`recurring_interval`) keep `enabled=true` and set `next_run_at_ms = fired_at_ms + interval_ms`.
 
 ## `job` refs, stems, and ids

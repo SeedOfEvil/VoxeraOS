@@ -177,6 +177,29 @@ def context_on_followup_preview_prepared(
 # ---------------------------------------------------------------------------
 
 
+def context_on_automation_saved(
+    queue_root: Path,
+    session_id: str,
+    *,
+    automation_id: str,
+) -> dict[str, Any]:
+    """Update context when an automation definition is saved via Vera.
+
+    Records the automation ID so follow-up references ("that automation",
+    "show it", "what did you save?") can resolve truthfully against the
+    session context.  Clears preview-related refs since the preview has
+    been consumed by the submit flow.
+    """
+    return update_session_context(
+        queue_root,
+        session_id,
+        active_draft_ref=None,
+        active_preview_ref=None,
+        last_submitted_job_ref=automation_id,
+        active_topic=f"automation:{automation_id}",
+    )
+
+
 def context_on_session_cleared(
     queue_root: Path,
     session_id: str,

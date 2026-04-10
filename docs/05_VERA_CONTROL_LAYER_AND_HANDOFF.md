@@ -64,6 +64,7 @@ Preview shapes come from `vera/preview_drafting.py`:
 - **Weather** — bounded weather lookup (`vera/weather.py`, `vera/weather_flow.py`).
 - **Draft revision** — rename / save-as / content rewrite of an active preview (`vera/draft_revision.py`).
 - **Saveable assistant artifact** — save a recent assistant content block under a governed path (`vera/saveable_artifacts.py`).
+- **Automation definition** — governed automation preview shape drafted by `vera/automation_preview.py`. Includes title, trigger_kind, trigger_config, payload_template, enabled flag, and an operator-facing explanation. Submit saves a durable automation definition via the automation store — it does NOT emit a queue job. Execution happens only through the automation runner → queue path. Supported authoring triggers: `delay`, `recurring_interval`, `once_at`. Preview clearly communicates that saving is distinct from executing.
 
 Key rules observable in the code:
 
