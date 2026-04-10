@@ -74,6 +74,7 @@ from ..vera.reference_resolver import (
     resolve_job_id_from_context,
 )
 from ..vera.session_store import read_session_handoff_state
+from ..vera.time_context import answer_time_question
 
 
 @dataclass
@@ -163,16 +164,17 @@ def dispatch_early_exit_intent(
 
     Checks evaluated (in order):
 
-    1. Diagnostics refusal — blocked system-diagnostics phrasing.
-    2. Job review / evidence review — review request or explicit job ID.
-    3. Follow-up preview request — draft follow-up from prior job evidence.
-    4. Investigation derived-save — save the current derived artifact.
-    5. Investigation compare — compare investigation result references.
-    6. Investigation summary — summarise investigation result references.
-    7. Investigation expand (error path) — invalid expand reference.
-    8. Investigation save — save investigation findings to a governed preview.
-    9. Near-miss submit phrase — fail-closed block on fuzzy submit phrasing.
-    10. Stale draft reference — fail-closed when message references a draft
+    1. Time question — deterministic local-time / timezone answer.
+    2. Diagnostics refusal — blocked system-diagnostics phrasing.
+    3. Job review / evidence review — review request or explicit job ID.
+    4. Follow-up preview request — draft follow-up from prior job evidence.
+    5. Investigation derived-save — save the current derived artifact.
+    6. Investigation compare — compare investigation result references.
+    7. Investigation summary — summarise investigation result references.
+    8. Investigation expand (error path) — invalid expand reference.
+    9. Investigation save — save investigation findings to a governed preview.
+    10. Near-miss submit phrase — fail-closed block on fuzzy submit phrasing.
+    11. Stale draft reference — fail-closed when message references a draft
         but no active draft/preview exists in session context.
 
     Returns ``EarlyExitResult(matched=True)`` for the first condition that
@@ -185,7 +187,18 @@ def dispatch_early_exit_intent(
     - Blocked-file intent check (ordering: must follow submit checks).
     """
 
-    # ── 1. Diagnostics refusal ─────────────────────────────────────────────
+    # ── 1. Time question ──────────────────────────────────────────────────
+    # Simple "what time is it?" / "what day is it?" questions are answered
+    # deterministically from the system clock — no LLM needed.
+    time_answer = answer_time_question(message)
+    if time_answer is not None:
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=time_answer,
+            status="ok:time_question",
+        )
+
+    # ── 2. Diagnostics refusal ─────────────────────────────────────────────
     refusal = diagnostics_request_refusal(message)
     if refusal is not None:
         return EarlyExitResult(

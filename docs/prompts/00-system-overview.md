@@ -35,5 +35,8 @@ Vera maintains a bounded shared session context that tracks workflow-continuity 
 
 A bounded reference-resolution layer (`vera/reference_resolver.py`) maps natural in-session phrases ("that draft", "that file", "the result", "the follow-up") to concrete referents using shared session context. Resolution is conservative and fail-closed: ambiguous or missing references are never guessed.
 
+## Time-Aware Context
+Vera and other AI fronts receive a structured time-context block containing current system-local time, UTC time, timezone name, and day-of-week. This enables truthful answers to timing questions ("what time is it?", "how long ago did that run?", "when will it fire?") grounded in the system clock and canonical timestamps — without fabrication or location guessing.
+
 ## Additional Shared Context
 For a concise runtime/module map used across model roles, see `docs/prompts/03-runtime-technical-overview.md`.

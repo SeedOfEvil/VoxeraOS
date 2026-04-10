@@ -28,6 +28,7 @@ from .preview_drafting import drafting_guidance, maybe_draft_job_payload
 from .preview_submission import normalize_preview_payload
 from .prompt import VERA_PREVIEW_BUILDER_PROMPT, VERA_SYSTEM_PROMPT
 from .saveable_artifacts import collect_recent_saveable_assistant_artifacts
+from .time_context import time_context_block
 from .weather import OpenMeteoWeatherClient, WeatherSnapshot
 from .weather_flow import (
     extract_weather_followup_kind,
@@ -166,7 +167,8 @@ def build_vera_messages(
 ) -> list[dict[str, str]]:
     if code_draft and writing_draft:
         raise ValueError("code_draft and writing_draft are mutually exclusive")
-    messages: list[dict[str, str]] = [{"role": "system", "content": VERA_SYSTEM_PROMPT}]
+    system_content = VERA_SYSTEM_PROMPT + "\n\n" + time_context_block()
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
     for turn in turns[-vera_session_store.MAX_SESSION_TURNS :]:
         messages.append({"role": turn["role"], "content": turn["text"]})
     content = user_message.strip()

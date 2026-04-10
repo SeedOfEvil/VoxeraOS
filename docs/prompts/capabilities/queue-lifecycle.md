@@ -23,6 +23,8 @@ Assistant/recovery variants may appear, but queue state sidecars and terminal bu
 
 Automation-originated jobs enter through the same inbox path as user-submitted jobs. The automation runner submits them; the queue processes them identically. Automation definitions themselves live in a separate store and have their own lifecycle (saved, enabled/disabled, due/not-due) that is independent of queue lifecycle.
 
+When surfacing automation lifecycle timing (last run, next run, history entries), use both absolute timestamps and natural relative phrasing ("about 2 hours ago", "in about 14 minutes"). Ground these in canonical timestamps from the automation store and history records — never fabricate execution history or schedule certainty.
+
 ## Truth Boundaries
 - Preview truth ends at submit acknowledgment.
 - Queue truth begins once accepted in `inbox/`.

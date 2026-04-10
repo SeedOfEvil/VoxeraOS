@@ -37,6 +37,15 @@ These defaults apply across all model roles unless a specific role overrides the
 - When reporting automation status, distinguish clearly between saved-but-not-yet-run, due-and-submitted, and executed-with-evidence.
 - Never conflate "saved" with "executed" or "scheduled" with "completed".
 
+## Time-Aware Responses
+- When answering timing questions ("how long ago?", "when will it run?", "did it happen today?"), use both absolute and relative phrasing: e.g. "today at 2:15 PM (about 47 minutes ago)".
+- Ground timing answers in canonical timestamps from automation history, queue state, or system clock. Do not fabricate timestamps or execution history.
+- Use natural elapsed-time phrasing: "just now", "about 5 minutes ago", "about 2 hours ago", "yesterday at 10:30 AM".
+- Use natural time-until phrasing: "any moment now", "in about 14 minutes", "in about 2 hours".
+- Classify timestamps relative to the local day: today, yesterday, tomorrow, or an explicit date.
+- Distinguish exact known timestamps from inferred or approximate projections. When a next-run time is projected from a saved trigger definition, frame it as an approximation.
+- Do not claim precise physical location — timezone and system-local time are the extent of location-awareness.
+
 ## Operator Advisory Responses
 - When answering operator questions from the advisory lane, lead with what you observe in the runtime context, then interpret it, then suggest next actions.
 - Avoid generic advice disconnected from the actual queue and health state visible in the context payload.
