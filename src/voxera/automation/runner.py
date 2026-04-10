@@ -1,19 +1,27 @@
-"""Minimal automation runner for due queue-submission automations (PR2).
+"""Minimal automation runner for due queue-submission automations.
 
 The runner is deliberately tiny:
 
 1. Load automation definitions from ``<queue_root>/automations/definitions/``.
-2. For each *enabled* definition whose trigger kind is supported in PR2
-   (``once_at`` or ``delay``), decide whether it is due.
+2. For each *enabled* definition whose trigger kind is supported
+   (``once_at``, ``delay``, or ``recurring_interval``), decide whether it
+   is due.
 3. When a definition is due, emit a normal canonical queue payload via the
    existing inbox submit path (``core/inbox.add_inbox_payload``). Record a
    single history entry under ``<queue_root>/automations/history/`` and
    update the saved definition (``last_run_at_ms``, ``last_job_ref``,
-   ``run_history_refs``, and the one-shot ``enabled=False`` + cleared
-   ``next_run_at_ms``).
-4. Unsupported trigger kinds are skipped with an explicit ``skipped``
-   outcome so an operator can tell the difference between "nothing was
-   due" and "a real definition exists but PR2 refuses to act on it yet".
+   ``run_history_refs``).
+
+   - **One-shot** (``once_at``, ``delay``): the definition is disabled
+     after a successful fire (``enabled=False``, ``next_run_at_ms=None``).
+   - **Recurring** (``recurring_interval``): the definition stays enabled
+     and ``next_run_at_ms`` is re-armed to ``fired_at_ms + interval_ms``
+     so it fires again on the next runner pass after that time.
+
+4. Unsupported trigger kinds (``recurring_cron``, ``watch_path``) are
+   skipped with an explicit ``skipped`` outcome so an operator can tell
+   the difference between "nothing was due" and "a real definition exists
+   but the runner refuses to act on it yet".
 
 Architectural rule (do not break):
 
@@ -21,9 +29,15 @@ Architectural rule (do not break):
 
 That means the runner never executes skills, never writes into
 ``pending/`` / ``done/`` / ``failed/`` directly, and never invents a second
-execution schema. The queue remains the execution boundary. If a future PR
-wants to add cron / interval / watch-path triggers, it must layer on top of
-this same emit-via-inbox path.
+execution schema. The queue remains the execution boundary.
+
+Recurring-interval semantics:
+
+- If ``next_run_at_ms`` is already set, use it as the due anchor.
+- Otherwise initialize from ``created_at_ms + interval_ms``.
+- After a successful fire, set ``next_run_at_ms = fired_at_ms + interval_ms``.
+- If the runner wakes up late, emit at most one queue job and schedule
+  the next interval from the actual fire time (no catch-up bursts).
 
 Fail-closed semantics:
 
@@ -33,7 +47,7 @@ Fail-closed semantics:
 - Any exception raised while emitting a queue job for a supported, due
   definition is caught, recorded as an ``error`` history entry, and the
   definition's state is *not* advanced — so a transient failure cannot
-  leave a one-shot definition stuck in a "half-fired" state.
+  leave a definition stuck in a "half-fired" state.
 - If the queue job is emitted successfully but the follow-up save of the
   updated definition fails (e.g. disk full, permission error), a second
   ``error`` history record is written that references the successful
@@ -50,14 +64,12 @@ Fail-closed semantics:
 
 Concurrency note:
 
-PR2 has no background daemon. The runner is meant to be invoked
-synchronously (library call or ``voxera automation run-due-once``). It
-does not take a lock on the definitions directory, so two concurrent
-invocations against the same queue root can race and both see a
-definition as "not yet fired" and both emit. This is an explicit
-non-goal for PR2; any real scheduler layer (cron / interval / watch)
-added by a future PR will need to serialize through the queue daemon
-lock or a dedicated automation lock.
+The runner is meant to be invoked synchronously (library call or
+``voxera automation run-due-once``). It does not take a lock on the
+definitions directory, so two concurrent invocations against the same
+queue root can race. This is an explicit non-goal for now; any real
+scheduler layer will need to serialize through the queue daemon lock or
+a dedicated automation lock.
 """
 
 from __future__ import annotations
@@ -83,10 +95,12 @@ from .store import (
     save_automation_definition,
 )
 
-# PR2 actively runs only ``once_at`` and ``delay``. Every other trigger kind
-# is intentionally skipped with an explicit reason so docs + history stay
-# honest about what the runner does today.
-SUPPORTED_TRIGGER_KINDS: frozenset[str] = frozenset({"once_at", "delay"})
+# Trigger kinds the runner actively evaluates and fires.
+SUPPORTED_TRIGGER_KINDS: frozenset[str] = frozenset({"once_at", "delay", "recurring_interval"})
+
+# One-shot trigger kinds disable the definition after a successful fire.
+# Recurring trigger kinds stay enabled and re-arm ``next_run_at_ms``.
+ONE_SHOT_TRIGGER_KINDS: frozenset[str] = frozenset({"once_at", "delay"})
 
 AUTOMATION_SOURCE_LANE = "automation_runner"
 
@@ -117,15 +131,17 @@ class AutomationRunResult:
 def _compute_due_anchor_ms(definition: AutomationDefinition) -> int | None:
     """Return the epoch-ms anchor at which ``definition`` becomes due.
 
-    ``once_at``: ``trigger_config["run_at_ms"]``.
-    ``delay``:   ``created_at_ms + trigger_config["delay_ms"]``.
+    ``once_at``:            ``trigger_config["run_at_ms"]``.
+    ``delay``:              ``created_at_ms + trigger_config["delay_ms"]``.
+    ``recurring_interval``: ``next_run_at_ms`` if set, otherwise
+                            ``created_at_ms + trigger_config["interval_ms"]``.
 
-    Both trigger kinds anchor their due time on fields that the object
+    All trigger kinds anchor their due time on fields that the object
     model has already validated (strict positive ints, no bool/float), so
     this helper does not need to re-validate — it trusts the durable model
     as the source of truth.
 
-    Returns ``None`` for any trigger kind PR2 does not support.
+    Returns ``None`` for any trigger kind the runner does not support.
     """
     kind = definition.trigger_kind
     config = definition.trigger_config
@@ -139,6 +155,13 @@ def _compute_due_anchor_ms(definition: AutomationDefinition) -> int | None:
         if isinstance(delay, int) and not isinstance(delay, bool) and delay > 0:
             return definition.created_at_ms + delay
         return None
+    if kind == "recurring_interval":
+        if definition.next_run_at_ms is not None:
+            return definition.next_run_at_ms
+        interval = config.get("interval_ms")
+        if isinstance(interval, int) and not isinstance(interval, bool) and interval > 0:
+            return definition.created_at_ms + interval
+        return None
     return None
 
 
@@ -150,13 +173,18 @@ def evaluate_due_automation(
     """Decide whether ``definition`` should fire at ``now_ms``.
 
     Returns a ``(due, reason)`` pair. ``due`` is True only for supported,
-    enabled, not-already-fired definitions whose anchor has been reached.
-    ``reason`` always carries an operator-legible explanation — even on the
-    True path, where it describes *why* the definition is considered due.
+    enabled, not-already-fired (one-shot) or due-again (recurring)
+    definitions whose anchor has been reached. ``reason`` always carries
+    an operator-legible explanation — even on the True path, where it
+    describes *why* the definition is considered due.
 
-    One-shot semantics: in PR2 both ``once_at`` and ``delay`` are one-shot.
-    A definition with a non-null ``last_run_at_ms`` is considered already
-    fired and will not be re-emitted on a subsequent runner pass.
+    One-shot semantics (``once_at``, ``delay``): a definition with a
+    non-null ``last_run_at_ms`` is considered already fired and will not
+    be re-emitted on a subsequent runner pass.
+
+    Recurring semantics (``recurring_interval``): ``last_run_at_ms`` does
+    not disqualify the definition. The due anchor is ``next_run_at_ms``
+    (or ``created_at_ms + interval_ms`` on the first pass).
     """
     stamp = int(now_ms) if now_ms is not None else _now_ms()
 
@@ -166,10 +194,11 @@ def evaluate_due_automation(
     if definition.trigger_kind not in SUPPORTED_TRIGGER_KINDS:
         return (
             False,
-            f"trigger_kind {definition.trigger_kind!r} is not supported by the PR2 runner",
+            f"trigger_kind {definition.trigger_kind!r} is not supported by the runner",
         )
 
-    if definition.last_run_at_ms is not None:
+    # One-shot guard: once_at and delay fire at most once.
+    if definition.trigger_kind in ONE_SHOT_TRIGGER_KINDS and definition.last_run_at_ms is not None:
         return (False, "one-shot definition has already fired")
 
     anchor = _compute_due_anchor_ms(definition)
@@ -249,10 +278,16 @@ def process_automation_definition(
 
     Returns an ``AutomationRunResult`` summarizing what happened.
 
-    On ``submitted``, the updated definition (with refreshed
-    ``last_run_at_ms`` / ``last_job_ref`` / ``run_history_refs`` /
-    ``enabled=False`` / ``next_run_at_ms=None``) has already been saved
-    back through the PR1 storage layer before this function returns.
+    On ``submitted``, the updated definition has already been saved back
+    through the storage layer before this function returns:
+
+    - **One-shot** (``once_at``, ``delay``): ``enabled=False``,
+      ``next_run_at_ms=None``.
+    - **Recurring** (``recurring_interval``): ``enabled=True``,
+      ``next_run_at_ms = fired_at_ms + interval_ms``.
+
+    In both cases ``last_run_at_ms``, ``last_job_ref``, and
+    ``run_history_refs`` are updated.
 
     On ``skipped``, the stored definition is left untouched and no
     history record is written — history is an audit trail of actual
@@ -315,15 +350,22 @@ def process_automation_definition(
         payload_template=definition.payload_template,
     )
 
-    updated = definition.model_copy(
-        update={
-            "enabled": False,
-            "last_run_at_ms": stamp,
-            "last_job_ref": queue_job_ref,
-            "run_history_refs": [*definition.run_history_refs, history_ref],
-            "next_run_at_ms": None,
-        }
-    )
+    # Build the post-submit state update. One-shot kinds disable the
+    # definition; recurring kinds stay enabled and re-arm next_run_at_ms.
+    state_update: dict[str, Any] = {
+        "last_run_at_ms": stamp,
+        "last_job_ref": queue_job_ref,
+        "run_history_refs": [*definition.run_history_refs, history_ref],
+    }
+    if definition.trigger_kind in ONE_SHOT_TRIGGER_KINDS:
+        state_update["enabled"] = False
+        state_update["next_run_at_ms"] = None
+    elif definition.trigger_kind == "recurring_interval":
+        interval = definition.trigger_config.get("interval_ms")
+        state_update["enabled"] = True
+        state_update["next_run_at_ms"] = stamp + int(interval)  # type: ignore[arg-type]
+
+    updated = definition.model_copy(update=state_update)
     try:
         save_automation_definition(updated, queue_root, now_ms=stamp)
     except Exception as exc:  # noqa: BLE001 - fail-closed audit path
@@ -419,6 +461,7 @@ def run_due_automations(
 __all__ = [
     "AUTOMATION_SOURCE_LANE",
     "AutomationRunResult",
+    "ONE_SHOT_TRIGGER_KINDS",
     "SUPPORTED_TRIGGER_KINDS",
     "evaluate_due_automation",
     "process_automation_definition",
