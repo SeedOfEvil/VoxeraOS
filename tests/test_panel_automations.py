@@ -320,8 +320,10 @@ def test_detail_survives_malformed_history(tmp_path, monkeypatch):
     res = client.get("/automations/hist-bad")
 
     assert res.status_code == 200
+    body = res.text
     # Page renders without error; malformed history is skipped
-    assert "hist-bad" in body if (body := res.text) else True
+    assert "hist-bad" in body
+    assert "Run History" in body
 
 
 # -----------------------------------------------------------------------
@@ -456,3 +458,165 @@ def test_flash_messages_render_on_detail_page(tmp_path, monkeypatch):
 
     assert res.status_code == 200
     assert "Automation enabled" in res.text
+
+
+# -----------------------------------------------------------------------
+# 11. Enable/disable preserve unrelated fields
+# -----------------------------------------------------------------------
+
+
+def test_enable_preserves_unrelated_fields(tmp_path, monkeypatch):
+    queue_dir = _setup_queue(tmp_path, monkeypatch, with_auth=True)
+    _make_definition(
+        queue_dir,
+        id="preserve-en",
+        enabled=False,
+        title="Original Title",
+        description="original desc",
+        trigger_kind="once_at",
+        trigger_config={"run_at_ms": 1_700_000_000_000},
+        payload_template={"goal": "original goal"},
+        policy_posture="strict_review",
+        created_from="cli",
+    )
+
+    client = TestClient(panel_module.app)
+    _authed_csrf_request(client, "post", "/automations/preserve-en/enable")
+
+    reloaded = load_automation_definition("preserve-en", queue_dir)
+    assert reloaded.enabled is True
+    assert reloaded.title == "Original Title"
+    assert reloaded.description == "original desc"
+    assert reloaded.trigger_kind == "once_at"
+    assert reloaded.trigger_config == {"run_at_ms": 1_700_000_000_000}
+    assert reloaded.payload_template == {"goal": "original goal"}
+    assert reloaded.policy_posture == "strict_review"
+    assert reloaded.created_from == "cli"
+    assert reloaded.created_at_ms == 1_699_999_000_000
+
+
+def test_disable_preserves_unrelated_fields(tmp_path, monkeypatch):
+    queue_dir = _setup_queue(tmp_path, monkeypatch, with_auth=True)
+    _make_definition(
+        queue_dir,
+        id="preserve-dis",
+        enabled=True,
+        title="Keep This Title",
+        trigger_config={"run_at_ms": 1_700_000_000_000},
+        payload_template={"mission_id": "system_inspect"},
+    )
+
+    client = TestClient(panel_module.app)
+    _authed_csrf_request(client, "post", "/automations/preserve-dis/disable")
+
+    reloaded = load_automation_definition("preserve-dis", queue_dir)
+    assert reloaded.enabled is False
+    assert reloaded.title == "Keep This Title"
+    assert reloaded.trigger_config == {"run_at_ms": 1_700_000_000_000}
+    assert reloaded.payload_template == {"mission_id": "system_inspect"}
+    assert reloaded.created_at_ms == 1_699_999_000_000
+
+
+# -----------------------------------------------------------------------
+# 12. Run-now source_lane and definition state verification
+# -----------------------------------------------------------------------
+
+
+def test_run_now_uses_automation_runner_source_lane(tmp_path, monkeypatch):
+    """Verify the inbox payload carries source_lane=automation_runner,
+    proving run-now goes through the canonical runner path."""
+    queue_dir = _setup_queue(tmp_path, monkeypatch, with_auth=True)
+    _make_definition(queue_dir, id="lane-test", enabled=True)
+
+    client = TestClient(panel_module.app)
+    _authed_csrf_request(client, "post", "/automations/lane-test/run-now")
+
+    inbox_files = list((queue_dir / "inbox").glob("*.json"))
+    assert len(inbox_files) >= 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    job_intent = payload.get("job_intent", {})
+    assert job_intent.get("source_lane") == "automation_runner"
+
+
+def test_run_now_updates_definition_state(tmp_path, monkeypatch):
+    """After run-now on a once_at definition, it should be disabled
+    and have last_run_at_ms set (one-shot semantics)."""
+    queue_dir = _setup_queue(tmp_path, monkeypatch, with_auth=True)
+    _make_definition(queue_dir, id="state-test", enabled=True)
+
+    client = TestClient(panel_module.app)
+    _authed_csrf_request(client, "post", "/automations/state-test/run-now")
+
+    reloaded = load_automation_definition("state-test", queue_dir)
+    # once_at is one-shot: disabled after firing
+    assert reloaded.enabled is False
+    assert reloaded.last_run_at_ms is not None
+    assert reloaded.last_job_ref is not None
+    assert len(reloaded.run_history_refs) >= 1
+
+
+# -----------------------------------------------------------------------
+# 13. Traversal-looking automation_id handled safely
+# -----------------------------------------------------------------------
+
+
+def test_traversal_automation_id_handled_safely(tmp_path, monkeypatch):
+    _setup_queue(tmp_path, monkeypatch)
+
+    client = TestClient(panel_module.app)
+    # Path traversal attempt — rejected either by FastAPI routing (404)
+    # or by store id validation (303 redirect to flash=store_error/not_found).
+    # Either way, no file-system escape.
+    res = client.get("/automations/..%2F..%2Fetc%2Fpasswd", follow_redirects=False)
+    assert res.status_code in {303, 404, 422}
+
+
+def test_store_validation_rejects_bad_id(tmp_path, monkeypatch):
+    """An id that passes FastAPI routing but fails AUTOMATION_ID_PATTERN
+    should redirect cleanly, not crash."""
+    _setup_queue(tmp_path, monkeypatch)
+
+    client = TestClient(panel_module.app)
+    # Dots at start violate AUTOMATION_ID_PATTERN (must start with alnum)
+    res = client.get("/automations/.hidden-file", follow_redirects=False)
+    assert res.status_code in {303, 404}
+
+
+def test_store_validation_rejects_bad_id_on_mutation(tmp_path, monkeypatch):
+    _setup_queue(tmp_path, monkeypatch, with_auth=True)
+
+    client = TestClient(panel_module.app)
+    # Leading dot violates AUTOMATION_ID_PATTERN
+    res = _authed_csrf_request(client, "post", "/automations/.bad-id/enable")
+    assert res.status_code in {303, 404}
+
+
+# -----------------------------------------------------------------------
+# 14. History with non-int triggered_at_ms survives gracefully
+# -----------------------------------------------------------------------
+
+
+def test_detail_survives_history_with_bad_timestamp_type(tmp_path, monkeypatch):
+    """A corrupted-but-parseable history record with a non-int triggered_at_ms
+    should not crash the detail page."""
+    queue_dir = _setup_queue(tmp_path, monkeypatch)
+    _make_definition(queue_dir, id="ts-bad")
+
+    from voxera.automation.store import history_dir
+
+    bad_record = {
+        "automation_id": "ts-bad",
+        "run_id": "9999-deadbeef",
+        "triggered_at_ms": "not-a-number",
+        "outcome": "submitted",
+        "queue_job_ref": "test.json",
+        "message": "test",
+    }
+    target = history_dir(queue_dir) / "auto-ts-bad-9999-deadbeef.json"
+    target.write_text(json.dumps(bad_record), encoding="utf-8")
+
+    client = TestClient(panel_module.app)
+    res = client.get("/automations/ts-bad")
+
+    assert res.status_code == 200
+    assert "ts-bad" in res.text

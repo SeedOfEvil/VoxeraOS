@@ -56,6 +56,24 @@ def _format_ts_ms(ts_ms: int | None) -> str:
     return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+def _coerce_ts_ms(value: Any) -> int | None:
+    """Safely coerce a raw JSON value to an epoch-ms int or None.
+
+    History records are normally well-formed (``build_history_record`` always
+    writes ``int(triggered_at_ms)``), but a hand-edited or corrupted record
+    could carry a string or bool. Passing a non-int to the timestamp formatter
+    would raise ``TypeError`` on the ``<= 0`` comparison and crash the detail
+    page. This helper ensures we never pass a non-int to ``ts_fmt``.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float) and value > 0:
+        return int(value)
+    return None
+
+
 def _safe_json_pretty(value: Any) -> str:
     try:
         return json.dumps(value, indent=2, sort_keys=True)
@@ -142,7 +160,7 @@ def register_automation_routes(
                 history.append(
                     {
                         "run_id": rec.get("run_id", "\u2014"),
-                        "triggered_at": ts_fmt(rec.get("triggered_at_ms")),
+                        "triggered_at": ts_fmt(_coerce_ts_ms(rec.get("triggered_at_ms"))),
                         "outcome": rec.get("outcome", "\u2014"),
                         "queue_job_ref": rec.get("queue_job_ref") or "\u2014",
                         "message": rec.get("message", "\u2014"),
