@@ -29,6 +29,7 @@ from .history import (
     build_history_record,
     generate_run_id,
     history_record_ref,
+    list_history_records,
     write_history_record,
 )
 from .models import (
@@ -103,6 +104,7 @@ __all__ = [
     "generate_run_id",
     "history_dir",
     "history_record_ref",
+    "list_history_records",
     "list_automation_definitions",
     "load_automation_definition",
     "process_automation_definition",

@@ -29,6 +29,6 @@
 │ ops          Operational incident bundle utilities                                               │
 │ inbox        Human-friendly queue inbox                                                          │
 │ secrets      Manage provider/API secrets                                                         │
-│ automation   Minimal automation runner. Supports once_at, delay, and recurring_interval          │
-│              triggers; recurring_cron and watch_path are skipped.                                │
+│ automation   Automation operator CLI. Inspect, control, and run saved automation definitions.    │
+│              Queue remains the execution boundary.                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

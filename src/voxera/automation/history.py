@@ -225,6 +225,45 @@ def history_record_ref(automation_id: str, run_id: str) -> str:
     return f"{HISTORY_DIRNAME}/{_history_record_name(automation_id, run_id)}"
 
 
+def list_history_records(
+    queue_root: Path,
+    automation_id: str,
+) -> list[dict[str, Any]]:
+    """Return all history records for a given automation id, newest first.
+
+    Each record is the raw parsed JSON dict from disk. Malformed files
+    are silently skipped so one corrupt history entry cannot hide the
+    rest of the audit trail. Results are sorted by ``triggered_at_ms``
+    descending (newest first) for operator convenience.
+
+    The ``automation_id`` is validated against ``AUTOMATION_ID_PATTERN``
+    before the glob is constructed so a traversal-looking id is rejected
+    fail-closed.
+    """
+    safe_id = _validated_id_segment(automation_id, kind="id")
+    directory = history_dir(queue_root)
+    if not directory.exists():
+        return []
+
+    prefix = f"auto-{safe_id}-"
+    records: list[dict[str, Any]] = []
+    for path in sorted(directory.glob(f"{prefix}*.json")):
+        if not path.is_file():
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                continue
+        except (OSError, json.JSONDecodeError, ValueError):
+            continue
+        records.append(data)
+
+    # Sort newest first by triggered_at_ms (fall back to 0 for robustness).
+    records.sort(key=lambda r: r.get("triggered_at_ms", 0), reverse=True)
+    return records
+
+
 __all__ = [
     "AUTOMATION_HISTORY_SCHEMA_VERSION",
     "AUTOMATION_RUN_OUTCOMES",
@@ -232,5 +271,6 @@ __all__ = [
     "build_history_record",
     "generate_run_id",
     "history_record_ref",
+    "list_history_records",
     "write_history_record",
 ]

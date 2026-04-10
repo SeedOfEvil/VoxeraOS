@@ -169,9 +169,10 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 ### Voice foundation
 - `test_voice_foundation.py`
 
-### Automation object model and runner (definition layer + runner)
+### Automation object model, runner, and operator CLI
 - `test_automation_object_model.py` — covers the Pydantic model in `src/voxera/automation/models.py` and the file-backed store in `src/voxera/automation/store.py`.
 - `test_automation_runner.py` — covers the runner surface in `src/voxera/automation/runner.py` and the history records in `src/voxera/automation/history.py`: due `once_at`, `delay`, and `recurring_interval` definitions emit normal canonical queue jobs via the existing inbox path; non-due / disabled / malformed / unsupported-trigger-kind definitions are skipped; history records carry queue job linkage; updated definition fields (`last_run_at_ms`, `last_job_ref`, `run_history_refs`, `enabled`, `next_run_at_ms`) are saved; one-shot semantics prevent double-submit on repeated runner passes; recurring semantics re-arm `next_run_at_ms` and allow repeated fires; emitted payload matches the saved `payload_template`.
+- `test_automation_operator_cli.py` — covers the operator CLI commands in `src/voxera/cli_automation.py`: `list` shows saved definitions; `show` renders a detailed JSON view; `enable` / `disable` flip the enabled flag and persist without rewriting unrelated fields; `history` shows linked run history entries; `run-now` processes through the existing runner and submits via the queue; missing ids return clean errors; malformed definitions and history files are handled safely; `list_history_records` helper returns records filtered by automation id, newest first.
 
 ### Misc
 - `test_inbox.py`
@@ -239,6 +240,7 @@ The "sync, test, validate" method used for meaningful PRs (see `Testing-Method.t
 | Ops / incident bundle | `test_ops_bundle.py`, `test_ops_bundle_includes_config_snapshot.py`, `test_diagnostics_pack.py` |
 | Automation object model / storage | `test_automation_object_model.py` |
 | Automation runner / history | `test_automation_runner.py` |
+| Automation operator CLI | `test_automation_operator_cli.py` |
 | Docs consistency | `test_docs_consistency.py` |
 
 ## E2E scripts
