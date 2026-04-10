@@ -164,7 +164,11 @@ def automation_enable(
         return
 
     updated = defn.model_copy(update={"enabled": True})
-    save_automation_definition(updated, queue_root)
+    try:
+        save_automation_definition(updated, queue_root)
+    except (AutomationStoreError, OSError) as exc:
+        console.print(f"[red]ERROR:[/red] failed to save: {exc}")
+        raise typer.Exit(code=1) from exc
     console.print(f"Automation [bold]{automation_id}[/bold] enabled.")
 
 
@@ -193,7 +197,11 @@ def automation_disable(
         return
 
     updated = defn.model_copy(update={"enabled": False})
-    save_automation_definition(updated, queue_root)
+    try:
+        save_automation_definition(updated, queue_root)
+    except (AutomationStoreError, OSError) as exc:
+        console.print(f"[red]ERROR:[/red] failed to save: {exc}")
+        raise typer.Exit(code=1) from exc
     console.print(f"Automation [bold]{automation_id}[/bold] disabled.")
 
 

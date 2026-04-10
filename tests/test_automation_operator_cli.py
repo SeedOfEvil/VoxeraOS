@@ -161,6 +161,17 @@ def test_show_missing_id_exits_nonzero(tmp_path: Path) -> None:
     assert "automation not found" in result.stdout.lower()  # type: ignore[union-attr]
 
 
+def test_show_malformed_file_exits_nonzero(tmp_path: Path) -> None:
+    """Show with a malformed definition file on disk returns a clean error."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    bad_path = queue_root / "automations" / "definitions" / "corrupt.json"
+    bad_path.write_text("not valid json {{{", encoding="utf-8")
+    result = _invoke(["automation", "show", "corrupt", "--queue-dir", str(queue_root)], tmp_path)
+    assert result.exit_code == 1  # type: ignore[union-attr]
+    assert "error" in result.stdout.lower()  # type: ignore[union-attr]
+
+
 # ---------------------------------------------------------------------------
 # automation enable
 # ---------------------------------------------------------------------------
@@ -233,6 +244,39 @@ def test_enable_preserves_unrelated_fields(tmp_path: Path) -> None:
     assert reloaded.payload_template == original.payload_template
 
 
+def test_enable_save_failure_exits_nonzero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enable exits non-zero when the save fails."""
+    from unittest.mock import patch
+
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_defn(id="save-fail", enabled=False),
+        queue_root,
+        touch_updated=False,
+    )
+    with patch(
+        "voxera.cli_automation.save_automation_definition",
+        side_effect=OSError("disk full"),
+    ):
+        result = _invoke(
+            ["automation", "enable", "save-fail", "--queue-dir", str(queue_root)], tmp_path
+        )
+    assert result.exit_code == 1  # type: ignore[union-attr]
+    assert "failed to save" in result.stdout.lower()  # type: ignore[union-attr]
+
+
+def test_enable_malformed_file_exits_nonzero(tmp_path: Path) -> None:
+    """Enable with a malformed definition file on disk returns a clean error."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    bad_path = queue_root / "automations" / "definitions" / "corrupt.json"
+    bad_path.write_text("{{{bad", encoding="utf-8")
+    result = _invoke(["automation", "enable", "corrupt", "--queue-dir", str(queue_root)], tmp_path)
+    assert result.exit_code == 1  # type: ignore[union-attr]
+    assert "error" in result.stdout.lower()  # type: ignore[union-attr]
+
+
 # ---------------------------------------------------------------------------
 # automation disable
 # ---------------------------------------------------------------------------
@@ -298,6 +342,19 @@ def test_disable_preserves_unrelated_fields(tmp_path: Path) -> None:
     assert reloaded.description == "keep this too"
     assert reloaded.next_run_at_ms == 1_700_001_000_000
     assert reloaded.trigger_kind == original.trigger_kind
+
+
+def test_disable_malformed_file_exits_nonzero(tmp_path: Path) -> None:
+    """Disable with a malformed definition file on disk returns a clean error."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    bad_path = queue_root / "automations" / "definitions" / "corrupt2.json"
+    bad_path.write_text("{{{bad", encoding="utf-8")
+    result = _invoke(
+        ["automation", "disable", "corrupt2", "--queue-dir", str(queue_root)], tmp_path
+    )
+    assert result.exit_code == 1  # type: ignore[union-attr]
+    assert "error" in result.stdout.lower()  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------
