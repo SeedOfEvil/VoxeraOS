@@ -361,9 +361,11 @@ def process_automation_definition(
         state_update["enabled"] = False
         state_update["next_run_at_ms"] = None
     elif definition.trigger_kind == "recurring_interval":
-        interval = definition.trigger_config.get("interval_ms")
+        # interval_ms is guaranteed present and positive-int by model
+        # validation in _validate_trigger_config; use [] not .get().
+        interval_ms: int = definition.trigger_config["interval_ms"]
         state_update["enabled"] = True
-        state_update["next_run_at_ms"] = stamp + int(interval)  # type: ignore[arg-type]
+        state_update["next_run_at_ms"] = stamp + interval_ms
 
     updated = definition.model_copy(update=state_update)
     try:
