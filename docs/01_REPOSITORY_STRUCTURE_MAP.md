@@ -221,12 +221,12 @@ File-based missions are merged with in-code `MISSION_TEMPLATES`. In-code templat
 
 ## `deploy/systemd/user/` — user services
 
-All units under `deploy/systemd/user/` use a token `@VOXERA_PROJECT_DIR@` that `make services-install` rewrites to the absolute project directory:
+The daemon, panel, and Vera units use a token `@VOXERA_PROJECT_DIR@` that `make services-install` rewrites to the absolute project directory. The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory) so it is directly valid without the sed render step:
 
 - `voxera-daemon.service` — `voxera daemon` (queue + missions).
 - `voxera-panel.service` — `voxera panel --host 127.0.0.1 --port 8844`.
 - `voxera-vera.service` — `python -m uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`.
-- `voxera-automation.service` — `voxera automation run-due-once` (one-shot).
+- `voxera-automation.service` — `voxera automation run-due-once` (one-shot, `%h/VoxeraOS`).
 - `voxera-automation.timer` — fires `voxera-automation.service` every minute (`OnCalendar=minutely`, `Persistent=true`).
 
 The top-level `systemd/` directory still carries `voxera-core.service` and `voxera-panel.service` as legacy references. `services-install` uses the `deploy/` path.

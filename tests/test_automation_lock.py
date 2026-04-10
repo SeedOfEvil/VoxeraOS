@@ -232,6 +232,11 @@ def test_automation_service_unit_exists_and_has_correct_shape() -> None:
     assert "Type=oneshot" in unit
     assert "voxera automation run-due-once" in unit
     assert "Description=Voxera Automation Runner" in unit
+    # The service must use a directly-valid path (%h/VoxeraOS), not an
+    # unresolved placeholder, so the unit loads without a sed render step.
+    assert "@VOXERA_PROJECT_DIR@" not in unit
+    assert "WorkingDirectory=%h/VoxeraOS" in unit
+    assert "ExecStart=%h/VoxeraOS/.venv/bin/voxera" in unit
 
 
 def test_automation_timer_unit_exists_and_has_correct_cadence() -> None:

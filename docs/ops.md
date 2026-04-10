@@ -330,8 +330,16 @@ voxera automation run-due-once --id <automation_id>     # same, restricted to a 
 
 The `voxera-automation.timer` systemd unit invokes `voxera automation run-due-once` every minute. The runner acquires a single-writer lock (`<queue_root>/automations/.runner.lock`) before evaluating definitions. If the lock is already held (e.g. by a concurrent manual invocation), the runner exits cleanly with a `BUSY` message — no definitions are loaded and no queue jobs are submitted.
 
+The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory), so it is directly valid without the `make services-install` sed render step. You can install it manually or via `make services-install`:
+
 ```bash
-# enable and start the automation timer
+# install via make (copies + enables all units including the automation timer)
+make services-install
+
+# or install manually
+cp deploy/systemd/user/voxera-automation.service ~/.config/systemd/user/
+cp deploy/systemd/user/voxera-automation.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
 systemctl --user enable --now voxera-automation.timer
 
 # check timer status

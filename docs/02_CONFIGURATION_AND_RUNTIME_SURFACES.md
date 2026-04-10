@@ -100,9 +100,9 @@ Canonical units live under `deploy/systemd/user/`:
   ```
   ExecStart=@VOXERA_PROJECT_DIR@/.venv/bin/python -m uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790
   ```
-- `voxera-automation.service` (one-shot)
+- `voxera-automation.service` (one-shot, directly valid — uses `%h/VoxeraOS`)
   ```
-  ExecStart=@VOXERA_PROJECT_DIR@/.venv/bin/voxera automation run-due-once
+  ExecStart=%h/VoxeraOS/.venv/bin/voxera automation run-due-once
   ```
 - `voxera-automation.timer`
   ```
@@ -112,7 +112,7 @@ Canonical units live under `deploy/systemd/user/`:
 
 The three long-running services declare `Restart=on-failure`, a 2-second restart backoff, and `WantedBy=default.target`. The daemon unit additionally caps `TimeoutStopSec=10` so graceful SIGTERM shutdown has room to write its shutdown sidecar. The automation service is `Type=oneshot` — it evaluates due definitions once per timer tick and exits. The timer fires every minute with `Persistent=true` so missed ticks after a sleep/reboot are caught up on the next wake.
 
-`make services-install` rewrites `@VOXERA_PROJECT_DIR@` to the absolute project path, copies the units into `$HOME/.config/systemd/user/`, runs `daemon-reload`, and enables + starts them with `systemctl --user`.
+`make services-install` rewrites `@VOXERA_PROJECT_DIR@` to the absolute project path, copies the units into `$HOME/.config/systemd/user/`, runs `daemon-reload`, and enables + starts them with `systemctl --user`. The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory) so it loads without the sed render step; `make services-install` still copies and enables it alongside the other units.
 
 The top-level `systemd/` folder still carries `voxera-core.service` and `voxera-panel.service` as legacy references (they use `%h/VoxeraOS` directly). The supported path is `deploy/systemd/user/`.
 

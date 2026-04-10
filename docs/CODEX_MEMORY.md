@@ -6,7 +6,7 @@
 - **Runner changes** (`src/voxera/automation/runner.py`): added `RunnerPassResult` dataclass and `run_due_automations_locked()` wrapper that acquires the runner lock before evaluation. Returns `status="busy"` with empty results if the lock is held, `status="ok"` with a summary message otherwise.
 - **CLI changes** (`src/voxera/cli_automation.py`): `run-due-once` (without `--id`) now uses the locked wrapper. If busy, prints a `BUSY` message and exits cleanly (code 0) so the systemd timer does not treat a concurrent-skip as a failure. Single-id mode (`--id`) remains unlocked.
 - **Systemd units** (`deploy/systemd/user/`):
-  - `voxera-automation.service` — `Type=oneshot`, runs `voxera automation run-due-once`.
+  - `voxera-automation.service` — `Type=oneshot`, runs `voxera automation run-due-once`. Uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory) so the unit is directly valid without the `make services-install` sed render step. The other three services still use `@VOXERA_PROJECT_DIR@` placeholder substitution.
   - `voxera-automation.timer` — `OnCalendar=minutely`, `Persistent=true`, `WantedBy=timers.target`.
 - **Makefile**: `VOXERA_UNITS` updated to include `voxera-automation.service` and `voxera-automation.timer`.
 - **Tests** (`tests/test_automation_lock.py`): lock acquisition succeeds, second concurrent attempt returns busy, release allows reacquisition, locked runner returns busy when held, locked runner submits normally when available, summary message reflects outcomes, empty queue returns ok, systemd unit files exist with correct shape/cadence.

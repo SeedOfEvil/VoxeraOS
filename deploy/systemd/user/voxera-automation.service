@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=@VOXERA_PROJECT_DIR@
-ExecStart=@VOXERA_PROJECT_DIR@/.venv/bin/voxera automation run-due-once
+WorkingDirectory=%h/VoxeraOS
+ExecStart=%h/VoxeraOS/.venv/bin/voxera automation run-due-once
 
 [Install]
 WantedBy=default.target
