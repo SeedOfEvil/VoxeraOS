@@ -50,6 +50,8 @@ Vera is no longer one large handoff file. Current boundaries:
 - `vera/investigation_derivations.py` — compare/summarize/expand follow-up shaping
 - `vera/weather_flow.py` — quick weather lane and follow-up continuity
 - `vera/saveable_artifacts.py` — recent meaningful assistant-content save targeting
+- `vera/automation_preview.py` — automation definition preview drafting, revision, and submit-to-store
+- `vera/automation_lifecycle.py` — conversational lifecycle management for saved automations (show, enable, disable, delete, run-now, history)
 - `vera/handoff.py` — compatibility façade across the extracted seams
 
 ### Session context and continuity

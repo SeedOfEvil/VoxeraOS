@@ -4,7 +4,9 @@ import pytest
 
 from voxera import prompts
 from voxera.core.planner_context import get_planner_preamble
+from voxera.operator_assistant import build_assistant_messages
 from voxera.vera import prompt as vera_prompt
+from voxera.vera.service import _CODE_DRAFT_HINT, _WRITING_DRAFT_HINT
 
 
 def test_load_prompt_doc_reads_expected_markdown() -> None:
@@ -184,3 +186,52 @@ def test_all_composed_prompts_produce_nonempty_output() -> None:
         assert text.startswith("# System Overview"), (
             f"{name} prompt does not start with System Overview"
         )
+
+
+# ── Code-level inline instruction surfaces ──────────────────────────────
+
+
+def test_code_draft_hint_contains_quality_guidance() -> None:
+    hint = _CODE_DRAFT_HINT.lower()
+    assert "complete" in hint, "code draft hint should guide toward complete code"
+    assert "import" in hint, "code draft hint should mention imports"
+    assert "error handling" in hint, "code draft hint should mention error handling"
+
+
+def test_writing_draft_hint_contains_depth_guidance() -> None:
+    hint = _WRITING_DRAFT_HINT.lower()
+    assert "length" in hint or "depth" in hint, (
+        "writing draft hint should guide toward honoring depth"
+    )
+    assert "tone" in hint, "writing draft hint should mention tone"
+    assert "section" in hint or "structure" in hint, (
+        "writing draft hint should mention structure for longer pieces"
+    )
+
+
+def test_operator_assistant_system_prompt_contains_expected_guidance() -> None:
+    messages = build_assistant_messages("test question", {"queue_counts": {}})
+    system_msg = messages[0]["content"]
+    lowered = system_msg.lower()
+    assert "automation" in lowered, "operator assistant should mention automations"
+    assert "lifecycle" in lowered or (
+        "queued" in lowered and "planning" in lowered and "running" in lowered
+    ), "operator assistant should reference lifecycle terms"
+    assert "advisory" in lowered, "operator assistant should state advisory-only lane"
+    assert "saving" in lowered or "not executing" in lowered, (
+        "operator assistant should distinguish saving from executing"
+    )
+
+
+def test_planner_preamble_includes_output_quality_section() -> None:
+    preamble = get_planner_preamble(env={})
+    assert "# Capability: Output Quality Defaults" in preamble
+
+
+# ── Vera decomposition coverage in runtime overview ─────────────────────
+
+
+def test_runtime_overview_vera_decomposition_includes_automation_modules() -> None:
+    text = prompts.load_prompt_doc("03-runtime-technical-overview.md")
+    assert "vera/automation_preview.py" in text
+    assert "vera/automation_lifecycle.py" in text
