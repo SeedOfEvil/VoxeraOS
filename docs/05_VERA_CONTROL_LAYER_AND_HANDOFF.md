@@ -137,7 +137,7 @@ From `src/voxera/vera_web/app.py`:
 - `GET /` — chat UI shell.
 - `POST /chat` — main chat turn handler.
 - `GET /chat/updates` — pull updates / linked completion delivery.
-- `POST /handoff` — explicit handoff/submit path.
+- `POST /handoff` — explicit handoff/submit path. Routes through the correct preview-type-specific submit path: automation definition previews save a durable definition (no queue job); normal action previews submit a queue job.
 - `POST /clear` — clear the session.
 - `GET /vera/debug/session.json` — debug snapshot of the current session.
 

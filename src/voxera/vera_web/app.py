@@ -1803,6 +1803,26 @@ async def handoff(request: Request):
     preview = read_session_preview(root, active_session)
 
     append_session_turn(root, active_session, role="user", text="[explicit handoff requested]")
+
+    # ── Automation preview: save definition instead of queue submit ────
+    # The handoff endpoint must respect the active preview type.
+    # Automation previews save a durable definition; they do NOT emit a
+    # queue job.  This matches the routing in /chat for
+    # should_submit_active_preview + is_automation_preview.
+    if isinstance(preview, dict) and is_automation_preview(preview):
+        _auto_result = submit_automation_preview(preview, root)
+        write_session_preview(root, active_session, None)
+        context_on_automation_saved(root, active_session, automation_id=_auto_result.automation_id)
+        write_session_last_automation_preview(root, active_session, preview)
+        append_session_turn(root, active_session, role="assistant", text=_auto_result.ack)
+        return _render_page(
+            session_id=active_session,
+            turns=read_session_turns(root, active_session),
+            status="automation_definition_saved",
+            voice_flags=load_voice_foundation_flags(),
+        )
+
+    # ── Normal preview: queue-submit path (existing behavior) ─────────
     assistant_text, status = _submit_handoff(
         root=root,
         session_id=active_session,

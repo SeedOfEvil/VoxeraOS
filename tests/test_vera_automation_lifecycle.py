@@ -20,6 +20,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from fastapi.testclient import TestClient
+
 from voxera.automation.history import (
     build_history_record,
     write_history_record,
@@ -30,6 +32,7 @@ from voxera.automation.store import (
     load_automation_definition,
     save_automation_definition,
 )
+from voxera.vera import session_store as vera_session_store
 from voxera.vera.automation_lifecycle import (
     AmbiguousAutomation,
     AutomationNotResolved,
@@ -49,6 +52,7 @@ from voxera.vera.automation_lifecycle import (
 from voxera.vera.automation_preview import (
     is_automation_authoring_intent,
 )
+from voxera.vera_web import app as vera_app_module
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -859,3 +863,177 @@ class TestContextLifecycleIntegration:
             queue, sid, automation_id="test-auto-abc", deleted=True
         )
         assert ctx["active_topic"] is None
+
+
+# ---------------------------------------------------------------------------
+# 14. Explicit handoff routing — /handoff endpoint + /chat "[explicit handoff]"
+# ---------------------------------------------------------------------------
+
+
+def _set_queue_root(monkeypatch, queue: Path) -> None:
+    monkeypatch.setattr(vera_app_module, "_active_queue_root", lambda: queue)
+
+
+def _sample_automation_preview(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "preview_type": "automation_definition",
+        "title": "Handoff Test Automation",
+        "description": "",
+        "trigger_kind": "recurring_interval",
+        "trigger_config": {"interval_ms": 3_600_000},
+        "payload_template": {"goal": "run system_inspect"},
+        "enabled": True,
+        "created_from": "vera",
+        "explanation": "placeholder explanation",
+    }
+    base.update(overrides)
+    return base
+
+
+class TestExplicitHandoffAutomationPreview:
+    """Verify that explicit handoff routes automation previews through the
+    automation save path, not the queue-submit path.
+    """
+
+    def test_handoff_endpoint_saves_automation_definition(self, tmp_path, monkeypatch):
+        """POST /handoff with an active automation preview saves a definition."""
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        # Plant an automation preview directly in session state
+        preview = _sample_automation_preview()
+        vera_session_store.write_session_preview(queue, sid, preview)
+
+        res = client.post("/handoff", data={"session_id": sid})
+        assert res.status_code == 200
+
+        # Should save a definition, not emit a queue job
+        definitions = list_automation_definitions(queue)
+        assert len(definitions) == 1
+        assert definitions[0].title == "Handoff Test Automation"
+        assert definitions[0].trigger_kind == "recurring_interval"
+        assert definitions[0].created_from == "vera"
+
+    def test_handoff_endpoint_does_not_emit_queue_job(self, tmp_path, monkeypatch):
+        """POST /handoff with an automation preview must not create an inbox job."""
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        vera_session_store.write_session_preview(queue, sid, _sample_automation_preview())
+
+        client.post("/handoff", data={"session_id": sid})
+
+        inbox = queue / "inbox"
+        if inbox.exists():
+            inbox_files = list(inbox.glob("inbox-*.json"))
+            assert len(inbox_files) == 0, "Automation handoff must NOT create a queue job"
+
+    def test_handoff_endpoint_ack_is_truthful(self, tmp_path, monkeypatch):
+        """POST /handoff ack should mention saving, not execution."""
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        vera_session_store.write_session_preview(queue, sid, _sample_automation_preview())
+
+        res = client.post("/handoff", data={"session_id": sid})
+        body = res.text.lower()
+
+        assert "saved" in body or "definition" in body
+        assert "queue" in body or "runner" in body
+        # Must NOT claim the job was submitted to the queue inbox
+        assert "i submitted the job to voxeraos" not in body
+
+    def test_handoff_endpoint_clears_preview(self, tmp_path, monkeypatch):
+        """After automation handoff, the active preview should be cleared."""
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        vera_session_store.write_session_preview(queue, sid, _sample_automation_preview())
+
+        client.post("/handoff", data={"session_id": sid})
+
+        assert vera_session_store.read_session_preview(queue, sid) is None
+
+    def test_handoff_endpoint_stashes_preview_for_continuity(self, tmp_path, monkeypatch):
+        """After automation handoff, last_automation_preview is stashed."""
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        preview = _sample_automation_preview()
+        vera_session_store.write_session_preview(queue, sid, preview)
+
+        client.post("/handoff", data={"session_id": sid})
+
+        stashed = vera_session_store.read_session_last_automation_preview(queue, sid)
+        assert stashed is not None
+        assert stashed.get("title") == "Handoff Test Automation"
+
+    def test_handoff_endpoint_normal_preview_still_queues(self, tmp_path, monkeypatch):
+        """POST /handoff with a normal (non-automation) preview still queue-submits."""
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        # Plant a normal action preview
+        normal_preview = {"goal": "read ~/VoxeraOS/notes/test.txt from notes"}
+        vera_session_store.write_session_preview(queue, sid, normal_preview)
+
+        res = client.post("/handoff", data={"session_id": sid})
+        body = res.text.lower()
+
+        assert "submitted" in body or "queue" in body
+        # Should NOT save an automation definition
+        definitions = list_automation_definitions(queue)
+        assert len(definitions) == 0
+
+    def test_chat_explicit_handoff_saves_automation(self, tmp_path, monkeypatch):
+        """Typing '[explicit handoff requested]' in chat with an automation preview
+        should also save the definition (via the /chat route)."""
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        vera_session_store.write_session_preview(queue, sid, _sample_automation_preview())
+
+        client.post(
+            "/chat",
+            data={"session_id": sid, "message": "hand it off"},
+        )
+
+        definitions = list_automation_definitions(queue)
+        assert len(definitions) == 1
+        assert definitions[0].title == "Handoff Test Automation"
+        # No queue inbox job
+        inbox = queue / "inbox"
+        if inbox.exists():
+            assert len(list(inbox.glob("inbox-*.json"))) == 0
+
+    def test_go_ahead_still_saves_automation(self, tmp_path, monkeypatch):
+        """Existing 'go ahead' behavior for automation previews is unchanged."""
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        vera_session_store.write_session_preview(queue, sid, _sample_automation_preview())
+
+        client.post(
+            "/chat",
+            data={"session_id": sid, "message": "go ahead"},
+        )
+
+        definitions = list_automation_definitions(queue)
+        assert len(definitions) == 1
+        assert definitions[0].title == "Handoff Test Automation"
