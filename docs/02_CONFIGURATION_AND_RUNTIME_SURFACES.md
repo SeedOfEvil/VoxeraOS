@@ -176,6 +176,12 @@ From the README and the curated catalog under `src/voxera/data/openrouter_catalo
 - `voxera doctor --self-test` — fuller self test.
 - `voxera ops capabilities` — prints the deterministic capabilities snapshot (`core/capabilities_snapshot.py`).
 - `voxera ops bundle system` / `voxera ops bundle job <ref>` — incident bundles, archived by default under the data dir.
+- `voxera automation list` — list saved automation definitions with key fields (id, enabled, trigger_kind, next_run_at_ms, last_run_at_ms, last_job_ref).
+- `voxera automation show <id>` — detailed JSON view of a single automation definition.
+- `voxera automation enable <id>` — set `enabled=True` and persist. Only changes the enabled flag; unrelated fields are preserved.
+- `voxera automation disable <id>` — set `enabled=False` and persist. Only changes the enabled flag; unrelated fields are preserved.
+- `voxera automation history <id>` — show run history records for a definition, newest first. Uses the existing history file naming/linkage.
+- `voxera automation run-now <id>` — force an immediate run of a single definition through the existing runner, bypassing the due-time check. Disabled definitions and unsupported trigger kinds are still rejected. Submits through the canonical inbox path — the queue remains the execution boundary.
 - `voxera automation run-due-once` — automation runner entrypoint. Evaluates saved automation definitions under `<queue_root>/automations/definitions/` and emits a normal canonical queue payload via the existing inbox path for every *enabled*, *supported* (`once_at`, `delay`, `recurring_interval`), due definition. One-shot triggers (`once_at`, `delay`) disable the definition after firing. Recurring triggers (`recurring_interval`) stay enabled and re-arm `next_run_at_ms` for the next interval. `--id <automation_id>` restricts the evaluation to a single definition. `recurring_cron` and `watch_path` are persisted but skipped by the runner.
 
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.

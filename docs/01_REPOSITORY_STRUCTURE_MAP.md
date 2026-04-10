@@ -130,9 +130,10 @@ the execution boundary. Unsupported trigger kinds (``recurring_cron``,
   re-arms ``next_run_at_ms`` to ``fired_at_ms + interval_ms``.
 - `history.py` — durable run-history records
   (`build_history_record`, `write_history_record`, `generate_run_id`,
-  `history_record_ref`). One JSON file per run event under
+  `history_record_ref`, `list_history_records`). One JSON file per run event under
   `~/VoxeraOS/notes/queue/automations/history/`, atomically written via
-  a `.tmp` sidecar and `Path.replace`.
+  a `.tmp` sidecar and `Path.replace`. `list_history_records` returns all
+  records for a given automation id, newest first, skipping malformed files.
 
 **Skills subsystem (`src/voxera/skills/`)**
 - `registry.py` — `SkillRegistry`, `SkillDiscoveryReport`, manifest validation.
@@ -263,6 +264,7 @@ See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for the themed breakdown. At a 
 | Panel route families | `src/voxera/panel/routes_*.py` |
 | CLI new subcommand | the appropriate `src/voxera/cli_*.py`, wired from `cli.py` |
 | Automation definition model / storage | `src/voxera/automation/models.py`, `src/voxera/automation/store.py` |
-| Automation runner (once_at / delay / recurring_interval) | `src/voxera/automation/runner.py`, `src/voxera/automation/history.py`, `src/voxera/cli_automation.py` |
+| Automation runner (once_at / delay / recurring_interval) | `src/voxera/automation/runner.py`, `src/voxera/automation/history.py` |
+| Automation operator CLI (list / show / enable / disable / history / run-now) | `src/voxera/cli_automation.py` |
 | Systemd units | `deploy/systemd/user/` |
 | CLI help baselines | `tests/golden/` via `tools/golden_surfaces.py` |
