@@ -22,7 +22,18 @@ from ..core.writing_draft_intent import (
     is_writing_refinement_request,
 )
 from ..paths import queue_root as default_queue_root
+from ..vera.automation_preview import (
+    AutomationClarification,
+    AutomationPreview,
+    describe_saved_automation,
+    draft_automation_preview,
+    is_automation_authoring_intent,
+    is_automation_preview,
+    revise_automation_preview,
+    submit_automation_preview,
+)
 from ..vera.context_lifecycle import (
+    context_on_automation_saved,
     context_on_completion_ingested,
     context_on_followup_preview_prepared,
     context_on_handoff_submitted,
@@ -85,6 +96,7 @@ from ..vera.session_store import (
     read_session_enrichment,
     read_session_handoff_state,
     read_session_investigation,
+    read_session_last_automation_preview,
     read_session_last_user_input_origin,
     read_session_preview,
     read_session_saveable_assistant_artifacts,
@@ -99,6 +111,7 @@ from ..vera.session_store import (
     write_session_enrichment,
     write_session_handoff_state,
     write_session_investigation,
+    write_session_last_automation_preview,
     write_session_preview,
     write_session_weather_context,
 )
@@ -1019,6 +1032,35 @@ async def chat(request: Request):
             status=status,
         )
 
+    # ── Automation preview submit ──────────────────────────────────────────
+    # When the active preview is an automation definition preview, submit
+    # saves a durable automation definition instead of emitting a queue job.
+    if (
+        should_submit_active_preview(message, preview_available=pending_preview is not None)
+        and isinstance(pending_preview, dict)
+        and is_automation_preview(pending_preview)
+    ):
+        _auto_result = submit_automation_preview(pending_preview, root)
+        write_session_preview(root, active_session, None)
+        context_on_automation_saved(root, active_session, automation_id=_auto_result.automation_id)
+        # Stash the preview so post-submit continuity can describe it.
+        write_session_last_automation_preview(root, active_session, pending_preview)
+        append_session_turn(root, active_session, role="assistant", text=_auto_result.ack)
+        _auto_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status="automation_definition_saved",
+            dispatch_source="submit_automation_preview",
+            turn_index=len(_auto_turns),
+        )
+        return _render_page(
+            session_id=active_session,
+            turns=_auto_turns,
+            status="automation_definition_saved",
+            voice_flags=voice_flags,
+        )
+
     if should_submit_active_preview(message, preview_available=pending_preview is not None):
         assistant_text, status = _submit_handoff(
             root=root,
@@ -1058,6 +1100,139 @@ async def chat(request: Request):
             session_id=active_session,
             turns=_blocked_turns,
             status="blocked_path",
+        )
+
+    # ── Automation preview drafting / revision ─────────────────────────────
+    # Detect automation-authoring intent ("every hour, run diagnostics") and
+    # draft a governed automation preview deterministically.  If there is
+    # already an active automation preview, handle revision turns.
+    # Post-submit continuity: answer "what did you save?" / "did it run?"
+    # using the stashed automation preview.
+    if isinstance(pending_preview, dict) and is_automation_preview(pending_preview):
+        _auto_revision = revise_automation_preview(message, pending_preview)
+        if isinstance(_auto_revision, AutomationPreview):
+            pending_preview = _auto_revision.preview
+            write_session_preview(root, active_session, _auto_revision.preview)
+            context_on_preview_created(root, active_session, draft_ref="automation_preview")
+            _auto_text = (
+                "I updated the automation preview.\n\n"
+                f"{_auto_revision.explanation}\n\n"
+                "Say **go ahead** to save this automation definition, or "
+                "tell me what to change."
+            )
+            append_session_turn(root, active_session, role="assistant", text=_auto_text)
+            _auto_turns = read_session_turns(root, active_session)
+            append_routing_debug_entry(
+                root,
+                active_session,
+                route_status="automation_preview_revised",
+                dispatch_source="automation_revision",
+                turn_index=len(_auto_turns),
+            )
+            return _render_page(
+                session_id=active_session,
+                turns=_auto_turns,
+                status="automation_preview_revised",
+                voice_flags=voice_flags,
+            )
+        if isinstance(_auto_revision, AutomationClarification):
+            append_session_turn(
+                root, active_session, role="assistant", text=_auto_revision.question
+            )
+            _auto_turns = read_session_turns(root, active_session)
+            append_routing_debug_entry(
+                root,
+                active_session,
+                route_status="automation_clarification",
+                dispatch_source="automation_revision_clarify",
+                turn_index=len(_auto_turns),
+            )
+            return _render_page(
+                session_id=active_session,
+                turns=_auto_turns,
+                status="automation_clarification",
+                voice_flags=voice_flags,
+            )
+    elif (
+        pending_preview is None
+        and is_automation_authoring_intent(message)
+        and not diagnostics_service_turn
+    ):
+        _auto_draft = draft_automation_preview(message, active_preview=None)
+        if isinstance(_auto_draft, AutomationPreview):
+            pending_preview = _auto_draft.preview
+            write_session_preview(root, active_session, _auto_draft.preview)
+            context_on_preview_created(root, active_session, draft_ref="automation_preview")
+            _auto_text = (
+                "Here's an automation preview:\n\n"
+                f"{_auto_draft.explanation}\n\n"
+                "Say **go ahead** to save this automation definition, or "
+                "tell me what to change."
+            )
+            append_session_turn(root, active_session, role="assistant", text=_auto_text)
+            _auto_turns = read_session_turns(root, active_session)
+            append_routing_debug_entry(
+                root,
+                active_session,
+                route_status="automation_preview_drafted",
+                dispatch_source="automation_drafting",
+                turn_index=len(_auto_turns),
+            )
+            return _render_page(
+                session_id=active_session,
+                turns=_auto_turns,
+                status="automation_preview_drafted",
+                voice_flags=voice_flags,
+            )
+        if isinstance(_auto_draft, AutomationClarification):
+            append_session_turn(root, active_session, role="assistant", text=_auto_draft.question)
+            _auto_turns = read_session_turns(root, active_session)
+            append_routing_debug_entry(
+                root,
+                active_session,
+                route_status="automation_clarification",
+                dispatch_source="automation_drafting_clarify",
+                turn_index=len(_auto_turns),
+            )
+            return _render_page(
+                session_id=active_session,
+                turns=_auto_turns,
+                status="automation_clarification",
+                voice_flags=voice_flags,
+            )
+
+    # ── Post-submit automation continuity ────────────────────────────────
+    # Answer "what did you save?" / "show me that automation" / "did it run?"
+    # using the stashed last_automation_preview from the session.
+    _last_auto_preview = read_session_last_automation_preview(root, active_session)
+    if _last_auto_preview is not None and re.search(
+        r"\b(?:show|what\s+did\s+you\s+save|what\s+will\s+it\s+do|when\s+will\s+it\s+run|"
+        r"did\s+it\s+run|has\s+it\s+run|what\s+was\s+that|describe\s+(?:it|that|the\s+automation))\b",
+        message,
+        re.IGNORECASE,
+    ):
+        _continuity_text = describe_saved_automation(_last_auto_preview)
+        # Guard: "did it run?" should not hallucinate execution
+        if re.search(r"\b(?:did\s+it\s+run|has\s+it\s+run)\b", message, re.IGNORECASE):
+            _continuity_text += (
+                "\n\nThe automation definition was saved but has not executed yet. "
+                "Execution will happen through the automation runner when the "
+                "trigger condition is met."
+            )
+        append_session_turn(root, active_session, role="assistant", text=_continuity_text)
+        _cont_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status="automation_continuity",
+            dispatch_source="post_submit_automation",
+            turn_index=len(_cont_turns),
+        )
+        return _render_page(
+            session_id=active_session,
+            turns=_cont_turns,
+            status="automation_continuity",
+            voice_flags=voice_flags,
         )
 
     is_info_query = is_informational_web_query(message)

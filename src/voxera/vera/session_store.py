@@ -134,6 +134,7 @@ def append_session_turn(
         "linked_queue_jobs",
         "conversational_planning_active",
         "last_user_input_origin",
+        "last_automation_preview",
         _SHARED_CONTEXT_FIELD,
         _ROUTING_DEBUG_FIELD,
     ):
@@ -291,6 +292,27 @@ def write_session_investigation(
         session_id,
         field_name="last_investigation",
         value=investigation,
+    )
+
+
+def read_session_last_automation_preview(
+    queue_root: Path, session_id: str
+) -> dict[str, Any] | None:
+    """Return the last saved automation preview for post-submit continuity."""
+    payload = _read_session_payload(queue_root, session_id)
+    preview = payload.get("last_automation_preview")
+    return preview if isinstance(preview, dict) else None
+
+
+def write_session_last_automation_preview(
+    queue_root: Path, session_id: str, preview: dict[str, Any] | None
+) -> None:
+    """Persist the last automation preview for post-submit continuity."""
+    _write_session_field(
+        queue_root,
+        session_id,
+        field_name="last_automation_preview",
+        value=preview,
     )
 
 

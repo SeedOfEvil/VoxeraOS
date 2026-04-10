@@ -156,8 +156,9 @@ Conversational control surface — reasoning, preview, submit, review. Vera is n
 - `linked_completions.py` — linked-job tracking, ingestion, auto-surfacing.
 - `result_surfacing.py` — result-forward text extraction.
 - `saveable_artifacts.py` — recent assistant-content selection for save flows.
-- `context_lifecycle.py` — shared-context update points (preview create/revise/clear, handoff, completion ingest, review, clear).
+- `context_lifecycle.py` — shared-context update points (preview create/revise/clear, handoff, completion ingest, review, automation save, clear).
 - `reference_resolver.py` — bounded reference-resolution layer (draft/file/job/continuation).
+- `automation_preview.py` — automation definition preview drafting, revision, and submit-to-store flow. Vera can now author automation previews conversationally and save them as durable automation definitions. Submit saves a definition — it does NOT emit a queue job. Execution remains through the automation runner and queue.
 - `investigation_flow.py`, `investigation_derivations.py` — read-only web investigation and derived follow-ups.
 - `weather.py`, `weather_flow.py` — live weather lookup flow.
 - `brave_search.py` — Brave Search API client used by the investigation flow.
