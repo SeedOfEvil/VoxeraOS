@@ -62,16 +62,13 @@ def _render_inline(text: str) -> str:
 
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.+)$")
 _UL_RE = re.compile(r"^[-*]\s+(.+)$")
-_UL_START_RE = re.compile(r"^[-*]\s+")
 _OL_RE = re.compile(r"^\d+\.\s+(.+)$")
-_OL_START_RE = re.compile(r"^\d+\.\s+")
 
 
 def _collect_list_items(
     lines: list[str],
     start: int,
     item_re: re.Pattern[str],
-    start_re: re.Pattern[str],
 ) -> tuple[list[str], int]:
     """Collect consecutive list items, tolerating blank lines between them."""
     items: list[str] = []
@@ -87,7 +84,7 @@ def _collect_list_items(
             j = i + 1
             while j < n and lines[j].strip() == "":
                 j += 1
-            if j < n and start_re.match(lines[j].strip()):
+            if j < n and item_re.match(lines[j].strip()):
                 i += 1
             else:
                 break
@@ -145,14 +142,14 @@ def render_assistant_markdown(text: str) -> Markup:
             continue
 
         # ── Unordered list (- or *) ──────────────────────────────────
-        if _UL_START_RE.match(stripped):
-            items, i = _collect_list_items(lines, i, _UL_RE, _UL_START_RE)
+        if _UL_RE.match(stripped):
+            items, i = _collect_list_items(lines, i, _UL_RE)
             parts.append(f"<ul>{''.join(items)}</ul>")
             continue
 
         # ── Ordered list (1. 2. …) ──────────────────────────────────
-        if _OL_START_RE.match(stripped):
-            items, i = _collect_list_items(lines, i, _OL_RE, _OL_START_RE)
+        if _OL_RE.match(stripped):
+            items, i = _collect_list_items(lines, i, _OL_RE)
             parts.append(f"<ol>{''.join(items)}</ol>")
             continue
 
@@ -184,8 +181,8 @@ def render_assistant_markdown(text: str) -> Markup:
             if (
                 s == ""
                 or _HEADING_RE.match(s)
-                or _UL_START_RE.match(s)
-                or _OL_START_RE.match(s)
+                or _UL_RE.match(s)
+                or _OL_RE.match(s)
                 or s.startswith("```")
                 or s.startswith("&gt; ")
                 or s == "&gt;"

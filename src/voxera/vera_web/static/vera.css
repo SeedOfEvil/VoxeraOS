@@ -230,16 +230,9 @@ body {
 .text.md-rendered h3 { font-size: 1.05em; }
 .text.md-rendered h4 { font-size: 0.95em; }
 .text.md-rendered h5 { font-size: 0.88em; color: var(--muted); }
-.text.md-rendered h3:first-child,
-.text.md-rendered h4:first-child,
-.text.md-rendered h5:first-child {
-  margin-top: 0;
-}
 .text.md-rendered p {
   margin: 0.4em 0;
 }
-.text.md-rendered p:first-child { margin-top: 0; }
-.text.md-rendered p:last-child { margin-bottom: 0; }
 .text.md-rendered ul,
 .text.md-rendered ol {
   margin: 0.4em 0;
@@ -263,8 +256,11 @@ body {
   background: rgba(10, 11, 16, 0.7);
   border: 1px solid var(--line);
   overflow-x: auto;
+  white-space: pre;
+  word-break: normal;
 }
 .text.md-rendered pre code {
+  display: block;
   padding: 0;
   background: none;
   border: none;
@@ -281,6 +277,8 @@ body {
   border-left: 3px solid rgba(45, 140, 240, 0.4);
   color: var(--muted);
 }
+.text.md-rendered > :first-child { margin-top: 0; }
+.text.md-rendered > :last-child { margin-bottom: 0; }
 
 /* ─── Empty state ──────────────────────────────────────────────── */
 .empty {

@@ -364,3 +364,92 @@ class TestParagraphBreaks:
         result = render_assistant_markdown("# Title\n\nSome text.")
         assert "<h3>Title</h3>" in result
         assert "<p>Some text.</p>" in result
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestEdgeCases:
+    def test_empty_ul_marker_no_infinite_loop(self):
+        """'- ' with no content must not cause an infinite loop."""
+        result = render_assistant_markdown("- ")
+        assert isinstance(result, Markup)
+        # The marker is treated as plain paragraph text, not as a list
+        assert "<ul>" not in result
+
+    def test_empty_ol_marker_no_infinite_loop(self):
+        """'1. ' with no content must not cause an infinite loop."""
+        result = render_assistant_markdown("1. ")
+        assert isinstance(result, Markup)
+        assert "<ol>" not in result
+
+    def test_four_hashes_not_heading(self):
+        """#### is outside the supported subset and should not render as heading."""
+        result = render_assistant_markdown("#### deep heading")
+        assert "<h" not in result or "<h3>" not in result
+        assert "####" in result  # stays literal in paragraph
+
+    def test_horizontal_rule_stays_literal(self):
+        """--- is not supported; should render as paragraph text."""
+        result = render_assistant_markdown("---")
+        assert "<hr" not in result
+        assert "<p>---</p>" in result
+
+    def test_link_syntax_not_processed(self):
+        """[text](url) stays literal — links are not in the supported subset."""
+        result = render_assistant_markdown("[click here](https://example.com)")
+        assert "<a " not in result
+        assert "[click here]" in result
+
+    def test_html_inside_fenced_code_block_escaped(self):
+        """HTML tags inside code blocks must be escaped, not rendered."""
+        text = "```\n<script>alert('xss')</script>\n```"
+        result = render_assistant_markdown(text)
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+        assert "<pre><code>" in result
+
+    def test_whitespace_only_returns_empty(self):
+        result = render_assistant_markdown("   \n  \n   ")
+        # All blank lines — no visible output (just blank-line skips)
+        assert "<p>" not in result
+        assert "<li>" not in result
+
+    def test_code_block_with_bold_markers_literal(self):
+        """Bold markers inside fenced blocks stay literal."""
+        text = "```\n**not bold** and `not code`\n```"
+        result = render_assistant_markdown(text)
+        assert "<strong>" not in result
+        assert "**not bold**" in result
+
+    def test_mixed_list_and_paragraph(self):
+        """A list followed by a paragraph should produce both elements."""
+        text = "- item one\n- item two\n\nSome text after."
+        result = render_assistant_markdown(text)
+        assert "<ul>" in result
+        assert "<li>item one</li>" in result
+        assert "<p>Some text after.</p>" in result
+
+
+# ---------------------------------------------------------------------------
+# Integration: template scoping
+# ---------------------------------------------------------------------------
+
+
+class TestTemplateScoping:
+    """The renderer is scoped to assistant messages by the Jinja2 template
+    and the JS renderTurns function. These tests verify the renderer itself
+    is a pure function — the scoping is the caller's job."""
+
+    def test_user_markdown_would_render_if_called(self):
+        """Proves the renderer doesn't distinguish roles — callers scope it."""
+        result = render_assistant_markdown("### User heading\n- user list")
+        assert "<h5>" in result
+        assert "<ul>" in result
+
+    def test_safety_holds_regardless_of_caller(self):
+        result = render_assistant_markdown("<img src=x onerror=alert(1)>")
+        assert "<img" not in result
+        assert "&lt;img" in result
