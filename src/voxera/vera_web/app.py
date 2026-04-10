@@ -1206,8 +1206,16 @@ async def chat(request: Request):
     # using the stashed last_automation_preview from the session.
     _last_auto_preview = read_session_last_automation_preview(root, active_session)
     if _last_auto_preview is not None and re.search(
-        r"\b(?:show|what\s+did\s+you\s+save|what\s+will\s+it\s+do|when\s+will\s+it\s+run|"
-        r"did\s+it\s+run|has\s+it\s+run|what\s+was\s+that|describe\s+(?:it|that|the\s+automation))\b",
+        r"\b(?:show\s+(?:me\s+)?(?:that|the)\s+automation"
+        r"|what\s+did\s+you\s+save"
+        r"|what\s+will\s+it\s+do"
+        r"|when\s+will\s+it\s+run"
+        r"|did\s+it\s+run"
+        r"|has\s+it\s+run"
+        r"|what\s+was\s+that\s+automation"
+        r"|describe\s+(?:it|that|the\s+automation)"
+        r"|show\s+(?:me\s+)?(?:that|the)\s+(?:saved\s+)?(?:definition|automation)"
+        r")\b",
         message,
         re.IGNORECASE,
     ):

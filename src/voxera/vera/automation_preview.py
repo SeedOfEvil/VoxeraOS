@@ -28,6 +28,7 @@ Preview shape:
 
 from __future__ import annotations
 
+import copy
 import datetime
 import re
 import secrets
@@ -75,14 +76,6 @@ _AT_TIME_INTENT_RE = re.compile(
 
 _STRONG_SCHEDULE_RE = re.compile("|".join(_STRONG_SCHEDULE_PATTERNS), re.IGNORECASE)
 
-# Payload target patterns — what should the automation do?
-_PAYLOAD_ACTION_PATTERNS = (
-    r"\b(?:run|execute|trigger|launch)\s+(\w+)",
-    r"\b(?:write|save|create)\s+(?:a\s+)?(?:note|file|reminder)",
-    r"\b(?:run)\s+(?:system\s+)?(?:diagnostics|inspect|health)",
-    r"\b(?:check|inspect|monitor)\s+(?:system|disk|memory|cpu|load)",
-)
-
 _IMMEDIATE_EXECUTION_PATTERNS = (
     r"^(?:do\s+it|go\s+ahead|proceed|yes|ok|submit|run\s+it)\s*[.!?]*$",
     r"\bright\s+now\b",
@@ -116,12 +109,6 @@ _UNIT_TO_MS = {
     "hour": 3_600_000,
     "hr": 3_600_000,
     "day": 86_400_000,
-}
-
-_PERIOD_OF_DAY_HOUR = {
-    "morning": 8,
-    "evening": 18,
-    "night": 21,
 }
 
 
@@ -264,7 +251,9 @@ def revise_automation_preview(
     text = message.strip()
     lowered = text.lower()
 
-    revised = dict(active_preview)
+    # Deep-copy so nested dicts (payload_template, trigger_config) are not
+    # shared by reference with the caller's original preview.
+    revised = copy.deepcopy(active_preview)
 
     # ── Title revision ────────────────────────────────────────────────────
     title_match = re.search(

@@ -612,3 +612,109 @@ class TestDidItRunGuard:
         # Must contain truthful language
         assert "not executed" in desc.lower()
         assert "saved definition" in desc.lower()
+
+
+# ---------------------------------------------------------------------------
+# Deep-copy safety — revision must not mutate the original preview
+# ---------------------------------------------------------------------------
+
+
+class TestRevisionDeepCopySafety:
+    def test_trigger_revision_does_not_mutate_original(self) -> None:
+        original = _sample_automation_preview()
+        original_trigger_config = original["trigger_config"].copy()
+        result = revise_automation_preview("Make it every 30 minutes instead.", original)
+        assert isinstance(result, AutomationPreview)
+        # Original must be unchanged
+        assert original["trigger_config"] == original_trigger_config
+        assert original["trigger_kind"] == "recurring_interval"
+
+    def test_content_revision_does_not_mutate_original(self) -> None:
+        original = _sample_automation_preview(
+            payload_template={
+                "goal": "write a reminder note",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/reminder.txt",
+                    "content": "original content",
+                    "mode": "overwrite",
+                },
+            }
+        )
+        original_content = original["payload_template"]["write_file"]["content"]
+        result = revise_automation_preview("Change the note text to 'new content'.", original)
+        assert isinstance(result, AutomationPreview)
+        # Original write_file content must be untouched
+        assert original["payload_template"]["write_file"]["content"] == original_content
+
+
+# ---------------------------------------------------------------------------
+# Intent detection edge cases — prevent false positives
+# ---------------------------------------------------------------------------
+
+
+class TestIntentEdgeCases:
+    def test_bare_schedule_without_timing_is_not_intent(self) -> None:
+        """Bare 'schedule' without a timing pattern must not hijack normal flows."""
+        assert not is_automation_authoring_intent("schedule uptime check")
+
+    def test_bare_automate_without_timing_is_not_intent(self) -> None:
+        assert not is_automation_authoring_intent("automate the build process")
+
+    def test_in_as_preposition_is_not_intent(self) -> None:
+        """'in' as a plain preposition (not 'in 20 minutes') must not trigger."""
+        assert not is_automation_authoring_intent("Write a note in the file")
+
+    def test_every_inside_word_is_not_intent(self) -> None:
+        """Ensure 'every' as a standalone concept word doesn't false-positive."""
+        # "every" needs to be followed by a timing unit
+        assert not is_automation_authoring_intent("Check every item on the list")
+
+    def test_schedule_with_at_time_is_intent(self) -> None:
+        """Weak keyword + 'at X AM' should be sufficient."""
+        assert is_automation_authoring_intent("Schedule diagnostics at 8 AM")
+
+    def test_open_url_is_not_intent(self) -> None:
+        assert not is_automation_authoring_intent("Open https://example.com")
+
+    def test_read_file_is_not_intent(self) -> None:
+        assert not is_automation_authoring_intent("Read the file ~/notes/a.txt")
+
+    def test_submit_confirmation_is_not_intent(self) -> None:
+        """Submit confirmations must never be treated as automation authoring."""
+        assert not is_automation_authoring_intent("yes")
+        assert not is_automation_authoring_intent("go ahead")
+        assert not is_automation_authoring_intent("do it")
+        assert not is_automation_authoring_intent("submit")
+
+    def test_every_2_hours_is_intent(self) -> None:
+        assert is_automation_authoring_intent("Every 2 hours, run health_check")
+
+    def test_after_10_minutes_is_intent(self) -> None:
+        assert is_automation_authoring_intent(
+            "After 10 minutes, write a note that says meeting time"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Payload false-positive prevention during revision
+# ---------------------------------------------------------------------------
+
+
+class TestRevisionPayloadGuards:
+    def test_revision_with_unrelated_text_returns_none(self) -> None:
+        """Unrecognized revision text should return None, not produce drift."""
+        preview = _sample_automation_preview()
+        assert revise_automation_preview("Tell me a joke", preview) is None
+
+    def test_revision_preserves_existing_title_on_trigger_change(self) -> None:
+        preview = _sample_automation_preview(title="My Custom Name")
+        result = revise_automation_preview("Make it every 5 minutes.", preview)
+        assert isinstance(result, AutomationPreview)
+        # Title should be preserved (not overwritten by trigger revision)
+        assert result.preview["title"] == "My Custom Name"
+
+    def test_revision_preserves_payload_on_trigger_change(self) -> None:
+        preview = _sample_automation_preview(payload_template={"goal": "run system_inspect"})
+        result = revise_automation_preview("Make it every 5 minutes.", preview)
+        assert isinstance(result, AutomationPreview)
+        assert result.preview["payload_template"]["goal"] == "run system_inspect"
