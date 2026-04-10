@@ -312,7 +312,7 @@ voxera queue health-reset --scope current_and_recent   # reset current state + r
 voxera queue health-reset --scope current_state          # reset current daemon/degradation state only
 voxera queue health-reset --scope recent_history         # reset last error/fallback/shutdown context only
 voxera queue lock status      # lock table alias (same lock fields as queue health)
-voxera automation run-due-once                          # drain due once_at/delay automations into inbox (PR2)
+voxera automation run-due-once                          # drain due once_at/delay/recurring_interval automations into inbox
 voxera automation run-due-once --id <automation_id>     # same, restricted to a single definition
 ```
 

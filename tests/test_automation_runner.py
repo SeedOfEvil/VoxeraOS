@@ -1,21 +1,23 @@
-"""Tests for the minimal PR2 automation runner.
+"""Tests for the automation runner.
 
 The runner consumes saved ``AutomationDefinition`` objects and, when they
 are due, emits a normal canonical queue payload via the existing
-``core/inbox.add_inbox_payload`` path. PR2 only supports the ``once_at``
-and ``delay`` trigger kinds. These tests cover:
+``core/inbox.add_inbox_payload`` path. The runner supports ``once_at``,
+``delay``, and ``recurring_interval`` trigger kinds. These tests cover:
 
 - due ``once_at`` emits exactly one normal queue job
 - due ``delay`` emits exactly one normal queue job
+- ``recurring_interval`` fires, re-arms ``next_run_at_ms``, and fires again
 - non-due definitions do not emit jobs
 - disabled definitions do not emit jobs
 - malformed definition files on disk are skipped safely
-- unsupported trigger kinds (``recurring_interval``, ``recurring_cron``,
-  ``watch_path``) are explicitly skipped and do not emit jobs
+- unsupported trigger kinds (``recurring_cron``, ``watch_path``) are
+  explicitly skipped and do not emit jobs
 - history records are written on submit and include queue job linkage
 - updated definition fields (``last_run_at_ms``, ``last_job_ref``,
   ``run_history_refs``, ``enabled``, ``next_run_at_ms``) are saved
 - one-shot semantics prevent double-submit on repeated runner passes
+- recurring semantics allow re-submit after interval elapses
 - the emitted payload matches the saved ``payload_template`` (allowing
   for normal inbox intake enrichment like ``job_intent`` + ``id``)
 """
@@ -144,7 +146,6 @@ def test_evaluate_due_skips_already_fired_one_shot() -> None:
 @pytest.mark.parametrize(
     ("kind", "config"),
     [
-        ("recurring_interval", {"interval_ms": 60_000}),
         ("recurring_cron", {"cron": "*/5 * * * *"}),
         ("watch_path", {"path": "~/VoxeraOS/notes/incoming", "event": "created"}),
     ],
@@ -242,7 +243,6 @@ def test_disabled_definition_does_not_emit(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("kind", "config"),
     [
-        ("recurring_interval", {"interval_ms": 60_000}),
         ("recurring_cron", {"cron": "*/5 * * * *"}),
         ("watch_path", {"path": "~/VoxeraOS/notes/incoming", "event": "created"}),
     ],
@@ -1096,3 +1096,405 @@ def test_add_inbox_payload_accepts_every_canonical_anchor(tmp_path: Path) -> Non
         # Every top-level key from the input payload survives verbatim.
         for key, value in payload.items():
             assert emitted.get(key) == value
+
+
+# ---------------------------------------------------------------------------
+# recurring_interval trigger support
+# ---------------------------------------------------------------------------
+
+
+def _make_recurring(**overrides: object) -> AutomationDefinition:
+    defaults: dict[str, object] = {
+        "id": "recurring-automation",
+        "title": "Recurring automation",
+        "description": "fires on an interval",
+        "trigger_kind": "recurring_interval",
+        "trigger_config": {"interval_ms": 60_000},
+        "payload_template": {"goal": "collect diagnostic snapshot"},
+        "created_at_ms": 1_700_000_000_000,
+        "updated_at_ms": 1_700_000_000_000,
+        "created_from": "cli",
+    }
+    defaults.update(overrides)
+    return AutomationDefinition(**defaults)  # type: ignore[arg-type]
+
+
+def test_recurring_interval_not_due_before_first_interval() -> None:
+    """A fresh recurring_interval definition is not due until created_at_ms + interval_ms."""
+    definition = _make_recurring(
+        created_at_ms=1_700_000_000_000,
+        updated_at_ms=1_700_000_000_000,
+        trigger_config={"interval_ms": 60_000},
+    )
+    # 59 seconds after creation — not yet due.
+    due, reason = evaluate_due_automation(definition, now_ms=1_700_000_059_000)
+    assert due is False
+    assert "not yet due" in reason
+
+
+def test_recurring_interval_due_at_created_plus_interval() -> None:
+    """When next_run_at_ms is unset, due anchor is created_at_ms + interval_ms."""
+    definition = _make_recurring(
+        created_at_ms=1_700_000_000_000,
+        updated_at_ms=1_700_000_000_000,
+        trigger_config={"interval_ms": 60_000},
+    )
+    # Exactly at created_at_ms + interval_ms => due.
+    due, reason = evaluate_due_automation(definition, now_ms=1_700_000_060_000)
+    assert due is True
+    assert "1700000060000" in reason
+
+
+def test_recurring_interval_emits_one_queue_job(tmp_path: Path) -> None:
+    """A due recurring_interval emits exactly one queue job via the inbox path."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring()
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_060_000)
+    assert result.outcome == "submitted"
+    assert result.queue_job_ref is not None
+    assert result.trigger_kind == "recurring_interval"
+
+    inbox_files = _inbox_files(queue_root)
+    assert len(inbox_files) == 1
+    emitted = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert emitted["goal"] == "collect diagnostic snapshot"
+    assert emitted["job_intent"]["source_lane"] == AUTOMATION_SOURCE_LANE
+
+
+def test_recurring_interval_state_after_successful_fire(tmp_path: Path) -> None:
+    """After a successful fire:
+
+    - enabled remains True
+    - last_run_at_ms updates to the fire time
+    - last_job_ref updates to the inbox filename
+    - run_history_refs appends the new history ref
+    - next_run_at_ms is re-armed to fired_at_ms + interval_ms
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring(trigger_config={"interval_ms": 60_000})
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    fire_time = 1_700_000_060_000
+    result = process_automation_definition(definition, queue_root, now_ms=fire_time)
+    assert result.outcome == "submitted"
+
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.enabled is True
+    assert loaded.last_run_at_ms == fire_time
+    assert loaded.last_job_ref == result.queue_job_ref
+    assert len(loaded.run_history_refs) == 1
+    assert loaded.run_history_refs[0] == result.history_ref
+    assert loaded.next_run_at_ms == fire_time + 60_000
+
+
+def test_recurring_interval_no_double_submit_before_next_interval(tmp_path: Path) -> None:
+    """A runner pass before the next interval elapses must not emit a second job."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring(trigger_config={"interval_ms": 60_000})
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    # First fire at created + interval.
+    first = run_due_automations(queue_root, now_ms=1_700_000_060_000)
+    assert [r.outcome for r in first] == ["submitted"]
+    assert len(_inbox_files(queue_root)) == 1
+
+    # Second pass 30s later — next_run_at_ms is 1_700_000_120_000, so not due.
+    second = run_due_automations(queue_root, now_ms=1_700_000_090_000)
+    assert [r.outcome for r in second] == ["skipped"]
+    assert len(_inbox_files(queue_root)) == 1  # no new inbox file
+    assert len(_history_files(queue_root)) == 1  # no new history
+
+
+def test_recurring_interval_fires_again_after_next_interval(tmp_path: Path) -> None:
+    """After the next interval elapses, the recurring definition fires again."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring(trigger_config={"interval_ms": 60_000})
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    # First fire.
+    first = run_due_automations(queue_root, now_ms=1_700_000_060_000)
+    assert [r.outcome for r in first] == ["submitted"]
+    assert len(_inbox_files(queue_root)) == 1
+    assert len(_history_files(queue_root)) == 1
+
+    # Second fire at next_run_at_ms (60_000 + 60_000 = 120_000).
+    second = run_due_automations(queue_root, now_ms=1_700_000_120_000)
+    assert [r.outcome for r in second] == ["submitted"]
+    assert len(_inbox_files(queue_root)) == 2
+    assert len(_history_files(queue_root)) == 2
+
+    # Verify re-armed state.
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.enabled is True
+    assert loaded.last_run_at_ms == 1_700_000_120_000
+    assert loaded.next_run_at_ms == 1_700_000_180_000
+    assert len(loaded.run_history_refs) == 2
+
+
+def test_recurring_interval_mission_id_payload(tmp_path: Path) -> None:
+    """recurring_interval works with a mission_id payload (non-goal canonical anchor)."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring(
+        id="recurring-mission",
+        payload_template={"mission_id": "system_inspect"},
+        trigger_config={"interval_ms": 30_000},
+    )
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_030_000)
+    assert result.outcome == "submitted"
+    assert result.queue_job_ref is not None
+
+    inbox_files = _inbox_files(queue_root)
+    assert len(inbox_files) == 1
+    emitted = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert emitted["mission_id"] == "system_inspect"
+    assert emitted["job_intent"]["source_lane"] == AUTOMATION_SOURCE_LANE
+
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.enabled is True
+    assert loaded.next_run_at_ms == 1_700_000_060_000
+
+
+def test_recurring_interval_emit_failure_preserves_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On submit failure, definition state is unchanged and next_run_at_ms is not advanced."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring(trigger_config={"interval_ms": 60_000})
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    from voxera.automation import runner as runner_module
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("simulated inbox failure")
+
+    monkeypatch.setattr(runner_module, "add_inbox_payload", _boom)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_060_000)
+    assert result.outcome == "error"
+    assert result.queue_job_ref is None
+    assert "simulated inbox failure" in result.message
+
+    # Error history written.
+    history_files = _history_files(queue_root)
+    assert len(history_files) == 1
+    record = json.loads(history_files[0].read_text(encoding="utf-8"))
+    assert record["outcome"] == "error"
+
+    # Definition on disk is unchanged — enabled, no last_run, no next_run advance.
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.enabled is True
+    assert loaded.last_run_at_ms is None
+    assert loaded.last_job_ref is None
+    assert loaded.run_history_refs == []
+    assert loaded.next_run_at_ms is None
+
+
+def test_once_at_and_delay_semantics_unchanged(tmp_path: Path) -> None:
+    """Verify that once_at and delay still behave as one-shots after the recurring change."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+
+    # once_at
+    save_automation_definition(
+        _make_once_at(
+            id="once-at-check",
+            trigger_config={"run_at_ms": 1_700_000_000_000},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    # delay
+    save_automation_definition(
+        _make_delay(
+            id="delay-check",
+            created_at_ms=1_700_000_000_000,
+            updated_at_ms=1_700_000_000_000,
+            trigger_config={"delay_ms": 30_000},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+
+    results = run_due_automations(queue_root, now_ms=1_700_000_100_000)
+    by_id = {r.automation_id: r for r in results}
+    assert by_id["once-at-check"].outcome == "submitted"
+    assert by_id["delay-check"].outcome == "submitted"
+
+    # Both disabled after fire.
+    for auto_id in ("once-at-check", "delay-check"):
+        loaded = load_automation_definition(auto_id, queue_root)
+        assert loaded.enabled is False
+        assert loaded.next_run_at_ms is None
+        assert loaded.last_run_at_ms == 1_700_000_100_000
+
+    # Second pass: both skipped.
+    second = run_due_automations(queue_root, now_ms=1_700_000_200_000)
+    assert all(r.outcome == "skipped" for r in second)
+    assert len(_inbox_files(queue_root)) == 2  # no new files
+
+
+def test_recurring_interval_late_wakeup_emits_one_job_no_burst(tmp_path: Path) -> None:
+    """If the runner wakes up long after the due time, emit one job only.
+
+    The next interval is anchored on the actual fire time, not the
+    missed anchor, so no catch-up burst can occur.
+    """
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring(trigger_config={"interval_ms": 60_000})
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    # Due at 1_700_000_060_000 but runner wakes up 5 minutes late.
+    late_time = 1_700_000_360_000
+    results = run_due_automations(queue_root, now_ms=late_time)
+    assert [r.outcome for r in results] == ["submitted"]
+    assert len(_inbox_files(queue_root)) == 1  # exactly one, not five
+
+    loaded = load_automation_definition(definition.id, queue_root)
+    # next_run_at_ms anchored on actual fire time, not the old missed anchor.
+    assert loaded.next_run_at_ms == late_time + 60_000
+    assert loaded.last_run_at_ms == late_time
+
+    # Immediate second pass: still one job — next isn't due yet.
+    second = run_due_automations(queue_root, now_ms=late_time + 1000)
+    assert [r.outcome for r in second] == ["skipped"]
+    assert len(_inbox_files(queue_root)) == 1
+
+
+def test_recurring_interval_with_preset_next_run_at_ms(tmp_path: Path) -> None:
+    """When next_run_at_ms is already set, it is used as the due anchor."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    # Created at T=0, interval=60s, but next_run_at_ms explicitly set to T+30s.
+    definition = _make_recurring(
+        trigger_config={"interval_ms": 60_000},
+        next_run_at_ms=1_700_000_030_000,
+    )
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    # Before preset anchor: not due.
+    due, reason = evaluate_due_automation(definition, now_ms=1_700_000_029_000)
+    assert due is False
+    assert "not yet due" in reason
+
+    # At preset anchor: due (ignoring created_at + interval = T+60s).
+    due, reason = evaluate_due_automation(definition, now_ms=1_700_000_030_000)
+    assert due is True
+    assert "1700000030000" in reason
+
+    # Actually fire and verify re-arm.
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_030_000)
+    assert result.outcome == "submitted"
+    loaded = load_automation_definition(definition.id, queue_root)
+    assert loaded.next_run_at_ms == 1_700_000_090_000  # 30_000 + 60_000
+
+
+def test_run_due_automations_mixed_with_recurring(tmp_path: Path) -> None:
+    """Inventory pass handles recurring alongside one-shot and unsupported kinds."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+
+    # Due once_at.
+    save_automation_definition(
+        _make_once_at(id="alpha", trigger_config={"run_at_ms": 1_700_000_000_000}),
+        queue_root,
+        touch_updated=False,
+    )
+    # Due recurring_interval.
+    save_automation_definition(
+        _make_recurring(
+            id="bravo",
+            trigger_config={"interval_ms": 30_000},
+            created_at_ms=1_700_000_000_000,
+            updated_at_ms=1_700_000_000_000,
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    # Unsupported recurring_cron.
+    save_automation_definition(
+        _make_once_at(
+            id="charlie",
+            trigger_kind="recurring_cron",
+            trigger_config={"cron": "*/5 * * * *"},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+
+    results = run_due_automations(queue_root, now_ms=1_700_000_100_000)
+    by_id = {r.automation_id: r for r in results}
+    assert by_id["alpha"].outcome == "submitted"
+    assert by_id["bravo"].outcome == "submitted"
+    assert by_id["charlie"].outcome == "skipped"
+    assert len(_inbox_files(queue_root)) == 2
+
+    # once_at is disabled, recurring stays enabled.
+    alpha = load_automation_definition("alpha", queue_root)
+    assert alpha.enabled is False
+    bravo = load_automation_definition("bravo", queue_root)
+    assert bravo.enabled is True
+    assert bravo.next_run_at_ms == 1_700_000_100_000 + 30_000
+
+
+def test_disabled_recurring_interval_is_skipped(tmp_path: Path) -> None:
+    """An explicitly disabled recurring_interval definition does not fire."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring(enabled=False)
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_060_000)
+    assert result.outcome == "skipped"
+    assert "disabled" in result.message
+    assert _inbox_files(queue_root) == []
+    assert _history_files(queue_root) == []
+
+
+def test_recurring_save_failure_after_emit_preserves_enabled_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Save failure after emit for recurring: enabled stays True, next_run_at_ms unchanged."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    definition = _make_recurring(trigger_config={"interval_ms": 60_000})
+    save_automation_definition(definition, queue_root, touch_updated=False)
+
+    from voxera.automation import runner as runner_module
+
+    def _fail_save(*args: object, **kwargs: object) -> object:
+        raise OSError("simulated disk full")
+
+    monkeypatch.setattr(runner_module, "save_automation_definition", _fail_save)
+
+    result = process_automation_definition(definition, queue_root, now_ms=1_700_000_060_000)
+    assert result.outcome == "error"
+    assert result.queue_job_ref is not None
+    assert "was emitted but definition state save failed" in result.message
+
+    # Queue job was emitted.
+    assert len(_inbox_files(queue_root)) == 1
+
+    # Two history records: submit + save-error.
+    history_files = _history_files(queue_root)
+    assert len(history_files) == 2
+
+    # Re-enable real save to check stored definition.
+    monkeypatch.undo()
+    loaded = load_automation_definition(definition.id, queue_root)
+    # Definition was never advanced — operator must reconcile.
+    assert loaded.enabled is True
+    assert loaded.last_run_at_ms is None
+    assert loaded.last_job_ref is None
+    assert loaded.run_history_refs == []
+    assert loaded.next_run_at_ms is None  # not advanced

@@ -17,11 +17,11 @@ The outcome of a single run is one of:
   (e.g. malformed on disk). ``message`` carries the error text. No queue job
   is emitted in this case — fail closed.
 
-PR2 scope note: only ``once_at`` and ``delay`` triggers are actually run.
-Every other trigger kind surfaces here as a ``skipped`` record with a
-reason that names the unsupported kind, so an operator tailing the history
-directory can tell the difference between "nothing was due" and "a real
-definition exists but PR2 refuses to act on it yet".
+The runner actively fires ``once_at``, ``delay``, and ``recurring_interval``
+triggers. ``recurring_cron`` and ``watch_path`` are persisted but skipped
+with a reason that names the unsupported kind, so an operator tailing the
+history directory can tell the difference between "nothing was due" and
+"a real definition exists but the runner refuses to act on it yet".
 """
 
 from __future__ import annotations

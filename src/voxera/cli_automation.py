@@ -1,4 +1,4 @@
-"""Minimal operator CLI for the PR2 automation runner.
+"""Minimal operator CLI for the automation runner.
 
 This is intentionally narrow: just enough to let an operator drain the
 due automation definitions once from the command line and see what the
@@ -17,8 +17,9 @@ from .paths import queue_root_display
 
 automation_app = typer.Typer(
     help=(
-        "Minimal automation runner (PR2). Only once_at and delay triggers "
-        "are active; everything else is skipped."
+        "Minimal automation runner. Supports once_at, delay, and "
+        "recurring_interval triggers; recurring_cron and watch_path "
+        "are skipped."
     )
 )
 

@@ -29,6 +29,6 @@
 │ ops          Operational incident bundle utilities                                               │
 │ inbox        Human-friendly queue inbox                                                          │
 │ secrets      Manage provider/API secrets                                                         │
-│ automation   Minimal automation runner (PR2). Only once_at and delay triggers are active;        │
-│              everything else is skipped.                                                         │
+│ automation   Minimal automation runner. Supports once_at, delay, and recurring_interval          │
+│              triggers; recurring_cron and watch_path are skipped.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

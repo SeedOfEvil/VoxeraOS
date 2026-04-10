@@ -239,7 +239,7 @@ Any payload with extra keys or mismatched action/payload combinations is rejecte
 
 ## `AutomationDefinition`
 
-`src/voxera/automation/models.py::AutomationDefinition` (Pydantic, `extra="forbid"`). Durable record that describes a *future* governed queue submission. PR1 added the data model and file-backed storage. PR2 added a minimal runner (`src/voxera/automation/runner.py`) that only fires the `once_at` and `delay` trigger kinds; every other trigger kind is persisted but explicitly skipped by the runner. When the runner acts on a definition it emits a normal canonical queue job into `inbox/` via `core/inbox.add_inbox_payload` on the `automation_runner` source lane — the queue stays the execution boundary.
+`src/voxera/automation/models.py::AutomationDefinition` (Pydantic, `extra="forbid"`). Durable record that describes a *future* governed queue submission. PR1 added the data model and file-backed storage. The runner (`src/voxera/automation/runner.py`) fires `once_at`, `delay`, and `recurring_interval` trigger kinds; `recurring_cron` and `watch_path` are persisted but explicitly skipped by the runner. When the runner acts on a definition it emits a normal canonical queue job into `inbox/` via `core/inbox.add_inbox_payload` on the `automation_runner` source lane — the queue stays the execution boundary.
 
 ```jsonc
 {
@@ -261,13 +261,13 @@ Any payload with extra keys or mismatched action/payload combinations is rejecte
 }
 ```
 
-Supported `trigger_kind` values and their strict `trigger_config` shapes. Only `once_at` and `delay` are actively fired by the PR2 runner; every other kind is persisted but skipped by the runner with an explicit reason.
+Supported `trigger_kind` values and their strict `trigger_config` shapes. `once_at`, `delay`, and `recurring_interval` are actively fired by the runner; `recurring_cron` and `watch_path` are persisted but skipped with an explicit reason.
 
-| Kind | Required shape | PR2 runner behavior |
+| Kind | Required shape | Runner behavior |
 |---|---|---|
 | `once_at` | `{"run_at_ms": <positive int>}` | Due when `now_ms >= run_at_ms` and not already fired. One-shot. |
 | `delay` | `{"delay_ms": <positive int>}` | Due when `now_ms >= created_at_ms + delay_ms` and not already fired. One-shot. |
-| `recurring_interval` | `{"interval_ms": <positive int>}` | Persisted, skipped by runner. |
+| `recurring_interval` | `{"interval_ms": <positive int>}` | Due when `now_ms >= next_run_at_ms` (or `created_at_ms + interval_ms` on first pass). Re-arms after each fire. |
 | `recurring_cron` | `{"cron": <non-empty str>}` | Persisted, skipped by runner. Cron parsing is deferred. |
 | `watch_path` | `{"path": <non-empty str>, "event": "created"\|"modified"\|"deleted"}` | Persisted, skipped by runner. `event` defaults to `"created"` when omitted. |
 
@@ -275,7 +275,7 @@ Supported `trigger_kind` values and their strict `trigger_config` shapes. Only `
 
 Storage lives under `<queue_root>/automations/definitions/<id>.json` via `src/voxera/automation/store.py`. Saves are atomic (`.json.tmp` → `Path.replace`), JSON is sorted for deterministic diffs, and `list_automation_definitions(...)` is best-effort by default so a single malformed file cannot hide the rest of the inventory (`strict=True` surfaces every failure for tooling).
 
-The PR2 runner writes one JSON file per run event into the sibling `<queue_root>/automations/history/` directory: `auto-<automation_id>-<run_id>.json`. Each record is schema_version 1 and carries `automation_id`, `run_id`, `triggered_at_ms`, `trigger_kind`, `outcome` (`submitted` | `skipped` | `error`), `queue_job_ref` (the `inbox-*.json` filename when submitted), a short `message`, and a `payload_summary` + sha256 `payload_hash` of the saved `payload_template`. History records are write-once; a fired definition is saved back with `last_run_at_ms`, `last_job_ref`, an appended `run_history_refs` entry (`history/auto-<automation_id>-<run_id>.json`), `next_run_at_ms=null`, and `enabled=false` to enforce one-shot semantics.
+The runner writes one JSON file per run event into the sibling `<queue_root>/automations/history/` directory: `auto-<automation_id>-<run_id>.json`. Each record is schema_version 1 and carries `automation_id`, `run_id`, `triggered_at_ms`, `trigger_kind`, `outcome` (`submitted` | `skipped` | `error`), `queue_job_ref` (the `inbox-*.json` filename when submitted), a short `message`, and a `payload_summary` + sha256 `payload_hash` of the saved `payload_template`. History records are write-once. After a successful fire the definition is updated with `last_run_at_ms`, `last_job_ref`, and an appended `run_history_refs` entry. One-shot triggers (`once_at`, `delay`) set `enabled=false` and `next_run_at_ms=null`. Recurring triggers (`recurring_interval`) keep `enabled=true` and set `next_run_at_ms = fired_at_ms + interval_ms`.
 
 ## `job` refs, stems, and ids
 
