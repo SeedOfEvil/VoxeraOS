@@ -317,7 +317,7 @@ voxera automation show <id>                              # detailed JSON view of
 voxera automation enable <id>                            # set enabled=true and persist
 voxera automation disable <id>                           # set enabled=false and persist
 voxera automation history <id>                           # show run history records for a definition
-voxera automation run-now <id>                           # immediately process through the runner (queue-submitting only)
+voxera automation run-now <id>                           # force immediate run, bypassing due-time check (queue-submitting only)
 voxera automation run-due-once                          # drain due once_at/delay/recurring_interval automations into inbox
 voxera automation run-due-once --id <automation_id>     # same, restricted to a single definition
 ```

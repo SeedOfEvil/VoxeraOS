@@ -540,6 +540,156 @@ def test_run_now_updates_definition_state(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# run-now force semantics (due-time bypass)
+# ---------------------------------------------------------------------------
+
+
+def test_run_now_fires_far_future_once_at(tmp_path: Path) -> None:
+    """run-now on a far-future once_at fires immediately."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_defn(
+            id="far-future",
+            trigger_kind="once_at",
+            trigger_config={"run_at_ms": 9_999_999_999_999},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    result = _invoke(
+        ["automation", "run-now", "far-future", "--queue-dir", str(queue_root)], tmp_path
+    )
+    assert result.exit_code == 0  # type: ignore[union-attr]
+    out = result.stdout  # type: ignore[union-attr]
+    assert "submitted" in out
+    assert "far-future" in out
+    assert len(_inbox_files(queue_root)) == 1
+    # One-shot state should be applied.
+    reloaded = load_automation_definition("far-future", queue_root)
+    assert reloaded.enabled is False
+    assert reloaded.last_run_at_ms is not None
+    assert reloaded.last_job_ref is not None
+    assert len(reloaded.run_history_refs) == 1
+
+
+def test_run_now_fires_not_yet_due_delay(tmp_path: Path) -> None:
+    """run-now on a delay that is not yet due fires immediately."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_defn(
+            id="delay-force",
+            trigger_kind="delay",
+            trigger_config={"delay_ms": 999_999_999_999},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    result = _invoke(
+        ["automation", "run-now", "delay-force", "--queue-dir", str(queue_root)], tmp_path
+    )
+    assert result.exit_code == 0  # type: ignore[union-attr]
+    assert "submitted" in result.stdout  # type: ignore[union-attr]
+    assert len(_inbox_files(queue_root)) == 1
+    reloaded = load_automation_definition("delay-force", queue_root)
+    assert reloaded.enabled is False
+
+
+def test_run_now_fires_not_yet_due_recurring(tmp_path: Path) -> None:
+    """run-now on a recurring_interval that is not yet due fires and re-arms."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    interval_ms = 60_000
+    save_automation_definition(
+        _make_defn(
+            id="recur-force",
+            trigger_kind="recurring_interval",
+            trigger_config={"interval_ms": interval_ms},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    result = _invoke(
+        ["automation", "run-now", "recur-force", "--queue-dir", str(queue_root)], tmp_path
+    )
+    assert result.exit_code == 0  # type: ignore[union-attr]
+    assert "submitted" in result.stdout  # type: ignore[union-attr]
+    assert len(_inbox_files(queue_root)) == 1
+    reloaded = load_automation_definition("recur-force", queue_root)
+    # Recurring stays enabled.
+    assert reloaded.enabled is True
+    # next_run_at_ms should be re-armed from actual fire time.
+    assert reloaded.next_run_at_ms is not None
+    assert reloaded.last_run_at_ms is not None
+    assert reloaded.next_run_at_ms == reloaded.last_run_at_ms + interval_ms
+
+
+def test_run_now_still_rejects_disabled(tmp_path: Path) -> None:
+    """run-now on a disabled definition still skips (operator should enable first)."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_defn(
+            id="disabled-force",
+            enabled=False,
+            trigger_kind="once_at",
+            trigger_config={"run_at_ms": 9_999_999_999_999},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    result = _invoke(
+        ["automation", "run-now", "disabled-force", "--queue-dir", str(queue_root)], tmp_path
+    )
+    assert result.exit_code == 0  # type: ignore[union-attr]
+    out = result.stdout  # type: ignore[union-attr]
+    assert "skipped" in out
+    assert "disabled" in out
+    assert len(_inbox_files(queue_root)) == 0
+
+
+def test_run_now_far_future_goes_through_queue(tmp_path: Path) -> None:
+    """run-now with force still submits through the canonical inbox path."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_defn(
+            id="queue-force",
+            trigger_kind="once_at",
+            trigger_config={"run_at_ms": 9_999_999_999_999},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    _invoke(["automation", "run-now", "queue-force", "--queue-dir", str(queue_root)], tmp_path)
+    inbox_files = _inbox_files(queue_root)
+    assert len(inbox_files) == 1
+    payload = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+    assert payload.get("job_intent", {}).get("source_lane") == "automation_runner"
+
+
+def test_run_due_once_still_respects_due_time(tmp_path: Path) -> None:
+    """run-due-once on a far-future definition still skips (regression guard)."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    save_automation_definition(
+        _make_defn(
+            id="due-guard",
+            trigger_kind="once_at",
+            trigger_config={"run_at_ms": 9_999_999_999_999},
+        ),
+        queue_root,
+        touch_updated=False,
+    )
+    result = _invoke(["automation", "run-due-once", "--queue-dir", str(queue_root)], tmp_path)
+    assert result.exit_code == 0  # type: ignore[union-attr]
+    out = result.stdout  # type: ignore[union-attr]
+    assert "skipped" in out
+    assert len(_inbox_files(queue_root)) == 0
+
+
+# ---------------------------------------------------------------------------
 # list_history_records helper
 # ---------------------------------------------------------------------------
 

@@ -169,6 +169,7 @@ def evaluate_due_automation(
     definition: AutomationDefinition,
     *,
     now_ms: int | None = None,
+    force: bool = False,
 ) -> tuple[bool, str]:
     """Decide whether ``definition`` should fire at ``now_ms``.
 
@@ -177,6 +178,12 @@ def evaluate_due_automation(
     definitions whose anchor has been reached. ``reason`` always carries
     an operator-legible explanation — even on the True path, where it
     describes *why* the definition is considered due.
+
+    When ``force`` is True (used by ``voxera automation run-now``), the
+    due-time check and the one-shot "already fired" guard are bypassed so
+    the definition fires immediately. The disabled and unsupported-trigger-
+    kind guards are still enforced — the operator can ``enable`` a disabled
+    definition before forcing a run.
 
     One-shot semantics (``once_at``, ``delay``): a definition with a
     non-null ``last_run_at_ms`` is considered already fired and will not
@@ -196,6 +203,9 @@ def evaluate_due_automation(
             False,
             f"trigger_kind {definition.trigger_kind!r} is not supported by the runner",
         )
+
+    if force:
+        return (True, f"forced (operator run-now, now_ms={stamp})")
 
     # One-shot guard: once_at and delay fire at most once.
     if definition.trigger_kind in ONE_SHOT_TRIGGER_KINDS and definition.last_run_at_ms is not None:
@@ -273,10 +283,15 @@ def process_automation_definition(
     queue_root: Path,
     *,
     now_ms: int | None = None,
+    force: bool = False,
 ) -> AutomationRunResult:
     """Process one definition: evaluate, emit if due, persist history.
 
     Returns an ``AutomationRunResult`` summarizing what happened.
+
+    When ``force`` is True (used by ``voxera automation run-now``), the
+    due-time check is bypassed so the definition fires immediately. The
+    disabled and unsupported-trigger-kind guards are still enforced.
 
     On ``submitted``, the updated definition has already been saved back
     through the storage layer before this function returns:
@@ -301,7 +316,7 @@ def process_automation_definition(
     state explicitly.
     """
     stamp = int(now_ms) if now_ms is not None else _now_ms()
-    due, reason = evaluate_due_automation(definition, now_ms=stamp)
+    due, reason = evaluate_due_automation(definition, now_ms=stamp, force=force)
 
     if not due:
         return AutomationRunResult(

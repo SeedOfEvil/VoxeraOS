@@ -266,11 +266,13 @@ def automation_run_now(
         help="Queue directory containing JSON mission jobs.",
     ),
 ) -> None:
-    """Immediately process a single automation through the runner.
+    """Force an immediate run of a single automation through the runner.
 
-    This command loads the definition, evaluates it through the existing
-    runner path, and emits a queue job if due. It does NOT bypass the
-    queue — the queue remains the execution boundary.
+    This command bypasses the due-time check and fires the definition
+    immediately through the existing canonical runner / inbox path. The
+    queue remains the execution boundary — no skills are executed
+    directly. Disabled definitions and unsupported trigger kinds are
+    still rejected.
     """
     queue_root = queue_dir_path(queue_dir)
     try:
@@ -282,7 +284,7 @@ def automation_run_now(
         console.print(f"[red]ERROR:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
-    result = process_automation_definition(defn, queue_root)
+    result = process_automation_definition(defn, queue_root, force=True)
     _render_results_table([result])
 
 
