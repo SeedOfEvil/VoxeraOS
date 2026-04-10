@@ -22,10 +22,13 @@ from ..core.writing_draft_intent import (
     is_writing_refinement_request,
 )
 from ..paths import queue_root as default_queue_root
+from ..vera.automation_lifecycle import (
+    dispatch_lifecycle_action,
+    is_automation_lifecycle_intent,
+)
 from ..vera.automation_preview import (
     AutomationClarification,
     AutomationPreview,
-    describe_saved_automation,
     draft_automation_preview,
     is_automation_authoring_intent,
     is_automation_preview,
@@ -1201,47 +1204,56 @@ async def chat(request: Request):
                 voice_flags=voice_flags,
             )
 
-    # ── Post-submit automation continuity ────────────────────────────────
-    # Answer "what did you save?" / "show me that automation" / "did it run?"
-    # using the stashed last_automation_preview from the session.
+    # ── Automation lifecycle management ───────────────────────────────────
+    # Detect conversational lifecycle requests (show, enable, disable,
+    # delete, run-now, history) for saved automation definitions. Uses the
+    # canonical automation store and history — not only session memory.
+    # Must come after automation preview revision (so active-preview
+    # revision turns are not hijacked) but before the LLM path.
     _last_auto_preview = read_session_last_automation_preview(root, active_session)
-    if _last_auto_preview is not None and re.search(
-        r"\b(?:show\s+(?:me\s+)?(?:that|the)\s+automation"
-        r"|what\s+did\s+you\s+save"
-        r"|what\s+will\s+it\s+do"
-        r"|when\s+will\s+it\s+run"
-        r"|did\s+it\s+run"
-        r"|has\s+it\s+run"
-        r"|what\s+was\s+that\s+automation"
-        r"|describe\s+(?:it|that|the\s+automation)"
-        r"|show\s+(?:me\s+)?(?:that|the)\s+(?:saved\s+)?(?:definition|automation)"
-        r")\b",
-        message,
-        re.IGNORECASE,
+    if is_automation_lifecycle_intent(message) and not (
+        isinstance(pending_preview, dict) and is_automation_preview(pending_preview)
     ):
-        _continuity_text = describe_saved_automation(_last_auto_preview)
-        # Guard: "did it run?" should not hallucinate execution
-        if re.search(r"\b(?:did\s+it\s+run|has\s+it\s+run)\b", message, re.IGNORECASE):
-            _continuity_text += (
-                "\n\nThe automation definition was saved but has not executed yet. "
-                "Execution will happen through the automation runner when the "
-                "trigger condition is met."
+        _lifecycle = dispatch_lifecycle_action(
+            message,
+            queue_root=root,
+            session_context=_session_ctx,
+            last_automation_preview=_last_auto_preview,
+        )
+        if _lifecycle.matched:
+            # Update session context for the lifecycle action
+            if _lifecycle.automation_id and not _lifecycle.definition_deleted:
+                update_session_context(
+                    root,
+                    active_session,
+                    active_topic=f"automation:{_lifecycle.automation_id}",
+                )
+            elif _lifecycle.definition_deleted:
+                update_session_context(
+                    root,
+                    active_session,
+                    active_topic=None,
+                )
+                # Clear stashed preview since the definition was deleted
+                write_session_last_automation_preview(root, active_session, None)
+            append_session_turn(
+                root, active_session, role="assistant", text=_lifecycle.assistant_text
             )
-        append_session_turn(root, active_session, role="assistant", text=_continuity_text)
-        _cont_turns = read_session_turns(root, active_session)
-        append_routing_debug_entry(
-            root,
-            active_session,
-            route_status="automation_continuity",
-            dispatch_source="post_submit_automation",
-            turn_index=len(_cont_turns),
-        )
-        return _render_page(
-            session_id=active_session,
-            turns=_cont_turns,
-            status="automation_continuity",
-            voice_flags=voice_flags,
-        )
+            _lc_turns = read_session_turns(root, active_session)
+            append_routing_debug_entry(
+                root,
+                active_session,
+                route_status=_lifecycle.status,
+                dispatch_source="automation_lifecycle",
+                matched_early_exit=True,
+                turn_index=len(_lc_turns),
+            )
+            return _render_page(
+                session_id=active_session,
+                turns=_lc_turns,
+                status=_lifecycle.status,
+                voice_flags=voice_flags,
+            )
 
     is_info_query = is_informational_web_query(message)
     informational_web_turn = (
