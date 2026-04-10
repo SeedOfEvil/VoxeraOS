@@ -182,7 +182,7 @@ FastAPI operator panel. Route modules plug into a single `FastAPI` app composed 
 - `routes_recovery.py` — `GET /recovery`, `GET /recovery/download/{bucket}/{name}`.
 - `routes_bundle.py` — `GET /jobs/{job_id}/bundle`, `GET /bundle/system`.
 - `routes_assistant.py` — `GET /assistant`, `POST /assistant/ask`, `GET /assistant/progress/{request_id}` (advisory assistant lane).
-- `routes_automations.py` — `GET /automations`, `GET /automations/{id}`, `POST /automations/{id}/enable|disable|run-now`. Automation inspection and control dashboard — operator visibility into saved definitions, enable/disable toggling, and queue-submitting run-now. Does not author definitions or bypass the queue.
+- `routes_automations.py` — `GET /automations`, `GET /automations/{id}`, `POST /automations/{id}/enable|disable|run-now|delete`. Automation inspection and control dashboard — operator visibility into saved definitions, enable/disable toggling, queue-submitting run-now, and definition delete (history preserved). Does not author definitions or bypass the queue.
 - `routes_vera.py` — `GET /vera`, `POST /vera/chat` route module (present in source; registration is not currently wired into `panel/app.py`, which composes home/jobs/queue-control/missions/hygiene/recovery/bundle/assistant/automations routes).
 - `assistant.py` — assistant thread persistence helpers.
 - `auth_state_store.py` — panel auth window/lockout state.

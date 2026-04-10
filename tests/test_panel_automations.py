@@ -19,6 +19,7 @@ import base64
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from voxera.automation.history import build_history_record, write_history_record
@@ -637,3 +638,118 @@ def test_detail_survives_history_with_bad_timestamp_type(tmp_path, monkeypatch):
 
     assert res.status_code == 200
     assert "ts-bad" in res.text
+
+
+# -----------------------------------------------------------------------
+# 15. Delete removes definition and redirects cleanly
+# -----------------------------------------------------------------------
+
+
+def test_delete_removes_definition(tmp_path, monkeypatch):
+    queue_dir = _setup_queue(tmp_path, monkeypatch, with_auth=True)
+    _make_definition(queue_dir, id="del-test")
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/automations/del-test/delete")
+
+    assert res.status_code == 303
+    assert "/automations" in res.headers["location"]
+    assert "flash=deleted" in res.headers["location"]
+
+    # Definition is gone
+    from voxera.automation.store import AutomationNotFoundError
+
+    with pytest.raises(AutomationNotFoundError):
+        load_automation_definition("del-test", queue_dir)
+
+
+def test_deleted_definition_not_on_list(tmp_path, monkeypatch):
+    queue_dir = _setup_queue(tmp_path, monkeypatch, with_auth=True)
+    _make_definition(queue_dir, id="keep-me", title="Keeper")
+    _make_definition(queue_dir, id="remove-me", title="Removable")
+
+    client = TestClient(panel_module.app)
+    _authed_csrf_request(client, "post", "/automations/remove-me/delete")
+
+    res = client.get("/automations")
+    assert res.status_code == 200
+    body = res.text
+    assert "keep-me" in body
+    assert "Keeper" in body
+    assert "remove-me" not in body
+    assert "Removable" not in body
+
+
+def test_delete_preserves_history(tmp_path, monkeypatch):
+    queue_dir = _setup_queue(tmp_path, monkeypatch, with_auth=True)
+    _make_definition(queue_dir, id="hist-del")
+
+    record = build_history_record(
+        automation_id="hist-del",
+        run_id="1700000000000-aaa11111",
+        triggered_at_ms=1_700_000_000_000,
+        trigger_kind="once_at",
+        outcome="submitted",
+        queue_job_ref="inbox-job-hist.json",
+        message="test fire",
+        payload_template={"goal": "test"},
+    )
+    write_history_record(queue_dir, record)
+
+    client = TestClient(panel_module.app)
+    _authed_csrf_request(client, "post", "/automations/hist-del/delete")
+
+    # Definition is gone
+    from voxera.automation.store import definitions_dir
+
+    assert not (definitions_dir(queue_dir) / "hist-del.json").exists()
+
+    # History is preserved
+    from voxera.automation.history import list_history_records
+
+    records = list_history_records(queue_dir, "hist-del")
+    assert len(records) == 1
+    assert records[0]["run_id"] == "1700000000000-aaa11111"
+
+
+def test_delete_missing_definition_redirects(tmp_path, monkeypatch):
+    _setup_queue(tmp_path, monkeypatch, with_auth=True)
+
+    client = TestClient(panel_module.app)
+    res = _authed_csrf_request(client, "post", "/automations/nonexistent/delete")
+
+    assert res.status_code == 303
+    assert "flash=not_found" in res.headers["location"]
+
+
+def test_delete_without_auth_rejected(tmp_path, monkeypatch):
+    queue_dir = _setup_queue(tmp_path, monkeypatch)
+    _make_definition(queue_dir, id="auth-del")
+
+    client = TestClient(panel_module.app, raise_server_exceptions=False)
+    res = client.post("/automations/auth-del/delete")
+
+    assert res.status_code in {401, 503}
+
+
+def test_detail_redirects_after_delete(tmp_path, monkeypatch):
+    queue_dir = _setup_queue(tmp_path, monkeypatch, with_auth=True)
+    _make_definition(queue_dir, id="gone-detail")
+
+    client = TestClient(panel_module.app)
+    _authed_csrf_request(client, "post", "/automations/gone-detail/delete")
+
+    # Detail page should redirect to list with not_found
+    res = client.get("/automations/gone-detail", follow_redirects=False)
+    assert res.status_code == 303
+    assert "flash=not_found" in res.headers["location"]
+
+
+def test_delete_flash_renders_on_list(tmp_path, monkeypatch):
+    _setup_queue(tmp_path, monkeypatch)
+
+    client = TestClient(panel_module.app)
+    res = client.get("/automations?flash=deleted")
+
+    assert res.status_code == 200
+    assert "History records preserved" in res.text

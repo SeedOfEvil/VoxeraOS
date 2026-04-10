@@ -33,6 +33,7 @@ from .automation.runner import (
 from .automation.store import (
     AutomationNotFoundError,
     AutomationStoreError,
+    delete_automation_definition,
     list_automation_definitions,
     load_automation_definition,
     save_automation_definition,
@@ -203,6 +204,37 @@ def automation_disable(
         console.print(f"[red]ERROR:[/red] failed to save: {exc}")
         raise typer.Exit(code=1) from exc
     console.print(f"Automation [bold]{automation_id}[/bold] disabled.")
+
+
+# ---------------------------------------------------------------------------
+# delete
+# ---------------------------------------------------------------------------
+
+
+@automation_app.command("delete")
+def automation_delete(
+    automation_id: str = typer.Argument(..., help="Automation definition id."),
+    queue_dir: str = typer.Option(
+        queue_root_display(),
+        "--queue-dir",
+        help="Queue directory containing JSON mission jobs.",
+    ),
+) -> None:
+    """Delete a saved automation definition.
+
+    Only the definition file is removed. History records under
+    automations/history/ are preserved as audit trail.
+    """
+    queue_root = queue_dir_path(queue_dir)
+    try:
+        delete_automation_definition(automation_id, queue_root)
+    except AutomationNotFoundError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    except AutomationStoreError as exc:
+        console.print(f"[red]ERROR:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Automation [bold]{automation_id}[/bold] deleted. History records preserved.")
 
 
 # ---------------------------------------------------------------------------

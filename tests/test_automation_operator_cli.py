@@ -761,3 +761,69 @@ def test_list_history_records_rejects_traversal_id(tmp_path: Path) -> None:
     ensure_automation_dirs(queue_root)
     with pytest.raises(ValueError, match="invalid"):
         list_history_records(queue_root, "../escape")
+
+
+# ---------------------------------------------------------------------------
+# automation delete
+# ---------------------------------------------------------------------------
+
+
+def test_delete_removes_definition(tmp_path: Path) -> None:
+    """delete removes the definition file."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    defn = _make_defn(id="del-cli")
+    save_automation_definition(defn, queue_root, touch_updated=False)
+
+    result = _invoke(["automation", "delete", "del-cli", "--queue-dir", str(queue_root)], tmp_path)
+    assert result.exit_code == 0  # type: ignore[union-attr]
+    assert "deleted" in result.output.lower()  # type: ignore[union-attr]
+    assert "History records preserved" in result.output  # type: ignore[union-attr]
+
+    from voxera.automation.store import definitions_dir
+
+    assert not (definitions_dir(queue_root) / "del-cli.json").exists()
+
+
+def test_delete_preserves_history(tmp_path: Path) -> None:
+    """delete removes definition but preserves history records."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+    defn = _make_defn(id="del-hist-cli")
+    save_automation_definition(defn, queue_root, touch_updated=False)
+
+    from voxera.automation.history import build_history_record, generate_run_id
+
+    run_id = generate_run_id("del-hist-cli", now_ms=1_700_000_000_000)
+    record = build_history_record(
+        automation_id="del-hist-cli",
+        run_id=run_id,
+        triggered_at_ms=1_700_000_000_000,
+        trigger_kind="once_at",
+        outcome="submitted",
+        queue_job_ref="inbox-test.json",
+        message="test fire",
+        payload_template={"goal": "test"},
+    )
+    write_history_record(queue_root, record)
+
+    result = _invoke(
+        ["automation", "delete", "del-hist-cli", "--queue-dir", str(queue_root)], tmp_path
+    )
+    assert result.exit_code == 0  # type: ignore[union-attr]
+
+    # History remains
+    records = list_history_records(queue_root, "del-hist-cli")
+    assert len(records) == 1
+
+
+def test_delete_missing_id_fails(tmp_path: Path) -> None:
+    """delete with missing id exits non-zero."""
+    queue_root = tmp_path / "queue"
+    ensure_automation_dirs(queue_root)
+
+    result = _invoke(
+        ["automation", "delete", "no-such-id", "--queue-dir", str(queue_root)], tmp_path
+    )
+    assert result.exit_code == 1  # type: ignore[union-attr]
+    assert "not found" in result.output.lower()  # type: ignore[union-attr]

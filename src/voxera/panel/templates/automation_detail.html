@@ -48,11 +48,16 @@
         <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
         <button class="btn btn-primary" type="submit">Run Now</button>
       </form>
-      <span style="margin-left:auto;">
+      <span style="margin-left:auto; display:flex; gap:8px; align-items:center;">
         Status:
         <span class="badge {% if detail.enabled %}badge-done{% else %}badge-failed{% endif %}">
           {% if detail.enabled %}enabled{% else %}disabled{% endif %}
         </span>
+        <form method="post" action="/automations/{{detail.id}}/delete" style="margin:0;"
+              onsubmit="return confirm('Delete automation {{detail.id}}? History records will be preserved.');">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <button class="btn btn-sm" type="submit" style="color:var(--color-danger,#c00);">Delete</button>
+        </form>
       </span>
     </div>
 

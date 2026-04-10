@@ -80,6 +80,11 @@
                       <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
                       <button class="btn btn-sm btn-primary" type="submit">Run Now</button>
                     </form>
+                    <form method="post" action="/automations/{{row.id}}/delete" style="margin:0;"
+                          onsubmit="return confirm('Delete automation {{row.id}}?');">
+                      <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                      <button class="btn btn-sm" type="submit" style="color:var(--color-danger,#c00);">Delete</button>
+                    </form>
                   </div>
                 </td>
               </tr>

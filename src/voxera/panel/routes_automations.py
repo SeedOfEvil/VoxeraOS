@@ -32,6 +32,7 @@ from ..automation.runner import process_automation_definition
 from ..automation.store import (
     AutomationNotFoundError,
     AutomationStoreError,
+    delete_automation_definition,
     list_automation_definitions,
     load_automation_definition,
     save_automation_definition,
@@ -45,6 +46,7 @@ AUTOMATION_FLASH_MESSAGES: dict[str, str] = {
     "run_submitted": "Run submitted to queue.",
     "run_skipped": "Run skipped by runner.",
     "run_error": "Run encountered an error.",
+    "deleted": "Automation definition deleted. History records preserved.",
     "not_found": "Automation not found.",
     "store_error": "Failed to load or save automation.",
 }
@@ -324,3 +326,31 @@ def register_automation_routes(
             url=f"/automations/{automation_id}?flash={flash_key}",
             status_code=303,
         )
+
+    # ------------------------------------------------------------------
+    # POST /automations/{automation_id}/delete
+    # ------------------------------------------------------------------
+    @app.post("/automations/{automation_id}/delete")
+    async def automation_delete(automation_id: str, request: Request):
+        """Delete a saved automation definition.
+
+        Only the definition file is removed. History records under
+        ``automations/history/`` are preserved as audit trail.
+        """
+        await require_mutation_guard(request)
+        root = queue_root()
+        try:
+            delete_automation_definition(automation_id, root)
+        except AutomationNotFoundError:
+            panel_security_counter_incr("panel_4xx_count", last_error="automation_not_found")
+            return RedirectResponse(url="/automations?flash=not_found", status_code=303)
+        except AutomationStoreError:
+            return RedirectResponse(url="/automations?flash=store_error", status_code=303)
+
+        log(
+            {
+                "event": "panel_automation_deleted",
+                "automation_id": automation_id,
+            }
+        )
+        return RedirectResponse(url="/automations?flash=deleted", status_code=303)

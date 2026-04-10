@@ -21,6 +21,7 @@ def test_panel_public_route_surface_snapshot():
             ("/assistant/progress/{request_id}", ("GET",)),
             ("/automations", ("GET",)),
             ("/automations/{automation_id}", ("GET",)),
+            ("/automations/{automation_id}/delete", ("POST",)),
             ("/automations/{automation_id}/disable", ("POST",)),
             ("/automations/{automation_id}/enable", ("POST",)),
             ("/automations/{automation_id}/run-now", ("POST",)),
