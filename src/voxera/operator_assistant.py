@@ -213,7 +213,13 @@ def build_assistant_messages(
         "(3) what that means, (4) what you suggest next. Keep it natural, not rigid. "
         "Use only provided runtime context + bounded thread history. "
         "Do not fabricate actions/state. Mark uncertainty plainly. "
-        "Advisory/read-only lane: never claim execution, approval, denial, or state mutation."
+        "Advisory/read-only lane: never claim execution, approval, denial, or state mutation. "
+        "The system has automation definitions evaluated by a timer-driven runner that submits queue "
+        "jobs when trigger conditions are met. Saving a definition is not executing it. "
+        "When interpreting queue state, use precise lifecycle terms: "
+        "queued, planning, running, awaiting_approval, done, failed, canceled. "
+        "When the operator asks for detail, give it — do not default to terse summaries "
+        "when a thorough analysis of the runtime context would be more useful."
     )
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
 

@@ -58,6 +58,29 @@ Vera is no longer one large handoff file. Current boundaries:
 ### Session-scoped reference resolution
 `vera/reference_resolver.py` provides a bounded, fail-closed reference-resolution layer that maps natural in-session phrases ("that draft", "the result", "the follow-up") to concrete referents using shared session context. Supported reference classes: draft, file, job/result, and continuation. Resolution respects a strict priority ordering per class and returns string ref values — callers validate against canonical truth downstream. Missing or ambiguous references always fail closed. The early-exit dispatch uses session context as a fallback for job review and follow-up flows when handoff state is unavailable.
 
+## 4b) Automation Subsystem
+VoxeraOS supports durable automation definitions that trigger queue work on a schedule or condition.
+
+Key components:
+- **Automation store** (`automation/store.py`) — file-backed CRUD for automation definitions under `<queue_root>/automations/definitions/`.
+- **Automation runner** (`automation/runner.py`) — evaluates enabled, due definitions and submits canonical queue payloads via the inbox path. Acquires a single-writer lock before evaluation.
+- **Automation timer** (`voxera-automation.timer`) — systemd timer that invokes the runner once per minute.
+- **Automation history** (`automation/history.py`) — per-definition run history records under `<queue_root>/automations/history/`.
+
+Supported trigger kinds (active at runtime):
+- `recurring_interval` — repeats at a fixed interval; re-arms after each fire.
+- `delay` — fires once after a delay; disables itself after firing.
+- `once_at` — fires once at a target time; disables itself after firing.
+
+Stored but not yet active at runtime:
+- `recurring_cron` — stored in definitions but skipped by the runner.
+- `watch_path` — stored in definitions but skipped by the runner.
+
+Critical boundaries:
+- Saving a definition is not executing it. The runner decides when to fire.
+- The runner submits through the normal queue inbox. The queue remains the execution boundary.
+- Vera can author, revise, and submit automation previews (which save definitions) and manage saved definitions conversationally (show, enable, disable, delete, run-now, history). Vera does not execute automation payloads directly.
+
 ## 5) Brain Layer (Reasoning Providers)
 Brain adapters provide model generation but are not execution truth:
 - base protocol (`generate`, `capability_test`)

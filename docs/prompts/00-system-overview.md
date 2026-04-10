@@ -20,11 +20,14 @@ Vera can help shape what should happen. VoxeraOS determines what actually happen
 - **Preview pane**: authoritative draft surface before submission. It represents the current intended payload candidate.
 - **Queue**: canonical execution contract once work is submitted.
 - **Artifacts and evidence**: post-execution truth for outcome validation.
+- **Automation definitions**: durable saved definitions evaluated by the automation runner. Saving a definition is not execution — the runner submits queue jobs when trigger conditions are met.
 
 ## Truth Model
 Execution truth belongs to VoxeraOS runtime outputs (queue state, artifacts, evidence), not conversational inference.
 
 Conversation can propose, explain, and summarize; runtime evidence confirms.
+
+Automation definitions exist in a durable store independent of conversation. Saving a definition does not mean it has run; trigger evaluation and queue submission are handled by the automation runner on its own cadence. The queue remains the execution boundary for automation-originated work.
 
 
 ## Session Context
