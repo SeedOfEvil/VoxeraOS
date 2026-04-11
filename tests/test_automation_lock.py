@@ -298,6 +298,23 @@ def test_makefile_install_enables_timer_not_automation_service() -> None:
         "voxera-vera.service voxera-automation.timer" in makefile
     )
 
+    # The install recipe still copies the full VOXERA_UNITS set (so the
+    # oneshot worker unit is shipped on disk even though it is not enabled).
+    assert "for unit in $(VOXERA_UNITS); do" in makefile
+
     # The install target enables the subset, not the full set.
     assert "systemctl --user enable --now $(VOXERA_ENABLED_UNITS)" in makefile
     assert "systemctl --user enable --now $(VOXERA_UNITS)" not in makefile
+
+
+def test_makefile_disable_targets_enabled_subset_only() -> None:
+    """`make services-disable` must operate on the enabled subset.
+
+    Disabling the oneshot automation service would be a no-op at best and
+    a warning at worst — systemctl refuses to disable a unit without an
+    ``[Install]`` section. ``services-disable`` should mirror the install
+    recipe and target ``VOXERA_ENABLED_UNITS`` only.
+    """
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    assert "systemctl --user disable --now $(VOXERA_ENABLED_UNITS)" in makefile
+    assert "systemctl --user disable --now $(VOXERA_UNITS)" not in makefile
