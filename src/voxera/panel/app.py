@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import subprocess  # noqa: F401 (re-export so tests monkeypatching panel.app.subprocess.run still drive queue_mutation_bridge)
 import sys  # noqa: F401 (re-export so tests asserting panel.app.sys.executable still resolve)
@@ -19,7 +18,6 @@ from ..audit import log, tail
 from ..config import load_config as load_runtime_config
 from ..core.queue_inspect import lookup_job, queue_snapshot
 from ..core.queue_result_consumers import resolve_structured_execution
-from ..health import increment_health_counter, read_health_snapshot
 from ..health_semantics import build_health_semantic_sections
 from ..version import get_version
 from . import routes_assistant as _routes_assistant
@@ -45,6 +43,18 @@ from .routes_jobs import register_job_routes
 from .routes_missions import register_mission_routes
 from .routes_queue_control import register_queue_control_routes
 from .routes_recovery import register_recovery_routes
+from .security_health_helpers import (
+    auth_setup_banner as _auth_setup_banner_impl,
+)
+from .security_health_helpers import (
+    health_queue_root as _health_queue_root_impl,
+)
+from .security_health_helpers import (
+    panel_security_counter_incr as _panel_security_counter_incr_impl,
+)
+from .security_health_helpers import (
+    panel_security_snapshot as _panel_security_snapshot_impl,
+)
 
 app = FastAPI(title="Voxera Panel", version=get_version())
 
@@ -150,21 +160,11 @@ def _queue_root() -> Path:
 
 
 def _health_queue_root() -> Path | None:
-    isolated_health = os.getenv("VOXERA_HEALTH_PATH", "").strip()
-    if not isolated_health:
-        return _queue_root()
-
-    # Keep production/runtime semantics unchanged for explicit queue roots.
-    if os.getenv("VOXERA_QUEUE_ROOT", "").strip():
-        return _queue_root()
-
-    configured_root = _queue_root().expanduser().resolve()
-    repo_operator_root = (Path.cwd() / "notes" / "queue").resolve()
-    # Test-only safety net: when panel would target the repo default queue root,
-    # route health writes through VOXERA_HEALTH_PATH instead.
-    if configured_root == repo_operator_root:
-        return None
-    return _queue_root()
+    # Thin wrapper over the extracted security_health_helpers entry point so
+    # route modules (``health_queue_root=_health_queue_root``) and
+    # ``auth_enforcement`` (which reaches back via ``panel.app._health_queue_root``)
+    # continue to resolve to the same behavior.
+    return _health_queue_root_impl(_queue_root())
 
 
 def _missions_dir() -> Path:
@@ -176,35 +176,24 @@ def _allow_get_mutations() -> bool:
 
 
 def _panel_security_counter_incr(key: str, *, last_error: str | None = None) -> None:
-    increment_health_counter(_health_queue_root(), key, last_error=last_error)
+    # Thin wrapper so route-registration callbacks keep the same
+    # ``(key, *, last_error=None)`` signature while the counter logic
+    # lives in ``security_health_helpers.panel_security_counter_incr``.
+    _panel_security_counter_incr_impl(_health_queue_root(), key, last_error=last_error)
 
 
 def _panel_security_snapshot() -> dict[str, Any]:
-    payload = read_health_snapshot(_health_queue_root())
-    counters = payload.get("counters")
-    return counters if isinstance(counters, dict) else {}
+    # Thin wrapper so route-registration callbacks keep the same
+    # ``() -> dict`` signature while the snapshot read lives in
+    # ``security_health_helpers.panel_security_snapshot``.
+    return _panel_security_snapshot_impl(_health_queue_root())
 
 
 def _auth_setup_banner() -> dict[str, str] | None:
-    settings = _settings()
-    if settings.panel_operator_password not in {None, ""}:
-        return None
-    config_path_hint = str(settings.config_path.expanduser())
-    return {
-        "title": "Setup required: panel operator password is not configured.",
-        "detail": (
-            "Mutation routes require Basic auth. Set VOXERA_PANEL_OPERATOR_PASSWORD in your "
-            "user service environment and restart panel + daemon. If VOXERA_LOAD_DOTENV=1, "
-            ".env may override file settings."
-        ),
-        "path_hint": f"Config file: {config_path_hint}",
-        "commands": (
-            "systemctl --user edit voxera-panel.service\n"
-            "# add [Service] Environment=VOXERA_PANEL_OPERATOR_PASSWORD=<set-a-strong-password>\n"
-            "systemctl --user daemon-reload\n"
-            "systemctl --user restart voxera-panel.service voxera-daemon.service"
-        ),
-    }
+    # Thin wrapper so route-registration callbacks keep the same
+    # ``() -> dict | None`` signature while the banner decision logic
+    # lives in ``security_health_helpers.auth_setup_banner``.
+    return _auth_setup_banner_impl(_settings())
 
 
 def _format_ts(ts_ms: int | None) -> str:
