@@ -120,6 +120,196 @@ class TestAutomationLaneResultContract:
 
 
 # ---------------------------------------------------------------------------
+# 2b. Automation lane step-aside / fall-through behavior
+# ---------------------------------------------------------------------------
+#
+# These tests pin the behavior that each automation lane entry point declines
+# cleanly when its preconditions are not met, so the caller falls through to
+# the next lane exactly as it did before the extraction. They do not exercise
+# the "claim" paths (those are covered by the end-to-end automation tests in
+# ``test_vera_automation_preview.py`` and ``test_vera_automation_lifecycle.py``
+# and by the end-to-end smoke at the bottom of this file).
+
+
+class TestAutomationSubmitLaneDeclines:
+    def test_declines_when_message_is_not_submit(self, tmp_path) -> None:
+        """Non-submit messages fall through even on an automation preview."""
+        preview = {"preview_type": "automation_definition", "goal": "automation"}
+        result = try_submit_automation_preview_lane(
+            message="what does this do?",
+            pending_preview=preview,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+    def test_declines_when_preview_is_normal(self, tmp_path) -> None:
+        """A normal preview + 'go ahead' must NOT be claimed by the automation
+        submit lane — it belongs to the normal submit handoff path."""
+        normal = {
+            "goal": "draft a note",
+            "write_file": {"path": "~/VoxeraOS/notes/n.md", "content": "hi"},
+        }
+        result = try_submit_automation_preview_lane(
+            message="go ahead",
+            pending_preview=normal,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+    def test_declines_when_no_preview(self, tmp_path) -> None:
+        result = try_submit_automation_preview_lane(
+            message="go ahead",
+            pending_preview=None,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+
+class TestAutomationDraftOrRevisionLaneDeclines:
+    def test_declines_when_no_preview_and_no_authoring_intent(self, tmp_path) -> None:
+        result = try_automation_draft_or_revision_lane(
+            message="what is the capital of France?",
+            pending_preview=None,
+            diagnostics_service_turn=False,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+    def test_declines_when_diagnostics_service_turn_is_true(self, tmp_path) -> None:
+        """Authoring intent + diagnostics turn must NOT draft — the caller's
+        diagnostics short-circuit owns that turn."""
+        result = try_automation_draft_or_revision_lane(
+            message="every hour run the diagnostics",
+            pending_preview=None,
+            diagnostics_service_turn=True,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+    def test_declines_on_normal_preview(self, tmp_path) -> None:
+        """A normal active preview is never handled by this lane — neither the
+        revision branch (gated on automation preview) nor the drafting branch
+        (gated on pending_preview is None) should fire."""
+        normal = {
+            "goal": "draft a note",
+            "write_file": {"path": "~/VoxeraOS/notes/n.md", "content": "hi"},
+        }
+        result = try_automation_draft_or_revision_lane(
+            message="every hour run the diagnostics",
+            pending_preview=normal,
+            diagnostics_service_turn=False,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+
+class TestAutomationLifecycleLaneDeclines:
+    def test_declines_when_no_lifecycle_intent(self, tmp_path) -> None:
+        result = try_automation_lifecycle_lane(
+            message="what is the weather in Calgary?",
+            pending_preview=None,
+            active_preview_revision_in_flight=False,
+            session_context=None,
+            last_automation_preview=None,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+    def test_declines_when_active_preview_is_automation_preview(self, tmp_path) -> None:
+        """Lifecycle wording on an active automation preview belongs to the
+        automation revision lane, not the lifecycle lane."""
+        automation_preview = {"preview_type": "automation_definition", "goal": "automation"}
+        result = try_automation_lifecycle_lane(
+            message="show that automation",
+            pending_preview=automation_preview,
+            active_preview_revision_in_flight=False,
+            session_context=None,
+            last_automation_preview=None,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+    def test_declines_when_revision_in_flight(self, tmp_path) -> None:
+        """Lifecycle wording while a normal preview is under revision must
+        fall through so the normal preview revision flow runs instead."""
+        normal = {
+            "goal": "draft a note",
+            "write_file": {"path": "~/VoxeraOS/notes/n.md", "content": "hi"},
+        }
+        result = try_automation_lifecycle_lane(
+            message="run it now",
+            pending_preview=normal,
+            active_preview_revision_in_flight=True,
+            session_context=None,
+            last_automation_preview=None,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result.matched is False
+
+
+class TestMaterializeAutomationShellDeclines:
+    def test_returns_none_when_preview_is_active(self, tmp_path) -> None:
+        existing = {
+            "goal": "draft a note",
+            "write_file": {"path": "~/VoxeraOS/notes/n.md", "content": "hi"},
+        }
+        result = try_materialize_automation_shell(
+            message="watch ./incoming and move new folders to ./processed",
+            pending_preview=existing,
+            turns=[],
+            is_info_query=False,
+            is_explicit_writing_transform=False,
+            conversational_answer_first_turn=False,
+            is_voxera_control_turn=False,
+            looks_like_new_unrelated_query=False,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result is None
+
+    def test_returns_none_on_unrelated_message(self, tmp_path) -> None:
+        result = try_materialize_automation_shell(
+            message="what is 2 + 2?",
+            pending_preview=None,
+            turns=[],
+            is_info_query=False,
+            is_explicit_writing_transform=False,
+            conversational_answer_first_turn=False,
+            is_voxera_control_turn=False,
+            looks_like_new_unrelated_query=False,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result is None
+
+    def test_returns_none_when_info_query_gate_is_true(self, tmp_path) -> None:
+        """Even a clearly automation-shaped phrase is declined when the caller
+        flags it as an informational web query, so the info lane can claim it."""
+        result = try_materialize_automation_shell(
+            message="watch ./incoming and move new folders to ./processed",
+            pending_preview=None,
+            turns=[],
+            is_info_query=True,
+            is_explicit_writing_transform=False,
+            conversational_answer_first_turn=False,
+            is_voxera_control_turn=False,
+            looks_like_new_unrelated_query=False,
+            queue_root=tmp_path,
+            session_id="sid",
+        )
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
 # 3. review_lane.compute_active_preview_revision_in_flight
 # ---------------------------------------------------------------------------
 
@@ -309,6 +499,13 @@ class TestLaneModulesPreviewOwnershipDiscipline:
 
 
 class TestAutomationLaneEndToEnd:
+    """End-to-end smoke through the ``/chat`` endpoint.
+
+    Proves the extraction did not break the full automation draft +
+    save path. The lane-level declines / step-asides are pinned in the
+    unit-level test classes above; this class is only for ``/chat``.
+    """
+
     def test_automation_preview_draft_then_save_through_chat(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path
     ) -> None:
@@ -330,12 +527,15 @@ class TestAutomationLaneEndToEnd:
         # Automation submit clears the preview slot.
         assert harness.preview() is None
 
-    def test_automation_lifecycle_lane_steps_aside_for_normal_preview_revision(
+    def test_normal_preview_revision_blocks_automation_lifecycle_lane(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path
     ) -> None:
-        """The lifecycle lane must step aside when a clear revision of a
-        normal active preview is in flight. This is the belt-and-suspenders
-        that moved into review_lane.compute_active_preview_revision_in_flight.
+        """Regression anchor: a normal preview under revision must still be
+        protected from the automation lifecycle lane after the extraction.
+
+        This is the moved-to-``review_lane.compute_active_preview_revision_in_flight``
+        gate. If the caller drops the ``active_preview_revision_in_flight``
+        forwarding, this test fails.
         """
         harness = make_vera_session(monkeypatch, tmp_path)
 
@@ -353,14 +553,16 @@ class TestAutomationLaneEndToEnd:
         }
         write_session_preview(harness.queue, harness.session_id, normal_preview)
 
-        # A clear revision phrase with incidental lifecycle wording.
-        # The lifecycle lane must step aside because the active preview
-        # is a normal preview under revision.
-        revision_flag = compute_active_preview_revision_in_flight(
-            "make it longer", pending_preview=normal_preview
+        # The narrow revision gate fires for "make it longer".
+        assert (
+            compute_active_preview_revision_in_flight(
+                "make it longer", pending_preview=normal_preview
+            )
+            is True
         )
-        assert revision_flag is True
 
+        # Even the lifecycle-overlap phrase must step aside when the
+        # caller signals revision-in-flight.
         lifecycle_result = try_automation_lifecycle_lane(
             message="show me the file",  # overlaps with lifecycle wording
             pending_preview=normal_preview,
