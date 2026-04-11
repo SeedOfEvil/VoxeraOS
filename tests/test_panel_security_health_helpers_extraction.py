@@ -113,6 +113,22 @@ def test_panel_app_does_not_redefine_extracted_banner_constants() -> None:
     assert "systemctl --user edit voxera-panel.service" not in wrapper_source
 
 
+def test_panel_app_no_longer_imports_health_primitives_directly() -> None:
+    # After extraction the helper module is the only panel-side caller of
+    # ``voxera.health.increment_health_counter`` / ``read_health_snapshot``.
+    # Pin that ``panel.app`` does not re-import them so a later PR cannot
+    # silently reintroduce a local inline implementation bypassing the
+    # extraction.
+    assert not hasattr(panel_module, "increment_health_counter"), (
+        "panel.app should no longer import increment_health_counter directly; "
+        "it now lives behind voxera.panel.security_health_helpers.panel_security_counter_incr."
+    )
+    assert not hasattr(panel_module, "read_health_snapshot"), (
+        "panel.app should no longer import read_health_snapshot directly; "
+        "it now lives behind voxera.panel.security_health_helpers.panel_security_snapshot."
+    )
+
+
 def test_security_health_helpers_does_not_reach_back_into_panel_app() -> None:
     # Architecture invariant: like PR B's queue_mutation_bridge, this
     # module is pure — every input is explicit. A future PR that sneaks
