@@ -22,34 +22,21 @@ from ..core.writing_draft_intent import (
     is_writing_refinement_request,
 )
 from ..paths import queue_root as default_queue_root
-from ..vera.automation_lifecycle import (
-    dispatch_lifecycle_action,
-    is_automation_lifecycle_intent,
-)
 from ..vera.automation_preview import (
-    AutomationClarification,
-    AutomationPreview,
-    draft_automation_preview,
-    is_automation_authoring_intent,
     is_automation_preview,
-    revise_automation_preview,
     submit_automation_preview,
 )
 from ..vera.context_lifecycle import (
-    context_on_automation_lifecycle_action,
     context_on_automation_saved,
     context_on_completion_ingested,
     context_on_handoff_submitted,
     context_on_preview_cleared,
-    context_on_review_performed,
     context_on_session_cleared,
 )
 from ..vera.draft_revision import (
     looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.evidence_review import (
-    is_revise_from_evidence_request,
-    is_save_followup_request,
     maybe_extract_job_id,
 )
 from ..vera.investigation_derivations import (
@@ -57,7 +44,6 @@ from ..vera.investigation_derivations import (
     is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
     is_investigation_expand_request,
-    is_investigation_save_request,
 )
 from ..vera.investigation_flow import (
     is_informational_web_query,
@@ -75,8 +61,6 @@ from ..vera.preview_drafting import (
 )
 from ..vera.preview_ownership import (
     clear_active_preview,
-    derive_preview_draft_ref,
-    record_followup_preview,
     record_submit_success,
     reset_active_preview,
 )
@@ -117,7 +101,6 @@ from ..vera.session_store import (
     read_session_weather_context,
     register_session_linked_job,
     session_debug_snapshot,
-    update_session_context,
     write_session_conversational_planning_active,
     write_session_derived_investigation_output,
     write_session_enrichment,
@@ -159,6 +142,31 @@ from .execution_mode import (
 from .execution_mode import (
     _looks_like_active_preview_content_generation_turn as _em_looks_like_active_preview_content_generation_turn,
 )
+from .lanes.automation_lane import (
+    _AUTOMATION_CLARIFICATION_QUESTION_RE,  # noqa: F401 — re-export for tests
+    _AUTOMATION_DETAIL_SIGNAL_RE,  # noqa: F401 — re-export for tests
+    _AUTOMATION_INTENT_RE,  # noqa: F401 — re-export for tests
+    _DIRECT_AUTOMATION_ACTION_RE,  # noqa: F401 — re-export for tests
+    _DIRECT_AUTOMATION_PATH_TOKEN_RE,  # noqa: F401 — re-export for tests
+    _DIRECT_AUTOMATION_SUBJECT_RE,  # noqa: F401 — re-export for tests
+    _DIRECT_AUTOMATION_VERB_RE,  # noqa: F401 — re-export for tests
+    _PREVIEWABLE_AUTOMATION_ACTION_HINT_RE,  # noqa: F401 — re-export for tests
+    _PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY,
+    _PREVIEWABLE_AUTOMATION_INTENT_RE,  # noqa: F401 — re-export for tests
+    _PREVIEWABLE_AUTOMATION_SUBJECT_RE,  # noqa: F401 — re-export for tests
+    _detect_automation_clarification_completion,  # noqa: F401 — re-export for tests
+    _looks_like_direct_automation_request,  # noqa: F401 — re-export for tests
+    _looks_like_previewable_automation_intent,
+    _synthesize_direct_automation_preview,  # noqa: F401 — re-export for tests
+    try_automation_draft_or_revision_lane,
+    try_automation_lifecycle_lane,
+    try_materialize_automation_shell,
+    try_submit_automation_preview_lane,
+)
+from .lanes.review_lane import (
+    apply_early_exit_state_writes,
+    compute_active_preview_revision_in_flight,
+)
 from .markdown_render import render_assistant_markdown
 from .preview_content_binding import (
     is_targeted_code_preview_refinement,
@@ -167,8 +175,6 @@ from .preview_content_binding import (
 )
 from .preview_routing import (
     canonical_preview_lane_order,
-    is_active_preview_revision_turn,
-    is_normal_preview,
 )
 from .response_shaping import (
     BLANKET_PREVIEW_REFUSAL_TEXT,
@@ -389,268 +395,6 @@ def _recover_code_draft_from_history(
                 except Exception:
                     pass
     return None
-
-
-_AUTOMATION_INTENT_RE = re.compile(
-    r"\b(?:process|automation|workflow|automate|monitor|watch|detect)\b.*"
-    r"\b(?:folder|directory|file|files|path)\b",
-    re.IGNORECASE,
-)
-
-_AUTOMATION_CLARIFICATION_QUESTION_RE = re.compile(
-    r"\?|\b(?:source|destination|where|which folder|what should|what action|how often|what (?:trigger|condition))\b",
-    re.IGNORECASE,
-)
-
-_AUTOMATION_DETAIL_SIGNAL_RE = re.compile(
-    r"(?:[~./][\w./-]+|"  # path-like token
-    r"\b(?:source|destination|action|trigger|when|every|interval|timeout|stability)\s*[:=])",
-    re.IGNORECASE,
-)
-
-
-def _detect_automation_clarification_completion(
-    message: str,
-    *,
-    pending_preview: dict[str, object] | None,
-    turns: list[dict[str, str]],
-) -> dict[str, object] | None:
-    """Detect a clarification answer for an automation/process-style request.
-
-    The previous PR's code-draft recovery only fires when the original request
-    matches ``is_code_draft_request`` (requires explicit language keyword or
-    code filename).  Process/automation phrasing like "I want a process that
-    detects a new folder..." does not match, so a Python-script clarification
-    flow could not materialize a preview.
-
-    This helper closes that gap with a narrow detector:
-
-    1. No preview currently exists.
-    2. The current message is not a new informational/writing/control turn
-       (caller responsibility — these are gated upstream).
-    3. The most recent assistant turn looks like a clarification question.
-    4. A recent user turn contains automation/process intent (process/automate/
-       monitor/watch + folder/directory/file).
-    5. The current message provides specific clarification details (path tokens
-       or structured ``key: value`` clarification fields).
-
-    Returns a synthesized Python-script preview shell so the standard code-draft
-    flow can inject the actual generated code.  Returns None when any condition
-    is not met (fail-closed).
-    """
-    if pending_preview is not None:
-        return None
-    if is_code_draft_request(message):
-        return None
-    if not _AUTOMATION_DETAIL_SIGNAL_RE.search(message):
-        return None
-    if not turns:
-        return None
-    last_assistant: str | None = None
-    for turn in reversed(turns):
-        if str(turn.get("role") or "").strip().lower() == "assistant":
-            last_assistant = str(turn.get("text") or "").strip()
-            break
-    if not last_assistant:
-        return None
-    if not _AUTOMATION_CLARIFICATION_QUESTION_RE.search(last_assistant):
-        return None
-    has_automation_intent = False
-    for turn in reversed(turns[-8:]):
-        if str(turn.get("role") or "").strip().lower() != "user":
-            continue
-        prior_text = str(turn.get("text") or "").strip()
-        if prior_text == message.strip():
-            continue
-        if _AUTOMATION_INTENT_RE.search(prior_text):
-            has_automation_intent = True
-            break
-    if not has_automation_intent:
-        return None
-    shell = {
-        "goal": "draft a python script for the requested automation as automation.py",
-        "write_file": {
-            "path": "~/VoxeraOS/notes/automation.py",
-            "content": "",
-            "mode": "overwrite",
-        },
-    }
-    try:
-        return normalize_preview_payload(shell)
-    except Exception:
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Direct automation/script preview detection (no clarification required)
-# ---------------------------------------------------------------------------
-#
-# Handles fully specified single-turn requests like:
-#   "I need a process that continuously watches ./incoming. When a folder is
-#    fully copied in, add a status.txt file containing processed! and then
-#    move it to ./processed."
-#
-# The narrower clarification-recovery helpers above only fire after a prior
-# clarification exchange.  Direct requests must pass four structural gates
-# so the lane stays tight:
-#   (1) automation verb  — watch/monitor/detect/automate/poll (+ tense forms)
-#   (2) path token       — ~/X, ./X, or /X
-#   (3) action verb      — add/write/move/copy/create/append/rename/delete
-#   (4) file/dir subject — folder/directory/file/path (+ plurals)
-
-_DIRECT_AUTOMATION_VERB_RE = re.compile(
-    r"\b(?:watch|watches|watching|monitor|monitors|monitoring|"
-    r"detect|detects|detecting|automate|automates|automating|"
-    r"poll|polls|polling)\b",
-    re.IGNORECASE,
-)
-
-_DIRECT_AUTOMATION_PATH_TOKEN_RE = re.compile(r"(?:[~./][\w./-]*[\w/])")
-
-_DIRECT_AUTOMATION_ACTION_RE = re.compile(
-    r"\b(?:add(?:s|ing|ed)?|write|writes|writing|move|moves|moving|"
-    r"copy|copies|copying|create(?:s|d)?|creating|append(?:s|ing|ed)?|"
-    r"rename(?:s|d)?|renaming|delete(?:s|d)?|deleting)\b",
-    re.IGNORECASE,
-)
-
-_DIRECT_AUTOMATION_SUBJECT_RE = re.compile(
-    r"\b(?:folder|folders|directory|directories|file|files|path|paths)\b",
-    re.IGNORECASE,
-)
-
-
-def _looks_like_direct_automation_request(message: str) -> bool:
-    """Return True when the message is a fully specified automation/script request.
-
-    All four structural signals must be present to enter this lane:
-    automation verb, path token, action verb, and file/directory subject.
-    This is deliberately narrow — simple file ops ("move a.txt to b.txt"),
-    informational queries, writing drafts, and weather questions do not
-    match, so the detector only widens the code-draft lane for clearly
-    previewable automation requests.
-    """
-    text = message.strip()
-    if not text:
-        return False
-    return (
-        bool(_DIRECT_AUTOMATION_VERB_RE.search(text))
-        and bool(_DIRECT_AUTOMATION_PATH_TOKEN_RE.search(text))
-        and bool(_DIRECT_AUTOMATION_ACTION_RE.search(text))
-        and bool(_DIRECT_AUTOMATION_SUBJECT_RE.search(text))
-    )
-
-
-# ---------------------------------------------------------------------------
-# Previewable automation/process intent — broader, clarification-routing detector
-# ---------------------------------------------------------------------------
-#
-# Handles first-turn requests that clearly describe a previewable automation/
-# process/script (e.g. "I need a process that identifies a new folder copied
-# into a specific folder and then copies it to another folder") but lack the
-# explicit path token / narrow verb required by ``_looks_like_direct_automation
-# _request``.  These should never get a blanket first-turn refusal — the right
-# behavior is to ask a focused clarification.
-#
-# This detector is structural, not keyword-only.  All three signals must be
-# present so unrelated informational, writing, weather, or simple file-intent
-# requests do not match:
-#   (1) automation intent verb — process/automation/automate/script/workflow/
-#       monitor/watch/detect/identify/poll (+ tense forms)
-#   (2) file/folder/directory subject — folder/directory/file/path (+ plurals)
-#   (3) action-on-arrival/source-destination hint — copy/move/add/write/create/
-#       trigger/another folder/new folder/when phrasing
-#
-# Used to convert the blanket "I was not able to prepare a governed preview"
-# refusal into a focused clarification question — does NOT itself materialize
-# a preview or weaken the trust model.
-
-_PREVIEWABLE_AUTOMATION_INTENT_RE = re.compile(
-    r"\b(?:process|automation|automate|automating|automates|"
-    r"script|workflow|"
-    r"monitor|monitors|monitoring|"
-    r"watch|watches|watching|"
-    r"detect|detects|detecting|"
-    r"identify|identifies|identifying|"
-    r"poll|polls|polling)\b",
-    re.IGNORECASE,
-)
-
-_PREVIEWABLE_AUTOMATION_SUBJECT_RE = re.compile(
-    r"\b(?:folder|folders|directory|directories|file|files|path|paths)\b",
-    re.IGNORECASE,
-)
-
-_PREVIEWABLE_AUTOMATION_ACTION_HINT_RE = re.compile(
-    r"\b(?:copy|copies|copied|copying|"
-    r"move|moves|moved|moving|"
-    r"add|adds|added|adding|"
-    r"write|writes|wrote|writing|"
-    r"create|creates|created|creating|"
-    r"append|appends|appended|appending|"
-    r"rename|renames|renamed|renaming|"
-    r"delete|deletes|deleted|deleting|"
-    r"trigger|triggers|triggered|"
-    r"another\s+(?:folder|directory|file|path)|"
-    r"new\s+(?:folder|directory|file|path)|"
-    r"on\s+arrival|"
-    r"when\s+(?:a|an|new|something|it|they|the))\b",
-    re.IGNORECASE,
-)
-
-
-def _looks_like_previewable_automation_intent(message: str) -> bool:
-    """Return True when the message clearly describes a previewable automation request.
-
-    Broader than ``_looks_like_direct_automation_request``: does not require an
-    explicit path token, so first-turn requests phrased in natural language
-    (without ``./incoming``-style paths) are still recognized as previewable.
-
-    All three structural signals must match — automation intent verb, file or
-    directory subject, and an action-on-arrival/source-destination hint — so
-    informational, weather, writing, and simple file-intent requests do not
-    match.  Used only to route blanket first-turn refusals into a focused
-    clarification question; never used to materialize a preview directly.
-    """
-    text = message.strip()
-    if not text:
-        return False
-    if not _PREVIEWABLE_AUTOMATION_INTENT_RE.search(text):
-        return False
-    if not _PREVIEWABLE_AUTOMATION_SUBJECT_RE.search(text):
-        return False
-    return bool(_PREVIEWABLE_AUTOMATION_ACTION_HINT_RE.search(text))
-
-
-_PREVIEWABLE_AUTOMATION_CLARIFICATION_REPLY = (
-    "I can help with that. To prepare a governed preview I need a few details:\n\n"
-    "- Which source folder should be watched (full path, e.g. `~/VoxeraOS/notes/incoming`)?\n"
-    "- Which destination folder should receive the items (full path)?\n"
-    "- What should happen when a new folder is detected (for example: add a "
-    "marker file, then move the folder)?\n\n"
-    "Once I have those details I can draft a script for you to review."
-)
-
-
-def _synthesize_direct_automation_preview() -> dict[str, object] | None:
-    """Synthesize an empty Python-script preview shell for direct automation requests.
-
-    Returns a normalized preview payload or None on normalization failure.
-    The actual code content is injected by the standard code-draft flow after
-    the LLM reply is generated.
-    """
-    shell = {
-        "goal": "draft a python script for the requested automation as automation.py",
-        "write_file": {
-            "path": "~/VoxeraOS/notes/automation.py",
-            "content": "",
-            "mode": "overwrite",
-        },
-    }
-    try:
-        return normalize_preview_payload(shell)
-    except Exception:
-        return None
 
 
 def _is_refinable_prose_preview(preview: dict[str, object] | None) -> bool:
@@ -959,43 +703,14 @@ async def chat(request: Request):
     # silently overwriting the active preview slot. Non-mutating branches
     # (time, diagnostics refusal, job review report, near-miss submit
     # rejection, stale-draft reference) still run — they never touch the
-    # preview.  Computed once and reused by both the early-exit dispatch
-    # and the downstream automation-lifecycle gate.
-    #
-    # Belt-and-suspenders: the narrow revision-gate patterns do not
-    # cover every ambiguous phrase that could hijack an active preview.
-    # When a normal preview is active AND the message is an ambiguous
-    # save/revise-from-evidence phrase, we also mark the revision as in
-    # flight so the early-exit follow-up branches cannot silently
-    # replace the active preview. This is the fail-closed choice: if
-    # the phrase could mean either "mutate this preview" or "spawn a
-    # new evidence follow-up", we prefer not to mutate the wrong object.
-    _active_preview_revision_in_flight = is_active_preview_revision_turn(
-        message, active_preview=pending_preview
+    # preview.  The narrow revision gate plus the review/evidence belt-
+    # and-suspenders live in ``lanes.review_lane`` so the review lane
+    # owns its own protection logic; this file only calls the helper so
+    # the value remains reusable by the downstream automation-lifecycle
+    # gate.
+    _active_preview_revision_in_flight = compute_active_preview_revision_in_flight(
+        message, pending_preview=pending_preview
     )
-    if (
-        not _active_preview_revision_in_flight
-        and is_normal_preview(pending_preview)
-        and (
-            is_save_followup_request(message)
-            or is_revise_from_evidence_request(message)
-            # Investigation-save detector is extremely broad: any
-            # phrase with save/write/export + results/findings fires
-            # it. When a normal active preview is in play, phrases
-            # like "make it save the results to a file" or "save the
-            # scan results to a file" are script enhancements, not
-            # investigation-export requests — the investigation-save
-            # branch would otherwise fail closed with a confusing
-            # "couldn't resolve investigation result references"
-            # reply and steal the turn.  Fail-closed choice: mark as
-            # revision in flight so lane 4 / lane 8 / the derived-save
-            # lane all step aside and the script-enhancement lands on
-            # the active preview instead.
-            or is_investigation_save_request(message)
-            or is_investigation_derived_save_request(message)
-        )
-    ):
-        _active_preview_revision_in_flight = True
     _session_ctx = read_session_context(root, active_session)
     _early = dispatch_early_exit_intent(
         message=message,
@@ -1010,41 +725,12 @@ async def chat(request: Request):
         active_preview_revision_in_flight=_active_preview_revision_in_flight,
     )
     if _early.matched:
-        if _early.write_preview and isinstance(_early.preview_payload, dict):
-            # Follow-up previews record a source job so "that job" / "the
-            # last result" still resolves correctly on later turns.
-            _early_source_job = (
-                str((_early.context_updates or {}).get("last_reviewed_job_ref") or "").strip()
-                or None
-            )
-            _early_draft_ref = derive_preview_draft_ref(_early.preview_payload)
-            if _early_source_job:
-                record_followup_preview(
-                    root,
-                    active_session,
-                    _early.preview_payload,
-                    source_job_id=_early_source_job,
-                    draft_ref=_early_draft_ref,
-                )
-            else:
-                reset_active_preview(
-                    root,
-                    active_session,
-                    _early.preview_payload,
-                    draft_ref=_early_draft_ref,
-                )
-        elif _early.context_updates:
-            # Non-preview early-exit with context updates (e.g. job review).
-            _review_job = (
-                str((_early.context_updates or {}).get("last_reviewed_job_ref") or "").strip()
-                or None
-            )
-            if _review_job and len(_early.context_updates) == 1:
-                context_on_review_performed(root, active_session, job_id=_review_job)
-            else:
-                update_session_context(root, active_session, **_early.context_updates)
-        if _early.write_derived_output:
-            write_session_derived_investigation_output(root, active_session, _early.derived_output)
+        # Review-lane orchestration: apply preview / context / derived-
+        # output writes for the early-exit result. All preview mutations
+        # flow through ``preview_ownership`` helpers so ownership stays
+        # centralized and the review/evidence truth boundary is
+        # preserved.
+        apply_early_exit_state_writes(_early, queue_root=root, session_id=active_session)
         append_session_turn(root, active_session, role="assistant", text=_early.assistant_text)
         _early_turns = read_session_turns(root, active_session)
         append_routing_debug_entry(
@@ -1123,32 +809,30 @@ async def chat(request: Request):
     # ── Automation preview submit ──────────────────────────────────────────
     # When the active preview is an automation definition preview, submit
     # saves a durable automation definition instead of emitting a queue job.
-    if (
-        should_submit_active_preview(message, preview_available=pending_preview is not None)
-        and isinstance(pending_preview, dict)
-        and is_automation_preview(pending_preview)
-    ):
-        _auto_result = submit_automation_preview(pending_preview, root)
-        # Automation submit does NOT emit a queue job; it saves a durable
-        # definition. Clear the preview slot and let
-        # context_on_automation_saved refresh the continuity refs.
-        record_submit_success(root, active_session)
-        context_on_automation_saved(root, active_session, automation_id=_auto_result.automation_id)
-        # Stash the preview so post-submit continuity can describe it.
-        write_session_last_automation_preview(root, active_session, pending_preview)
-        append_session_turn(root, active_session, role="assistant", text=_auto_result.ack)
+    # Lane-specific logic lives in ``lanes.automation_lane``; this file
+    # retains the dispatch + render orchestration.
+    _auto_submit_result = try_submit_automation_preview_lane(
+        message=message,
+        pending_preview=pending_preview,
+        queue_root=root,
+        session_id=active_session,
+    )
+    if _auto_submit_result.matched:
+        append_session_turn(
+            root, active_session, role="assistant", text=_auto_submit_result.assistant_text
+        )
         _auto_turns = read_session_turns(root, active_session)
         append_routing_debug_entry(
             root,
             active_session,
-            route_status="automation_definition_saved",
-            dispatch_source="submit_automation_preview",
+            route_status=_auto_submit_result.status,
+            dispatch_source=_auto_submit_result.dispatch_source,
             turn_index=len(_auto_turns),
         )
         return _render_page(
             session_id=active_session,
             turns=_auto_turns,
-            status="automation_definition_saved",
+            status=_auto_submit_result.status,
             voice_flags=voice_flags,
         )
 
@@ -1199,114 +883,33 @@ async def chat(request: Request):
     # already an active automation preview, handle revision turns.
     # Post-submit continuity: answer "what did you save?" / "did it run?"
     # using the stashed automation preview.
-    if isinstance(pending_preview, dict) and is_automation_preview(pending_preview):
-        _auto_revision = revise_automation_preview(message, pending_preview)
-        if isinstance(_auto_revision, AutomationPreview):
-            pending_preview = _auto_revision.preview
-            # Automation previews are revised in place through the
-            # centralized reset_active_preview helper so every lane
-            # mutation path is auditable. Handoff state must NOT be
-            # marked preview_ready for automation previews because
-            # automation submit saves a definition and does not use the
-            # queue handoff pathway.
-            reset_active_preview(
-                root,
-                active_session,
-                _auto_revision.preview,
-                draft_ref="automation_preview",
-                mark_handoff_ready=False,
-            )
-            _auto_text = (
-                "I updated the automation preview.\n\n"
-                f"{_auto_revision.explanation}\n\n"
-                "Say **go ahead** to save this automation definition, or "
-                "tell me what to change."
-            )
-            append_session_turn(root, active_session, role="assistant", text=_auto_text)
-            _auto_turns = read_session_turns(root, active_session)
-            append_routing_debug_entry(
-                root,
-                active_session,
-                route_status="automation_preview_revised",
-                dispatch_source="automation_revision",
-                turn_index=len(_auto_turns),
-            )
-            return _render_page(
-                session_id=active_session,
-                turns=_auto_turns,
-                status="automation_preview_revised",
-                voice_flags=voice_flags,
-            )
-        if isinstance(_auto_revision, AutomationClarification):
-            append_session_turn(
-                root, active_session, role="assistant", text=_auto_revision.question
-            )
-            _auto_turns = read_session_turns(root, active_session)
-            append_routing_debug_entry(
-                root,
-                active_session,
-                route_status="automation_clarification",
-                dispatch_source="automation_revision_clarify",
-                turn_index=len(_auto_turns),
-            )
-            return _render_page(
-                session_id=active_session,
-                turns=_auto_turns,
-                status="automation_clarification",
-                voice_flags=voice_flags,
-            )
-    elif (
-        pending_preview is None
-        and is_automation_authoring_intent(message)
-        and not diagnostics_service_turn
-    ):
-        _auto_draft = draft_automation_preview(message, active_preview=None)
-        if isinstance(_auto_draft, AutomationPreview):
-            pending_preview = _auto_draft.preview
-            reset_active_preview(
-                root,
-                active_session,
-                _auto_draft.preview,
-                draft_ref="automation_preview",
-                mark_handoff_ready=False,
-            )
-            _auto_text = (
-                "Here's an automation preview:\n\n"
-                f"{_auto_draft.explanation}\n\n"
-                "Say **go ahead** to save this automation definition, or "
-                "tell me what to change."
-            )
-            append_session_turn(root, active_session, role="assistant", text=_auto_text)
-            _auto_turns = read_session_turns(root, active_session)
-            append_routing_debug_entry(
-                root,
-                active_session,
-                route_status="automation_preview_drafted",
-                dispatch_source="automation_drafting",
-                turn_index=len(_auto_turns),
-            )
-            return _render_page(
-                session_id=active_session,
-                turns=_auto_turns,
-                status="automation_preview_drafted",
-                voice_flags=voice_flags,
-            )
-        if isinstance(_auto_draft, AutomationClarification):
-            append_session_turn(root, active_session, role="assistant", text=_auto_draft.question)
-            _auto_turns = read_session_turns(root, active_session)
-            append_routing_debug_entry(
-                root,
-                active_session,
-                route_status="automation_clarification",
-                dispatch_source="automation_drafting_clarify",
-                turn_index=len(_auto_turns),
-            )
-            return _render_page(
-                session_id=active_session,
-                turns=_auto_turns,
-                status="automation_clarification",
-                voice_flags=voice_flags,
-            )
+    _auto_draft_result = try_automation_draft_or_revision_lane(
+        message=message,
+        pending_preview=pending_preview,
+        diagnostics_service_turn=diagnostics_service_turn,
+        queue_root=root,
+        session_id=active_session,
+    )
+    if _auto_draft_result.matched:
+        if _auto_draft_result.pending_preview_after is not None:
+            pending_preview = _auto_draft_result.pending_preview_after
+        append_session_turn(
+            root, active_session, role="assistant", text=_auto_draft_result.assistant_text
+        )
+        _auto_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status=_auto_draft_result.status,
+            dispatch_source=_auto_draft_result.dispatch_source,
+            turn_index=len(_auto_turns),
+        )
+        return _render_page(
+            session_id=active_session,
+            turns=_auto_turns,
+            status=_auto_draft_result.status,
+            voice_flags=voice_flags,
+        )
 
     # ── Automation lifecycle management ───────────────────────────────────
     # Detect conversational lifecycle requests (show, enable, disable,
@@ -1323,46 +926,34 @@ async def chat(request: Request):
     # non-automation preview. See ``preview_routing.is_active_preview_
     # revision_turn`` for the conservative gate.
     _last_auto_preview = read_session_last_automation_preview(root, active_session)
-    if (
-        is_automation_lifecycle_intent(message)
-        and not (isinstance(pending_preview, dict) and is_automation_preview(pending_preview))
-        and not _active_preview_revision_in_flight
-    ):
-        _lifecycle = dispatch_lifecycle_action(
-            message,
-            queue_root=root,
-            session_context=_session_ctx,
-            last_automation_preview=_last_auto_preview,
+    _lifecycle_result = try_automation_lifecycle_lane(
+        message=message,
+        pending_preview=pending_preview,
+        active_preview_revision_in_flight=_active_preview_revision_in_flight,
+        session_context=_session_ctx,
+        last_automation_preview=_last_auto_preview,
+        queue_root=root,
+        session_id=active_session,
+    )
+    if _lifecycle_result.matched:
+        append_session_turn(
+            root, active_session, role="assistant", text=_lifecycle_result.assistant_text
         )
-        if _lifecycle.matched:
-            # Update session context via the dedicated lifecycle function.
-            context_on_automation_lifecycle_action(
-                root,
-                active_session,
-                automation_id=_lifecycle.automation_id,
-                deleted=_lifecycle.definition_deleted,
-            )
-            if _lifecycle.definition_deleted:
-                # Clear stashed preview since the definition was deleted.
-                write_session_last_automation_preview(root, active_session, None)
-            append_session_turn(
-                root, active_session, role="assistant", text=_lifecycle.assistant_text
-            )
-            _lc_turns = read_session_turns(root, active_session)
-            append_routing_debug_entry(
-                root,
-                active_session,
-                route_status=_lifecycle.status,
-                dispatch_source="automation_lifecycle",
-                matched_early_exit=True,
-                turn_index=len(_lc_turns),
-            )
-            return _render_page(
-                session_id=active_session,
-                turns=_lc_turns,
-                status=_lifecycle.status,
-                voice_flags=voice_flags,
-            )
+        _lc_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status=_lifecycle_result.status,
+            dispatch_source=_lifecycle_result.dispatch_source,
+            matched_early_exit=_lifecycle_result.matched_early_exit,
+            turn_index=len(_lc_turns),
+        )
+        return _render_page(
+            session_id=active_session,
+            turns=_lc_turns,
+            status=_lifecycle_result.status,
+            voice_flags=voice_flags,
+        )
 
     is_info_query = is_informational_web_query(message)
     informational_web_turn = (
@@ -1424,59 +1015,37 @@ async def chat(request: Request):
         pending_preview = _recovered_code_draft
         reset_active_preview(root, active_session, _recovered_code_draft)
         _post_clarification_code_draft = True
-    # ── Automation/process clarification completion ───────────────────────
-    # When the user answers a clarification question for an automation/
-    # process-style request (which does not match is_code_draft_request),
-    # synthesize a Python-script preview shell so the standard code-draft
-    # flow can inject the actual generated code.  Same false-positive guards
-    # as the post-clarification path.
-    if (
-        pending_preview is None
-        and not is_code_draft_request(message)
-        and not is_info_query
-        and not is_explicit_writing_transform
-        and not conversational_answer_first_turn
-        and not _is_voxera_control_turn(message, active_preview=None)
-        and not _looks_like_new_unrelated_query(message)
-    ):
-        _automation_shell = _detect_automation_clarification_completion(
-            message,
-            pending_preview=pending_preview,
-            turns=turns,
-        )
-        if _automation_shell is not None:
-            pending_preview = _automation_shell
-            reset_active_preview(
-                root,
-                active_session,
-                _automation_shell,
-                draft_ref="~/VoxeraOS/notes/automation.py",
-            )
-            _post_clarification_code_draft = True
-    # ── Direct automation/script request (no clarification required) ─────
-    # A fully specified single-turn request with all four structural
-    # signals (automation verb + path token + action verb + file/dir
-    # subject) synthesizes the Python-script preview shell directly so the
-    # code-draft flow can inject the generated code on the same turn.
-    if (
-        pending_preview is None
-        and not is_code_draft_request(message)
-        and not is_info_query
-        and not is_explicit_writing_transform
-        and not conversational_answer_first_turn
-        and not _is_voxera_control_turn(message, active_preview=None)
-        and _looks_like_direct_automation_request(message)
-    ):
-        _direct_automation_shell = _synthesize_direct_automation_preview()
-        if _direct_automation_shell is not None:
-            pending_preview = _direct_automation_shell
-            reset_active_preview(
-                root,
-                active_session,
-                _direct_automation_shell,
-                draft_ref="~/VoxeraOS/notes/automation.py",
-            )
-            _post_clarification_code_draft = True
+    # ── Automation shell materialization ─────────────────────────────────
+    # Two sub-lanes live behind a single helper in ``lanes.automation_lane``:
+    #
+    # 1. Post-clarification completion — the user answers a clarification
+    #    question for an automation/process-style request (which does not
+    #    match ``is_code_draft_request``). Synthesize a Python-script
+    #    preview shell so the standard code-draft flow can inject the
+    #    generated code.
+    # 2. Direct automation request — a fully specified single-turn request
+    #    with all four structural signals (automation verb + path token +
+    #    action verb + file/dir subject) synthesizes the shell directly.
+    #
+    # Both paths reset the active preview through the approved
+    # ``preview_ownership`` helper and, when either fires, the code-draft
+    # flow continues on the same turn so the generated code is injected
+    # into the shell.
+    _materialized_shell = try_materialize_automation_shell(
+        message=message,
+        pending_preview=pending_preview,
+        turns=turns,
+        is_info_query=is_info_query,
+        is_explicit_writing_transform=is_explicit_writing_transform,
+        conversational_answer_first_turn=conversational_answer_first_turn,
+        is_voxera_control_turn=_is_voxera_control_turn(message, active_preview=None),
+        looks_like_new_unrelated_query=_looks_like_new_unrelated_query(message),
+        queue_root=root,
+        session_id=active_session,
+    )
+    if _materialized_shell is not None:
+        pending_preview = _materialized_shell
+        _post_clarification_code_draft = True
     is_code_draft_turn = (
         (
             is_code_draft_request(message)

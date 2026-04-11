@@ -105,7 +105,21 @@ def is_writing_refinement_request(message: str) -> bool:
             r"\b("
             r"rewrite|more\s+formal|less\s+formal|more\s+casual|shorter|longer|"
             r"expand|turn\s+(?:that|this|it)\s+into|save\s+as|plain\s+english|"
-            r"high\s+school\s+essay|technical\s+teammate|essay|article|writeup"
+            r"high\s+school\s+essay|technical\s+teammate|essay|article|writeup|"
+            # Tone / style / voice / register revision phrases on an active
+            # prose draft. Gated in callers by an active refinable prose
+            # preview check, so these never fire without a concrete draft.
+            r"(?:change|adjust|shift|update)\s+(?:the\s+)?"
+            r"(?:tone|style|voice|register|wording|phrasing|language|writing\s+style)|"
+            r"(?:make|have)\s+(?:it|that|this)\s+(?:sound\s+)?(?:more\s+|less\s+)?"
+            r"(?:formal|informal|casual|technical|professional|friendly|polite|"
+            r"polished|natural|human|approachable|accessible|readable|simple|"
+            r"simpler|conversational|plain|direct|neutral|academic|concise|terse|"
+            r"detailed|brief|clear)|"
+            r"simplify\s+(?:the\s+|that\s+|this\s+)?"
+            r"(?:language|wording|tone|content|text|body|writing|phrasing|it|that|this)|"
+            r"more\s+(?:technical|professional|formal|casual|friendly|polished|"
+            r"readable|accessible|concise|detailed)\s+tone"
             r")\b",
             text,
             re.IGNORECASE,

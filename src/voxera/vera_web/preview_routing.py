@@ -160,6 +160,33 @@ _REVISION_VERB_PATTERNS: tuple[str, ...] = (
     r"\bturn\s+(?:it|that|this)\s+into\s+(?:a\s+)?(?:checklist|list|outline|bullet(?:s|\s+list)?)\b",
     r"\bas\s+a\s+checklist\b",
     r"\bmake\s+(?:it|that|this)\s+(?:more\s+)?(?:operator|user)[- ](?:facing|focused|friendly)\b",
+    # ── Tone / style / voice / register revision patterns ────────────
+    # Phrases that clearly ask the active prose draft to change tone,
+    # style, voice, register, or formality level.  These are ONLY
+    # reached when ``is_normal_preview(active_preview)`` returns True,
+    # so they can never fire without a concrete active draft.  A live
+    # regression on PR #313 showed that "change the tone to more
+    # technical" / "make it more formal" / "simplify the language"
+    # fell through the narrow gate and then tripped the submission-
+    # claim guardrail because the note body legitimately mentioned
+    # "queued" (queue-backed execution topic) — the content-aware
+    # guardrail cannot distinguish that legitimate mention from a
+    # false submission claim, so the revision gate must catch these
+    # phrases first.
+    r"\b(?:change|adjust|shift|update)\s+(?:the\s+)?"
+    r"(?:tone|style|voice|register|wording|phrasing|language|writing\s+style)\b",
+    r"\bmake\s+(?:it|that|this)\s+(?:sound\s+)?(?:more\s+|less\s+)?"
+    r"(?:formal|informal|casual|technical|professional|friendly|polite|"
+    r"polished|natural|human|approachable|accessible|readable|simple|"
+    r"simpler|conversational|plain|direct|neutral|academic|clear)\b",
+    r"\bhave\s+(?:it|that|this)\s+(?:sound\s+)?(?:more\s+|less\s+)?"
+    r"(?:formal|informal|casual|technical|professional|friendly|polite|"
+    r"polished|natural|human|approachable|accessible|readable|simple|"
+    r"simpler|conversational|plain|direct|neutral|academic|clear)\b",
+    r"\bsimplify\s+(?:the\s+|that\s+|this\s+)?"
+    r"(?:language|wording|tone|content|text|body|writing|phrasing|it|that|this)\b",
+    r"\bmore\s+(?:technical|professional|formal|casual|friendly|polished|"
+    r"readable|accessible|concise|detailed)\s+tone\b",
     # ── Script / draft behavior-enhancement patterns ─────────────────
     # Phrases that clearly ask the active script/draft to acquire new
     # behavior ("make it save the results to a file", "have it write a

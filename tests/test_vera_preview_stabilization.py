@@ -1066,6 +1066,102 @@ class TestScriptEnhancementGate:
 
 
 # ---------------------------------------------------------------------------
+# 9b. Tone / style / voice revision gate (PR #313 live regression follow-up)
+# ---------------------------------------------------------------------------
+
+
+class TestToneAndStyleRevisionGate:
+    """Regression coverage for PR #313 live repro: tone/style/voice revisions.
+
+    A normal active prose preview plus a phrase like "change the tone to
+    more technical" must be classified as an active-preview revision turn
+    so downstream code (``is_writing_refinement_request``) promotes the
+    turn to a writing-draft refinement and the submission-claim guardrail
+    stays off — otherwise note content that legitimately mentions
+    ``queued`` (e.g. a note about queue-backed execution) trips the
+    guardrail and the user sees "I have not submitted anything" instead
+    of their revision.
+    """
+
+    @pytest.fixture
+    def prose_preview(self) -> dict:
+        return {
+            "goal": "draft a note explaining queue-backed execution",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/queue-safety.txt",
+                "content": (
+                    "Queue-backed execution is safer than direct AI execution "
+                    "because every job is audited and queued before running."
+                ),
+                "mode": "overwrite",
+            },
+        }
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # The exact live reproduction phrase from PR #313.
+            "Change the tone to more technical.",
+            # The task-listed variations.
+            "Make it more formal.",
+            "Simplify the language.",
+            "Make it more concise.",
+            "Rewrite it in a more technical tone.",
+            "Change the style.",
+            "Make it sound more professional.",
+            # Additional natural variants.
+            "Simplify it.",
+            "Change the voice.",
+            "Adjust the tone.",
+            "Make it more technical.",
+            "Make it more readable.",
+            "Have it sound more professional.",
+            "Make it simpler.",
+            "change the wording",
+            "shift the register",
+            "update the phrasing",
+            "simplify the wording",
+        ],
+    )
+    def test_tone_style_phrases_match_revision_gate(
+        self, prose_preview: dict, message: str
+    ) -> None:
+        assert is_active_preview_revision_turn(message, active_preview=prose_preview)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # Without an active preview, tone/style phrases do not fire —
+            # the gate still requires is_normal_preview.
+            "Change the tone to more technical.",
+            "Make it more formal.",
+            "Simplify the language.",
+        ],
+    )
+    def test_tone_style_phrases_require_active_preview(self, message: str) -> None:
+        assert not is_active_preview_revision_turn(message, active_preview=None)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # Unrelated phrases that superficially share verbs but are not
+            # revisions — the gate must stay narrow enough that unrelated
+            # turns still fall through.
+            "what is the weather in Calgary?",
+            "show me the automation",
+            "run it now",
+            "what time is it?",
+            "send it",
+            "go ahead",
+            "save all findings",
+            "expand result 1",
+        ],
+    )
+    def test_unrelated_phrases_do_not_match_gate(self, prose_preview: dict, message: str) -> None:
+        assert not is_active_preview_revision_turn(message, active_preview=prose_preview)
+
+
+# ---------------------------------------------------------------------------
 # 10. Live regression (PR #311): end-to-end chat flow
 # ---------------------------------------------------------------------------
 
