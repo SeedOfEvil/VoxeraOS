@@ -211,6 +211,100 @@ def test_find_vera_session_id_for_job_ignores_malformed_session_files(
     assert _find_vera_session_id_for_job(queue_root, "inbox-target.json") is None
 
 
+def test_vera_context_absent_when_only_updated_at_ms_is_set(tmp_path: Path) -> None:
+    """Gate: a context whose only non-empty field is ``updated_at_ms`` carries
+    no operator-visible signal and must be treated as absent so the Vera
+    Activity strip does not render as an empty shell.
+    """
+    queue_root = _make_queue_root(tmp_path)
+    job_name = "inbox-ts-only.json"
+    _write_done_job(queue_root, job_name, completed_at_ms=1_700_000_000_000)
+
+    session_id = "vera-ts-only"
+    _register_session_tracking_job(queue_root, session_id, job_ref=job_name)
+    # Force a context with only a timestamp — no topic, no draft ref.
+    session_payload = session_store._read_session_payload(queue_root, session_id)
+    session_payload["shared_context"] = {
+        "active_topic": None,
+        "active_draft_ref": None,
+        "active_preview_ref": None,
+        "last_submitted_job_ref": None,
+        "last_completed_job_ref": None,
+        "last_reviewed_job_ref": None,
+        "last_saved_file_ref": None,
+        "ambiguity_flags": [],
+        "updated_at_ms": 1_800_000_000_000,
+    }
+    session_store._write_session_payload(queue_root, session_id, session_payload)
+
+    payload = build_job_detail_payload(queue_root, job_name)
+    assert payload["vera_context"] is None
+
+
+def test_vera_context_absent_when_topic_is_whitespace_only(tmp_path: Path) -> None:
+    """A context whose topic is whitespace-only is normalized to no
+    visible signal and must be treated as absent (no em-dash strip).
+    """
+    queue_root = _make_queue_root(tmp_path)
+    job_name = "inbox-ws-only.json"
+    _write_done_job(queue_root, job_name, completed_at_ms=1_700_000_000_000)
+
+    session_id = "vera-ws-only"
+    _register_session_tracking_job(queue_root, session_id, job_ref=job_name)
+    # Directly stuff whitespace-only values in to bypass the normalizer
+    # gate, then read through the panel builder.
+    session_payload = session_store._read_session_payload(queue_root, session_id)
+    session_payload["shared_context"] = {
+        "active_topic": "   ",
+        "active_draft_ref": "",
+        "active_preview_ref": None,
+        "last_submitted_job_ref": None,
+        "last_completed_job_ref": None,
+        "last_reviewed_job_ref": None,
+        "last_saved_file_ref": None,
+        "ambiguity_flags": [],
+        "updated_at_ms": 1_800_000_000_000,
+    }
+    session_store._write_session_payload(queue_root, session_id, session_payload)
+
+    payload = build_job_detail_payload(queue_root, job_name)
+    assert payload["vera_context"] is None
+
+
+def test_vera_context_coerces_bool_updated_at_ms_to_zero(tmp_path: Path) -> None:
+    """Defensive: a boolean masquerading as an int timestamp in either
+    the session file or the state sidecar must never be treated as a
+    positive millisecond value. ``True`` / ``False`` collapse to 0 and
+    the resulting ``is_stale`` is ``None`` (undecidable).
+    """
+    queue_root = _make_queue_root(tmp_path)
+    job_name = "inbox-bool-ts.json"
+    _write_done_job(queue_root, job_name, completed_at_ms=1_700_000_000_000)
+
+    session_id = "vera-bool-ts"
+    _register_session_tracking_job(queue_root, session_id, job_ref=job_name)
+    session_payload = session_store._read_session_payload(queue_root, session_id)
+    session_payload["shared_context"] = {
+        "active_topic": "topic-with-bool-ts",
+        "active_draft_ref": None,
+        "active_preview_ref": None,
+        "last_submitted_job_ref": None,
+        "last_completed_job_ref": None,
+        "last_reviewed_job_ref": None,
+        "last_saved_file_ref": None,
+        "ambiguity_flags": [],
+        "updated_at_ms": True,  # bool leaking into an int field
+    }
+    session_store._write_session_payload(queue_root, session_id, session_payload)
+
+    payload = build_job_detail_payload(queue_root, job_name)
+    vera_context = payload["vera_context"]
+    assert vera_context is not None
+    # Bool collapses to 0; no timestamp to compare → undecidable.
+    assert vera_context["updated_at_ms"] == 0
+    assert vera_context["is_stale"] is None
+
+
 # ---------------------------------------------------------------------------
 # 3. context stale -> stale marker computed correctly
 # ---------------------------------------------------------------------------
@@ -295,6 +389,37 @@ def test_vera_context_fresh_when_context_updated_after_terminal(
     vera_context = payload["vera_context"]
     assert vera_context is not None
     assert vera_context["is_stale"] is False
+
+
+def test_vera_context_fresh_when_context_equal_to_terminal_boundary(
+    tmp_path: Path,
+) -> None:
+    """Boundary: context updated at the exact same millisecond as the
+    job's terminal completion must count as fresh (not strictly before).
+    """
+    queue_root = _make_queue_root(tmp_path)
+    job_name = "inbox-boundary.json"
+    terminal_at_ms = 1_750_000_000_000
+    _write_done_job(queue_root, job_name, completed_at_ms=terminal_at_ms)
+
+    session_id = "vera-boundary"
+    _register_session_tracking_job(queue_root, session_id, job_ref=job_name)
+    write_session_context(
+        queue_root,
+        session_id,
+        {"active_topic": "edge", "active_draft_ref": None},
+    )
+    session_payload = session_store._read_session_payload(queue_root, session_id)
+    shared = session_payload["shared_context"]
+    shared["updated_at_ms"] = terminal_at_ms
+    session_payload["shared_context"] = shared
+    session_store._write_session_payload(queue_root, session_id, session_payload)
+
+    payload = build_job_detail_payload(queue_root, job_name)
+    vera_context = payload["vera_context"]
+    assert vera_context is not None
+    assert vera_context["is_stale"] is False
+    assert vera_context["updated_at_ms"] == terminal_at_ms
 
 
 # ---------------------------------------------------------------------------

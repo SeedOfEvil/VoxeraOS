@@ -60,11 +60,18 @@ Shared-session ``vera_context`` block (read-only, supplemental):
   primary, and the panel is strictly read-only with respect to the
   shared context surface. The lookup is fail-soft: missing session
   directory, missing session file, malformed session payload, empty
-  context, or no owning session all produce ``vera_context: None``
-  without raising. Wrong-session isolation is enforced by matching the
-  job filename against each session's
+  or signal-less context, or no owning session all produce
+  ``vera_context: None`` without raising. Wrong-session isolation is
+  enforced by matching the job filename against each session's
   ``linked_queue_jobs.tracked[].job_ref`` — context from a session that
-  did not submit this job never leaks into the payload.
+  did not submit this job never leaks into the payload. The gate for
+  "usable" requires at least one of ``active_topic`` / ``active_draft_ref``
+  to be a non-empty string, so a context carrying only an
+  ``updated_at_ms`` stamp does not surface an empty strip. Staleness is
+  computed strictly against the state-sidecar ``completed_at_ms``
+  terminal timestamp and is ``None`` whenever either side is missing,
+  so the panel never overclaims fresh/stale on a non-terminal job or
+  on a context with no timestamp.
 """
 
 from __future__ import annotations
@@ -188,6 +195,20 @@ def _find_vera_session_id_for_job(queue_root: Path, job_name: str) -> str | None
     return None
 
 
+def _coerce_positive_int(value: Any) -> int:
+    """Return ``value`` as a positive int, or 0 for anything else.
+
+    Defensive against ``bool`` (which is a subclass of ``int`` in
+    Python): treats ``True`` / ``False`` as 0 so a stray boolean in a
+    session file never masquerades as a timestamp.
+    """
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value > 0:
+        return value
+    return 0
+
+
 def _build_vera_context(
     queue_root: Path,
     job_name: str,
@@ -197,23 +218,30 @@ def _build_vera_context(
     """Shape the optional read-only ``vera_context`` block for job detail.
 
     Returns ``None`` when there is no owning Vera session, when the
-    session has no shared context yet, or when the stored context is the
-    canonical empty shape. The panel is strictly read-only w.r.t. shared
-    session context — this helper never writes, and a missing or wrong
-    session must not leak any other session's context.
+    session has no shared context yet, or when the stored context has
+    no visible ``active_topic`` / ``active_draft_ref`` signal. The panel
+    is strictly read-only w.r.t. shared session context — this helper
+    never writes, and a missing or wrong session must not leak any
+    other session's context.
+
+    Gate (what counts as "usable"): at least one of ``active_topic`` or
+    ``active_draft_ref`` must be a non-empty string. A context whose
+    only non-empty field is ``updated_at_ms`` carries no visible
+    operator-facing signal and is treated as absent so the "Vera
+    Activity" strip does not render as empty noise.
 
     Staleness is computed conservatively against the state-sidecar
     ``completed_at_ms`` terminal timestamp:
 
-    * ``is_stale`` is ``True`` when the context was last updated strictly
-      before the job's terminal completion time (the context has not
-      caught up to the job's terminal outcome);
+    * ``is_stale`` is ``True`` when the context was last updated
+      strictly before the job's terminal completion time (the context
+      has not caught up to the job's terminal outcome);
     * ``is_stale`` is ``False`` when the context's ``updated_at_ms`` is
-      at or after the terminal time;
+      at or after the terminal time (same-millisecond counts as fresh);
     * ``is_stale`` is ``None`` when there is not enough data to judge
-      safely — for example the job has not reached a terminal state yet,
-      or the context has no ``updated_at_ms`` stamp. We deliberately do
-      not invent a timestamp or guess.
+      safely — for example the job has not reached a terminal state
+      yet, or the context has no ``updated_at_ms`` stamp. We
+      deliberately do not invent a timestamp or guess.
     """
 
     session_id = _find_vera_session_id_for_job(queue_root, job_name)
@@ -223,16 +251,24 @@ def _build_vera_context(
         context = read_session_context(queue_root, session_id)
     except Exception:
         return None
-    active_topic = context.get("active_topic")
-    active_draft_ref = context.get("active_draft_ref")
-    updated_at_ms_raw = context.get("updated_at_ms")
-    updated_at_ms = int(updated_at_ms_raw) if isinstance(updated_at_ms_raw, int) else 0
-    has_usable_signal = bool(active_topic) or bool(active_draft_ref) or updated_at_ms > 0
-    if not has_usable_signal:
+
+    raw_topic = context.get("active_topic")
+    active_topic = raw_topic.strip() if isinstance(raw_topic, str) and raw_topic.strip() else None
+    raw_draft = context.get("active_draft_ref")
+    active_draft_ref = (
+        raw_draft.strip() if isinstance(raw_draft, str) and raw_draft.strip() else None
+    )
+
+    # Gate: require at least one visible operator-facing signal. A
+    # context with only updated_at_ms > 0 (and no topic/draft) is
+    # treated as absent to avoid rendering an empty strip.
+    if active_topic is None and active_draft_ref is None:
         return None
 
-    terminal_raw = state_sidecar.get("completed_at_ms") if isinstance(state_sidecar, dict) else None
-    terminal_at_ms = int(terminal_raw) if isinstance(terminal_raw, int) and terminal_raw > 0 else 0
+    updated_at_ms = _coerce_positive_int(context.get("updated_at_ms"))
+    terminal_at_ms = _coerce_positive_int(
+        state_sidecar.get("completed_at_ms") if isinstance(state_sidecar, dict) else None
+    )
 
     if terminal_at_ms > 0 and updated_at_ms > 0:
         is_stale: bool | None = updated_at_ms < terminal_at_ms
@@ -241,10 +277,8 @@ def _build_vera_context(
 
     return {
         "session_id": session_id,
-        "active_topic": active_topic if isinstance(active_topic, str) and active_topic else None,
-        "active_draft_ref": active_draft_ref
-        if isinstance(active_draft_ref, str) and active_draft_ref
-        else None,
+        "active_topic": active_topic,
+        "active_draft_ref": active_draft_ref,
         "updated_at_ms": updated_at_ms,
         "is_stale": is_stale,
     }
