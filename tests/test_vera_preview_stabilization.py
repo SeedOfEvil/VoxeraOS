@@ -946,3 +946,285 @@ class TestFollowUpScriptPhrasing:
             },
         }
         assert is_active_preview_revision_turn(message, active_preview=preview)
+
+
+# ---------------------------------------------------------------------------
+# 9. Script-enhancement hijack regressions (live reproduction from PR #311)
+# ---------------------------------------------------------------------------
+#
+# Live product reproduction from PR #311 review:
+#
+#   Turn 1: "Draft a Python script that scans a folder and lists all .txt files."
+#            → normal active script preview created at ~/VoxeraOS/notes/scan.py
+#   Turn 2: "Make it save the results to a file."
+#            → EXPECTED: active preview revision lane
+#            → ACTUAL (before this fix): early-exit investigation-save branch
+#              fired because is_investigation_save_request matched
+#              (save + results), draft_investigation_save_preview returned
+#              None (no investigation in session), and the branch returned
+#              "I couldn't resolve those investigation result references
+#              in this session" — hijacking the turn.
+#
+# Two-part fix landed in PR #311:
+#   (a) The active-preview revision gate is widened with narrow
+#       script-enhancement patterns ("make it save/write/output/export/log",
+#       "have it write/report", "add file logging", etc.). These patterns
+#       require a subject pronoun (it/that/this) or an explicit "the
+#       script/code/program/draft/note" anchor so bare investigation-save
+#       phrasing is still routed to the investigation lane when no active
+#       preview exists.
+#   (b) app.py's belt-and-suspenders layer also treats
+#       is_investigation_save_request / is_investigation_derived_save_request
+#       matches as revision candidates whenever a normal active preview is
+#       present — closing the gap for overly-broad phrases the narrow gate
+#       patterns do not cover.
+
+
+class TestScriptEnhancementGate:
+    """Unit tests on the widened revision gate for script-enhancement phrasing."""
+
+    @pytest.fixture
+    def script_preview(self) -> dict:
+        return {
+            "goal": "draft a python script as scan.py",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/scan.py",
+                "content": (
+                    "import os\n"
+                    "for name in os.listdir('.'):\n"
+                    "    if name.endswith('.txt'):\n"
+                    "        print(name)\n"
+                ),
+                "mode": "overwrite",
+            },
+        }
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # Exact live regression from PR #311
+            "Make it save the results to a file.",
+            # Task-listed variations
+            "Make it write the output to a file.",
+            "Add file logging.",
+            "Make it export the results.",
+            "Save the scan results to a file.",
+            "Have it write a report.",
+            "Make the script output to a file.",
+            # Additional natural-language variants
+            "make it also save the output to a file",
+            "have it log the results",
+            "have it print the results",
+            "make it emit a report",
+            "make the program write the findings to a file",
+            "make the script log the output",
+            "add output logging",
+            "add a report step",
+        ],
+    )
+    def test_script_enhancement_matches_revision_gate(
+        self, script_preview: dict, message: str
+    ) -> None:
+        assert is_active_preview_revision_turn(message, active_preview=script_preview)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # Bare investigation-save phrases WITHOUT a subject pronoun /
+            # active-preview anchor must NOT match the gate even when a
+            # preview is present — those are genuine investigation-save
+            # intents and belt-and-suspenders in app.py handles the active-
+            # preview case separately.
+            "save the findings to a note",
+            "save result 1 to a file",
+            "export all findings",
+            "save the comparison to a note",
+        ],
+    )
+    def test_bare_investigation_save_does_not_match_gate(
+        self, script_preview: dict, message: str
+    ) -> None:
+        # These return False from the narrow gate even with a preview —
+        # the belt-and-suspenders layer in app.py is what catches them
+        # when a normal active preview is in play. That split keeps the
+        # narrow gate honest (it only fires on phrases that clearly
+        # reference the active draft/script).
+        assert not is_active_preview_revision_turn(message, active_preview=script_preview)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # Without an active preview, none of the script-enhancement
+            # patterns should fire — they require is_normal_preview.
+            "Make it save the results to a file.",
+            "Add file logging.",
+            "Have it write a report.",
+        ],
+    )
+    def test_script_enhancement_requires_active_preview(self, message: str) -> None:
+        assert not is_active_preview_revision_turn(message, active_preview=None)
+
+
+# ---------------------------------------------------------------------------
+# 10. Live regression (PR #311): end-to-end chat flow
+# ---------------------------------------------------------------------------
+
+
+def _install_pr311_scan_script(session) -> None:
+    """Install the exact preview shape produced by PR #311's live repro turn 1."""
+    payload = {
+        "goal": "draft a python script as scan.py",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/scan.py",
+            "content": (
+                "import os\n"
+                "for name in os.listdir('.'):\n"
+                "    if name.endswith('.txt'):\n"
+                "        print(name)\n"
+            ),
+            "mode": "overwrite",
+        },
+    }
+    preview_ownership.reset_active_preview(session.queue, session.session_id, payload)
+    context_on_preview_created(
+        session.queue, session.session_id, draft_ref="~/VoxeraOS/notes/scan.py"
+    )
+
+
+def test_pr311_live_hijack_make_it_save_the_results_to_a_file(tmp_path, monkeypatch):
+    """Named regression: PR #311 live reproduction.
+
+    Turn 1: script preview.
+    Turn 2: "Make it save the results to a file." — the live product
+    showed the investigation-save branch firing and returning
+    "I couldn't resolve those investigation result references...".
+    After the fix this must land on the active preview revision lane.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_pr311_scan_script(session)
+
+    async def _pass_reply(**kwargs):
+        return {
+            "answer": (
+                "Here's the updated script that also saves the scan results "
+                "to ~/VoxeraOS/notes/scan_results.txt."
+            ),
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    resp = session.chat("Make it save the results to a file.")
+    assert resp.status_code == 200
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    # The bug we are fixing: the early-exit investigation-save branch
+    # used to fire and return this exact error string. After the fix
+    # the turn must land anywhere EXCEPT that error.
+    assert "couldn't resolve those investigation result references" not in last_reply.lower()
+    assert "run a fresh read-only investigation first" not in last_reply.lower()
+
+    # Active preview is preserved (path is still scan.py). Content may
+    # be updated by the LLM/builder path or left intact — we only
+    # assert the preview was not clobbered into an investigation-save
+    # payload pointing at a note path like "note.md".
+    preview = session.preview()
+    assert preview is not None
+    wf = preview.get("write_file") or {}
+    assert str(wf.get("path") or "").endswith("scan.py"), (
+        f"Expected scan.py preview, got: {wf.get('path')!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "make it save the results to a file",
+        "add file logging",
+        "have it write a report",
+        "make it export the results",
+        "save the scan results to a file",
+        "make the script output to a file",
+        "make it write the output to a file",
+    ],
+)
+def test_pr311_script_enhancement_does_not_hijack_active_preview(
+    tmp_path, monkeypatch, message: str
+):
+    """Each task-listed phrase must NOT be hijacked by investigation-save.
+
+    Parametrized over the full list of phrases the task brief flagged,
+    asserting that (a) the early-exit investigation-save error never
+    reaches chat, and (b) the active preview slot remains a
+    ``scan.py`` preview rather than an investigation-save payload.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_pr311_scan_script(session)
+
+    async def _pass_reply(**kwargs):
+        return {"answer": "Understood.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    resp = session.chat(message)
+    assert resp.status_code == 200
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    assert "couldn't resolve those investigation result references" not in last_reply.lower()
+
+    preview = session.preview()
+    assert preview is not None
+    wf = preview.get("write_file") or {}
+    assert str(wf.get("path") or "").endswith("scan.py")
+
+
+def test_pr311_legitimate_investigation_save_still_works(tmp_path, monkeypatch):
+    """Genuine investigation-save still works when NO active preview is in play.
+
+    The two-part fix must not globally disable investigation-save
+    behavior — it only prefers the revision lane when a normal active
+    preview is present.  Without an active preview, "save the findings
+    to a note" still lands on the investigation-save branch (which
+    fails closed honestly when no investigation has been run).
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    assert session.preview() is None
+
+    async def _pass_reply(**kwargs):
+        return {"answer": "Understood.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    resp = session.chat("save the findings to a note")
+    assert resp.status_code == 200
+
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    # With no investigation context, the investigation-save branch
+    # fails closed with its canonical error — which is the correct
+    # behavior when there is no active normal preview.
+    assert "investigation" in last_reply.lower() or "result" in last_reply.lower()
+
+
+def test_pr311_ambiguous_change_still_fails_closed(tmp_path, monkeypatch):
+    """Pure ambiguous 'change it' on an active script preview still fails closed.
+
+    The script-enhancement patterns require a concrete verb
+    (save/write/output/log/etc.) — they do NOT match bare "change it"
+    or "make it better". Those remain handled by the existing
+    ambiguous-change guard in draft_revision.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_pr311_scan_script(session)
+
+    # The gate must NOT match ambiguous phrases, even with an active
+    # script preview present.
+    preview = session.preview()
+    assert not is_active_preview_revision_turn("change it", active_preview=preview)
+    assert not is_active_preview_revision_turn("fix it", active_preview=preview)
+    assert not is_active_preview_revision_turn("make it better", active_preview=preview)

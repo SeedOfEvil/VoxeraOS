@@ -57,6 +57,7 @@ from ..vera.investigation_derivations import (
     is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
     is_investigation_expand_request,
+    is_investigation_save_request,
 )
 from ..vera.investigation_flow import (
     is_informational_web_query,
@@ -975,7 +976,24 @@ async def chat(request: Request):
     if (
         not _active_preview_revision_in_flight
         and is_normal_preview(pending_preview)
-        and (is_save_followup_request(message) or is_revise_from_evidence_request(message))
+        and (
+            is_save_followup_request(message)
+            or is_revise_from_evidence_request(message)
+            # Investigation-save detector is extremely broad: any
+            # phrase with save/write/export + results/findings fires
+            # it. When a normal active preview is in play, phrases
+            # like "make it save the results to a file" or "save the
+            # scan results to a file" are script enhancements, not
+            # investigation-export requests — the investigation-save
+            # branch would otherwise fail closed with a confusing
+            # "couldn't resolve investigation result references"
+            # reply and steal the turn.  Fail-closed choice: mark as
+            # revision in flight so lane 4 / lane 8 / the derived-save
+            # lane all step aside and the script-enhancement lands on
+            # the active preview instead.
+            or is_investigation_save_request(message)
+            or is_investigation_derived_save_request(message)
+        )
     ):
         _active_preview_revision_in_flight = True
     _session_ctx = read_session_context(root, active_session)

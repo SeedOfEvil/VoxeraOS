@@ -160,6 +160,39 @@ _REVISION_VERB_PATTERNS: tuple[str, ...] = (
     r"\bturn\s+(?:it|that|this)\s+into\s+(?:a\s+)?(?:checklist|list|outline|bullet(?:s|\s+list)?)\b",
     r"\bas\s+a\s+checklist\b",
     r"\bmake\s+(?:it|that|this)\s+(?:more\s+)?(?:operator|user)[- ](?:facing|focused|friendly)\b",
+    # ── Script / draft behavior-enhancement patterns ─────────────────
+    # Phrases that clearly ask the active script/draft to acquire new
+    # behavior ("make it save the results to a file", "have it write a
+    # report", "add file logging").  These are ONLY reached when
+    # ``is_normal_preview(active_preview)`` returns True, so they can
+    # never fire without a concrete active draft/script — there is no
+    # risk of hijacking a pure investigation-save request.
+    #
+    # Structural requirement: each pattern anchors on a subject pronoun
+    # ("it" / "that" / "this") or on the words "the script"/"the code"/
+    # "the program"/"the draft"/"the note" so that only active-preview
+    # references match.  Bare "save the results to a file" without a
+    # pronoun/subject anchor will NOT match — that case falls through
+    # to the existing investigation-save guardrails.
+    r"\bmake\s+(?:it|that|this)\s+(?:also\s+)?(?:save|write|output|export|log|print|emit|produce|report)\b",
+    r"\bhave\s+(?:it|that|this)\s+(?:also\s+)?(?:save|write|output|export|log|print|emit|produce|report)\b",
+    r"\bmake\s+(?:the|this|that)\s+(?:script|code|program|draft|note|file)\s+(?:also\s+)?(?:save|write|output|export|log|print|emit|produce|report)\b",
+    r"\bhave\s+(?:the|this|that)\s+(?:script|code|program|draft|note|file)\s+(?:also\s+)?(?:save|write|output|export|log|print|emit|produce|report)\b",
+    # "add file logging" / "add output" / "add a report step" —
+    # imperative additions of new behavior. Paired with an active
+    # preview, these clearly modify the current draft.
+    r"\badd\s+(?:file\s+)?(?:logging|output|reporting|writing\s+to\s+(?:a\s+)?file)\b",
+    r"\badd\s+(?:a\s+)?(?:log|output|report|results?)\s+(?:file|step|writer|output)\b",
+    # "make it write the output to a file" — "write the output/results to"
+    r"\bmake\s+(?:it|that|this)\s+(?:also\s+)?write\s+(?:the\s+)?(?:output|results?|findings?|report)\s+to\b",
+    r"\bhave\s+(?:it|that|this)\s+(?:also\s+)?write\s+(?:the\s+)?(?:output|results?|findings?|report)\s+to\b",
+    # "save the scan results to a file" / "save the output to ..." —
+    # when an active preview exists, this is a script enhancement, not
+    # an investigation-save reference. Require a descriptor word
+    # ("scan", "script", "output", "log") before "results" so bare
+    # "save the results" still falls through to the investigation
+    # guardrails when there is no active preview.
+    r"\bsave\s+(?:the\s+)?(?:scan|script|program|code|draft|file|output|log|run|execution)\s+(?:results?|findings?|output)\s+to\b",
 )
 
 _REVISION_VERB_RE = re.compile("|".join(_REVISION_VERB_PATTERNS), re.IGNORECASE)
