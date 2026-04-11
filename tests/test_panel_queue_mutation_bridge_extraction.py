@@ -39,6 +39,8 @@ from __future__ import annotations
 
 import inspect
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from voxera.panel import app as panel_module
@@ -105,6 +107,52 @@ def test_panel_app_does_not_redefine_extracted_bridge_helpers() -> None:
             f"panel.app should no longer own {name!r}; it was extracted to "
             "voxera.panel.queue_mutation_bridge as part of PR B."
         )
+
+
+def test_panel_app_still_exposes_subprocess_and_sys_for_hygiene_monkeypatch() -> None:
+    # tests/test_panel.py::test_hygiene_* monkeypatches panel.app via
+    # ``monkeypatch.setattr(panel_module.subprocess, "run", _fake_run)`` and
+    # asserts ``panel_module.sys.executable``. Both are module singletons so
+    # mutating ``panel_module.subprocess.run`` affects the global
+    # ``subprocess.run`` that queue_mutation_bridge actually calls. Pin the
+    # re-export surface so a later PR cannot silently drop the kept-for-
+    # test-compat imports and break every hygiene test at once.
+    assert panel_module.subprocess is subprocess
+    assert panel_module.sys is sys
+
+
+def test_queue_mutation_bridge_does_not_reach_back_into_panel_app() -> None:
+    # Architecture invariant: unlike PR A's auth_enforcement (which
+    # deliberately reaches back through panel.app for shared wrappers),
+    # the mutation bridge is pure — every input is explicit. A future PR
+    # that sneaks in a ``from . import app`` would quietly reintroduce a
+    # circular dependency and hide state. Catch it here via AST so
+    # docstrings / comments that mention "panel.app" don't false-positive.
+    import ast
+
+    tree = ast.parse(inspect.getsource(queue_mutation_bridge))
+    imported_modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported_modules.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            # ``from .app import ...`` would show up as module="app" with
+            # level=1; ``from voxera.panel.app import ...`` as module=
+            # "voxera.panel.app" with level=0. Guard both spellings.
+            mod = node.module or ""
+            if node.level == 1 and mod == "app":
+                imported_modules.add(".app")
+            if node.level >= 1 and mod.startswith("routes_"):
+                imported_modules.add(f".{mod}")
+            if mod == "voxera.panel.app":
+                imported_modules.add("voxera.panel.app")
+            if mod.startswith("voxera.panel.routes_"):
+                imported_modules.add(mod)
+    assert ".app" not in imported_modules
+    assert "voxera.panel.app" not in imported_modules
+    assert not any(m.startswith(".routes_") for m in imported_modules)
+    assert not any(m.startswith("voxera.panel.routes_") for m in imported_modules)
 
 
 def test_write_queue_job_preserves_source_lane_and_atomic_write(tmp_path: Path) -> None:
