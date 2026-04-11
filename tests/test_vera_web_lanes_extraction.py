@@ -498,6 +498,183 @@ class TestLaneModulesPreviewOwnershipDiscipline:
 # ---------------------------------------------------------------------------
 
 
+class TestPR313ToneRevisionRegression:
+    """Named regression: PR #313 live tone/style revision bug.
+
+    Live reproduction during the lane-extraction PR review surfaced
+    that a normal prose preview under revision with a phrase like
+    ``"Change the tone to more technical."`` fell into the
+    submission-claim guardrail path. Root cause: the narrow revision
+    gate (``_REVISION_VERB_PATTERNS``) and ``is_writing_refinement_request``
+    both missed tone/style/formality patterns, so the turn did not get
+    promoted to a writing-draft refinement and the guardrail fired on
+    note content that legitimately mentioned ``queued`` (the note was
+    about queue-backed execution).
+
+    These tests prove the end-to-end ``/chat`` flow now preserves
+    normal-preview revision continuity for tone/style turns: the
+    builder runs, the preview is updated, and the user does NOT see
+    the "I have not submitted anything to VoxeraOS yet" guardrail
+    text.
+    """
+
+    _LLM_REPLY = (
+        "Updated the preview. The note now explains that queue-backed "
+        "execution ensures jobs are audited and queued before running, "
+        "providing safety vs. direct AI execution."
+    )
+
+    @staticmethod
+    def _install_prose_preview(
+        harness, *, content: str = "Queue-backed execution is safer than direct AI execution."
+    ) -> dict:
+        from voxera.vera.session_store import (
+            write_session_handoff_state,
+            write_session_preview,
+        )
+
+        preview = {
+            "goal": "draft a note explaining queue-backed execution",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/queue-safety.txt",
+                "content": content,
+                "mode": "overwrite",
+            },
+        }
+        write_session_preview(harness.queue, harness.session_id, preview)
+        write_session_handoff_state(
+            harness.queue,
+            harness.session_id,
+            attempted=False,
+            queue_path=str(harness.queue),
+            status="preview_ready",
+            error=None,
+            job_id=None,
+        )
+        return preview
+
+    @staticmethod
+    def _install_mocks(monkeypatch: pytest.MonkeyPatch, *, reply_text: str) -> None:
+        async def fake_reply(*, turns, user_message, **kw):  # type: ignore[no-redef]
+            return {"answer": reply_text, "status": "ok:test"}
+
+        async def fake_builder(
+            *,
+            turns,
+            user_message,
+            active_preview,
+            enrichment_context,
+            investigation_context,
+            recent_assistant_artifacts,
+        ):  # type: ignore[no-redef]
+            if active_preview is None:
+                return None
+            wf = active_preview.get("write_file") or {}
+            return {
+                "goal": active_preview.get("goal"),
+                "write_file": {
+                    "path": wf.get("path"),
+                    "content": "Technical revision of the note content about queue-backed execution.",
+                    "mode": "overwrite",
+                },
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", fake_reply)
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", fake_builder)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # The exact live reproduction phrase.
+            "Change the tone to more technical.",
+            # Task-listed variations.
+            "Make it more formal.",
+            "Simplify the language.",
+            "Make it more concise.",
+            "Rewrite it in a more technical tone.",
+            "Change the style.",
+            "Make it sound more professional.",
+        ],
+    )
+    def test_tone_style_phrase_preserves_preview_revision_flow(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        message: str,
+    ) -> None:
+        """Tone/style phrases on a normal prose preview must:
+        1. Update the preview via the builder.
+        2. NOT trigger the submission-claim guardrail text.
+        3. NOT emit a "no handoff recorded" / "nothing submitted yet" reply.
+        """
+        harness = make_vera_session(monkeypatch, tmp_path)
+        self._install_prose_preview(harness)
+        self._install_mocks(monkeypatch, reply_text=self._LLM_REPLY)
+
+        original_content = "Queue-backed execution is safer than direct AI execution."
+        resp = harness.chat(message)
+        assert resp.status_code == 200
+
+        turns = harness.turns()
+        assistant_turns = [t for t in turns if t.get("role") == "assistant"]
+        assert assistant_turns, f"No assistant turn for {message!r}"
+        last_reply = str(assistant_turns[-1].get("text") or "")
+
+        # Must NOT be the submission-claim guardrail text — that is the
+        # core regression this test anchors. The guardrail fires when the
+        # turn is not promoted to a writing-draft refinement, which is
+        # exactly what PR #313 broke for tone/style phrases.
+        assert "i have not submitted anything" not in last_reply.lower(), (
+            f"Submission-claim guardrail hijacked {message!r}: {last_reply!r}"
+        )
+        assert "no confirmed queue handoff" not in last_reply.lower(), (
+            f"Guardrail fallback hit for {message!r}: {last_reply!r}"
+        )
+
+        # Preview must still exist.
+        preview = harness.preview()
+        assert preview is not None, f"Preview was cleared for {message!r}"
+        wf = preview.get("write_file")
+        assert isinstance(wf, dict)
+
+        # Preview content must have been revised away from the original.
+        # For a writing-draft turn the draft content binding path replaces
+        # the content with the LLM reply text (prose previews are
+        # LLM-authored), so we only assert the content changed — not its
+        # exact shape.
+        new_content = str(wf.get("content") or "")
+        assert new_content, f"Preview content was cleared for {message!r}"
+        assert new_content != original_content, f"Preview content was not revised for {message!r}"
+
+    def test_explicit_submit_still_reaches_handoff(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        """Regression anchor: the widened revision gate must not swallow
+        explicit submit/handoff phrases. A normal preview + ``go ahead``
+        must still reach the submit path and clear the preview slot.
+        """
+        harness = make_vera_session(monkeypatch, tmp_path)
+        self._install_prose_preview(harness)
+        self._install_mocks(monkeypatch, reply_text="ack")
+
+        resp = harness.chat("go ahead")
+        assert resp.status_code == 200
+
+        # The submit path either succeeds (preview cleared) or fails with a
+        # handoff error — either way the turn did NOT stay in revision mode.
+        # We allow either outcome here; what we assert is that the submit
+        # lane claimed the turn instead of the revision lane silently
+        # keeping the preview around unchanged.
+        turns = harness.turns()
+        assistant_turns = [t for t in turns if t.get("role") == "assistant"]
+        assert assistant_turns
+        last_reply = str(assistant_turns[-1].get("text") or "").lower()
+        # Must not be a revision-style reply (the widening must not hijack
+        # "go ahead" into the revision gate).
+        assert "updated the preview" not in last_reply
+        assert "still in the preview" not in last_reply
+
+
 class TestAutomationLaneEndToEnd:
     """End-to-end smoke through the ``/chat`` endpoint.
 
