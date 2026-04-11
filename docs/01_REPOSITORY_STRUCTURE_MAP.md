@@ -180,7 +180,8 @@ Conversational control surface — reasoning, preview, submit, review. Vera is n
 
 **Panel (`src/voxera/panel/`)**
 FastAPI operator panel. Route modules plug into a single `FastAPI` app composed in `app.py`.
-- `app.py` — `FastAPI(title="Voxera Panel")`, shared auth + CSRF + mutation guard, template env, route registration.
+- `app.py` — `FastAPI(title="Voxera Panel")`, composition root: shared health/queue wrappers, template env, dependency wiring, and route registration. Imports the operator Basic-auth guard and CSRF mutation guard from `auth_enforcement.py`.
+- `auth_enforcement.py` — operator Basic-auth enforcement, CSRF mutation guard, and per-IP failure/lockout mechanics (fail-closed). Exposes `require_operator_basic_auth(request)` and `require_mutation_guard(request)`; `app.py` wires these into each `register_*_routes` call.
 - `routes_home.py` — `GET /`, `GET/POST /queue/create`.
 - `routes_jobs.py` — `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/progress`, `POST /queue/jobs/{ref}/cancel|retry`, `POST /queue/approvals/{ref}/approve|approve-always|deny`, `GET /queue/jobs/{job}/detail|progress`.
 - `routes_queue_control.py` — `POST /queue/jobs/{ref}/delete`, `POST /queue/pause`, `POST /queue/resume`.
