@@ -44,6 +44,29 @@
     <p style="margin:var(--space-2) 0 0;" class="muted text-sm">Next-action source: {{payload.operator_summary.next_action_source}}</p>
   </section>
 
+  {% if payload.vera_context %}
+  <div class="section-label">Vera Activity</div>
+  <section class="card mb" data-testid="vera-activity-strip">
+    <p class="muted text-sm" style="margin-top:0;">
+      Read-only shared Vera session context. Supplemental only — canonical queue/artifact truth remains primary.
+    </p>
+    <dl class="detail-grid" style="margin-bottom:0;">
+      <dt>Active topic</dt><dd>{{payload.vera_context.active_topic or '-'}}</dd>
+      <dt>Active draft</dt><dd class="mono text-sm">{{payload.vera_context.active_draft_ref or '-'}}</dd>
+      <dt>Context freshness</dt>
+      <dd>
+        {% if payload.vera_context.is_stale is none %}
+          <span class="muted">unknown</span>
+        {% elif payload.vera_context.is_stale %}
+          <span class="badge badge-pending">stale</span>
+        {% else %}
+          <span class="badge badge-done">fresh</span>
+        {% endif %}
+      </dd>
+    </dl>
+  </section>
+  {% endif %}
+
   {% if payload.policy_rationale %}
   <div class="section-label">Policy Rationale</div>
   <section class="card mb">

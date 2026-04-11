@@ -368,6 +368,11 @@ _EXPECTED_JOB_DETAIL_KEYS: frozenset[str] = frozenset(
         "can_cancel",
         "can_retry",
         "can_delete",
+        # Optional shared-session continuity block. Always present as a
+        # top-level key (value is ``None`` when there is no owning Vera
+        # session or no usable context); the panel reads it read-only
+        # and never mutates shared context.
+        "vera_context",
     }
 )
 

@@ -49,6 +49,22 @@ Semantics preserved exactly:
   ``HTTPException(404, "job not found")`` when ``lookup_job`` returns
   ``None`` AND the artifacts directory does not exist, matching the
   original in-app behavior.
+
+Shared-session ``vera_context`` block (read-only, supplemental):
+
+* ``build_job_detail_payload`` optionally attaches a ``vera_context``
+  dict to the job-detail payload when the job belongs to a Vera session
+  that has a usable shared context (see
+  ``voxera.vera.session_store.read_session_context``). This is a
+  continuity aid only — canonical queue / artifact truth remains
+  primary, and the panel is strictly read-only with respect to the
+  shared context surface. The lookup is fail-soft: missing session
+  directory, missing session file, malformed session payload, empty
+  context, or no owning session all produce ``vera_context: None``
+  without raising. Wrong-session isolation is enforced by matching the
+  job filename against each session's
+  ``linked_queue_jobs.tracked[].job_ref`` — context from a session that
+  did not submit this job never leaks into the payload.
 """
 
 from __future__ import annotations
@@ -62,6 +78,7 @@ from fastapi import HTTPException
 from ..audit import tail
 from ..core.queue_inspect import lookup_job, queue_snapshot
 from ..core.queue_result_consumers import resolve_structured_execution
+from ..vera.session_store import read_session_context
 from .job_presentation import (
     evidence_summary_rows,
     job_artifact_inventory,
@@ -121,6 +138,116 @@ def _read_generated_files(artifacts_dir: Path) -> list[str]:
     except Exception:
         return []
     return [str(item) for item in payload] if isinstance(payload, list) else []
+
+
+def _find_vera_session_id_for_job(queue_root: Path, job_name: str) -> str | None:
+    """Return the Vera session id that tracks ``job_name``, if any.
+
+    Fail-soft, read-only scan of ``queue_root/artifacts/vera_sessions/*.json``
+    for a session whose ``linked_queue_jobs.tracked[].job_ref`` matches the
+    job filename. Returns ``None`` when no session tracks the job, when the
+    sessions directory does not exist, or when any session file is
+    unreadable / malformed. Never raises. Never writes.
+
+    The panel must only ever *read* shared session context, so this lookup
+    strictly isolates the job-to-session binding: only a session that has
+    explicitly registered this job via ``register_session_linked_job`` is
+    a valid match. A context from any other session must not leak into
+    the job-detail payload.
+    """
+
+    needle = Path(job_name).name.strip()
+    if not needle:
+        return None
+    sessions_dir = queue_root / "artifacts" / "vera_sessions"
+    if not sessions_dir.exists() or not sessions_dir.is_dir():
+        return None
+    try:
+        session_files = sorted(sessions_dir.glob("*.json"))
+    except OSError:
+        return None
+    for session_file in session_files:
+        if not session_file.is_file():
+            continue
+        payload = _safe_json(session_file)
+        if not payload:
+            continue
+        registry = payload.get("linked_queue_jobs")
+        if not isinstance(registry, dict):
+            continue
+        tracked = registry.get("tracked")
+        if not isinstance(tracked, list):
+            continue
+        for item in tracked:
+            if not isinstance(item, dict):
+                continue
+            job_ref = str(item.get("job_ref") or "").strip()
+            if job_ref == needle:
+                session_id = str(payload.get("session_id") or session_file.stem).strip()
+                return session_id or None
+    return None
+
+
+def _build_vera_context(
+    queue_root: Path,
+    job_name: str,
+    *,
+    state_sidecar: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Shape the optional read-only ``vera_context`` block for job detail.
+
+    Returns ``None`` when there is no owning Vera session, when the
+    session has no shared context yet, or when the stored context is the
+    canonical empty shape. The panel is strictly read-only w.r.t. shared
+    session context — this helper never writes, and a missing or wrong
+    session must not leak any other session's context.
+
+    Staleness is computed conservatively against the state-sidecar
+    ``completed_at_ms`` terminal timestamp:
+
+    * ``is_stale`` is ``True`` when the context was last updated strictly
+      before the job's terminal completion time (the context has not
+      caught up to the job's terminal outcome);
+    * ``is_stale`` is ``False`` when the context's ``updated_at_ms`` is
+      at or after the terminal time;
+    * ``is_stale`` is ``None`` when there is not enough data to judge
+      safely — for example the job has not reached a terminal state yet,
+      or the context has no ``updated_at_ms`` stamp. We deliberately do
+      not invent a timestamp or guess.
+    """
+
+    session_id = _find_vera_session_id_for_job(queue_root, job_name)
+    if not session_id:
+        return None
+    try:
+        context = read_session_context(queue_root, session_id)
+    except Exception:
+        return None
+    active_topic = context.get("active_topic")
+    active_draft_ref = context.get("active_draft_ref")
+    updated_at_ms_raw = context.get("updated_at_ms")
+    updated_at_ms = int(updated_at_ms_raw) if isinstance(updated_at_ms_raw, int) else 0
+    has_usable_signal = bool(active_topic) or bool(active_draft_ref) or updated_at_ms > 0
+    if not has_usable_signal:
+        return None
+
+    terminal_raw = state_sidecar.get("completed_at_ms") if isinstance(state_sidecar, dict) else None
+    terminal_at_ms = int(terminal_raw) if isinstance(terminal_raw, int) and terminal_raw > 0 else 0
+
+    if terminal_at_ms > 0 and updated_at_ms > 0:
+        is_stale: bool | None = updated_at_ms < terminal_at_ms
+    else:
+        is_stale = None
+
+    return {
+        "session_id": session_id,
+        "active_topic": active_topic if isinstance(active_topic, str) and active_topic else None,
+        "active_draft_ref": active_draft_ref
+        if isinstance(active_draft_ref, str) and active_draft_ref
+        else None,
+        "updated_at_ms": updated_at_ms,
+        "is_stale": is_stale,
+    }
 
 
 def _payload_lineage(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -328,6 +455,11 @@ def build_job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     state_job_payload = state_sidecar.get("payload")
     if lineage is None and isinstance(state_job_payload, dict):
         lineage = _payload_lineage(state_job_payload)
+    vera_context = _build_vera_context(
+        queue_root,
+        job_name,
+        state_sidecar=state_sidecar,
+    )
     return {
         "job_id": job_name,
         "bucket": bucket,
@@ -365,6 +497,7 @@ def build_job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "can_cancel": bucket in {"inbox", "pending", "approvals"},
         "can_retry": bucket in {"failed", "canceled"},
         "can_delete": bucket in {"done", "failed", "canceled"},
+        "vera_context": vera_context,
     }
 
 
