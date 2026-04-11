@@ -4,7 +4,14 @@
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
 SYSTEMD_SRC_DIR := deploy/systemd/user
+# Every unit we ship and copy on install. This is the full set installed
+# under ~/.config/systemd/user/ by `make services-install`.
 VOXERA_UNITS := voxera-daemon.service voxera-panel.service voxera-vera.service voxera-automation.service voxera-automation.timer
+# The subset that `make services-install` actually enables. Long-running
+# services plus the automation timer. voxera-automation.service is
+# intentionally omitted: it is a oneshot worker owned by
+# voxera-automation.timer, which handles cadence.
+VOXERA_ENABLED_UNITS := voxera-daemon.service voxera-panel.service voxera-vera.service voxera-automation.timer
 VERA_SERVICE := voxera-vera.service
 VERA_HOST ?= 127.0.0.1
 VERA_PORT ?= 8790
@@ -132,7 +139,7 @@ services-install:
 		sed "s|@VOXERA_PROJECT_DIR@|$(VOXERA_PROJECT_DIR)|g" "$(SYSTEMD_SRC_DIR)/$$unit" > "$(SYSTEMD_USER_DIR)/$$unit"; \
 	done
 	systemctl --user daemon-reload
-	systemctl --user enable --now $(VOXERA_UNITS)
+	systemctl --user enable --now $(VOXERA_ENABLED_UNITS)
 
 services-restart:
 	systemctl --user daemon-reload
@@ -151,7 +158,7 @@ services-stop:
 	systemctl --user stop $(VOXERA_UNITS)
 
 services-disable:
-	systemctl --user disable --now $(VOXERA_UNITS)
+	systemctl --user disable --now $(VOXERA_ENABLED_UNITS)
 
 vera-start:
 	systemctl --user daemon-reload

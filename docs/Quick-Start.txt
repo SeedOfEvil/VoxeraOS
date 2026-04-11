@@ -67,10 +67,15 @@ Unit names:
     voxera-daemon.service
     voxera-panel.service
     voxera-vera.service
+    voxera-automation.service   (timer-owned oneshot worker)
+    voxera-automation.timer
 
 These live under deploy/systemd/user/. make services-install rewrites
 @VOXERA_PROJECT_DIR@ to your absolute project path before copying them
-into ~/.config/systemd/user/ and enabling them.
+into ~/.config/systemd/user/, and then enables/starts the long-running
+services plus voxera-automation.timer. voxera-automation.service is
+copied but not directly enabled — the timer owns its cadence, and the
+service remains addressable for status/logs/manual start.
 
 Common service commands:
 

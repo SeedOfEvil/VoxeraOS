@@ -226,8 +226,10 @@ The daemon, panel, and Vera units use a token `@VOXERA_PROJECT_DIR@` that `make 
 - `voxera-daemon.service` — `voxera daemon` (queue + missions).
 - `voxera-panel.service` — `voxera panel --host 127.0.0.1 --port 8844`.
 - `voxera-vera.service` — `python -m uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790`.
-- `voxera-automation.service` — `voxera automation run-due-once` (one-shot, `%h/VoxeraOS`).
-- `voxera-automation.timer` — fires `voxera-automation.service` every minute (`OnCalendar=minutely`, `Persistent=true`).
+- `voxera-automation.service` — `voxera automation run-due-once` (one-shot, `%h/VoxeraOS`). Timer-owned: it has no `[Install]` section and is never enabled directly; `voxera-automation.timer` triggers it on schedule.
+- `voxera-automation.timer` — fires `voxera-automation.service` every minute (`OnCalendar=minutely`, `Persistent=true`, `WantedBy=timers.target`). This is the unit `make services-install` enables for the automation runner.
+
+`make services-install` installs every unit above but only enables the three long-running services plus `voxera-automation.timer`. The automation service stays addressable for `systemctl --user status` / `journalctl --user -u` / manual start, but the timer owns cadence.
 
 The top-level `systemd/` directory still carries `voxera-core.service` and `voxera-panel.service` as legacy references. `services-install` uses the `deploy/` path.
 

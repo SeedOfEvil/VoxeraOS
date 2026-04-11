@@ -7,5 +7,10 @@ Type=oneshot
 WorkingDirectory=%h/VoxeraOS
 ExecStart=%h/VoxeraOS/.venv/bin/voxera automation run-due-once
 
-[Install]
-WantedBy=default.target
+# This unit is intentionally timer-owned: no Install section.
+# voxera-automation.timer is the unit users enable; it triggers this
+# oneshot worker on its schedule. The service remains directly
+# addressable for status/logs/manual start:
+#   systemctl --user status voxera-automation.service
+#   journalctl --user -u voxera-automation.service
+#   systemctl --user start  voxera-automation.service

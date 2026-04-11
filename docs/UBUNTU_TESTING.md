@@ -327,4 +327,4 @@ make vera-restart
 make vera-stop
 ```
 
-`make services-install` installs/enables `voxera-daemon.service`, `voxera-panel.service`, and `voxera-vera.service` in `~/.config/systemd/user/`.
+`make services-install` installs all units into `~/.config/systemd/user/` and enables/starts `voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`, and `voxera-automation.timer`. `voxera-automation.service` is copied alongside but not directly enabled — it is a oneshot worker owned by `voxera-automation.timer`, which handles cadence.
