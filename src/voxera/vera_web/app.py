@@ -39,10 +39,8 @@ from ..vera.context_lifecycle import (
     context_on_automation_lifecycle_action,
     context_on_automation_saved,
     context_on_completion_ingested,
-    context_on_followup_preview_prepared,
     context_on_handoff_submitted,
     context_on_preview_cleared,
-    context_on_preview_created,
     context_on_review_performed,
     context_on_session_cleared,
 )
@@ -50,6 +48,8 @@ from ..vera.draft_revision import (
     looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.evidence_review import (
+    is_revise_from_evidence_request,
+    is_save_followup_request,
     maybe_extract_job_id,
 )
 from ..vera.investigation_derivations import (
@@ -57,6 +57,7 @@ from ..vera.investigation_derivations import (
     is_investigation_derived_followup_save_request,
     is_investigation_derived_save_request,
     is_investigation_expand_request,
+    is_investigation_save_request,
 )
 from ..vera.investigation_flow import (
     is_informational_web_query,
@@ -71,6 +72,13 @@ from ..vera.preview_drafting import (
     drafting_guidance,
     is_recent_assistant_content_save_request,
     maybe_draft_job_payload,
+)
+from ..vera.preview_ownership import (
+    clear_active_preview,
+    derive_preview_draft_ref,
+    record_followup_preview,
+    record_submit_success,
+    reset_active_preview,
 )
 from ..vera.preview_submission import (
     is_natural_preview_submission_confirmation,
@@ -113,10 +121,8 @@ from ..vera.session_store import (
     write_session_conversational_planning_active,
     write_session_derived_investigation_output,
     write_session_enrichment,
-    write_session_handoff_state,
     write_session_investigation,
     write_session_last_automation_preview,
-    write_session_preview,
     write_session_weather_context,
 )
 from ..vera.weather_flow import (
@@ -158,6 +164,11 @@ from .preview_content_binding import (
     is_targeted_code_preview_refinement,
     looks_like_builder_refinement_placeholder,
     preview_body_looks_like_control_narration,
+)
+from .preview_routing import (
+    canonical_preview_lane_order,
+    is_active_preview_revision_turn,
+    is_normal_preview,
 )
 from .response_shaping import (
     BLANKET_PREVIEW_REFUSAL_TEXT,
@@ -799,6 +810,35 @@ def index(request: Request):
 
 @app.post("/chat", response_class=HTMLResponse)
 async def chat(request: Request):
+    """Vera chat turn — canonical preview-routing lane precedence.
+
+    Lanes run in strict order below; the same order is recorded in
+    :func:`voxera.vera_web.preview_routing.canonical_preview_lane_order`
+    so the two surfaces stay aligned. Earlier lanes either claim the
+    turn or fall through; no lane may silently mutate the active
+    preview owned by another lane.
+
+    1. ``EXPLICIT_SUBMIT`` — explicit submit / handoff on the active
+       preview (including the automation-preview-save branch).
+    2. ``ACTIVE_PREVIEW_REVISION`` — revision of an active automation
+       preview, and the ``is_active_preview_revision_turn`` gate that
+       protects normal active previews from lifecycle/review hijacks.
+    3. ``AUTOMATION_LIFECYCLE`` — manage saved automation definitions.
+       Steps aside when a normal active preview is clearly under
+       revision.
+    4. ``FOLLOWUP_FROM_EVIDENCE`` — evidence-driven follow-up previews
+       (handled inside ``dispatch_early_exit_intent``).
+    5. ``PREVIEW_CREATION`` — code/writing/automation shell synthesis,
+       deterministic builder path, rename/save-as fallback.
+    6. ``READ_ONLY_EARLY_EXIT`` — time, weather, diagnostics, blocked
+       file intent, near-miss submit, investigation utilities.
+    7. ``CONVERSATIONAL`` — LLM orchestration + post-LLM draft binding.
+
+    All preview state mutations go through
+    ``voxera.vera.preview_ownership`` so the set of writers is narrow
+    and auditable.
+    """
+
     raw = (await request.body()).decode("utf-8", errors="replace")
     parsed = parse_qs(raw, keep_blank_values=True)
     message = str((parsed.get("message") or [""])[0])
@@ -806,6 +846,10 @@ async def chat(request: Request):
     session_id = str((parsed.get("session_id") or [""])[0])
     voice_flags = load_voice_foundation_flags()
     input_origin = normalize_input_origin(input_origin_raw)
+    # Sanity gate: keep the chat dispatcher aligned with the lane enum.
+    # This assertion is cheap and fires immediately if someone reorders
+    # lanes without updating the enum.
+    assert len(canonical_preview_lane_order()) == 7  # noqa: S101
 
     if input_origin is InputOrigin.VOICE_TRANSCRIPT:
         try:
@@ -907,6 +951,51 @@ async def chat(request: Request):
     # Intentionally NOT covered here: weather-context LLM lookup (async I/O,
     # below), submit/handoff truth paths, and blocked-file check (after
     # submit checks to preserve ordering).
+    #
+    # Active-preview revision protection: when a clear revision/follow-up
+    # mutation of a normal active preview is in flight, we prevent the
+    # early-exit dispatch's preview-writing branches (follow-up from
+    # evidence, investigation derived-save, investigation save) from
+    # silently overwriting the active preview slot. Non-mutating branches
+    # (time, diagnostics refusal, job review report, near-miss submit
+    # rejection, stale-draft reference) still run — they never touch the
+    # preview.  Computed once and reused by both the early-exit dispatch
+    # and the downstream automation-lifecycle gate.
+    #
+    # Belt-and-suspenders: the narrow revision-gate patterns do not
+    # cover every ambiguous phrase that could hijack an active preview.
+    # When a normal preview is active AND the message is an ambiguous
+    # save/revise-from-evidence phrase, we also mark the revision as in
+    # flight so the early-exit follow-up branches cannot silently
+    # replace the active preview. This is the fail-closed choice: if
+    # the phrase could mean either "mutate this preview" or "spawn a
+    # new evidence follow-up", we prefer not to mutate the wrong object.
+    _active_preview_revision_in_flight = is_active_preview_revision_turn(
+        message, active_preview=pending_preview
+    )
+    if (
+        not _active_preview_revision_in_flight
+        and is_normal_preview(pending_preview)
+        and (
+            is_save_followup_request(message)
+            or is_revise_from_evidence_request(message)
+            # Investigation-save detector is extremely broad: any
+            # phrase with save/write/export + results/findings fires
+            # it. When a normal active preview is in play, phrases
+            # like "make it save the results to a file" or "save the
+            # scan results to a file" are script enhancements, not
+            # investigation-export requests — the investigation-save
+            # branch would otherwise fail closed with a confusing
+            # "couldn't resolve investigation result references"
+            # reply and steal the turn.  Fail-closed choice: mark as
+            # revision in flight so lane 4 / lane 8 / the derived-save
+            # lane all step aside and the script-enhancement lands on
+            # the active preview instead.
+            or is_investigation_save_request(message)
+            or is_investigation_derived_save_request(message)
+        )
+    ):
+        _active_preview_revision_in_flight = True
     _session_ctx = read_session_context(root, active_session)
     _early = dispatch_early_exit_intent(
         message=message,
@@ -918,29 +1007,32 @@ async def chat(request: Request):
         queue_root=root,
         session_id=active_session,
         session_context=_session_ctx,
+        active_preview_revision_in_flight=_active_preview_revision_in_flight,
     )
     if _early.matched:
-        if _early.write_preview:
-            write_session_preview(root, active_session, _early.preview_payload)
-            _early_wf = (_early.preview_payload or {}).get("write_file")
-            _early_path = (
-                str(_early_wf.get("path") or "").strip() if isinstance(_early_wf, dict) else None
-            )
-            # Use the follow-up lifecycle function when the early-exit also
-            # records a source job (follow-up / revision / save-follow-up).
+        if _early.write_preview and isinstance(_early.preview_payload, dict):
+            # Follow-up previews record a source job so "that job" / "the
+            # last result" still resolves correctly on later turns.
             _early_source_job = (
                 str((_early.context_updates or {}).get("last_reviewed_job_ref") or "").strip()
                 or None
             )
+            _early_draft_ref = derive_preview_draft_ref(_early.preview_payload)
             if _early_source_job:
-                context_on_followup_preview_prepared(
+                record_followup_preview(
                     root,
                     active_session,
-                    draft_ref=_early_path or "preview",
+                    _early.preview_payload,
                     source_job_id=_early_source_job,
+                    draft_ref=_early_draft_ref,
                 )
             else:
-                context_on_preview_created(root, active_session, draft_ref=_early_path or "preview")
+                reset_active_preview(
+                    root,
+                    active_session,
+                    _early.preview_payload,
+                    draft_ref=_early_draft_ref,
+                )
         elif _early.context_updates:
             # Non-preview early-exit with context updates (e.g. job review).
             _review_job = (
@@ -951,16 +1043,6 @@ async def chat(request: Request):
                 context_on_review_performed(root, active_session, job_id=_review_job)
             else:
                 update_session_context(root, active_session, **_early.context_updates)
-        if _early.write_handoff_ready:
-            write_session_handoff_state(
-                root,
-                active_session,
-                attempted=False,
-                queue_path=str(root),
-                status="preview_ready",
-                error=None,
-                job_id=None,
-            )
         if _early.write_derived_output:
             write_session_derived_investigation_output(root, active_session, _early.derived_output)
         append_session_turn(root, active_session, role="assistant", text=_early.assistant_text)
@@ -1047,7 +1129,10 @@ async def chat(request: Request):
         and is_automation_preview(pending_preview)
     ):
         _auto_result = submit_automation_preview(pending_preview, root)
-        write_session_preview(root, active_session, None)
+        # Automation submit does NOT emit a queue job; it saves a durable
+        # definition. Clear the preview slot and let
+        # context_on_automation_saved refresh the continuity refs.
+        record_submit_success(root, active_session)
         context_on_automation_saved(root, active_session, automation_id=_auto_result.automation_id)
         # Stash the preview so post-submit continuity can describe it.
         write_session_last_automation_preview(root, active_session, pending_preview)
@@ -1118,8 +1203,19 @@ async def chat(request: Request):
         _auto_revision = revise_automation_preview(message, pending_preview)
         if isinstance(_auto_revision, AutomationPreview):
             pending_preview = _auto_revision.preview
-            write_session_preview(root, active_session, _auto_revision.preview)
-            context_on_preview_created(root, active_session, draft_ref="automation_preview")
+            # Automation previews are revised in place through the
+            # centralized reset_active_preview helper so every lane
+            # mutation path is auditable. Handoff state must NOT be
+            # marked preview_ready for automation previews because
+            # automation submit saves a definition and does not use the
+            # queue handoff pathway.
+            reset_active_preview(
+                root,
+                active_session,
+                _auto_revision.preview,
+                draft_ref="automation_preview",
+                mark_handoff_ready=False,
+            )
             _auto_text = (
                 "I updated the automation preview.\n\n"
                 f"{_auto_revision.explanation}\n\n"
@@ -1167,8 +1263,13 @@ async def chat(request: Request):
         _auto_draft = draft_automation_preview(message, active_preview=None)
         if isinstance(_auto_draft, AutomationPreview):
             pending_preview = _auto_draft.preview
-            write_session_preview(root, active_session, _auto_draft.preview)
-            context_on_preview_created(root, active_session, draft_ref="automation_preview")
+            reset_active_preview(
+                root,
+                active_session,
+                _auto_draft.preview,
+                draft_ref="automation_preview",
+                mark_handoff_ready=False,
+            )
             _auto_text = (
                 "Here's an automation preview:\n\n"
                 f"{_auto_draft.explanation}\n\n"
@@ -1213,9 +1314,19 @@ async def chat(request: Request):
     # canonical automation store and history — not only session memory.
     # Must come after automation preview revision (so active-preview
     # revision turns are not hijacked) but before the LLM path.
+    #
+    # Lane precedence fix: this lane also steps aside when an active
+    # **normal** preview exists and the current message is a clear
+    # revision/follow-up of that preview. Without this guard, a phrase
+    # that overlaps lifecycle wording ("run it now", "show me the
+    # file") could steal a turn that was clearly mutating an active
+    # non-automation preview. See ``preview_routing.is_active_preview_
+    # revision_turn`` for the conservative gate.
     _last_auto_preview = read_session_last_automation_preview(root, active_session)
-    if is_automation_lifecycle_intent(message) and not (
-        isinstance(pending_preview, dict) and is_automation_preview(pending_preview)
+    if (
+        is_automation_lifecycle_intent(message)
+        and not (isinstance(pending_preview, dict) and is_automation_preview(pending_preview))
+        and not _active_preview_revision_in_flight
     ):
         _lifecycle = dispatch_lifecycle_action(
             message,
@@ -1311,16 +1422,7 @@ async def chat(request: Request):
     )
     if _recovered_code_draft is not None:
         pending_preview = _recovered_code_draft
-        write_session_preview(root, active_session, _recovered_code_draft)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
-        )
+        reset_active_preview(root, active_session, _recovered_code_draft)
         _post_clarification_code_draft = True
     # ── Automation/process clarification completion ───────────────────────
     # When the user answers a clarification question for an automation/
@@ -1344,18 +1446,11 @@ async def chat(request: Request):
         )
         if _automation_shell is not None:
             pending_preview = _automation_shell
-            write_session_preview(root, active_session, _automation_shell)
-            write_session_handoff_state(
+            reset_active_preview(
                 root,
                 active_session,
-                attempted=False,
-                queue_path=str(root),
-                status="preview_ready",
-                error=None,
-                job_id=None,
-            )
-            context_on_preview_created(
-                root, active_session, draft_ref="~/VoxeraOS/notes/automation.py"
+                _automation_shell,
+                draft_ref="~/VoxeraOS/notes/automation.py",
             )
             _post_clarification_code_draft = True
     # ── Direct automation/script request (no clarification required) ─────
@@ -1375,18 +1470,11 @@ async def chat(request: Request):
         _direct_automation_shell = _synthesize_direct_automation_preview()
         if _direct_automation_shell is not None:
             pending_preview = _direct_automation_shell
-            write_session_preview(root, active_session, _direct_automation_shell)
-            write_session_handoff_state(
+            reset_active_preview(
                 root,
                 active_session,
-                attempted=False,
-                queue_path=str(root),
-                status="preview_ready",
-                error=None,
-                job_id=None,
-            )
-            context_on_preview_created(
-                root, active_session, draft_ref="~/VoxeraOS/notes/automation.py"
+                _direct_automation_shell,
+                draft_ref="~/VoxeraOS/notes/automation.py",
             )
             _post_clarification_code_draft = True
     is_code_draft_turn = (
@@ -1508,19 +1596,7 @@ async def chat(request: Request):
             ):
                 builder_payload = None
         if builder_payload is not None:
-            write_session_preview(root, active_session, builder_payload)
-            write_session_handoff_state(
-                root,
-                active_session,
-                attempted=False,
-                queue_path=str(root),
-                status="preview_ready",
-                error=None,
-                job_id=None,
-            )
-            _bp_wf = builder_payload.get("write_file")
-            _bp_path = str(_bp_wf.get("path") or "").strip() if isinstance(_bp_wf, dict) else None
-            context_on_preview_created(root, active_session, draft_ref=_bp_path or "preview")
+            reset_active_preview(root, active_session, builder_payload)
 
     # ── Rename-mutation fallback ──────────────────────────────────────────
     # When the user clearly asked for a rename/save-as but builder_payload
@@ -1553,21 +1629,7 @@ async def chat(request: Request):
                 _rename_payload = None
             if _rename_payload is not None and _rename_payload != pending_preview:
                 builder_payload = _rename_payload
-                write_session_preview(root, active_session, builder_payload)
-                write_session_handoff_state(
-                    root,
-                    active_session,
-                    attempted=False,
-                    queue_path=str(root),
-                    status="preview_ready",
-                    error=None,
-                    job_id=None,
-                )
-                _rn_wf = builder_payload.get("write_file")
-                _rn_path = (
-                    str(_rn_wf.get("path") or "").strip() if isinstance(_rn_wf, dict) else None
-                )
-                context_on_preview_created(root, active_session, draft_ref=_rn_path or "preview")
+                reset_active_preview(root, active_session, builder_payload)
 
     reply = await generate_vera_reply(
         turns=turns,
@@ -1631,21 +1693,8 @@ async def chat(request: Request):
     is_code_draft_turn = _binding.is_code_draft_turn
     is_writing_draft_turn = _binding.is_writing_draft_turn
     generation_content_refresh_failed_closed = _binding.generation_content_refresh_failed_closed
-    if _binding.preview_needs_write:
-        write_session_preview(root, active_session, builder_payload)
-        write_session_handoff_state(
-            root,
-            active_session,
-            attempted=False,
-            queue_path=str(root),
-            status="preview_ready",
-            error=None,
-            job_id=None,
-        )
-        if isinstance(builder_payload, dict):
-            _bd_wf = builder_payload.get("write_file")
-            _bd_path = str(_bd_wf.get("path") or "").strip() if isinstance(_bd_wf, dict) else None
-            context_on_preview_created(root, active_session, draft_ref=_bd_path or "preview")
+    if _binding.preview_needs_write and isinstance(builder_payload, dict):
+        reset_active_preview(root, active_session, builder_payload)
 
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative
@@ -1709,8 +1758,7 @@ async def chat(request: Request):
         if should_clear_stale_preview(
             guarded_answer, _answer_before_preview_guardrail, effective_preview
         ):
-            write_session_preview(root, active_session, None)
-            context_on_preview_cleared(root, active_session)
+            clear_active_preview(root, active_session, reason="stale_preview_guardrail_cleanup")
             builder_payload = None
 
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
@@ -1813,7 +1861,7 @@ async def handoff(request: Request):
     # should_submit_active_preview + is_automation_preview.
     if isinstance(preview, dict) and is_automation_preview(preview):
         _auto_result = submit_automation_preview(preview, root)
-        write_session_preview(root, active_session, None)
+        record_submit_success(root, active_session)
         context_on_automation_saved(root, active_session, automation_id=_auto_result.automation_id)
         write_session_last_automation_preview(root, active_session, preview)
         append_session_turn(root, active_session, role="assistant", text=_auto_result.ack)

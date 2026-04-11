@@ -122,6 +122,7 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 - `test_vera_draft_bug_fix.py`
 - `test_vera_draft_revision.py`
 - `test_vera_preview_materialization.py`
+- `test_vera_preview_stabilization.py` — covers the centralized preview state transitions in `src/voxera/vera/preview_ownership.py` (create/revise/follow-up/clear/submit-success), the canonical routing lane order in `src/voxera/vera_web/preview_routing.py`, the conservative revision-turn gate (`is_active_preview_revision_turn`), and integration-level regressions ensuring that lifecycle/review lanes no longer hijack active-preview revision turns.
 - `test_vera_preview_submission.py`
 - `test_draft_content_binding.py`
 - `test_authored_draft_body_fidelity.py`
@@ -242,7 +243,8 @@ The "sync, test, validate" method used for meaningful PRs (see `Testing-Method.t
 | Policy / mutation gate | `test_policy.py`, `test_direct_mutation_gate.py`, `test_execution_evaluator.py`, `test_capability_semantics.py` |
 | Panel routes | `test_panel.py`, `test_panel_automations.py`, `test_panel_contract_snapshot.py` |
 | Vera reply surface | `test_vera_chat_reliability.py`, `test_vera_contextual_flows.py`, `test_vera_runtime_validation_fixes.py` |
-| Vera preview / submit | `test_vera_preview_materialization.py`, `test_vera_preview_submission.py`, `test_vera_draft_revision.py`, `test_draft_content_binding.py` |
+| Vera preview / submit | `test_vera_preview_materialization.py`, `test_vera_preview_stabilization.py`, `test_vera_preview_submission.py`, `test_vera_draft_revision.py`, `test_draft_content_binding.py` |
+| Vera preview ownership / routing lanes | `test_vera_preview_stabilization.py`, `src/voxera/vera/preview_ownership.py`, `src/voxera/vera_web/preview_routing.py` |
 | Vera review / linked completions | `test_evidence_review.py`, `test_linked_job_review_continuation.py`, `test_result_surfacing.py` |
 | Vera investigation / hidden compiler | `test_vera_investigation_derivations.py`, `test_vera_hidden_compiler.py`, `test_vera_compiler_leakage.py`, `test_vera_brave_search.py` |
 | Vera web markdown rendering | `test_vera_web_markdown_render.py` |

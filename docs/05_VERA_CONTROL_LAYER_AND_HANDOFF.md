@@ -50,6 +50,27 @@ Important fields tracked per session:
 
 Canonical truth surfaces (preview / queue / artifacts-evidence) always win over shared context. When continuity is ambiguous, the session fails closed.
 
+## Preview ownership and routing lane precedence
+
+Two dedicated modules narrow the surfaces that can mutate Vera's preview state:
+
+- `vera/preview_ownership.py` owns every transition into the session's active preview slot. Its public surface is `reset_active_preview`, `record_followup_preview`, `clear_active_preview`, and `record_submit_success`. Each helper performs the coupled writes that used to live scattered throughout `app.py` (preview payload + `preview_ready` handoff marker + shared-context refresh) as a single atomic unit, so there is one place to audit how previews are created, revised, replaced, cleared, and cleaned up.
+- `vera_web/preview_routing.py` documents the canonical routing lanes that may claim a chat turn. `canonical_preview_lane_order()` returns the lane tuple that the top-level dispatch in `chat()` must keep in sync with its branch order. The enum values are also used by `is_active_preview_revision_turn`, the conservative gate that protects normal active previews from being hijacked by unrelated lanes.
+
+Canonical lane order (defined in `preview_routing.canonical_preview_lane_order`):
+
+1. `EXPLICIT_SUBMIT` — submit / handoff on the active preview (including automation-preview-save).
+2. `ACTIVE_PREVIEW_REVISION` — revision or follow-up mutation on the active preview. This lane is the only path that rewrites the payload in place on an active preview for normal `write_file` previews and for automation previews.
+3. `AUTOMATION_LIFECYCLE` — manage saved automation definitions. Steps aside when a normal active preview is clearly under revision.
+4. `FOLLOWUP_FROM_EVIDENCE` — evidence-driven follow-up previews drafted from a completed job.
+5. `PREVIEW_CREATION` — code/writing/automation shell synthesis, deterministic builder path, rename/save-as fallback.
+6. `READ_ONLY_EARLY_EXIT` — time, weather, diagnostics refusal, blocked file intent, near-miss submit, investigation utilities.
+7. `CONVERSATIONAL` — LLM orchestration + post-LLM draft binding.
+
+Each lane either claims the turn cleanly or fails closed and allows later lanes to try. A lane must not silently mutate a preview that is owned by another lane; the revision-turn gate is the explicit short-circuit that enforces this for normal previews.
+
+The revision-turn gate is threaded into `chat_early_exit_dispatch.dispatch_early_exit_intent` as an explicit `active_preview_revision_in_flight` parameter. When it is true, the evidence-driven preview-writing branches (follow-up from evidence, save-follow-up, revise-from-evidence, investigation derived-save, investigation save) are skipped so they cannot clobber the active preview. The non-mutating branches (time question, diagnostics refusal, job review report, near-miss submit rejection, stale-draft reference) still run. As a belt-and-suspenders layer, `app.py` also treats `is_save_followup_request` and `is_revise_from_evidence_request` matches as revision candidates whenever a normal active preview is present — this catches ambiguous phrases like "save the follow-up as a file" or "update that based on the result" that the narrow revision gate does not.
+
 ## Preview model
 
 Preview is the pre-submit draft object. It is Vera's authoritative surface **before** submit and is also the exact source of the payload that goes to the queue at submit time.
@@ -162,6 +183,8 @@ The refactors that preceded this bundle split Vera's reply orchestration into na
 | Result-forward text extraction | `vera/result_surfacing.py` |
 | Saveable recent assistant content | `vera/saveable_artifacts.py` |
 | Shared session context lifecycle points | `vera/context_lifecycle.py` |
+| Centralized preview state transitions (create/revise/clear/submit) | `vera/preview_ownership.py` |
+| Canonical preview routing lane enum + revision-turn gate | `vera_web/preview_routing.py` |
 | Bounded reference resolution (draft/file/job/continuation) | `vera/reference_resolver.py` |
 | Automation definition preview drafting, revision, submit-to-store | `vera/automation_preview.py` |
 | Conversational lifecycle management for saved automations | `vera/automation_lifecycle.py` |
