@@ -5,7 +5,6 @@ import re
 import subprocess  # noqa: F401 (re-export so tests monkeypatching panel.app.subprocess.run still drive queue_mutation_bridge)
 import sys  # noqa: F401 (re-export so tests asserting panel.app.sys.executable still resolve)
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,13 +14,14 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..audit import log
 from ..config import load_config as load_runtime_config
-from ..health_semantics import build_health_semantic_sections
 from ..version import get_version
 from . import routes_assistant as _routes_assistant
 from .auth_enforcement import _operator_credentials  # noqa: F401 (re-export for contract tests)
 from .auth_enforcement import require_mutation_guard as _require_mutation_guard
 from .auth_enforcement import require_operator_basic_auth as _require_operator_basic_auth
-from .helpers import coerce_int as _coerce_int
+from .health_view_helpers import daemon_health_view as _daemon_health_view_impl
+from .health_view_helpers import format_ts as _format_ts_impl
+from .health_view_helpers import performance_stats_view as _performance_stats_view_impl
 from .helpers import request_value as _request_value
 from .job_detail_sections import build_job_detail_payload as _build_job_detail_payload_impl
 from .job_detail_sections import build_job_progress_payload as _build_job_progress_payload_impl
@@ -197,224 +197,24 @@ def _auth_setup_banner() -> dict[str, str] | None:
 
 
 def _format_ts(ts_ms: int | None) -> str:
-    if ts_ms is None or ts_ms <= 0:
-        return "—"
-    return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def _format_ts_seconds(ts_s: float | None) -> str:
-    if ts_s is None or ts_s <= 0:
-        return "—"
-    return datetime.fromtimestamp(ts_s, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def _format_age(age_s: int | None) -> str:
-    if age_s is None or age_s < 0:
-        return "—"
-    if age_s < 60:
-        return f"{age_s}s"
-    minutes, seconds = divmod(age_s, 60)
-    if seconds:
-        return f"{minutes}m {seconds}s"
-    return f"{minutes}m"
-
-
-def _history_value(value: Any) -> str:
-    text = str(value).strip() if value is not None else ""
-    return text or "-"
-
-
-def _history_pair(value: Any, ts_label: str) -> str:
-    val = _history_value(value)
-    ts = ts_label.strip() if ts_label else "-"
-    if val == "-" and ts in {"-", "—"}:
-        return "-"
-    return f"{val} @ {ts}"
+    # Thin wrapper so ``register_automation_routes(format_ts_ms=_format_ts)``
+    # keeps the same callable identity while the formatting logic lives in
+    # ``health_view_helpers.format_ts``.
+    return _format_ts_impl(ts_ms)
 
 
 def _daemon_health_view(health: dict[str, Any]) -> dict[str, Any]:
-    lock_raw = health.get("lock_status")
-    lock: dict[str, Any] = lock_raw if isinstance(lock_raw, dict) else {}
-    lock_state = str(health.get("lock_state") or "").strip().lower()
-    lock_status = str(lock.get("status") or "").strip().lower()
-    if lock_status not in {"held", "stale", "clear"}:
-        if lock_state in {"active", "locked_by_other"}:
-            lock_status = "held"
-        elif lock_state in {"stale", "reclaimed"}:
-            lock_status = "stale"
-        else:
-            lock_status = "clear"
-
-    lock_pid = _coerce_int(lock.get("pid"))
-    if lock_pid is None:
-        lock_pid = _coerce_int(health.get("lock_holder_pid"))
-
-    fallback_reason = health.get("last_fallback_reason")
-    fallback_tier = health.get("last_fallback_to")
-    fallback_ts = _coerce_int(health.get("last_fallback_ts_ms"))
-    has_fallback = any([fallback_reason, fallback_tier, fallback_ts])
-
-    startup_recovery = health.get("last_startup_recovery")
-    if isinstance(startup_recovery, dict):
-        recovery_counts = startup_recovery.get("counts")
-        recovery_ts = _coerce_int(startup_recovery.get("ts_ms"))
-    else:
-        recovery_counts = health.get("last_startup_recovery_counts")
-        recovery_ts = _coerce_int(health.get("last_startup_recovery_ts"))
-    counts = recovery_counts if isinstance(recovery_counts, dict) else {}
-    recovery_job_count = _coerce_int(counts.get("jobs_failed")) or 0
-    orphan_count = (_coerce_int(counts.get("orphan_approvals_quarantined")) or 0) + (
-        _coerce_int(counts.get("orphan_state_files_quarantined")) or 0
-    )
-    has_recovery = any([recovery_job_count, orphan_count, recovery_ts])
-
-    shutdown_outcome = str(health.get("last_shutdown_outcome") or "").strip() or "unknown"
-    shutdown_ts_raw = health.get("last_shutdown_ts")
-    shutdown_ts = float(shutdown_ts_raw) if isinstance(shutdown_ts_raw, (int, float)) else None
-    shutdown_reason = str(health.get("last_shutdown_reason") or "").strip() or "—"
-    shutdown_job = str(health.get("last_shutdown_job") or "").strip() or "—"
-
-    stale_age_s = _coerce_int(lock.get("stale_age_s"))
-
-    return {
-        "lock_status": lock_status,
-        "lock_pid": lock_pid,
-        "lock_stale_age_s": stale_age_s,
-        "lock_stale_age_label": _format_age(stale_age_s),
-        "last_brain_fallback": {
-            "present": has_fallback,
-            "tier": str(fallback_tier or "—"),
-            "reason": str(fallback_reason or "—"),
-            "ts": _format_ts(fallback_ts),
-        },
-        "last_startup_recovery": {
-            "present": has_recovery,
-            "job_count": recovery_job_count,
-            "orphan_count": orphan_count,
-            "ts": _format_ts(recovery_ts),
-        },
-        "last_shutdown": {
-            "present": shutdown_outcome != "unknown" or shutdown_ts is not None,
-            "outcome": shutdown_outcome,
-            "ts": _format_ts_seconds(shutdown_ts),
-            "reason": shutdown_reason,
-            "job": shutdown_job,
-        },
-        "daemon_state": str(health.get("daemon_state") or "healthy"),
-    }
+    # Thin wrapper so ``register_home_routes(daemon_health_view=_daemon_health_view)``
+    # keeps the same ``(health) -> dict`` signature while the shaping logic
+    # lives in ``health_view_helpers.daemon_health_view``.
+    return _daemon_health_view_impl(health)
 
 
 def _performance_stats_view(queue: dict[str, Any], health: dict[str, Any]) -> dict[str, Any]:
-    counts_raw = queue.get("counts")
-    counts = counts_raw if isinstance(counts_raw, dict) else {}
-    grouped = build_health_semantic_sections(
-        health,
-        queue_context={
-            "queue_root": queue.get("queue_root"),
-            "health_path": queue.get("health_path"),
-            "intake_glob": queue.get("intake_glob"),
-            "paused": bool(queue.get("paused", False)),
-        },
-        lock_status=queue.get("lock_status") if isinstance(queue.get("lock_status"), dict) else {},
-        daemon_lock_counters=queue.get("daemon_lock_counters")
-        if isinstance(queue.get("daemon_lock_counters"), dict)
-        else {},
-    )
-    current_state = grouped["current_state"]
-    recent_history = grouped["recent_history"]
-    historical_counters = grouped["historical_counters"]
-    shutdown_ts_raw = recent_history.get("last_shutdown_ts")
-    shutdown_ts = float(shutdown_ts_raw) if isinstance(shutdown_ts_raw, (int, float)) else None
-    fallback = recent_history.get("last_brain_fallback", {})
-
-    return {
-        "queue_counts": {
-            "inbox": int(counts.get("inbox", 0) or 0),
-            "pending": int(counts.get("pending", 0) or 0),
-            "pending_approvals": int(counts.get("pending_approvals", 0) or 0),
-            "done": int(counts.get("done", 0) or 0),
-            "failed": int(counts.get("failed", 0) or 0),
-            "canceled": int(counts.get("canceled", 0) or 0),
-        },
-        "current_state": current_state,
-        "recent_history": {
-            "last_fallback_line": (
-                "-"
-                if not isinstance(fallback, dict)
-                or not any(
-                    [
-                        fallback.get("reason"),
-                        fallback.get("from"),
-                        fallback.get("to"),
-                        fallback.get("ts_ms"),
-                    ]
-                )
-                else (
-                    f"{_history_value(fallback.get('reason'))} "
-                    f"({_history_value(fallback.get('from'))} → {_history_value(fallback.get('to'))}) "
-                    f"@ {_format_ts(_coerce_int(fallback.get('ts_ms')))}"
-                )
-            ),
-            "last_error_line": _history_pair(
-                recent_history.get("last_error"),
-                _format_ts(_coerce_int(recent_history.get("last_error_ts_ms"))),
-            ),
-            "last_shutdown_line": (
-                "-"
-                if not any(
-                    [
-                        recent_history.get("last_shutdown_outcome"),
-                        recent_history.get("last_shutdown_reason"),
-                        recent_history.get("last_shutdown_job"),
-                        recent_history.get("last_shutdown_ts"),
-                    ]
-                )
-                else (
-                    f"{_history_value(recent_history.get('last_shutdown_outcome'))} / "
-                    f"{_history_value(recent_history.get('last_shutdown_reason'))} / "
-                    f"{_history_value(recent_history.get('last_shutdown_job'))} @ "
-                    f"{_format_ts_seconds(shutdown_ts)}"
-                )
-            ),
-            "degraded_since_ts": _history_value(recent_history.get("degraded_since_ts")),
-            "brain_backoff_last_applied_s": int(
-                recent_history.get("brain_backoff_last_applied_s", 0) or 0
-            ),
-            "brain_backoff_last_applied_ts": _history_value(
-                recent_history.get("brain_backoff_last_applied_ts")
-            ),
-        },
-        "historical_counters": {
-            "panel_auth_invalid": int(historical_counters.get("panel_auth_invalid", 0) or 0),
-            "panel_401_count": int(historical_counters.get("panel_401_count", 0) or 0),
-            "panel_403_count": int(historical_counters.get("panel_403_count", 0) or 0),
-            "panel_429_count": int(historical_counters.get("panel_429_count", 0) or 0),
-            "panel_csrf_missing": int(historical_counters.get("panel_csrf_missing", 0) or 0),
-            "panel_csrf_invalid": int(historical_counters.get("panel_csrf_invalid", 0) or 0),
-            "panel_mutation_allowed": int(
-                historical_counters.get("panel_mutation_allowed", 0) or 0
-            ),
-            "brain_fallback_count": int(historical_counters.get("brain_fallback_count", 0) or 0),
-            "brain_fallback_reason_timeout": int(
-                historical_counters.get("brain_fallback_reason_timeout", 0) or 0
-            ),
-            "brain_fallback_reason_auth": int(
-                historical_counters.get("brain_fallback_reason_auth", 0) or 0
-            ),
-            "brain_fallback_reason_rate_limit": int(
-                historical_counters.get("brain_fallback_reason_rate_limit", 0) or 0
-            ),
-            "brain_fallback_reason_malformed": int(
-                historical_counters.get("brain_fallback_reason_malformed", 0) or 0
-            ),
-            "brain_fallback_reason_network": int(
-                historical_counters.get("brain_fallback_reason_network", 0) or 0
-            ),
-            "brain_fallback_reason_unknown": int(
-                historical_counters.get("brain_fallback_reason_unknown", 0) or 0
-            ),
-        },
-    }
+    # Thin wrapper so ``register_home_routes(performance_stats_view=_performance_stats_view)``
+    # keeps the same ``(queue, health) -> dict`` signature while the shaping
+    # logic lives in ``health_view_helpers.performance_stats_view``.
+    return _performance_stats_view_impl(queue, health)
 
 
 def _require_operator_auth_from_request(request: Request) -> None:
