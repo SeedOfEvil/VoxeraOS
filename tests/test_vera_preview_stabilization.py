@@ -249,6 +249,18 @@ class TestPreviewRoutingLanes:
     def test_is_normal_preview_rejects_none(self) -> None:
         assert not is_normal_preview(None)
 
+    def test_is_normal_preview_rejects_empty_dict(self) -> None:
+        # A phantom empty dict is not a real preview we should protect.
+        assert not is_normal_preview({})
+
+    def test_is_normal_preview_rejects_dict_without_authoring_surface(self) -> None:
+        # A dict without goal/write_file/steps/file_organize/mission_id
+        # has no authoring surface and is not a real preview.
+        assert not is_normal_preview({"random_key": "random_value"})
+
+    def test_is_normal_preview_accepts_mission_preview(self) -> None:
+        assert is_normal_preview({"goal": "run diagnostics", "mission_id": "system_diagnostics"})
+
     @pytest.mark.parametrize(
         "message",
         [
@@ -517,3 +529,420 @@ def test_review_request_does_not_wipe_active_preview(tmp_path, monkeypatch):
     assert preview is not None
     wf = preview.get("write_file") or {}
     assert str(wf.get("content") or "") == "Initial draft body."
+
+
+# ---------------------------------------------------------------------------
+# 6. Early-exit dispatch: active-preview revision gate
+# ---------------------------------------------------------------------------
+#
+# These tests lock in the stronger protection added after the first
+# stabilization pass. The early-exit dispatch previously ran before any
+# revision-lane gate, so preview-writing branches in
+# chat_early_exit_dispatch.py (follow-up-from-evidence, save-follow-up,
+# revise-from-evidence, investigation-save, investigation-derived-save)
+# could clobber an active normal preview that the user was clearly
+# mutating. The fix threads ``active_preview_revision_in_flight`` into
+# ``dispatch_early_exit_intent`` and skips the preview-writing branches
+# when that flag is set. Non-mutating branches still run.
+
+
+def _install_script_preview(session, *, content: str = "print('hello')") -> None:
+    """Install a governed script preview for revision-hijack scenarios."""
+    payload = {
+        "goal": "draft a python script as script.py",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/script.py",
+            "content": content,
+            "mode": "overwrite",
+        },
+    }
+    preview_ownership.reset_active_preview(session.queue, session.session_id, payload)
+    context_on_preview_created(
+        session.queue, session.session_id, draft_ref="~/VoxeraOS/notes/script.py"
+    )
+
+
+def test_revise_from_evidence_does_not_hijack_active_revision_turn(tmp_path, monkeypatch):
+    """'revise that based on the result' with an active preview must NOT overwrite it.
+
+    Before the fix the early-exit dispatch would match
+    ``is_revise_from_evidence_request`` and, if any handoff job id was
+    resolvable, would call ``draft_revised_preview(evidence)`` and write
+    the resulting payload directly to the active preview slot —
+    silently clobbering the user's in-flight revision.  With the fix,
+    the revision-in-flight flag short-circuits the follow-up branch in
+    ``dispatch_early_exit_intent`` so the turn falls through to the
+    normal revision path.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_script_preview(session, content="print('initial version')")
+
+    # Install a handoff state that would otherwise satisfy the follow-up
+    # branch's job resolver.
+    session_store.write_session_handoff_state(
+        session.queue,
+        session.session_id,
+        attempted=True,
+        queue_path=str(session.queue),
+        status="submitted",
+        job_id="fake-job-1",
+    )
+
+    async def _pass_reply(**kwargs):
+        return {
+            "answer": "Understood — I'll revise the active script.",
+            "status": "ok:test",
+        }
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    resp = session.chat("revise that based on the result")
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    wf = preview.get("write_file") or {}
+    # Preview is still the active script (not overwritten by a
+    # follow-up-from-evidence payload rooted elsewhere).
+    assert str(wf.get("path") or "").endswith("script.py")
+
+
+def test_save_followup_phrase_does_not_hijack_rename_on_active_preview(tmp_path, monkeypatch):
+    """'save it as followup.py' with an active preview is a rename, not a new follow-up.
+
+    ``save_the_follow-up`` phrasing is in the evidence-review save-follow-up
+    hint list.  With an active preview, the revision gate catches
+    ``save.*as.*followup.py`` via the rename/save-as pattern and the
+    early-exit follow-up branch is short-circuited, leaving the rename
+    fallback in the normal flow to do its job.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_script_preview(session, content="print('hi')")
+
+    session_store.write_session_handoff_state(
+        session.queue,
+        session.session_id,
+        attempted=True,
+        queue_path=str(session.queue),
+        status="submitted",
+        job_id="fake-job-1",
+    )
+
+    async def _pass_reply(**kwargs):
+        return {"answer": "Renamed.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    resp = session.chat("save it as followup.py")
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    wf = preview.get("write_file") or {}
+    path = str(wf.get("path") or "")
+    # The active preview's path was renamed to followup.py rather than
+    # being clobbered with a save-follow-up evidence payload.
+    assert path.endswith("followup.py")
+    # Script content is preserved (not replaced with an evidence-based
+    # body that would have come from draft_saveable_followup_preview).
+    assert str(wf.get("content") or "").strip() == "print('hi')"
+
+
+def test_make_it_a_script_does_not_hijack_with_followup_phrasing(tmp_path, monkeypatch):
+    """'make it a follow-up script' with an active preview is a revision."""
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_writing_preview(session, content="A short note body.")
+
+    session_store.write_session_handoff_state(
+        session.queue,
+        session.session_id,
+        attempted=True,
+        queue_path=str(session.queue),
+        status="submitted",
+        job_id="fake-job-1",
+    )
+
+    async def _pass_reply(**kwargs):
+        return {"answer": "Understood.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    resp = session.chat("make it a follow-up script")
+    assert resp.status_code == 200
+
+    # Preview is NOT silently replaced with a general follow-up preview
+    # drafted from evidence (which would come from draft_followup_preview
+    # and could point at a different path).
+    preview = session.preview()
+    assert preview is not None
+    wf = preview.get("write_file") or {}
+    assert str(wf.get("path") or "").endswith("essay.md")
+
+
+def test_investigation_save_does_not_hijack_active_revision(tmp_path, monkeypatch):
+    """'save that to a note' with an active preview and a recent investigation must not hijack.
+
+    ``is_investigation_save_request`` would normally produce a
+    save-to-note preview from the session investigation. With an
+    active normal preview under revision, that branch is skipped so
+    the active preview is not silently replaced.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_writing_preview(session, content="Original note body.")
+
+    # Seed an investigation that would normally be eligible for save.
+    from .vera_session_helpers import sample_investigation_payload
+
+    session.write_investigation(sample_investigation_payload())
+
+    async def _pass_reply(**kwargs):
+        return {"answer": "Understood.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    # "save that as more_concise.md" is a rename-style revision that
+    # matches both the save-as pattern and the investigation-save hint.
+    # The revision gate must win so the active preview is renamed, not
+    # replaced with an investigation-save preview.
+    resp = session.chat("save it as more_concise.md")
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    wf = preview.get("write_file") or {}
+    path = str(wf.get("path") or "")
+    # Active preview was renamed (its content preserved), not replaced
+    # with an investigation-save payload that would point somewhere
+    # else and contain investigation findings.
+    assert path.endswith("more_concise.md")
+    assert "Original note body." in str(wf.get("content") or "")
+
+
+def test_save_the_followup_phrasing_does_not_hijack_active_preview(tmp_path, monkeypatch):
+    """Belt-and-suspenders: ambiguous 'save the follow-up' on an active preview.
+
+    ``is_save_followup_request("save the follow-up as a file")`` is True,
+    and the phrase does NOT match the narrow revision-gate patterns —
+    but with a normal preview active, the fail-closed rule in app.py
+    marks the revision as in flight so the save-follow-up branch is
+    skipped.  Without this rule, the branch would call
+    ``draft_saveable_followup_preview(evidence)`` and overwrite the
+    active preview.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_writing_preview(session, content="Active note body.")
+
+    # Installing a fake handoff state would otherwise make evidence
+    # resolvable for the save-follow-up branch.
+    session_store.write_session_handoff_state(
+        session.queue,
+        session.session_id,
+        attempted=True,
+        queue_path=str(session.queue),
+        status="submitted",
+        job_id="fake-job-1",
+    )
+
+    async def _pass_reply(**kwargs):
+        return {"answer": "Understood.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    resp = session.chat("save the follow-up as a file")
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    wf = preview.get("write_file") or {}
+    # Active preview is untouched (its content preserved).
+    assert str(wf.get("path") or "").endswith("essay.md")
+    assert "Active note body." in str(wf.get("content") or "")
+
+
+def test_revise_from_evidence_fallback_does_not_hijack_active_preview(tmp_path, monkeypatch):
+    """Belt-and-suspenders regression for 'update that based on the result'.
+
+    ``update that based on the result`` matches
+    ``is_revise_from_evidence_request`` but does NOT match the narrow
+    revision verb gate (``update`` is deliberately excluded as too
+    ambiguous).  The belt-and-suspenders rule in app.py catches it.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_writing_preview(session, content="Active note body.")
+
+    session_store.write_session_handoff_state(
+        session.queue,
+        session.session_id,
+        attempted=True,
+        queue_path=str(session.queue),
+        status="submitted",
+        job_id="fake-job-1",
+    )
+
+    async def _pass_reply(**kwargs):
+        return {"answer": "Understood.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    resp = session.chat("update that based on the result")
+    assert resp.status_code == 200
+
+    preview = session.preview()
+    assert preview is not None
+    wf = preview.get("write_file") or {}
+    # Active preview is untouched.
+    assert str(wf.get("path") or "").endswith("essay.md")
+    assert "Active note body." in str(wf.get("content") or "")
+
+
+def test_time_question_still_fires_with_active_preview(tmp_path, monkeypatch):
+    """Non-mutating early-exit branches still run when a preview is active.
+
+    The revision-in-flight flag only short-circuits preview-writing
+    branches. Time, diagnostics refusal, near-miss submit rejection,
+    and stale-draft reference must still fire normally.
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    _install_writing_preview(session)
+
+    # Time question even with an active preview should be answered
+    # deterministically.
+    resp = session.chat("what time is it?")
+    assert resp.status_code == 200
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    # Deterministic time reply contains "local time" (from time_context)
+    # and the preview is still intact.
+    assert "local time" in last_reply.lower() or "utc" in last_reply.lower()
+    preview = session.preview()
+    assert preview is not None
+
+
+def test_early_exit_follow_up_still_works_without_active_preview(tmp_path, monkeypatch):
+    """Revision gate must not disable follow-up lane when no preview exists.
+
+    The flag gates preview-writing branches only when an active normal
+    preview exists. With no preview, the follow-up branch must still
+    behave as before (fail closed honestly when no job is resolvable).
+    """
+    session = make_vera_session(monkeypatch, tmp_path)
+    assert session.preview() is None
+
+    async def _pass_reply(**kwargs):
+        return {"answer": "Understood.", "status": "ok:test"}
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _pass_reply)
+    monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _passthrough_builder)
+
+    # No preview, no job, no evidence — follow-up branch fails closed
+    # with its canonical "no completed job" message (not the stale
+    # draft reference or the near-miss submit).
+    resp = session.chat("draft a follow-up based on the result")
+    assert resp.status_code == 200
+    turns = session.turns()
+    last_reply = [t["text"] for t in turns if t["role"] == "assistant"][-1]
+    # Canonical fail-closed message from the follow-up branch:
+    assert "no completed job" in last_reply.lower() or "follow-up" in last_reply.lower()
+
+
+# ---------------------------------------------------------------------------
+# 7. Early-exit dispatch unit tests: the flag is respected
+# ---------------------------------------------------------------------------
+
+
+class TestEarlyExitRevisionFlag:
+    """Direct unit tests for the active_preview_revision_in_flight parameter."""
+
+    def _call_early_exit(self, tmp_path, message: str, *, flag: bool):
+        from voxera.vera_web.chat_early_exit_dispatch import dispatch_early_exit_intent
+
+        queue = tmp_path / "queue"
+        session_store.write_session_handoff_state(
+            queue,
+            "s1",
+            attempted=True,
+            queue_path=str(queue),
+            status="submitted",
+            job_id="fake-job-1",
+        )
+        return dispatch_early_exit_intent(
+            message=message,
+            diagnostics_service_turn=False,
+            requested_job_id=None,
+            should_attempt_derived_save=False,
+            session_investigation=None,
+            session_derived_output=None,
+            queue_root=queue,
+            session_id="s1",
+            session_context={},
+            active_preview_revision_in_flight=flag,
+        )
+
+    def test_followup_branch_fires_without_flag(self, tmp_path) -> None:
+        result = self._call_early_exit(
+            tmp_path, "draft a follow-up based on the result", flag=False
+        )
+        # With no real evidence in the fake job, the branch enters and
+        # fails closed with its canonical error — that still counts as
+        # "matched" because it claimed the turn.
+        assert result.matched
+
+    def test_followup_branch_skipped_with_flag(self, tmp_path) -> None:
+        result = self._call_early_exit(tmp_path, "draft a follow-up based on the result", flag=True)
+        # With the flag set, the follow-up branch is skipped; no other
+        # preview-writing branch matches this phrase, so the result is
+        # unmatched (falls through to the normal LLM flow).
+        assert not result.matched
+
+    def test_review_branch_still_fires_with_flag(self, tmp_path) -> None:
+        # Review lane is non-mutating, so it still runs.
+        result = self._call_early_exit(tmp_path, "what happened with the last job?", flag=True)
+        assert result.matched
+        assert not result.write_preview
+
+    def test_time_branch_still_fires_with_flag(self, tmp_path) -> None:
+        result = self._call_early_exit(tmp_path, "what time is it?", flag=True)
+        assert result.matched
+        assert not result.write_preview
+
+    def test_near_miss_submit_still_fires_with_flag(self, tmp_path) -> None:
+        # Near-miss submit is also non-mutating (refusal).
+        result = self._call_early_exit(tmp_path, "send iit", flag=True)
+        assert result.matched
+        assert not result.write_preview
+
+
+# ---------------------------------------------------------------------------
+# 8. Gate predicate coverage on follow-up script phrasing
+# ---------------------------------------------------------------------------
+
+
+class TestFollowUpScriptPhrasing:
+    """Phrases that the task brief specifically flagged as follow-up mutations."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "make it a follow-up script",
+            "make that into a follow-up script",
+            "make this into a follow-up script",
+            "turn it into a script",
+            "turn that into a script",
+        ],
+    )
+    def test_follow_up_script_phrasing_matches_revision_gate(self, message: str) -> None:
+        preview = {
+            "goal": "write a file called note.md with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/note.md",
+                "content": "body",
+                "mode": "overwrite",
+            },
+        }
+        assert is_active_preview_revision_turn(message, active_preview=preview)

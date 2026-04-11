@@ -49,6 +49,22 @@ Canonical lane precedence
 Routing precedence is not magic. Each lane still makes its own claim
 in ``app.py``; this module records the order and supplies shared gate
 predicates so overlapping ownership is easier to audit.
+
+Fail-closed rationale
+---------------------
+When a normal active preview is present and the message could be
+interpreted as either "mutate the active preview" or "spawn a new
+evidence-grounded follow-up", we prefer not to mutate the wrong
+object. The :func:`is_active_preview_revision_turn` gate is
+deliberately narrow (specific revision verbs + rename/save-as), so
+``app.py`` layers an additional belt-and-suspenders check over
+evidence-review follow-up phrasing (``is_save_followup_request`` /
+``is_revise_from_evidence_request``) when the active preview is
+normal — this treats ambiguous phrasings as revision candidates so
+the early-exit follow-up branches cannot silently replace the active
+preview. Legitimate evidence-grounded follow-ups still work when no
+active preview is present, or when the user explicitly submits /
+clears the active preview first.
 """
 
 from __future__ import annotations
@@ -152,19 +168,33 @@ _REVISION_VERB_RE = re.compile("|".join(_REVISION_VERB_PATTERNS), re.IGNORECASE)
 def is_normal_preview(preview: dict[str, Any] | None) -> bool:
     """Return True when *preview* is a normal file/script preview.
 
-    A "normal" preview is any active preview that is not an automation
-    definition preview. Normal previews include governed write_file
-    previews (code, script, writing draft), diagnostics previews, and
-    file-organize previews.
+    A "normal" preview is a non-empty preview dict that is not an
+    automation definition. Normal previews include governed write_file
+    previews (code, script, writing draft), mission previews,
+    diagnostics previews, and file-organize previews.
 
     Used by the dispatch layer to distinguish "there's an active
     automation preview under revision" (automation revision lane) from
     "there's an active normal preview" (active-preview revision lane
-    with the automation lifecycle gate turned on).
+    with the automation lifecycle gate turned on). Empty / malformed
+    dicts do not count as "normal" so that revision-lane protections
+    never fire on a phantom preview.
     """
-    if not isinstance(preview, dict):
+    if not isinstance(preview, dict) or not preview:
         return False
-    return preview.get("preview_type") != "automation_definition"
+    if preview.get("preview_type") == "automation_definition":
+        return False
+    # A real preview always carries one of these authoring surfaces.
+    # Any missing-all-surfaces dict is not a real preview we should
+    # protect from revision-lane collisions.
+    return bool(
+        preview.get("goal")
+        or preview.get("write_file")
+        or preview.get("steps")
+        or preview.get("file_organize")
+        or preview.get("mission_id")
+        or preview.get("enqueue_child")
+    )
 
 
 def is_active_preview_revision_turn(

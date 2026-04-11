@@ -48,6 +48,8 @@ from ..vera.draft_revision import (
     looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.evidence_review import (
+    is_revise_from_evidence_request,
+    is_save_followup_request,
     maybe_extract_job_id,
 )
 from ..vera.investigation_derivations import (
@@ -165,6 +167,7 @@ from .preview_content_binding import (
 from .preview_routing import (
     canonical_preview_lane_order,
     is_active_preview_revision_turn,
+    is_normal_preview,
 )
 from .response_shaping import (
     BLANKET_PREVIEW_REFUSAL_TEXT,
@@ -947,6 +950,34 @@ async def chat(request: Request):
     # Intentionally NOT covered here: weather-context LLM lookup (async I/O,
     # below), submit/handoff truth paths, and blocked-file check (after
     # submit checks to preserve ordering).
+    #
+    # Active-preview revision protection: when a clear revision/follow-up
+    # mutation of a normal active preview is in flight, we prevent the
+    # early-exit dispatch's preview-writing branches (follow-up from
+    # evidence, investigation derived-save, investigation save) from
+    # silently overwriting the active preview slot. Non-mutating branches
+    # (time, diagnostics refusal, job review report, near-miss submit
+    # rejection, stale-draft reference) still run — they never touch the
+    # preview.  Computed once and reused by both the early-exit dispatch
+    # and the downstream automation-lifecycle gate.
+    #
+    # Belt-and-suspenders: the narrow revision-gate patterns do not
+    # cover every ambiguous phrase that could hijack an active preview.
+    # When a normal preview is active AND the message is an ambiguous
+    # save/revise-from-evidence phrase, we also mark the revision as in
+    # flight so the early-exit follow-up branches cannot silently
+    # replace the active preview. This is the fail-closed choice: if
+    # the phrase could mean either "mutate this preview" or "spawn a
+    # new evidence follow-up", we prefer not to mutate the wrong object.
+    _active_preview_revision_in_flight = is_active_preview_revision_turn(
+        message, active_preview=pending_preview
+    )
+    if (
+        not _active_preview_revision_in_flight
+        and is_normal_preview(pending_preview)
+        and (is_save_followup_request(message) or is_revise_from_evidence_request(message))
+    ):
+        _active_preview_revision_in_flight = True
     _session_ctx = read_session_context(root, active_session)
     _early = dispatch_early_exit_intent(
         message=message,
@@ -958,6 +989,7 @@ async def chat(request: Request):
         queue_root=root,
         session_id=active_session,
         session_context=_session_ctx,
+        active_preview_revision_in_flight=_active_preview_revision_in_flight,
     )
     if _early.matched:
         if _early.write_preview and isinstance(_early.preview_payload, dict):
@@ -1273,13 +1305,10 @@ async def chat(request: Request):
     # non-automation preview. See ``preview_routing.is_active_preview_
     # revision_turn`` for the conservative gate.
     _last_auto_preview = read_session_last_automation_preview(root, active_session)
-    _lane_active_preview_revision = is_active_preview_revision_turn(
-        message, active_preview=pending_preview
-    )
     if (
         is_automation_lifecycle_intent(message)
         and not (isinstance(pending_preview, dict) and is_automation_preview(pending_preview))
-        and not _lane_active_preview_revision
+        and not _active_preview_revision_in_flight
     ):
         _lifecycle = dispatch_lifecycle_action(
             message,

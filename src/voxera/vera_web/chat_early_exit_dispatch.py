@@ -159,6 +159,7 @@ def dispatch_early_exit_intent(
     queue_root: Path,
     session_id: str,
     session_context: dict[str, Any] | None = None,
+    active_preview_revision_in_flight: bool = False,
 ) -> EarlyExitResult:
     """Evaluate message against all early-exit intent conditions in chat() order.
 
@@ -185,6 +186,19 @@ def dispatch_early_exit_intent(
     - Weather-context pending LLM lookup (requires async I/O).
     - Submit / handoff dispatch (``_submit_handoff`` — truth-sensitive).
     - Blocked-file intent check (ordering: must follow submit checks).
+
+    Active-preview revision protection
+    ----------------------------------
+    When ``active_preview_revision_in_flight`` is ``True`` (the caller has
+    detected a clear revision/follow-up mutation of a normal active
+    preview via ``preview_routing.is_active_preview_revision_turn``),
+    the preview-writing branches below are skipped so they cannot
+    overwrite the active preview with an evidence-grounded follow-up.
+    The non-mutating branches (time, diagnostics refusal, job review
+    report, near-miss submit rejection, stale-draft reference) still
+    run — they do not touch preview state. The read-only investigation
+    compare/summary branches also still run because they only write
+    ``derived_investigation_output``, not the preview.
     """
 
     # ── 1. Time question ──────────────────────────────────────────────────
@@ -259,8 +273,16 @@ def dispatch_early_exit_intent(
     # ── 3. Follow-up preview request ───────────────────────────────────────
     # Follow-up hint phrases enter the branch and fail closed honestly when
     # no job target is resolvable.  Anti-hijack: suppress when the message
-    # is primarily an authored-drafting request.
-    if is_followup_preview_request(message) and not _is_drafting:
+    # is primarily an authored-drafting request OR when the caller has
+    # already determined that a clear active-preview revision is in flight
+    # (e.g. "revise that based on the result" with an active normal preview
+    # — the user is mutating the active preview, not spawning a new
+    # evidence-grounded follow-up that would overwrite it).
+    if (
+        is_followup_preview_request(message)
+        and not _is_drafting
+        and not active_preview_revision_in_flight
+    ):
         handoff = read_session_handoff_state(queue_root, session_id) or {}
         _followup_job_id = str(handoff.get("job_id") or "") or None
         # Session-context fallback for follow-up evidence resolution.
@@ -334,7 +356,9 @@ def dispatch_early_exit_intent(
         )
 
     # ── 4. Investigation derived-save request ──────────────────────────────
-    if should_attempt_derived_save:
+    # Skipped when an active-preview revision is in flight so a derived
+    # save cannot silently overwrite the preview the user is mutating.
+    if should_attempt_derived_save and not active_preview_revision_in_flight:
         derived_preview = draft_investigation_derived_save_preview(
             message,
             derived_output=session_derived_output,
@@ -435,7 +459,11 @@ def dispatch_early_exit_intent(
         # Valid reference — fall through to LLM expansion in normal flow.
 
     # ── 8. Investigation save request ──────────────────────────────────────
-    if is_investigation_save_request(message):
+    # Skipped when an active-preview revision is in flight: a phrase like
+    # "save that" on an active preview must mutate the active preview
+    # (rename / revise), not spawn a new investigation-save preview that
+    # would overwrite it.
+    if is_investigation_save_request(message) and not active_preview_revision_in_flight:
         investigation_preview = draft_investigation_save_preview(
             message,
             investigation_context=session_investigation,

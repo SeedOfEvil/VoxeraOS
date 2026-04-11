@@ -69,6 +69,8 @@ Canonical lane order (defined in `preview_routing.canonical_preview_lane_order`)
 
 Each lane either claims the turn cleanly or fails closed and allows later lanes to try. A lane must not silently mutate a preview that is owned by another lane; the revision-turn gate is the explicit short-circuit that enforces this for normal previews.
 
+The revision-turn gate is threaded into `chat_early_exit_dispatch.dispatch_early_exit_intent` as an explicit `active_preview_revision_in_flight` parameter. When it is true, the evidence-driven preview-writing branches (follow-up from evidence, save-follow-up, revise-from-evidence, investigation derived-save, investigation save) are skipped so they cannot clobber the active preview. The non-mutating branches (time question, diagnostics refusal, job review report, near-miss submit rejection, stale-draft reference) still run. As a belt-and-suspenders layer, `app.py` also treats `is_save_followup_request` and `is_revise_from_evidence_request` matches as revision candidates whenever a normal active preview is present — this catches ambiguous phrases like "save the follow-up as a file" or "update that based on the result" that the narrow revision gate does not.
+
 ## Preview model
 
 Preview is the pre-submit draft object. It is Vera's authoritative surface **before** submit and is also the exact source of the payload that goes to the queue at submit time.
