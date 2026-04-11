@@ -133,6 +133,10 @@ def test_vera_context_present_surfaces_active_topic_and_draft(tmp_path: Path) ->
     assert vera_context["session_id"] == session_id
     assert vera_context["active_topic"] == "weather-briefing"
     assert vera_context["active_draft_ref"] == "draft://notes/weather.md"
+    # Unpopulated continuity fields stay None — no placeholder junk.
+    assert vera_context["last_saved_file_ref"] is None
+    assert vera_context["last_submitted_job_ref"] is None
+    assert vera_context["last_completed_job_ref"] is None
     assert isinstance(vera_context["updated_at_ms"], int)
     assert vera_context["updated_at_ms"] > 0
     # Context is newer than the job's completed_at_ms -> not stale.
@@ -152,8 +156,132 @@ def test_vera_context_present_partial_topic_only(tmp_path: Path) -> None:
     vera_context = payload["vera_context"]
     assert vera_context is not None
     assert vera_context["active_topic"] == "ops-incident"
-    # Partial context: draft ref absent, do not invent a placeholder.
+    # Partial context: other ref fields absent, do not invent placeholders.
     assert vera_context["active_draft_ref"] is None
+    assert vera_context["last_saved_file_ref"] is None
+    assert vera_context["last_submitted_job_ref"] is None
+    assert vera_context["last_completed_job_ref"] is None
+
+
+def test_vera_context_surfaces_when_only_last_saved_file_ref_is_set(
+    tmp_path: Path,
+) -> None:
+    """Real-world case after submit: ``active_topic`` and ``active_draft_ref``
+    are cleared when the draft is handed off, but ``last_saved_file_ref``
+    remains as a continuity signal. The strip must still appear.
+    """
+    queue_root = _make_queue_root(tmp_path)
+    job_name = "inbox-saved-only.json"
+    _write_done_job(queue_root, job_name, completed_at_ms=1_700_000_000_000)
+
+    session_id = "vera-saved-only"
+    _register_session_tracking_job(queue_root, session_id, job_ref=job_name)
+    # No topic, no draft — just the saved file ref from a prior turn.
+    update_session_context(
+        queue_root,
+        session_id,
+        last_saved_file_ref="~/VoxeraOS/notes/audit-note.txt",
+    )
+
+    payload = build_job_detail_payload(queue_root, job_name)
+    vera_context = payload["vera_context"]
+    assert vera_context is not None
+    assert vera_context["active_topic"] is None
+    assert vera_context["active_draft_ref"] is None
+    assert vera_context["last_saved_file_ref"] == "~/VoxeraOS/notes/audit-note.txt"
+    assert vera_context["last_submitted_job_ref"] is None
+
+
+def test_vera_context_surfaces_when_only_last_submitted_job_ref_is_set(
+    tmp_path: Path,
+) -> None:
+    """Real-world case observed in live testing: after a successful submit,
+    Vera's shared context carries ``last_submitted_job_ref`` but has no
+    active topic or active draft. The strip must still surface.
+    """
+    queue_root = _make_queue_root(tmp_path)
+    job_name = "inbox-submitted-only.json"
+    _write_done_job(queue_root, job_name, completed_at_ms=1_700_000_000_000)
+
+    session_id = "vera-submitted-only"
+    _register_session_tracking_job(queue_root, session_id, job_ref=job_name)
+    update_session_context(
+        queue_root,
+        session_id,
+        last_submitted_job_ref="1775943976577-19a07abc",
+    )
+
+    payload = build_job_detail_payload(queue_root, job_name)
+    vera_context = payload["vera_context"]
+    assert vera_context is not None
+    assert vera_context["active_topic"] is None
+    assert vera_context["active_draft_ref"] is None
+    assert vera_context["last_submitted_job_ref"] == "1775943976577-19a07abc"
+
+
+def test_vera_context_surfaces_when_only_last_completed_job_ref_is_set(
+    tmp_path: Path,
+) -> None:
+    """A session that has only observed a completed job still carries a
+    useful continuity signal; the strip surfaces.
+    """
+    queue_root = _make_queue_root(tmp_path)
+    job_name = "inbox-completed-only.json"
+    _write_done_job(queue_root, job_name, completed_at_ms=1_700_000_000_000)
+
+    session_id = "vera-completed-only"
+    _register_session_tracking_job(queue_root, session_id, job_ref=job_name)
+    update_session_context(
+        queue_root,
+        session_id,
+        last_completed_job_ref="inbox-prev-done.json",
+    )
+
+    payload = build_job_detail_payload(queue_root, job_name)
+    vera_context = payload["vera_context"]
+    assert vera_context is not None
+    assert vera_context["last_completed_job_ref"] == "inbox-prev-done.json"
+    assert vera_context["active_topic"] is None
+    assert vera_context["active_draft_ref"] is None
+
+
+def test_vera_context_surfaces_real_world_post_submit_shape(tmp_path: Path) -> None:
+    """End-to-end: real-world shared_context observed in live testing for
+    a Vera-submitted job (active_topic / active_draft_ref cleared;
+    last_submitted_job_ref + last_saved_file_ref populated). The strip
+    must render with the fallback fields and the read-only note.
+    """
+    queue_root = _make_queue_root(tmp_path)
+    job_name = "inbox-real-world.json"
+    terminal_at_ms = 1_775_943_970_000
+    _write_done_job(queue_root, job_name, completed_at_ms=terminal_at_ms)
+
+    session_id = "vera-real-world"
+    _register_session_tracking_job(queue_root, session_id, job_ref=job_name)
+    # Stuff a shared_context that mirrors the live-testing excerpt.
+    session_payload = session_store._read_session_payload(queue_root, session_id)
+    session_payload["shared_context"] = {
+        "active_topic": None,
+        "active_draft_ref": None,
+        "active_preview_ref": None,
+        "last_submitted_job_ref": "1775943976577-19a07abc",
+        "last_completed_job_ref": None,
+        "last_reviewed_job_ref": None,
+        "last_saved_file_ref": "~/VoxeraOS/notes/audit-note.txt",
+        "ambiguity_flags": [],
+        "updated_at_ms": 1_775_943_976_580,
+    }
+    session_store._write_session_payload(queue_root, session_id, session_payload)
+
+    payload = build_job_detail_payload(queue_root, job_name)
+    vera_context = payload["vera_context"]
+    assert vera_context is not None
+    assert vera_context["active_topic"] is None
+    assert vera_context["active_draft_ref"] is None
+    assert vera_context["last_submitted_job_ref"] == "1775943976577-19a07abc"
+    assert vera_context["last_saved_file_ref"] == "~/VoxeraOS/notes/audit-note.txt"
+    # Context updated AFTER terminal -> fresh, not stale.
+    assert vera_context["is_stale"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -441,14 +569,21 @@ def test_vera_context_does_not_leak_from_unrelated_session(tmp_path: Path) -> No
         {"active_topic": "A-topic", "active_draft_ref": "draft://A.md"},
     )
 
-    # Session B tracks a *different* job and has its own loud context.
-    # Its context must never leak into the detail payload for job_name.
+    # Session B tracks a *different* job and has its own loud context
+    # populated across every continuity field — none of these may bleed
+    # into the detail payload for job_name.
     session_b = "vera-unrelated-b"
     _register_session_tracking_job(queue_root, session_b, job_ref="inbox-some-other.json")
     write_session_context(
         queue_root,
         session_b,
-        {"active_topic": "B-topic", "active_draft_ref": "draft://B.md"},
+        {
+            "active_topic": "B-topic",
+            "active_draft_ref": "draft://B.md",
+            "last_saved_file_ref": "~/B-saved.txt",
+            "last_submitted_job_ref": "B-submitted.json",
+            "last_completed_job_ref": "B-completed.json",
+        },
     )
 
     payload = build_job_detail_payload(queue_root, job_name)
@@ -457,9 +592,19 @@ def test_vera_context_does_not_leak_from_unrelated_session(tmp_path: Path) -> No
     assert vera_context["session_id"] == session_a
     assert vera_context["active_topic"] == "A-topic"
     assert vera_context["active_draft_ref"] == "draft://A.md"
+    assert vera_context["last_saved_file_ref"] is None
+    assert vera_context["last_submitted_job_ref"] is None
+    assert vera_context["last_completed_job_ref"] is None
     # Belt-and-suspenders: nothing from session B bleeds through.
-    assert "B-topic" not in json.dumps(vera_context)
-    assert "draft://B.md" not in json.dumps(vera_context)
+    rendered = json.dumps(vera_context)
+    for b_signal in (
+        "B-topic",
+        "draft://B.md",
+        "~/B-saved.txt",
+        "B-submitted.json",
+        "B-completed.json",
+    ):
+        assert b_signal not in rendered
 
 
 def test_vera_context_returns_none_for_job_with_only_unrelated_sessions(
@@ -603,3 +748,47 @@ def test_job_detail_template_hides_vera_activity_strip_when_absent(
     body = res.text
     assert "Vera Activity" not in body
     assert "Read-only shared Vera session context" not in body
+
+
+def test_job_detail_template_renders_fallback_fields_without_topic_or_draft(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Real-world post-submit shape: the strip must render with only
+    ``last_submitted_job_ref`` / ``last_saved_file_ref`` populated, show
+    those rows, and NOT render em-dash placeholder rows for the absent
+    active topic / active draft fields.
+    """
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    for bucket in ("inbox", "pending", "done", "failed", "canceled"):
+        (queue_dir / bucket).mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+
+    job_name = "inbox-render-fallback.json"
+    _write_done_job(queue_dir, job_name, completed_at_ms=1_700_000_000_000)
+
+    session_id = "vera-render-fallback"
+    _register_session_tracking_job(queue_dir, session_id, job_ref=job_name)
+    update_session_context(
+        queue_dir,
+        session_id,
+        last_submitted_job_ref="1775943976577-19a07abc",
+        last_saved_file_ref="~/VoxeraOS/notes/audit-note.txt",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    res = client.get(f"/jobs/{job_name}")
+    assert res.status_code == 200
+    body = res.text
+    assert "Vera Activity" in body
+    assert "Read-only shared Vera session context" in body
+    # Fallback rows render.
+    assert "Last submitted job" in body
+    assert "1775943976577-19a07abc" in body
+    assert "Last saved file" in body
+    assert "~/VoxeraOS/notes/audit-note.txt" in body
+    # Absent fields must NOT render as placeholder rows.
+    assert "Active topic" not in body
+    assert "Active draft" not in body

@@ -65,13 +65,18 @@ Shared-session ``vera_context`` block (read-only, supplemental):
   enforced by matching the job filename against each session's
   ``linked_queue_jobs.tracked[].job_ref`` — context from a session that
   did not submit this job never leaks into the payload. The gate for
-  "usable" requires at least one of ``active_topic`` / ``active_draft_ref``
-  to be a non-empty string, so a context carrying only an
-  ``updated_at_ms`` stamp does not surface an empty strip. Staleness is
-  computed strictly against the state-sidecar ``completed_at_ms``
-  terminal timestamp and is ``None`` whenever either side is missing,
-  so the panel never overclaims fresh/stale on a non-terminal job or
-  on a context with no timestamp.
+  "usable" accepts any of ``active_topic``, ``active_draft_ref``,
+  ``last_saved_file_ref``, ``last_submitted_job_ref``, or
+  ``last_completed_job_ref`` as a non-empty string. Real Vera sessions
+  after submit commonly have only the last-submitted / last-saved
+  fields populated (the active topic / draft are cleared on handoff),
+  so the gate must not require a "live" draft to surface the strip.
+  A context carrying only an ``updated_at_ms`` stamp with no ref
+  signal still returns ``None``. Staleness is computed strictly
+  against the state-sidecar ``completed_at_ms`` terminal timestamp
+  and is ``None`` whenever either side is missing, so the panel
+  never overclaims fresh/stale on a non-terminal job or on a
+  context with no timestamp.
 """
 
 from __future__ import annotations
@@ -219,16 +224,30 @@ def _build_vera_context(
 
     Returns ``None`` when there is no owning Vera session, when the
     session has no shared context yet, or when the stored context has
-    no visible ``active_topic`` / ``active_draft_ref`` signal. The panel
-    is strictly read-only w.r.t. shared session context — this helper
-    never writes, and a missing or wrong session must not leak any
-    other session's context.
+    no operator-visible continuity signal. The panel is strictly
+    read-only w.r.t. shared session context — this helper never
+    writes, and a missing or wrong session must not leak any other
+    session's context.
 
-    Gate (what counts as "usable"): at least one of ``active_topic`` or
-    ``active_draft_ref`` must be a non-empty string. A context whose
-    only non-empty field is ``updated_at_ms`` carries no visible
-    operator-facing signal and is treated as absent so the "Vera
-    Activity" strip does not render as empty noise.
+    Gate (what counts as "usable"): any of the following fields must
+    be a non-empty string:
+
+    * ``active_topic`` — what Vera is currently conversing about;
+    * ``active_draft_ref`` — the current preview / draft in flight;
+    * ``last_saved_file_ref`` — the last operator-visible file save;
+    * ``last_submitted_job_ref`` — the last job submission this
+      session handed off to the queue;
+    * ``last_completed_job_ref`` — the last job the session saw
+      terminate.
+
+    Real Vera sessions after submit commonly have only
+    ``last_submitted_job_ref`` / ``last_saved_file_ref`` populated
+    (``active_topic`` / ``active_draft_ref`` are cleared when the
+    draft is handed off to the queue). Surfacing the strip in that
+    state is the whole point of the continuity aid. A context whose
+    only non-empty field is ``updated_at_ms`` still carries no
+    operator-facing signal and is treated as absent so the strip
+    does not render as empty noise.
 
     Staleness is computed conservatively against the state-sidecar
     ``completed_at_ms`` terminal timestamp:
@@ -252,17 +271,32 @@ def _build_vera_context(
     except Exception:
         return None
 
-    raw_topic = context.get("active_topic")
-    active_topic = raw_topic.strip() if isinstance(raw_topic, str) and raw_topic.strip() else None
-    raw_draft = context.get("active_draft_ref")
-    active_draft_ref = (
-        raw_draft.strip() if isinstance(raw_draft, str) and raw_draft.strip() else None
-    )
+    def _clean_ref(key: str) -> str | None:
+        raw = context.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return None
 
-    # Gate: require at least one visible operator-facing signal. A
-    # context with only updated_at_ms > 0 (and no topic/draft) is
-    # treated as absent to avoid rendering an empty strip.
-    if active_topic is None and active_draft_ref is None:
+    active_topic = _clean_ref("active_topic")
+    active_draft_ref = _clean_ref("active_draft_ref")
+    last_saved_file_ref = _clean_ref("last_saved_file_ref")
+    last_submitted_job_ref = _clean_ref("last_submitted_job_ref")
+    last_completed_job_ref = _clean_ref("last_completed_job_ref")
+
+    # Gate: require at least one visible operator-facing signal across
+    # the documented continuity fields. A context with only
+    # updated_at_ms > 0 (and no ref fields) is treated as absent to
+    # avoid rendering an empty strip.
+    if all(
+        ref is None
+        for ref in (
+            active_topic,
+            active_draft_ref,
+            last_saved_file_ref,
+            last_submitted_job_ref,
+            last_completed_job_ref,
+        )
+    ):
         return None
 
     updated_at_ms = _coerce_positive_int(context.get("updated_at_ms"))
@@ -279,6 +313,9 @@ def _build_vera_context(
         "session_id": session_id,
         "active_topic": active_topic,
         "active_draft_ref": active_draft_ref,
+        "last_saved_file_ref": last_saved_file_ref,
+        "last_submitted_job_ref": last_submitted_job_ref,
+        "last_completed_job_ref": last_completed_job_ref,
         "updated_at_ms": updated_at_ms,
         "is_stale": is_stale,
     }

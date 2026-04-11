@@ -1,3 +1,43 @@
+## 2026-04-11 — review(panel): broaden vera_context visibility gate to surface post-submit continuity signals
+
+- **Motivation**: live testing against a real Vera-submitted job proved the session/job lookup path is correct (the session file exists, the job is correctly linked in `linked_queue_jobs.tracked`, and `_find_vera_session_id_for_job` returns the right session), but the Vera Activity strip was still hidden because the initial visibility gate required `active_topic` or `active_draft_ref` to be a non-empty string. Real Vera sessions after submit commonly have both of those cleared — the draft has been handed off to the queue — and only `last_submitted_job_ref` / `last_saved_file_ref` remain as operator-visible continuity signals. The strip must appear in that state; that is the whole point of the continuity aid.
+- **Scope (deliberately bounded)**:
+  - Broaden the "usable" gate in `_build_vera_context` to accept any of `active_topic`, `active_draft_ref`, `last_saved_file_ref`, `last_submitted_job_ref`, or `last_completed_job_ref` as a non-empty string.
+  - Expand the returned `vera_context` payload to carry `last_saved_file_ref` / `last_submitted_job_ref` / `last_completed_job_ref` alongside the existing fields.
+  - Teach the template to render those fields as conditional rows — no em-dash placeholder rows for absent fields, strip stays modest.
+  - Extend `tests/test_panel_session_context.py` to cover the real-world post-submit shapes, tighten wrong-session isolation across the new fields, and add a template render test for the fallback case.
+  - Do NOT change the read-only invariant, the wrong-session isolation rule, the conservative staleness rule, the 33-key top-level detail payload shape lock, queue-truth precedence, or any panel route.
+  - Do NOT widen `_find_vera_session_id_for_job` or add any mutation helper.
+- **Root cause**: the original gate was `if active_topic is None and active_draft_ref is None: return None`. This correctly avoided rendering an empty strip for a context carrying only `updated_at_ms`, but it also hid the strip for the dominant real-world shape where the session has successfully handed off the draft and now holds only the last-submitted / last-saved refs.
+- **Fix — `src/voxera/panel/job_detail_sections.py`**: the gate now checks all five documented continuity fields (`active_topic`, `active_draft_ref`, `last_saved_file_ref`, `last_submitted_job_ref`, `last_completed_job_ref`) and returns `None` only if every one of them is `None` after normalization. A local `_clean_ref(key)` helper normalizes each field to `None` or a stripped non-empty string, so whitespace-only values still fall through to absent. The module docstring now lists all five signal fields and notes explicitly that real Vera sessions after submit commonly have only the last-submitted / last-saved fields populated, so the gate must not require a "live" draft.
+- **Expanded `vera_context` payload shape** (now 8 fields, all reads only):
+  ```
+  {
+      "session_id": str,
+      "active_topic": str | None,
+      "active_draft_ref": str | None,
+      "last_saved_file_ref": str | None,
+      "last_submitted_job_ref": str | None,
+      "last_completed_job_ref": str | None,
+      "updated_at_ms": int,
+      "is_stale": bool | None,
+  }
+  ```
+  The top-level job-detail payload shape lock (`_EXPECTED_JOB_DETAIL_KEYS` = 33 keys) still holds — `vera_context` is the same single top-level key, only its inner shape grew.
+- **Template — `src/voxera/panel/templates/job_detail.html`**: each ref field renders as a conditional `<dt>`/`<dd>` row (`{% if payload.vera_context.active_topic %}...{% endif %}`) so absent fields simply do not render. The freshness label always renders when the strip is visible. No em-dash placeholder rows leak into the rendered page. The "Read-only shared Vera session context. Supplemental only — canonical queue/artifact truth remains primary." note is unchanged.
+- **Test coverage expansion — `tests/test_panel_session_context.py` (19 → 24 tests)**:
+  - `test_vera_context_surfaces_when_only_last_saved_file_ref_is_set` — session with only `last_saved_file_ref` populated → strip appears.
+  - `test_vera_context_surfaces_when_only_last_submitted_job_ref_is_set` — session with only `last_submitted_job_ref` populated → strip appears. Mirrors the exact live-testing shape.
+  - `test_vera_context_surfaces_when_only_last_completed_job_ref_is_set` — session with only `last_completed_job_ref` populated → strip appears.
+  - `test_vera_context_surfaces_real_world_post_submit_shape` — end-to-end with the exact shared_context excerpt observed in live testing (`active_topic=None`, `active_draft_ref=None`, `last_submitted_job_ref="1775943976577-19a07abc"`, `last_saved_file_ref="~/VoxeraOS/notes/audit-note.txt"`, `updated_at_ms=1775943976580`) asserts the strip surfaces and correctly computes fresh vs. stale against the terminal timestamp.
+  - `test_job_detail_template_renders_fallback_fields_without_topic_or_draft` — end-to-end `TestClient` render: a post-submit session renders the strip with "Last submitted job" / "Last saved file" rows and does NOT render "Active topic" / "Active draft" rows.
+  - `test_vera_context_does_not_leak_from_unrelated_session` — hardened: the unrelated session now populates every ref field (`active_topic`, `active_draft_ref`, `last_saved_file_ref`, `last_submitted_job_ref`, `last_completed_job_ref`) with distinctive "B-*" strings, and the test asserts that none of them appear in the owning session's surfaced context. Wrong-session isolation continues to hold across the broadened gate.
+  - `test_vera_context_present_surfaces_active_topic_and_draft` and `test_vera_context_present_partial_topic_only` — updated to assert that the new ref fields are `None` when unpopulated (no placeholder junk).
+  - `test_vera_context_absent_when_only_updated_at_ms_is_set` — still holds: a context with no ref signals still returns `None` regardless of `updated_at_ms`. The tightening the review commit added is preserved.
+- **Validation run**: focused tests `tests/test_panel_session_context.py` (24), `tests/test_panel_job_detail_shaping_extraction.py` (14), `tests/test_panel.py` (full panel suite), `tests/test_shared_session_context.py`, `tests/test_shared_session_context_integration.py` — all green. Full ladder (`ruff format --check .`, `ruff check .`, `mypy src/voxera`, `pytest -q`, `make golden-check`, `make security-check`, `make validation-check`, `make merge-readiness-check`) all green.
+- **Files touched**: `src/voxera/panel/job_detail_sections.py` (broadened gate + expanded payload + docstring), `src/voxera/panel/templates/job_detail.html` (conditional rows for the new fields), `tests/test_panel_session_context.py` (+5 tests; 1 existing test hardened), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/CODEX_MEMORY.md`.
+- **Invariants preserved**: panel reads shared context only; panel never mutates shared context; `vera_context` is supplemental, not execution truth; missing context is non-fatal; wrong-session context does not leak (now verified across all five ref fields); staleness labeling stays conservative (strict `<` against state-sidecar `completed_at_ms`, `None` when undecidable).
+
 ## 2026-04-11 — feat(panel): show shared Vera session context on job detail
 
 - **Motivation**: now that PR D extracted the job-detail payload builder into `src/voxera/panel/job_detail_sections.py`, the panel has a clean surface to attach a small, read-only shared Vera session context block to the job-detail page. This is a tight, product-facing enhancement that helps operators see which active topic / active draft Vera is tracking when they land on a job. The panel reads shared context only and never mutates it — canonical queue / artifact truth remains primary, and `vera_context` is supplemental continuity only.
