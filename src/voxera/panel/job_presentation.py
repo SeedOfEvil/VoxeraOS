@@ -58,6 +58,26 @@ def job_context_summary(
     }
 
 
+def job_artifact_flags(queue_root: Path, job_id: str) -> dict[str, bool]:
+    """Return the four-artifact presence flags for the jobs listing row.
+
+    Mirrors the original ``panel.app._job_artifact_flags`` exactly: derives
+    the artifacts directory from ``queue_root / "artifacts" / Path(job_id).stem``
+    and checks for the four canonical artifact filenames (``plan.json``,
+    ``actions.jsonl``, ``stdout.txt``, ``stderr.txt``). This helper powers
+    the per-row artifact chips on ``GET /jobs`` and is deliberately kept
+    tiny and pure.
+    """
+
+    artifacts_dir = queue_root / "artifacts" / Path(job_id).stem
+    return {
+        "plan": (artifacts_dir / "plan.json").exists(),
+        "actions": (artifacts_dir / "actions.jsonl").exists(),
+        "stdout": (artifacts_dir / "stdout.txt").exists(),
+        "stderr": (artifacts_dir / "stderr.txt").exists(),
+    }
+
+
 def job_artifact_inventory(
     *,
     artifacts_dir: Path,

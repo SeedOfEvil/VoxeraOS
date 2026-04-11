@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import subprocess  # noqa: F401 (re-export so tests monkeypatching panel.app.subprocess.run still drive queue_mutation_bridge)
 import sys  # noqa: F401 (re-export so tests asserting panel.app.sys.executable still resolve)
@@ -14,10 +13,8 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from ..audit import log, tail
+from ..audit import log
 from ..config import load_config as load_runtime_config
-from ..core.queue_inspect import lookup_job, queue_snapshot
-from ..core.queue_result_consumers import resolve_structured_execution
 from ..health_semantics import build_health_semantic_sections
 from ..version import get_version
 from . import routes_assistant as _routes_assistant
@@ -26,9 +23,12 @@ from .auth_enforcement import require_mutation_guard as _require_mutation_guard
 from .auth_enforcement import require_operator_basic_auth as _require_operator_basic_auth
 from .helpers import coerce_int as _coerce_int
 from .helpers import request_value as _request_value
-from .job_detail_sections import build_job_detail_sections as _build_job_detail_sections
-from .job_presentation import job_artifact_inventory as _job_artifact_inventory
-from .job_presentation import operator_outcome_summary as _operator_outcome_summary
+from .job_detail_sections import build_job_detail_payload as _build_job_detail_payload_impl
+from .job_detail_sections import build_job_progress_payload as _build_job_progress_payload_impl
+from .job_presentation import job_artifact_flags as _job_artifact_flags_impl
+from .job_presentation import (
+    operator_outcome_summary as _operator_outcome_summary,  # noqa: F401 (re-export for tests/test_panel.py::test_operator_outcome_summary_semantics_precedence_characterization)
+)
 from .queue_mutation_bridge import (
     run_queue_hygiene_command,
     write_hygiene_result,
@@ -450,86 +450,6 @@ def _write_panel_mission_job(*, prompt: str, approval_required: bool) -> tuple[s
     )
 
 
-def _artifact_text(path: Path, *, max_chars: int = 8000) -> str:
-    if not path.exists():
-        return ""
-    text = path.read_text(encoding="utf-8", errors="replace")
-    return text[:max_chars] + ("\n...[truncated]..." if len(text) > max_chars else "")
-
-
-def _safe_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _load_actions(path: Path, *, limit: int = 200) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    actions: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not line.strip():
-            continue
-        try:
-            event = json.loads(line)
-        except Exception:
-            event = {"raw": line}
-        if isinstance(event, dict):
-            actions.append(event)
-    return list(reversed(actions[-limit:]))
-
-
-def _read_generated_files(artifacts_dir: Path) -> list[str]:
-    generated = artifacts_dir / "outputs" / "generated_files.json"
-    if not generated.exists():
-        return []
-    try:
-        payload = json.loads(generated.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
-        return []
-    return [str(item) for item in payload] if isinstance(payload, list) else []
-
-
-def _payload_lineage(payload: dict[str, Any]) -> dict[str, Any] | None:
-    lineage_keys = (
-        "parent_job_id",
-        "root_job_id",
-        "orchestration_depth",
-        "sequence_index",
-        "lineage_role",
-    )
-    if not any(key in payload for key in lineage_keys):
-        return None
-
-    def _clean_str(value: Any) -> str | None:
-        if not isinstance(value, str):
-            return None
-        cleaned = value.strip()
-        return cleaned or None
-
-    def _clean_int(value: Any) -> int | None:
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            return None
-        return parsed if parsed >= 0 else None
-
-    role_raw = _clean_str(payload.get("lineage_role"))
-    role = role_raw.lower() if role_raw and role_raw.lower() in {"root", "child"} else None
-    depth = _clean_int(payload.get("orchestration_depth"))
-    return {
-        "parent_job_id": _clean_str(payload.get("parent_job_id")),
-        "root_job_id": _clean_str(payload.get("root_job_id")),
-        "orchestration_depth": depth if depth is not None else 0,
-        "sequence_index": _clean_int(payload.get("sequence_index")),
-        "lineage_role": role,
-    }
-
-
 def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, Any]:
     # Thin wrapper so route-registration callbacks keep the same
     # (queue_root, args) signature while the bridge logic lives in
@@ -546,297 +466,27 @@ def _write_hygiene_result(queue_root: Path, key: str, result: dict[str, Any]) ->
 
 
 def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
-    lookup = lookup_job(queue_root, job_id)
-    if lookup is None:
-        stem = Path(job_id).stem
-        artifacts_dir = queue_root / "artifacts" / stem
-        if not artifacts_dir.exists():
-            raise HTTPException(status_code=404, detail="job not found")
-        primary: dict[str, Any] = {}
-        approval: dict[str, Any] = {}
-        failed_sidecar: dict[str, Any] = {}
-        bucket = "unknown"
-        job_name = f"{stem}.json"
-    else:
-        primary = _safe_json(lookup.primary_path)
-        approval = _safe_json(lookup.approval_path) if lookup.approval_path else {}
-        failed_sidecar = (
-            _safe_json(lookup.failed_sidecar_path) if lookup.failed_sidecar_path else {}
-        )
-        artifacts_dir = lookup.artifacts_dir
-        bucket = lookup.bucket
-        job_name = lookup.job_id
-        approval_path = lookup.approval_path
-        failed_sidecar_path = lookup.failed_sidecar_path
-
-    if lookup is None:
-        approval_path = (
-            queue_root / "pending" / "approvals" / f"{Path(job_name).stem}.approval.json"
-        )
-        failed_sidecar_path = queue_root / "failed" / f"{Path(job_name).stem}.error.json"
-
-    state_sidecar: dict[str, Any] = {}
-    stem = Path(job_name).stem
-    state_candidates = [
-        queue_root / bucket / f"{stem}.state.json"
-        for bucket in ("pending", "inbox", "done", "failed", "canceled")
-    ]
-    for state_path in state_candidates:
-        if not state_path.exists():
-            continue
-        loaded = _safe_json(state_path)
-        if loaded:
-            state_sidecar = loaded
-            break
-
-    artifact_files = (
-        [
-            child.relative_to(artifacts_dir).as_posix()
-            for child in sorted(artifacts_dir.rglob("*"))
-            if child.is_file()
-        ]
-        if artifacts_dir.exists()
-        else []
-    )
-
-    snapshot = queue_snapshot(queue_root)
-    relevant_events = [
-        item
-        for item in reversed(tail(200))
-        if job_name in str(item.get("job", ""))
-        or item.get("event") in {"queue_job_failed", "queue_job_done"}
-    ]
-    actions = _load_actions(artifacts_dir / "actions.jsonl")
-    artifact_inventory, artifact_anomalies = _job_artifact_inventory(
-        artifacts_dir=artifacts_dir,
-        approval_path=approval_path if approval_path and approval_path.exists() else None,
-        failed_sidecar_path=failed_sidecar_path
-        if failed_sidecar_path and failed_sidecar_path.exists()
-        else None,
-        state_sidecar_paths=state_candidates,
-        bucket=bucket,
-    )
-    structured_execution = resolve_structured_execution(
-        artifacts_dir=artifacts_dir,
-        state_sidecar=state_sidecar,
-        approval=approval,
-        failed_sidecar=failed_sidecar,
-    )
-    audit_timeline = relevant_events[:40]
-    detail_sections = _build_job_detail_sections(
-        primary=primary,
-        state_sidecar=state_sidecar,
-        approval=approval,
-        failed_sidecar=failed_sidecar,
-        structured_execution=structured_execution,
-        artifacts_dir=artifacts_dir,
-        approval_path=approval_path if approval_path and approval_path.exists() else None,
-        failed_sidecar_path=failed_sidecar_path
-        if failed_sidecar_path and failed_sidecar_path.exists()
-        else None,
-        state_sidecar_paths=state_candidates,
-        bucket=bucket,
-        actions=actions,
-        audit_timeline=audit_timeline,
-    )
-    lineage = (
-        structured_execution.get("lineage")
-        if isinstance(structured_execution.get("lineage"), dict)
-        else None
-    )
-    if lineage is None:
-        lineage = _payload_lineage(primary)
-    state_job_payload = state_sidecar.get("payload")
-    if lineage is None and isinstance(state_job_payload, dict):
-        lineage = _payload_lineage(state_job_payload)
-    return {
-        "job_id": job_name,
-        "bucket": bucket,
-        "job": primary,
-        "approval": approval,
-        "state": state_sidecar,
-        "failed_sidecar": failed_sidecar,
-        "lock": snapshot.get("lock_status", {}),
-        "paused": snapshot.get("paused", False),
-        "plan": _safe_json(artifacts_dir / "plan.json"),
-        "actions": actions,
-        "stdout": _artifact_text(artifacts_dir / "stdout.txt", max_chars=64 * 1024),
-        "stderr": _artifact_text(artifacts_dir / "stderr.txt", max_chars=64 * 1024),
-        "generated_files": _read_generated_files(artifacts_dir),
-        "artifact_files": artifact_files,
-        "artifact_inventory": artifact_inventory,
-        "artifact_anomalies": artifact_anomalies,
-        "job_context": detail_sections["job_context"],
-        "lineage": lineage,
-        "child_refs": structured_execution.get("child_refs")
-        if isinstance(structured_execution.get("child_refs"), list)
-        else [],
-        "child_summary": structured_execution.get("child_summary")
-        if isinstance(structured_execution.get("child_summary"), dict)
-        else None,
-        "execution": structured_execution,
-        "operator_summary": detail_sections["operator_summary"],
-        "policy_rationale": detail_sections["policy_rationale"],
-        "evidence_summary": detail_sections["evidence_summary"],
-        "why_stopped": detail_sections["why_stopped"],
-        "recent_timeline": detail_sections["recent_timeline"],
-        "artifacts_dir": str(artifacts_dir),
-        "audit_timeline": audit_timeline,
-        "has_approval": bool(approval),
-        "can_cancel": bucket in {"inbox", "pending", "approvals"},
-        "can_retry": bucket in {"failed", "canceled"},
-        "can_delete": bucket in {"done", "failed", "canceled"},
-    }
+    # Thin wrapper over the extracted job_detail_sections entry point so
+    # ``register_job_routes(job_detail_payload=_job_detail_payload)`` keeps
+    # the same ``(queue_root, job_id) -> dict`` signature while the builder
+    # logic lives in ``job_detail_sections.build_job_detail_payload``.
+    return _build_job_detail_payload_impl(queue_root, job_id)
 
 
 def _job_progress_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
-    payload = _job_detail_payload(queue_root, job_id)
-
-    execution_raw = payload.get("execution")
-    execution: dict[str, Any] = execution_raw if isinstance(execution_raw, dict) else {}
-
-    job_context_raw = payload.get("job_context")
-    job_context: dict[str, Any] = job_context_raw if isinstance(job_context_raw, dict) else {}
-
-    state_raw = payload.get("state")
-    state_payload: dict[str, Any] = state_raw if isinstance(state_raw, dict) else {}
-
-    approval_raw = payload.get("approval")
-    approval: dict[str, Any] = approval_raw if isinstance(approval_raw, dict) else {}
-
-    timeline_raw = payload.get("recent_timeline")
-    timeline: list[Any] = timeline_raw if isinstance(timeline_raw, list) else []
-
-    lifecycle_state = str(
-        execution.get("lifecycle_state")
-        or state_payload.get("lifecycle_state")
-        or payload.get("bucket")
-        or "unknown"
-    )
-    terminal_outcome = str(
-        execution.get("terminal_outcome") or state_payload.get("terminal_outcome") or ""
-    )
-    bucket = str(payload.get("bucket") or "unknown")
-
-    is_success_terminal = (
-        terminal_outcome == "succeeded" or lifecycle_state == "done" or bucket == "done"
-    )
-    is_failed_terminal = terminal_outcome in {"failed", "blocked", "canceled"} or bucket in {
-        "failed",
-        "canceled",
-    }
-
-    raw_failure_summary = str(job_context.get("failure_summary") or execution.get("error") or "")
-    failure_summary: str | None = (
-        raw_failure_summary if is_failed_terminal and raw_failure_summary else None
-    )
-
-    raw_stop_reason = str(execution.get("stop_reason") or "")
-    stop_reason: str | None = raw_stop_reason if is_failed_terminal and raw_stop_reason else None
-
-    filtered_timeline: list[Any] = []
-    for item in timeline:
-        if not isinstance(item, dict):
-            continue
-        event_name = str(item.get("event") or "")
-        if is_success_terminal and event_name in {"queue_job_failed", "assistant_advisory_failed"}:
-            continue
-        if is_failed_terminal and event_name in {"queue_job_done", "assistant_job_done"}:
-            continue
-        filtered_timeline.append(item)
-
-    fast_lane_raw = execution.get("fast_lane")
-    intent_route_raw = execution.get("intent_route")
-    review_summary_raw = execution.get("review_summary")
-    review_summary = review_summary_raw if isinstance(review_summary_raw, dict) else {}
-    minimum_artifacts_raw = review_summary.get("minimum_artifacts")
-    minimum_artifacts = minimum_artifacts_raw if isinstance(minimum_artifacts_raw, dict) else None
-    operator_summary = _operator_outcome_summary(
-        bucket=bucket,
-        execution=execution,
-        state_sidecar=state_payload,
-        job_context=job_context,
-        has_approval=bool(approval),
-    )
-
-    return {
-        "ok": True,
-        "job_id": payload.get("job_id") or f"{Path(job_id).stem}.json",
-        "bucket": bucket,
-        "lifecycle_state": lifecycle_state,
-        "terminal_outcome": terminal_outcome,
-        "current_step_index": int(
-            execution.get("current_step_index") or state_payload.get("current_step_index") or 0
-        ),
-        "total_steps": int(execution.get("total_steps") or state_payload.get("total_steps") or 0),
-        "last_attempted_step": int(
-            execution.get("last_attempted_step") or state_payload.get("last_attempted_step") or 0
-        ),
-        "last_completed_step": int(
-            execution.get("last_completed_step") or state_payload.get("last_completed_step") or 0
-        ),
-        "approval_status": str(
-            execution.get("approval_status")
-            or job_context.get("approval_status")
-            or ("pending" if approval else "none")
-        ),
-        "execution_lane": str(execution.get("execution_lane") or ""),
-        "fast_lane": fast_lane_raw if isinstance(fast_lane_raw, dict) else None,
-        "intent_route": intent_route_raw if isinstance(intent_route_raw, dict) else None,
-        "lineage": payload.get("lineage") if isinstance(payload.get("lineage"), dict) else None,
-        "child_refs": payload.get("child_refs")
-        if isinstance(payload.get("child_refs"), list)
-        else [],
-        "child_summary": payload.get("child_summary")
-        if isinstance(payload.get("child_summary"), dict)
-        else None,
-        "parent_job_id": (
-            payload.get("lineage", {}).get("parent_job_id")
-            if isinstance(payload.get("lineage"), dict)
-            else None
-        ),
-        "root_job_id": (
-            payload.get("lineage", {}).get("root_job_id")
-            if isinstance(payload.get("lineage"), dict)
-            else None
-        ),
-        "orchestration_depth": (
-            payload.get("lineage", {}).get("orchestration_depth")
-            if isinstance(payload.get("lineage"), dict)
-            else None
-        ),
-        "sequence_index": (
-            payload.get("lineage", {}).get("sequence_index")
-            if isinstance(payload.get("lineage"), dict)
-            else None
-        ),
-        "latest_summary": str(execution.get("latest_summary") or ""),
-        "operator_note": str(execution.get("operator_note") or ""),
-        "operator_summary": operator_summary,
-        "failure_summary": failure_summary,
-        "stop_reason": stop_reason,
-        "artifacts": {
-            "plan": bool(payload.get("plan")),
-            "actions": bool(payload.get("actions")),
-            "stdout": bool(payload.get("stdout")),
-            "stderr": bool(payload.get("stderr")),
-            "minimum_contract": minimum_artifacts,
-        },
-        "step_summaries": execution.get("step_summaries")
-        if isinstance(execution.get("step_summaries"), list)
-        else [],
-        "recent_timeline": filtered_timeline[:12],
-    }
+    # Thin wrapper over the extracted job_detail_sections entry point so
+    # ``register_job_routes(job_progress_payload=_job_progress_payload)``
+    # keeps the same ``(queue_root, job_id) -> dict`` signature while the
+    # builder logic lives in ``job_detail_sections.build_job_progress_payload``.
+    return _build_job_progress_payload_impl(queue_root, job_id)
 
 
 def _job_artifact_flags(queue_root: Path, job_id: str) -> dict[str, bool]:
-    artifacts_dir = queue_root / "artifacts" / Path(job_id).stem
-    return {
-        "plan": (artifacts_dir / "plan.json").exists(),
-        "actions": (artifacts_dir / "actions.jsonl").exists(),
-        "stdout": (artifacts_dir / "stdout.txt").exists(),
-        "stderr": (artifacts_dir / "stderr.txt").exists(),
-    }
+    # Thin wrapper over the extracted job_presentation entry point so
+    # ``register_job_routes(job_artifact_flags=_job_artifact_flags)`` keeps
+    # the same ``(queue_root, job_id) -> dict[str, bool]`` signature while
+    # the helper logic lives in ``job_presentation.job_artifact_flags``.
+    return _job_artifact_flags_impl(queue_root, job_id)
 
 
 def _last_activity(artifacts_dir: Path) -> str:
