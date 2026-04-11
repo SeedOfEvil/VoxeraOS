@@ -105,7 +105,7 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 - `test_code_draft_intent.py`
 
 ### Panel + panel contract snapshot
-- `test_panel.py`
+- `test_panel.py` — operator Basic-auth 401 paths, CSRF 403 guard, per-IP lockout 429 behavior, panel security counters, and lockout/window semantics are exercised end-to-end through the FastAPI `TestClient`. These tests pin the auth-enforcement behavior that is now implemented in `src/voxera/panel/auth_enforcement.py` and consumed by `panel/app.py` via `require_operator_basic_auth` / `require_mutation_guard`. Lockout tests monkeypatch `panel_module._now_ms`; because `auth_enforcement` reaches back through the `panel.app` module for the shared wrappers (`_now_ms`, `_health_queue_root`, `_panel_security_counter_incr`), the patches still drive the auth flow exactly as before.
 - `test_panel_automations.py` — automation dashboard routes: list page, detail page, enable/disable, run-now (queue-submitting only), history display, missing/malformed handling, auth/mutation guard.
 - `test_panel_contract_snapshot.py`
 - `test_operator_assistant_queue.py`
