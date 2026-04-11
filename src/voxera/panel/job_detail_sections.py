@@ -49,6 +49,34 @@ Semantics preserved exactly:
   ``HTTPException(404, "job not found")`` when ``lookup_job`` returns
   ``None`` AND the artifacts directory does not exist, matching the
   original in-app behavior.
+
+Shared-session ``vera_context`` block (read-only, supplemental):
+
+* ``build_job_detail_payload`` optionally attaches a ``vera_context``
+  dict to the job-detail payload when the job belongs to a Vera session
+  that has a usable shared context (see
+  ``voxera.vera.session_store.read_session_context``). This is a
+  continuity aid only — canonical queue / artifact truth remains
+  primary, and the panel is strictly read-only with respect to the
+  shared context surface. The lookup is fail-soft: missing session
+  directory, missing session file, malformed session payload, empty
+  or signal-less context, or no owning session all produce
+  ``vera_context: None`` without raising. Wrong-session isolation is
+  enforced by matching the job filename against each session's
+  ``linked_queue_jobs.tracked[].job_ref`` — context from a session that
+  did not submit this job never leaks into the payload. The gate for
+  "usable" accepts any of ``active_topic``, ``active_draft_ref``,
+  ``last_saved_file_ref``, ``last_submitted_job_ref``, or
+  ``last_completed_job_ref`` as a non-empty string. Real Vera sessions
+  after submit commonly have only the last-submitted / last-saved
+  fields populated (the active topic / draft are cleared on handoff),
+  so the gate must not require a "live" draft to surface the strip.
+  A context carrying only an ``updated_at_ms`` stamp with no ref
+  signal still returns ``None``. Staleness is computed strictly
+  against the state-sidecar ``completed_at_ms`` terminal timestamp
+  and is ``None`` whenever either side is missing, so the panel
+  never overclaims fresh/stale on a non-terminal job or on a
+  context with no timestamp.
 """
 
 from __future__ import annotations
@@ -62,6 +90,7 @@ from fastapi import HTTPException
 from ..audit import tail
 from ..core.queue_inspect import lookup_job, queue_snapshot
 from ..core.queue_result_consumers import resolve_structured_execution
+from ..vera.session_store import read_session_context
 from .job_presentation import (
     evidence_summary_rows,
     job_artifact_inventory,
@@ -121,6 +150,175 @@ def _read_generated_files(artifacts_dir: Path) -> list[str]:
     except Exception:
         return []
     return [str(item) for item in payload] if isinstance(payload, list) else []
+
+
+def _find_vera_session_id_for_job(queue_root: Path, job_name: str) -> str | None:
+    """Return the Vera session id that tracks ``job_name``, if any.
+
+    Fail-soft, read-only scan of ``queue_root/artifacts/vera_sessions/*.json``
+    for a session whose ``linked_queue_jobs.tracked[].job_ref`` matches the
+    job filename. Returns ``None`` when no session tracks the job, when the
+    sessions directory does not exist, or when any session file is
+    unreadable / malformed. Never raises. Never writes.
+
+    The panel must only ever *read* shared session context, so this lookup
+    strictly isolates the job-to-session binding: only a session that has
+    explicitly registered this job via ``register_session_linked_job`` is
+    a valid match. A context from any other session must not leak into
+    the job-detail payload.
+    """
+
+    needle = Path(job_name).name.strip()
+    if not needle:
+        return None
+    sessions_dir = queue_root / "artifacts" / "vera_sessions"
+    if not sessions_dir.exists() or not sessions_dir.is_dir():
+        return None
+    try:
+        session_files = sorted(sessions_dir.glob("*.json"))
+    except OSError:
+        return None
+    for session_file in session_files:
+        if not session_file.is_file():
+            continue
+        payload = _safe_json(session_file)
+        if not payload:
+            continue
+        registry = payload.get("linked_queue_jobs")
+        if not isinstance(registry, dict):
+            continue
+        tracked = registry.get("tracked")
+        if not isinstance(tracked, list):
+            continue
+        for item in tracked:
+            if not isinstance(item, dict):
+                continue
+            job_ref = str(item.get("job_ref") or "").strip()
+            if job_ref == needle:
+                session_id = str(payload.get("session_id") or session_file.stem).strip()
+                return session_id or None
+    return None
+
+
+def _coerce_positive_int(value: Any) -> int:
+    """Return ``value`` as a positive int, or 0 for anything else.
+
+    Defensive against ``bool`` (which is a subclass of ``int`` in
+    Python): treats ``True`` / ``False`` as 0 so a stray boolean in a
+    session file never masquerades as a timestamp.
+    """
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value > 0:
+        return value
+    return 0
+
+
+def _build_vera_context(
+    queue_root: Path,
+    job_name: str,
+    *,
+    state_sidecar: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Shape the optional read-only ``vera_context`` block for job detail.
+
+    Returns ``None`` when there is no owning Vera session, when the
+    session has no shared context yet, or when the stored context has
+    no operator-visible continuity signal. The panel is strictly
+    read-only w.r.t. shared session context — this helper never
+    writes, and a missing or wrong session must not leak any other
+    session's context.
+
+    Gate (what counts as "usable"): any of the following fields must
+    be a non-empty string:
+
+    * ``active_topic`` — what Vera is currently conversing about;
+    * ``active_draft_ref`` — the current preview / draft in flight;
+    * ``last_saved_file_ref`` — the last operator-visible file save;
+    * ``last_submitted_job_ref`` — the last job submission this
+      session handed off to the queue;
+    * ``last_completed_job_ref`` — the last job the session saw
+      terminate.
+
+    Real Vera sessions after submit commonly have only
+    ``last_submitted_job_ref`` / ``last_saved_file_ref`` populated
+    (``active_topic`` / ``active_draft_ref`` are cleared when the
+    draft is handed off to the queue). Surfacing the strip in that
+    state is the whole point of the continuity aid. A context whose
+    only non-empty field is ``updated_at_ms`` still carries no
+    operator-facing signal and is treated as absent so the strip
+    does not render as empty noise.
+
+    Staleness is computed conservatively against the state-sidecar
+    ``completed_at_ms`` terminal timestamp:
+
+    * ``is_stale`` is ``True`` when the context was last updated
+      strictly before the job's terminal completion time (the context
+      has not caught up to the job's terminal outcome);
+    * ``is_stale`` is ``False`` when the context's ``updated_at_ms`` is
+      at or after the terminal time (same-millisecond counts as fresh);
+    * ``is_stale`` is ``None`` when there is not enough data to judge
+      safely — for example the job has not reached a terminal state
+      yet, or the context has no ``updated_at_ms`` stamp. We
+      deliberately do not invent a timestamp or guess.
+    """
+
+    session_id = _find_vera_session_id_for_job(queue_root, job_name)
+    if not session_id:
+        return None
+    try:
+        context = read_session_context(queue_root, session_id)
+    except Exception:
+        return None
+
+    def _clean_ref(key: str) -> str | None:
+        raw = context.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return None
+
+    active_topic = _clean_ref("active_topic")
+    active_draft_ref = _clean_ref("active_draft_ref")
+    last_saved_file_ref = _clean_ref("last_saved_file_ref")
+    last_submitted_job_ref = _clean_ref("last_submitted_job_ref")
+    last_completed_job_ref = _clean_ref("last_completed_job_ref")
+
+    # Gate: require at least one visible operator-facing signal across
+    # the documented continuity fields. A context with only
+    # updated_at_ms > 0 (and no ref fields) is treated as absent to
+    # avoid rendering an empty strip.
+    if all(
+        ref is None
+        for ref in (
+            active_topic,
+            active_draft_ref,
+            last_saved_file_ref,
+            last_submitted_job_ref,
+            last_completed_job_ref,
+        )
+    ):
+        return None
+
+    updated_at_ms = _coerce_positive_int(context.get("updated_at_ms"))
+    terminal_at_ms = _coerce_positive_int(
+        state_sidecar.get("completed_at_ms") if isinstance(state_sidecar, dict) else None
+    )
+
+    if terminal_at_ms > 0 and updated_at_ms > 0:
+        is_stale: bool | None = updated_at_ms < terminal_at_ms
+    else:
+        is_stale = None
+
+    return {
+        "session_id": session_id,
+        "active_topic": active_topic,
+        "active_draft_ref": active_draft_ref,
+        "last_saved_file_ref": last_saved_file_ref,
+        "last_submitted_job_ref": last_submitted_job_ref,
+        "last_completed_job_ref": last_completed_job_ref,
+        "updated_at_ms": updated_at_ms,
+        "is_stale": is_stale,
+    }
 
 
 def _payload_lineage(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -328,6 +526,11 @@ def build_job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
     state_job_payload = state_sidecar.get("payload")
     if lineage is None and isinstance(state_job_payload, dict):
         lineage = _payload_lineage(state_job_payload)
+    vera_context = _build_vera_context(
+        queue_root,
+        job_name,
+        state_sidecar=state_sidecar,
+    )
     return {
         "job_id": job_name,
         "bucket": bucket,
@@ -365,6 +568,7 @@ def build_job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
         "can_cancel": bucket in {"inbox", "pending", "approvals"},
         "can_retry": bucket in {"failed", "canceled"},
         "can_delete": bucket in {"done", "failed", "canceled"},
+        "vera_context": vera_context,
     }
 
 
