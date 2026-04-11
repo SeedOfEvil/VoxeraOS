@@ -131,6 +131,29 @@ class TestFormatElapsedSinceMs:
         result = format_elapsed_since_ms(past_ms)
         assert "second" in result or "just now" in result
 
+    def test_future_timestamp_is_flagged(self) -> None:
+        """A future timestamp passed to format_elapsed_since_ms must not
+        fabricate a past — it should clearly indicate the timestamp is
+        in the future."""
+        now_ms = 1_700_000_000_000
+        future_ms = now_ms + 60_000  # 1 minute in the future
+        result = format_elapsed_since_ms(future_ms, now_ms=now_ms)
+        assert result == "in the future"
+
+    def test_boundary_at_one_minute(self) -> None:
+        """Exactly 60 seconds should roll over to '1 minute ago', not '60 seconds'."""
+        now_ms = 1_700_000_000_000
+        past_ms = now_ms - 60_000
+        result = format_elapsed_since_ms(past_ms, now_ms=now_ms)
+        assert "1 minute" in result
+        assert "second" not in result
+
+    def test_boundary_at_one_hour(self) -> None:
+        now_ms = 1_700_000_000_000
+        past_ms = now_ms - 3_600_000
+        result = format_elapsed_since_ms(past_ms, now_ms=now_ms)
+        assert "1 hour" in result
+
 
 # ---------------------------------------------------------------------------
 # 3. Time-until formatting
@@ -169,6 +192,14 @@ class TestFormatTimeUntilMs:
         future_ms = now_ms + 840_000  # 14 minutes from now
         result = format_time_until_ms(future_ms, now_ms=now_ms)
         assert "14 minute" in result
+
+    def test_past_timestamp_is_flagged(self) -> None:
+        """A past timestamp passed to format_time_until_ms must not fabricate
+        a future — it should clearly indicate the timestamp is already past."""
+        now_ms = 1_700_000_000_000
+        past_ms = now_ms - 60_000
+        result = format_time_until_ms(past_ms, now_ms=now_ms)
+        assert result == "already past"
 
 
 # ---------------------------------------------------------------------------
@@ -230,9 +261,79 @@ class TestDescribeTimestampMs:
         assert "triggered:" in result
         assert "1 hour" in result
 
+    def test_describe_future_timestamp_uses_time_until(self) -> None:
+        """Future timestamps should produce 'in about ...' phrasing, not 'ago'."""
+        now = datetime(2025, 6, 15, 15, 0, 0, tzinfo=timezone.utc)
+        now_ms = int(now.timestamp() * 1000)
+        ts = now_ms + 3_600_000  # 1 hour from now
+        result = describe_timestamp_ms(ts, label="Next run", now_ms=now_ms, now=now)
+        assert "Next run:" in result
+        assert "in about 1 hour" in result
+        assert "ago" not in result
+
+    def test_describe_next_run_tomorrow(self) -> None:
+        """Tomorrow's next run is classified correctly."""
+        now = datetime(2025, 6, 15, 23, 30, 0, tzinfo=timezone.utc)
+        now_ms = int(now.timestamp() * 1000)
+        ts = now_ms + 3_600_000  # 1 hour -> crosses midnight to June 16
+        result = describe_next_run_ms(ts, now_ms=now_ms, now=now)
+        assert "tomorrow" in result
+        assert "in about 1 hour" in result
+
+    def test_describe_last_run_yesterday(self) -> None:
+        """Yesterday's last run is classified correctly."""
+        now = datetime(2025, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
+        now_ms = int(now.timestamp() * 1000)
+        # 20 hours ago crosses midnight backward into June 14
+        ts = now_ms - 20 * 3_600_000
+        result = describe_last_run_ms(ts, now_ms=now_ms, now=now)
+        assert "yesterday" in result
+        # Elapsed should report hours, not days
+        assert "hour" in result
+
 
 # ---------------------------------------------------------------------------
-# 6. Time question detection and answers
+# 6. UTC offset and timezone formatting
+# ---------------------------------------------------------------------------
+
+
+class TestUtcOffsetFormatting:
+    def test_utc_offset_zero(self) -> None:
+        fixed = datetime(2025, 6, 15, 14, 0, 0, tzinfo=timezone.utc)
+        ctx = current_time_context(now=fixed)
+        assert ctx.utc_offset == "UTC+00:00"
+
+    def test_utc_offset_negative(self) -> None:
+        from datetime import timedelta
+
+        tz_minus_four = timezone(timedelta(hours=-4))
+        fixed = datetime(2025, 6, 15, 10, 0, 0, tzinfo=tz_minus_four)
+        ctx = current_time_context(now=fixed)
+        assert ctx.utc_offset == "UTC-04:00"
+        # Local ISO should reflect the local time, not UTC
+        assert ctx.local_iso == "2025-06-15 10:00:00"
+        # UTC ISO should be +4 hours (2 PM UTC for 10 AM in UTC-4)
+        assert ctx.utc_iso == "2025-06-15 14:00:00"
+
+    def test_utc_offset_positive_with_minutes(self) -> None:
+        from datetime import timedelta
+
+        # India Standard Time: UTC+05:30
+        tz_india = timezone(timedelta(hours=5, minutes=30))
+        fixed = datetime(2025, 6, 15, 14, 0, 0, tzinfo=tz_india)
+        ctx = current_time_context(now=fixed)
+        assert ctx.utc_offset == "UTC+05:30"
+
+    def test_date_human_single_digit_day_not_zero_padded(self) -> None:
+        """Natural phrasing: 'June 5, 2025' not 'June 05, 2025'."""
+        fixed = datetime(2025, 6, 5, 14, 0, 0, tzinfo=timezone.utc)
+        ctx = current_time_context(now=fixed)
+        assert "June 5, 2025" in ctx.date_human
+        assert "June 05, 2025" not in ctx.date_human
+
+
+# ---------------------------------------------------------------------------
+# 7. Time question detection and answers
 # ---------------------------------------------------------------------------
 
 
@@ -268,6 +369,76 @@ class TestTimeQuestionDetection:
         # "How long ago did that run?" is not a simple time question;
         # it's a lifecycle question handled by automation lifecycle.
         assert is_time_question("How long ago did that run?") is False
+
+    # ── False-positive guards ──
+    # Time-question detection runs FIRST in early-exit dispatch, so these
+    # phrases must NOT be matched even though they contain time-ish words.
+
+    def test_lifecycle_phrase_what_date_did_you_save(self) -> None:
+        assert is_time_question("What date did you save that automation?") is False
+
+    def test_lifecycle_phrase_show_me_what_time_it_ran(self) -> None:
+        assert is_time_question("Show me what time it ran") is False
+
+    def test_lifecycle_phrase_what_time_did_that_run(self) -> None:
+        assert is_time_question("What time did that run?") is False
+
+    def test_drafting_phrase_what_date_should_i_pick(self) -> None:
+        assert is_time_question("What date should I pick?") is False
+
+    def test_lifecycle_phrase_when_will_it_run(self) -> None:
+        # "when will it run" is a SHOW lifecycle intent, not a time question
+        assert is_time_question("When will it run?") is False
+
+    def test_conversational_phrase_current_time_since(self) -> None:
+        assert is_time_question("current time since last run") is False
+
+    def test_drafting_phrase_tell_me_the_time_of_event(self) -> None:
+        assert is_time_question("Can you tell me the time of that event?") is False
+
+    def test_not_a_question_current_time_and_date_are(self) -> None:
+        assert is_time_question("Current time and date are approximate") is False
+
+    # ── Positive coverage for new/extended patterns ──
+
+    def test_what_is_the_date(self) -> None:
+        assert is_time_question("What is the date?") is True
+
+    def test_whats_todays_date(self) -> None:
+        assert is_time_question("What's today's date?") is True
+
+    def test_what_date_is_today(self) -> None:
+        assert is_time_question("What date is today?") is True
+
+    def test_tell_me_the_date(self) -> None:
+        assert is_time_question("Tell me the date") is True
+
+    def test_tell_me_the_time(self) -> None:
+        assert is_time_question("Tell me the time") is True
+
+    def test_tell_me_the_current_time(self) -> None:
+        assert is_time_question("Tell me the current time") is True
+
+    def test_what_day_of_the_week(self) -> None:
+        assert is_time_question("What day of the week is it?") is True
+
+    def test_what_time_is_it_right_now(self) -> None:
+        assert is_time_question("What time is it right now?") is True
+
+    def test_what_time_is_it_here(self) -> None:
+        assert is_time_question("What time is it here?") is True
+
+    def test_whats_the_timezone(self) -> None:
+        assert is_time_question("What's the timezone?") is True
+
+    def test_local_time_bare(self) -> None:
+        assert is_time_question("local time") is True
+
+    def test_case_insensitive(self) -> None:
+        assert is_time_question("WHAT TIME IS IT") is True
+
+    def test_multiple_punctuation(self) -> None:
+        assert is_time_question("what time is it?!") is True
 
 
 class TestAnswerTimeQuestion:

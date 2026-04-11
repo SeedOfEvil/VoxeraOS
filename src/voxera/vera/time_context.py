@@ -64,7 +64,7 @@ def current_time_context(*, now: datetime | None = None) -> TimeContext:
         utc_offset=offset,
         epoch_ms=int(now.timestamp() * 1000),
         day_of_week=now.strftime("%A"),
-        date_human=now.strftime("%A, %B %d, %Y"),
+        date_human=now.strftime("%A, %B %-d, %Y"),
     )
 
 
@@ -73,9 +73,11 @@ def current_time_summary(*, now: datetime | None = None) -> str:
 
     Example: "It's Sunday, June 15, 2025 at 2:32 PM (America/New_York, UTC-04:00)."
     """
-    ctx = current_time_context(now=now)
+    # Capture once so the context and the time string cannot straddle a
+    # second/minute boundary.
     if now is None:
         now = datetime.now(tz=timezone.utc).astimezone()
+    ctx = current_time_context(now=now)
     time_str = now.strftime("%-I:%M %p")
     return f"It's {ctx.date_human} at {time_str} ({ctx.timezone_name}, {ctx.utc_offset})."
 
@@ -255,16 +257,38 @@ def describe_last_run_ms(
 # Time-question intent detection
 # ---------------------------------------------------------------------------
 
+# Patterns are end-anchored so the phrase must be the complete question, not
+# a substring of a larger request like "what date did you save that?".
+# Time-question detection runs FIRST in early-exit dispatch, so it must not
+# hijack lifecycle/drafting questions.
+#
+# ``_END`` matches optional trailing punctuation and whitespace then end of string.
+_END = r"\s*[.?!]*\s*$"
+
 _TIME_QUESTION_PATTERNS = (
-    r"\bwhat\s+time\s+is\s+it\b",
-    r"\bwhat\'?s?\s+the\s+(?:current\s+|local\s+)?time\b",
-    r"\bcurrent\s+time\b",
-    r"\bwhat\s+(?:day|date)\s+is\s+it\b",
-    r"\bwhat\s+(?:day|date)\s+is\s+(?:today|it\s+today)\b",
-    r"\bwhat\s+time\s+(?:is\s+it\s+)?(?:here|on\s+this\s+(?:box|machine|system))\b",
-    r"\bwhat\s+(?:is\s+)?(?:today\'?s?\s+)?date\b",
-    r"\bwhat\s+timezone\b",
-    r"\bwhat\s+tz\b",
+    # "what time is it" / "what time is it now" / "what time is it right now" /
+    # "what time is it here" / "what time is it on this box|machine|system"
+    r"\bwhat\s+time\s+is\s+it"
+    r"(?:\s+(?:right\s+)?now|\s+here|\s+on\s+this\s+(?:box|machine|system))?" + _END,
+    # "what's the time" / "what is the time" / "what's the current/local time"
+    r"\bwhat(?:\s+is|'s|s)\s+the\s+(?:current\s+|local\s+)?time" + _END,
+    # "tell me the time" / "tell me the current/local time"
+    r"\btell\s+me\s+the\s+(?:current\s+|local\s+)?time" + _END,
+    # bare "current time" / "local time"
+    r"^\s*(?:current|local)\s+time" + _END,
+    # "what day/date is it" / "what day/date is it today" / "what day/date is today"
+    r"\bwhat\s+(?:day|date)\s+is\s+(?:it(?:\s+today)?|today)" + _END,
+    # "what's the date" / "what is the date" / "what's today's date"
+    r"\bwhat(?:\s+is|'s|s)\s+(?:the|today'?s?)\s+date" + _END,
+    # "tell me the date" / "tell me today's date"
+    r"\btell\s+me\s+(?:the|today'?s?)\s+date" + _END,
+    # "today's date" (bare)
+    r"^\s*today'?s?\s+date" + _END,
+    # "what day of the week is it"
+    r"\bwhat\s+day\s+of\s+the\s+week\s+is\s+it" + _END,
+    # "what timezone" / "what tz" / "what's the timezone"
+    r"\bwhat(?:\s+is|'s|s)?\s+(?:the\s+)?time\s*zone" + _END,
+    r"\bwhat\s+tz" + _END,
 )
 
 

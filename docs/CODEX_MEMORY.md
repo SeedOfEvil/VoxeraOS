@@ -1,3 +1,22 @@
+## 2026-04-11 — review(ai): polish time-aware context helpers and tighten time-question detection
+
+- **Motivation**: review pass on the time-aware context PR. Found four correctness/quality issues and closed them before merge.
+- **Fix 1 — `current_time_summary` boundary skew**: the helper called `datetime.now()` twice (once via `current_time_context`, once for the formatted time string), so the context and the rendered time could straddle a second/minute boundary. Now captures `now` once and reuses it.
+- **Fix 2 — zero-padded day format**: `date_human` used `%d` which produces "June 05, 2025" instead of natural "June 5, 2025". Switched to `%-d` (GNU strftime, matches the existing `%-I:%M %p` convention in the same module).
+- **Fix 3 — `is_time_question` false positives**: the previous patterns were substring-matched (`\b...\b`) and would hijack lifecycle/drafting phrases like "What date did you save that automation?", "Show me what time it ran", "What time did that run?", "current time since last run", "Can you tell me the time of that event?". Since time-question detection runs FIRST in early-exit dispatch, any hijack would bypass real lifecycle intent. Patterns are now end-anchored (`\s*[.?!]*\s*$`) so they only fire on complete questions, with richer positive coverage for "what's the date", "what is today's date", "tell me the time", "what day of the week is it", "what's the timezone", etc.
+- **Fix 4 — prompt wording tightening**: `roles/vera.md` Time-Aware Reasoning section now frames capabilities as concrete behaviors ("every Vera conversation includes a structured time-context block", "Simple time/date/timezone questions are answered deterministically from the system clock before the LLM path runs") instead of abstract claims. Adds explicit guidance for the "no `next_run_at_ms` yet" case: describe the schedule from trigger config and state that the runner has not yet scheduled the first fire. `capabilities/output-quality-defaults.md` Time-Aware Responses now distinguishes precise seconds from approximate minutes/hours/days and explicitly forbids reconstructing run history from a schedule.
+- **Tests added** (`tests/test_time_context.py`, now 96 total):
+  - `TestDescribeTimestampMs.test_describe_future_timestamp_uses_time_until` — future timestamps use "in about" not "ago"
+  - `TestDescribeTimestampMs.test_describe_next_run_tomorrow` — next run crossing midnight classifies as tomorrow
+  - `TestDescribeTimestampMs.test_describe_last_run_yesterday` — last run crossing midnight backward classifies as yesterday
+  - `TestUtcOffsetFormatting` — UTC+00:00, UTC-04:00, UTC+05:30 (India, with minutes), and single-digit day non-padding
+  - `TestFormatElapsedSinceMs.test_future_timestamp_is_flagged` / `test_boundary_at_one_minute` / `test_boundary_at_one_hour`
+  - `TestFormatTimeUntilMs.test_past_timestamp_is_flagged`
+  - 21 new `TestTimeQuestionDetection` cases covering false-positive guards (lifecycle hijacks) and the expanded positive coverage
+- **Validation**: `ruff format --check .`, `ruff check .`, `mypy` on all 5 modified source files — all clean. 86 pure unit tests pass locally; the remaining 10 tests in `tests/test_time_context.py` require the full venv (pydantic, platformdirs, httpx) and will run in CI.
+- **Files touched**: `src/voxera/vera/time_context.py`, `docs/prompts/roles/vera.md`, `docs/prompts/capabilities/output-quality-defaults.md`, `tests/test_time_context.py`, `docs/CODEX_MEMORY.md`.
+- **Non-goals for the review pass**: no new runtime features, no projected-next-run inference from trigger_config (would duplicate runner logic — deferred as follow-up), no geolocation, no parser rewrites.
+
 ## 2026-04-10 — feat(ai): add time-aware conversational context and refresh instruction surfaces
 
 - **Motivation**: with automation runner and timer in place, time-sensitive conversational questions ("how long ago did that run?", "when will it fire?", "what time is it?") are much more important. The system needed to answer these questions naturally and accurately, grounded in the system clock and canonical timestamps.
