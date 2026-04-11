@@ -399,6 +399,39 @@ def test_performance_stats_view_counts_and_historical_counters() -> None:
     assert view["historical_counters"]["panel_429_count"] == 0
 
 
+def test_performance_stats_view_populated_history_line_formatting() -> None:
+    # Pins the populated-path f-string templates for the three recent-history
+    # lines (``last_fallback_line`` / ``last_error_line`` / ``last_shutdown_line``)
+    # so a later PR can't silently tweak the format. Covers the populated
+    # branch that the ``test_home_performance_history_missing_shows_dash``
+    # HTTP test does not. Uses the flat ``last_fallback_*`` input shape that
+    # ``build_health_semantic_sections`` reads to populate
+    # ``recent_history.last_brain_fallback``.
+    view = health_view_helpers.performance_stats_view(
+        {},
+        {
+            "last_fallback_reason": "timeout",
+            "last_fallback_from": "primary",
+            "last_fallback_to": "fallback",
+            "last_fallback_ts_ms": 1700000000000,
+            "last_error": "boom",
+            "last_error_ts_ms": 1700000000000,
+            "last_shutdown_outcome": "failed_shutdown",
+            "last_shutdown_reason": "KeyboardInterrupt",
+            "last_shutdown_job": "job-5.json",
+            "last_shutdown_ts": 1700000000.0,
+        },
+    )
+    recent = view["recent_history"]
+    assert recent["last_fallback_line"] == (
+        "timeout (primary → fallback) @ 2023-11-14 22:13:20 UTC"
+    )
+    assert recent["last_error_line"] == "boom @ 2023-11-14 22:13:20 UTC"
+    assert recent["last_shutdown_line"] == (
+        "failed_shutdown / KeyboardInterrupt / job-5.json @ 2023-11-14 22:13:20 UTC"
+    )
+
+
 def test_panel_app_thin_wrappers_forward_to_helpers() -> None:
     # The thin wrappers must produce byte-for-byte identical results to
     # the extracted helpers when called with the same inputs.
