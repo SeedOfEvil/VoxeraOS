@@ -22,6 +22,11 @@ and enables/starts:
 - `voxera-daemon.service`
 - `voxera-panel.service`
 - `voxera-vera.service`
+- `voxera-automation.timer`
+
+`voxera-automation.service` is copied alongside the other units but is not enabled directly —
+it is a oneshot worker owned by `voxera-automation.timer` (see the Automation timer/service
+section below).
 
 Vera service runtime defaults:
 - host: `127.0.0.1`
@@ -328,12 +333,16 @@ voxera automation run-due-once --id <automation_id>     # same, restricted to a 
 
 ### Automation timer/service
 
-The `voxera-automation.timer` systemd unit invokes `voxera automation run-due-once` every minute. The runner acquires a single-writer lock (`<queue_root>/automations/.runner.lock`) before evaluating definitions. If the lock is already held (e.g. by a concurrent manual invocation), the runner exits cleanly with a `BUSY` message — no definitions are loaded and no queue jobs are submitted.
+The automation runner is **timer-owned**: `voxera-automation.service` is the oneshot worker, and `voxera-automation.timer` owns the schedule. The timer invokes `voxera automation run-due-once` every minute. The runner acquires a single-writer lock (`<queue_root>/automations/.runner.lock`) before evaluating definitions. If the lock is already held (e.g. by a concurrent manual invocation), the runner exits cleanly with a `BUSY` message — no definitions are loaded and no queue jobs are submitted.
 
-The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory), so it is directly valid without the `make services-install` sed render step. You can install it manually or via `make services-install`:
+The automation service has no `[Install]` section; it is never enabled directly. Only the timer is enabled in the normal install path, and it triggers the oneshot service on each tick. The service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory), so it is directly valid without the `make services-install` sed render step.
+
+You can install via `make services-install` or manually:
 
 ```bash
-# install via make (copies + enables all units including the automation timer)
+# install via make (copies all units, enables the long-running services + the
+# automation timer, and starts them). The automation service is copied but
+# not directly enabled — the timer owns its cadence.
 make services-install
 
 # or install manually
@@ -345,11 +354,14 @@ systemctl --user enable --now voxera-automation.timer
 # check timer status
 systemctl --user status voxera-automation.timer
 
-# check most recent one-shot run
+# check most recent one-shot run (service stays addressable for status/logs)
 systemctl --user status voxera-automation.service
 
 # view automation runner logs
 journalctl --user -u voxera-automation.service --no-pager -n 20
+
+# manual debugging run (timer not required)
+systemctl --user start voxera-automation.service
 ```
 
 The timer uses `Persistent=true`, so missed ticks after a sleep or reboot are caught up on the next wake. `recurring_cron` and `watch_path` trigger kinds remain deferred — the runner skips them with an explicit `skipped` status.

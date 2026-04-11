@@ -239,6 +239,21 @@ def test_automation_service_unit_exists_and_has_correct_shape() -> None:
     assert "ExecStart=%h/VoxeraOS/.venv/bin/voxera" in unit
 
 
+def test_automation_service_is_timer_owned_not_directly_enabled() -> None:
+    """The automation service is a oneshot worker owned by its timer.
+
+    It must not advertise ``WantedBy=default.target`` (or any other
+    ``[Install]`` wiring) — the timer is the thing users enable, and the
+    service is triggered through it. The unit stays directly addressable
+    for status/logs/manual start.
+    """
+    unit = (SYSTEMD_DIR / "voxera-automation.service").read_text(encoding="utf-8")
+    assert "WantedBy=default.target" not in unit
+    assert "WantedBy=timers.target" not in unit
+    # No [Install] section at all — the timer owns scheduling.
+    assert "[Install]" not in unit
+
+
 def test_automation_timer_unit_exists_and_has_correct_cadence() -> None:
     unit = (SYSTEMD_DIR / "voxera-automation.timer").read_text(encoding="utf-8")
     assert "OnCalendar=minutely" in unit
@@ -246,7 +261,60 @@ def test_automation_timer_unit_exists_and_has_correct_cadence() -> None:
     assert "timers.target" in unit
 
 
+def test_automation_timer_is_enableable_under_timers_target() -> None:
+    """The timer is what users enable; it must advertise timers.target."""
+    unit = (SYSTEMD_DIR / "voxera-automation.timer").read_text(encoding="utf-8")
+    assert "[Install]" in unit
+    assert "WantedBy=timers.target" in unit
+
+
 def test_automation_units_in_makefile() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     assert "voxera-automation.service" in makefile
     assert "voxera-automation.timer" in makefile
+
+
+def test_makefile_install_enables_timer_not_automation_service() -> None:
+    """`make services-install` must enable the timer, not the service.
+
+    The service remains in ``VOXERA_UNITS`` (so it is copied into
+    ``~/.config/systemd/user/`` and is addressable for status/logs/manual
+    start), but it must not be in the subset the install target actually
+    enables.
+    """
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    # The full unit set still carries the automation service (it must be
+    # copied on install so the timer can trigger it).
+    assert (
+        "VOXERA_UNITS := voxera-daemon.service voxera-panel.service "
+        "voxera-vera.service voxera-automation.service voxera-automation.timer" in makefile
+    )
+
+    # There is a separate "enabled" subset that drops the automation service
+    # and keeps the automation timer.
+    assert (
+        "VOXERA_ENABLED_UNITS := voxera-daemon.service voxera-panel.service "
+        "voxera-vera.service voxera-automation.timer" in makefile
+    )
+
+    # The install recipe still copies the full VOXERA_UNITS set (so the
+    # oneshot worker unit is shipped on disk even though it is not enabled).
+    assert "for unit in $(VOXERA_UNITS); do" in makefile
+
+    # The install target enables the subset, not the full set.
+    assert "systemctl --user enable --now $(VOXERA_ENABLED_UNITS)" in makefile
+    assert "systemctl --user enable --now $(VOXERA_UNITS)" not in makefile
+
+
+def test_makefile_disable_targets_enabled_subset_only() -> None:
+    """`make services-disable` must operate on the enabled subset.
+
+    Disabling the oneshot automation service would be a no-op at best and
+    a warning at worst — systemctl refuses to disable a unit without an
+    ``[Install]`` section. ``services-disable`` should mirror the install
+    recipe and target ``VOXERA_ENABLED_UNITS`` only.
+    """
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    assert "systemctl --user disable --now $(VOXERA_ENABLED_UNITS)" in makefile
+    assert "systemctl --user disable --now $(VOXERA_UNITS)" not in makefile

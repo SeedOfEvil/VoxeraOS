@@ -100,19 +100,19 @@ Canonical units live under `deploy/systemd/user/`:
   ```
   ExecStart=@VOXERA_PROJECT_DIR@/.venv/bin/python -m uvicorn voxera.vera_web.app:app --host 127.0.0.1 --port 8790
   ```
-- `voxera-automation.service` (one-shot, directly valid — uses `%h/VoxeraOS`)
+- `voxera-automation.service` (one-shot, directly valid — uses `%h/VoxeraOS`, timer-owned, no `[Install]` section)
   ```
   ExecStart=%h/VoxeraOS/.venv/bin/voxera automation run-due-once
   ```
-- `voxera-automation.timer`
+- `voxera-automation.timer` (`WantedBy=timers.target`)
   ```
   OnCalendar=minutely
   Persistent=true
   ```
 
-The three long-running services declare `Restart=on-failure`, a 2-second restart backoff, and `WantedBy=default.target`. The daemon unit additionally caps `TimeoutStopSec=10` so graceful SIGTERM shutdown has room to write its shutdown sidecar. The automation service is `Type=oneshot` — it evaluates due definitions once per timer tick and exits. The timer fires every minute with `Persistent=true` so missed ticks after a sleep/reboot are caught up on the next wake.
+The three long-running services declare `Restart=on-failure`, a 2-second restart backoff, and `WantedBy=default.target`. The daemon unit additionally caps `TimeoutStopSec=10` so graceful SIGTERM shutdown has room to write its shutdown sidecar. The automation service is `Type=oneshot` — it evaluates due definitions once per timer tick and exits. It is **timer-owned**: it has no `[Install]` section and is not enabled directly. Scheduling is owned entirely by `voxera-automation.timer`, which fires every minute with `Persistent=true` so missed ticks after a sleep/reboot are caught up on the next wake. The service stays directly addressable for status (`systemctl --user status voxera-automation.service`), logs (`journalctl --user -u voxera-automation.service`), and manual start for debugging.
 
-`make services-install` rewrites `@VOXERA_PROJECT_DIR@` to the absolute project path, copies the units into `$HOME/.config/systemd/user/`, runs `daemon-reload`, and enables + starts them with `systemctl --user`. The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory) so it loads without the sed render step; `make services-install` still copies and enables it alongside the other units.
+`make services-install` rewrites `@VOXERA_PROJECT_DIR@` to the absolute project path, copies **all** units (including `voxera-automation.service`) into `$HOME/.config/systemd/user/`, runs `daemon-reload`, and then enables + starts the **enabled subset** with `systemctl --user`: `voxera-daemon.service`, `voxera-panel.service`, `voxera-vera.service`, and `voxera-automation.timer`. The automation service is copied but not directly enabled — the timer owns its cadence. The automation service uses `%h/VoxeraOS` directly (systemd resolves `%h` to the user's home directory) so it loads without the sed render step.
 
 The top-level `systemd/` folder still carries `voxera-core.service` and `voxera-panel.service` as legacy references (they use `%h/VoxeraOS` directly). The supported path is `deploy/systemd/user/`.
 
