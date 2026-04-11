@@ -179,6 +179,9 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 - `test_vera_automation_lifecycle.py` — covers conversational lifecycle management of saved automation definitions via `src/voxera/vera/automation_lifecycle.py`: intent classification for show/enable/disable/delete/run-now/history requests; reference resolution from session context, explicit id, title match, and single-definition fallback; ambiguous references fail closed with clarification; show describes a saved definition truthfully from the canonical store; enable/disable persist the change; delete removes the definition but preserves history; "did it run?" answers truthfully when no history exists; history surfaces canonical run records; run-now uses the existing runner path and does not bypass the queue; ordinary automation authoring and non-automation flows remain unchanged; context lifecycle integration tracks active topic.
 - `test_automation_lock.py` — covers the automation runner single-writer lock (`src/voxera/automation/lock.py`) and locked runner wrapper (`run_due_automations_locked`): lock acquisition succeeds on first try; second concurrent attempt returns busy; release allows reacquisition; locked runner returns busy with empty results when lock is held; locked runner submits normally when lock is available; summary message reflects outcomes; empty queue returns ok; systemd unit files exist with correct shape, command, and cadence wiring.
 
+### Time-aware context
+- `test_time_context.py` — covers the time-context helpers in `src/voxera/vera/time_context.py`: current time context returns structured data; deterministic snapshot with fixed `now`; UTC offset formatting for zero/negative/positive-with-minutes (UTC+05:30); single-digit-day natural phrasing; elapsed-time formatting for recent timestamps including boundary cases; time-until formatting for future timestamps; past/future flagging in the `_since_ms` / `_until_ms` wrappers; relative-day classification (today/yesterday/tomorrow/explicit date); automation timing descriptions for past, future, crossing-midnight-tomorrow, and crossing-midnight-yesterday cases; time question detection and direct answers from the system clock; false-positive guards for lifecycle/drafting hijacks ("what date did you save that?", "what time did that run?", "current time since last run"); no fabricated execution history when timestamps are absent; prompt/instruction surfaces reflect time-aware capability; time context block for prompt injection; operator assistant system prompt includes time context; early exit dispatch handles time questions.
+
 ### Prompt surface integrity
 - `test_prompts.py` — prompt doc loading, composition ordering, role-capability wiring, output-quality-defaults presence across all roles, automation awareness in shared prompts, unsupported features not marked active, save-vs-execute wording, non-empty structured output from all composed prompts.
 
@@ -250,6 +253,7 @@ The "sync, test, validate" method used for meaningful PRs (see `Testing-Method.t
 | Automation runner / history | `test_automation_runner.py` |
 | Automation operator CLI | `test_automation_operator_cli.py` |
 | Vera automation lifecycle management | `test_vera_automation_lifecycle.py` |
+| Time-aware context / timing helpers | `test_time_context.py`, `src/voxera/vera/time_context.py` |
 | AI instruction prompts / system prompt docs | `test_prompts.py`, `docs/prompts/**/*.md`, `src/voxera/prompts.py` |
 | Docs consistency | `test_docs_consistency.py` |
 

@@ -11,6 +11,7 @@ from typing import Any
 from .audit import tail
 from .health import read_health_snapshot
 from .health_semantics import build_health_semantic_sections
+from .vera.time_context import time_context_block
 
 ASSISTANT_JOB_KIND = "assistant_question"
 _MAX_THREAD_TURNS = 12
@@ -204,6 +205,7 @@ def build_assistant_messages(
     *,
     thread_turns: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, str]]:
+    time_info = time_context_block()
     system = (
         "You are VoxeraOS speaking from inside your queue-driven control plane. "
         "Sound like an operator's technical partner: first-hand, grounded, interpretive, and concise. "
@@ -219,7 +221,12 @@ def build_assistant_messages(
         "When interpreting queue state, use precise lifecycle terms: "
         "queued, planning, running, awaiting_approval, done, failed, canceled. "
         "When the operator asks for detail, give it — do not default to terse summaries "
-        "when a thorough analysis of the runtime context would be more useful."
+        "when a thorough analysis of the runtime context would be more useful. "
+        "When answering timing questions, use both absolute timestamps and natural relative phrasing "
+        "(e.g. 'about 2 hours ago', 'in about 14 minutes'). Ground timing answers in canonical "
+        "timestamps from runtime context — do not fabricate execution history or schedule certainty. "
+        "Do not claim precise physical location; timezone and system-local time are sufficient.\n\n"
+        + time_info
     )
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
 

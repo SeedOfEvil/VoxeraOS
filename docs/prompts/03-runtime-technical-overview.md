@@ -52,6 +52,7 @@ Vera is no longer one large handoff file. Current boundaries:
 - `vera/saveable_artifacts.py` — recent meaningful assistant-content save targeting
 - `vera/automation_preview.py` — automation definition preview drafting, revision, and submit-to-store
 - `vera/automation_lifecycle.py` — conversational lifecycle management for saved automations (show, enable, disable, delete, run-now, history)
+- `vera/time_context.py` — deterministic time-context helpers: current local/UTC time, elapsed-time formatting, time-until formatting, relative-day classification, and time-question detection
 - `vera/handoff.py` — compatibility façade across the extracted seams
 
 ### Session context and continuity

@@ -42,6 +42,11 @@ from ..automation.store import (
     load_automation_definition,
     save_automation_definition,
 )
+from .time_context import (
+    describe_last_run_ms,
+    describe_next_run_ms,
+    describe_timestamp_ms,
+)
 
 # ---------------------------------------------------------------------------
 # Lifecycle intent classification
@@ -440,11 +445,11 @@ def handle_show(
         if wf_content:
             lines.append(f"Content: {wf_content[:100]}")
 
-    # Timing info
-    if definition.next_run_at_ms is not None:
-        lines.append(f"Next run at (ms): {definition.next_run_at_ms}")
+    # Timing info — human-readable absolute + relative phrasing
     if definition.last_run_at_ms is not None:
-        lines.append(f"Last run at (ms): {definition.last_run_at_ms}")
+        lines.append(describe_last_run_ms(definition.last_run_at_ms))
+    if definition.next_run_at_ms is not None:
+        lines.append(describe_next_run_ms(definition.next_run_at_ms))
     if definition.last_job_ref:
         lines.append(f"Last job ref: `{definition.last_job_ref}`")
 
@@ -453,10 +458,14 @@ def handle_show(
     if history:
         lines.append(f"Run history entries: {len(history)}")
         latest = history[0]
-        lines.append(
-            f"Latest run: {latest.get('outcome', 'unknown')} "
-            f"at {latest.get('triggered_at_ms', '?')}"
-        )
+        triggered_at = latest.get("triggered_at_ms")
+        outcome = latest.get("outcome", "unknown")
+        if isinstance(triggered_at, int) and triggered_at > 0:
+            lines.append(
+                f"Latest run: {outcome} — {describe_timestamp_ms(triggered_at, label='triggered')}"
+            )
+        else:
+            lines.append(f"Latest run: {outcome}")
     else:
         lines.append("Run history: no runs yet")
 
@@ -581,11 +590,14 @@ def handle_history(
     for record in records[:5]:
         run_id = str(record.get("run_id", "?"))
         outcome = str(record.get("outcome", "?"))
-        triggered_at = record.get("triggered_at_ms", "?")
+        triggered_at = record.get("triggered_at_ms")
         job_ref = record.get("queue_job_ref") or "-"
         msg = str(record.get("message", ""))
         lines.append(f"- **{outcome}** (run: `{run_id}`)")
-        lines.append(f"  Triggered at (ms): {triggered_at}")
+        if isinstance(triggered_at, int) and triggered_at > 0:
+            lines.append(f"  {describe_timestamp_ms(triggered_at, label='Triggered')}")
+        else:
+            lines.append("  Triggered at: unknown")
         if job_ref != "-":
             lines.append(f"  Queue job: `{job_ref}`")
         if msg:
