@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import os
 import re
-import subprocess
-import sys
+import subprocess  # noqa: F401 (re-export so tests monkeypatching panel.app.subprocess.run still drive queue_mutation_bridge)
+import sys  # noqa: F401 (re-export so tests asserting panel.app.sys.executable still resolve)
 import time
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,9 +18,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..audit import log, tail
 from ..config import load_config as load_runtime_config
 from ..core.queue_inspect import lookup_job, queue_snapshot
-from ..core.queue_job_intent import enrich_queue_job_payload
 from ..core.queue_result_consumers import resolve_structured_execution
-from ..health import increment_health_counter, read_health_snapshot, update_health_snapshot
+from ..health import increment_health_counter, read_health_snapshot
 from ..health_semantics import build_health_semantic_sections
 from ..version import get_version
 from . import routes_assistant as _routes_assistant
@@ -34,6 +31,12 @@ from .helpers import request_value as _request_value
 from .job_detail_sections import build_job_detail_sections as _build_job_detail_sections
 from .job_presentation import job_artifact_inventory as _job_artifact_inventory
 from .job_presentation import operator_outcome_summary as _operator_outcome_summary
+from .queue_mutation_bridge import (
+    run_queue_hygiene_command,
+    write_hygiene_result,
+    write_panel_mission_job,
+    write_queue_job,
+)
 from .routes_automations import register_automation_routes
 from .routes_bundle import register_bundle_routes
 from .routes_home import register_home_routes
@@ -441,58 +444,21 @@ def _enforce_get_mutations_enabled() -> None:
 
 
 def _write_queue_job(payload: dict[str, Any]) -> str:
-    queue_root = _queue_root()
-    inbox = queue_root / "inbox"
-    inbox.mkdir(parents=True, exist_ok=True)
-    job_id = f"job-{int(time.time())}-{uuid.uuid4().hex[:8]}"
-    tmp_path = inbox / f".{job_id}.tmp.json"
-    final_path = inbox / f"{job_id}.json"
-    enriched = enrich_queue_job_payload(payload, source_lane="panel_queue_create")
-    tmp_path.write_text(json.dumps(enriched, indent=2), encoding="utf-8")
-    tmp_path.replace(final_path)
-    return final_path.name
+    # Thin wrapper so route-registration callbacks keep the same
+    # (payload,) signature while the bridge logic lives in
+    # queue_mutation_bridge.write_queue_job.
+    return write_queue_job(_queue_root(), payload)
 
 
 def _write_panel_mission_job(*, prompt: str, approval_required: bool) -> tuple[str, str]:
-    queue_root = _queue_root()
-    inbox = queue_root / "inbox"
-    inbox.mkdir(parents=True, exist_ok=True)
-
-    normalized_prompt = prompt.strip()
-    slug = re.sub(r"[^a-z0-9_-]+", "-", normalized_prompt.lower()).strip("-")
-    slug = slug[:32] or "mission"
-    ts = int(time.time())
-    suffix = hashlib.sha1(normalized_prompt.encode("utf-8")).hexdigest()[:6]
-    mission_id = re.sub(r"[^a-z0-9_-]+", "-", f"{slug}-{suffix}-{ts}").strip("-")
-
-    payload = enrich_queue_job_payload(
-        {
-            "id": mission_id,
-            "goal": normalized_prompt,
-            "approval_required": approval_required,
-            "summary": "Panel mission prompt queued for planner",
-            "approval_hints": ["manual" if approval_required else "none"],
-            "expected_artifacts": [
-                "plan.json",
-                "execution_envelope.json",
-                "execution_result.json",
-                "step_results.json",
-            ],
-        },
-        source_lane="panel_mission_prompt",
+    # Thin wrapper so route-registration callbacks keep the same
+    # (*, prompt, approval_required) signature while the bridge logic
+    # lives in queue_mutation_bridge.write_panel_mission_job.
+    return write_panel_mission_job(
+        _queue_root(),
+        prompt=prompt,
+        approval_required=approval_required,
     )
-
-    base_name = f"job-panel-mission-{slug}-{ts}"
-    final_path = inbox / f"{base_name}.json"
-    counter = 1
-    while final_path.exists():
-        final_path = inbox / f"{base_name}-{counter}.json"
-        counter += 1
-
-    tmp_path = inbox / f".{final_path.stem}.tmp.json"
-    tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    tmp_path.replace(final_path)
-    return final_path.name, mission_id
 
 
 def _artifact_text(path: Path, *, max_chars: int = 8000) -> str:
@@ -575,133 +541,19 @@ def _payload_lineage(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _trim_tail(value: str, *, max_chars: int = 2000) -> str:
-    text = value.strip()
-    if len(text) <= max_chars:
-        return text
-    return text[-max_chars:]
-
-
-def _repo_root_for_panel_subprocess() -> Path:
-    env_root = os.getenv("VOXERA_REPO_ROOT", "").strip()
-    if env_root:
-        candidate = Path(env_root).expanduser().resolve()
-        if candidate.exists() and candidate.is_dir():
-            return candidate
-
-    default_root = Path(__file__).resolve().parents[3]
-    if default_root.exists() and default_root.is_dir():
-        return default_root
-    return Path.cwd()
-
-
 def _run_queue_hygiene_command(queue_root: Path, args: list[str]) -> dict[str, Any]:
-    run_cwd = _repo_root_for_panel_subprocess()
-    commands = [
-        [sys.executable, "-m", "voxera.cli", *args, "--queue-dir", str(queue_root)],
-        ["voxera", *args, "--queue-dir", str(queue_root)],
-    ]
-    attempted: list[dict[str, Any]] = []
-
-    for cmd in commands:
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=run_cwd)
-        except FileNotFoundError as exc:
-            attempted.append(
-                {
-                    "cmd": cmd,
-                    "cwd": str(run_cwd),
-                    "exit_code": None,
-                    "stderr_tail": _trim_tail(str(exc)),
-                    "stdout_tail": "",
-                }
-            )
-            continue
-
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
-        stdout_tail = _trim_tail(stdout)
-        stderr_tail = _trim_tail(stderr)
-
-        result: dict[str, Any] = {
-            "ok": False,
-            "result": {},
-            "exit_code": int(proc.returncode),
-            "stderr_tail": stderr_tail,
-            "stdout_tail": stdout_tail,
-            "cmd": cmd,
-            "cwd": str(run_cwd),
-            "attempted": attempted,
-            "error": "",
-        }
-
-        if proc.returncode != 0:
-            result["error"] = _trim_tail(stderr or stdout or "command failed")
-        else:
-            if not stdout.strip():
-                result["error"] = "no json output"
-            else:
-                try:
-                    parsed = json.loads(stdout)
-                except json.JSONDecodeError:
-                    result["error"] = "json parse failed"
-                else:
-                    if not isinstance(parsed, dict):
-                        result["error"] = "json parse failed"
-                    else:
-                        result["ok"] = True
-                        result["result"] = parsed
-
-        if not result["ok"]:
-            log(
-                {
-                    "event": "panel_hygiene_command_failed",
-                    "cmd": cmd,
-                    "rc": int(proc.returncode),
-                    "stderr_tail": stderr_tail,
-                    "stdout_tail": stdout_tail,
-                    "error": result["error"],
-                    "cwd": str(run_cwd),
-                }
-            )
-        return result
-
-    last_attempt = attempted[-1] if attempted else {}
-    error_tail = _trim_tail(
-        str(last_attempt.get("stderr_tail") or "voxera CLI executable not found")
-    )
-    failure = {
-        "ok": False,
-        "result": {},
-        "exit_code": None,
-        "stderr_tail": error_tail,
-        "stdout_tail": "",
-        "cmd": last_attempt.get("cmd", commands[0]),
-        "cwd": str(run_cwd),
-        "attempted": attempted,
-        "error": error_tail,
-    }
-    log(
-        {
-            "event": "panel_hygiene_command_failed",
-            "cmd": failure["cmd"],
-            "rc": None,
-            "stderr_tail": error_tail,
-            "stdout_tail": "",
-            "error": failure["error"],
-            "cwd": str(run_cwd),
-        }
-    )
-    return failure
+    # Thin wrapper so route-registration callbacks keep the same
+    # (queue_root, args) signature while the bridge logic lives in
+    # queue_mutation_bridge.run_queue_hygiene_command.
+    return run_queue_hygiene_command(queue_root, args)
 
 
 def _write_hygiene_result(queue_root: Path, key: str, result: dict[str, Any]) -> None:
-    def _apply(payload: dict[str, Any]) -> dict[str, Any]:
-        payload[key] = result
-        payload["updated_at_ms"] = _now_ms()
-        return payload
-
-    update_health_snapshot(queue_root, _apply)
+    # Thin wrapper that forwards to queue_mutation_bridge.write_hygiene_result
+    # and passes the ``_now_ms`` module-level callable so tests that
+    # monkeypatch ``panel.app._now_ms`` still drive the ``updated_at_ms``
+    # stamp exactly as before.
+    write_hygiene_result(queue_root, key, result, now_ms=_now_ms)
 
 
 def _job_detail_payload(queue_root: Path, job_id: str) -> dict[str, Any]:
