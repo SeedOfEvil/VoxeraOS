@@ -316,3 +316,129 @@ def test_panel_app_thin_wrappers_forward_to_extracted_builders(tmp_path: Path) -
     with pytest.raises(HTTPException) as exc_info:
         panel_module._job_detail_payload(queue_root, "ghost.json")
     assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Payload key-set shape locks
+#
+# These two tests pin the *exact* top-level key sets of the job-detail and
+# job-progress payloads. They are deliberately strong so that a later PR
+# that silently adds, removes, or renames a payload key cannot land
+# without also updating these pins. The rest of the extraction tests only
+# pin structural invariants; these lock shape.
+#
+# If you are intentionally adding a new top-level key (for example the
+# future shared session-context / ``vera_context`` block), update the
+# corresponding frozenset below **and** the matching template consumers
+# in the same PR.
+# ---------------------------------------------------------------------------
+
+
+_EXPECTED_JOB_DETAIL_KEYS: frozenset[str] = frozenset(
+    {
+        "job_id",
+        "bucket",
+        "job",
+        "approval",
+        "state",
+        "failed_sidecar",
+        "lock",
+        "paused",
+        "plan",
+        "actions",
+        "stdout",
+        "stderr",
+        "generated_files",
+        "artifact_files",
+        "artifact_inventory",
+        "artifact_anomalies",
+        "job_context",
+        "lineage",
+        "child_refs",
+        "child_summary",
+        "execution",
+        "operator_summary",
+        "policy_rationale",
+        "evidence_summary",
+        "why_stopped",
+        "recent_timeline",
+        "artifacts_dir",
+        "audit_timeline",
+        "has_approval",
+        "can_cancel",
+        "can_retry",
+        "can_delete",
+    }
+)
+
+
+_EXPECTED_JOB_PROGRESS_KEYS: frozenset[str] = frozenset(
+    {
+        "ok",
+        "job_id",
+        "bucket",
+        "lifecycle_state",
+        "terminal_outcome",
+        "current_step_index",
+        "total_steps",
+        "last_attempted_step",
+        "last_completed_step",
+        "approval_status",
+        "execution_lane",
+        "fast_lane",
+        "intent_route",
+        "lineage",
+        "child_refs",
+        "child_summary",
+        "parent_job_id",
+        "root_job_id",
+        "orchestration_depth",
+        "sequence_index",
+        "latest_summary",
+        "operator_note",
+        "operator_summary",
+        "failure_summary",
+        "stop_reason",
+        "artifacts",
+        "step_summaries",
+        "recent_timeline",
+    }
+)
+
+
+def test_job_detail_payload_key_set_shape_lock(tmp_path: Path) -> None:
+    # Shape lock: the full set of top-level keys returned by
+    # build_job_detail_payload must exactly match the documented set.
+    # A later PR that silently adds, renames, or removes a key must
+    # update this pin in the same commit.
+    queue_root = tmp_path / "queue"
+    (queue_root / "done").mkdir(parents=True)
+    (queue_root / "done" / "job-shape.json").write_text('{"goal":"ok"}', encoding="utf-8")
+    art = queue_root / "artifacts" / "job-shape"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps({"lifecycle_state": "done", "terminal_outcome": "succeeded"}),
+        encoding="utf-8",
+    )
+
+    payload = job_detail_sections.build_job_detail_payload(queue_root, "job-shape.json")
+    assert set(payload.keys()) == set(_EXPECTED_JOB_DETAIL_KEYS)
+
+
+def test_job_progress_payload_key_set_shape_lock(tmp_path: Path) -> None:
+    # Shape lock: the full set of top-level keys returned by
+    # build_job_progress_payload must exactly match the documented set.
+    # A later PR that silently adds, renames, or removes a key must
+    # update this pin in the same commit.
+    queue_root = tmp_path / "queue"
+    (queue_root / "done").mkdir(parents=True)
+    (queue_root / "done" / "job-shape.json").write_text('{"goal":"ok"}', encoding="utf-8")
+    art = queue_root / "artifacts" / "job-shape"
+    art.mkdir(parents=True)
+    (art / "execution_result.json").write_text(
+        json.dumps({"lifecycle_state": "done", "terminal_outcome": "succeeded"}),
+        encoding="utf-8",
+    )
+
+    payload = job_detail_sections.build_job_progress_payload(queue_root, "job-shape.json")
+    assert set(payload.keys()) == set(_EXPECTED_JOB_PROGRESS_KEYS)
