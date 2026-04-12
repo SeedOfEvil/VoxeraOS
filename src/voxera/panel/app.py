@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..audit import log
 from ..config import load_config as load_runtime_config
 from ..version import get_version
+from . import degraded_assistant_bridge as _degraded_assistant_bridge
 from . import routes_assistant as _routes_assistant
 from .auth_enforcement import _operator_credentials  # noqa: F401 (re-export for contract tests)
 from .auth_enforcement import require_mutation_guard as _require_mutation_guard
@@ -67,11 +68,11 @@ app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
 APPROVALS: list[dict[str, Any]] = []
 MISSION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
-load_app_config = _routes_assistant.load_app_config
+load_app_config = _degraded_assistant_bridge.load_app_config
 enqueue_assistant_question = _routes_assistant.enqueue_assistant_question
-_assistant_stalled_degraded_reason = _routes_assistant._assistant_stalled_degraded_reason
-_create_panel_assistant_brain = _routes_assistant._create_panel_assistant_brain
-_persist_degraded_assistant_result = _routes_assistant._persist_degraded_assistant_result
+_assistant_stalled_degraded_reason = _degraded_assistant_bridge.assistant_stalled_degraded_reason
+_create_panel_assistant_brain = _degraded_assistant_bridge.create_panel_assistant_brain
+_persist_degraded_assistant_result = _degraded_assistant_bridge.persist_degraded_assistant_result
 
 
 async def _generate_degraded_assistant_answer_async(
@@ -81,9 +82,9 @@ async def _generate_degraded_assistant_answer_async(
     thread_turns: list[dict[str, Any]],
     degraded_reason: str,
 ) -> dict[str, Any]:
-    _routes_assistant.load_app_config = load_app_config
-    _routes_assistant._create_panel_assistant_brain = _create_panel_assistant_brain
-    return await _routes_assistant._generate_degraded_assistant_answer_async(
+    _degraded_assistant_bridge.load_app_config = load_app_config
+    _degraded_assistant_bridge.create_panel_assistant_brain = _create_panel_assistant_brain
+    return await _degraded_assistant_bridge.generate_degraded_assistant_answer_async(
         question,
         context,
         thread_turns=thread_turns,
