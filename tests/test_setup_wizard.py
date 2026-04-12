@@ -729,6 +729,7 @@ def test_print_what_next_default_excludes_old_command_dump(capsys):
     assert "voxera queue prune" not in out
     assert "voxera artifacts prune" not in out
     assert "single-writer lock" not in out
+    assert "Next Steps (verbose)" not in out
 
 
 def test_print_what_next_default_has_explanatory_text(capsys):
@@ -736,7 +737,7 @@ def test_print_what_next_default_has_explanatory_text(capsys):
     setup_wizard._print_what_next()
     out = capsys.readouterr().out
 
-    assert "verify everything is connected" in out
+    assert "check config and connectivity" in out
     assert "start a conversation with Vera" in out
     assert "open the operator dashboard" in out
 

@@ -498,7 +498,7 @@ def _print_what_next(*, verbose: bool = False) -> None:
     console.print(
         Panel(
             "Three things to try:\n\n"
-            "  1. voxera doctor --quick  — verify everything is connected\n"
+            "  1. voxera doctor --quick  — check config and connectivity\n"
             "  2. voxera vera            — start a conversation with Vera\n"
             "  3. voxera panel           — open the operator dashboard\n\n"
             "Run 'voxera setup --verbose-next' for the full command list.",
