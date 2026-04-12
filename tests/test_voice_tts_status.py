@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from voxera.voice.flags import VoiceFoundationFlags, load_voice_foundation_flags
 from voxera.voice.tts_status import (
     TTS_STATUS_AVAILABLE,
@@ -86,11 +88,8 @@ class TestTTSStatusShape:
 
     def test_status_is_frozen(self) -> None:
         status = build_tts_status(_flags(foundation=True, output=True, tts_backend="x"))
-        try:
+        with pytest.raises(AttributeError):
             status.available = False  # type: ignore[misc]
-            raise AssertionError("Expected FrozenInstanceError")  # pragma: no cover
-        except AttributeError:
-            pass
 
 
 # -- truthful unavailable handling ------------------------------------------
@@ -195,3 +194,54 @@ class TestTTSStatusWithFlagsLoader:
         status = build_tts_status(flags)
         assert status.available is True
         assert status.backend == "env-speaker"
+
+
+# -- doctor integration -----------------------------------------------------
+
+
+class TestTTSStatusInDoctor:
+    """Verify the TTS status check appears in ``run_quick_doctor`` output."""
+
+    @staticmethod
+    def _make_queue(tmp_path: Path) -> Path:
+        queue_root = tmp_path / "queue"
+        (queue_root / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+        for bucket in ("inbox", "done", "failed", "canceled"):
+            (queue_root / bucket).mkdir(parents=True, exist_ok=True)
+        (queue_root / "health.json").write_text("{}", encoding="utf-8")
+        return queue_root
+
+    def test_tts_check_present_in_quick_doctor(self, tmp_path: Path) -> None:
+        from voxera.doctor import run_quick_doctor
+
+        queue_root = self._make_queue(tmp_path)
+        checks = run_quick_doctor(queue_root=queue_root)
+        tts_checks = [c for c in checks if c["check"] == "voice: tts status"]
+        assert len(tts_checks) == 1
+
+    def test_tts_check_ok_when_disabled(self, tmp_path: Path) -> None:
+        """Disabled-by-config is intentional; should be ok, not warn."""
+        from voxera.doctor import run_quick_doctor
+
+        queue_root = self._make_queue(tmp_path)
+        checks = run_quick_doctor(queue_root=queue_root)
+        tts_check = next(c for c in checks if c["check"] == "voice: tts status")
+        assert tts_check["status"] == "ok"
+        assert "disabled" in tts_check["detail"]
+        assert tts_check["hint"] == ""
+
+    def test_tts_check_warn_when_enabled_but_unconfigured(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from voxera.doctor import run_quick_doctor
+
+        monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
+        monkeypatch.setenv("VOXERA_ENABLE_VOICE_OUTPUT", "1")
+        # no VOXERA_VOICE_TTS_BACKEND set
+
+        queue_root = self._make_queue(tmp_path)
+        checks = run_quick_doctor(queue_root=queue_root)
+        tts_check = next(c for c in checks if c["check"] == "voice: tts status")
+        assert tts_check["status"] == "warn"
+        assert "unconfigured" in tts_check["detail"]
+        assert "VOXERA_VOICE_TTS_BACKEND" in tts_check["hint"]

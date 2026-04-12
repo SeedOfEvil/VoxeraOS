@@ -439,12 +439,15 @@ def run_quick_doctor(
         )
         if tts.reason:
             tts_detail += f" reason={tts.reason}"
+        # warn only when voice output is enabled but not fully available
+        # (e.g. backend missing); disabled-by-config is an intentional state.
         tts_check_status = "ok" if tts.available else "warn" if tts.enabled else "ok"
-        tts_hint = (
-            f"TTS is {tts.status}: {tts.reason}. Configure voice_tts_backend to enable."
-            if tts.reason
-            else ""
-        )
+        if tts_check_status == "warn" and tts.reason == "voice_tts_backend_not_configured":
+            tts_hint = "Set voice_tts_backend in config or VOXERA_VOICE_TTS_BACKEND env var."
+        elif tts_check_status == "warn":
+            tts_hint = f"TTS enabled but {tts.status}: {tts.reason}."
+        else:
+            tts_hint = ""
     except Exception:
         tts_detail = "error loading voice flags"
         tts_check_status = "warn"
