@@ -3784,7 +3784,7 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make merge-readiness-check`
   - `make golden-check`
 
-## 2026-04-12 — PR #TBD — feat(setup): streamline post-setup next-steps output
+## 2026-04-12 — PR #328 — feat(setup): streamline post-setup next-steps output
 
 - Summary:
   - Replaced the verbose post-setup "What you can do next" command dump with a compact "Three things to try" block: `voxera doctor --quick`, `voxera vera`, `voxera panel`.

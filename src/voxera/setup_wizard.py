@@ -480,17 +480,17 @@ def _print_what_next(*, verbose: bool = False) -> None:
         console.print(
             Panel(
                 "All available post-setup commands:\n"
-                "- voxera doctor --quick       # verify config and provider connectivity\n"
+                "- voxera doctor --quick        # check config and connectivity\n"
                 "- voxera doctor --self-test    # deeper self-test\n"
                 "- voxera vera                  # start a conversation with Vera\n"
                 "- voxera panel                 # open the operator dashboard\n"
                 "- voxera demo                  # guided offline onboarding check\n"
                 "- voxera demo --online         # opt-in provider readiness\n"
-                "- voxera queue status           # queue state overview\n"
-                "- voxera queue reconcile        # check queue consistency\n"
-                "- voxera queue reconcile --fix  # auto-fix inconsistencies\n"
-                "- voxera queue prune            # remove old queue entries\n"
-                "- voxera artifacts prune        # remove old artifacts",
+                "- voxera queue status          # queue state overview\n"
+                "- voxera queue reconcile       # check queue consistency\n"
+                "- voxera queue reconcile --fix # auto-fix inconsistencies\n"
+                "- voxera queue prune           # remove old queue entries\n"
+                "- voxera artifacts prune       # remove old artifacts",
                 title="Next Steps (verbose)",
             )
         )
