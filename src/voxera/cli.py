@@ -13,6 +13,7 @@ from .cli_common import (
     RUN_ARG_OPTION,
     SNAPSHOT_PATH_OPTION,
     console,
+    require_config,
 )
 from .cli_config import config_show_impl, config_snapshot_impl, config_validate_impl
 from .cli_doctor import register as register_doctor
@@ -354,6 +355,7 @@ def panel(
     port: int | None = typer.Option(None, "--port", help="Panel port override."),
 ):
     """Run the minimal approvals/audit panel."""
+    require_config()
     panel_impl(load_runtime_config=load_runtime_config, host=host, port=port)
 
 
@@ -376,6 +378,7 @@ def daemon(
     ),
 ):
     """Run mission queue daemon watching for JSON jobs."""
+    require_config()
     daemon_impl(
         MissionQueueDaemon_cls=MissionQueueDaemon,
         queue_lock_error_cls=QueueLockError,
@@ -392,6 +395,7 @@ def vera(
     port: int = typer.Option(8790, "--port", help="Vera port override."),
 ):
     """Run the standalone Vera web app."""
+    require_config()
     vera_impl(host=host, port=port)
 
 

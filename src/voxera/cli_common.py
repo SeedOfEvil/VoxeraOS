@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
@@ -7,6 +8,37 @@ import typer
 from rich.console import Console
 
 console = Console()
+
+# Intentionally public — tests import this to assert the exact message.
+CONFIG_GUARD_MESSAGE = "No configuration found. Run voxera setup to get started."
+
+
+def require_config(*, config_path: Path | None = None) -> None:
+    """Exit with a clear hint when user config has not been created yet.
+
+    Intended for runtime command surfaces that cannot do useful work
+    without a config.yml.  Setup, doctor, version, config-show, and help
+    flows must remain unguarded.
+
+    Skips the check when ``--help`` is present on the command line so that
+    help text remains accessible before first-run setup.
+
+    Note: the ``sys.argv`` check is process-global.  In production this is
+    the real CLI invocation; under ``CliRunner`` tests must monkeypatch
+    ``sys.argv`` for the help-skip path to fire.  If this coupling causes
+    brittleness, consider accepting a ``typer.Context`` and inspecting the
+    Click context chain instead.
+    """
+    if "--help" in sys.argv:
+        return
+
+    from .config import default_config_path
+
+    path = config_path or default_config_path()
+    if not path.exists():
+        console.print(CONFIG_GUARD_MESSAGE)
+        raise typer.Exit(code=1)
+
 
 RUN_ARG_OPTION = typer.Option(None, "--arg", help="Key=Value args (repeat --arg for multiple).")
 OUT_PATH_OPTION = typer.Option(..., "--out", help="Output zip file path.")

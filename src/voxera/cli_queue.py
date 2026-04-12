@@ -6,7 +6,7 @@ from typing import Any
 import typer
 from rich.table import Table
 
-from .cli_common import console, queue_dir_path
+from .cli_common import console, queue_dir_path, require_config
 from .cli_queue_approvals import (
     queue_approvals_approve,
     queue_approvals_deny,
@@ -29,10 +29,28 @@ from .core.queue_result_consumers import resolve_structured_execution
 from .paths import queue_root_display
 
 queue_app = typer.Typer(help="Queue job utilities")
+
+
+@queue_app.callback()
+def _queue_guard() -> None:
+    require_config()
+
+
 queue_approvals_app = typer.Typer(help="Resolve pending queue approvals")
 queue_lock_app = typer.Typer(help="Queue daemon lock utilities")
 inbox_app = typer.Typer(help="Human-friendly queue inbox")
 artifacts_app = typer.Typer(help="Artifact management utilities")
+
+
+@inbox_app.callback()
+def _inbox_guard() -> None:
+    require_config()
+
+
+@artifacts_app.callback()
+def _artifacts_guard() -> None:
+    require_config()
+
 
 queue_app.add_typer(queue_approvals_app, name="approvals")
 queue_app.add_typer(queue_lock_app, name="lock")

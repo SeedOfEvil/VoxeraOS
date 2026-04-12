@@ -51,6 +51,7 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 ### CLI surface + contract snapshot + golden surfaces
 - `test_cli_version.py`
 - `test_cli_run_args.py`
+- `test_cli_config_guard.py`
 - `test_cli_config_snapshot.py`
 - `test_cli_contract_snapshot.py`
 - `test_cli_queue.py`

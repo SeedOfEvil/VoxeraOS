@@ -20,6 +20,26 @@ def _sanitize_voxera_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _provide_default_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    _sanitize_voxera_env: None,
+) -> None:
+    """Ensure a config.yml exists so the first-run config guard passes.
+
+    Depends on ``_sanitize_voxera_env`` (via the parameter) to guarantee
+    env vars are cleaned before we set the config path — otherwise the
+    sanitizer could clear state we depend on.
+
+    Tests that explicitly verify the missing-config behavior override
+    ``default_config_path`` themselves via monkeypatch.
+    """
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr("voxera.config.default_config_path", lambda: cfg)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_health_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

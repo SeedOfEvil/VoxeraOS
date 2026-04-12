@@ -38,7 +38,7 @@ from .automation.store import (
     load_automation_definition,
     save_automation_definition,
 )
-from .cli_common import console, queue_dir_path
+from .cli_common import console, queue_dir_path, require_config
 from .paths import queue_root_display
 
 automation_app = typer.Typer(
@@ -47,6 +47,11 @@ automation_app = typer.Typer(
         "automation definitions. Queue remains the execution boundary."
     )
 )
+
+
+@automation_app.callback()
+def _automation_guard() -> None:
+    require_config()
 
 
 def _render_results_table(results: list[AutomationRunResult]) -> None:

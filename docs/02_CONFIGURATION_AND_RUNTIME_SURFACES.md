@@ -36,6 +36,10 @@ Runtime configuration is split into two files and a few environment knobs. Both 
 
 These are kept as living templates. They are not loaded at runtime automatically — they are reference material for operators bootstrapping a new config.
 
+### First-run config guard
+
+Runtime CLI surfaces (`vera`, `panel`, `daemon`, `queue *`, `inbox *`, `artifacts *`, `automation *`) check for a `config.yml` at the canonical config path before proceeding. If the file is missing, the command prints "No configuration found. Run voxera setup to get started." and exits with code 1. Setup, doctor, version, config show, and all help flows remain usable without config.
+
 ### Setup wizard
 
 `voxera setup` runs `src/voxera/setup_wizard.py`. It:
