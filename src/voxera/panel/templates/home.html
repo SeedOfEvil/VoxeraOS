@@ -360,6 +360,45 @@
         </tbody></table></div>{% endif %}
       </section>
 
+      {% if vera_activity %}
+      <!-- Vera activity (read-only, supplemental only) -->
+      <div class="section-label">Vera Activity</div>
+      <section class="card mb" data-testid="home-vera-activity-strip">
+        <p class="muted text-sm" style="margin-top:0;">
+          Read-only shared Vera session context. Supplemental only &mdash; canonical queue, daemon health, and approvals above remain primary.
+        </p>
+        <dl class="detail-grid" style="margin-bottom:0;">
+          {% if vera_activity.active_topic %}
+            <dt>Active topic</dt><dd>{{vera_activity.active_topic}}</dd>
+          {% endif %}
+          {% if vera_activity.active_draft_ref %}
+            <dt>Active draft</dt><dd class="mono text-sm">{{vera_activity.active_draft_ref}}</dd>
+          {% endif %}
+          {% if vera_activity.last_saved_file_ref %}
+            <dt>Last saved file</dt><dd class="mono text-sm">{{vera_activity.last_saved_file_ref}}</dd>
+          {% endif %}
+          {% if vera_activity.last_submitted_job_ref %}
+            <dt>Last submitted job</dt><dd class="mono text-sm">{{vera_activity.last_submitted_job_ref}}</dd>
+          {% endif %}
+          {% if vera_activity.last_completed_job_ref %}
+            <dt>Last completed job</dt><dd class="mono text-sm">{{vera_activity.last_completed_job_ref}}</dd>
+          {% endif %}
+          <dt>Context freshness</dt>
+          <dd>
+            {% if vera_activity.freshness == "fresh" %}
+              <span class="badge badge-done">fresh</span>
+            {% elif vera_activity.freshness == "aging" %}
+              <span class="badge badge-pending">aging</span>
+            {% elif vera_activity.freshness == "stale" %}
+              <span class="badge badge-pending">stale</span>
+            {% else %}
+              <span class="muted">unknown</span>
+            {% endif %}
+          </dd>
+        </dl>
+      </section>
+      {% endif %}
+
       <!-- Mission library -->
       <div class="section-label">Mission Library</div>
       <section class="card">
