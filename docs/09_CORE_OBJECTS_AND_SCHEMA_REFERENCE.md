@@ -322,11 +322,14 @@ Frozen dataclass. Built via `build_stt_request(...)`.
   "language": "en-US",                         // BCP-47 locale hint; nullable
   "session_id": "string",                      // correlation id; nullable
   "created_at_ms": 1712900000000,              // epoch-ms
-  "schema_version": 1
+  "schema_version": 1,
+  "audio_path": "/path/to/audio.wav"           // nullable; required for audio_file backends
 }
 ```
 
 Unknown `input_source` values are rejected fail-closed (`ValueError`).
+
+`audio_path` is an optional additive field (schema version remains 1 — existing consumers are unaffected). Required when `input_source` is `audio_file` and a file-based backend (e.g. `WhisperLocalBackend`) is used.
 
 ### `STTResponse`
 
@@ -343,7 +346,9 @@ Frozen dataclass. Built via `build_stt_response(...)` or `build_stt_unavailable_
   "backend": "provider-name",                  // nullable
   "started_at_ms": 0,                          // nullable
   "finished_at_ms": 0,                         // nullable
-  "schema_version": 1
+  "schema_version": 1,
+  "inference_ms": 150,                         // nullable; adapter-reported inference time
+  "audio_duration_ms": 3500                    // nullable; adapter-reported audio duration
 }
 ```
 
@@ -365,8 +370,11 @@ Structural interface (mirrors the `Brain` protocol in `brain/base.py`). Implemen
 class STTBackend(Protocol):
     @property
     def backend_name(self) -> str: ...
+    def supports_source(self, input_source: str) -> bool: ...
     def transcribe(self, request: STTRequest) -> STTAdapterResult: ...
 ```
+
+`supports_source(input_source)` allows callers to check source support upfront (e.g. for UI gating) without triggering a full transcription attempt.
 
 ### `STTAdapterResult`
 
@@ -377,17 +385,34 @@ Frozen dataclass. Adapter-internal result shape returned by `STTBackend.transcri
   "transcript": "transcribed text",            // nullable
   "language": "en-US",                         // nullable
   "error": "reason string",                    // nullable
-  "error_class": "custom_error"                // nullable; passthrough
+  "error_class": "custom_error",               // nullable; passthrough
+  "inference_ms": 150,                         // nullable; adapter-reported inference time
+  "audio_duration_ms": 3500                    // nullable; adapter-reported audio duration
 }
 ```
 
 ### `NullSTTBackend`
 
-Default adapter when no real backend is configured. Always returns an honest `STTAdapterResult` with `error_class="backend_missing"` — never pretends transcription occurred.
+Default adapter when no real backend is configured. Always returns an honest `STTAdapterResult` with `error_class="backend_missing"` — never pretends transcription occurred. `supports_source()` returns `False` for all sources.
+
+### `WhisperLocalBackend`
+
+First real STT backend. Uses `faster-whisper` (CTranslate2-based Whisper) for local audio file transcription. See `voice/whisper_backend.py`.
+
+- Supports `audio_file` only. `microphone` and `stream` are explicitly unsupported.
+- Lazy model loading on first `transcribe()` call.
+- Optional dependency: install with `pip install voxera-os[whisper]`.
+- Configuration via env vars: `VOXERA_VOICE_STT_WHISPER_MODEL` (default: `base`), `VOXERA_VOICE_STT_WHISPER_DEVICE` (default: `auto`), `VOXERA_VOICE_STT_WHISPER_COMPUTE_TYPE` (default: `int8`).
+- Missing `faster-whisper` dependency returns truthful `backend_missing` — never crashes.
+- Reports `inference_ms` and `audio_duration_ms` timing fields when transcription succeeds.
 
 ### `transcribe_stt_request(request, adapter=None) -> STTResponse`
 
 Canonical fail-soft transcription entry point. Never raises. Returns a truthful `STTResponse` for every path:
+
+### `transcribe_stt_request_async(request, adapter=None) -> STTResponse`
+
+Async wrapper around `transcribe_stt_request`. Runs the synchronous backend path in a thread via `asyncio.to_thread()`. Preserves all fail-soft semantics.
 
 | Condition | Status | Error class |
 |---|---|---|

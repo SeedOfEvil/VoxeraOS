@@ -202,7 +202,11 @@ From the README and the curated catalog under `src/voxera/data/openrouter_catalo
 
 Status labels: `available` (foundation + input/output enabled + backend configured), `unconfigured` (enabled but no backend), `disabled` (foundation or input/output off). `available` means configured and enabled — it does NOT imply that transcription or synthesis has been tested or will succeed. Disabled-by-config is an intentional state and reports `ok`; enabled-but-unconfigured reports `warn` with actionable hints.
 
-The STT request/response protocol (`voice/stt_protocol.py`) defines the canonical contract shapes for speech-to-text interactions. The STT backend adapter boundary (`voice/stt_adapter.py`) provides the protocol-to-runtime bridge: an `STTBackend` protocol interface, a `NullSTTBackend` for unconfigured systems, and a `transcribe_stt_request()` fail-soft entry point that consumes `STTRequest` and always returns a truthful `STTResponse`. The adapter boundary exists but no production backend is wired yet — `NullSTTBackend` is the default and honestly reports `backend_missing`. See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
+The STT request/response protocol (`voice/stt_protocol.py`) defines the canonical contract shapes for speech-to-text interactions. The STT backend adapter boundary (`voice/stt_adapter.py`) provides the protocol-to-runtime bridge: an `STTBackend` protocol interface, a `NullSTTBackend` for unconfigured systems, and `transcribe_stt_request()` / `transcribe_stt_request_async()` fail-soft entry points that consume `STTRequest` and always return a truthful `STTResponse`.
+
+The first real STT backend is `WhisperLocalBackend` (`voice/whisper_backend.py`), which uses `faster-whisper` for local audio file transcription. It supports `audio_file` only — `microphone` and `stream` are explicitly unsupported and remain future work. The dependency is optional: install with `pip install voxera-os[whisper]`. If the dependency is missing, the backend honestly reports `backend_missing`. Model loading is lazy (first `transcribe()` call).
+
+See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
 
 Environment variables for voice configuration (loaded by `voice/flags.py`):
 - `VOXERA_ENABLE_VOICE_FOUNDATION` — master toggle for the voice subsystem.
@@ -210,5 +214,10 @@ Environment variables for voice configuration (loaded by `voice/flags.py`):
 - `VOXERA_ENABLE_VOICE_OUTPUT` — enable TTS output path.
 - `VOXERA_VOICE_STT_BACKEND` — STT backend identifier.
 - `VOXERA_VOICE_TTS_BACKEND` — TTS backend identifier.
+
+Environment variables for Whisper backend configuration (loaded by `voice/whisper_backend.py`):
+- `VOXERA_VOICE_STT_WHISPER_MODEL` — Whisper model size (default: `base`).
+- `VOXERA_VOICE_STT_WHISPER_DEVICE` — compute device (default: `auto`).
+- `VOXERA_VOICE_STT_WHISPER_COMPUTE_TYPE` — quantization type (default: `int8`).
 
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.

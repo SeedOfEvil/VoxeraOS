@@ -66,6 +66,7 @@ class STTRequest:
     session_id: str | None
     created_at_ms: int
     schema_version: int
+    audio_path: str | None = None
 
 
 def build_stt_request(
@@ -75,10 +76,14 @@ def build_stt_request(
     session_id: str | None = None,
     request_id: str | None = None,
     created_at_ms: int | None = None,
+    audio_path: str | None = None,
 ) -> STTRequest:
     """Build a validated STT request.
 
     Normalizes *input_source* fail-closed: unknown values raise ``ValueError``.
+
+    *audio_path* is an optional path to an audio file.  Required when
+    ``input_source`` is ``audio_file`` and a file-based backend is used.
     """
     normalized_source = str(input_source or "").strip().lower()
     if normalized_source not in _STT_VALID_SOURCES:
@@ -89,6 +94,7 @@ def build_stt_request(
 
     rid = str(request_id or "").strip() or str(uuid.uuid4())
     ts = int(created_at_ms) if created_at_ms is not None else int(time.time() * 1000)
+    cleaned_audio_path = str(audio_path).strip() if audio_path else None
 
     return STTRequest(
         request_id=rid,
@@ -97,6 +103,7 @@ def build_stt_request(
         session_id=str(session_id).strip() if session_id else None,
         created_at_ms=ts,
         schema_version=STT_PROTOCOL_SCHEMA_VERSION,
+        audio_path=cleaned_audio_path,
     )
 
 
@@ -109,6 +116,10 @@ class STTResponse:
 
     Immutable after construction.  Created via :func:`build_stt_response`
     or :func:`build_stt_unavailable_response`.
+
+    Optional adapter-reported timing fields (observability only):
+    - ``inference_ms``: wall-clock time the backend spent in inference.
+    - ``audio_duration_ms``: duration of the input audio, if known.
     """
 
     request_id: str
@@ -121,6 +132,8 @@ class STTResponse:
     started_at_ms: int | None
     finished_at_ms: int | None
     schema_version: int
+    inference_ms: int | None = None
+    audio_duration_ms: int | None = None
 
 
 def _normalize_status(raw: str | None) -> str:
@@ -142,6 +155,8 @@ def build_stt_response(
     backend: str | None = None,
     started_at_ms: int | None = None,
     finished_at_ms: int | None = None,
+    inference_ms: int | None = None,
+    audio_duration_ms: int | None = None,
 ) -> STTResponse:
     """Build a validated STT response.
 
@@ -163,6 +178,8 @@ def build_stt_response(
         started_at_ms=int(started_at_ms) if started_at_ms is not None else None,
         finished_at_ms=int(finished_at_ms) if finished_at_ms is not None else None,
         schema_version=STT_PROTOCOL_SCHEMA_VERSION,
+        inference_ms=int(inference_ms) if inference_ms is not None else None,
+        audio_duration_ms=int(audio_duration_ms) if audio_duration_ms is not None else None,
     )
 
 
@@ -202,6 +219,7 @@ def stt_request_as_dict(request: STTRequest) -> dict[str, object]:
         "session_id": request.session_id,
         "created_at_ms": request.created_at_ms,
         "schema_version": request.schema_version,
+        "audio_path": request.audio_path,
     }
 
 
@@ -218,4 +236,6 @@ def stt_response_as_dict(response: STTResponse) -> dict[str, object]:
         "started_at_ms": response.started_at_ms,
         "finished_at_ms": response.finished_at_ms,
         "schema_version": response.schema_version,
+        "inference_ms": response.inference_ms,
+        "audio_duration_ms": response.audio_duration_ms,
     }
