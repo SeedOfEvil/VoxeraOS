@@ -5,7 +5,9 @@ Provides a local speech-to-text backend backed by ``faster-whisper``
 ``STTBackend`` implementation — it supports ``audio_file`` transcription
 only.  ``microphone`` and ``stream`` are explicitly unsupported for now.
 
-Configuration is environment-driven:
+Configuration is environment-driven (backend-specific knobs, intentionally
+separate from ``VoiceFoundationFlags``; a unified voice backend config
+surface should be considered if more backends arrive):
 
 - ``VOXERA_VOICE_STT_WHISPER_MODEL`` — model size (default: ``base``)
 - ``VOXERA_VOICE_STT_WHISPER_DEVICE`` — compute device (default: ``auto``)
@@ -118,6 +120,9 @@ class WhisperLocalBackend:
             )
 
         # -- audio_path check --------------------------------------------------
+        # Trust boundary: audio_path is currently only set by internal code
+        # (build_stt_request).  If it ever comes from operator/Vera input,
+        # it will need path boundary enforcement (see skills/path_boundaries.py).
         if not request.audio_path:
             return STTAdapterResult(
                 transcript=None,
@@ -169,6 +174,9 @@ class WhisperLocalBackend:
 
         detected_language = info.language if hasattr(info, "language") and info.language else None
 
+        # Empty string from joined segments means no speech was detected.
+        # `or None` collapses "" to None so the entry point correctly
+        # maps it to empty_audio via normalize_transcript_text().
         return STTAdapterResult(
             transcript=transcript or None,
             language=detected_language,

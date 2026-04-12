@@ -194,14 +194,18 @@ class TestWhisperAudioPath:
 def _make_mock_model(
     transcript_text: str = "Hello world", language: str = "en", duration: float = 3.5
 ):
-    """Build a mock WhisperModel that returns a fixed transcript."""
+    """Build a mock WhisperModel that returns a fixed transcript.
+
+    Real faster-whisper returns (generator, TranscriptionInfo).  We use
+    iter() over a list so the mock matches the real iteration contract.
+    """
     mock_model = MagicMock()
     segment = MagicMock()
     segment.text = transcript_text
     info = MagicMock()
     info.language = language
     info.duration = duration
-    mock_model.transcribe.return_value = ([segment], info)
+    mock_model.transcribe.return_value = (iter([segment]), info)
     return mock_model
 
 
@@ -219,7 +223,7 @@ class TestWhisperMultiSegment:
         info = MagicMock()
         info.language = "en"
         info.duration = 4.0
-        mock_model.transcribe.return_value = ([seg1, seg2, seg3], info)
+        mock_model.transcribe.return_value = (iter([seg1, seg2, seg3]), info)
 
         backend = WhisperLocalBackend()
         backend._model = mock_model
@@ -245,7 +249,7 @@ class TestWhisperMultiSegment:
         info = MagicMock()
         info.language = "en"
         info.duration = 1.0
-        mock_model.transcribe.return_value = ([], info)
+        mock_model.transcribe.return_value = (iter([]), info)
 
         backend = WhisperLocalBackend()
         backend._model = mock_model
