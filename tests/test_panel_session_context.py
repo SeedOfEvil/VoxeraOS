@@ -1084,6 +1084,40 @@ def test_build_home_vera_activity_is_read_only(tmp_path: Path) -> None:
     assert after["updated_at_ms"] == before_updated_at
 
 
+def test_build_home_vera_activity_return_shape_lock(tmp_path: Path) -> None:
+    """Shape lock: pin the exact top-level keys returned by
+    ``build_home_vera_activity`` so a later change that silently adds,
+    renames, or removes a key must update this test in the same commit.
+    Mirrors the ``_EXPECTED_JOB_DETAIL_KEYS`` pattern from
+    ``test_panel_job_detail_shaping_extraction.py``.
+    """
+    _EXPECTED_KEYS = frozenset(
+        {
+            "session_id",
+            "active_topic",
+            "active_draft_ref",
+            "last_saved_file_ref",
+            "last_submitted_job_ref",
+            "last_completed_job_ref",
+            "updated_at_ms",
+            "freshness",
+        }
+    )
+
+    queue_root = _make_home_queue_root(tmp_path)
+    session_id = "vera-shape-lock"
+    session_store.register_session_linked_job(queue_root, session_id, job_ref="inbox-x.json")
+    write_session_context(queue_root, session_id, {"active_topic": "shape-test"})
+
+    activity = build_home_vera_activity(queue_root, now_ms=lambda: 2_000_000_000_000)
+    assert activity is not None
+    assert set(activity.keys()) == _EXPECTED_KEYS, (
+        f"build_home_vera_activity return keys changed: "
+        f"added={set(activity.keys()) - _EXPECTED_KEYS}, "
+        f"removed={_EXPECTED_KEYS - set(activity.keys())}"
+    )
+
+
 def test_home_vera_activity_module_does_not_import_mutation_helpers() -> None:
     """Belt-and-suspenders: the home-page helper imports only the
     read-only shared-context surface, never a write/update/clear helper.
