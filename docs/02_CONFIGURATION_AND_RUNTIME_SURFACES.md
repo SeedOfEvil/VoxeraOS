@@ -48,6 +48,9 @@ Runtime CLI surfaces (`vera`, `panel`, `daemon`, `queue *`, `inbox *`, `artifact
 - offers to configure the four brain slots (`primary`, `fast`, `reasoning`, `fallback`) from the curated OpenRouter catalog (`src/voxera/data/openrouter_catalog.json`)
 - runs a bounded post-setup validation step after config is written
 - optionally starts the stack and opens the panel / Vera
+- ends with a compact "Three things to try" next-steps block: `voxera doctor --quick`, `voxera vera`, `voxera panel`
+
+The full post-setup command list is available via `voxera setup --verbose-next`.
 
 #### Post-setup validation
 

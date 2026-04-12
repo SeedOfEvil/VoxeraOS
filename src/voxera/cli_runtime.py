@@ -14,8 +14,8 @@ from .config import AppConfig
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 
 
-def setup_impl(*, run_setup: Callable[[], Any]) -> None:
-    asyncio.run(run_setup())
+def setup_impl(*, run_setup: Callable[..., Any], verbose_next: bool = False) -> None:
+    asyncio.run(run_setup(verbose_next=verbose_next))
 
 
 def demo_cmd_impl(

@@ -256,7 +256,7 @@ def test_run_setup_finish_path_ensures_services_before_launch(monkeypatch):
         calls.append("launch")
 
     monkeypatch.setattr(setup_wizard, "_launch_choice", _launch)
-    monkeypatch.setattr(setup_wizard, "_print_what_next", lambda: None)
+    monkeypatch.setattr(setup_wizard, "_print_what_next", lambda **kwargs: None)
     monkeypatch.setattr(setup_wizard.console, "print", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: True)
 
@@ -655,7 +655,7 @@ def test_run_setup_calls_post_setup_validation(monkeypatch):
         lambda: {"failed": [], "started": []},
     )
     monkeypatch.setattr(setup_wizard, "_launch_choice", lambda **kwargs: None)
-    monkeypatch.setattr(setup_wizard, "_print_what_next", lambda: None)
+    monkeypatch.setattr(setup_wizard, "_print_what_next", lambda **kwargs: None)
     monkeypatch.setattr(setup_wizard.console, "print", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: True)
 
@@ -689,7 +689,7 @@ def test_run_setup_completes_with_validation_warnings(monkeypatch):
         lambda: {"failed": [], "started": []},
     )
     monkeypatch.setattr(setup_wizard, "_launch_choice", lambda **kwargs: None)
-    monkeypatch.setattr(setup_wizard, "_print_what_next", lambda: None)
+    monkeypatch.setattr(setup_wizard, "_print_what_next", lambda **kwargs: None)
     monkeypatch.setattr(setup_wizard.console, "print", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: True)
 
@@ -702,3 +702,127 @@ def test_run_setup_completes_with_validation_warnings(monkeypatch):
     cfg = asyncio.run(setup_wizard.run_setup())
 
     assert isinstance(cfg, AppConfig)
+
+
+# --- Next-steps output tests ---
+
+
+def test_print_what_next_default_shows_three_compact_steps(capsys):
+    """Default next-steps output includes exactly the 3 intended commands."""
+    setup_wizard._print_what_next()
+    out = capsys.readouterr().out
+
+    assert "voxera doctor --quick" in out
+    assert "voxera vera" in out
+    assert "voxera panel" in out
+    assert "Three things to try" in out
+
+
+def test_print_what_next_default_excludes_old_command_dump(capsys):
+    """Default output no longer includes the large old command list."""
+    setup_wizard._print_what_next()
+    out = capsys.readouterr().out
+
+    assert "voxera demo" not in out
+    assert "voxera queue status" not in out
+    assert "voxera queue reconcile" not in out
+    assert "voxera queue prune" not in out
+    assert "voxera artifacts prune" not in out
+    assert "single-writer lock" not in out
+
+
+def test_print_what_next_default_has_explanatory_text(capsys):
+    """Each of the 3 commands has a concise explanation."""
+    setup_wizard._print_what_next()
+    out = capsys.readouterr().out
+
+    assert "verify everything is connected" in out
+    assert "start a conversation with Vera" in out
+    assert "open the operator dashboard" in out
+
+
+def test_print_what_next_default_mentions_verbose_path(capsys):
+    """Default output tells the user how to see the full command list."""
+    setup_wizard._print_what_next()
+    out = capsys.readouterr().out
+
+    assert "--verbose-next" in out
+
+
+def test_print_what_next_verbose_shows_full_command_list(capsys):
+    """Verbose path shows the full command list including advanced commands."""
+    setup_wizard._print_what_next(verbose=True)
+    out = capsys.readouterr().out
+
+    assert "voxera doctor --quick" in out
+    assert "voxera doctor --self-test" in out
+    assert "voxera vera" in out
+    assert "voxera panel" in out
+    assert "voxera demo" in out
+    assert "voxera demo --online" in out
+    assert "voxera queue status" in out
+    assert "voxera queue reconcile" in out
+    assert "voxera queue reconcile --fix" in out
+    assert "voxera queue prune" in out
+    assert "voxera artifacts prune" in out
+    assert "verbose" in out.lower()
+
+
+def test_print_what_next_verbose_excludes_compact_framing(capsys):
+    """Verbose output does not show the compact 'Three things to try' framing."""
+    setup_wizard._print_what_next(verbose=True)
+    out = capsys.readouterr().out
+
+    assert "Three things to try" not in out
+
+
+def test_print_what_next_default_output_is_compact(capsys):
+    """Default output fits comfortably in one screen (under 15 lines)."""
+    setup_wizard._print_what_next()
+    out = capsys.readouterr().out
+
+    lines = [line for line in out.splitlines() if line.strip()]
+    assert len(lines) <= 15
+
+
+def test_run_setup_passes_verbose_next_flag(monkeypatch):
+    """run_setup forwards verbose_next to _print_what_next."""
+    import asyncio
+
+    monkeypatch.setattr(setup_wizard, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(setup_wizard, "_pick_mode", lambda: "mixed")
+    monkeypatch.setattr(setup_wizard, "_pick_brain_type", lambda: "cloud")
+    monkeypatch.setattr(setup_wizard, "_configure_cloud_brains", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_configure_web_investigation", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_policy_defaults", lambda: setup_wizard.PolicyApprovals())
+    monkeypatch.setattr(setup_wizard, "_confirm_write_config", lambda path: True)
+    monkeypatch.setattr(setup_wizard, "save_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup_wizard, "save_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        setup_wizard, "capabilities_report_path", lambda: Path("/tmp/voxera-cap.json")
+    )
+    monkeypatch.setattr(
+        setup_wizard,
+        "_post_setup_validation",
+        lambda cfg: None,
+    )
+    monkeypatch.setattr(
+        setup_wizard,
+        "_ensure_runtime_services_running",
+        lambda: {"failed": [], "started": []},
+    )
+    monkeypatch.setattr(setup_wizard, "_launch_choice", lambda **kwargs: None)
+    monkeypatch.setattr(setup_wizard.console, "print", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: True)
+
+    captured_kwargs: list[dict] = []
+
+    def _capture_what_next(**kwargs):
+        captured_kwargs.append(kwargs)
+
+    monkeypatch.setattr(setup_wizard, "_print_what_next", _capture_what_next)
+
+    asyncio.run(setup_wizard.run_setup(verbose_next=True))
+
+    assert len(captured_kwargs) == 1
+    assert captured_kwargs[0]["verbose"] is True

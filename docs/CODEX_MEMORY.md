@@ -3784,6 +3784,36 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make merge-readiness-check`
   - `make golden-check`
 
+## 2026-04-12 — PR #TBD — feat(setup): streamline post-setup next-steps output
+
+- Summary:
+  - Replaced the verbose post-setup "What you can do next" command dump with a compact "Three things to try" block: `voxera doctor --quick`, `voxera vera`, `voxera panel`.
+  - Added a `--verbose-next` CLI flag to `voxera setup` that renders the full command list for advanced users.
+  - Wired the flag through `cli.py` → `cli_runtime.py` → `setup_wizard.py` → `_print_what_next(verbose=...)`.
+  - Default output fits one screen, includes a concise explanation for each step, and points to `--verbose-next` for the full list.
+- Files changed:
+  - `src/voxera/setup_wizard.py` — replaced `_print_what_next()` body with compact default / verbose paths; added `verbose_next` parameter to `run_setup()`
+  - `src/voxera/cli.py` — added `--verbose-next` option to the `setup` command
+  - `src/voxera/cli_runtime.py` — forwarded `verbose_next` through `setup_impl()`
+  - `tests/test_setup_wizard.py` — added 8 focused tests: compact 3-step default, old dump exclusion, explanatory text, verbose path coverage, output compactness, verbose/compact mutual exclusion, verbose-next flag forwarding; updated existing monkeypatches for new `_print_what_next` signature
+  - `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md` — documented compact next-steps output and `--verbose-next` path
+  - `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` — updated test coverage description for `test_setup_wizard.py`
+  - `docs/CODEX_MEMORY.md` — this entry
+- Invariants preserved:
+  - Setup remains usable before config exists
+  - Post-setup validation from PR 1.2 remains authoritative and unchanged
+  - No fake readiness claims
+  - No change to actual runtime behavior
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q`
+  - `make golden-check`
+  - `make security-check`
+  - `make validation-check`
+  - `make merge-readiness-check`
+
 ## 2026-03-23 — PR #TBD — refactor(vera): extract saveable assistant artifact selection from handoff
 
 - Summary:
