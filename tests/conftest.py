@@ -27,6 +27,10 @@ def _provide_default_config(
 ) -> None:
     """Ensure a config.yml exists so the first-run config guard passes.
 
+    Depends on ``_sanitize_voxera_env`` (via the parameter) to guarantee
+    env vars are cleaned before we set the config path — otherwise the
+    sanitizer could clear state we depend on.
+
     Tests that explicitly verify the missing-config behavior override
     ``default_config_path`` themselves via monkeypatch.
     """
