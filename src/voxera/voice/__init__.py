@@ -4,6 +4,7 @@ from .input import (
     ingest_voice_transcript,
     normalize_transcript_text,
     transcribe_audio_file,
+    transcribe_audio_file_async,
 )
 from .models import InputOrigin, normalize_input_origin
 from .output import voice_output_status
@@ -56,6 +57,7 @@ __all__ = [
     "stt_response_as_dict",
     "stt_status_as_dict",
     "transcribe_audio_file",
+    "transcribe_audio_file_async",
     "transcribe_stt_request",
     "transcribe_stt_request_async",
     "tts_status_as_dict",

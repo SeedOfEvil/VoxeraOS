@@ -208,7 +208,7 @@ The first real STT backend is `WhisperLocalBackend` (`voice/whisper_backend.py`)
 
 Backend selection is handled by `build_stt_backend(flags)` (`voice/stt_backend_factory.py`), which maps `VoiceFoundationFlags.voice_stt_backend` to the appropriate `STTBackend` implementation. When voice input is disabled, no backend is configured, or the backend identifier is unrecognized, it returns `NullSTTBackend`. When `voice_stt_backend` is `"whisper_local"`, it returns `WhisperLocalBackend`. The factory is the single point of backend selection logic.
 
-The recommended entry point for audio-file transcription is `transcribe_audio_file(audio_path, flags, ...)` (`voice/input.py`). It builds an `STTRequest`, selects the backend via the factory, and runs the request through `transcribe_stt_request()`. It always returns a truthful `STTResponse` — never raises on transcription failure. Only `audio_file` is supported as an input source; microphone and stream remain future work.
+The recommended entry point for audio-file transcription is `transcribe_audio_file(audio_path, flags, ...)` (`voice/input.py`). It builds an `STTRequest`, selects the backend via the factory (or uses a caller-supplied `backend` to avoid per-call model reload), and runs the request through `transcribe_stt_request()`. It always returns a truthful `STTResponse` — never raises on transcription failure. Only `audio_file` is supported as an input source; microphone and stream remain future work. An async variant `transcribe_audio_file_async(...)` runs the transcription in a thread via `asyncio.to_thread()` for use in async contexts (Vera chat, FastAPI routes).
 
 See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
 

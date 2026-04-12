@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from voxera.voice.flags import VoiceFoundationFlags
 from voxera.voice.input import transcribe_audio_file
 from voxera.voice.stt_adapter import NullSTTBackend, STTAdapterResult
@@ -593,3 +595,196 @@ class TestResponseUniqueness:
         r1 = transcribe_audio_file(audio_path="/tmp/a.wav", flags=flags)
         r2 = transcribe_audio_file(audio_path="/tmp/b.wav", flags=flags)
         assert r1.request_id != r2.request_id
+
+
+# =============================================================================
+# Section 8: pre-built backend reuse (avoids model reload)
+# =============================================================================
+
+
+class TestPreBuiltBackendReuse:
+    """Callers can pass a pre-built backend to avoid per-call reconstruction."""
+
+    def test_pre_built_backend_is_used(self) -> None:
+        """When backend= is supplied, the factory is not called."""
+        captured_request = None
+
+        class TrackingBackend:
+            @property
+            def backend_name(self) -> str:
+                return "tracking"
+
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
+            def transcribe(self, request):
+                nonlocal captured_request
+                captured_request = request
+                return STTAdapterResult(transcript="from pre-built")
+
+        # flags say no backend — but passing backend= directly should bypass factory
+        flags = _make_flags(stt_backend=None)
+        resp = transcribe_audio_file(
+            audio_path="/tmp/test.wav",
+            flags=flags,
+            backend=TrackingBackend(),
+        )
+        assert resp.status == STT_STATUS_SUCCEEDED
+        assert resp.transcript == "from pre-built"
+        assert resp.backend == "tracking"
+        assert captured_request is not None
+
+    def test_pre_built_backend_reuses_model(self, tmp_path) -> None:
+        """Same backend instance across calls reuses the loaded model."""
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake-audio")
+
+        call_count = 0
+
+        class CountingBackend:
+            @property
+            def backend_name(self) -> str:
+                return "counting"
+
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
+            def transcribe(self, request):
+                nonlocal call_count
+                call_count += 1
+                return STTAdapterResult(transcript=f"call {call_count}")
+
+        flags = _make_flags(stt_backend="whisper_local")
+        reusable = CountingBackend()
+
+        r1 = transcribe_audio_file(audio_path=str(audio_file), flags=flags, backend=reusable)
+        r2 = transcribe_audio_file(audio_path=str(audio_file), flags=flags, backend=reusable)
+        assert r1.transcript == "call 1"
+        assert r2.transcript == "call 2"
+        assert call_count == 2
+        # Same instance was used — no reconstruction
+        assert r1.backend == r2.backend == "counting"
+
+    def test_none_backend_falls_through_to_factory(self) -> None:
+        """backend=None (the default) uses the factory."""
+        flags = _make_flags(stt_backend=None)
+        resp = transcribe_audio_file(audio_path="/tmp/test.wav", flags=flags, backend=None)
+        assert resp.status == STT_STATUS_UNAVAILABLE
+        assert resp.error_class == STT_ERROR_BACKEND_MISSING
+
+
+# =============================================================================
+# Section 9: async entry point
+# =============================================================================
+
+
+class TestTranscribeAudioFileAsync:
+    """Async entry point preserves sync semantics in a thread."""
+
+    @pytest.mark.asyncio
+    async def test_async_success(self, tmp_path) -> None:
+        from voxera.voice.input import transcribe_audio_file_async
+
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake-audio")
+
+        class StubBackend:
+            @property
+            def backend_name(self) -> str:
+                return "async-stub"
+
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
+            def transcribe(self, request):
+                return STTAdapterResult(transcript="async hello")
+
+        flags = _make_flags(stt_backend="whisper_local")
+        resp = await transcribe_audio_file_async(
+            audio_path=str(audio_file),
+            flags=flags,
+            backend=StubBackend(),
+        )
+        assert resp.status == STT_STATUS_SUCCEEDED
+        assert resp.transcript == "async hello"
+        assert resp.backend == "async-stub"
+        assert isinstance(resp, STTResponse)
+
+    @pytest.mark.asyncio
+    async def test_async_unavailable_when_unconfigured(self) -> None:
+        from voxera.voice.input import transcribe_audio_file_async
+
+        flags = _make_flags(stt_backend=None)
+        resp = await transcribe_audio_file_async(audio_path="/tmp/test.wav", flags=flags)
+        assert resp.status == STT_STATUS_UNAVAILABLE
+        assert resp.error_class == STT_ERROR_BACKEND_MISSING
+        assert resp.transcript is None
+
+    @pytest.mark.asyncio
+    async def test_async_fail_soft_on_crash(self, tmp_path) -> None:
+        from voxera.voice.input import transcribe_audio_file_async
+
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake-audio")
+
+        class CrashBackend:
+            @property
+            def backend_name(self) -> str:
+                return "crash"
+
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
+            def transcribe(self, request):
+                raise RuntimeError("boom")
+
+        flags = _make_flags(stt_backend="whisper_local")
+        resp = await transcribe_audio_file_async(
+            audio_path=str(audio_file),
+            flags=flags,
+            backend=CrashBackend(),
+        )
+        assert resp.status == STT_STATUS_FAILED
+        assert resp.transcript is None
+
+    @pytest.mark.asyncio
+    async def test_async_returns_stt_response(self) -> None:
+        from voxera.voice.input import transcribe_audio_file_async
+
+        flags = _make_flags(stt_backend=None)
+        resp = await transcribe_audio_file_async(audio_path="/tmp/test.wav", flags=flags)
+        assert isinstance(resp, STTResponse)
+
+    @pytest.mark.asyncio
+    async def test_async_with_pre_built_backend(self, tmp_path) -> None:
+        """Async variant also accepts a pre-built backend."""
+        from voxera.voice.input import transcribe_audio_file_async
+
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake-audio")
+
+        class ReusableBackend:
+            @property
+            def backend_name(self) -> str:
+                return "reusable"
+
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
+            def transcribe(self, request):
+                return STTAdapterResult(transcript="reused")
+
+        flags = _make_flags(stt_backend=None)
+        reusable = ReusableBackend()
+        resp = await transcribe_audio_file_async(
+            audio_path=str(audio_file),
+            flags=flags,
+            backend=reusable,
+        )
+        assert resp.status == STT_STATUS_SUCCEEDED
+        assert resp.transcript == "reused"
+
+    def test_async_exported(self) -> None:
+        from voxera.voice import transcribe_audio_file_async
+
+        assert callable(transcribe_audio_file_async)

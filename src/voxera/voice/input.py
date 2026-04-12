@@ -7,6 +7,7 @@ from .models import InputOrigin
 
 if TYPE_CHECKING:
     from .flags import VoiceFoundationFlags
+    from .stt_adapter import STTBackend
     from .stt_protocol import STTResponse
 
 
@@ -44,18 +45,31 @@ def transcribe_audio_file(
     flags: VoiceFoundationFlags,
     language: str | None = None,
     session_id: str | None = None,
+    backend: STTBackend | None = None,
 ) -> STTResponse:
     """Transcribe an audio file through the canonical STT pipeline.
 
     Builds an ``STTRequest``, selects the appropriate backend from
-    *flags* via the backend factory, and runs the request through
-    ``transcribe_stt_request``.  Always returns a truthful
-    ``STTResponse`` — never raises on transcription failure.
+    *flags* via the backend factory (or uses a caller-supplied
+    *backend*), and runs the request through ``transcribe_stt_request``.
+    Always returns a truthful ``STTResponse`` — never raises on
+    transcription failure.
+
+    Pass a pre-built *backend* to reuse an existing ``STTBackend``
+    instance across calls.  This avoids re-constructing the backend
+    (and potentially re-loading heavy models like Whisper) on every
+    invocation.  When *backend* is ``None`` (the default), the factory
+    builds a fresh instance from *flags*.
 
     This is the recommended entry point for audio-file transcription.
     Only ``audio_file`` is supported as an input source.  Microphone
     and stream sources are not supported by this function — they
     remain future work.
+
+    For async contexts (Vera chat, FastAPI routes), use
+    :func:`transcribe_audio_file_async` instead — it runs the
+    synchronous backend in a thread so it does not block the event
+    loop.
 
     Fail-soft behavior:
     - Voice input disabled -> unavailable (via NullSTTBackend)
@@ -70,11 +84,62 @@ def transcribe_audio_file(
     from .stt_backend_factory import build_stt_backend
     from .stt_protocol import STT_SOURCE_AUDIO_FILE, build_stt_request
 
-    backend = build_stt_backend(flags)
+    selected_backend = backend if backend is not None else build_stt_backend(flags)
     request = build_stt_request(
         input_source=STT_SOURCE_AUDIO_FILE,
         audio_path=audio_path,
         language=language,
         session_id=session_id,
     )
-    return transcribe_stt_request(request, adapter=backend)
+    return transcribe_stt_request(request, adapter=selected_backend)
+
+
+async def transcribe_audio_file_async(
+    *,
+    audio_path: str,
+    flags: VoiceFoundationFlags,
+    language: str | None = None,
+    session_id: str | None = None,
+    backend: STTBackend | None = None,
+) -> STTResponse:
+    """Async variant of :func:`transcribe_audio_file`.
+
+    Runs the synchronous transcription path in a thread via
+    ``asyncio.to_thread()`` so it does not block the event loop.
+    Preserves all fail-soft semantics of the sync entry point.
+
+    Use this from async contexts (Vera chat, FastAPI routes) instead
+    of the sync :func:`transcribe_audio_file`.
+    """
+    import asyncio
+
+    return await asyncio.to_thread(
+        _transcribe_audio_file_sync,
+        audio_path=audio_path,
+        flags=flags,
+        language=language,
+        session_id=session_id,
+        backend=backend,
+    )
+
+
+def _transcribe_audio_file_sync(
+    *,
+    audio_path: str,
+    flags: VoiceFoundationFlags,
+    language: str | None = None,
+    session_id: str | None = None,
+    backend: STTBackend | None = None,
+) -> STTResponse:
+    """Internal sync implementation for the async wrapper.
+
+    Identical to ``transcribe_audio_file`` — exists only so
+    ``asyncio.to_thread`` can call it with keyword arguments.
+    """
+    return transcribe_audio_file(
+        audio_path=audio_path,
+        flags=flags,
+        language=language,
+        session_id=session_id,
+        backend=backend,
+    )

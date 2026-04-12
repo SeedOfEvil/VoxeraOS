@@ -445,9 +445,15 @@ Supported backend identifiers:
 | `"whisper_local"` | `WhisperLocalBackend` | Local Whisper via faster-whisper |
 | (empty / None / unrecognized) | `NullSTTBackend` | Truthful unavailable |
 
-### `transcribe_audio_file(audio_path, flags, ...) -> STTResponse`
+### `transcribe_audio_file(audio_path, flags, ..., backend=None) -> STTResponse`
 
-`voice/input.py`. Recommended entry point for audio-file transcription through the canonical STT pipeline. Builds an `STTRequest` with `input_source="audio_file"`, selects the backend via `build_stt_backend(flags)`, and runs the request through `transcribe_stt_request()`. Always returns a truthful `STTResponse`. Only `audio_file` is supported — microphone and stream remain future work.
+`voice/input.py`. Recommended entry point for audio-file transcription through the canonical STT pipeline. Builds an `STTRequest` with `input_source="audio_file"`, selects the backend via `build_stt_backend(flags)` (or uses a caller-supplied `backend`), and runs the request through `transcribe_stt_request()`. Always returns a truthful `STTResponse`. Only `audio_file` is supported — microphone and stream remain future work.
+
+Pass a pre-built `backend` to reuse an existing `STTBackend` instance across calls — this avoids re-constructing the backend (and potentially re-loading heavy models like Whisper) on every invocation.
+
+### `transcribe_audio_file_async(audio_path, flags, ..., backend=None) -> STTResponse`
+
+`voice/input.py`. Async variant of `transcribe_audio_file`. Runs the synchronous transcription in a thread via `asyncio.to_thread()` so it does not block the event loop. Use from async contexts (Vera chat, FastAPI routes). Preserves all fail-soft semantics.
 
 ## STT status surface
 
