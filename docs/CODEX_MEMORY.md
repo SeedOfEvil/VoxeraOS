@@ -1,3 +1,21 @@
+## 2026-04-12 — feat(cli): add first-run config guard for runtime command surfaces
+
+- **Motivation**: new installs without config.yml hit confusing runtime errors or tracebacks from commands that cannot do useful work without config. This PR adds a first-run config guard that prints a clear one-line next action and exits cleanly.
+- **Scope (deliberately bounded)**:
+  - Add `require_config()` shared helper in `src/voxera/cli_common.py`: checks whether `config.yml` exists at the canonical config path, prints actionable hint, exits with code 1. Skips the check when `--help` is on the command line so help text remains accessible.
+  - Wire the guard into guarded runtime surfaces: `vera`, `panel`, `daemon` (top-level commands in `cli.py`), `queue` group (callback in `cli_queue.py`), `automation` group (callback in `cli_automation.py`).
+  - Keep setup, doctor, version, config show, and all help flows unguarded.
+  - Add `tests/test_cli_config_guard.py` (18 tests): guarded commands exit 1 with exact hint when config absent; guarded commands proceed when config present; unguarded commands (setup, doctor, version, config show) remain usable; root/subcommand help remains usable.
+  - Add auto-use conftest fixture `_provide_default_config` to ensure existing test suite passes with the guard active.
+  - Do NOT change setup wizard behavior, panel/Vera runtime internals, or CLI composition.
+- **Guard policy**:
+  - Always unguarded: `voxera setup`, `voxera doctor`, `voxera version`, `voxera config show`, root `--help`, subcommand `--help`.
+  - Guarded: `voxera vera`, `voxera panel`, `voxera daemon`, `voxera queue *`, `voxera automation *`.
+- **Guard message**: "No configuration found. Run voxera setup to get started."
+- **Files touched**: `src/voxera/cli_common.py` (guard helper), `src/voxera/cli.py` (vera/panel/daemon guards), `src/voxera/cli_queue.py` (queue group callback), `src/voxera/cli_automation.py` (automation group callback), `tests/test_cli_config_guard.py` (new, 18 tests), `tests/conftest.py` (auto-use config fixture), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing), `docs/CODEX_MEMORY.md`.
+- **Invariants preserved**: CLI help available without config; setup/doctor/version/config-show usable without config; no behavior drift for configured installs; no hidden config creation; no fallback magic; existing test suite unaffected.
+- **Next safe step**: post-setup validation, starter mission hints, or first-chat experience improvements in subsequent PRs.
+
 ## 2026-04-12 — feat(voice): wire STT backend selection into voice input pipeline
 
 - **Motivation**: connect the STT protocol surfaces, adapter boundary, and WhisperLocalBackend into the actual voice input path through bounded config/runtime selection. Prior PRs established the protocol shapes, adapter interface, NullSTTBackend, and WhisperLocalBackend independently — this PR wires them together end-to-end.
