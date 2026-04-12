@@ -46,7 +46,21 @@ Runtime CLI surfaces (`vera`, `panel`, `daemon`, `queue *`, `inbox *`, `artifact
 
 - writes a starter `config.yml`
 - offers to configure the four brain slots (`primary`, `fast`, `reasoning`, `fallback`) from the curated OpenRouter catalog (`src/voxera/data/openrouter_catalog.json`)
+- runs a bounded post-setup validation step after config is written
 - optionally starts the stack and opens the panel / Vera
+
+#### Post-setup validation
+
+After config is successfully written, setup automatically runs a bounded validation step (`_post_setup_validation`). This step:
+
+1. Checks first-run brain readiness — verifies that at least one configured brain slot has a resolvable API key (environment variable or keyring via `get_secret`). Unconfigured optional slots are not first-run blockers and do not produce individual warnings. The summary produces exactly one "brain readiness" check: ok if any slot is usable, warn with a focused fix hint if none is.
+2. Runs the quick doctor path (`run_quick_doctor()`) in-process. Failures are caught gracefully (e.g., queue not yet initialized). Only doctor checks that report an actual failure (`status == "fail"`) are surfaced — warn-level runtime state (daemon lock absent, no health events yet, etc.) is expected before the first daemon start and is left to `voxera doctor --quick`.
+3. Renders a compact traffic-light summary using Rich:
+   - **All pass (green):** "Setup complete. Try: voxera vera"
+   - **Warnings (yellow):** lists failing checks with actionable fix hints, e.g., "Set OPENROUTER_API_KEY in your environment or run 'voxera secrets set OPENROUTER_API_KEY'."
+   - **Failures (red):** lists checks needing attention with fix guidance and recommends `voxera doctor --quick`.
+
+The validation step does not claim the system is ready unless all checks pass. It does not duplicate doctor business logic — brain config checks are setup-specific, and runtime checks delegate to the existing quick doctor surface. Setup completes normally even when warnings or failures are reported.
 
 ## Paths
 

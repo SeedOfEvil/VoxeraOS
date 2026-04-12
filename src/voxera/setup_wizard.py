@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import subprocess
 import time
 import webbrowser
@@ -16,6 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .config import capabilities_report_path, default_config_path, save_config, save_policy
+from .doctor import run_quick_doctor
 from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig, WebInvestigationConfig
 from .openrouter_catalog import (
     grouped_catalog,
@@ -23,7 +26,7 @@ from .openrouter_catalog import (
     recommended_model_for_slot,
 )
 from .paths import ensure_dirs
-from .secrets import set_secret
+from .secrets import get_secret, set_secret
 
 console = Console()
 
@@ -491,6 +494,136 @@ def _print_what_next() -> None:
     )
 
 
+def _check_brain_config(cfg: AppConfig) -> list[dict[str, str]]:
+    """Check first-run brain readiness — is there at least one usable brain path?
+
+    This is intentionally NOT a per-slot completeness audit.  The setup
+    summary answers "can the user likely talk to Vera now?" — so we check
+    whether *any* configured slot has a resolvable API key.  Unconfigured
+    optional slots are not first-run blockers and do not produce warnings.
+    """
+    checks: list[dict[str, str]] = []
+    if not cfg.brain:
+        checks.append(
+            {
+                "check": "brain config",
+                "status": "warn",
+                "detail": "No brain slots configured.",
+                "hint": "Re-run 'voxera setup' and configure at least one brain slot.",
+            }
+        )
+        return checks
+
+    # Scan every configured slot to find at least one usable brain path.
+    usable_slots: list[str] = []
+    first_broken: dict[str, str] | None = None
+
+    for name, bc in cfg.brain.items():
+        if not bc.api_key_ref:
+            # Slot exists but has no key ref — skip silently.
+            # Only matters if *no* slot ends up usable.
+            continue
+        found = bool(os.environ.get(bc.api_key_ref, "").strip())
+        if not found:
+            try:
+                resolved = get_secret(bc.api_key_ref)
+                found = resolved is not None and bool(resolved.strip())
+            except Exception:
+                pass
+        if found:
+            usable_slots.append(name)
+        elif first_broken is None:
+            first_broken = {
+                "name": name,
+                "ref": bc.api_key_ref,
+            }
+
+    if usable_slots:
+        checks.append(
+            {
+                "check": "brain readiness",
+                "status": "ok",
+                "detail": f"Usable: {', '.join(usable_slots)}.",
+                "hint": "",
+            }
+        )
+    elif first_broken:
+        ref = first_broken["ref"]
+        checks.append(
+            {
+                "check": "brain readiness",
+                "status": "warn",
+                "detail": f"{ref} not found in environment or keyring.",
+                "hint": (f"Set {ref} in your environment or run 'voxera secrets set {ref}'."),
+            }
+        )
+    else:
+        # All slots exist but none has an api_key_ref at all.
+        checks.append(
+            {
+                "check": "brain readiness",
+                "status": "warn",
+                "detail": "No brain slot has an API key reference configured.",
+                "hint": "Re-run 'voxera setup' and set an API key for at least one slot.",
+            }
+        )
+    return checks
+
+
+def _render_validation_summary(checks: list[dict[str, str]]) -> None:
+    """Render a compact traffic-light validation summary."""
+    if not checks:
+        return
+    icon = {"ok": "✅", "warn": "⚠️", "fail": "❌"}
+    ok_count = sum(1 for c in checks if c["status"] == "ok")
+    non_ok = [c for c in checks if c["status"] != "ok"]
+    warn_count = sum(1 for c in checks if c["status"] == "warn")
+    fail_count = sum(1 for c in checks if c["status"] == "fail")
+
+    lines: list[str] = []
+    if ok_count:
+        lines.append(f"✅ {ok_count} check{'s' if ok_count != 1 else ''} passed")
+    for c in non_ok:
+        lines.append(f"{icon.get(c['status'], '⚠️')} {c['check']}: {c['detail']}")
+        if c.get("hint"):
+            lines.append(f"   → {c['hint']}")
+
+    if fail_count:
+        lines.append("")
+        lines.append("Setup wrote config but some checks need attention.")
+        lines.append("Run 'voxera doctor --quick' for full diagnostics.")
+        border_style = "red"
+    elif warn_count:
+        lines.append("")
+        lines.append(f"Setup complete with {warn_count} warning{'s' if warn_count != 1 else ''}.")
+        lines.append("Run 'voxera doctor --quick' for full diagnostics.")
+        border_style = "yellow"
+    else:
+        lines.append("")
+        lines.append("Setup complete. Try: voxera vera")
+        border_style = "green"
+
+    console.print(Panel("\n".join(lines), title="Post-Setup Validation", border_style=border_style))
+
+
+def _post_setup_validation(cfg: AppConfig) -> None:
+    """Run bounded post-setup validation and render summary."""
+    checks = _check_brain_config(cfg)
+    with contextlib.suppress(Exception):
+        for rc in run_quick_doctor():
+            # The quick-doctor surface is designed for a running system.
+            # After a fresh setup the daemon has not started, so most warn
+            # checks ("no health event", "lock absent", …) are expected-
+            # default-state noise, not actionable blockers.
+            #
+            # Only surface doctor results that report an actual failure
+            # (status "fail").  Warn-level runtime state is left to
+            # `voxera doctor --quick` which the summary already recommends.
+            if rc["status"] in {"ok", "fail"}:
+                checks.append(rc)
+    _render_validation_summary(checks)
+
+
 async def run_setup() -> AppConfig:
     ensure_dirs()
     mode = _pick_mode()
@@ -551,11 +684,12 @@ async def run_setup() -> AppConfig:
     }
     capabilities_report_path().write_text(json.dumps(cap, indent=2), encoding="utf-8")
 
-    console.print("\n✅ Setup complete.")
+    console.print("\nConfig written.")
     console.print("App config (brain/mode/privacy): ~/.config/voxera/config.yml")
     console.print("Runtime ops config (panel/queue, optional): ~/.config/voxera/config.json")
     console.print("Policy: ~/.config/voxera/policy.yml")
     console.print("Capabilities: ~/.local/share/voxera/capabilities.json\n")
+    _post_setup_validation(cfg)
     service_state = _ensure_runtime_services_running()
     _launch_choice(service_state=service_state)
     _print_what_next()
