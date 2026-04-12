@@ -177,8 +177,10 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 ### Security / red-team
 - `test_security_redteam.py`
 
-### Voice foundation
+### Voice foundation and protocol
 - `test_voice_foundation.py`
+- `test_voice_stt_protocol.py` — pins the STT request/response protocol contract: request construction (all valid sources, case normalization, unknown source rejection, auto-generated ids, explicit ids/timestamps), success response shape (transcript whitespace normalization, empty transcript → None), failure response shape (error + error_class carriage), unavailable response convenience builder (default error_class, backend passthrough), fail-closed status normalization (unknown/empty/None status → unavailable), frozen immutability.
+- `test_voice_tts_status.py` — pins the TTS status surface contract: available when fully configured, disabled when foundation or output off, unconfigured when no backend, fully-disabled defaults, frozen immutability, truthful unavailable handling (available ≠ synthesis proven), last_error passthrough/stripping/None, dict serialization roundtrip and JSON serializability, integration with flags loader (config file, empty config, env vars).
 
 ### Automation object model, runner, operator CLI, and Vera preview
 - `test_automation_object_model.py` — covers the Pydantic model in `src/voxera/automation/models.py` and the file-backed store in `src/voxera/automation/store.py`.

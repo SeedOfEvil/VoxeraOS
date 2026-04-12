@@ -196,4 +196,19 @@ From the README and the curated catalog under `src/voxera/data/openrouter_catalo
 - `voxera automation run-now <id>` — force an immediate run of a single definition through the existing runner, bypassing the due-time check. Disabled definitions and unsupported trigger kinds are still rejected. Submits through the canonical inbox path — the queue remains the execution boundary.
 - `voxera automation run-due-once` — automation runner entrypoint. Acquires the automation runner single-writer lock (`<queue_root>/automations/.runner.lock`) before evaluating definitions; if the lock is already held the command exits cleanly with a `BUSY` message and exit code 0. Evaluates saved automation definitions under `<queue_root>/automations/definitions/` and emits a normal canonical queue payload via the existing inbox path for every *enabled*, *supported* (`once_at`, `delay`, `recurring_interval`), due definition. One-shot triggers (`once_at`, `delay`) disable the definition after firing. Recurring triggers (`recurring_interval`) stay enabled and re-arm `next_run_at_ms` for the next interval. `--id <automation_id>` restricts the evaluation to a single definition (without lock). `recurring_cron` and `watch_path` are persisted but skipped by the runner. The `voxera-automation.timer` systemd unit invokes this command every minute.
 
+### Voice subsystem status
+
+`voxera doctor --quick` now includes a `voice: tts status` check that reports the TTS subsystem's configuration and availability state. The check loads `VoiceFoundationFlags` from the runtime config and produces a `TTSStatus` surface (`voice/tts_status.py`) with fields: `configured`, `available`, `enabled`, `backend`, `status`, `reason`, `last_error`, `schema_version`.
+
+Status labels: `available` (foundation + output enabled + backend configured), `unconfigured` (enabled but no backend), `disabled` (foundation or output off), `unavailable` (catch-all). `available` means configured and enabled — it does NOT imply that synthesis has been tested or will succeed.
+
+The STT request/response protocol (`voice/stt_protocol.py`) defines the canonical contract shapes for speech-to-text interactions. It is a protocol definition only — no runtime transcription backend is wired yet. See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
+
+Environment variables for voice configuration (loaded by `voice/flags.py`):
+- `VOXERA_ENABLE_VOICE_FOUNDATION` — master toggle for the voice subsystem.
+- `VOXERA_ENABLE_VOICE_INPUT` — enable STT input path.
+- `VOXERA_ENABLE_VOICE_OUTPUT` — enable TTS output path.
+- `VOXERA_VOICE_STT_BACKEND` — STT backend identifier.
+- `VOXERA_VOICE_TTS_BACKEND` — TTS backend identifier.
+
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.

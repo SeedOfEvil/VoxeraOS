@@ -22,6 +22,8 @@ from .core.queue_daemon import MissionQueueDaemon
 from .health import read_health_snapshot
 from .health_semantics import build_health_semantic_sections
 from .skills.registry import SkillRegistry
+from .voice.flags import load_voice_foundation_flags
+from .voice.tts_status import build_tts_status
 
 console = Console()
 _STALE_LAST_ERROR_THRESHOLD_MS = 5 * 60 * 1000
@@ -424,6 +426,35 @@ def run_quick_doctor(
                 f"429={int(historical_counters.get('panel_429_count', 0) or 0)}"
             ),
             "hint": "Counters are cumulative; spikes indicate repeated authentication or lockout issues.",
+        }
+    )
+
+    try:
+        voice_flags = load_voice_foundation_flags()
+        tts = build_tts_status(voice_flags)
+        tts_detail = (
+            f"status={tts.status} available={tts.available} "
+            f"enabled={tts.enabled} configured={tts.configured} "
+            f"backend={tts.backend or '-'}"
+        )
+        if tts.reason:
+            tts_detail += f" reason={tts.reason}"
+        tts_check_status = "ok" if tts.available else "warn" if tts.enabled else "ok"
+        tts_hint = (
+            f"TTS is {tts.status}: {tts.reason}. Configure voice_tts_backend to enable."
+            if tts.reason
+            else ""
+        )
+    except Exception:
+        tts_detail = "error loading voice flags"
+        tts_check_status = "warn"
+        tts_hint = "Voice foundation flags could not be loaded; check config."
+    checks.append(
+        {
+            "check": "voice: tts status",
+            "status": tts_check_status,
+            "detail": tts_detail,
+            "hint": tts_hint,
         }
     )
 

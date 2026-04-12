@@ -307,6 +307,71 @@ After saving, Vera can manage automation definitions conversationally via `vera/
 
 The runner writes one JSON file per run event into the sibling `<queue_root>/automations/history/` directory: `auto-<automation_id>-<run_id>.json`. Each record is schema_version 1 and carries `automation_id`, `run_id`, `triggered_at_ms`, `trigger_kind`, `outcome` (`submitted` | `skipped` | `error`), `queue_job_ref` (the `inbox-*.json` filename when submitted), a short `message`, and a `payload_summary` + sha256 `payload_hash` of the saved `payload_template`. History records are write-once. `list_history_records(queue_root, automation_id)` returns all records for a given automation id, newest first, skipping malformed files. After a successful fire the definition is updated with `last_run_at_ms`, `last_job_ref`, and an appended `run_history_refs` entry. One-shot triggers (`once_at`, `delay`) set `enabled=false` and `next_run_at_ms=null`. Recurring triggers (`recurring_interval`) keep `enabled=true` and set `next_run_at_ms = fired_at_ms + interval_ms`.
 
+## STT request/response protocol
+
+`voice/stt_protocol.py`. Protocol-layer contract for speech-to-text interactions. This defines data shapes only — it does not perform transcription.
+
+### `STTRequest`
+
+Frozen dataclass. Built via `build_stt_request(...)`.
+
+```jsonc
+{
+  "request_id": "uuid-string",                // auto-generated or caller-supplied
+  "input_source": "microphone" | "audio_file" | "stream",
+  "language": "en-US",                         // BCP-47 locale hint; nullable
+  "session_id": "string",                      // correlation id; nullable
+  "created_at_ms": 1712900000000,              // epoch-ms
+  "schema_version": 1
+}
+```
+
+Unknown `input_source` values are rejected fail-closed (`ValueError`).
+
+### `STTResponse`
+
+Frozen dataclass. Built via `build_stt_response(...)` or `build_stt_unavailable_response(...)`.
+
+```jsonc
+{
+  "request_id": "uuid-string",
+  "status": "succeeded" | "failed" | "unavailable" | "unsupported",
+  "transcript": "transcribed text",            // nullable; whitespace-normalized
+  "language": "en-US",                         // nullable
+  "error": "reason string",                    // nullable
+  "error_class": "disabled" | "backend_missing" | "backend_error" | "timeout" | "unsupported_source" | "empty_audio",
+  "backend": "provider-name",                  // nullable
+  "started_at_ms": 0,                          // nullable
+  "finished_at_ms": 0,                         // nullable
+  "schema_version": 1
+}
+```
+
+Unknown `status` values normalize fail-closed to `"unavailable"`.
+
+## TTS status surface
+
+`voice/tts_status.py`. Observable status surface for text-to-speech configuration and availability. This is a truthful status surface — `available=true` means the subsystem is configured and enabled, NOT that synthesis has been tested or will succeed.
+
+### `TTSStatus`
+
+Frozen dataclass. Built via `build_tts_status(flags, *, last_error=None)`.
+
+```jsonc
+{
+  "configured": true,                          // backend string is present
+  "available": true,                           // foundation + output enabled + configured
+  "enabled": true,                             // foundation + output enabled
+  "backend": "provider-name",                  // nullable
+  "status": "available" | "unconfigured" | "disabled" | "unavailable",
+  "reason": "voice_foundation_disabled" | "voice_output_disabled" | "voice_tts_backend_not_configured" | null,
+  "last_error": "string",                      // nullable passthrough from health
+  "schema_version": 1
+}
+```
+
+`tts_status_as_dict(status)` serializes to a plain dict for JSON/health payloads.
+
 ## `job` refs, stems, and ids
 
 - Canonical job id is the queue filename stem (`<job>.json` → `<job>`).
