@@ -109,6 +109,43 @@ class TestBuildSTTBackendWhisper:
         assert isinstance(backend, WhisperLocalBackend)
 
 
+class TestBuildSTTBackendErrorMessages:
+    """Factory-produced NullSTTBackend carries truthful error messages."""
+
+    def test_unrecognized_backend_error_mentions_name(self) -> None:
+        """Operators see which backend identifier was rejected."""
+        flags = _make_flags(stt_backend="google_cloud_stt")
+        backend = build_stt_backend(flags)
+        from voxera.voice.stt_protocol import build_stt_request
+
+        req = build_stt_request(input_source="audio_file", request_id="err-msg")
+        result = backend.transcribe(req)
+        assert result.error is not None
+        assert "google_cloud_stt" in result.error
+
+    def test_unconfigured_backend_error_is_generic(self) -> None:
+        """When no backend is configured, error says 'No STT backend is configured'."""
+        flags = _make_flags(stt_backend=None)
+        backend = build_stt_backend(flags)
+        from voxera.voice.stt_protocol import build_stt_request
+
+        req = build_stt_request(input_source="audio_file", request_id="err-gen")
+        result = backend.transcribe(req)
+        assert result.error is not None
+        # Default NullSTTBackend message — not the unrecognized-backend variant
+        assert "configured" in result.error.lower()
+        assert "not recognized" not in result.error.lower()
+
+    def test_null_backend_default_reason_preserved(self) -> None:
+        """NullSTTBackend() with no args preserves the original message."""
+        backend = NullSTTBackend()
+        from voxera.voice.stt_protocol import build_stt_request
+
+        req = build_stt_request(input_source="audio_file", request_id="default")
+        result = backend.transcribe(req)
+        assert result.error == "No STT backend is configured"
+
+
 class TestBuildSTTBackendConstant:
     """The canonical backend identifier constant is correct."""
 
@@ -448,3 +485,111 @@ class TestExportSurface:
         from voxera.voice import transcribe_audio_file as exported
 
         assert exported is transcribe_audio_file
+
+
+# =============================================================================
+# Section 6: config-driven integration
+# =============================================================================
+
+
+class TestConfigDrivenIntegration:
+    """Backend selection works end-to-end through flags loaded from config."""
+
+    def test_flags_from_config_select_whisper(self, tmp_path) -> None:
+        """Flags with voice_stt_backend='whisper_local' produce WhisperLocalBackend."""
+        import json
+
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "enable_voice_foundation": True,
+                    "enable_voice_input": True,
+                    "voice_stt_backend": "whisper_local",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        from voxera.voice.flags import load_voice_foundation_flags
+
+        flags = load_voice_foundation_flags(config_path=config_path, environ={})
+        backend = build_stt_backend(flags)
+        assert isinstance(backend, WhisperLocalBackend)
+
+    def test_flags_from_config_no_backend(self, tmp_path) -> None:
+        """Flags with no voice_stt_backend produce NullSTTBackend."""
+        import json
+
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "enable_voice_foundation": True,
+                    "enable_voice_input": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        from voxera.voice.flags import load_voice_foundation_flags
+
+        flags = load_voice_foundation_flags(config_path=config_path, environ={})
+        backend = build_stt_backend(flags)
+        assert isinstance(backend, NullSTTBackend)
+
+    def test_env_var_selects_whisper(self, tmp_path) -> None:
+        """VOXERA_VOICE_STT_BACKEND env var selects WhisperLocalBackend."""
+        import json
+
+        config_path = tmp_path / "config.json"
+        config_path.write_text(json.dumps({}), encoding="utf-8")
+
+        from voxera.voice.flags import load_voice_foundation_flags
+
+        env = {
+            "VOXERA_ENABLE_VOICE_FOUNDATION": "1",
+            "VOXERA_ENABLE_VOICE_INPUT": "1",
+            "VOXERA_VOICE_STT_BACKEND": "whisper_local",
+        }
+        flags = load_voice_foundation_flags(config_path=config_path, environ=env)
+        backend = build_stt_backend(flags)
+        assert isinstance(backend, WhisperLocalBackend)
+
+    def test_env_var_overrides_config(self, tmp_path) -> None:
+        """Env var takes precedence over config file for backend selection."""
+        import json
+
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "enable_voice_foundation": True,
+                    "enable_voice_input": True,
+                    "voice_stt_backend": "some_other_backend",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        from voxera.voice.flags import load_voice_foundation_flags
+
+        env = {"VOXERA_VOICE_STT_BACKEND": "whisper_local"}
+        flags = load_voice_foundation_flags(config_path=config_path, environ=env)
+        backend = build_stt_backend(flags)
+        assert isinstance(backend, WhisperLocalBackend)
+
+
+# =============================================================================
+# Section 7: response uniqueness
+# =============================================================================
+
+
+class TestResponseUniqueness:
+    """Each pipeline call produces a distinct request_id."""
+
+    def test_distinct_request_ids(self) -> None:
+        flags = _make_flags(stt_backend=None)
+        r1 = transcribe_audio_file(audio_path="/tmp/a.wav", flags=flags)
+        r2 = transcribe_audio_file(audio_path="/tmp/b.wav", flags=flags)
+        assert r1.request_id != r2.request_id

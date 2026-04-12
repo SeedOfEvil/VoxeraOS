@@ -48,5 +48,6 @@ def build_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
     if backend_id == STT_BACKEND_WHISPER_LOCAL:
         return WhisperLocalBackend()
 
-    # Unrecognized backend — return NullSTTBackend rather than crashing.
-    return NullSTTBackend()
+    # Unrecognized backend — return NullSTTBackend with a specific reason
+    # so operators can see which identifier was rejected.
+    return NullSTTBackend(reason=f"STT backend {flags.voice_stt_backend!r} is not recognized")

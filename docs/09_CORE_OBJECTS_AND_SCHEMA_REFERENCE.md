@@ -393,7 +393,7 @@ Frozen dataclass. Adapter-internal result shape returned by `STTBackend.transcri
 
 ### `NullSTTBackend`
 
-Default adapter when no real backend is configured. Always returns an honest `STTAdapterResult` with `error_class="backend_missing"` — never pretends transcription occurred. `supports_source()` returns `False` for all sources.
+Default adapter when no real backend is configured. Always returns an honest `STTAdapterResult` with `error_class="backend_missing"` — never pretends transcription occurred. `supports_source()` returns `False` for all sources. Accepts an optional `reason` keyword argument at construction to distinguish "not configured" from "unrecognized backend" in error messages (default: `"No STT backend is configured"`).
 
 ### `WhisperLocalBackend`
 

@@ -129,7 +129,14 @@ class NullSTTBackend:
 
     Used when no real STT backend is configured.  Never pretends
     transcription occurred.
+
+    An optional *reason* can be passed at construction time to
+    distinguish "not configured" from "unrecognized backend" in
+    error messages.  The default covers the common unconfigured case.
     """
+
+    def __init__(self, *, reason: str = "No STT backend is configured") -> None:
+        self._reason = reason
 
     @property
     def backend_name(self) -> str:
@@ -141,7 +148,7 @@ class NullSTTBackend:
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
         return STTAdapterResult(
             transcript=None,
-            error="No STT backend is configured",
+            error=self._reason,
             error_class=STT_ERROR_BACKEND_MISSING,
         )
 
