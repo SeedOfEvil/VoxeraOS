@@ -13,6 +13,7 @@ from ..core.missions import list_missions
 from ..core.queue_daemon import MissionQueueDaemon
 from ..core.queue_inspect import queue_snapshot
 from ..health import read_health_snapshot
+from .home_vera_activity import build_home_vera_activity
 
 
 def register_home_routes(
@@ -82,6 +83,11 @@ def register_home_routes(
         health_snapshot = read_health_snapshot(root)
         daemon_health = daemon_health_view(health_snapshot)
         performance_stats = performance_stats_view(queue, health_snapshot)
+        # Read-only, fail-soft lookup of the most recent Vera session
+        # context. This is a supplemental continuity aid only —
+        # canonical queue / daemon-health / approvals truth above
+        # remains primary and must never be overridden by this block.
+        vera_activity = build_home_vera_activity(root)
         tmpl = templates.get_template("home.html")
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
         html = tmpl.render(
@@ -104,6 +110,7 @@ def register_home_routes(
             auth_setup_banner=auth_setup_banner(),
             daemon_health=daemon_health,
             performance_stats=performance_stats,
+            vera_activity=vera_activity,
         )
         response = HTMLResponse(content=html)
         response.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
