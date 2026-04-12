@@ -41,6 +41,17 @@ queue_lock_app = typer.Typer(help="Queue daemon lock utilities")
 inbox_app = typer.Typer(help="Human-friendly queue inbox")
 artifacts_app = typer.Typer(help="Artifact management utilities")
 
+
+@inbox_app.callback()
+def _inbox_guard() -> None:
+    require_config()
+
+
+@artifacts_app.callback()
+def _artifacts_guard() -> None:
+    require_config()
+
+
 queue_app.add_typer(queue_approvals_app, name="approvals")
 queue_app.add_typer(queue_lock_app, name="lock")
 queue_app.add_typer(queue_files_app, name="files")

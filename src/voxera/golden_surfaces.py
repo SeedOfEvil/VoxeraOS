@@ -141,12 +141,15 @@ def normalize_json_payload(
 
 
 def _render_surface(surface: GoldenSurface) -> str:
+    import shutil
+
     import voxera.config as _config_mod
 
     runner = CliRunner()
     env = {"COLUMNS": "100", "VOXERA_LOAD_DOTENV": "0"}
     original_env = dict(os.environ)
     original_default_config_path = _config_mod.default_config_path
+    _stub_dir: Path | None = None
     try:
         for key in list(os.environ):
             if key.startswith("VOXERA_"):
@@ -156,9 +159,9 @@ def _render_surface(surface: GoldenSurface) -> str:
         # block help-surface rendering when no real config is present.
         cfg_path = original_default_config_path()
         if not cfg_path.exists():
-            stub_dir = Path(tempfile.mkdtemp())
-            stub_cfg = stub_dir / "config.yml"
-            stub_cfg.write_text("mode: cli\n", encoding="utf-8")
+            _stub_dir = Path(tempfile.mkdtemp())
+            stub_cfg = _stub_dir / "config.yml"
+            stub_cfg.write_text("{}\n", encoding="utf-8")
             _config_mod.default_config_path = lambda: stub_cfg
 
         if surface.renderer == "help":
@@ -195,6 +198,8 @@ def _render_surface(surface: GoldenSurface) -> str:
         raise ValueError(f"Unsupported renderer: {surface.renderer}")
     finally:
         _config_mod.default_config_path = original_default_config_path
+        if _stub_dir is not None:
+            shutil.rmtree(_stub_dir, ignore_errors=True)
         os.environ.clear()
         os.environ.update(original_env)
 

@@ -31,7 +31,7 @@ def _provide_default_config(
     ``default_config_path`` themselves via monkeypatch.
     """
     cfg = tmp_path / "config.yml"
-    cfg.write_text("mode: cli\n", encoding="utf-8")
+    cfg.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr("voxera.config.default_config_path", lambda: cfg)
 
 

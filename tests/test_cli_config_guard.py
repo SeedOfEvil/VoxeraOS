@@ -38,7 +38,7 @@ def _with_missing_config(monkeypatch, tmp_path):
 def _with_present_config(monkeypatch, tmp_path):
     """Point default_config_path at a real (minimal) file."""
     cfg = tmp_path / "config.yml"
-    cfg.write_text("mode: cli\n", encoding="utf-8")
+    cfg.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr("voxera.config.default_config_path", lambda: cfg)
 
 
@@ -83,6 +83,30 @@ def test_queue_init_guarded_when_config_missing(monkeypatch, tmp_path):
 def test_automation_group_guarded_when_config_missing(monkeypatch, tmp_path):
     _with_missing_config(monkeypatch, tmp_path)
     result = runner.invoke(cli.app, ["automation", "list"])
+    assert result.exit_code == 1
+    assert _CONFIG_GUARD_MESSAGE in _strip_ansi(result.stdout)
+
+
+def test_automation_subcommand_guarded_when_config_missing(monkeypatch, tmp_path):
+    """Different leaf command than 'list' — proves the group callback covers all."""
+    _with_missing_config(monkeypatch, tmp_path)
+    result = runner.invoke(cli.app, ["automation", "run-due-once"])
+    assert result.exit_code == 1
+    assert _CONFIG_GUARD_MESSAGE in _strip_ansi(result.stdout)
+
+
+def test_inbox_guarded_when_config_missing(monkeypatch, tmp_path):
+    """inbox_app is mounted at root (not under queue_app) but must still be guarded."""
+    _with_missing_config(monkeypatch, tmp_path)
+    result = runner.invoke(cli.app, ["inbox", "list"])
+    assert result.exit_code == 1
+    assert _CONFIG_GUARD_MESSAGE in _strip_ansi(result.stdout)
+
+
+def test_artifacts_guarded_when_config_missing(monkeypatch, tmp_path):
+    """artifacts_app is mounted at root (not under queue_app) but must still be guarded."""
+    _with_missing_config(monkeypatch, tmp_path)
+    result = runner.invoke(cli.app, ["artifacts", "prune"])
     assert result.exit_code == 1
     assert _CONFIG_GUARD_MESSAGE in _strip_ansi(result.stdout)
 

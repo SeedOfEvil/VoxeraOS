@@ -38,7 +38,7 @@ These are kept as living templates. They are not loaded at runtime automatically
 
 ### First-run config guard
 
-Runtime CLI surfaces (`vera`, `panel`, `daemon`, `queue *`, `automation *`) check for a `config.yml` at the canonical config path before proceeding. If the file is missing, the command prints "No configuration found. Run voxera setup to get started." and exits with code 1. Setup, doctor, version, config show, and all help flows remain usable without config.
+Runtime CLI surfaces (`vera`, `panel`, `daemon`, `queue *`, `inbox *`, `artifacts *`, `automation *`) check for a `config.yml` at the canonical config path before proceeding. If the file is missing, the command prints "No configuration found. Run voxera setup to get started." and exits with code 1. Setup, doctor, version, config show, and all help flows remain usable without config.
 
 ### Setup wizard
 
