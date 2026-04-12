@@ -303,7 +303,8 @@ def test_configure_web_investigation_persists_secret_ref_and_max_results(monkeyp
 # --- Post-setup validation tests ---
 
 
-def test_check_brain_config_all_keys_found(monkeypatch):
+def test_check_brain_config_primary_usable(monkeypatch):
+    """Single usable slot → one ok check naming the usable slot."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     cfg = AppConfig(
         brain={
@@ -317,11 +318,12 @@ def test_check_brain_config_all_keys_found(monkeypatch):
 
     assert len(checks) == 1
     assert checks[0]["status"] == "ok"
-    assert checks[0]["check"] == "primary: api key"
-    assert "found" in checks[0]["detail"]
+    assert checks[0]["check"] == "brain readiness"
+    assert "primary" in checks[0]["detail"]
 
 
-def test_check_brain_config_missing_key_ref():
+def test_check_brain_config_no_key_ref_only_slot():
+    """Single slot with no api_key_ref and no other slots → warn."""
     cfg = AppConfig(
         brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref=None)}
     )
@@ -330,11 +332,11 @@ def test_check_brain_config_missing_key_ref():
 
     assert len(checks) == 1
     assert checks[0]["status"] == "warn"
-    assert checks[0]["check"] == "primary: api key"
-    assert "No API key reference" in checks[0]["detail"]
+    assert "No brain slot has an API key" in checks[0]["detail"]
 
 
 def test_check_brain_config_key_not_resolved(monkeypatch):
+    """Only slot has a key ref but it can't be resolved → warn with fix hint."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setattr(setup_wizard, "get_secret", lambda ref: None)
     cfg = AppConfig(
@@ -365,7 +367,7 @@ def test_check_brain_config_key_found_via_keyring(monkeypatch):
 
     assert len(checks) == 1
     assert checks[0]["status"] == "ok"
-    assert "found" in checks[0]["detail"]
+    assert "primary" in checks[0]["detail"]
 
 
 def test_check_brain_config_no_brains():
@@ -378,7 +380,31 @@ def test_check_brain_config_no_brains():
     assert "No brain slots" in checks[0]["detail"]
 
 
-def test_check_brain_config_multiple_slots_mixed(monkeypatch):
+def test_check_brain_config_primary_usable_optional_unconfigured(monkeypatch):
+    """Primary is usable — unconfigured optional slots do NOT produce warnings."""
+    monkeypatch.setenv("GOOD_KEY", "sk-valid")
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="GOOD_KEY"),
+            "fast": BrainConfig(type="openai_compat", model="m2", api_key_ref=None),
+            "reasoning": BrainConfig(type="openai_compat", model="m3", api_key_ref=None),
+            "fallback": BrainConfig(type="openai_compat", model="m4", api_key_ref=None),
+        }
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "ok"
+    assert checks[0]["check"] == "brain readiness"
+    assert "primary" in checks[0]["detail"]
+    # No per-slot warnings for unconfigured optional slots.
+    warn_checks = [c for c in checks if c["status"] == "warn"]
+    assert warn_checks == []
+
+
+def test_check_brain_config_primary_usable_optional_broken_still_ok(monkeypatch):
+    """Primary is usable — broken optional slots do NOT produce warnings."""
     monkeypatch.setenv("GOOD_KEY", "sk-valid")
     monkeypatch.delenv("BAD_KEY", raising=False)
     monkeypatch.setattr(setup_wizard, "get_secret", lambda ref: None)
@@ -391,23 +417,37 @@ def test_check_brain_config_multiple_slots_mixed(monkeypatch):
 
     checks = setup_wizard._check_brain_config(cfg)
 
-    assert len(checks) == 2
-    ok_checks = [c for c in checks if c["status"] == "ok"]
-    warn_checks = [c for c in checks if c["status"] == "warn"]
-    assert len(ok_checks) == 1
-    assert ok_checks[0]["check"] == "primary: api key"
-    assert len(warn_checks) == 1
-    assert warn_checks[0]["check"] == "fast: api key"
-    assert "BAD_KEY" in warn_checks[0]["detail"]
+    assert len(checks) == 1
+    assert checks[0]["status"] == "ok"
+    assert "primary" in checks[0]["detail"]
+
+
+def test_check_brain_config_no_usable_path_shows_first_broken(monkeypatch):
+    """No usable slot → one warn with the first broken key's fix hint."""
+    monkeypatch.delenv("KEY_A", raising=False)
+    monkeypatch.delenv("KEY_B", raising=False)
+    monkeypatch.setattr(setup_wizard, "get_secret", lambda ref: None)
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="KEY_A"),
+            "fast": BrainConfig(type="openai_compat", model="m2", api_key_ref="KEY_B"),
+        }
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "warn"
+    assert "KEY_A" in checks[0]["detail"]
+    assert "voxera secrets set KEY_A" in checks[0]["hint"]
 
 
 def test_check_brain_config_get_secret_exception(monkeypatch):
+    """get_secret raising does not crash — slot treated as not found."""
     monkeypatch.delenv("MY_KEY", raising=False)
-
-    def _boom(ref):
-        raise RuntimeError("keyring unavailable")
-
-    monkeypatch.setattr(setup_wizard, "get_secret", _boom)
+    monkeypatch.setattr(
+        setup_wizard, "get_secret", lambda ref: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     cfg = AppConfig(
         brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="MY_KEY")}
     )
@@ -417,46 +457,61 @@ def test_check_brain_config_get_secret_exception(monkeypatch):
     assert len(checks) == 1
     assert checks[0]["status"] == "warn"
     assert "MY_KEY" in checks[0]["detail"]
-    assert "not found" in checks[0]["detail"]
+
+
+def test_check_brain_config_lists_all_usable_slots(monkeypatch):
+    """Multiple usable slots are listed in the ok detail."""
+    monkeypatch.setenv("K1", "v")
+    monkeypatch.setenv("K2", "v")
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="K1"),
+            "fast": BrainConfig(type="openai_compat", model="m2", api_key_ref="K2"),
+        }
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "ok"
+    assert "primary" in checks[0]["detail"]
+    assert "fast" in checks[0]["detail"]
 
 
 def test_render_validation_summary_all_pass(capsys):
     checks = [
-        {"check": "primary: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
-        {"check": "fast: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
-    ]
-
-    setup_wizard._render_validation_summary(checks)
-    out = capsys.readouterr().out
-
-    assert "2 checks passed" in out
-    assert "Setup complete. Try: voxera vera" in out
-
-
-def test_render_validation_summary_with_warnings(capsys):
-    checks = [
-        {"check": "primary: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
-        {
-            "check": "fast: api key",
-            "status": "warn",
-            "detail": "KEY2 not found.",
-            "hint": "Set KEY2.",
-        },
+        {"check": "brain readiness", "status": "ok", "detail": "Usable: primary.", "hint": ""},
     ]
 
     setup_wizard._render_validation_summary(checks)
     out = capsys.readouterr().out
 
     assert "1 check passed" in out
-    assert "KEY2 not found" in out
-    assert "Set KEY2" in out
+    assert "Setup complete. Try: voxera vera" in out
+
+
+def test_render_validation_summary_with_warnings(capsys):
+    checks = [
+        {
+            "check": "brain readiness",
+            "status": "warn",
+            "detail": "KEY not found.",
+            "hint": "Set KEY.",
+        },
+    ]
+
+    setup_wizard._render_validation_summary(checks)
+    out = capsys.readouterr().out
+
+    assert "KEY not found" in out
+    assert "Set KEY" in out
     assert "1 warning" in out
     assert "Setup complete. Try: voxera vera" not in out
 
 
 def test_render_validation_summary_with_failures(capsys):
     checks = [
-        {"check": "primary: api key", "status": "fail", "detail": "broken.", "hint": "Fix it."},
+        {"check": "brain readiness", "status": "fail", "detail": "broken.", "hint": "Fix it."},
     ]
 
     setup_wizard._render_validation_summary(checks)
@@ -469,60 +524,38 @@ def test_render_validation_summary_with_failures(capsys):
 
 def test_render_validation_summary_mixed_no_fake_success(capsys):
     checks = [
-        {"check": "primary: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
+        {"check": "brain readiness", "status": "ok", "detail": "Usable: primary.", "hint": ""},
         {
-            "check": "fast: api key",
+            "check": "infra",
             "status": "warn",
-            "detail": "KEY2 not found.",
-            "hint": "Set KEY2.",
+            "detail": "degraded.",
+            "hint": "Check logs.",
         },
-        {"check": "runtime: health", "status": "ok", "detail": "ok", "hint": ""},
     ]
 
     setup_wizard._render_validation_summary(checks)
     out = capsys.readouterr().out
 
-    assert "2 checks passed" in out
+    assert "1 check passed" in out
     assert "1 warning" in out
-    assert "KEY2 not found" in out
+    assert "degraded" in out
     assert "Setup complete. Try: voxera vera" not in out
 
 
-def test_render_validation_summary_only_warnings(capsys):
-    checks = [
-        {
-            "check": "primary: api key",
-            "status": "warn",
-            "detail": "KEY not found.",
-            "hint": "Set KEY.",
-        },
-        {
-            "check": "fast: api key",
-            "status": "warn",
-            "detail": "KEY2 not found.",
-            "hint": "Set KEY2.",
-        },
-    ]
-
-    setup_wizard._render_validation_summary(checks)
-    out = capsys.readouterr().out
-
-    assert "checks passed" not in out
-    assert "KEY not found" in out
-    assert "KEY2 not found" in out
-    assert "2 warnings" in out
-    assert "Setup complete. Try: voxera vera" not in out
-
-
-def test_post_setup_validation_filters_doctor_noise(monkeypatch, capsys):
-    """Quick doctor warn checks with empty hints are expected-default-state noise
-    and should not appear in the post-setup summary."""
+def test_post_setup_validation_suppresses_all_doctor_warns(monkeypatch, capsys):
+    """All doctor warn checks are suppressed — only ok and fail pass through."""
     monkeypatch.setenv("TEST_KEY", "sk-test")
     cfg = AppConfig(
         brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="TEST_KEY")}
     )
     doctor_result = [
         {"check": "lock status", "status": "warn", "detail": "exists=False", "hint": ""},
+        {
+            "check": "recent history: last_ok",
+            "status": "warn",
+            "detail": "event=- ts=-",
+            "hint": "No recent successful health event recorded.",
+        },
         {
             "check": "voice: stt",
             "status": "warn",
@@ -536,14 +569,41 @@ def test_post_setup_validation_filters_doctor_noise(monkeypatch, capsys):
     setup_wizard._post_setup_validation(cfg)
     out = capsys.readouterr().out
 
-    # Config ok (1) + doctor ok (1) = 2 passed; voice warn (1) shown; lock noise dropped
+    # brain ok (1) + doctor ok (1) = 2 passed; all doctor warns dropped
     assert "2 checks passed" in out
-    assert "Set voice_stt_backend" in out
     assert "lock status" not in out
-    assert "1 warning" in out
+    assert "last_ok" not in out
+    assert "voice" not in out
+    assert "Setup complete. Try: voxera vera" in out
 
 
-def test_post_setup_validation_includes_quick_doctor(monkeypatch, capsys):
+def test_post_setup_validation_surfaces_doctor_fail(monkeypatch, capsys):
+    """Doctor checks with status 'fail' DO surface in the post-setup summary."""
+    monkeypatch.setenv("TEST_KEY", "sk-test")
+    cfg = AppConfig(
+        brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="TEST_KEY")}
+    )
+    doctor_result = [
+        {
+            "check": "critical: infra",
+            "status": "fail",
+            "detail": "disk full.",
+            "hint": "Free disk space.",
+        },
+        {"check": "queue counts", "status": "ok", "detail": "all zero", "hint": ""},
+    ]
+    monkeypatch.setattr(setup_wizard, "run_quick_doctor", lambda: doctor_result)
+
+    setup_wizard._post_setup_validation(cfg)
+    out = capsys.readouterr().out
+
+    assert "disk full" in out
+    assert "Free disk space" in out
+    assert "checks need attention" in out
+
+
+def test_post_setup_validation_includes_doctor_ok_in_count(monkeypatch, capsys):
+    """Doctor ok checks are counted but not individually displayed."""
     monkeypatch.setenv("TEST_KEY", "sk-test")
     cfg = AppConfig(
         brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="TEST_KEY")}
@@ -634,7 +694,7 @@ def test_run_setup_completes_with_validation_warnings(monkeypatch):
     monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: True)
 
     warn_checks = [
-        {"check": "primary: api key", "status": "warn", "detail": "missing", "hint": "fix"}
+        {"check": "brain readiness", "status": "warn", "detail": "missing", "hint": "fix"}
     ]
     monkeypatch.setattr(setup_wizard, "_check_brain_config", lambda cfg: list(warn_checks))
     monkeypatch.setattr(setup_wizard, "run_quick_doctor", lambda: [])

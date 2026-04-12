@@ -495,7 +495,13 @@ def _print_what_next() -> None:
 
 
 def _check_brain_config(cfg: AppConfig) -> list[dict[str, str]]:
-    """Validate brain slot configuration completeness."""
+    """Check first-run brain readiness — is there at least one usable brain path?
+
+    This is intentionally NOT a per-slot completeness audit.  The setup
+    summary answers "can the user likely talk to Vera now?" — so we check
+    whether *any* configured slot has a resolvable API key.  Unconfigured
+    optional slots are not first-run blockers and do not produce warnings.
+    """
     checks: list[dict[str, str]] = []
     if not cfg.brain:
         checks.append(
@@ -507,16 +513,15 @@ def _check_brain_config(cfg: AppConfig) -> list[dict[str, str]]:
             }
         )
         return checks
+
+    # Scan every configured slot to find at least one usable brain path.
+    usable_slots: list[str] = []
+    first_broken: dict[str, str] | None = None
+
     for name, bc in cfg.brain.items():
         if not bc.api_key_ref:
-            checks.append(
-                {
-                    "check": f"{name}: api key",
-                    "status": "warn",
-                    "detail": "No API key reference configured.",
-                    "hint": f"Re-run 'voxera setup' or set an API key for the {name} slot.",
-                }
-            )
+            # Slot exists but has no key ref — skip silently.
+            # Only matters if *no* slot ends up usable.
             continue
         found = bool(os.environ.get(bc.api_key_ref, "").strip())
         if not found:
@@ -526,26 +531,42 @@ def _check_brain_config(cfg: AppConfig) -> list[dict[str, str]]:
             except Exception:
                 pass
         if found:
-            checks.append(
-                {
-                    "check": f"{name}: api key",
-                    "status": "ok",
-                    "detail": f"{bc.api_key_ref} — found.",
-                    "hint": "",
-                }
-            )
-        else:
-            checks.append(
-                {
-                    "check": f"{name}: api key",
-                    "status": "warn",
-                    "detail": f"{bc.api_key_ref} not found in environment or keyring.",
-                    "hint": (
-                        f"Set {bc.api_key_ref} in your environment or run"
-                        f" 'voxera secrets set {bc.api_key_ref}'."
-                    ),
-                }
-            )
+            usable_slots.append(name)
+        elif first_broken is None:
+            first_broken = {
+                "name": name,
+                "ref": bc.api_key_ref,
+            }
+
+    if usable_slots:
+        checks.append(
+            {
+                "check": "brain readiness",
+                "status": "ok",
+                "detail": f"Usable: {', '.join(usable_slots)}.",
+                "hint": "",
+            }
+        )
+    elif first_broken:
+        ref = first_broken["ref"]
+        checks.append(
+            {
+                "check": "brain readiness",
+                "status": "warn",
+                "detail": f"{ref} not found in environment or keyring.",
+                "hint": (f"Set {ref} in your environment or run 'voxera secrets set {ref}'."),
+            }
+        )
+    else:
+        # All slots exist but none has an api_key_ref at all.
+        checks.append(
+            {
+                "check": "brain readiness",
+                "status": "warn",
+                "detail": "No brain slot has an API key reference configured.",
+                "hint": "Re-run 'voxera setup' and set an API key for at least one slot.",
+            }
+        )
     return checks
 
 
@@ -590,11 +611,15 @@ def _post_setup_validation(cfg: AppConfig) -> None:
     checks = _check_brain_config(cfg)
     with contextlib.suppress(Exception):
         for rc in run_quick_doctor():
-            # Include ok checks (counted but not displayed).  Only surface
-            # non-ok checks that carry an actionable hint — warn checks with
-            # an empty hint are expected-default-state noise in a fresh-setup
-            # context (e.g. "daemon lock does not exist yet").
-            if rc["status"] == "ok" or rc.get("hint"):
+            # The quick-doctor surface is designed for a running system.
+            # After a fresh setup the daemon has not started, so most warn
+            # checks ("no health event", "lock absent", …) are expected-
+            # default-state noise, not actionable blockers.
+            #
+            # Only surface doctor results that report an actual failure
+            # (status "fail").  Warn-level runtime state is left to
+            # `voxera doctor --quick` which the summary already recommends.
+            if rc["status"] in {"ok", "fail"}:
                 checks.append(rc)
     _render_validation_summary(checks)
 

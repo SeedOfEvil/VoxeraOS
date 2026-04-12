@@ -53,8 +53,8 @@ Runtime CLI surfaces (`vera`, `panel`, `daemon`, `queue *`, `inbox *`, `artifact
 
 After config is successfully written, setup automatically runs a bounded validation step (`_post_setup_validation`). This step:
 
-1. Checks brain slot configuration completeness — for each configured brain slot, verifies that an API key reference is set and that the key is resolvable via environment variable or keyring (`get_secret`).
-2. Runs the quick doctor path (`run_quick_doctor()`) in-process for runtime health checks. Failures are caught gracefully (e.g., queue not yet initialized). Only runtime checks with actionable hints are surfaced — expected-default-state warnings (e.g., daemon lock does not exist yet) are silently excluded to keep the summary focused on items the operator can act on.
+1. Checks first-run brain readiness — verifies that at least one configured brain slot has a resolvable API key (environment variable or keyring via `get_secret`). Unconfigured optional slots are not first-run blockers and do not produce individual warnings. The summary produces exactly one "brain readiness" check: ok if any slot is usable, warn with a focused fix hint if none is.
+2. Runs the quick doctor path (`run_quick_doctor()`) in-process. Failures are caught gracefully (e.g., queue not yet initialized). Only doctor checks that report an actual failure (`status == "fail"`) are surfaced — warn-level runtime state (daemon lock absent, no health events yet, etc.) is expected before the first daemon start and is left to `voxera doctor --quick`.
 3. Renders a compact traffic-light summary using Rich:
    - **All pass (green):** "Setup complete. Try: voxera vera"
    - **Warnings (yellow):** lists failing checks with actionable fix hints, e.g., "Set OPENROUTER_API_KEY in your environment or run 'voxera secrets set OPENROUTER_API_KEY'."
