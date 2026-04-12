@@ -2,6 +2,13 @@ from .flags import VoiceFoundationFlags, load_voice_foundation_flags
 from .input import VoiceInputDisabledError, ingest_voice_transcript, normalize_transcript_text
 from .models import InputOrigin, normalize_input_origin
 from .output import voice_output_status
+from .stt_adapter import (
+    NullSTTBackend,
+    STTAdapterResult,
+    STTBackend,
+    STTBackendUnsupportedError,
+    transcribe_stt_request,
+)
 from .stt_protocol import (
     STTRequest,
     STTResponse,
@@ -16,6 +23,10 @@ from .tts_status import TTSStatus, build_tts_status, tts_status_as_dict
 
 __all__ = [
     "InputOrigin",
+    "NullSTTBackend",
+    "STTAdapterResult",
+    "STTBackend",
+    "STTBackendUnsupportedError",
     "STTRequest",
     "STTResponse",
     "STTStatus",
@@ -34,6 +45,7 @@ __all__ = [
     "stt_request_as_dict",
     "stt_response_as_dict",
     "stt_status_as_dict",
+    "transcribe_stt_request",
     "tts_status_as_dict",
     "voice_output_status",
 ]

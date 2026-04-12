@@ -353,6 +353,57 @@ Unknown `status` values normalize fail-closed to `"unavailable"`.
 
 `stt_request_as_dict(request)` / `stt_response_as_dict(response)` serialize to plain dicts for JSON/logging/audit.
 
+## STT backend adapter boundary
+
+`voice/stt_adapter.py`. Runtime adapter interface for speech-to-text backends and the fail-soft transcription entry point. This is the protocol-to-runtime bridge layer — it consumes `STTRequest` and returns `STTResponse` through an explicit adapter boundary.
+
+### `STTBackend` (Protocol)
+
+Structural interface (mirrors the `Brain` protocol in `brain/base.py`). Implementations do not need to inherit — they only satisfy the structural signature.
+
+```python
+class STTBackend(Protocol):
+    @property
+    def backend_name(self) -> str: ...
+    def transcribe(self, request: STTRequest) -> STTAdapterResult: ...
+```
+
+### `STTAdapterResult`
+
+Frozen dataclass. Adapter-internal result shape returned by `STTBackend.transcribe()`.
+
+```jsonc
+{
+  "transcript": "transcribed text",            // nullable
+  "language": "en-US",                         // nullable
+  "error": "reason string",                    // nullable
+  "error_class": "custom_error"                // nullable; passthrough
+}
+```
+
+### `NullSTTBackend`
+
+Default adapter when no real backend is configured. Always returns an honest `STTAdapterResult` with `error_class="backend_missing"` — never pretends transcription occurred.
+
+### `transcribe_stt_request(request, adapter=None) -> STTResponse`
+
+Canonical fail-soft transcription entry point. Never raises. Returns a truthful `STTResponse` for every path:
+
+| Condition | Status | Error class |
+|---|---|---|
+| No adapter (`None`) | `unavailable` | `backend_missing` |
+| Adapter raises `STTBackendUnsupportedError` | `unsupported` | `unsupported_source` |
+| Adapter raises unexpected exception | `failed` | `backend_error` |
+| Adapter returns a result with `error` set | `failed` | passthrough |
+| Empty/whitespace transcript after normalization | `failed` | `empty_audio` |
+| Valid transcript | `succeeded` | (none) |
+
+Transcript normalization reuses `voice/input.py::normalize_transcript_text()`.
+
+### `STTBackendUnsupportedError`
+
+Exception raised by adapters when they do not support the requested input source. Caught by `transcribe_stt_request` and mapped to an `unsupported` response.
+
 ## STT status surface
 
 `voice/stt_status.py`. Observable status surface for speech-to-text configuration and availability. Symmetric with the TTS status surface. `available=true` means the subsystem is configured and enabled, NOT that transcription has been tested or will succeed.
