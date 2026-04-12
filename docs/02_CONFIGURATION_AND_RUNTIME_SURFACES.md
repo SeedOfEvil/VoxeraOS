@@ -206,6 +206,10 @@ The STT request/response protocol (`voice/stt_protocol.py`) defines the canonica
 
 The first real STT backend is `WhisperLocalBackend` (`voice/whisper_backend.py`), which uses `faster-whisper` for local audio file transcription. It supports `audio_file` only — `microphone` and `stream` are explicitly unsupported and remain future work. The dependency is optional: install with `pip install voxera-os[whisper]`. If the dependency is missing, the backend honestly reports `backend_missing`. Model loading is lazy (first `transcribe()` call).
 
+Backend selection is handled by `build_stt_backend(flags)` (`voice/stt_backend_factory.py`), which maps `VoiceFoundationFlags.voice_stt_backend` to the appropriate `STTBackend` implementation. When voice input is disabled, no backend is configured, or the backend identifier is unrecognized, it returns `NullSTTBackend`. When `voice_stt_backend` is `"whisper_local"`, it returns `WhisperLocalBackend`. The factory is the single point of backend selection logic.
+
+The recommended entry point for audio-file transcription is `transcribe_audio_file(audio_path, flags, ...)` (`voice/input.py`). It builds an `STTRequest`, selects the backend via the factory (or uses a caller-supplied `backend` to avoid per-call model reload), and runs the request through `transcribe_stt_request()`. It always returns a truthful `STTResponse` — never raises on transcription failure. Only `audio_file` is supported as an input source; microphone and stream remain future work. An async variant `transcribe_audio_file_async(...)` runs the transcription in a thread via `asyncio.to_thread()` for use in async contexts (Vera chat, FastAPI routes).
+
 See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
 
 Environment variables for voice configuration (loaded by `voice/flags.py`):

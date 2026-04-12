@@ -393,7 +393,7 @@ Frozen dataclass. Adapter-internal result shape returned by `STTBackend.transcri
 
 ### `NullSTTBackend`
 
-Default adapter when no real backend is configured. Always returns an honest `STTAdapterResult` with `error_class="backend_missing"` — never pretends transcription occurred. `supports_source()` returns `False` for all sources.
+Default adapter when no real backend is configured. Always returns an honest `STTAdapterResult` with `error_class="backend_missing"` — never pretends transcription occurred. `supports_source()` returns `False` for all sources. Accepts an optional `reason` keyword argument at construction to distinguish "not configured" from "unrecognized backend" in error messages (default: `"No STT backend is configured"`).
 
 ### `WhisperLocalBackend`
 
@@ -429,6 +429,31 @@ Transcript normalization reuses `voice/input.py::normalize_transcript_text()`.
 ### `STTBackendUnsupportedError`
 
 Exception raised by adapters when they do not support the requested input source. Caught by `transcribe_stt_request` and mapped to an `unsupported` response.
+
+## STT backend factory
+
+`voice/stt_backend_factory.py`. Runtime backend selection from `VoiceFoundationFlags`.
+
+### `build_stt_backend(flags) -> STTBackend`
+
+Maps `VoiceFoundationFlags.voice_stt_backend` to the appropriate `STTBackend` implementation. Returns `NullSTTBackend` when voice input is disabled, no backend is configured, or the backend identifier is unrecognized. Returns `WhisperLocalBackend` when `voice_stt_backend` is `"whisper_local"` (case-insensitive, whitespace-trimmed).
+
+Supported backend identifiers:
+
+| Identifier | Backend | Notes |
+|---|---|---|
+| `"whisper_local"` | `WhisperLocalBackend` | Local Whisper via faster-whisper |
+| (empty / None / unrecognized) | `NullSTTBackend` | Truthful unavailable |
+
+### `transcribe_audio_file(audio_path, flags, ..., backend=None) -> STTResponse`
+
+`voice/input.py`. Recommended entry point for audio-file transcription through the canonical STT pipeline. Builds an `STTRequest` with `input_source="audio_file"`, selects the backend via `build_stt_backend(flags)` (or uses a caller-supplied `backend`), and runs the request through `transcribe_stt_request()`. Always returns a truthful `STTResponse`. Only `audio_file` is supported — microphone and stream remain future work.
+
+Pass a pre-built `backend` to reuse an existing `STTBackend` instance across calls — this avoids re-constructing the backend (and potentially re-loading heavy models like Whisper) on every invocation.
+
+### `transcribe_audio_file_async(audio_path, flags, ..., backend=None) -> STTResponse`
+
+`voice/input.py`. Async variant of `transcribe_audio_file`. Runs the synchronous transcription in a thread via `asyncio.to_thread()` so it does not block the event loop. Use from async contexts (Vera chat, FastAPI routes). Preserves all fail-soft semantics.
 
 ## STT status surface
 
