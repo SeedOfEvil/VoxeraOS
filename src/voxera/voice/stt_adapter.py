@@ -30,15 +30,25 @@ from .input import normalize_transcript_text
 from .stt_protocol import (
     STT_ERROR_BACKEND_ERROR,
     STT_ERROR_BACKEND_MISSING,
+    STT_ERROR_DISABLED,
     STT_ERROR_EMPTY_AUDIO,
     STT_ERROR_UNSUPPORTED_SOURCE,
     STT_STATUS_FAILED,
     STT_STATUS_SUCCEEDED,
+    STT_STATUS_UNAVAILABLE,
     STT_STATUS_UNSUPPORTED,
     STTRequest,
     STTResponse,
     build_stt_response,
     build_stt_unavailable_response,
+)
+
+# Error classes that signal availability problems (subsystem cannot service
+# the request at all), as opposed to runtime failures (subsystem tried but
+# encountered an error).  Used by ``transcribe_stt_request`` to choose
+# ``unavailable`` vs ``failed`` status truthfully.
+_UNAVAILABLE_ERROR_CLASSES: frozenset[str] = frozenset(
+    {STT_ERROR_DISABLED, STT_ERROR_BACKEND_MISSING}
 )
 
 # -- adapter result ---------------------------------------------------------
@@ -134,10 +144,12 @@ def transcribe_stt_request(
       unsupported with the adapter's message.
     - If the adapter raises any other exception: returns failed with
       a backend_error error class.
+    - If the adapter returns a result with an availability-class error
+      (``disabled``, ``backend_missing``): returns unavailable.
+    - If the adapter returns a result with any other error: returns
+      failed with the adapter's error details.
     - If the adapter returns an empty/whitespace-only transcript:
       returns failed with empty_audio error class.
-    - If the adapter returns a result with an error: returns failed
-      with the adapter's error details.
     - Otherwise: returns succeeded with the normalized transcript.
     """
     started_at_ms = int(time.time() * 1000)
@@ -182,9 +194,18 @@ def transcribe_stt_request(
 
     # -- adapter returned an error -------------------------------------------
     if result.error is not None:
+        # Availability-class errors (disabled, backend_missing) are truthfully
+        # reported as "unavailable" — the subsystem was never capable.  Runtime
+        # errors (backend_error, timeout, custom) are "failed" — the subsystem
+        # tried and encountered an error.
+        error_status = (
+            STT_STATUS_UNAVAILABLE
+            if result.error_class in _UNAVAILABLE_ERROR_CLASSES
+            else STT_STATUS_FAILED
+        )
         return build_stt_response(
             request_id=request.request_id,
-            status=STT_STATUS_FAILED,
+            status=error_status,
             error=result.error,
             error_class=result.error_class,
             backend=backend_name,

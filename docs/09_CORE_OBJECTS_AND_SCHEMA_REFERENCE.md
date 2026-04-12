@@ -394,7 +394,8 @@ Canonical fail-soft transcription entry point. Never raises. Returns a truthful 
 | No adapter (`None`) | `unavailable` | `backend_missing` |
 | Adapter raises `STTBackendUnsupportedError` | `unsupported` | `unsupported_source` |
 | Adapter raises unexpected exception | `failed` | `backend_error` |
-| Adapter returns a result with `error` set | `failed` | passthrough |
+| Adapter result with availability error (`disabled`, `backend_missing`) | `unavailable` | passthrough |
+| Adapter result with runtime error (any other `error_class`) | `failed` | passthrough |
 | Empty/whitespace transcript after normalization | `failed` | `empty_audio` |
 | Valid transcript | `succeeded` | (none) |
 

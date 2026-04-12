@@ -20,6 +20,7 @@ from voxera.voice.stt_adapter import (
 from voxera.voice.stt_protocol import (
     STT_ERROR_BACKEND_ERROR,
     STT_ERROR_BACKEND_MISSING,
+    STT_ERROR_DISABLED,
     STT_ERROR_EMPTY_AUDIO,
     STT_ERROR_UNSUPPORTED_SOURCE,
     STT_PROTOCOL_SCHEMA_VERSION,
@@ -198,10 +199,11 @@ class TestTranscribeNoAdapter:
 
 
 class TestTranscribeNullBackend:
-    def test_null_backend_returns_failed_with_backend_missing(self) -> None:
+    def test_null_backend_returns_unavailable(self) -> None:
+        """NullSTTBackend signals an availability problem, not a runtime failure."""
         req = build_stt_request(input_source="microphone", request_id="null-be")
         resp = transcribe_stt_request(req, adapter=NullSTTBackend())
-        assert resp.status == STT_STATUS_FAILED
+        assert resp.status == STT_STATUS_UNAVAILABLE
         assert resp.error_class == STT_ERROR_BACKEND_MISSING
         assert resp.backend == "null"
         assert resp.transcript is None
@@ -285,7 +287,8 @@ class TestTranscribeBackendException:
 
 
 class TestTranscribeAdapterError:
-    def test_adapter_error_returns_failed(self) -> None:
+    def test_runtime_error_returns_failed(self) -> None:
+        """An adapter-reported error with a runtime error_class maps to 'failed'."""
         req = build_stt_request(input_source="audio_file", request_id="err-1")
         resp = transcribe_stt_request(req, adapter=StubErrorResultBackend())
         assert resp.status == STT_STATUS_FAILED
@@ -293,6 +296,99 @@ class TestTranscribeAdapterError:
         assert resp.error_class == "custom_format_error"
         assert resp.backend == "stub-error-result"
         assert resp.transcript is None
+
+    def test_availability_error_returns_unavailable(self) -> None:
+        """An adapter-reported error with an availability error_class maps to 'unavailable'."""
+
+        class DisabledBackend:
+            @property
+            def backend_name(self) -> str:
+                return "stub-disabled"
+
+            def transcribe(self, request: STTRequest) -> STTAdapterResult:
+                return STTAdapterResult(
+                    transcript=None,
+                    error="STT is disabled by policy",
+                    error_class=STT_ERROR_DISABLED,
+                )
+
+        req = build_stt_request(input_source="microphone", request_id="avail-1")
+        resp = transcribe_stt_request(req, adapter=DisabledBackend())
+        assert resp.status == STT_STATUS_UNAVAILABLE
+        assert resp.error_class == STT_ERROR_DISABLED
+        assert resp.backend == "stub-disabled"
+        assert resp.transcript is None
+
+    def test_backend_missing_error_returns_unavailable(self) -> None:
+        """backend_missing error_class is an availability problem, not a runtime failure."""
+        req = build_stt_request(input_source="microphone", request_id="avail-2")
+        resp = transcribe_stt_request(req, adapter=NullSTTBackend())
+        assert resp.status == STT_STATUS_UNAVAILABLE
+        assert resp.error_class == STT_ERROR_BACKEND_MISSING
+
+    def test_unknown_error_class_returns_failed(self) -> None:
+        """Unknown/custom error_class defaults to 'failed' — not availability."""
+
+        class CustomErrorBackend:
+            @property
+            def backend_name(self) -> str:
+                return "stub-custom-err"
+
+            def transcribe(self, request: STTRequest) -> STTAdapterResult:
+                return STTAdapterResult(
+                    transcript=None,
+                    error="Something vendor-specific broke",
+                    error_class="vendor_specific_error",
+                )
+
+        req = build_stt_request(input_source="microphone", request_id="custom-err")
+        resp = transcribe_stt_request(req, adapter=CustomErrorBackend())
+        assert resp.status == STT_STATUS_FAILED
+        assert resp.error_class == "vendor_specific_error"
+
+    def test_none_error_class_returns_failed(self) -> None:
+        """Adapter error with no error_class is a runtime failure."""
+
+        class BareErrorBackend:
+            @property
+            def backend_name(self) -> str:
+                return "stub-bare-err"
+
+            def transcribe(self, request: STTRequest) -> STTAdapterResult:
+                return STTAdapterResult(
+                    transcript=None,
+                    error="Something went wrong",
+                )
+
+        req = build_stt_request(input_source="microphone", request_id="bare-err")
+        resp = transcribe_stt_request(req, adapter=BareErrorBackend())
+        assert resp.status == STT_STATUS_FAILED
+        assert resp.error_class is None
+
+
+# -- transcribe_stt_request: unsupported with empty message ------------------
+
+
+class TestTranscribeUnsupportedEmptyMessage:
+    def test_empty_unsupported_error_uses_fallback_message(self) -> None:
+        """STTBackendUnsupportedError('') gets a meaningful fallback error string."""
+
+        class EmptyMessageUnsupportedBackend:
+            @property
+            def backend_name(self) -> str:
+                return "stub-empty-msg"
+
+            def transcribe(self, request: STTRequest) -> STTAdapterResult:
+                raise STTBackendUnsupportedError("")
+
+        req = build_stt_request(input_source="stream", request_id="empty-msg")
+        resp = transcribe_stt_request(req, adapter=EmptyMessageUnsupportedBackend())
+        assert resp.status == STT_STATUS_UNSUPPORTED
+        assert resp.error_class == STT_ERROR_UNSUPPORTED_SOURCE
+        # Should have a meaningful error string, not empty
+        assert resp.error is not None
+        assert len(resp.error) > 0
+        assert "stream" in resp.error
 
 
 # -- transcribe_stt_request: empty transcript --------------------------------
