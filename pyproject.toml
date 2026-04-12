@@ -25,6 +25,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+whisper = [
+  "faster-whisper>=1.0,<2.0",
+]
 dev = [
   "ruff>=0.6",
   "pytest>=8.0",

@@ -1,3 +1,36 @@
+## 2026-04-12 — feat(voice): add Whisper local STT backend
+
+- **Motivation**: first real STT backend implementation behind the `STTBackend` adapter boundary established in #323. Resolves the three intentionally deferred gaps from the adapter PR: async entry point, explicit `supports_source()`, and adapter-reported timing fields.
+- **Scope (deliberately bounded)**:
+  - Add `WhisperLocalBackend` (`src/voxera/voice/whisper_backend.py`): local Whisper STT via `faster-whisper`, supports `audio_file` only, lazy model loading, environment-driven configuration.
+  - Extend `STTBackend` protocol with `supports_source(input_source) -> bool`. `WhisperLocalBackend` returns `True` for `audio_file`, `False` for `microphone`/`stream`. `NullSTTBackend` returns `False` for all sources.
+  - Add optional timing fields to `STTAdapterResult`: `inference_ms`, `audio_duration_ms`. Carried through to `STTResponse`.
+  - Add `audio_path: str | None` to `STTRequest` (additive optional field, schema version stays at 1).
+  - Add `transcribe_stt_request_async()` async entry point via `asyncio.to_thread()`.
+  - Add `faster-whisper` as optional dependency: `pip install voxera-os[whisper]`.
+  - Update voice `__init__.py` exports.
+  - Do NOT add voice UI, streaming UX, microphone capture, or panel changes.
+- **New module — `src/voxera/voice/whisper_backend.py`**:
+  - `WhisperLocalBackend`: satisfies `STTBackend` protocol. `backend_name="whisper_local"`. Lazy model loading on first `transcribe()`. Supports `audio_file` only. `microphone`/`stream` raise `STTBackendUnsupportedError`. Missing `faster-whisper` returns truthful `backend_missing`. Reports `inference_ms` and `audio_duration_ms` on success.
+  - Configuration: `VOXERA_VOICE_STT_WHISPER_MODEL` (default: `base`), `VOXERA_VOICE_STT_WHISPER_DEVICE` (default: `auto`), `VOXERA_VOICE_STT_WHISPER_COMPUTE_TYPE` (default: `int8`).
+- **Protocol changes**:
+  - `STTRequest.audio_path: str | None` (optional, additive — schema version 1 preserved).
+  - `STTResponse.inference_ms: int | None`, `STTResponse.audio_duration_ms: int | None` (optional timing fields).
+  - `STTAdapterResult.inference_ms: int | None`, `STTAdapterResult.audio_duration_ms: int | None`.
+  - `build_stt_request(...)` accepts `audio_path` parameter.
+  - `build_stt_response(...)` accepts `inference_ms` and `audio_duration_ms` parameters.
+  - Serialization helpers updated for new fields.
+- **Adapter boundary changes**:
+  - `STTBackend.supports_source(input_source: str) -> bool` added to protocol.
+  - `NullSTTBackend.supports_source()` returns `False` for all sources.
+  - `transcribe_stt_request()` passes timing fields through on success.
+  - `transcribe_stt_request_async()` added — async wrapper via `asyncio.to_thread()`.
+- **Test coverage** — `tests/test_voice_whisper_backend.py` (40 tests): protocol conformance, lazy loading, missing dependency handling (backend_missing), supports_source behavior, unsupported source handling, audio_path requirements, multi-segment transcription (joined and normalized), empty segments list (truthful empty_audio), model load failure (clean error result, not leaked exception), successful transcription (mocked), timing field pass-through, empty transcript truthfulness, transcription failure, configuration (defaults, explicit, env), async entry point, STTRequest.audio_path field. `tests/test_voice_stt_adapter.py` updated with supports_source tests, timing field tests, and async entry point tests. `tests/test_voice_stt_protocol.py` updated with timing field serialization coverage and audio_path default assertion.
+- **Docs updated**: `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/CODEX_MEMORY.md`.
+- **What this does NOT do**: no voice UI, no streaming UX, no microphone capture, no panel changes, no assistant refactors. `microphone` and `stream` are future work. This is one bounded backend PR.
+- **Invariants preserved**: existing voice protocol/adapter/status tests updated for new protocol shape; fail-soft semantics preserved; truthful behavior maintained (no fake transcripts, no fake real-time capture); schema version stays at 1 (additive optional fields only).
+- **Next safe step**: wire `WhisperLocalBackend` into the voice input pipeline via flags/config, or add microphone/stream support as a subsequent backend.
+
 ## 2026-04-12 — feat(voice): add STT backend adapter interface and fail-soft transcription path
 
 - **Motivation**: next bounded step in the voice track — bridge the STT protocol shapes from #322 to a runtime adapter boundary. Defines the smallest credible adapter interface and a fail-soft transcription entry point, without overreaching into full voice UI or streaming UX.

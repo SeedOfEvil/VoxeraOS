@@ -42,6 +42,9 @@ class StubSuccessBackend:
     def backend_name(self) -> str:
         return "stub-success"
 
+    def supports_source(self, input_source: str) -> bool:
+        return True
+
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
         return STTAdapterResult(transcript="Hello world", language="en-US")
 
@@ -52,6 +55,9 @@ class StubUnsupportedBackend:
     @property
     def backend_name(self) -> str:
         return "stub-unsupported"
+
+    def supports_source(self, input_source: str) -> bool:
+        return False
 
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
         raise STTBackendUnsupportedError(
@@ -66,6 +72,9 @@ class StubCrashingBackend:
     def backend_name(self) -> str:
         return "stub-crash"
 
+    def supports_source(self, input_source: str) -> bool:
+        return True
+
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
         raise RuntimeError("Unexpected segfault in native library")
 
@@ -76,6 +85,9 @@ class StubErrorResultBackend:
     @property
     def backend_name(self) -> str:
         return "stub-error-result"
+
+    def supports_source(self, input_source: str) -> bool:
+        return True
 
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
         return STTAdapterResult(
@@ -92,6 +104,9 @@ class StubEmptyTranscriptBackend:
     def backend_name(self) -> str:
         return "stub-empty"
 
+    def supports_source(self, input_source: str) -> bool:
+        return True
+
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
         return STTAdapterResult(transcript="   \t  \n  ")
 
@@ -102,6 +117,9 @@ class StubWhitespaceTranscriptBackend:
     @property
     def backend_name(self) -> str:
         return "stub-whitespace"
+
+    def supports_source(self, input_source: str) -> bool:
+        return True
 
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
         return STTAdapterResult(transcript="  hello   world  ", language="en")
@@ -305,6 +323,9 @@ class TestTranscribeAdapterError:
             def backend_name(self) -> str:
                 return "stub-disabled"
 
+            def supports_source(self, input_source: str) -> bool:
+                return False
+
             def transcribe(self, request: STTRequest) -> STTAdapterResult:
                 return STTAdapterResult(
                     transcript=None,
@@ -334,6 +355,9 @@ class TestTranscribeAdapterError:
             def backend_name(self) -> str:
                 return "stub-custom-err"
 
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
             def transcribe(self, request: STTRequest) -> STTAdapterResult:
                 return STTAdapterResult(
                     transcript=None,
@@ -353,6 +377,9 @@ class TestTranscribeAdapterError:
             @property
             def backend_name(self) -> str:
                 return "stub-bare-err"
+
+            def supports_source(self, input_source: str) -> bool:
+                return True
 
             def transcribe(self, request: STTRequest) -> STTAdapterResult:
                 return STTAdapterResult(
@@ -377,6 +404,9 @@ class TestTranscribeUnsupportedEmptyMessage:
             @property
             def backend_name(self) -> str:
                 return "stub-empty-msg"
+
+            def supports_source(self, input_source: str) -> bool:
+                return False
 
             def transcribe(self, request: STTRequest) -> STTAdapterResult:
                 raise STTBackendUnsupportedError("")
@@ -411,6 +441,9 @@ class TestTranscribeEmptyTranscript:
             def backend_name(self) -> str:
                 return "stub-none-transcript"
 
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
             def transcribe(self, request: STTRequest) -> STTAdapterResult:
                 return STTAdapterResult(transcript=None)
 
@@ -436,6 +469,9 @@ class TestTranscriptNormalization:
             def backend_name(self) -> str:
                 return "raw"
 
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
             def transcribe(self, request: STTRequest) -> STTAdapterResult:
                 return STTAdapterResult(transcript=raw)
 
@@ -454,3 +490,114 @@ class TestTranscribeAllSources:
         resp = transcribe_stt_request(req, adapter=StubSuccessBackend())
         assert resp.status == STT_STATUS_SUCCEEDED
         assert resp.transcript == "Hello world"
+
+
+# -- supports_source() --------------------------------------------------------
+
+
+class TestSupportsSource:
+    def test_null_backend_supports_nothing(self) -> None:
+        backend = NullSTTBackend()
+        assert backend.supports_source("microphone") is False
+        assert backend.supports_source("audio_file") is False
+        assert backend.supports_source("stream") is False
+
+    def test_stub_success_supports_all(self) -> None:
+        backend = StubSuccessBackend()
+        assert backend.supports_source("microphone") is True
+        assert backend.supports_source("audio_file") is True
+
+    def test_stub_unsupported_supports_none(self) -> None:
+        backend = StubUnsupportedBackend()
+        assert backend.supports_source("microphone") is False
+
+
+# -- timing fields on STTAdapterResult ----------------------------------------
+
+
+class TestAdapterResultTimingFields:
+    def test_timing_fields_default_none(self) -> None:
+        result = STTAdapterResult(transcript="hello")
+        assert result.inference_ms is None
+        assert result.audio_duration_ms is None
+
+    def test_timing_fields_set(self) -> None:
+        result = STTAdapterResult(
+            transcript="hello",
+            inference_ms=500,
+            audio_duration_ms=3000,
+        )
+        assert result.inference_ms == 500
+        assert result.audio_duration_ms == 3000
+
+    def test_timing_fields_pass_through_to_response(self) -> None:
+        """Adapter-reported timing is carried into the STTResponse."""
+
+        class TimedBackend:
+            @property
+            def backend_name(self) -> str:
+                return "stub-timed"
+
+            def supports_source(self, input_source: str) -> bool:
+                return True
+
+            def transcribe(self, request: STTRequest) -> STTAdapterResult:
+                return STTAdapterResult(
+                    transcript="hello",
+                    inference_ms=150,
+                    audio_duration_ms=2500,
+                )
+
+        req = build_stt_request(input_source="audio_file", request_id="timed-1")
+        resp = transcribe_stt_request(req, adapter=TimedBackend())
+        assert resp.status == STT_STATUS_SUCCEEDED
+        assert resp.inference_ms == 150
+        assert resp.audio_duration_ms == 2500
+
+    def test_timing_fields_none_when_not_reported(self) -> None:
+        req = build_stt_request(input_source="microphone", request_id="no-timing")
+        resp = transcribe_stt_request(req, adapter=StubSuccessBackend())
+        assert resp.inference_ms is None
+        assert resp.audio_duration_ms is None
+
+
+# -- async entry point --------------------------------------------------------
+
+
+class TestTranscribeAsync:
+    @pytest.mark.asyncio
+    async def test_async_returns_same_as_sync(self) -> None:
+        from voxera.voice.stt_adapter import transcribe_stt_request_async
+
+        req = build_stt_request(input_source="microphone", request_id="async-ok")
+        resp = await transcribe_stt_request_async(req, adapter=StubSuccessBackend())
+        assert resp.status == STT_STATUS_SUCCEEDED
+        assert resp.transcript == "Hello world"
+        assert resp.backend == "stub-success"
+
+    @pytest.mark.asyncio
+    async def test_async_preserves_fail_soft(self) -> None:
+        from voxera.voice.stt_adapter import transcribe_stt_request_async
+
+        req = build_stt_request(input_source="microphone", request_id="async-fail")
+        resp = await transcribe_stt_request_async(req, adapter=None)
+        assert resp.status == STT_STATUS_UNAVAILABLE
+        assert resp.error_class == STT_ERROR_BACKEND_MISSING
+
+    @pytest.mark.asyncio
+    async def test_async_exception_is_fail_soft(self) -> None:
+        from voxera.voice.stt_adapter import transcribe_stt_request_async
+
+        req = build_stt_request(input_source="microphone", request_id="async-crash")
+        resp = await transcribe_stt_request_async(req, adapter=StubCrashingBackend())
+        assert resp.status == STT_STATUS_FAILED
+        assert resp.error_class == STT_ERROR_BACKEND_ERROR
+
+    @pytest.mark.asyncio
+    async def test_async_returns_stt_response(self) -> None:
+        from voxera.voice.stt_adapter import transcribe_stt_request_async
+        from voxera.voice.stt_protocol import STTResponse
+
+        req = build_stt_request(input_source="microphone", request_id="async-shape")
+        resp = await transcribe_stt_request_async(req, adapter=StubSuccessBackend())
+        assert isinstance(resp, STTResponse)

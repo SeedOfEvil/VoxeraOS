@@ -22,6 +22,7 @@ transcripts without crashing, and always returns a truthful
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -61,12 +62,20 @@ class STTAdapterResult:
     This is the adapter-internal shape — callers never see it directly.
     The ``transcribe_stt_request`` entry point wraps it into an
     ``STTResponse``.
+
+    Optional timing fields are adapter-reported observability data:
+    - ``inference_ms``: wall-clock time spent in the inference call.
+    - ``audio_duration_ms``: duration of the input audio, if known.
+    These are best-effort — backends that cannot measure them leave
+    them as ``None``.
     """
 
     transcript: str | None
     language: str | None = None
     error: str | None = None
     error_class: str | None = None
+    inference_ms: int | None = None
+    audio_duration_ms: int | None = None
 
 
 # -- adapter protocol -------------------------------------------------------
@@ -83,6 +92,14 @@ class STTBackend(Protocol):
     @property
     def backend_name(self) -> str:
         """Stable identifier for this backend (used in responses/logs)."""
+        ...
+
+    def supports_source(self, input_source: str) -> bool:
+        """Return whether this backend supports the given input source.
+
+        Allows callers to check source support upfront (e.g. for UI
+        gating) without triggering a full transcription attempt.
+        """
         ...
 
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
@@ -117,6 +134,9 @@ class NullSTTBackend:
     @property
     def backend_name(self) -> str:
         return "null"
+
+    def supports_source(self, input_source: str) -> bool:
+        return False
 
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
         return STTAdapterResult(
@@ -238,4 +258,22 @@ def transcribe_stt_request(
         backend=backend_name,
         started_at_ms=started_at_ms,
         finished_at_ms=finished_at_ms,
+        inference_ms=result.inference_ms,
+        audio_duration_ms=result.audio_duration_ms,
     )
+
+
+# -- async entry point ------------------------------------------------------
+
+
+async def transcribe_stt_request_async(
+    request: STTRequest,
+    adapter: STTBackend | None = None,
+) -> STTResponse:
+    """Async wrapper around ``transcribe_stt_request``.
+
+    Runs the synchronous transcription path in a thread via
+    ``asyncio.to_thread()`` so it does not block the event loop.
+    Preserves all fail-soft semantics of the sync entry point.
+    """
+    return await asyncio.to_thread(transcribe_stt_request, request, adapter)
