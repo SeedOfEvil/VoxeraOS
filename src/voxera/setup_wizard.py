@@ -569,13 +569,13 @@ def _render_validation_summary(checks: list[dict[str, str]]) -> None:
 
     if fail_count:
         lines.append("")
-        lines.append("Setup wrote config but some checks failed.")
-        lines.append("Fix items above, then run: voxera doctor --quick")
+        lines.append("Setup wrote config but some checks need attention.")
+        lines.append("Run 'voxera doctor --quick' for full diagnostics.")
         border_style = "red"
     elif warn_count:
         lines.append("")
         lines.append(f"Setup complete with {warn_count} warning{'s' if warn_count != 1 else ''}.")
-        lines.append("Fix items above, then try: voxera doctor --quick")
+        lines.append("Run 'voxera doctor --quick' for full diagnostics.")
         border_style = "yellow"
     else:
         lines.append("")
@@ -589,7 +589,13 @@ def _post_setup_validation(cfg: AppConfig) -> None:
     """Run bounded post-setup validation and render summary."""
     checks = _check_brain_config(cfg)
     with contextlib.suppress(Exception):
-        checks.extend(run_quick_doctor())
+        for rc in run_quick_doctor():
+            # Include ok checks (counted but not displayed).  Only surface
+            # non-ok checks that carry an actionable hint — warn checks with
+            # an empty hint are expected-default-state noise in a fresh-setup
+            # context (e.g. "daemon lock does not exist yet").
+            if rc["status"] == "ok" or rc.get("hint"):
+                checks.append(rc)
     _render_validation_summary(checks)
 
 

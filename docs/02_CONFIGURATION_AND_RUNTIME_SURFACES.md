@@ -54,11 +54,11 @@ Runtime CLI surfaces (`vera`, `panel`, `daemon`, `queue *`, `inbox *`, `artifact
 After config is successfully written, setup automatically runs a bounded validation step (`_post_setup_validation`). This step:
 
 1. Checks brain slot configuration completeness — for each configured brain slot, verifies that an API key reference is set and that the key is resolvable via environment variable or keyring (`get_secret`).
-2. Runs the quick doctor path (`run_quick_doctor()`) in-process for runtime health checks. Failures are caught gracefully (e.g., queue not yet initialized).
+2. Runs the quick doctor path (`run_quick_doctor()`) in-process for runtime health checks. Failures are caught gracefully (e.g., queue not yet initialized). Only runtime checks with actionable hints are surfaced — expected-default-state warnings (e.g., daemon lock does not exist yet) are silently excluded to keep the summary focused on items the operator can act on.
 3. Renders a compact traffic-light summary using Rich:
    - **All pass (green):** "Setup complete. Try: voxera vera"
    - **Warnings (yellow):** lists failing checks with actionable fix hints, e.g., "Set OPENROUTER_API_KEY in your environment or run 'voxera secrets set OPENROUTER_API_KEY'."
-   - **Failures (red):** lists failed checks with fix guidance and recommends `voxera doctor --quick`.
+   - **Failures (red):** lists checks needing attention with fix guidance and recommends `voxera doctor --quick`.
 
 The validation step does not claim the system is ready unless all checks pass. It does not duplicate doctor business logic — brain config checks are setup-specific, and runtime checks delegate to the existing quick doctor surface. Setup completes normally even when warnings or failures are reported.
 

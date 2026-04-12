@@ -378,6 +378,48 @@ def test_check_brain_config_no_brains():
     assert "No brain slots" in checks[0]["detail"]
 
 
+def test_check_brain_config_multiple_slots_mixed(monkeypatch):
+    monkeypatch.setenv("GOOD_KEY", "sk-valid")
+    monkeypatch.delenv("BAD_KEY", raising=False)
+    monkeypatch.setattr(setup_wizard, "get_secret", lambda ref: None)
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="GOOD_KEY"),
+            "fast": BrainConfig(type="openai_compat", model="m2", api_key_ref="BAD_KEY"),
+        }
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 2
+    ok_checks = [c for c in checks if c["status"] == "ok"]
+    warn_checks = [c for c in checks if c["status"] == "warn"]
+    assert len(ok_checks) == 1
+    assert ok_checks[0]["check"] == "primary: api key"
+    assert len(warn_checks) == 1
+    assert warn_checks[0]["check"] == "fast: api key"
+    assert "BAD_KEY" in warn_checks[0]["detail"]
+
+
+def test_check_brain_config_get_secret_exception(monkeypatch):
+    monkeypatch.delenv("MY_KEY", raising=False)
+
+    def _boom(ref):
+        raise RuntimeError("keyring unavailable")
+
+    monkeypatch.setattr(setup_wizard, "get_secret", _boom)
+    cfg = AppConfig(
+        brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="MY_KEY")}
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "warn"
+    assert "MY_KEY" in checks[0]["detail"]
+    assert "not found" in checks[0]["detail"]
+
+
 def test_render_validation_summary_all_pass(capsys):
     checks = [
         {"check": "primary: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
@@ -422,7 +464,7 @@ def test_render_validation_summary_with_failures(capsys):
 
     assert "broken" in out
     assert "Fix it" in out
-    assert "checks failed" in out
+    assert "checks need attention" in out
 
 
 def test_render_validation_summary_mixed_no_fake_success(capsys):
@@ -444,6 +486,61 @@ def test_render_validation_summary_mixed_no_fake_success(capsys):
     assert "1 warning" in out
     assert "KEY2 not found" in out
     assert "Setup complete. Try: voxera vera" not in out
+
+
+def test_render_validation_summary_only_warnings(capsys):
+    checks = [
+        {
+            "check": "primary: api key",
+            "status": "warn",
+            "detail": "KEY not found.",
+            "hint": "Set KEY.",
+        },
+        {
+            "check": "fast: api key",
+            "status": "warn",
+            "detail": "KEY2 not found.",
+            "hint": "Set KEY2.",
+        },
+    ]
+
+    setup_wizard._render_validation_summary(checks)
+    out = capsys.readouterr().out
+
+    assert "checks passed" not in out
+    assert "KEY not found" in out
+    assert "KEY2 not found" in out
+    assert "2 warnings" in out
+    assert "Setup complete. Try: voxera vera" not in out
+
+
+def test_post_setup_validation_filters_doctor_noise(monkeypatch, capsys):
+    """Quick doctor warn checks with empty hints are expected-default-state noise
+    and should not appear in the post-setup summary."""
+    monkeypatch.setenv("TEST_KEY", "sk-test")
+    cfg = AppConfig(
+        brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="TEST_KEY")}
+    )
+    doctor_result = [
+        {"check": "lock status", "status": "warn", "detail": "exists=False", "hint": ""},
+        {
+            "check": "voice: stt",
+            "status": "warn",
+            "detail": "unconfigured",
+            "hint": "Set voice_stt_backend.",
+        },
+        {"check": "queue counts", "status": "ok", "detail": "all zero", "hint": ""},
+    ]
+    monkeypatch.setattr(setup_wizard, "run_quick_doctor", lambda: doctor_result)
+
+    setup_wizard._post_setup_validation(cfg)
+    out = capsys.readouterr().out
+
+    # Config ok (1) + doctor ok (1) = 2 passed; voice warn (1) shown; lock noise dropped
+    assert "2 checks passed" in out
+    assert "Set voice_stt_backend" in out
+    assert "lock status" not in out
+    assert "1 warning" in out
 
 
 def test_post_setup_validation_includes_quick_doctor(monkeypatch, capsys):
