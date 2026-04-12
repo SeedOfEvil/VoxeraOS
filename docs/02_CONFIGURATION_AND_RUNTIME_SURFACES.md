@@ -202,7 +202,7 @@ From the README and the curated catalog under `src/voxera/data/openrouter_catalo
 
 Status labels: `available` (foundation + input/output enabled + backend configured), `unconfigured` (enabled but no backend), `disabled` (foundation or input/output off). `available` means configured and enabled — it does NOT imply that transcription or synthesis has been tested or will succeed. Disabled-by-config is an intentional state and reports `ok`; enabled-but-unconfigured reports `warn` with actionable hints.
 
-The STT request/response protocol (`voice/stt_protocol.py`) defines the canonical contract shapes for speech-to-text interactions. It is a protocol definition only — no runtime transcription backend is wired yet. See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
+The STT request/response protocol (`voice/stt_protocol.py`) defines the canonical contract shapes for speech-to-text interactions. The STT backend adapter boundary (`voice/stt_adapter.py`) provides the protocol-to-runtime bridge: an `STTBackend` protocol interface, a `NullSTTBackend` for unconfigured systems, and a `transcribe_stt_request()` fail-soft entry point that consumes `STTRequest` and always returns a truthful `STTResponse`. The adapter boundary exists but no production backend is wired yet — `NullSTTBackend` is the default and honestly reports `backend_missing`. See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
 
 Environment variables for voice configuration (loaded by `voice/flags.py`):
 - `VOXERA_ENABLE_VOICE_FOUNDATION` — master toggle for the voice subsystem.

@@ -1,3 +1,28 @@
+## 2026-04-12 — feat(voice): add STT backend adapter interface and fail-soft transcription path
+
+- **Motivation**: next bounded step in the voice track — bridge the STT protocol shapes from #322 to a runtime adapter boundary. Defines the smallest credible adapter interface and a fail-soft transcription entry point, without overreaching into full voice UI or streaming UX.
+- **Scope (deliberately bounded)**:
+  - Add STT backend adapter protocol (`src/voxera/voice/stt_adapter.py`): `STTBackend` structural interface mirroring `Brain` protocol pattern, `STTAdapterResult` frozen dataclass, `STTBackendUnsupportedError` exception, `NullSTTBackend` truthful no-op adapter, `transcribe_stt_request()` fail-soft entry point.
+  - Update voice `__init__.py` exports with new public symbols.
+  - Add focused contract-pinning tests (`tests/test_voice_stt_adapter.py`, 26 tests).
+  - Do NOT build a voice UI, streaming UX, or wire a production backend.
+  - Do NOT mix in panel/assistant refactors or broad voice lane logic.
+- **New module — `src/voxera/voice/stt_adapter.py`**:
+  - `STTBackend(Protocol)`: structural interface with `backend_name` property and `transcribe(request) -> STTAdapterResult` method. Mirrors `brain/base.py::Brain` pattern — implementations do not inherit.
+  - `STTAdapterResult`: frozen dataclass with `transcript`, `language`, `error`, `error_class`. Adapter-internal shape wrapped by the entry point.
+  - `NullSTTBackend`: default adapter when unconfigured. `backend_name="null"`, always returns `error_class=backend_missing`. Never pretends transcription occurred.
+  - `STTBackendUnsupportedError`: exception for adapters to reject unsupported input sources.
+  - `transcribe_stt_request(request, adapter=None) -> STTResponse`: canonical fail-soft entry point. Never raises. Handles: no adapter (unavailable/backend_missing), unsupported source (unsupported/unsupported_source), backend exception (failed/backend_error), adapter availability error — `disabled`/`backend_missing` error_class (unavailable/passthrough), adapter runtime error — any other error_class (failed/passthrough), empty transcript (failed/empty_audio), success (succeeded with normalized transcript). Reuses `normalize_transcript_text` from `voice/input.py`.
+- **Test coverage** — `tests/test_voice_stt_adapter.py` (31 tests): STTAdapterResult frozen/defaults/all-fields, NullSTTBackend truthful behavior and protocol conformance, STTBackend structural conformance (multiple stub adapters), transcribe_stt_request across all fail-soft paths (no adapter, null backend → unavailable, success with timing/normalization, unsupported with empty message fallback, exception, adapter availability-class error → unavailable, adapter runtime error → failed, custom/unknown/None error_class → failed, empty/None transcript), normalization consistency with input.py, all valid input sources.
+- **Docs updated**: `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` (adapter boundary schema), `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md` (adapter boundary description), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing), `docs/CODEX_MEMORY.md`.
+- **What this does NOT do**: no production STT backend, no voice UI, no streaming UX, no panel changes, no assistant refactors. The adapter boundary exists and is tested — real backends are a subsequent PR.
+- **Invariants preserved**: existing voice foundation, protocol, and status tests unchanged; no new runtime side effects; no network calls; no UI changes; adapter boundary is truthful (NullSTTBackend never overclaims); fail-soft entry point never raises.
+- **Known gaps (intentionally deferred)**:
+  - `transcribe_stt_request` is synchronous. Real STT backends will be async. An async counterpart (`transcribe_stt_request_async` or making the protocol async) should arrive with the first real backend — adding it now would be speculative.
+  - No `STTBackend.supports_source()` method. Source support is discovered via `STTBackendUnsupportedError`. An upfront check method is warranted when a UI needs to show source availability before the user starts speaking.
+  - `STTAdapterResult` has no adapter-reported timing fields. Wall-clock timing from the entry point is sufficient for now. If a backend reports server-side timing, the result shape can gain optional timing fields then.
+- **Next safe step**: wire a real STT backend adapter (e.g. Whisper, Google STT) behind the `STTBackend` protocol, or integrate `transcribe_stt_request` into the voice input pipeline.
+
 ## 2026-04-12 — feat(voice): add STT request/response protocol and TTS status surfaces
 
 - **Motivation**: protocol-first start of the voice capability track. Defines the minimum trustworthy contract surfaces for speech-to-text and text-to-speech without overreaching into a full voice UI. Follows the same VoxeraOS philosophy: explicit contracts, durable truth surfaces, fail-soft when unavailable, no overclaiming.
