@@ -1,3 +1,25 @@
+## 2026-04-12 — feat(voice): wire STT backend selection into voice input pipeline
+
+- **Motivation**: connect the STT protocol surfaces, adapter boundary, and WhisperLocalBackend into the actual voice input path through bounded config/runtime selection. Prior PRs established the protocol shapes, adapter interface, NullSTTBackend, and WhisperLocalBackend independently — this PR wires them together end-to-end.
+- **Scope (deliberately bounded)**:
+  - Add STT backend factory (`src/voxera/voice/stt_backend_factory.py`): `build_stt_backend(flags) -> STTBackend` maps `VoiceFoundationFlags.voice_stt_backend` to the appropriate backend implementation.
+  - Add `transcribe_audio_file(audio_path, flags, ...)` to `src/voxera/voice/input.py`: builds an `STTRequest`, selects backend via factory, runs through canonical `transcribe_stt_request()` path.
+  - Update `voice/__init__.py` exports with new public symbols.
+  - Add focused pipeline/factory tests (`tests/test_voice_stt_pipeline.py`, 27 tests).
+  - Do NOT add voice UI, streaming UX, microphone capture, panel changes, or assistant refactors.
+- **New module — `src/voxera/voice/stt_backend_factory.py`**:
+  - `build_stt_backend(flags)`: returns `NullSTTBackend` when voice input disabled, no backend configured, or backend identifier unrecognized. Returns `WhisperLocalBackend` when `voice_stt_backend == "whisper_local"` (case-insensitive, whitespace-trimmed). Single point of backend selection logic — no plugin registry, no dynamic imports.
+  - `STT_BACKEND_WHISPER_LOCAL = "whisper_local"` canonical identifier constant.
+- **Voice input path — `src/voxera/voice/input.py`**:
+  - `transcribe_audio_file(audio_path, flags, language=None, session_id=None) -> STTResponse`: recommended entry point for audio-file transcription. Builds `STTRequest` with `input_source="audio_file"`, selects backend via `build_stt_backend(flags)`, runs through `transcribe_stt_request()`. Always returns truthful `STTResponse`. Only `audio_file` supported — microphone and stream remain future work.
+  - Circular import avoided by using local imports inside `transcribe_audio_file`.
+- **Test coverage** — `tests/test_voice_stt_pipeline.py` (27 tests): factory returns NullSTTBackend for no-backend/empty/whitespace/unrecognized/disabled-foundation/disabled-input; factory returns WhisperLocalBackend for whisper_local (case-insensitive, whitespace-trimmed); canonical backend identifier constant; transcribe_audio_file returns unavailable for unconfigured/disabled/unknown; successful mocked transcription through full pipeline; request carries audio_path and input_source=audio_file; language and session_id pass-through; missing dependency returns unavailable; nonexistent file returns failed; empty transcript returns failed+empty_audio; backend crash is fail-soft; schema_version and request_id present; source truthfulness (only audio_file); export surface verified.
+- **Docs updated**: `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md` (factory and pipeline entry point), `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` (factory and transcribe_audio_file schema), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing), `docs/CODEX_MEMORY.md`.
+- **Files touched**: `src/voxera/voice/stt_backend_factory.py` (new), `src/voxera/voice/input.py` (added transcribe_audio_file), `src/voxera/voice/__init__.py` (updated exports), `tests/test_voice_stt_pipeline.py` (new, 27 tests), `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/CODEX_MEMORY.md`.
+- **What this does NOT do**: no voice UI, no streaming UX, no microphone capture, no panel changes, no assistant refactors. Microphone and stream sources are future work. This is bounded pipeline/config/runtime wiring only.
+- **Invariants preserved**: existing voice protocol/adapter/whisper/status/foundation tests unchanged; fail-soft semantics preserved; truthful behavior maintained (no fake transcripts, no fake source support); NullSTTBackend never overclaims; backend selection is explicit and observable.
+- **Next safe step**: integrate `transcribe_audio_file` into Vera or panel flows for operator-facing audio transcription, or add microphone/stream support as a subsequent backend capability.
+
 ## 2026-04-12 — feat(voice): add Whisper local STT backend
 
 - **Motivation**: first real STT backend implementation behind the `STTBackend` adapter boundary established in #323. Resolves the three intentionally deferred gaps from the adapter PR: async entry point, explicit `supports_source()`, and adapter-reported timing fields.

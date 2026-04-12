@@ -1,5 +1,10 @@
 from .flags import VoiceFoundationFlags, load_voice_foundation_flags
-from .input import VoiceInputDisabledError, ingest_voice_transcript, normalize_transcript_text
+from .input import (
+    VoiceInputDisabledError,
+    ingest_voice_transcript,
+    normalize_transcript_text,
+    transcribe_audio_file,
+)
 from .models import InputOrigin, normalize_input_origin
 from .output import voice_output_status
 from .stt_adapter import (
@@ -10,6 +15,7 @@ from .stt_adapter import (
     transcribe_stt_request,
     transcribe_stt_request_async,
 )
+from .stt_backend_factory import build_stt_backend
 from .stt_protocol import (
     STTRequest,
     STTResponse,
@@ -36,6 +42,7 @@ __all__ = [
     "VoiceFoundationFlags",
     "VoiceInputDisabledError",
     "WhisperLocalBackend",
+    "build_stt_backend",
     "build_stt_request",
     "build_stt_response",
     "build_stt_status",
@@ -48,6 +55,7 @@ __all__ = [
     "stt_request_as_dict",
     "stt_response_as_dict",
     "stt_status_as_dict",
+    "transcribe_audio_file",
     "transcribe_stt_request",
     "transcribe_stt_request_async",
     "tts_status_as_dict",

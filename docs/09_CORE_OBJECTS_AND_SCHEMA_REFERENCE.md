@@ -430,6 +430,25 @@ Transcript normalization reuses `voice/input.py::normalize_transcript_text()`.
 
 Exception raised by adapters when they do not support the requested input source. Caught by `transcribe_stt_request` and mapped to an `unsupported` response.
 
+## STT backend factory
+
+`voice/stt_backend_factory.py`. Runtime backend selection from `VoiceFoundationFlags`.
+
+### `build_stt_backend(flags) -> STTBackend`
+
+Maps `VoiceFoundationFlags.voice_stt_backend` to the appropriate `STTBackend` implementation. Returns `NullSTTBackend` when voice input is disabled, no backend is configured, or the backend identifier is unrecognized. Returns `WhisperLocalBackend` when `voice_stt_backend` is `"whisper_local"` (case-insensitive, whitespace-trimmed).
+
+Supported backend identifiers:
+
+| Identifier | Backend | Notes |
+|---|---|---|
+| `"whisper_local"` | `WhisperLocalBackend` | Local Whisper via faster-whisper |
+| (empty / None / unrecognized) | `NullSTTBackend` | Truthful unavailable |
+
+### `transcribe_audio_file(audio_path, flags, ...) -> STTResponse`
+
+`voice/input.py`. Recommended entry point for audio-file transcription through the canonical STT pipeline. Builds an `STTRequest` with `input_source="audio_file"`, selects the backend via `build_stt_backend(flags)`, and runs the request through `transcribe_stt_request()`. Always returns a truthful `STTResponse`. Only `audio_file` is supported — microphone and stream remain future work.
+
 ## STT status surface
 
 `voice/stt_status.py`. Observable status surface for speech-to-text configuration and availability. Symmetric with the TTS status surface. `available=true` means the subsystem is configured and enabled, NOT that transcription has been tested or will succeed.
