@@ -198,9 +198,9 @@ From the README and the curated catalog under `src/voxera/data/openrouter_catalo
 
 ### Voice subsystem status
 
-`voxera doctor --quick` now includes a `voice: tts status` check that reports the TTS subsystem's configuration and availability state. The check loads `VoiceFoundationFlags` from the runtime config and produces a `TTSStatus` surface (`voice/tts_status.py`) with fields: `configured`, `available`, `enabled`, `backend`, `status`, `reason`, `last_error`, `schema_version`.
+`voxera doctor --quick` now includes symmetric `voice: stt status` and `voice: tts status` checks that report each subsystem's configuration and availability state. The checks load `VoiceFoundationFlags` from the runtime config and produce `STTStatus` (`voice/stt_status.py`) and `TTSStatus` (`voice/tts_status.py`) surfaces.
 
-Status labels: `available` (foundation + output enabled + backend configured), `unconfigured` (enabled but no backend), `disabled` (foundation or output off), `unavailable` (catch-all). `available` means configured and enabled — it does NOT imply that synthesis has been tested or will succeed.
+Status labels: `available` (foundation + input/output enabled + backend configured), `unconfigured` (enabled but no backend), `disabled` (foundation or input/output off). `available` means configured and enabled — it does NOT imply that transcription or synthesis has been tested or will succeed. Disabled-by-config is an intentional state and reports `ok`; enabled-but-unconfigured reports `warn` with actionable hints.
 
 The STT request/response protocol (`voice/stt_protocol.py`) defines the canonical contract shapes for speech-to-text interactions. It is a protocol definition only — no runtime transcription backend is wired yet. See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
 

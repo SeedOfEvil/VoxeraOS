@@ -139,6 +139,9 @@ class TestTTSStatusSerialization:
         assert d["reason"] is None
         assert d["last_error"] is None
         assert d["schema_version"] == TTS_STATUS_SCHEMA_VERSION
+        # field-count guard: catches drift if a field is added to TTSStatus
+        # but forgotten in tts_status_as_dict
+        assert len(d) == len(TTSStatus.__dataclass_fields__)
 
     def test_as_dict_json_serializable(self) -> None:
         status = build_tts_status(_flags(foundation=True, output=True, tts_backend="stub"))

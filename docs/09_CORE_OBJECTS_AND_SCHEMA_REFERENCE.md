@@ -349,6 +349,32 @@ Frozen dataclass. Built via `build_stt_response(...)` or `build_stt_unavailable_
 
 Unknown `status` values normalize fail-closed to `"unavailable"`.
 
+`error_class` is intentionally not validated — backends may define their own error classes beyond the canonical constants. This matches the `CanonicalSkillResult.error_class` passthrough policy.
+
+`stt_request_as_dict(request)` / `stt_response_as_dict(response)` serialize to plain dicts for JSON/logging/audit.
+
+## STT status surface
+
+`voice/stt_status.py`. Observable status surface for speech-to-text configuration and availability. Symmetric with the TTS status surface. `available=true` means the subsystem is configured and enabled, NOT that transcription has been tested or will succeed.
+
+### `STTStatus`
+
+Frozen dataclass. Built via `build_stt_status(flags)`.
+
+```jsonc
+{
+  "configured": true,                          // backend string is present
+  "available": true,                           // foundation + input enabled + configured
+  "enabled": true,                             // foundation + input enabled
+  "backend": "provider-name",                  // nullable
+  "status": "available" | "unconfigured" | "disabled",
+  "reason": "voice_foundation_disabled" | "voice_input_disabled" | "voice_stt_backend_not_configured" | null,
+  "schema_version": 1
+}
+```
+
+`stt_status_as_dict(status)` serializes to a plain dict for JSON/health payloads.
+
 ## TTS status surface
 
 `voice/tts_status.py`. Observable status surface for text-to-speech configuration and availability. This is a truthful status surface — `available=true` means the subsystem is configured and enabled, NOT that synthesis has been tested or will succeed.

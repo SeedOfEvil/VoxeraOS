@@ -7,6 +7,8 @@ normalization of unknown status values.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from voxera.voice.stt_protocol import (
@@ -26,6 +28,8 @@ from voxera.voice.stt_protocol import (
     build_stt_request,
     build_stt_response,
     build_stt_unavailable_response,
+    stt_request_as_dict,
+    stt_response_as_dict,
 )
 
 # -- request shape ----------------------------------------------------------
@@ -177,12 +181,13 @@ class TestSTTUnavailableResponse:
         assert resp.transcript is None
         assert resp.request_id == "req-7"
 
-    def test_unavailable_response_defaults_error_class(self) -> None:
+    def test_unavailable_response_requires_error_class(self) -> None:
         resp = build_stt_unavailable_response(
             request_id="req-8",
             reason="No backend",
+            error_class=STT_ERROR_BACKEND_MISSING,
         )
-        assert resp.error_class == STT_ERROR_DISABLED
+        assert resp.error_class == STT_ERROR_BACKEND_MISSING
 
     def test_unavailable_response_with_backend(self) -> None:
         resp = build_stt_unavailable_response(
@@ -220,3 +225,74 @@ class TestSTTStatusNormalization:
         ):
             resp = build_stt_response(request_id="req-v", status=valid)
             assert resp.status == valid
+
+
+# -- error_class passthrough ------------------------------------------------
+
+
+class TestSTTErrorClassPassthrough:
+    def test_arbitrary_error_class_passes_through(self) -> None:
+        """error_class is intentionally not validated — backends may define their own."""
+        resp = build_stt_response(
+            request_id="req-ec",
+            status="failed",
+            error_class="custom_backend_specific_error",
+        )
+        assert resp.error_class == "custom_backend_specific_error"
+
+    def test_none_error_class_passes_through(self) -> None:
+        resp = build_stt_response(request_id="req-ec2", status="succeeded")
+        assert resp.error_class is None
+
+
+# -- serialization ----------------------------------------------------------
+
+
+class TestSTTSerialization:
+    def test_request_as_dict_roundtrip(self) -> None:
+        req = build_stt_request(
+            input_source="microphone",
+            language="en-US",
+            session_id="sess-1",
+            request_id="rid-1",
+            created_at_ms=5000,
+        )
+        d = stt_request_as_dict(req)
+        assert isinstance(d, dict)
+        assert d["request_id"] == "rid-1"
+        assert d["input_source"] == "microphone"
+        assert d["language"] == "en-US"
+        assert d["session_id"] == "sess-1"
+        assert d["created_at_ms"] == 5000
+        assert d["schema_version"] == STT_PROTOCOL_SCHEMA_VERSION
+        # field-count guard: catches drift if a field is added to STTRequest
+        # but forgotten in stt_request_as_dict
+        assert len(d) == len(STTRequest.__dataclass_fields__)
+
+    def test_request_as_dict_json_serializable(self) -> None:
+        req = build_stt_request(input_source="stream")
+        assert isinstance(json.dumps(stt_request_as_dict(req)), str)
+
+    def test_response_as_dict_roundtrip(self) -> None:
+        resp = build_stt_response(
+            request_id="rid-2",
+            status="succeeded",
+            transcript="hello",
+            language="en",
+            backend="stub",
+            started_at_ms=1000,
+            finished_at_ms=2000,
+        )
+        d = stt_response_as_dict(resp)
+        assert isinstance(d, dict)
+        assert d["request_id"] == "rid-2"
+        assert d["status"] == "succeeded"
+        assert d["transcript"] == "hello"
+        assert d["backend"] == "stub"
+        assert d["schema_version"] == STT_PROTOCOL_SCHEMA_VERSION
+        # field-count guard
+        assert len(d) == len(STTResponse.__dataclass_fields__)
+
+    def test_response_as_dict_json_serializable(self) -> None:
+        resp = build_stt_response(request_id="rid-3", status="failed", error="boom")
+        assert isinstance(json.dumps(stt_response_as_dict(resp)), str)
