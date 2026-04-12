@@ -22,6 +22,9 @@ from .core.queue_daemon import MissionQueueDaemon
 from .health import read_health_snapshot
 from .health_semantics import build_health_semantic_sections
 from .skills.registry import SkillRegistry
+from .voice.flags import load_voice_foundation_flags
+from .voice.stt_status import build_stt_status
+from .voice.tts_status import build_tts_status
 
 console = Console()
 _STALE_LAST_ERROR_THRESHOLD_MS = 5 * 60 * 1000
@@ -424,6 +427,73 @@ def run_quick_doctor(
                 f"429={int(historical_counters.get('panel_429_count', 0) or 0)}"
             ),
             "hint": "Counters are cumulative; spikes indicate repeated authentication or lockout issues.",
+        }
+    )
+
+    try:
+        voice_flags = load_voice_foundation_flags()
+    except Exception:
+        voice_flags = None
+
+    # -- STT status check --
+    if voice_flags is not None:
+        stt = build_stt_status(voice_flags)
+        stt_detail = (
+            f"status={stt.status} available={stt.available} "
+            f"enabled={stt.enabled} configured={stt.configured} "
+            f"backend={stt.backend or '-'}"
+        )
+        if stt.reason:
+            stt_detail += f" reason={stt.reason}"
+        stt_check_status = "ok" if stt.available else "warn" if stt.enabled else "ok"
+        if stt_check_status == "warn" and stt.reason == "voice_stt_backend_not_configured":
+            stt_hint = "Set voice_stt_backend in config or VOXERA_VOICE_STT_BACKEND env var."
+        elif stt_check_status == "warn":
+            stt_hint = f"STT enabled but {stt.status}: {stt.reason}."
+        else:
+            stt_hint = ""
+    else:
+        stt_detail = "error loading voice flags"
+        stt_check_status = "warn"
+        stt_hint = "Voice foundation flags could not be loaded; check config."
+    checks.append(
+        {
+            "check": "voice: stt status",
+            "status": stt_check_status,
+            "detail": stt_detail,
+            "hint": stt_hint,
+        }
+    )
+
+    # -- TTS status check --
+    if voice_flags is not None:
+        tts = build_tts_status(voice_flags)
+        tts_detail = (
+            f"status={tts.status} available={tts.available} "
+            f"enabled={tts.enabled} configured={tts.configured} "
+            f"backend={tts.backend or '-'}"
+        )
+        if tts.reason:
+            tts_detail += f" reason={tts.reason}"
+        # warn only when voice output is enabled but not fully available
+        # (e.g. backend missing); disabled-by-config is an intentional state.
+        tts_check_status = "ok" if tts.available else "warn" if tts.enabled else "ok"
+        if tts_check_status == "warn" and tts.reason == "voice_tts_backend_not_configured":
+            tts_hint = "Set voice_tts_backend in config or VOXERA_VOICE_TTS_BACKEND env var."
+        elif tts_check_status == "warn":
+            tts_hint = f"TTS enabled but {tts.status}: {tts.reason}."
+        else:
+            tts_hint = ""
+    else:
+        tts_detail = "error loading voice flags"
+        tts_check_status = "warn"
+        tts_hint = "Voice foundation flags could not be loaded; check config."
+    checks.append(
+        {
+            "check": "voice: tts status",
+            "status": tts_check_status,
+            "detail": tts_detail,
+            "hint": tts_hint,
         }
     )
 

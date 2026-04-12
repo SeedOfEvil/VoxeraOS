@@ -1,3 +1,43 @@
+## 2026-04-12 — feat(voice): add STT request/response protocol and TTS status surfaces
+
+- **Motivation**: protocol-first start of the voice capability track. Defines the minimum trustworthy contract surfaces for speech-to-text and text-to-speech without overreaching into a full voice UI. Follows the same VoxeraOS philosophy: explicit contracts, durable truth surfaces, fail-soft when unavailable, no overclaiming.
+- **Scope (deliberately bounded)**:
+  - Add STT request/response protocol definition (`src/voxera/voice/stt_protocol.py`).
+  - Add symmetric STT and TTS status surfaces (`src/voxera/voice/stt_status.py`, `src/voxera/voice/tts_status.py`).
+  - Wire both STT and TTS status into `voxera doctor --quick` checks.
+  - Add focused contract-pinning tests.
+  - Update voice `__init__.py` exports.
+  - Do NOT build a voice UI, runtime transcription backend, or synthesis engine.
+  - Do NOT mix in panel/assistant refactors.
+- **New module — `src/voxera/voice/stt_protocol.py`**:
+  - `STTRequest` frozen dataclass: `request_id`, `input_source` (microphone|audio_file|stream), `language`, `session_id`, `created_at_ms`, `schema_version`.
+  - `STTResponse` frozen dataclass: `request_id`, `status` (succeeded|failed|unavailable|unsupported), `transcript`, `language`, `error`, `error_class`, `backend`, `started_at_ms`, `finished_at_ms`, `schema_version`.
+  - Factory functions: `build_stt_request(...)`, `build_stt_response(...)`, `build_stt_unavailable_response(...)`.
+  - Serialization helpers: `stt_request_as_dict(...)`, `stt_response_as_dict(...)`.
+  - Unknown `input_source` rejected fail-closed (`ValueError`). Unknown `status` normalized fail-closed to `"unavailable"`. `error_class` intentionally not validated — backends may define their own error classes (matches `CanonicalSkillResult` passthrough policy).
+  - `build_stt_unavailable_response` requires explicit `error_class` — no misleading default.
+  - Schema version: `STT_PROTOCOL_SCHEMA_VERSION = 1`.
+- **New module — `src/voxera/voice/stt_status.py`**:
+  - `STTStatus` frozen dataclass: `configured`, `available`, `enabled`, `backend`, `status`, `reason`, `schema_version`.
+  - `build_stt_status(flags)` — truthful status from `VoiceFoundationFlags`. `available=True` means configured + enabled, NOT proven transcription.
+  - `stt_status_as_dict(status)` — plain dict serialization for health/JSON payloads.
+  - Status labels: `available`, `unconfigured`, `disabled`.
+- **New module — `src/voxera/voice/tts_status.py`**:
+  - `TTSStatus` frozen dataclass: `configured`, `available`, `enabled`, `backend`, `status`, `reason`, `last_error`, `schema_version`.
+  - `build_tts_status(flags, *, last_error=None)` — truthful status from `VoiceFoundationFlags`. `available=True` means configured + enabled, NOT proven synthesis.
+  - `tts_status_as_dict(status)` — plain dict serialization for health/JSON payloads.
+  - Status labels: `available`, `unconfigured`, `disabled`, `unavailable`.
+  - Schema version: `TTS_STATUS_SCHEMA_VERSION = 1`.
+- **Doctor integration — `src/voxera/doctor.py`**:
+  - `run_quick_doctor()` now includes symmetric `voice: stt status` and `voice: tts status` checks. Voice flags loaded once, both checks derived. Disabled-by-config is `ok` (intentional state); enabled-but-unconfigured is `warn` with actionable hints. Fail-soft: if flag loading fails, both checks report a warning.
+- **Test coverage**:
+  - `tests/test_voice_stt_protocol.py` (30 tests): request shape, all valid sources, case normalization, unknown source rejection, auto-generated/explicit ids, explicit timestamps, frozen immutability, optional field defaults, success response shape, transcript whitespace normalization, empty transcript → None, failure response with error/error_class, unsupported response, unavailable convenience builder (required error_class, backend passthrough), fail-closed status normalization (unknown/empty/None → unavailable), all valid statuses pass through, error_class passthrough policy (arbitrary strings accepted, None passthrough), serialization helpers (request/response as_dict roundtrip, field-count guards, JSON serializability).
+  - `tests/test_voice_stt_status.py` (14 tests): available when fully configured, disabled when foundation or input off, unconfigured when no backend, fully-disabled defaults, frozen immutability, truthful unavailable handling (available ≠ transcription proven), dict serialization roundtrip (field-count guard, JSON serializability), integration with flags loader (config file, empty config), doctor integration (check presence, ok-when-disabled, warn-when-enabled-but-unconfigured).
+  - `tests/test_voice_tts_status.py` (19 tests): available when fully configured, disabled when foundation or output off, unconfigured when no backend, fully-disabled defaults, frozen immutability, truthful unavailable handling (available ≠ synthesis proven), last_error passthrough/stripping/None, dict serialization roundtrip (field-count guard, JSON serializability), disabled dict state, integration with flags loader (config file, empty config, env vars), doctor integration (check presence, ok-when-disabled, warn-when-enabled-but-unconfigured).
+- **Docs updated**: `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` (STT protocol + STT/TTS status schema shapes, error_class passthrough note, serialization helpers), `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md` (voice subsystem status section, env vars), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listings), `docs/CODEX_MEMORY.md`.
+- **Files touched**: `src/voxera/voice/stt_protocol.py` (new), `src/voxera/voice/stt_status.py` (new), `src/voxera/voice/tts_status.py` (new), `src/voxera/voice/__init__.py` (updated exports), `src/voxera/doctor.py` (STT + TTS status checks), `tests/test_voice_stt_protocol.py` (new, 30 tests), `tests/test_voice_stt_status.py` (new, 14 tests), `tests/test_voice_tts_status.py` (new, 19 tests), `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/CODEX_MEMORY.md`.
+- **Invariants preserved**: existing voice foundation behavior unchanged; no new runtime side effects; no network calls; no UI changes; protocol is definition-only (no transcription/synthesis execution); status surfaces are truthful (available ≠ feature works); doctor checks are fail-soft; disabled-by-config is ok not warn.
+
 ## 2026-04-12 — refactor(panel): extract degraded assistant bridge and messaging helpers
 
 - **Motivation**: continuing the bounded panel decomposition. The degraded-assistant bridge / messaging cluster (stall detection, provider-tier traversal, degraded-mode disclosure, async/sync bridge, result persistence) lived inline in `routes_assistant.py` with thin wrappers in `app.py`. This PR extracts that cluster into a dedicated `degraded_assistant_bridge.py` module, keeping `app.py` as the composition root and preserving behavior exactly.
