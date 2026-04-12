@@ -17,6 +17,10 @@
 - **Docs updated**: `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` (adapter boundary schema), `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md` (adapter boundary description), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing), `docs/CODEX_MEMORY.md`.
 - **What this does NOT do**: no production STT backend, no voice UI, no streaming UX, no panel changes, no assistant refactors. The adapter boundary exists and is tested — real backends are a subsequent PR.
 - **Invariants preserved**: existing voice foundation, protocol, and status tests unchanged; no new runtime side effects; no network calls; no UI changes; adapter boundary is truthful (NullSTTBackend never overclaims); fail-soft entry point never raises.
+- **Known gaps (intentionally deferred)**:
+  - `transcribe_stt_request` is synchronous. Real STT backends will be async. An async counterpart (`transcribe_stt_request_async` or making the protocol async) should arrive with the first real backend — adding it now would be speculative.
+  - No `STTBackend.supports_source()` method. Source support is discovered via `STTBackendUnsupportedError`. An upfront check method is warranted when a UI needs to show source availability before the user starts speaking.
+  - `STTAdapterResult` has no adapter-reported timing fields. Wall-clock timing from the entry point is sufficient for now. If a backend reports server-side timing, the result shape can gain optional timing fields then.
 - **Next safe step**: wire a real STT backend adapter (e.g. Whisper, Google STT) behind the `STTBackend` protocol, or integrate `transcribe_stt_request` into the voice input pipeline.
 
 ## 2026-04-12 — feat(voice): add STT request/response protocol and TTS status surfaces
