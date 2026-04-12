@@ -118,24 +118,30 @@ class WhisperLocalBackend:
             )
 
         # -- audio_path check --------------------------------------------------
-        audio_path = getattr(request, "audio_path", None)
-        if not audio_path:
+        if not request.audio_path:
             return STTAdapterResult(
                 transcript=None,
                 error="audio_path is required for audio_file transcription",
                 error_class=STT_ERROR_BACKEND_ERROR,
             )
 
-        path = Path(audio_path)
+        path = Path(request.audio_path)
         if not path.is_file():
             return STTAdapterResult(
                 transcript=None,
-                error=f"Audio file not found: {audio_path}",
+                error=f"Audio file not found: {request.audio_path}",
                 error_class=STT_ERROR_BACKEND_ERROR,
             )
 
         # -- lazy model load ---------------------------------------------------
-        model = self._ensure_model()
+        try:
+            model = self._ensure_model()
+        except Exception as exc:
+            return STTAdapterResult(
+                transcript=None,
+                error=f"Whisper model failed to load: {exc}",
+                error_class=STT_ERROR_BACKEND_ERROR,
+            )
 
         # -- transcribe --------------------------------------------------------
         inference_start_ms = int(time.time() * 1000)

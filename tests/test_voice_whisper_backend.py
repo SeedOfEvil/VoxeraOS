@@ -205,6 +205,109 @@ def _make_mock_model(
     return mock_model
 
 
+class TestWhisperMultiSegment:
+    def test_multi_segment_transcript_joined(self, tmp_path) -> None:
+        """Whisper typically returns multiple segments; they should be joined."""
+        audio_file = tmp_path / "multi.wav"
+        audio_file.write_bytes(b"fake-audio-data")
+
+        mock_model = MagicMock()
+        seg1, seg2, seg3 = MagicMock(), MagicMock(), MagicMock()
+        seg1.text = " Hello"
+        seg2.text = " beautiful"
+        seg3.text = " world"
+        info = MagicMock()
+        info.language = "en"
+        info.duration = 4.0
+        mock_model.transcribe.return_value = ([seg1, seg2, seg3], info)
+
+        backend = WhisperLocalBackend()
+        backend._model = mock_model
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="multi-seg",
+            audio_path=str(audio_file),
+        )
+        with patch("voxera.voice.whisper_backend._FASTER_WHISPER_AVAILABLE", True):
+            resp = transcribe_stt_request(req, adapter=backend)
+
+        assert resp.status == STT_STATUS_SUCCEEDED
+        # Entry point normalizes whitespace via normalize_transcript_text
+        assert resp.transcript == "Hello beautiful world"
+
+    def test_empty_segments_list(self, tmp_path) -> None:
+        """No segments → empty transcript → truthful empty_audio failure."""
+        audio_file = tmp_path / "silence.wav"
+        audio_file.write_bytes(b"fake-silence")
+
+        mock_model = MagicMock()
+        info = MagicMock()
+        info.language = "en"
+        info.duration = 1.0
+        mock_model.transcribe.return_value = ([], info)
+
+        backend = WhisperLocalBackend()
+        backend._model = mock_model
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="no-seg",
+            audio_path=str(audio_file),
+        )
+        with patch("voxera.voice.whisper_backend._FASTER_WHISPER_AVAILABLE", True):
+            resp = transcribe_stt_request(req, adapter=backend)
+
+        assert resp.status == STT_STATUS_FAILED
+        assert resp.error_class == STT_ERROR_EMPTY_AUDIO
+
+
+class TestWhisperModelLoadFailure:
+    def test_model_load_failure_returns_error_result(self, tmp_path) -> None:
+        """If the Whisper model fails to load, return a clean error result."""
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake-audio-data")
+
+        backend = WhisperLocalBackend(model_size="nonexistent-model-xyz")
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="load-fail",
+            audio_path=str(audio_file),
+        )
+        with (
+            patch("voxera.voice.whisper_backend._FASTER_WHISPER_AVAILABLE", True),
+            patch.object(backend, "_ensure_model", side_effect=OSError("model not found")),
+        ):
+            result = backend.transcribe(req)
+
+        assert result.transcript is None
+        assert result.error_class == STT_ERROR_BACKEND_ERROR
+        assert "failed to load" in (result.error or "").lower()
+
+    def test_model_load_failure_through_entry_point(self, tmp_path) -> None:
+        """Model load failure through entry point returns failed, not crashed."""
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake-audio-data")
+
+        backend = WhisperLocalBackend()
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="load-fail-ep",
+            audio_path=str(audio_file),
+        )
+        with (
+            patch("voxera.voice.whisper_backend._FASTER_WHISPER_AVAILABLE", True),
+            patch.object(backend, "_ensure_model", side_effect=MemoryError("OOM")),
+        ):
+            resp = transcribe_stt_request(req, adapter=backend)
+
+        assert resp.status == STT_STATUS_FAILED
+        assert resp.error_class == STT_ERROR_BACKEND_ERROR
+        assert resp.backend == "whisper_local"
+
+
 class TestWhisperTranscriptionSuccess:
     def test_success_returns_transcript(self, tmp_path) -> None:
         audio_file = tmp_path / "test.wav"

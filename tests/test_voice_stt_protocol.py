@@ -87,6 +87,7 @@ class TestSTTRequestShape:
         req = build_stt_request(input_source="microphone")
         assert req.language is None
         assert req.session_id is None
+        assert req.audio_path is None
 
 
 # -- success response shape -------------------------------------------------
@@ -114,6 +115,19 @@ class TestSTTSuccessResponse:
         assert resp.started_at_ms == 1000
         assert resp.finished_at_ms == 2000
         assert resp.schema_version == STT_PROTOCOL_SCHEMA_VERSION
+        assert resp.inference_ms is None
+        assert resp.audio_duration_ms is None
+
+    def test_success_response_with_timing_fields(self) -> None:
+        resp = build_stt_response(
+            request_id="req-timing",
+            status="succeeded",
+            transcript="hello",
+            inference_ms=150,
+            audio_duration_ms=3500,
+        )
+        assert resp.inference_ms == 150
+        assert resp.audio_duration_ms == 3500
 
     def test_success_response_normalizes_transcript_whitespace(self) -> None:
         resp = build_stt_response(
@@ -282,6 +296,8 @@ class TestSTTSerialization:
             backend="stub",
             started_at_ms=1000,
             finished_at_ms=2000,
+            inference_ms=150,
+            audio_duration_ms=3500,
         )
         d = stt_response_as_dict(resp)
         assert isinstance(d, dict)
@@ -290,6 +306,8 @@ class TestSTTSerialization:
         assert d["transcript"] == "hello"
         assert d["backend"] == "stub"
         assert d["schema_version"] == STT_PROTOCOL_SCHEMA_VERSION
+        assert d["inference_ms"] == 150
+        assert d["audio_duration_ms"] == 3500
         # field-count guard
         assert len(d) == len(STTResponse.__dataclass_fields__)
 
