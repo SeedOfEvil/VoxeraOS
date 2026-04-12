@@ -242,6 +242,11 @@ def test_run_setup_finish_path_ensures_services_before_launch(monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(
         setup_wizard,
+        "_post_setup_validation",
+        lambda cfg: calls.append("validation"),
+    )
+    monkeypatch.setattr(
+        setup_wizard,
         "_ensure_runtime_services_running",
         lambda: calls.append("ensure") or {"failed": [], "started": []},
     )
@@ -257,7 +262,7 @@ def test_run_setup_finish_path_ensures_services_before_launch(monkeypatch):
 
     asyncio.run(setup_wizard.run_setup())
 
-    assert calls == ["ensure", "launch"]
+    assert calls == ["validation", "ensure", "launch"]
 
 
 def test_configure_web_investigation_disabled(monkeypatch):
@@ -293,3 +298,250 @@ def test_configure_web_investigation_persists_secret_ref_and_max_results(monkeyp
     assert cfg.web_investigation.api_key_ref == "BRAVE_API_KEY"
     assert cfg.web_investigation.env_api_key_var == "BRAVE_API_KEY"
     assert cfg.web_investigation.max_results == 7
+
+
+# --- Post-setup validation tests ---
+
+
+def test_check_brain_config_all_keys_found(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat", model="m1", api_key_ref="OPENROUTER_API_KEY"
+            )
+        }
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "ok"
+    assert checks[0]["check"] == "primary: api key"
+    assert "found" in checks[0]["detail"]
+
+
+def test_check_brain_config_missing_key_ref():
+    cfg = AppConfig(
+        brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref=None)}
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "warn"
+    assert checks[0]["check"] == "primary: api key"
+    assert "No API key reference" in checks[0]["detail"]
+
+
+def test_check_brain_config_key_not_resolved(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(setup_wizard, "get_secret", lambda ref: None)
+    cfg = AppConfig(
+        brain={
+            "primary": BrainConfig(
+                type="openai_compat", model="m1", api_key_ref="OPENROUTER_API_KEY"
+            )
+        }
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "warn"
+    assert "OPENROUTER_API_KEY" in checks[0]["detail"]
+    assert "not found" in checks[0]["detail"]
+    assert "voxera secrets set OPENROUTER_API_KEY" in checks[0]["hint"]
+
+
+def test_check_brain_config_key_found_via_keyring(monkeypatch):
+    monkeypatch.delenv("MY_KEY", raising=False)
+    monkeypatch.setattr(setup_wizard, "get_secret", lambda ref: "sk-keyring-value")
+    cfg = AppConfig(
+        brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="MY_KEY")}
+    )
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "ok"
+    assert "found" in checks[0]["detail"]
+
+
+def test_check_brain_config_no_brains():
+    cfg = AppConfig(brain={})
+
+    checks = setup_wizard._check_brain_config(cfg)
+
+    assert len(checks) == 1
+    assert checks[0]["status"] == "warn"
+    assert "No brain slots" in checks[0]["detail"]
+
+
+def test_render_validation_summary_all_pass(capsys):
+    checks = [
+        {"check": "primary: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
+        {"check": "fast: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
+    ]
+
+    setup_wizard._render_validation_summary(checks)
+    out = capsys.readouterr().out
+
+    assert "2 checks passed" in out
+    assert "Setup complete. Try: voxera vera" in out
+
+
+def test_render_validation_summary_with_warnings(capsys):
+    checks = [
+        {"check": "primary: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
+        {
+            "check": "fast: api key",
+            "status": "warn",
+            "detail": "KEY2 not found.",
+            "hint": "Set KEY2.",
+        },
+    ]
+
+    setup_wizard._render_validation_summary(checks)
+    out = capsys.readouterr().out
+
+    assert "1 check passed" in out
+    assert "KEY2 not found" in out
+    assert "Set KEY2" in out
+    assert "1 warning" in out
+    assert "Setup complete. Try: voxera vera" not in out
+
+
+def test_render_validation_summary_with_failures(capsys):
+    checks = [
+        {"check": "primary: api key", "status": "fail", "detail": "broken.", "hint": "Fix it."},
+    ]
+
+    setup_wizard._render_validation_summary(checks)
+    out = capsys.readouterr().out
+
+    assert "broken" in out
+    assert "Fix it" in out
+    assert "checks failed" in out
+
+
+def test_render_validation_summary_mixed_no_fake_success(capsys):
+    checks = [
+        {"check": "primary: api key", "status": "ok", "detail": "KEY — found.", "hint": ""},
+        {
+            "check": "fast: api key",
+            "status": "warn",
+            "detail": "KEY2 not found.",
+            "hint": "Set KEY2.",
+        },
+        {"check": "runtime: health", "status": "ok", "detail": "ok", "hint": ""},
+    ]
+
+    setup_wizard._render_validation_summary(checks)
+    out = capsys.readouterr().out
+
+    assert "2 checks passed" in out
+    assert "1 warning" in out
+    assert "KEY2 not found" in out
+    assert "Setup complete. Try: voxera vera" not in out
+
+
+def test_post_setup_validation_includes_quick_doctor(monkeypatch, capsys):
+    monkeypatch.setenv("TEST_KEY", "sk-test")
+    cfg = AppConfig(
+        brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="TEST_KEY")}
+    )
+    doctor_result = [{"check": "queue health", "status": "ok", "detail": "healthy", "hint": ""}]
+    monkeypatch.setattr(setup_wizard, "run_quick_doctor", lambda: doctor_result)
+
+    setup_wizard._post_setup_validation(cfg)
+    out = capsys.readouterr().out
+
+    assert "2 checks passed" in out
+    assert "Setup complete. Try: voxera vera" in out
+
+
+def test_post_setup_validation_handles_quick_doctor_failure(monkeypatch, capsys):
+    monkeypatch.setenv("TEST_KEY", "sk-test")
+    cfg = AppConfig(
+        brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="TEST_KEY")}
+    )
+    monkeypatch.setattr(
+        setup_wizard, "run_quick_doctor", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    setup_wizard._post_setup_validation(cfg)
+    out = capsys.readouterr().out
+
+    assert "1 check passed" in out
+    assert "Setup complete. Try: voxera vera" in out
+
+
+def test_run_setup_calls_post_setup_validation(monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(setup_wizard, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(setup_wizard, "_pick_mode", lambda: "mixed")
+    monkeypatch.setattr(setup_wizard, "_pick_brain_type", lambda: "cloud")
+    monkeypatch.setattr(setup_wizard, "_configure_cloud_brains", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_configure_web_investigation", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_policy_defaults", lambda: setup_wizard.PolicyApprovals())
+    monkeypatch.setattr(setup_wizard, "_confirm_write_config", lambda path: True)
+    monkeypatch.setattr(setup_wizard, "save_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup_wizard, "save_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        setup_wizard, "capabilities_report_path", lambda: Path("/tmp/voxera-cap.json")
+    )
+    monkeypatch.setattr(
+        setup_wizard,
+        "_ensure_runtime_services_running",
+        lambda: {"failed": [], "started": []},
+    )
+    monkeypatch.setattr(setup_wizard, "_launch_choice", lambda **kwargs: None)
+    monkeypatch.setattr(setup_wizard, "_print_what_next", lambda: None)
+    monkeypatch.setattr(setup_wizard.console, "print", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: True)
+
+    validated: list[AppConfig] = []
+    monkeypatch.setattr(setup_wizard, "_post_setup_validation", lambda cfg: validated.append(cfg))
+
+    asyncio.run(setup_wizard.run_setup())
+
+    assert len(validated) == 1
+    assert isinstance(validated[0], AppConfig)
+
+
+def test_run_setup_completes_with_validation_warnings(monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(setup_wizard, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(setup_wizard, "_pick_mode", lambda: "mixed")
+    monkeypatch.setattr(setup_wizard, "_pick_brain_type", lambda: "cloud")
+    monkeypatch.setattr(setup_wizard, "_configure_cloud_brains", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_configure_web_investigation", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_policy_defaults", lambda: setup_wizard.PolicyApprovals())
+    monkeypatch.setattr(setup_wizard, "_confirm_write_config", lambda path: True)
+    monkeypatch.setattr(setup_wizard, "save_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup_wizard, "save_policy", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        setup_wizard, "capabilities_report_path", lambda: Path("/tmp/voxera-cap.json")
+    )
+    monkeypatch.setattr(
+        setup_wizard,
+        "_ensure_runtime_services_running",
+        lambda: {"failed": [], "started": []},
+    )
+    monkeypatch.setattr(setup_wizard, "_launch_choice", lambda **kwargs: None)
+    monkeypatch.setattr(setup_wizard, "_print_what_next", lambda: None)
+    monkeypatch.setattr(setup_wizard.console, "print", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: True)
+
+    warn_checks = [
+        {"check": "primary: api key", "status": "warn", "detail": "missing", "hint": "fix"}
+    ]
+    monkeypatch.setattr(setup_wizard, "_check_brain_config", lambda cfg: list(warn_checks))
+    monkeypatch.setattr(setup_wizard, "run_quick_doctor", lambda: [])
+
+    cfg = asyncio.run(setup_wizard.run_setup())
+
+    assert isinstance(cfg, AppConfig)

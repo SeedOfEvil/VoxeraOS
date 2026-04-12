@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import subprocess
 import time
 import webbrowser
@@ -16,6 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .config import capabilities_report_path, default_config_path, save_config, save_policy
+from .doctor import run_quick_doctor
 from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig, WebInvestigationConfig
 from .openrouter_catalog import (
     grouped_catalog,
@@ -23,7 +26,7 @@ from .openrouter_catalog import (
     recommended_model_for_slot,
 )
 from .paths import ensure_dirs
-from .secrets import set_secret
+from .secrets import get_secret, set_secret
 
 console = Console()
 
@@ -491,6 +494,105 @@ def _print_what_next() -> None:
     )
 
 
+def _check_brain_config(cfg: AppConfig) -> list[dict[str, str]]:
+    """Validate brain slot configuration completeness."""
+    checks: list[dict[str, str]] = []
+    if not cfg.brain:
+        checks.append(
+            {
+                "check": "brain config",
+                "status": "warn",
+                "detail": "No brain slots configured.",
+                "hint": "Re-run 'voxera setup' and configure at least one brain slot.",
+            }
+        )
+        return checks
+    for name, bc in cfg.brain.items():
+        if not bc.api_key_ref:
+            checks.append(
+                {
+                    "check": f"{name}: api key",
+                    "status": "warn",
+                    "detail": "No API key reference configured.",
+                    "hint": f"Re-run 'voxera setup' or set an API key for the {name} slot.",
+                }
+            )
+            continue
+        found = bool(os.environ.get(bc.api_key_ref, "").strip())
+        if not found:
+            try:
+                resolved = get_secret(bc.api_key_ref)
+                found = resolved is not None and bool(resolved.strip())
+            except Exception:
+                pass
+        if found:
+            checks.append(
+                {
+                    "check": f"{name}: api key",
+                    "status": "ok",
+                    "detail": f"{bc.api_key_ref} — found.",
+                    "hint": "",
+                }
+            )
+        else:
+            checks.append(
+                {
+                    "check": f"{name}: api key",
+                    "status": "warn",
+                    "detail": f"{bc.api_key_ref} not found in environment or keyring.",
+                    "hint": (
+                        f"Set {bc.api_key_ref} in your environment or run"
+                        f" 'voxera secrets set {bc.api_key_ref}'."
+                    ),
+                }
+            )
+    return checks
+
+
+def _render_validation_summary(checks: list[dict[str, str]]) -> None:
+    """Render a compact traffic-light validation summary."""
+    if not checks:
+        return
+    icon = {"ok": "✅", "warn": "⚠️", "fail": "❌"}
+    ok_count = sum(1 for c in checks if c["status"] == "ok")
+    non_ok = [c for c in checks if c["status"] != "ok"]
+    warn_count = sum(1 for c in checks if c["status"] == "warn")
+    fail_count = sum(1 for c in checks if c["status"] == "fail")
+
+    lines: list[str] = []
+    if ok_count:
+        lines.append(f"✅ {ok_count} check{'s' if ok_count != 1 else ''} passed")
+    for c in non_ok:
+        lines.append(f"{icon.get(c['status'], '⚠️')} {c['check']}: {c['detail']}")
+        if c.get("hint"):
+            lines.append(f"   → {c['hint']}")
+
+    if fail_count:
+        lines.append("")
+        lines.append("Setup wrote config but some checks failed.")
+        lines.append("Fix items above, then run: voxera doctor --quick")
+        border_style = "red"
+    elif warn_count:
+        lines.append("")
+        lines.append(f"Setup complete with {warn_count} warning{'s' if warn_count != 1 else ''}.")
+        lines.append("Fix items above, then try: voxera doctor --quick")
+        border_style = "yellow"
+    else:
+        lines.append("")
+        lines.append("Setup complete. Try: voxera vera")
+        border_style = "green"
+
+    console.print(Panel("\n".join(lines), title="Post-Setup Validation", border_style=border_style))
+
+
+def _post_setup_validation(cfg: AppConfig) -> None:
+    """Run bounded post-setup validation and render summary."""
+    checks = _check_brain_config(cfg)
+    with contextlib.suppress(Exception):
+        checks.extend(run_quick_doctor())
+    _render_validation_summary(checks)
+
+
 async def run_setup() -> AppConfig:
     ensure_dirs()
     mode = _pick_mode()
@@ -551,11 +653,12 @@ async def run_setup() -> AppConfig:
     }
     capabilities_report_path().write_text(json.dumps(cap, indent=2), encoding="utf-8")
 
-    console.print("\n✅ Setup complete.")
+    console.print("\nConfig written.")
     console.print("App config (brain/mode/privacy): ~/.config/voxera/config.yml")
     console.print("Runtime ops config (panel/queue, optional): ~/.config/voxera/config.json")
     console.print("Policy: ~/.config/voxera/policy.yml")
     console.print("Capabilities: ~/.local/share/voxera/capabilities.json\n")
+    _post_setup_validation(cfg)
     service_state = _ensure_runtime_services_running()
     _launch_choice(service_state=service_state)
     _print_what_next()

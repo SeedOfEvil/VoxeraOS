@@ -1,3 +1,26 @@
+## 2026-04-12 — feat(setup): add post-setup validation summary after first-run wizard
+
+- **Motivation**: after `voxera setup` writes config, operators had no immediate feedback about whether API keys were resolvable or runtime health was sound. Missing keys and broken providers were only discovered later. This PR adds a bounded post-setup validation step that surfaces actionable diagnostics immediately.
+- **Scope (deliberately bounded)**:
+  - Add `_check_brain_config(cfg)` in `setup_wizard.py`: validates each brain slot for API key reference presence and resolvability (env var + keyring via `get_secret`). Returns checks in the same `{check, status, detail, hint}` dict format used by `run_quick_doctor`.
+  - Add `_render_validation_summary(checks)` in `setup_wizard.py`: renders a compact traffic-light summary using Rich Panel — green (all pass, "Setup complete. Try: voxera vera"), yellow (warnings with actionable fix text), red (failures with fix guidance).
+  - Add `_post_setup_validation(cfg)` in `setup_wizard.py`: orchestrates config checks + quick doctor call + summary render. Quick doctor failures are caught gracefully.
+  - Wire `_post_setup_validation(cfg)` into `run_setup()` after config write and before service startup.
+  - Replace premature "✅ Setup complete." with truthful "Config written." — the validation summary now provides the authoritative status message.
+  - Add 14 focused tests to `tests/test_setup_wizard.py`: config checks (keys found, missing ref, unresolved key, keyring fallback, no brains), summary rendering (all pass, warnings, failures, mixed results no fake success), integration (quick doctor included, doctor failure handled, validation called in run_setup, setup completes with warnings).
+  - Update existing `test_run_setup_finish_path_ensures_services_before_launch` to account for the new validation step in the call sequence.
+  - Do NOT redesign the setup wizard, add starter mission guidance, add first-chat hints, add panel changes, or broaden doctor into a larger framework.
+- **New functions in `setup_wizard.py`**:
+  - `_check_brain_config(cfg: AppConfig) -> list[dict[str, str]]`: validates brain slot API key refs. No brain slots → warn. Missing api_key_ref → warn. Key not in env/keyring → warn with `voxera secrets set` hint. Key found → ok.
+  - `_render_validation_summary(checks: list[dict[str, str]]) -> None`: compact Rich Panel output. Counts ok checks, shows non-ok checks with hints, classifies overall as pass/warn/fail.
+  - `_post_setup_validation(cfg: AppConfig) -> None`: runs `_check_brain_config` + `run_quick_doctor()` (try/except), renders combined summary.
+- **Imports added to `setup_wizard.py`**: `import os`, `from .doctor import run_quick_doctor`, `from .secrets import get_secret` (added to existing `set_secret` import).
+- **Test coverage** — `tests/test_setup_wizard.py` (15 existing + 14 new = 29 tests): `test_check_brain_config_all_keys_found`, `test_check_brain_config_missing_key_ref`, `test_check_brain_config_key_not_resolved`, `test_check_brain_config_key_found_via_keyring`, `test_check_brain_config_no_brains`, `test_render_validation_summary_all_pass`, `test_render_validation_summary_with_warnings`, `test_render_validation_summary_with_failures`, `test_render_validation_summary_mixed_no_fake_success`, `test_post_setup_validation_includes_quick_doctor`, `test_post_setup_validation_handles_quick_doctor_failure`, `test_run_setup_calls_post_setup_validation`, `test_run_setup_completes_with_validation_warnings`, plus updated `test_run_setup_finish_path_ensures_services_before_launch`.
+- **Docs updated**: `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md` (setup wizard section, post-setup validation subsection), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing note), `docs/CODEX_MEMORY.md`.
+- **Files touched**: `src/voxera/setup_wizard.py` (3 new functions, `run_setup` modified), `tests/test_setup_wizard.py` (14 new tests, 1 updated test), `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/CODEX_MEMORY.md`.
+- **Invariants preserved**: setup remains usable before config exists; doctor remains the canonical diagnostic surface; no duplicated doctor business logic (config checks are setup-specific, runtime checks delegate to quick doctor); no fake "all good" claims; setup completes normally even with validation warnings/failures; no hidden runtime side effects; bounded quick-check behavior only.
+- **Next safe step**: starter mission hints, first-conversation Vera guidance, or further first-run polish in subsequent PRs.
+
 ## 2026-04-12 — feat(cli): add first-run config guard for runtime command surfaces
 
 - **Motivation**: new installs without config.yml hit confusing runtime errors or tracebacks from commands that cannot do useful work without config. This PR adds a first-run config guard that prints a clear one-line next action and exits cleanly.
