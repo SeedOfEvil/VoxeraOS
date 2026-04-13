@@ -33,9 +33,9 @@ from .session_store import (
 # ---------------------------------------------------------------------------
 
 _TOUR_REQUEST_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bstart\s+(?:the\s+)?voxera\s+tour\b", re.IGNORECASE),
-    re.compile(r"\brun\s+(?:the\s+)?voxera\s+tour\b", re.IGNORECASE),
-    re.compile(r"\bvoxera\s+tour\b", re.IGNORECASE),
+    re.compile(r"\bstart\s+(?:the\s+)?voxera(?:os)?\s+tour\b", re.IGNORECASE),
+    re.compile(r"\brun\s+(?:the\s+)?voxera(?:os)?\s+tour\b", re.IGNORECASE),
+    re.compile(r"\bvoxera(?:os)?\s+tour\b", re.IGNORECASE),
     re.compile(r"\bfirst[- ]?run\s+tour\b", re.IGNORECASE),
 )
 
@@ -80,8 +80,8 @@ _INITIAL_NOTE_PATH = "~/VoxeraOS/notes/voxera-welcome.md"
 _RENAMED_NOTE_PATH = "~/VoxeraOS/notes/voxera-quick-start.md"
 
 _INITIAL_CONTENT = (
-    "# Welcome to Voxera\n\n"
-    "Voxera is an AI-assisted operating environment.\n\n"
+    "# Welcome to VoxeraOS\n\n"
+    "VoxeraOS is an AI-assisted operating environment.\n\n"
     "- Vera explains and guides.\n"
     "- Files are concrete outputs you can inspect.\n"
     "- The queue is the trust boundary — changes go through it.\n"
@@ -89,23 +89,23 @@ _INITIAL_CONTENT = (
 )
 
 _STEP_2_CONTENT = (
-    "# Voxera Quick Start\n\n"
-    "Voxera helps you work safely with AI.\n"
+    "# VoxeraOS Quick Start\n\n"
+    "VoxeraOS helps you work safely with AI.\n"
     "Vera drafts, you refine, and the queue governs execution.\n"
 )
 
 _STEP_3_CONTENT = (
-    "# Voxera Quick Start\n\n"
-    "Voxera helps you work safely with AI.\n"
+    "# VoxeraOS Quick Start\n\n"
+    "VoxeraOS helps you work safely with AI.\n"
     "Vera drafts, you refine, and the queue governs execution.\n\n"
-    "This note was created during the Voxera guided tour.\n"
+    "This note was created during the VoxeraOS guided tour.\n"
 )
 
 
 def _make_preview(path: str, content: str) -> dict[str, Any]:
     """Build a canonical write_file preview payload."""
     return {
-        "goal": "Voxera first-run walkthrough note",
+        "goal": "VoxeraOS first-run walkthrough note",
         "write_file": {
             "path": path,
             "content": content,
@@ -121,8 +121,8 @@ def _make_preview(path: str, content: str) -> dict[str, Any]:
 def _step_0_start() -> tuple[str, dict[str, Any]]:
     """Step 0: introduce Voxera and create the initial preview."""
     text = (
-        "Welcome to the Voxera guided tour.\n\n"
-        "Voxera works like this: Vera drafts a **preview** of what will happen, "
+        "Welcome to the VoxeraOS guided tour.\n\n"
+        "VoxeraOS works like this: Vera drafts a **preview** of what will happen, "
         "you refine it in chat, and when you're ready you submit it through the "
         "**governed queue** — which produces an evidence trail you can inspect.\n\n"
         "I've prepared a preview for a welcome note. "
@@ -152,7 +152,7 @@ def _step_2_rename() -> tuple[str, dict[str, Any]]:
         "You can rename, edit content, or change the goal at any point "
         "before submitting. The preview is yours to shape.\n\n"
         "**Next step:** Type: "
-        '**"Add a final line saying this note was created during the Voxera tour."**'
+        '**"Add a final line saying this note was created during the VoxeraOS tour."**'
     )
     preview = _make_preview(_RENAMED_NOTE_PATH, _STEP_2_CONTENT)
     return text, preview

@@ -41,9 +41,15 @@ class TestTourRequestDetection:
             "Start the Voxera tour",
             "START VOXERA TOUR",
             "run the Voxera tour",
+            "Voxera tour",
+            # VoxeraOS variants
+            "start VoxeraOS tour",
+            "Start the VoxeraOS tour",
+            "run the VoxeraOS tour",
+            "VoxeraOS tour",
+            # first-run anchor
             "run the first-run tour",
             "run first run tour",
-            "Voxera tour",
             "first-run tour",
             "first run tour",
         ],
@@ -133,6 +139,22 @@ class TestWalkthroughStart:
         text, _ = start_walkthrough(queue, "s1")
         # Must tell the user what to type next
         assert "type" in text.lower() or "Type" in text
+
+    def test_presentation_uses_voxeraos(self, tmp_path) -> None:
+        """Walkthrough text and preview content must say VoxeraOS, not bare Voxera."""
+        queue = tmp_path / "queue"
+        text, _ = start_walkthrough(queue, "s1")
+        assert "VoxeraOS" in text
+
+        preview = read_session_preview(queue, "s1")
+        content = preview["write_file"]["content"]
+        assert "VoxeraOS" in content
+
+    def test_preview_goal_uses_voxeraos(self, tmp_path) -> None:
+        queue = tmp_path / "queue"
+        start_walkthrough(queue, "s1")
+        preview = read_session_preview(queue, "s1")
+        assert "VoxeraOS" in preview["goal"]
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +278,7 @@ class TestTourHintRendering:
 
         res = client.get("/")
         assert res.status_code == 200
-        assert "start Voxera tour" in res.text
+        assert "start VoxeraOS tour" in res.text
 
     def test_hint_suppressed_after_chat_turn(self, monkeypatch, tmp_path) -> None:
         from .vera_session_helpers import make_vera_session
@@ -279,7 +301,7 @@ class TestTourHintRendering:
         harness = make_vera_session(monkeypatch, tmp_path)
         harness.chat("hello")
         for turn in harness.turns():
-            assert "start Voxera tour" not in str(turn.get("text", ""))
+            assert "start VoxeraOS tour" not in str(turn.get("text", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -379,8 +401,8 @@ class TestWalkthroughEndToEnd:
         harness.chat("Change the content to something shorter and more casual.")
         harness.chat("Rename it to voxera-quick-start.md.")
 
-        # This message contains "Voxera tour" — must NOT restart the walkthrough
-        harness.chat("Add a final line saying this note was created during the Voxera tour.")
+        # This message contains "VoxeraOS tour" — must NOT restart the walkthrough
+        harness.chat("Add a final line saying this note was created during the VoxeraOS tour.")
 
         state = read_session_walkthrough(harness.queue, harness.session_id)
         assert state is not None
@@ -413,8 +435,8 @@ class TestWalkthroughEndToEnd:
         assert state["step"] == 2
         assert "quick-start" in harness.preview()["write_file"]["path"]
 
-        # Step 3 — final edit (exact prompt from step 2 text, contains "Voxera tour")
-        harness.chat("Add a final line saying this note was created during the Voxera tour.")
+        # Step 3 — final edit (exact prompt from step 2 text, contains "VoxeraOS tour")
+        harness.chat("Add a final line saying this note was created during the VoxeraOS tour.")
         state = read_session_walkthrough(harness.queue, harness.session_id)
         assert state["step"] == 3
 

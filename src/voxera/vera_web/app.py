@@ -557,10 +557,10 @@ def _main_screen_guidance(*, show_tour_hint: bool = False) -> dict[str, object]:
     }
     if show_tour_hint:
         guidance["tour_hint"] = (
-            "I can walk you through how Voxera works step by step. "
+            "I can walk you through how VoxeraOS works step by step. "
             "You'll edit a preview, rename a note, and then submit it "
             "through the queue so you can inspect the evidence trail. "
-            'Say "start Voxera tour" to begin.'
+            'Say "start VoxeraOS tour" to begin.'
         )
     return guidance
 
