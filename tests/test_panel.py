@@ -3059,3 +3059,29 @@ def test_home_dashboard_zone_hierarchy(tmp_path, monkeypatch):
     # Approvals and Active Work appear before Daemon Health and Queue Details
     assert body.index("Approval Command Center") < body.index("Daemon Health")
     assert body.index("Active Work") < body.index("Queue Details")
+
+    # Bottom zone: Mission Library uses dash-card-bottom (not borrowed tertiary)
+    assert "dash-card-bottom" in body
+
+    # With all-zero counts, conditional KPI highlight classes should NOT appear
+    assert "kpi-warn" not in body
+    assert "kpi-danger" not in body
+
+
+def test_home_kpi_cards_highlight_nonzero_counts(tmp_path, monkeypatch):
+    """KPI cards apply kpi-danger when failed > 0 and kpi-warn when
+    pending_approvals > 0, giving operators immediate visual signals."""
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-boom.json").write_text('{"goal":"boom"}', encoding="utf-8")
+    (queue_dir / "failed" / "job-boom.error.json").write_text(
+        json.dumps({"job": "job-boom.json", "error": "kaboom", "ts": 1}), encoding="utf-8"
+    )
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    body = client.get("/").text
+
+    assert "kpi-danger" in body

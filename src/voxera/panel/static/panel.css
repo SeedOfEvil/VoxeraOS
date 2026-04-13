@@ -545,8 +545,9 @@ pre {
   box-shadow: none;
 }
 
-/* Tertiary context cards — minimal styling */
-.dash-card-tertiary {
+/* Tertiary context cards + bottom zone — minimal styling */
+.dash-card-tertiary,
+.dash-card-bottom {
   border-color: var(--border-soft);
   box-shadow: none;
   background: var(--surface-2);
