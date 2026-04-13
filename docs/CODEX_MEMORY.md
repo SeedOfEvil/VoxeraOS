@@ -1,3 +1,10 @@
+## 2026-04-13 — feat(panel): polish Vera chat interface
+
+- **Motivation**: Vera chat was functional but lacked production-grade visual polish — weak role attribution, no thinking feedback, unstyled tour hint.
+- **What shipped**: `vera.css` + light JS in `index.html`, plus a bounded session-store fix. Accent dot on Vera role labels, consecutive same-role message grouping (tighter spacing + hidden redundant labels), on-submit user-echo bubble + animated thinking indicator, keyboard hint on composer focus, tour-hint styling, thread padding increase (`min-height: 0` for robust grid scroll). Removed unused `.responding-indicator` CSS. Shared accent-dot rule across bubble and thinking-indicator selectors. Switched thinking-indicator DOM construction to `createElement`/`textContent`. **Session persistence**: removed destructive turn truncation from `session_store.py` — `read_session_turns` and `append_session_turn` no longer slice to `MAX_SESSION_TURNS`; full conversation history is preserved on disk and displayed in the thread until Clear session. LLM context windowing in `service.py` (which already applied its own `[-MAX_SESSION_TURNS:]`) is unchanged.
+- **Tests**: `test_vera_chat_polish.py` (11 tests) — CSS structure pins, template/JS behaviour pins, static file serving.
+- **Next safe step**: panel table polish, job detail page refresh, mobile/accessibility pass, or panel Vera route wiring.
+
 ## 2026-04-13 — feat(panel): refresh home dashboard layout hierarchy
 
 - **Motivation**: the panel home page displayed all sections as equally-weighted cards. This PR restructures the Control tab into five prioritized visual zones so operators can scan status at a glance.

@@ -238,8 +238,9 @@
       });
     };
 
+    let isSubmitting = false;
+
     if (form && sendBtn && textarea) {
-      let isSubmitting = false;
 
       // Prevent double-send: disable controls on first submit
       form.addEventListener('submit', (e) => {
@@ -256,7 +257,44 @@
         sendBtn.disabled = true;
         sendBtn.classList.add('is-sending');
         textarea.readOnly = true;  // readOnly (not disabled) — disabled fields are excluded from form submission
-        // Page will reload with the response; no cleanup needed
+        // Echo the user's message into the thread immediately so they
+        // see it alongside the thinking indicator while waiting for reload.
+        // `thread` is the outer const declared later in this IIFE — safe
+        // because this callback runs after the IIFE completes.
+        if (thread) {
+          // User bubble (mirrors server-rendered .bubble.user structure)
+          const userBubble = document.createElement('article');
+          userBubble.className = 'bubble user';
+          const userRole = document.createElement('div');
+          userRole.className = 'role';
+          userRole.textContent = 'You';
+          const userText = document.createElement('div');
+          userText.className = 'text';
+          userText.textContent = msg;
+          userBubble.appendChild(userRole);
+          userBubble.appendChild(userText);
+          thread.appendChild(userBubble);
+
+          // Thinking indicator (createElement — no innerHTML)
+          const indicator = document.createElement('div');
+          indicator.className = 'thinking-indicator is-visible';
+          indicator.setAttribute('aria-live', 'polite');
+          const thinkRole = document.createElement('div');
+          thinkRole.className = 'thinking-role';
+          thinkRole.textContent = 'Vera';
+          const thinkContent = document.createElement('div');
+          thinkContent.className = 'thinking-content';
+          const dots = document.createElement('span');
+          dots.className = 'dots';
+          for (let i = 0; i < 3; i++) dots.appendChild(document.createElement('span'));
+          thinkContent.appendChild(dots);
+          thinkContent.appendChild(document.createTextNode('Thinking\u2026'));
+          indicator.appendChild(thinkRole);
+          indicator.appendChild(thinkContent);
+          thread.appendChild(indicator);
+
+          thread.scrollTop = thread.scrollHeight;
+        }
       });
 
       // Keyboard shortcut: Enter to send, Shift+Enter for newline
@@ -428,6 +466,7 @@
 
     const pollForTurnUpdates = async () => {
       if (!sessionId) return;
+      if (isSubmitting) return;  // skip polling while form is submitting; page will reload
       if (document.visibilityState !== 'visible') return;
       try {
         const params = new URLSearchParams({
