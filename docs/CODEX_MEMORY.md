@@ -1,3 +1,20 @@
+## 2026-04-13 — feat(first-run): add interactive Vera walkthrough for preview refinement and governed submission
+
+- **Motivation**: prior first-run PRs (config guard, validation, next-steps) gave the user a clean start but never taught the actual Vera interaction model. A static "tour mission" preview would have skipped straight to a canned submission — the user would learn that Voxera runs missions, but not how to draft, refine, and submit a preview step by step. This PR adds a bounded interactive walkthrough that teaches the real loop: draft → refine in chat → preview updates → governed submit.
+- **What shipped**:
+  - **Interactive walkthrough module** `src/voxera/vera/first_run_tour.py` — owns tour request detection, fresh-session detection, and a 4-step guided walkthrough. Each step creates a real `write_file` preview via `reset_active_preview` and tells the user exactly what to type next. Steps: (0) create initial welcome note preview, (1) refine content to be shorter, (2) rename to `voxera-quick-start.md`, (3) add a final tour line and prompt for submission.
+  - **Session walkthrough state** — new `walkthrough_state` dict field in `session_store.py` (preserved across turns). Tracks `active: bool` and `step: int`. Read/write helpers: `read_session_walkthrough`, `write_session_walkthrough`.
+  - **Early-exit dispatch wiring** — conditions 0a/0b in `dispatch_early_exit_intent`: tour request starts the walkthrough; active walkthrough advances on any message. The final "submit it" is NOT intercepted — it falls through to the normal `EXPLICIT_SUBMIT` lane for governed queue submission.
+  - **Walkthrough cleanup on submit** — `_submit_handoff` clears walkthrough state on successful handoff so the session returns to normal mode.
+  - **Fresh-session landing-page hint** — `_main_screen_guidance(show_tour_hint=True)` adds a `tour_hint` field rendered in the empty-state HTML guidance. Only computed when no turns exist (skips filesystem context read otherwise). Suppressed when prior job refs exist.
+- **Scope (deliberately bounded)**:
+  - One interactive walkthrough with 4 concrete steps. Not a generic tutorial engine.
+  - All preview mutations use `reset_active_preview` (ownership discipline preserved).
+  - Final submission uses the normal governed queue path (no shortcuts).
+  - No panel UX, no voice, no mission template, no broad onboarding engine.
+- **Tests**: 45 focused tests in `tests/test_first_run_tour.py` covering tour request detection (positive + false-positive), fresh session detection, walkthrough start/advance/clear, step-by-step preview mutations (content refine, rename, final edit), final-step non-auto-submit invariant, landing-page hint rendering + suppression, and end-to-end /chat integration (start → refine → rename → submit → walkthrough cleared).
+- **Docs**: `CODEX_MEMORY.md` (this entry), `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (new test file + change-surface entries).
+
 ## 2026-04-12 — feat(setup): add post-setup validation summary after first-run wizard
 
 - **Motivation**: after `voxera setup` writes config, operators had no immediate feedback about whether API keys were resolvable or runtime health was sound. Missing keys and broken providers were only discovered later. This PR adds a bounded post-setup validation step that surfaces actionable diagnostics immediately.

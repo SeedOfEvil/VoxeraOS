@@ -53,6 +53,14 @@ from ..vera.evidence_review import (
     review_job_outcome,
     review_message,
 )
+from ..vera.first_run_tour import (
+    advance_walkthrough,
+    clear_walkthrough,
+    is_first_run_tour_request,
+    is_walkthrough_active,
+    is_walkthrough_exit_request,
+    start_walkthrough,
+)
 from ..vera.investigation_derivations import (
     derive_investigation_comparison,
     derive_investigation_summary,
@@ -165,6 +173,8 @@ def dispatch_early_exit_intent(
 
     Checks evaluated (in order):
 
+    0. Interactive walkthrough — active walkthrough advance, cancel,
+       off-topic replay, or new tour start request.
     1. Time question — deterministic local-time / timezone answer.
     2. Diagnostics refusal — blocked system-diagnostics phrasing.
     3. Job review / evidence review — review request or explicit job ID.
@@ -201,6 +211,44 @@ def dispatch_early_exit_intent(
     ``derived_investigation_output``, not the preview.
     """
 
+    # ── 0. Interactive walkthrough ───────────────────────────────────────
+    # When the walkthrough is already active, handle cancel, advance, or
+    # off-topic replay.  Checked BEFORE the tour-start pattern so that
+    # messages containing "Voxera tour" mid-walkthrough do not restart.
+    # The "submit it" message is NOT intercepted — advance returns None
+    # at the final step so the normal EXPLICIT_SUBMIT lane handles it.
+    if is_walkthrough_active(queue_root, session_id):
+        if is_walkthrough_exit_request(message):
+            clear_walkthrough(queue_root, session_id)
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "Tour cancelled. The preview is still available if you want to "
+                    "refine or submit it, or you can start fresh."
+                ),
+                status="walkthrough_cancelled",
+            )
+        result = advance_walkthrough(queue_root, session_id, message=message)
+        if result is not None:
+            text, status = result
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=text,
+                status=status,
+            )
+        # result is None → final step reached, let submit flow through.
+
+    # "Start VoxeraOS tour" begins the interactive walkthrough and creates
+    # an initial write_file preview so the user can refine it step by step.
+    # Only fires when no walkthrough is already active (guarded above).
+    if is_first_run_tour_request(message):
+        text, status = start_walkthrough(queue_root, session_id)
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=text,
+            status=status,
+        )
+
     # ── 1. Time question ──────────────────────────────────────────────────
     # Simple "what time is it?" / "what day is it?" questions are answered
     # deterministically from the system clock — no LLM needed.
@@ -221,7 +269,7 @@ def dispatch_early_exit_intent(
             status="blocked_diagnostics",
         )
 
-    # ── 2. Job review / evidence review ───────────────────────────────────
+    # ── 3. Job review / evidence review ───────────────────────────────────
     # An explicit job ID in the message always enters review (fail-closed if
     # evidence is missing).  Hint-based review requests enter the branch and
     # fail closed honestly when no job target is resolvable — this gives the
@@ -270,7 +318,7 @@ def dispatch_early_exit_intent(
             context_updates=_review_ctx,
         )
 
-    # ── 3. Follow-up preview request ───────────────────────────────────────
+    # ── 4. Follow-up preview request ───────────────────────────────────────
     # Follow-up hint phrases enter the branch and fail closed honestly when
     # no job target is resolvable.  Anti-hijack: suppress when the message
     # is primarily an authored-drafting request OR when the caller has
@@ -355,7 +403,7 @@ def dispatch_early_exit_intent(
             context_updates={"last_reviewed_job_ref": evidence.job_id},
         )
 
-    # ── 4. Investigation derived-save request ──────────────────────────────
+    # ── 5. Investigation derived-save request ──────────────────────────────
     # Skipped when an active-preview revision is in flight so a derived
     # save cannot silently overwrite the preview the user is mutating.
     if should_attempt_derived_save and not active_preview_revision_in_flight:
@@ -385,7 +433,7 @@ def dispatch_early_exit_intent(
             write_handoff_ready=True,
         )
 
-    # ── 5. Investigation compare request ───────────────────────────────────
+    # ── 6. Investigation compare request ───────────────────────────────────
     if is_investigation_compare_request(message):
         comparison = derive_investigation_comparison(
             message,
@@ -409,7 +457,7 @@ def dispatch_early_exit_intent(
             write_derived_output=True,
         )
 
-    # ── 6. Investigation summary request ───────────────────────────────────
+    # ── 7. Investigation summary request ───────────────────────────────────
     if is_investigation_summary_request(message):
         summary = derive_investigation_summary(
             message,
@@ -433,7 +481,7 @@ def dispatch_early_exit_intent(
             write_derived_output=True,
         )
 
-    # ── 7. Investigation expand request — invalid-reference early exit ─────
+    # ── 8. Investigation expand request — invalid-reference early exit ─────
     # NOTE: when the reference IS valid this branch does NOT return — the
     # caller continues to the normal LLM flow which performs the expansion.
     if is_investigation_expand_request(message):
@@ -458,7 +506,7 @@ def dispatch_early_exit_intent(
             )
         # Valid reference — fall through to LLM expansion in normal flow.
 
-    # ── 8. Investigation save request ──────────────────────────────────────
+    # ── 9. Investigation save request ──────────────────────────────────────
     # Skipped when an active-preview revision is in flight: a phrase like
     # "save that" on an active preview must mutate the active preview
     # (rename / revise), not spawn a new investigation-save preview that
@@ -490,7 +538,7 @@ def dispatch_early_exit_intent(
             write_handoff_ready=True,
         )
 
-    # ── 9. Near-miss submit phrase (fail-closed) ───────────────────────────
+    # ── 10. Near-miss submit phrase (fail-closed) ──────────────────────────
     # Runs before the canonical submit path so a fuzzy near-submit never
     # reaches the LLM, which might overclaim submission.
     if is_near_miss_submit_phrase(message):
@@ -504,7 +552,7 @@ def dispatch_early_exit_intent(
             status="near_miss_submit_rejected",
         )
 
-    # ── 10. Stale draft reference (fail-closed) ────────────────────────────
+    # ── 11. Stale draft reference (fail-closed) ────────────────────────────
     # When the message contains an explicit draft-class reference phrase
     # ("save that draft", "the draft", etc.) but session context has no
     # active draft or preview, fail closed rather than letting the builder

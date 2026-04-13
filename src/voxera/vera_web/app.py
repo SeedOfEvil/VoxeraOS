@@ -39,6 +39,11 @@ from ..vera.draft_revision import (
 from ..vera.evidence_review import (
     maybe_extract_job_id,
 )
+from ..vera.first_run_tour import (
+    clear_walkthrough,
+    is_fresh_vera_session,
+    is_walkthrough_active,
+)
 from ..vera.investigation_derivations import (
     derive_investigation_expansion,
     is_investigation_derived_followup_save_request,
@@ -219,6 +224,10 @@ def _submit_handoff(
         submit_preview_hook=submit_preview,
     )
     if status == "handoff_submitted":
+        # Clear walkthrough state if it was active — the user has completed
+        # the guided tour by submitting through the governed queue.
+        if is_walkthrough_active(root, session_id):
+            clear_walkthrough(root, session_id)
         handoff = read_session_handoff_state(root, session_id) or {}
         job_id = str(handoff.get("job_id") or "").strip() or None
         _submit_file_ref: str | None = None
@@ -459,6 +468,13 @@ def _render_page(
         voice_runtime["voice_output_attempted"] = False
         voice_runtime["voice_output_backend"] = None
         voice_runtime["voice_output_reason"] = "voice_runtime_unavailable"
+    # Compute the tour hint for the empty-state landing page only.
+    # Skip the session-context read when turns exist (guidance hidden).
+    _show_tour_hint = False
+    if not turns:
+        _ctx = read_session_context(root, session_id)
+        _show_tour_hint = is_fresh_vera_session(turns, _ctx)
+    _guidance = _main_screen_guidance(show_tour_hint=_show_tour_hint)
     tmpl = templates.get_template("index.html")
     html = tmpl.render(
         session_id=session_id,
@@ -472,15 +488,15 @@ def _render_page(
         system_prompt=VERA_SYSTEM_PROMPT,
         pending_preview=read_session_preview(root, session_id),
         drafting_examples=drafting_guidance().examples,
-        main_screen_guidance=_main_screen_guidance(),
+        main_screen_guidance=_guidance,
     )
     response = HTMLResponse(content=html)
     response.set_cookie("vera_session_id", session_id, httponly=False, samesite="lax")
     return response
 
 
-def _main_screen_guidance() -> dict[str, object]:
-    return {
+def _main_screen_guidance(*, show_tour_hint: bool = False) -> dict[str, object]:
+    guidance: dict[str, object] = {
         "title": "How to use Vera",
         "summary": (
             "Ask naturally. Vera can answer questions, investigate the web, draft notes or files, "
@@ -539,6 +555,14 @@ def _main_screen_guidance() -> dict[str, object]:
             },
         ],
     }
+    if show_tour_hint:
+        guidance["tour_hint"] = (
+            "I can walk you through how VoxeraOS works step by step. "
+            "You'll edit a preview, rename a note, and then submit it "
+            "through the queue so you can inspect the evidence trail. "
+            'Say "start VoxeraOS tour" to begin.'
+        )
+    return guidance
 
 
 @app.get("/", response_class=HTMLResponse)

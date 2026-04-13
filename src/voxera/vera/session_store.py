@@ -135,6 +135,7 @@ def append_session_turn(
         "conversational_planning_active",
         "last_user_input_origin",
         "last_automation_preview",
+        "walkthrough_state",
         _SHARED_CONTEXT_FIELD,
         _ROUTING_DEBUG_FIELD,
     ):
@@ -615,6 +616,29 @@ def update_session_context(
 def clear_session_context(queue_root: Path, session_id: str) -> None:
     """Reset the shared session context to the empty default."""
     _write_session_field(queue_root, session_id, field_name=_SHARED_CONTEXT_FIELD, value=None)
+
+
+# ---------------------------------------------------------------------------
+# Walkthrough state — bounded first-run guided walkthrough tracking
+# ---------------------------------------------------------------------------
+
+_WALKTHROUGH_FIELD = "walkthrough_state"
+
+
+def read_session_walkthrough(queue_root: Path, session_id: str) -> dict[str, Any] | None:
+    """Read the walkthrough state, or None if no walkthrough is active."""
+    payload = _read_session_payload(queue_root, session_id)
+    raw = payload.get(_WALKTHROUGH_FIELD)
+    if isinstance(raw, dict) and raw.get("active") is True:
+        return raw
+    return None
+
+
+def write_session_walkthrough(
+    queue_root: Path, session_id: str, state: dict[str, Any] | None
+) -> None:
+    """Persist walkthrough state, or clear it with None."""
+    _write_session_field(queue_root, session_id, field_name=_WALKTHROUGH_FIELD, value=state)
 
 
 # ---------------------------------------------------------------------------
