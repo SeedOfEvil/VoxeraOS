@@ -1,3 +1,21 @@
+## 2026-04-13 — feat(panel): polish Vera chat interface
+
+- **Motivation**: the Vera chat interface was functional but lacked visual polish. Message attribution was understated, consecutive messages from the same role had no grouping, there was no thinking indicator during response generation, and several CSS surfaces (tour hint, keyboard hint) were unstyled. This PR brings the Vera chat page to a premium, operator-grade feel.
+- **What shipped**: CSS + light JS only, no backend or route changes.
+  - **Thread layout**: increased padding (20px 16px), flex column layout for better content flow.
+  - **Message spacing rhythm**: increased bubble margin (18px), consecutive same-role messages grouped tighter (margin-top: -6px) with redundant role labels hidden.
+  - **Vera role identity**: blue accent dot (::before pseudo-element) on Vera's role label for clear visual attribution.
+  - **Thinking indicator**: on form submit, a "Vera / Thinking..." element with animated dots is appended to the thread. Uses the same visual language as Vera bubbles. Freshness poll is guarded to skip during submission so the indicator survives until page reload.
+  - **Keyboard hint**: CSS ::after pseudo-element on .composer shows "Enter to send · Shift+Enter for new line" on focus, fades smoothly.
+  - **Tour hint styling**: dedicated .empty-tour-hint styles (accent-tinted border + background) so the walkthrough hint is visually distinct from the preview note.
+  - **Cleanup**: removed unused .responding-indicator CSS (was defined but never present in HTML, replaced by .thinking-indicator).
+- **Scope**: vera_web template + CSS + JS only. No route, backend, queue, or panel changes. The panel's `routes_vera.py` / `vera.html` are not wired up (confirmed by `test_vera_panel.py`) and were not touched.
+- **Tests**: `test_vera_chat_polish.py` (10 tests) — CSS structure pins (thinking-indicator rules, consecutive grouping, role dot, keyboard hint, tour hint, responding-indicator removal), template structure pins (thread/composer/send-btn presence), JS behaviour pins (thinking indicator creation on submit, poll skip during submit), static file serving verification.
+- **Docs**: `CODEX_MEMORY.md` (this entry), `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing).
+- **Files touched**: `src/voxera/vera_web/static/vera.css` (styling polish + cleanup), `src/voxera/vera_web/templates/index.html` (thinking indicator JS + poll guard), `tests/test_vera_chat_polish.py` (new, 10 tests), `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`.
+- **Invariants preserved**: no route contract changes, no chat dispatch changes, no backend behaviour changes, no queue/artifact truth changes, markdown rendering untouched, existing 272 test_vera_web tests pass unchanged.
+- **Next safe step**: panel table polish, job detail page refresh, mobile/accessibility pass, or panel Vera route wiring.
+
 ## 2026-04-13 — feat(panel): refresh home dashboard layout hierarchy
 
 - **Motivation**: the panel home page displayed all sections as equally-weighted cards. This PR restructures the Control tab into five prioritized visual zones so operators can scan status at a glance.

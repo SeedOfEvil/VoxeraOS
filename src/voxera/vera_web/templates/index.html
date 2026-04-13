@@ -238,8 +238,9 @@
       });
     };
 
+    let isSubmitting = false;
+
     if (form && sendBtn && textarea) {
-      let isSubmitting = false;
 
       // Prevent double-send: disable controls on first submit
       form.addEventListener('submit', (e) => {
@@ -256,7 +257,21 @@
         sendBtn.disabled = true;
         sendBtn.classList.add('is-sending');
         textarea.readOnly = true;  // readOnly (not disabled) — disabled fields are excluded from form submission
-        // Page will reload with the response; no cleanup needed
+        // Show thinking indicator in the thread while waiting for response
+        const thread = document.getElementById('thread');
+        if (thread) {
+          const indicator = document.createElement('div');
+          indicator.className = 'thinking-indicator is-visible';
+          indicator.setAttribute('aria-live', 'polite');
+          indicator.innerHTML =
+            '<div class="thinking-role">Vera</div>' +
+            '<div class="thinking-content">' +
+            '<span class="dots"><span></span><span></span><span></span></span>' +
+            'Thinking\u2026' +
+            '</div>';
+          thread.appendChild(indicator);
+          thread.scrollTop = thread.scrollHeight;
+        }
       });
 
       // Keyboard shortcut: Enter to send, Shift+Enter for newline
@@ -428,6 +443,7 @@
 
     const pollForTurnUpdates = async () => {
       if (!sessionId) return;
+      if (isSubmitting) return;  // skip polling while form is submitting; page will reload
       if (document.visibilityState !== 'visible') return;
       try {
         const params = new URLSearchParams({
