@@ -3116,3 +3116,145 @@ def test_home_kpi_cards_highlight_nonzero_counts(tmp_path, monkeypatch):
 
     assert "kpi-danger" in body
     assert "kpi-warn" in body
+
+
+# ---------------------------------------------------------------------------
+# Job detail page hierarchy / polish tests
+# ---------------------------------------------------------------------------
+
+
+def test_job_detail_page_hierarchy_and_section_ordering(tmp_path, monkeypatch):
+    """Pin the visual hierarchy: status banner -> operator summary ->
+    approval (if present) -> actions -> evidence -> execution ->
+    output -> deep evidence -> context -> timeline -> vera ->
+    audit/metadata."""
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    for bucket in [
+        "inbox",
+        "pending",
+        "pending/approvals",
+        "done",
+        "failed",
+        "canceled",
+        "artifacts",
+    ]:
+        (queue_dir / bucket).mkdir(parents=True, exist_ok=True)
+
+    # Create a done job with enough artifacts for all sections.
+    (queue_dir / "done" / "job-hierarchy.json").write_text(
+        json.dumps({"goal": "hierarchy test"}), encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-hierarchy"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "done",
+                "terminal_outcome": "succeeded",
+                "step_results": [
+                    {
+                        "step_index": 1,
+                        "skill_id": "test.skill",
+                        "status": "succeeded",
+                        "summary": "ok",
+                    }
+                ],
+                "output_artifacts": ["test.txt"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (art / "plan.json").write_text('{"steps":[]}', encoding="utf-8")
+    (art / "stdout.txt").write_text("hello", encoding="utf-8")
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    body = client.get("/jobs/job-hierarchy.json").text
+
+    # Status banner renders with the new CSS class.
+    assert "jd-status-banner" in body
+    assert "jd-status-done" in body
+    assert "jd-badge-lg" in body
+
+    # Key sections still render.
+    assert "Evidence Summary" in body
+    assert "Artifact Inventory" in body
+    assert "Lifecycle &amp; Execution State" in body
+    assert "Canonical Step Summaries" in body
+    assert "Recent Action Timeline" in body
+
+    # Section ordering: evidence before execution, execution before timeline,
+    # timeline before audit.
+    assert body.index("Evidence Summary") < body.index("Artifact Inventory")
+    assert body.index("Artifact Inventory") < body.index("Lifecycle")
+    assert body.index("Lifecycle") < body.index("Recent Action Timeline")
+    assert body.index("Recent Action Timeline") < body.index("Audit")
+
+
+def test_job_detail_approval_renders_before_evidence(tmp_path, monkeypatch):
+    """When a job has an active approval, the approval card appears
+    before evidence sections for fast operator action."""
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    for bucket in ["inbox", "pending", "pending/approvals", "done", "failed", "canceled"]:
+        (queue_dir / bucket).mkdir(parents=True, exist_ok=True)
+
+    (queue_dir / "pending" / "job-approval-order.json").write_text(
+        '{"goal":"approve me"}', encoding="utf-8"
+    )
+    (queue_dir / "pending" / "approvals" / "job-approval-order.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-approval-order.json",
+                "step": 1,
+                "reason": "needs approval",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    body = client.get("/jobs/job-approval-order.json").text
+
+    assert "Approval Details" in body
+    assert "Artifact Inventory" in body
+    # Approval appears before evidence sections.
+    assert body.index("Approval Details") < body.index("Artifact Inventory")
+    # Action buttons still render.
+    assert "jd-action-btn" in body
+
+
+def test_job_detail_actions_section_renders_retry_cancel_bundle(tmp_path, monkeypatch):
+    """The actions bar renders with retry/cancel/bundle controls."""
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    for bucket in ["inbox", "pending", "done", "failed", "canceled"]:
+        (queue_dir / bucket).mkdir(parents=True, exist_ok=True)
+
+    (queue_dir / "failed" / "job-actions-bar.json").write_text(
+        '{"goal":"fail test"}', encoding="utf-8"
+    )
+    art = queue_dir / "artifacts" / "job-actions-bar"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "execution_result.json").write_text(
+        json.dumps(
+            {
+                "lifecycle_state": "failed",
+                "terminal_outcome": "failed",
+                "step_results": [{"step_index": 1, "status": "failed", "retryable": True}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    client = TestClient(panel_module.app)
+    body = client.get("/jobs/job-actions-bar.json").text
+
+    assert "Retry Job" in body
+    assert "Download Incident Bundle (.zip)" in body
+    assert "jd-actions-section" in body
+    # Actions appear before evidence.
+    assert body.index("Retry Job") < body.index("Artifact Inventory")
