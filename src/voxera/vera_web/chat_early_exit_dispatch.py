@@ -53,6 +53,12 @@ from ..vera.evidence_review import (
     review_job_outcome,
     review_message,
 )
+from ..vera.first_run_tour import (
+    advance_walkthrough,
+    is_first_run_tour_request,
+    is_walkthrough_active,
+    start_walkthrough,
+)
 from ..vera.investigation_derivations import (
     derive_investigation_comparison,
     derive_investigation_summary,
@@ -165,6 +171,11 @@ def dispatch_early_exit_intent(
 
     Checks evaluated (in order):
 
+    0a. First-run tour request — "start Voxera tour" begins the
+        interactive walkthrough and creates an initial preview.
+    0b. Active walkthrough step — when a walkthrough is in progress,
+        advance to the next guided step (unless the user is submitting,
+        which falls through to the normal submit path).
     1. Time question — deterministic local-time / timezone answer.
     2. Diagnostics refusal — blocked system-diagnostics phrasing.
     3. Job review / evidence review — review request or explicit job ID.
@@ -200,6 +211,35 @@ def dispatch_early_exit_intent(
     compare/summary branches also still run because they only write
     ``derived_investigation_output``, not the preview.
     """
+
+    # ── 0a. First-run tour request ──────────────────────────────────────
+    # "Start Voxera tour" begins the interactive walkthrough and creates
+    # an initial write_file preview so the user can refine it step by step.
+    if is_first_run_tour_request(message):
+        text, status = start_walkthrough(queue_root, session_id)
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=text,
+            status=status,
+            # Preview is installed by start_walkthrough via reset_active_preview;
+            # no write_preview flag needed — the ownership helper already wrote it.
+        )
+
+    # ── 0b. Active walkthrough step ──────────────────────────────────────
+    # When the interactive walkthrough is in progress, advance to the next
+    # guided refinement step.  The "submit it" message is NOT intercepted
+    # here — it falls through to the normal EXPLICIT_SUBMIT lane so the
+    # governed queue path handles it.
+    if is_walkthrough_active(queue_root, session_id):
+        result = advance_walkthrough(queue_root, session_id)
+        if result is not None:
+            text, status = result
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=text,
+                status=status,
+            )
+        # result is None → final step reached, let submit flow through.
 
     # ── 1. Time question ──────────────────────────────────────────────────
     # Simple "what time is it?" / "what day is it?" questions are answered

@@ -56,6 +56,11 @@
         <div class="empty-preview-note">
           <strong>Preview → submit:</strong> {{main_screen_guidance.preview_hint}}
         </div>
+        {% if main_screen_guidance.tour_hint %}
+        <div class="empty-tour-hint">
+          <strong>Tip:</strong> {{main_screen_guidance.tour_hint}}
+        </div>
+        {% endif %}
         <div class="guidance-groups" aria-label="Vera example prompts">
           {% for group in main_screen_guidance.groups %}
             <section class="guidance-group" aria-labelledby="group-{{loop.index}}">
@@ -105,6 +110,11 @@
           <div class="empty-preview-note">
             <strong>Preview → submit:</strong> {{main_screen_guidance.preview_hint}}
           </div>
+          {% if main_screen_guidance.tour_hint %}
+          <div class="empty-tour-hint">
+            <strong>Tip:</strong> {{main_screen_guidance.tour_hint}}
+          </div>
+          {% endif %}
           <div class="guidance-groups" aria-label="Vera example prompts">
             {% for group in main_screen_guidance.groups %}
               <section class="guidance-group" aria-labelledby="inline-group-{{loop.index}}">
