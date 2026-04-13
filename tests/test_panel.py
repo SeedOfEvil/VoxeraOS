@@ -3030,6 +3030,10 @@ def test_home_dashboard_zone_hierarchy(tmp_path, monkeypatch):
     assert "dash-zone--tertiary" in body
     assert "dash-zone--bottom" in body
 
+    # KPI grid uses dedicated class (not generic grid-4)
+    assert "dash-kpi-grid" in body
+    assert "dash-kpi-card" in body
+
     # Key sections still rendered
     assert "Queue Summary" in body
     assert "Approval Command Center" in body
@@ -3040,6 +3044,9 @@ def test_home_dashboard_zone_hierarchy(tmp_path, monkeypatch):
     assert "Panel Security Counters" in body
     assert "Mission Library" in body
     assert "Create Mission" in body
+
+    # Primary action cards have accent styling class
+    assert "dash-card-primary" in body
 
     # Ordering: KPI zone before Primary, Primary before Secondary, etc.
     kpi_pos = body.index("dash-zone--kpi")

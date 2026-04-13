@@ -72,7 +72,7 @@
       <!-- ── Zone 1: KPI summary ─────────────────────────────────── -->
       <div class="dash-zone dash-zone--kpi">
         <div class="section-label">Queue Summary</div>
-        <section class="grid grid-4">
+        <section class="dash-kpi-grid">
           <article class="card dash-kpi-card">
             <p class="kpi">{{queue.counts.inbox}}</p>
             <p class="kpi-label">Inbox</p>
@@ -339,10 +339,10 @@
         <!-- Vera activity (read-only, supplemental only) -->
         <div class="section-label">Vera Activity</div>
         <section class="card dash-card-tertiary mb" data-testid="home-vera-activity-strip">
-          <p class="muted text-sm" style="margin-top:0;">
+          <p class="muted text-sm mt-0">
             Read-only shared Vera session context. Supplemental only &mdash; canonical queue, daemon health, and approvals above remain primary.
           </p>
-          <dl class="detail-grid" style="margin-bottom:0;">
+          <dl class="detail-grid mb-0">
             {% if vera_activity.active_topic %}
               <dt>Active topic</dt><dd>{{vera_activity.active_topic}}</dd>
             {% endif %}
