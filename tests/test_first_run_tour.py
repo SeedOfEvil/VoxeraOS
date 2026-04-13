@@ -366,3 +366,76 @@ class TestWalkthroughEndToEnd:
 
         state = read_session_walkthrough(harness.queue, harness.session_id)
         assert state is None
+
+    def test_third_refinement_advances_to_final_step_not_restart(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Regression: message containing 'Voxera tour' during active walkthrough
+        must advance to step 3, not restart from step 0."""
+        from .vera_session_helpers import make_vera_session
+
+        harness = make_vera_session(monkeypatch, tmp_path)
+        harness.chat("start Voxera tour")
+        harness.chat("Change the content to something shorter and more casual.")
+        harness.chat("Rename it to voxera-quick-start.md.")
+
+        # This message contains "Voxera tour" — must NOT restart the walkthrough
+        harness.chat("Add a final line saying this note was created during the Voxera tour.")
+
+        state = read_session_walkthrough(harness.queue, harness.session_id)
+        assert state is not None
+        assert state["step"] == 3, f"expected step 3 (final edit), got {state['step']}"
+
+        # Preview must retain the renamed path, not revert to the initial one
+        preview = harness.preview()
+        assert preview is not None
+        assert "quick-start" in preview["write_file"]["path"]
+
+    def test_full_guided_sequence_with_exact_prompts(self, monkeypatch, tmp_path) -> None:
+        """Full walkthrough using the exact prompts Vera instructs the user to type."""
+        from voxera.vera.session_store import read_session_context
+
+        from .vera_session_helpers import make_vera_session
+
+        harness = make_vera_session(monkeypatch, tmp_path)
+
+        # Step 0 — start
+        harness.chat("start Voxera tour")
+        assert read_session_walkthrough(harness.queue, harness.session_id)["step"] == 0
+
+        # Step 1 — content refinement (exact prompt from step 0 text)
+        harness.chat("Change the content to something shorter and more casual.")
+        assert read_session_walkthrough(harness.queue, harness.session_id)["step"] == 1
+
+        # Step 2 — rename (exact prompt from step 1 text)
+        harness.chat("Rename it to voxera-quick-start.md.")
+        state = read_session_walkthrough(harness.queue, harness.session_id)
+        assert state["step"] == 2
+        assert "quick-start" in harness.preview()["write_file"]["path"]
+
+        # Step 3 — final edit (exact prompt from step 2 text, contains "Voxera tour")
+        harness.chat("Add a final line saying this note was created during the Voxera tour.")
+        state = read_session_walkthrough(harness.queue, harness.session_id)
+        assert state["step"] == 3
+
+        # Final submit — preview consumed, walkthrough cleared, job submitted
+        resp = harness.chat("submit it")
+        assert resp.status_code == 200
+        assert harness.preview() is None
+        assert read_session_walkthrough(harness.queue, harness.session_id) is None
+        ctx = read_session_context(harness.queue, harness.session_id)
+        assert ctx.get("last_submitted_job_ref") is not None
+
+    def test_active_walkthrough_blocks_tour_restart(self, monkeypatch, tmp_path) -> None:
+        """Explicitly typing 'start Voxera tour' mid-walkthrough must advance,
+        not restart."""
+        from .vera_session_helpers import make_vera_session
+
+        harness = make_vera_session(monkeypatch, tmp_path)
+        harness.chat("start Voxera tour")
+        assert read_session_walkthrough(harness.queue, harness.session_id)["step"] == 0
+
+        # Typing the trigger phrase again should advance to step 1, not restart
+        harness.chat("start Voxera tour")
+        state = read_session_walkthrough(harness.queue, harness.session_id)
+        assert state["step"] == 1, f"expected step 1, got {state['step']}"

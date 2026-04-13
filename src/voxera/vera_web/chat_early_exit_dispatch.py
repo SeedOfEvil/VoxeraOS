@@ -212,24 +212,13 @@ def dispatch_early_exit_intent(
     ``derived_investigation_output``, not the preview.
     """
 
-    # ── 0a. First-run tour request ──────────────────────────────────────
-    # "Start Voxera tour" begins the interactive walkthrough and creates
-    # an initial write_file preview so the user can refine it step by step.
-    if is_first_run_tour_request(message):
-        text, status = start_walkthrough(queue_root, session_id)
-        return EarlyExitResult(
-            matched=True,
-            assistant_text=text,
-            status=status,
-            # Preview is installed by start_walkthrough via reset_active_preview;
-            # no write_preview flag needed — the ownership helper already wrote it.
-        )
-
-    # ── 0b. Active walkthrough step ──────────────────────────────────────
-    # When the interactive walkthrough is in progress, advance to the next
-    # guided refinement step.  The "submit it" message is NOT intercepted
-    # here — it falls through to the normal EXPLICIT_SUBMIT lane so the
-    # governed queue path handles it.
+    # ── 0. Interactive walkthrough ───────────────────────────────────────
+    # When the walkthrough is already active, advance to the next guided
+    # step.  This is checked BEFORE the tour-start pattern so that user
+    # messages whose content happens to contain "Voxera tour" (e.g. "Add
+    # a line saying this was the Voxera tour") do not restart the flow.
+    # The "submit it" message is NOT intercepted here — advance returns
+    # None at the final step so the normal EXPLICIT_SUBMIT lane handles it.
     if is_walkthrough_active(queue_root, session_id):
         result = advance_walkthrough(queue_root, session_id)
         if result is not None:
@@ -240,6 +229,17 @@ def dispatch_early_exit_intent(
                 status=status,
             )
         # result is None → final step reached, let submit flow through.
+
+    # "Start Voxera tour" begins the interactive walkthrough and creates
+    # an initial write_file preview so the user can refine it step by step.
+    # Only fires when no walkthrough is already active (guarded above).
+    if is_first_run_tour_request(message):
+        text, status = start_walkthrough(queue_root, session_id)
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=text,
+            status=status,
+        )
 
     # ── 1. Time question ──────────────────────────────────────────────────
     # Simple "what time is it?" / "what day is it?" questions are answered
