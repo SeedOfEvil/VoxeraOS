@@ -259,8 +259,8 @@
         textarea.readOnly = true;  // readOnly (not disabled) — disabled fields are excluded from form submission
         // Echo the user's message into the thread immediately so they
         // see it alongside the thinking indicator while waiting for reload.
-        // `thread` and `escapeHtml` are outer consts declared later in this
-        // IIFE — safe because this callback runs after the IIFE completes.
+        // `thread` is the outer const declared later in this IIFE — safe
+        // because this callback runs after the IIFE completes.
         if (thread) {
           // User bubble (mirrors server-rendered .bubble.user structure)
           const userBubble = document.createElement('article');

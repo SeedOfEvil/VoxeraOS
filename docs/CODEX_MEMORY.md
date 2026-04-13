@@ -2,7 +2,7 @@
 
 - **Motivation**: Vera chat was functional but lacked production-grade visual polish — weak role attribution, no thinking feedback, unstyled tour hint.
 - **What shipped**: `vera.css` + light JS in `index.html` only — no route, backend, or queue changes. Accent dot on Vera role labels, consecutive same-role message grouping (tighter spacing + hidden redundant labels), on-submit user-echo bubble + animated thinking indicator, keyboard hint on composer focus, tour-hint styling, thread padding increase. Removed unused `.responding-indicator` CSS. Shared accent-dot rule across bubble and thinking-indicator selectors. Switched thinking-indicator DOM construction to `createElement`/`textContent`.
-- **Tests**: `test_vera_chat_polish.py` (10 tests) — CSS structure pins, template/JS behaviour pins, static file serving.
+- **Tests**: `test_vera_chat_polish.py` (11 tests) — CSS structure pins, template/JS behaviour pins, static file serving.
 - **Next safe step**: panel table polish, job detail page refresh, mobile/accessibility pass, or panel Vera route wiring.
 
 ## 2026-04-13 — feat(panel): refresh home dashboard layout hierarchy

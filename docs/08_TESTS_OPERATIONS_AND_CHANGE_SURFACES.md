@@ -146,7 +146,7 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 - `test_response_shaping.py`
 - `test_chat_early_exit_dispatch.py`
 - `test_vera_web_markdown_render.py` — safe bounded markdown renderer for assistant messages: headings, bold, inline code, lists, fenced code blocks, blockquotes, paragraph breaks, XSS prevention, combined realistic samples.
-- `test_vera_chat_polish.py` — CSS and template structure pins for the Vera chat interface polish: thinking-indicator CSS rules, consecutive same-role grouping, assistant role dot, keyboard hint pseudo-element, tour hint styling, responding-indicator removal, page structure (thread/composer/send-btn), JS thinking indicator creation on submit, poll skip during submit, static vera.css serving.
+- `test_vera_chat_polish.py` — CSS and template structure pins for the Vera chat interface polish (11 tests): thinking-indicator CSS rules, consecutive same-role grouping, shared accent-dot rule, keyboard hint pseudo-element, tour hint styling, responding-indicator removal, page structure (thread/composer/send-btn), JS thinking indicator creation on submit, user-echo bubble on submit, poll skip during submit, static vera.css serving.
 - `test_reference_resolver.py`
 - `test_evidence_review.py`
 - `test_result_surfacing.py`
