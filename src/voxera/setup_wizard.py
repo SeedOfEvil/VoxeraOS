@@ -475,20 +475,33 @@ def _launch_choice(*, service_state: dict[str, list[str]]) -> None:
             console.print(f"[yellow]Launch failed for {url}:[/yellow] {exc}")
 
 
-def _print_what_next() -> None:
+def _print_what_next(*, verbose: bool = False) -> None:
+    if verbose:
+        console.print(
+            Panel(
+                "All available post-setup commands:\n"
+                "- voxera doctor --quick        # check config and connectivity\n"
+                "- voxera doctor --self-test    # deeper self-test\n"
+                "- voxera vera                  # start a conversation with Vera\n"
+                "- voxera panel                 # open the operator dashboard\n"
+                "- voxera demo                  # guided offline onboarding check\n"
+                "- voxera demo --online         # opt-in provider readiness\n"
+                "- voxera queue status          # queue state overview\n"
+                "- voxera queue reconcile       # check queue consistency\n"
+                "- voxera queue reconcile --fix # auto-fix inconsistencies\n"
+                "- voxera queue prune           # remove old queue entries\n"
+                "- voxera artifacts prune       # remove old artifacts",
+                title="Next Steps (verbose)",
+            )
+        )
+        return
     console.print(
         Panel(
-            "What you can do next:\n"
-            "- voxera demo  # guided offline onboarding check\n"
-            "- voxera demo --online  # opt-in provider readiness\n"
-            "- voxera queue status\n"
-            "- voxera queue reconcile\n"
-            "- voxera queue reconcile --fix\n"
-            "- voxera queue prune\n"
-            "- voxera artifacts prune\n"
-            "- voxera doctor --quick\n"
-            "- voxera doctor --self-test  # optional deeper checks\n\n"
-            "Daemon reliability features: single-writer lock, graceful shutdown, and startup recovery.",
+            "Three things to try:\n\n"
+            "  1. voxera doctor --quick  — check config and connectivity\n"
+            "  2. voxera vera            — start a conversation with Vera\n"
+            "  3. voxera panel           — open the operator dashboard\n\n"
+            "Run 'voxera setup --verbose-next' for the full command list.",
             title="Next Steps",
         )
     )
@@ -624,7 +637,7 @@ def _post_setup_validation(cfg: AppConfig) -> None:
     _render_validation_summary(checks)
 
 
-async def run_setup() -> AppConfig:
+async def run_setup(*, verbose_next: bool = False) -> AppConfig:
     ensure_dirs()
     mode = _pick_mode()
     brain_source = _pick_brain_type()
@@ -692,5 +705,5 @@ async def run_setup() -> AppConfig:
     _post_setup_validation(cfg)
     service_state = _ensure_runtime_services_running()
     _launch_choice(service_state=service_state)
-    _print_what_next()
+    _print_what_next(verbose=verbose_next)
     return cfg

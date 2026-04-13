@@ -167,7 +167,7 @@ From `tests/` (110 files at regeneration time). Grouped by area; every test list
 - `test_config_snapshot.py`
 - `test_dev_contract_config_integration.py`
 - `test_models_config_strictness.py`
-- `test_setup_wizard.py` — provider key choice flows, OpenRouter model selection, cloud brain slot sequencing, launch/service lifecycle, web investigation config, and post-setup validation (brain config checks, traffic-light summary rendering, quick doctor integration, graceful failure handling, mixed result truthfulness, setup completion with warnings).
+- `test_setup_wizard.py` — provider key choice flows, OpenRouter model selection, cloud brain slot sequencing, launch/service lifecycle, web investigation config, post-setup validation (brain config checks, traffic-light summary rendering, quick doctor integration, graceful failure handling, mixed result truthfulness, setup completion with warnings), and post-setup next-steps output (compact 3-step default, verbose full-list path, explanatory text, output compactness).
 - `test_secrets.py`
 
 ### Brain / providers

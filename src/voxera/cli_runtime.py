@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import typer
 from rich.table import Table
@@ -14,8 +14,12 @@ from .config import AppConfig
 from .core.queue_daemon import MissionQueueDaemon, QueueLockError
 
 
-def setup_impl(*, run_setup: Callable[[], Any]) -> None:
-    asyncio.run(run_setup())
+class _SetupRunner(Protocol):
+    def __call__(self, *, verbose_next: bool = False) -> Coroutine[Any, Any, AppConfig]: ...
+
+
+def setup_impl(*, run_setup: _SetupRunner, verbose_next: bool = False) -> None:
+    asyncio.run(run_setup(verbose_next=verbose_next))
 
 
 def demo_cmd_impl(

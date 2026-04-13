@@ -217,9 +217,15 @@ register_doctor(app)
 
 
 @app.command()
-def setup():
+def setup(
+    verbose_next: bool = typer.Option(
+        False,
+        "--verbose-next",
+        help="Show full command list after setup instead of compact next steps.",
+    ),
+):
     """Run first-run typed setup wizard."""
-    setup_impl(run_setup=run_setup)
+    setup_impl(run_setup=run_setup, verbose_next=verbose_next)
 
 
 @app.command("demo")
