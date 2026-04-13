@@ -113,9 +113,10 @@ def test_home_completed_jobs_table_has_sticky_scroll(tmp_path, monkeypatch):
 
 
 def test_jobs_page_table_has_sticky_scroll(tmp_path, monkeypatch):
-    """The main Job Browser table should have table-scroll for sticky headers."""
+    """The Job Browser uses table-scroll-lg (viewport-height) instead of
+    the bounded table-scroll used by dashboard widgets."""
     body = _jobs_body(tmp_path, monkeypatch)
-    assert "table-scroll" in body
+    assert "table-scroll-lg" in body
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +258,10 @@ def test_panel_css_has_table_scroll_rules(tmp_path, monkeypatch):
     client = TestClient(panel_module.app)
     css = client.get("/static/panel.css").text
     assert ".table-scroll" in css
+    assert ".table-scroll-lg" in css
     assert "position: sticky" in css
     assert ".cell-count" in css
+    assert "td.cell-count" in css
     assert ".empty-state" in css
     assert ".lifecycle-cell" in css
     assert ".step-progress" in css

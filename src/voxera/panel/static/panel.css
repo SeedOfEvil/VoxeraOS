@@ -252,12 +252,18 @@ tr:last-child td { border-bottom: none; }
 tbody tr { transition: background 0.1s; }
 tbody tr:hover { background: var(--surface-2); }
 
-/* Scrollable table with sticky header — opt-in via class on .table-wrap */
-.table-scroll {
-  max-height: 28rem;
+/* Scrollable table with sticky header — opt-in via class on .table-wrap.
+   .table-scroll       — bounded height (dashboard widgets with many sections)
+   .table-scroll-lg    — viewport-relative height (standalone table pages)    */
+.table-scroll,
+.table-scroll-lg {
   overflow-y: auto;
 }
-.table-scroll th {
+.table-scroll    { max-height: 28rem; }
+.table-scroll-lg { max-height: calc(100vh - 12rem); }
+
+.table-scroll th,
+.table-scroll-lg th {
   position: sticky;
   top: 0;
   background: var(--surface);
@@ -274,6 +280,8 @@ tbody tr:hover { background: var(--surface-2); }
 .cell-count {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+td.cell-count {
   font-weight: 600;
 }
 
@@ -382,7 +390,7 @@ pre {
   padding: var(--space-6) var(--space-4);
   color: var(--muted);
   font-size: 0.875rem;
-  background: var(--surface-2);
+  background: var(--surface-3);
   border: 1px dashed var(--border-soft);
   border-radius: var(--radius-sm);
   margin: var(--space-2) 0;
