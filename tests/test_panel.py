@@ -3006,3 +3006,113 @@ def test_operator_outcome_summary_semantics_precedence_characterization():
         has_approval=False,
     )
     assert failed["key"] == "failed"
+
+
+def test_home_dashboard_zone_hierarchy(tmp_path, monkeypatch):
+    """The home page should render dashboard zones in the correct visual
+    hierarchy order: KPI → Primary (Approvals, Active Work) → Secondary
+    (Daemon Health, Queue Details) → Tertiary (History) → Bottom (Mission
+    Library, Dispatch).  This test pins the ordering so a future template
+    edit that scrambles the zones will fail loudly."""
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    body = client.get("/").text
+
+    # Zone wrapper classes present
+    assert "dash-zone--kpi" in body
+    assert "dash-zone--primary" in body
+    assert "dash-zone--secondary" in body
+    assert "dash-zone--tertiary" in body
+    assert "dash-zone--bottom" in body
+
+    # KPI grid uses dedicated class (not generic grid-4)
+    assert "dash-kpi-grid" in body
+    assert "dash-kpi-card" in body
+
+    # Key sections still rendered
+    assert "Queue Summary" in body
+    assert "Approval Command Center" in body
+    assert "Active Work" in body
+    assert "Daemon Health" in body
+    assert "Queue Status" in body
+    assert "Daemon Lock History" in body
+    assert "Panel Security Counters" in body
+    assert "Mission Library" in body
+    assert "Create Mission" in body
+
+    # Primary action cards have accent styling class
+    assert "dash-card-primary" in body
+
+    # Ordering: KPI zone before Primary, Primary before Secondary, etc.
+    kpi_pos = body.index("dash-zone--kpi")
+    primary_pos = body.index("dash-zone--primary")
+    secondary_pos = body.index("dash-zone--secondary")
+    tertiary_pos = body.index("dash-zone--tertiary")
+    bottom_pos = body.index("dash-zone--bottom")
+    assert kpi_pos < primary_pos < secondary_pos < tertiary_pos < bottom_pos
+
+    # Approvals and Active Work appear before Daemon Health and Queue Details
+    assert body.index("Approval Command Center") < body.index("Daemon Health")
+    assert body.index("Active Work") < body.index("Queue Details")
+
+    # Bottom zone: Mission Library uses dash-card-bottom (not borrowed tertiary)
+    assert "dash-card-bottom" in body
+
+    # With all-zero counts, conditional KPI highlight classes should NOT appear
+    assert "kpi-warn" not in body
+    assert "kpi-danger" not in body
+
+
+def test_home_kpi_cards_highlight_nonzero_counts(tmp_path, monkeypatch):
+    """KPI cards apply kpi-danger when failed > 0 and kpi-warn when
+    pending_approvals > 0, giving operators immediate visual signals."""
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    # Failed job → triggers kpi-danger
+    (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "failed" / "job-boom.json").write_text('{"goal":"boom"}', encoding="utf-8")
+    (queue_dir / "failed" / "job-boom.error.json").write_text(
+        json.dumps({"job": "job-boom.json", "error": "kaboom", "ts": 1}), encoding="utf-8"
+    )
+    # Pending approval → triggers kpi-warn
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-ask.json").write_text('{"goal":"ask"}', encoding="utf-8")
+    (queue_dir / "pending" / "job-ask.pending.json").write_text(
+        json.dumps(
+            {
+                "payload": {"goal": "ask"},
+                "resume_step": 1,
+                "mission": {
+                    "id": "x",
+                    "title": "X",
+                    "goal": "x",
+                    "steps": [{"skill_id": "system.status", "args": {}}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "pending" / "approvals" / "job-ask.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-ask.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "reason": "needs approval",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    body = client.get("/").text
+
+    assert "kpi-danger" in body
+    assert "kpi-warn" in body

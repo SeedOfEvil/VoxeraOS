@@ -129,7 +129,9 @@ a:hover { text-decoration: underline; }
 /* Section spacing helper */
 .mb { margin-bottom: var(--space-4); }
 .mb-sm { margin-bottom: var(--space-3); }
+.mb-0 { margin-bottom: 0; }
 .mt { margin-top: var(--space-4); }
+.mt-0 { margin-top: 0; }
 
 /* ─── Section group labels ──────────────────────────────────────────────────── */
 .section-label {
@@ -155,6 +157,8 @@ a:hover { text-decoration: underline; }
 .kpi { font-size: 2rem; font-weight: 700; margin: 0; line-height: 1.1; }
 .kpi-sm { font-size: 1.3rem; font-weight: 700; margin: 0; line-height: 1.1; }
 .kpi-label { margin: var(--space-1) 0 0; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.kpi-warn { color: var(--warn); }
+.kpi-danger { color: var(--danger); }
 
 /* ─── Buttons ────────────────────────────────────────────────────────────────── */
 .btn {
@@ -483,6 +487,88 @@ pre {
   border-radius: 50%;
   animation: panel-spin 0.7s linear infinite;
   vertical-align: middle;
+}
+
+/* ─── Dashboard zone layout ────────────────────────────────────────────────── */
+.dash-zone {
+  margin-bottom: var(--space-5);
+}
+.dash-zone:last-child {
+  margin-bottom: 0;
+}
+
+.dash-zone-divider {
+  height: 1px;
+  background: var(--border-soft);
+  margin-bottom: var(--space-5);
+}
+
+/* KPI zone — compact prominent cards */
+.dash-zone--kpi {
+  margin-bottom: var(--space-6);
+}
+.dash-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+@media (max-width: 980px) {
+  .dash-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 540px) {
+  .dash-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.dash-kpi-card {
+  text-align: center;
+  padding: var(--space-4) var(--space-3);
+  border-color: var(--border-soft);
+}
+.dash-kpi-card .kpi {
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.dash-kpi-card .kpi-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+
+/* Primary action cards — subtle left accent */
+.dash-card-primary {
+  border-left: 3px solid var(--accent);
+}
+
+/* Secondary monitoring cards — quieter presence */
+.dash-card-secondary,
+.dash-zone--secondary > .card {
+  border-color: var(--border-soft);
+  box-shadow: none;
+}
+
+/* Tertiary context cards + bottom zone — minimal styling */
+.dash-card-tertiary,
+.dash-card-bottom {
+  border-color: var(--border-soft);
+  box-shadow: none;
+  background: var(--surface-2);
+}
+
+/* Dashboard sub-heading (replaces inline margin-top styles) */
+.dash-sub-heading {
+  margin-top: var(--space-3);
+}
+
+/* Queue actions spacing */
+.dash-queue-actions {
+  margin-top: var(--space-3);
+}
+
+/* Checkbox label in dispatch forms */
+.dash-checkbox-label {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-weight: 400;
 }
 
 /* ─── Queue status detail group ──────────────────────────────────────────────── */

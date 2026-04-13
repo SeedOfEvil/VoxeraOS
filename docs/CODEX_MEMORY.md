@@ -1,3 +1,10 @@
+## 2026-04-13 — feat(panel): refresh home dashboard layout hierarchy
+
+- **Motivation**: the panel home page displayed all sections as equally-weighted cards. This PR restructures the Control tab into five prioritized visual zones so operators can scan status at a glance.
+- **What shipped**: template + CSS only. Five zones — KPI summary (5-card row, conditional `kpi-warn`/`kpi-danger`), Primary action (Approvals + Active Work, left-accent border), Secondary monitoring (Daemon Health + Queue Details, quieter styling), Tertiary context (Vera Activity + History, receded), Bottom (Mission Library + Dispatch). Dashboard-specific CSS classes (`dash-zone--*`, `dash-kpi-grid`, `dash-card-primary/secondary/tertiary/bottom`) use existing design tokens. No route, payload, backend, Logging tab, or Performance Stats tab changes.
+- **Tests**: `test_home_dashboard_zone_hierarchy`, `test_home_kpi_cards_highlight_nonzero_counts`.
+- **Next safe step**: table polish, Vera chat redesign, job detail page refresh, or accessibility/mobile pass.
+
 ## 2026-04-13 — feat(first-run): add interactive Vera walkthrough for preview refinement and governed submission
 
 - **Motivation**: prior first-run PRs (config guard, validation, next-steps) gave the user a clean start but never taught the actual Vera interaction model. A static "tour mission" preview would have skipped straight to a canned submission — the user would learn that Voxera runs missions, but not how to draft, refine, and submit a preview step by step. This PR adds a bounded interactive walkthrough that teaches the real loop: draft → refine in chat → preview updates → governed submit.
