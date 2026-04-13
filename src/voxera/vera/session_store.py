@@ -83,7 +83,7 @@ def read_session_turns(queue_root: Path, session_id: str) -> list[dict[str, str]
             if role == "user" and input_origin in {"typed", "voice_transcript"}:
                 normalized_turn["input_origin"] = input_origin
             normalized.append(normalized_turn)
-    return normalized[-MAX_SESSION_TURNS:]
+    return normalized
 
 
 def read_session_updated_at_ms(queue_root: Path, session_id: str) -> int:
@@ -116,7 +116,6 @@ def append_session_turn(
     if normalized_role == "user" and normalized_origin in {"typed", "voice_transcript"}:
         turn_payload["input_origin"] = normalized_origin
     turns.append(turn_payload)
-    turns = turns[-MAX_SESSION_TURNS:]
     previous = _read_session_payload(queue_root, session_id)
     payload: dict[str, Any] = {
         "session_id": session_id,

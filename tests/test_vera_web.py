@@ -348,8 +348,10 @@ def test_vera_web_context_is_preserved_and_capped(tmp_path, monkeypatch):
         assert res.status_code == 200
 
     turns = vera_session_store.read_session_turns(queue, sid)
-    assert len(turns) == vera_session_store.MAX_SESSION_TURNS
-    assert turns[0]["text"] == "msg-2"
+    # All 12 turns preserved (6 user + 6 assistant) — session store no
+    # longer truncates; only the LLM context window (service layer) is capped.
+    assert len(turns) == 12
+    assert turns[0]["text"] == "msg-0"
 
 
 def test_vera_clear_chat_and_context(tmp_path, monkeypatch):
@@ -6126,7 +6128,7 @@ def test_chat_updates_detects_new_turn_when_session_window_is_full(tmp_path, mon
     assert refreshed.status_code == 200
     refreshed_payload = refreshed.json()
     assert refreshed_payload["changed"] is True
-    assert refreshed_payload["turn_count"] == vera_session_store.MAX_SESSION_TURNS
+    assert refreshed_payload["turn_count"] == vera_session_store.MAX_SESSION_TURNS + 1
     assert isinstance(refreshed_payload.get("turns"), list)
     assert refreshed_payload["turns"][-1]["text"] == "live completion second wave"
 
