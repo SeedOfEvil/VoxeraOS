@@ -1312,9 +1312,9 @@ def test_home_vera_activity_does_not_override_canonical_queue_counts(
     body = res.text
     # Canonical queue truth wins: the KPI cards still show empty.
     # "No pending queue approvals" comes from the empty Approvals block;
-    # "No active jobs currently" comes from the empty active work block.
+    # "No active work" comes from the empty active work block.
     assert "No pending queue approvals" in body
-    assert "No active jobs currently" in body
+    assert "No active work" in body
     # The strip surfaces the supplemental reference, but clearly labeled.
     assert "Vera Activity" in body
     assert "ghost-job-that-does-not-exist.json" in body

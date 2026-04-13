@@ -107,7 +107,7 @@
           {% if queue.pending_approvals|length == 0 %}
             <div class="empty-state">No pending queue approvals — all clear.</div>
           {% else %}
-            <div class="table-wrap">
+            <div class="table-wrap table-scroll">
               <table>
                 <thead>
                   <tr>
@@ -168,9 +168,9 @@
           <article class="card dash-card-primary">
             <h2>Active Work</h2>
             {% if active_jobs|length == 0 %}
-              <div class="empty-state">No active jobs currently.</div>
+              <div class="empty-state">No active work.</div>
             {% else %}
-              <div class="table-wrap">
+              <div class="table-wrap table-scroll">
                 <table>
                   <thead><tr><th>Job</th><th>Mission</th><th>Goal</th><th>State</th></tr></thead>
                   <tbody>
@@ -193,7 +193,7 @@
             {% if queue.recent_failed|length == 0 %}
               <div class="empty-state">No failed jobs.</div>
             {% else %}
-              <div class="table-wrap">
+              <div class="table-wrap table-scroll">
                 <table>
                   <thead><tr><th>Job</th><th>Error</th><th>Actions</th></tr></thead>
                   <tbody>
@@ -300,15 +300,15 @@
           <article class="card dash-card-secondary">
             <h2>Daemon Lock History</h2>
             <div class="table-wrap"><table>
-              <thead><tr><th>Event</th><th>Count</th></tr></thead>
+              <thead><tr><th>Event</th><th class="cell-count">Count</th></tr></thead>
               <tbody>
-                <tr><td>Lock acquired</td><td>{{queue.daemon_lock_counters.lock_acquire_ok or 0}}</td></tr>
-                <tr><td>Lock released cleanly</td><td>{{queue.daemon_lock_counters.lock_released or 0}}</td></tr>
-                <tr><td>Stale lock reclaimed</td><td>{{queue.daemon_lock_counters.lock_reclaimed or 0}}</td></tr>
-                <tr><td>Acquire blocked (live lock)</td><td>{{queue.daemon_lock_counters.lock_acquire_fail or 0}}</td></tr>
-                <tr><td>Stale lock cleared</td><td>{{queue.daemon_lock_counters.unlock_ok or 0}}</td></tr>
-                <tr><td>Unlock refused (live PID)</td><td>{{queue.daemon_lock_counters.unlock_refused or 0}}</td></tr>
-                <tr><td>Force-unlocked</td><td>{{queue.daemon_lock_counters.force_unlock_count or 0}}</td></tr>
+                <tr><td>Lock acquired</td><td class="cell-count">{{queue.daemon_lock_counters.lock_acquire_ok or 0}}</td></tr>
+                <tr><td>Lock released cleanly</td><td class="cell-count">{{queue.daemon_lock_counters.lock_released or 0}}</td></tr>
+                <tr><td>Stale lock reclaimed</td><td class="cell-count">{{queue.daemon_lock_counters.lock_reclaimed or 0}}</td></tr>
+                <tr><td>Acquire blocked (live lock)</td><td class="cell-count">{{queue.daemon_lock_counters.lock_acquire_fail or 0}}</td></tr>
+                <tr><td>Stale lock cleared</td><td class="cell-count">{{queue.daemon_lock_counters.unlock_ok or 0}}</td></tr>
+                <tr><td>Unlock refused (live PID)</td><td class="cell-count">{{queue.daemon_lock_counters.unlock_refused or 0}}</td></tr>
+                <tr><td>Force-unlocked</td><td class="cell-count">{{queue.daemon_lock_counters.force_unlock_count or 0}}</td></tr>
               </tbody>
             </table></div>
           </article>
@@ -316,14 +316,14 @@
           <article class="card dash-card-secondary">
             <h2>Panel Security Counters</h2>
             <div class="table-wrap"><table>
-              <thead><tr><th>Event</th><th>Count</th></tr></thead>
+              <thead><tr><th>Event</th><th class="cell-count">Count</th></tr></thead>
               <tbody>
-                <tr><td>Mutations allowed</td><td>{{panel_security_counters.panel_mutation_allowed or 0}}</td></tr>
-                <tr><td>Unauthorized (401)</td><td>{{panel_security_counters.panel_401_count or 0}}</td></tr>
-                <tr><td>Forbidden (403)</td><td>{{panel_security_counters.panel_403_count or 0}}</td></tr>
-                <tr><td>Bad credentials</td><td>{{panel_security_counters.panel_auth_invalid or 0}}</td></tr>
-                <tr><td>CSRF token missing</td><td>{{panel_security_counters.panel_csrf_missing or 0}}</td></tr>
-                <tr><td>CSRF token invalid</td><td>{{panel_security_counters.panel_csrf_invalid or 0}}</td></tr>
+                <tr><td>Mutations allowed</td><td class="cell-count">{{panel_security_counters.panel_mutation_allowed or 0}}</td></tr>
+                <tr><td>Unauthorized (401)</td><td class="cell-count">{{panel_security_counters.panel_401_count or 0}}</td></tr>
+                <tr><td>Forbidden (403)</td><td class="cell-count">{{panel_security_counters.panel_403_count or 0}}</td></tr>
+                <tr><td>Bad credentials</td><td class="cell-count">{{panel_security_counters.panel_auth_invalid or 0}}</td></tr>
+                <tr><td>CSRF token missing</td><td class="cell-count">{{panel_security_counters.panel_csrf_missing or 0}}</td></tr>
+                <tr><td>CSRF token invalid</td><td class="cell-count">{{panel_security_counters.panel_csrf_invalid or 0}}</td></tr>
               </tbody>
             </table></div>
           </article>
@@ -378,10 +378,23 @@
         <div class="section-label">History</div>
         <section class="card dash-card-tertiary mb">
           <h2>Completed Jobs</h2>
-          {% if queue.done_jobs|length == 0 %}<p class="muted">No completed jobs.</p>{% else %}
-          <div class="table-wrap"><table><thead><tr><th>Job</th><th>Artifacts</th></tr></thead><tbody>
-          {% for job in queue.done_jobs %}<tr><td class="mono text-sm">{{job}}</td><td><a href="/queue/jobs/{{job}}/detail">Open detail →</a></td></tr>{% endfor %}
-          </tbody></table></div>{% endif %}
+          {% if queue.done_jobs|length == 0 %}
+            <div class="empty-state">No completed jobs yet.</div>
+          {% else %}
+            <div class="table-wrap table-scroll">
+              <table>
+                <thead><tr><th>Job</th><th>Artifacts</th></tr></thead>
+                <tbody>
+                {% for job in queue.done_jobs %}
+                  <tr>
+                    <td class="mono text-sm">{{job}}</td>
+                    <td><a href="/queue/jobs/{{job}}/detail">Open detail →</a></td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
         </section>
 
       </div>
@@ -393,19 +406,25 @@
         <!-- Mission library -->
         <section class="card dash-card-bottom mb">
           <h2>Mission Library</h2>
-          <div class="table-wrap"><table>
-            <thead><tr><th>ID</th><th>Title</th><th>Goal</th><th>Steps</th></tr></thead>
-            <tbody>
-            {% for mission in missions %}
-              <tr>
-                <td class="mono text-sm">{{mission.id}}</td>
-                <td>{{mission.title}}</td>
-                <td>{{mission.goal}}</td>
-                <td>{{mission.steps|length}}</td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table></div>
+          {% if missions|length == 0 %}
+            <div class="empty-state">No mission templates defined.</div>
+          {% else %}
+            <div class="table-wrap table-scroll">
+              <table>
+                <thead><tr><th>ID</th><th>Title</th><th>Goal</th><th>Steps</th></tr></thead>
+                <tbody>
+                {% for mission in missions %}
+                  <tr>
+                    <td class="mono text-sm">{{mission.id}}</td>
+                    <td>{{mission.title}}</td>
+                    <td>{{mission.goal}}</td>
+                    <td class="cell-count">{{mission.steps|length}}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
         </section>
 
         <!-- Create mission forms -->
@@ -458,7 +477,7 @@
           {% if recent_activity|length == 0 %}
             <div class="empty-state">No recent lifecycle events yet.</div>
           {% else %}
-            <div class="table-wrap">
+            <div class="table-wrap table-scroll">
               <table>
                 <thead><tr><th>Event</th><th>Job</th><th>Mission</th><th>Step</th></tr></thead>
                 <tbody>
@@ -489,7 +508,7 @@
       <section class="card" style="margin-top:var(--space-4);">
         <h2>Audit (latest)</h2>
         {% if audit|length == 0 %}
-          <p class="muted">No audit events yet.</p>
+          <div class="empty-state">No audit events yet.</div>
         {% else %}
           {% for e in audit %}
             <pre style="margin-bottom:4px;">{{ e }}</pre>
