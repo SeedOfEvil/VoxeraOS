@@ -252,6 +252,52 @@ tr:last-child td { border-bottom: none; }
 tbody tr { transition: background 0.1s; }
 tbody tr:hover { background: var(--surface-2); }
 
+/* Scrollable table with sticky header — opt-in via class on .table-wrap.
+   .table-scroll       — bounded height (dashboard widgets with many sections)
+   .table-scroll-lg    — viewport-relative height (standalone table pages)    */
+.table-scroll,
+.table-scroll-lg {
+  overflow-y: auto;
+}
+.table-scroll    { max-height: 28rem; }
+.table-scroll-lg { max-height: calc(100vh - 12rem); }
+
+.table-scroll th,
+.table-scroll-lg th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+  border-bottom-color: transparent;
+  box-shadow: inset 0 -2px 0 var(--border);
+}
+.dash-card-tertiary .table-scroll th,
+.dash-card-tertiary .table-scroll-lg th,
+.dash-card-bottom .table-scroll th,
+.dash-card-bottom .table-scroll-lg th {
+  background: var(--surface-2);
+}
+
+/* Right-aligned numeric / count cells */
+.cell-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+td.cell-count {
+  font-weight: 600;
+}
+
+/* Job lifecycle sub-labels (jobs page) */
+.lifecycle-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.step-progress {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
 /* ─── Badges / pills ─────────────────────────────────────────────────────────── */
 .badge {
   display: inline-flex;
@@ -343,9 +389,17 @@ pre {
 /* ─── Empty states ───────────────────────────────────────────────────────────── */
 .empty-state {
   text-align: center;
-  padding: var(--space-5) var(--space-4);
+  padding: var(--space-6) var(--space-4);
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  background: var(--surface-3);
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-sm);
+  margin: var(--space-2) 0;
+}
+/* Inside table cells the wrapper td already provides spacing */
+td > .empty-state {
+  margin: 0;
 }
 
 /* ─── Collapsible / expandable regions ─────────────────────────────────────── */
