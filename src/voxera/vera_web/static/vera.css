@@ -163,8 +163,6 @@ body {
   border: 1px solid var(--line);
   background: rgba(10, 11, 15, 0.55);
   scroll-behavior: smooth;
-  display: flex;
-  flex-direction: column;
 }
 .thread::-webkit-scrollbar { width: 4px; }
 .thread::-webkit-scrollbar-track { background: transparent; }
@@ -556,12 +554,11 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* ─── Thinking indicator (shown during send) ──────────────────── */
 @keyframes bounce-dot {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
 }
-
-/* ─── Thinking indicator (shown during send) ──────────────────── */
 .thinking-indicator {
   display: none;
   flex-direction: column;

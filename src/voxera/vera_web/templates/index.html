@@ -257,8 +257,9 @@
         sendBtn.disabled = true;
         sendBtn.classList.add('is-sending');
         textarea.readOnly = true;  // readOnly (not disabled) — disabled fields are excluded from form submission
-        // Show thinking indicator in the thread while waiting for response
-        const thread = document.getElementById('thread');
+        // Show thinking indicator in the thread while waiting for response.
+        // `thread` is the outer const declared later in this IIFE — safe to
+        // reference here because this callback runs after the IIFE completes.
         if (thread) {
           const indicator = document.createElement('div');
           indicator.className = 'thinking-indicator is-visible';

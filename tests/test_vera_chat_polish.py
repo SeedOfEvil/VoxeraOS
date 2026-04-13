@@ -1,7 +1,7 @@
 """Focused tests for Vera chat interface polish.
 
 Pins the key structural and styling surfaces added/changed by the
-Vera chat polish PR. Not a visual snapshot test — just verifies that
+Vera chat polish PR.  Not a visual snapshot test — just verifies that
 the expected CSS rules, template structures, and JS behaviours are
 present so they can't be silently removed or broken by a later PR.
 """
@@ -10,62 +10,58 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from voxera.vera_web import app as vera_app_module
+
+_CSS_PATH = Path(vera_app_module.__file__).resolve().parent / "static" / "vera.css"
 
 
 def _set_queue_root(monkeypatch, queue: Path) -> None:
     monkeypatch.setattr(vera_app_module, "_active_queue_root", lambda: queue)
 
 
+@pytest.fixture(scope="module")
+def vera_css() -> str:
+    return _CSS_PATH.read_text(encoding="utf-8")
+
+
 # ─── CSS structure pins ──────────────────────────────────────────
 
 
-def test_vera_css_contains_thinking_indicator_rules():
-    css_path = Path(vera_app_module.__file__).resolve().parent / "static" / "vera.css"
-    css = css_path.read_text(encoding="utf-8")
-    assert ".thinking-indicator" in css
-    assert ".thinking-indicator.is-visible" in css
-    assert ".thinking-indicator .thinking-role" in css
-    assert ".thinking-indicator .thinking-content" in css
-    assert ".thinking-indicator .dots span" in css
+def test_vera_css_contains_thinking_indicator_rules(vera_css):
+    assert ".thinking-indicator" in vera_css
+    assert ".thinking-indicator.is-visible" in vera_css
+    assert ".thinking-indicator .thinking-role" in vera_css
+    assert ".thinking-indicator .thinking-content" in vera_css
+    assert ".thinking-indicator .dots span" in vera_css
 
 
-def test_vera_css_contains_consecutive_grouping_rules():
-    css_path = Path(vera_app_module.__file__).resolve().parent / "static" / "vera.css"
-    css = css_path.read_text(encoding="utf-8")
-    assert ".bubble.assistant + .bubble.assistant" in css
-    assert ".bubble.user + .bubble.user" in css
+def test_vera_css_contains_consecutive_grouping_rules(vera_css):
+    assert ".bubble.assistant + .bubble.assistant" in vera_css
+    assert ".bubble.user + .bubble.user" in vera_css
 
 
-def test_vera_css_contains_role_dot_for_assistant():
-    css_path = Path(vera_app_module.__file__).resolve().parent / "static" / "vera.css"
-    css = css_path.read_text(encoding="utf-8")
-    assert ".bubble.assistant .role::before" in css
+def test_vera_css_contains_role_dot_for_assistant(vera_css):
+    assert ".bubble.assistant .role::before" in vera_css
 
 
-def test_vera_css_contains_keyboard_hint():
-    css_path = Path(vera_app_module.__file__).resolve().parent / "static" / "vera.css"
-    css = css_path.read_text(encoding="utf-8")
-    assert ".composer::after" in css
-    assert "Enter to send" in css
-    assert ".composer:focus-within::after" in css
+def test_vera_css_contains_keyboard_hint(vera_css):
+    assert ".composer::after" in vera_css
+    assert "Enter to send" in vera_css
+    assert ".composer:focus-within::after" in vera_css
 
 
-def test_vera_css_contains_tour_hint_styling():
-    css_path = Path(vera_app_module.__file__).resolve().parent / "static" / "vera.css"
-    css = css_path.read_text(encoding="utf-8")
-    assert ".empty-tour-hint" in css
-    assert ".empty-tour-hint strong" in css
+def test_vera_css_contains_tour_hint_styling(vera_css):
+    assert ".empty-tour-hint" in vera_css
+    assert ".empty-tour-hint strong" in vera_css
 
 
-def test_vera_css_removed_unused_responding_indicator():
+def test_vera_css_removed_unused_responding_indicator(vera_css):
     """The .responding-indicator was never used in the HTML and is now
-    replaced by .thinking-indicator. Ensure it's gone."""
-    css_path = Path(vera_app_module.__file__).resolve().parent / "static" / "vera.css"
-    css = css_path.read_text(encoding="utf-8")
-    assert ".responding-indicator" not in css
+    replaced by .thinking-indicator.  Ensure it's gone."""
+    assert ".responding-indicator" not in vera_css
 
 
 # ─── Template / page structure pins ──────────────────────────────
