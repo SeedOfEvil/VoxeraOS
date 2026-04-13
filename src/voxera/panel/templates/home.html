@@ -410,8 +410,8 @@
 
         <!-- Create mission forms -->
         <div class="section-label">Dispatch</div>
-        <section class="grid grid-2">
-          <article class="card">
+        <section class="grid grid-2 mb">
+          <article class="card dash-card-bottom">
             <h2>Create Mission</h2>
             <form class="form-stack" method="post" action="/missions/create">
               <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
@@ -426,7 +426,7 @@
             </form>
           </article>
 
-          <article class="card">
+          <article class="card dash-card-bottom">
             <h2>Create Mission Template</h2>
             <form class="form-stack" method="post" action="/missions/templates/create">
               <input type="hidden" name="csrf_token" value="{{csrf_token}}" />

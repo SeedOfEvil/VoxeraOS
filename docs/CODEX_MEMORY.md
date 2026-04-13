@@ -1,12 +1,9 @@
 ## 2026-04-13 — feat(panel): refresh home dashboard layout hierarchy
 
 - **Motivation**: the panel home page displayed all sections as equally-weighted cards. This PR restructures the Control tab into five prioritized visual zones so operators can scan status at a glance.
-- **What shipped**: the Control tab is now organized into zone containers — KPI summary (5-card row with conditional `kpi-warn`/`kpi-danger` coloring), Primary action (Approvals + Active Work with left-accent border), Secondary monitoring (Daemon Health + Queue Details, quieter styling), Tertiary context (Vera Activity + Completed Jobs, receded), and Bottom (Mission Library + Dispatch). Dashboard-specific CSS classes (`dash-zone--*`, `dash-kpi-grid`, `dash-card-primary/secondary/tertiary/bottom`) use existing design tokens. Inline styles replaced with utility classes where touched.
-- **Scope**: template + CSS only. No route, payload, backend, Logging tab, or Performance Stats tab changes.
-- **Tests**: `test_home_dashboard_zone_hierarchy` (zone ordering, key sections, KPI grid class), `test_home_kpi_cards_highlight_nonzero_counts` (conditional `kpi-danger` on failed > 0). All existing panel tests pass unchanged.
-- **Files touched**: `home.html`, `panel.css`, `test_panel.py`, `CODEX_MEMORY.md`, `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`.
-- **Invariants preserved**: all text content, data bindings, form actions, route contracts unchanged. Vera Activity remains supplemental. Daemon health widget template unchanged (styled via CSS descendant selector).
-- **Next safe step**: table polish, Vera chat redesign, job detail page refresh, or accessibility/mobile pass in subsequent PRs.
+- **What shipped**: template + CSS only. Five zones — KPI summary (5-card row, conditional `kpi-warn`/`kpi-danger`), Primary action (Approvals + Active Work, left-accent border), Secondary monitoring (Daemon Health + Queue Details, quieter styling), Tertiary context (Vera Activity + History, receded), Bottom (Mission Library + Dispatch). Dashboard-specific CSS classes (`dash-zone--*`, `dash-kpi-grid`, `dash-card-primary/secondary/tertiary/bottom`) use existing design tokens. No route, payload, backend, Logging tab, or Performance Stats tab changes.
+- **Tests**: `test_home_dashboard_zone_hierarchy`, `test_home_kpi_cards_highlight_nonzero_counts`.
+- **Next safe step**: table polish, Vera chat redesign, job detail page refresh, or accessibility/mobile pass.
 
 ## 2026-04-13 — feat(first-run): add interactive Vera walkthrough for preview refinement and governed submission
 

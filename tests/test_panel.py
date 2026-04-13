@@ -3073,10 +3073,40 @@ def test_home_kpi_cards_highlight_nonzero_counts(tmp_path, monkeypatch):
     pending_approvals > 0, giving operators immediate visual signals."""
     fake_home = tmp_path / "home"
     queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    # Failed job → triggers kpi-danger
     (queue_dir / "failed").mkdir(parents=True, exist_ok=True)
     (queue_dir / "failed" / "job-boom.json").write_text('{"goal":"boom"}', encoding="utf-8")
     (queue_dir / "failed" / "job-boom.error.json").write_text(
         json.dumps({"job": "job-boom.json", "error": "kaboom", "ts": 1}), encoding="utf-8"
+    )
+    # Pending approval → triggers kpi-warn
+    (queue_dir / "pending" / "approvals").mkdir(parents=True, exist_ok=True)
+    (queue_dir / "pending" / "job-ask.json").write_text('{"goal":"ask"}', encoding="utf-8")
+    (queue_dir / "pending" / "job-ask.pending.json").write_text(
+        json.dumps(
+            {
+                "payload": {"goal": "ask"},
+                "resume_step": 1,
+                "mission": {
+                    "id": "x",
+                    "title": "X",
+                    "goal": "x",
+                    "steps": [{"skill_id": "system.status", "args": {}}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (queue_dir / "pending" / "approvals" / "job-ask.approval.json").write_text(
+        json.dumps(
+            {
+                "job": "job-ask.json",
+                "step": 1,
+                "skill": "system.open_url",
+                "reason": "needs approval",
+            }
+        ),
+        encoding="utf-8",
     )
     (queue_dir / "health.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
@@ -3085,3 +3115,4 @@ def test_home_kpi_cards_highlight_nonzero_counts(tmp_path, monkeypatch):
     body = client.get("/").text
 
     assert "kpi-danger" in body
+    assert "kpi-warn" in body
