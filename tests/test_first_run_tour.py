@@ -21,6 +21,7 @@ from voxera.vera.first_run_tour import (
     is_first_run_tour_request,
     is_fresh_vera_session,
     is_walkthrough_active,
+    is_walkthrough_exit_request,
     start_walkthrough,
 )
 from voxera.vera.session_store import (
@@ -41,12 +42,10 @@ class TestTourRequestDetection:
             "Start the Voxera tour",
             "START VOXERA TOUR",
             "run the Voxera tour",
-            "Voxera tour",
             # VoxeraOS variants
             "start VoxeraOS tour",
             "Start the VoxeraOS tour",
             "run the VoxeraOS tour",
-            "VoxeraOS tour",
             # first-run anchor
             "run the first-run tour",
             "run first run tour",
@@ -68,10 +67,14 @@ class TestTourRequestDetection:
             "   ",
             "tour de france",
             "start the engine",
-            # Must NOT match without Voxera/first-run anchor
+            # Must NOT match without start/run verb or first-run anchor
             "start the tour of the codebase",
             "start the tour",
             "run the tour of duty",
+            # Interrogative forms must not trigger
+            "Tell me about the VoxeraOS tour",
+            "What is the Voxera tour?",
+            "How does the VoxeraOS tour work?",
         ],
     )
     def test_rejects_non_tour_phrases(self, message: str) -> None:
@@ -257,6 +260,96 @@ class TestWalkthroughFinalStep:
 
         clear_walkthrough(queue, "s1")
         assert is_walkthrough_active(queue, "s1") is False
+
+
+# ---------------------------------------------------------------------------
+# 5b. Cancel walkthrough
+# ---------------------------------------------------------------------------
+
+
+class TestWalkthroughCancel:
+    @pytest.mark.parametrize(
+        "message",
+        ["cancel tour", "stop the tour", "exit tour", "quit walkthrough", "leave the tour"],
+    )
+    def test_exit_phrases_detected(self, message: str) -> None:
+        assert is_walkthrough_exit_request(message) is True
+
+    @pytest.mark.parametrize(
+        "message",
+        ["hello", "make it shorter", "submit it", ""],
+    )
+    def test_non_exit_phrases_rejected(self, message: str) -> None:
+        assert is_walkthrough_exit_request(message) is False
+
+    def test_cancel_clears_walkthrough_via_chat(self, monkeypatch, tmp_path) -> None:
+        from .vera_session_helpers import make_vera_session
+
+        harness = make_vera_session(monkeypatch, tmp_path)
+        harness.chat("start VoxeraOS tour")
+        assert is_walkthrough_active(harness.queue, harness.session_id)
+
+        harness.chat("cancel tour")
+        assert not is_walkthrough_active(harness.queue, harness.session_id)
+
+        # Preview should still exist (not destroyed on cancel)
+        assert harness.preview() is not None
+
+
+# ---------------------------------------------------------------------------
+# 5c. Off-topic message handling
+# ---------------------------------------------------------------------------
+
+
+class TestWalkthroughOffTopic:
+    def test_off_topic_replays_current_step(self, tmp_path) -> None:
+        queue = tmp_path / "queue"
+        start_walkthrough(queue, "s1")
+
+        result = advance_walkthrough(queue, "s1", message="help")
+        assert result is not None
+        text, status = result
+        # Should replay current step hint, not advance
+        assert "hint" in status
+        # Step should NOT have advanced
+        state = read_session_walkthrough(queue, "s1")
+        assert state["step"] == 0
+
+    def test_very_short_message_replays(self, tmp_path) -> None:
+        queue = tmp_path / "queue"
+        start_walkthrough(queue, "s1")
+
+        result = advance_walkthrough(queue, "s1", message="hi")
+        assert result is not None
+        assert "hint" in result[1]
+        assert read_session_walkthrough(queue, "s1")["step"] == 0
+
+    def test_what_time_replays(self, tmp_path) -> None:
+        queue = tmp_path / "queue"
+        start_walkthrough(queue, "s1")
+
+        result = advance_walkthrough(queue, "s1", message="what time is it?")
+        assert result is not None
+        assert "hint" in result[1]
+        assert read_session_walkthrough(queue, "s1")["step"] == 0
+
+    def test_normal_refinement_message_still_advances(self, tmp_path) -> None:
+        queue = tmp_path / "queue"
+        start_walkthrough(queue, "s1")
+
+        result = advance_walkthrough(
+            queue, "s1", message="Change the content to something shorter."
+        )
+        assert result is not None
+        assert read_session_walkthrough(queue, "s1")["step"] == 1
+
+    def test_replay_text_mentions_cancel_option(self, tmp_path) -> None:
+        queue = tmp_path / "queue"
+        start_walkthrough(queue, "s1")
+
+        result = advance_walkthrough(queue, "s1", message="help")
+        assert result is not None
+        assert "cancel tour" in result[0].lower()
 
 
 # ---------------------------------------------------------------------------

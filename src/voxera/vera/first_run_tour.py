@@ -35,7 +35,6 @@ from .session_store import (
 _TOUR_REQUEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bstart\s+(?:the\s+)?voxera(?:os)?\s+tour\b", re.IGNORECASE),
     re.compile(r"\brun\s+(?:the\s+)?voxera(?:os)?\s+tour\b", re.IGNORECASE),
-    re.compile(r"\bvoxera(?:os)?\s+tour\b", re.IGNORECASE),
     re.compile(r"\bfirst[- ]?run\s+tour\b", re.IGNORECASE),
 )
 
@@ -46,6 +45,17 @@ def is_first_run_tour_request(message: str) -> bool:
     if not text:
         return False
     return any(p.search(text) for p in _TOUR_REQUEST_PATTERNS)
+
+
+_EXIT_TOUR_RE = re.compile(
+    r"\b(?:cancel|stop|exit|quit|leave|end)\s+(?:the\s+)?(?:tour|walkthrough)\b",
+    re.IGNORECASE,
+)
+
+
+def is_walkthrough_exit_request(message: str) -> bool:
+    """Return True when the message asks to cancel/exit the walkthrough."""
+    return bool(_EXIT_TOUR_RE.search(message.strip()))
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +96,12 @@ _INITIAL_CONTENT = (
     "- Files are concrete outputs you can inspect.\n"
     "- The queue is the trust boundary — changes go through it.\n"
     "- Artifacts are the evidence trail for every action.\n"
+)
+
+_STEP_1_CONTENT = (
+    "# Welcome to VoxeraOS\n\n"
+    "VoxeraOS helps you work safely with AI.\n"
+    "Vera drafts, you refine, and the queue governs execution.\n"
 )
 
 _STEP_2_CONTENT = (
@@ -141,7 +157,7 @@ def _step_1_refine() -> tuple[str, dict[str, Any]]:
         "and the preview updates without anything being submitted yet.\n\n"
         '**Next step:** Type: **"Rename it to voxera-quick-start.md."**'
     )
-    preview = _make_preview(_INITIAL_NOTE_PATH, _STEP_2_CONTENT)
+    preview = _make_preview(_INITIAL_NOTE_PATH, _STEP_1_CONTENT)
     return text, preview
 
 
@@ -191,13 +207,49 @@ def start_walkthrough(queue_root: Path, session_id: str) -> tuple[str, str]:
     return text, "walkthrough_step_0"
 
 
-def advance_walkthrough(queue_root: Path, session_id: str) -> tuple[str, str] | None:
+def _is_off_topic(message: str) -> bool:
+    """Return True for very short or clearly off-topic messages.
+
+    These messages replay the current step's instruction instead of
+    silently advancing the walkthrough.
+    """
+    stripped = message.strip()
+    if len(stripped) < 4:
+        return True
+    lowered = stripped.lower()
+    off_topic_starts = ("help", "what time", "what day", "what is", "who is", "how do")
+    return any(lowered.startswith(prefix) for prefix in off_topic_starts)
+
+
+def _current_step_hint(step: int) -> str:
+    """Return a gentle nudge with the current step's instruction."""
+    step_fn = _WALKTHROUGH_STEPS[step]
+    text, _ = step_fn()
+    # Extract the **Next step:** or **Final step:** instruction line
+    for marker in ("**Next step:**", "**Final step:**"):
+        idx = text.find(marker)
+        if idx != -1:
+            instruction = text[idx:].strip()
+            return (
+                "We're in the middle of the guided tour. Here's the current step:\n\n"
+                f"{instruction}\n\n"
+                'You can also type **"cancel tour"** to exit the walkthrough.'
+            )
+    return "We're in the middle of the guided tour. Follow the instructions above."
+
+
+def advance_walkthrough(
+    queue_root: Path, session_id: str, *, message: str = ""
+) -> tuple[str, str] | None:
     """Advance the walkthrough by one step.
 
     Returns ``(assistant_text, status)`` if the walkthrough is active and
     there is a next step.  Returns ``None`` when:
     - no walkthrough is active
     - the walkthrough has reached the final step (user should submit)
+
+    Off-topic messages (very short, questions, "help") replay the
+    current step's instruction instead of silently advancing.
     """
     state = read_session_walkthrough(queue_root, session_id)
     if state is None:
@@ -207,6 +259,10 @@ def advance_walkthrough(queue_root: Path, session_id: str) -> tuple[str, str] | 
     if next_step >= WALKTHROUGH_TOTAL_STEPS:
         # Final step already shown — let the user submit normally.
         return None
+    # Off-topic guard: replay current step instruction instead of advancing.
+    if message and _is_off_topic(message):
+        hint = _current_step_hint(current)
+        return hint, f"walkthrough_step_{current}_hint"
     step_fn = _WALKTHROUGH_STEPS[next_step]
     text, preview = step_fn()
     reset_active_preview(queue_root, session_id, preview)
