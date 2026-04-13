@@ -194,7 +194,10 @@ body {
   padding: 0 4px;
 }
 .bubble.user .role { color: rgba(45, 140, 240, 0.7); }
-.bubble.assistant .role::before {
+
+/* Shared Vera accent dot — used on assistant role labels and thinking indicator */
+.bubble.assistant .role::before,
+.thinking-indicator .thinking-role::before {
   content: '';
   display: inline-block;
   width: 6px;
@@ -495,7 +498,7 @@ body {
 .composer::after {
   content: 'Enter to send · Shift+Enter for new line';
   position: absolute;
-  bottom: -16px;
+  bottom: -12px;
   right: 8px;
   font-size: .65rem;
   color: var(--muted-2);
@@ -577,17 +580,6 @@ body {
   letter-spacing: .08em;
   color: var(--muted-2);
   padding: 0 4px;
-}
-.thinking-indicator .thinking-role::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  margin-right: 5px;
-  vertical-align: middle;
-  box-shadow: 0 0 4px rgba(45, 140, 240, 0.3);
 }
 .thinking-indicator .thinking-content {
   display: inline-flex;
