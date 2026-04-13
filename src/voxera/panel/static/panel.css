@@ -485,6 +485,84 @@ pre {
   vertical-align: middle;
 }
 
+/* ─── Dashboard zone layout ────────────────────────────────────────────────── */
+.dash-zone {
+  margin-bottom: var(--space-5);
+}
+.dash-zone:last-child {
+  margin-bottom: 0;
+}
+
+.dash-zone-divider {
+  height: 1px;
+  background: var(--border-soft);
+  margin-bottom: var(--space-5);
+}
+
+/* KPI zone — compact prominent cards */
+.dash-zone--kpi {
+  margin-bottom: var(--space-6);
+}
+.dash-zone--kpi .grid-4 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 980px) {
+  .dash-zone--kpi .grid-4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 540px) {
+  .dash-zone--kpi .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.dash-kpi-card {
+  text-align: center;
+  padding: var(--space-4) var(--space-3);
+  border-color: var(--border-soft);
+}
+.dash-kpi-card .kpi {
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.dash-kpi-card .kpi-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+
+/* Primary action cards — subtle left accent */
+.dash-card-primary {
+  border-left: 3px solid var(--accent);
+}
+
+/* Secondary monitoring cards — quieter presence */
+.dash-card-secondary {
+  border-color: var(--border-soft);
+  box-shadow: 0 1px 4px rgba(24, 20, 16, 0.04);
+}
+
+/* Tertiary context cards — minimal styling */
+.dash-card-tertiary {
+  border-color: var(--border-soft);
+  box-shadow: none;
+  background: var(--surface-2);
+}
+
+/* Dashboard sub-heading (replaces inline margin-top styles) */
+.dash-sub-heading {
+  margin-top: var(--space-3);
+}
+
+/* Queue actions spacing */
+.dash-queue-actions {
+  margin-top: var(--space-3);
+}
+
+/* Checkbox label in dispatch forms */
+.dash-checkbox-label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 400;
+}
+
 /* ─── Queue status detail group ──────────────────────────────────────────────── */
 .queue-detail-row {
   display: flex;

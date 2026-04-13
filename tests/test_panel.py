@@ -3006,3 +3006,49 @@ def test_operator_outcome_summary_semantics_precedence_characterization():
         has_approval=False,
     )
     assert failed["key"] == "failed"
+
+
+def test_home_dashboard_zone_hierarchy(tmp_path, monkeypatch):
+    """The home page should render dashboard zones in the correct visual
+    hierarchy order: KPI → Primary (Approvals, Active Work) → Secondary
+    (Daemon Health, Queue Details) → Tertiary (History) → Bottom (Mission
+    Library, Dispatch).  This test pins the ordering so a future template
+    edit that scrambles the zones will fail loudly."""
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+
+    client = TestClient(panel_module.app)
+    body = client.get("/").text
+
+    # Zone wrapper classes present
+    assert "dash-zone--kpi" in body
+    assert "dash-zone--primary" in body
+    assert "dash-zone--secondary" in body
+    assert "dash-zone--tertiary" in body
+    assert "dash-zone--bottom" in body
+
+    # Key sections still rendered
+    assert "Queue Summary" in body
+    assert "Approval Command Center" in body
+    assert "Active Work" in body
+    assert "Daemon Health" in body
+    assert "Queue Status" in body
+    assert "Daemon Lock History" in body
+    assert "Panel Security Counters" in body
+    assert "Mission Library" in body
+    assert "Create Mission" in body
+
+    # Ordering: KPI zone before Primary, Primary before Secondary, etc.
+    kpi_pos = body.index("dash-zone--kpi")
+    primary_pos = body.index("dash-zone--primary")
+    secondary_pos = body.index("dash-zone--secondary")
+    tertiary_pos = body.index("dash-zone--tertiary")
+    bottom_pos = body.index("dash-zone--bottom")
+    assert kpi_pos < primary_pos < secondary_pos < tertiary_pos < bottom_pos
+
+    # Approvals and Active Work appear before Daemon Health and Queue Details
+    assert body.index("Approval Command Center") < body.index("Daemon Health")
+    assert body.index("Active Work") < body.index("Queue Details")

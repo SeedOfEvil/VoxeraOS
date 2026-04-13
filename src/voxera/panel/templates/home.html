@@ -69,137 +69,84 @@
     <!-- ═══════════════════════ CONTROL TAB ═══════════════════════ -->
     <section class="tab-panel" data-tab-panel="control">
 
-      <!-- Daemon health -->
-      {% include "_daemon_health_widget.html" %}
+      <!-- ── Zone 1: KPI summary ─────────────────────────────────── -->
+      <div class="dash-zone dash-zone--kpi">
+        <div class="section-label">Queue Summary</div>
+        <section class="grid grid-4">
+          <article class="card dash-kpi-card">
+            <p class="kpi">{{queue.counts.inbox}}</p>
+            <p class="kpi-label">Inbox</p>
+          </article>
+          <article class="card dash-kpi-card">
+            <p class="kpi {% if queue.counts.pending_approvals > 0 %}kpi-warn{% endif %}">{{queue.counts.pending_approvals}}</p>
+            <p class="kpi-label">Need Approval</p>
+          </article>
+          <article class="card dash-kpi-card">
+            <p class="kpi">{{queue.counts.pending}}</p>
+            <p class="kpi-label">In Progress</p>
+          </article>
+          <article class="card dash-kpi-card">
+            <p class="kpi {% if queue.counts.failed > 0 %}kpi-danger{% endif %}">{{queue.counts.failed}}</p>
+            <p class="kpi-label">Failed</p>
+          </article>
+          <article class="card dash-kpi-card">
+            <p class="kpi">{{queue.counts.done}}</p>
+            <p class="kpi-label">Completed</p>
+          </article>
+        </section>
+      </div>
 
-      <!-- KPI summary row -->
-      <div class="section-label">Queue Summary</div>
-      <section class="grid grid-4 mb">
-        <article class="card">
-          <p class="kpi">{{queue.counts.pending}}</p>
-          <p class="kpi-label">In Progress</p>
-        </article>
-        <article class="card">
-          <p class="kpi {% if queue.counts.pending_approvals > 0 %}kpi-warn{% endif %}">{{queue.counts.pending_approvals}}</p>
-          <p class="kpi-label">Need Approval</p>
-        </article>
-        <article class="card">
-          <p class="kpi {% if queue.counts.failed > 0 %}kpi-danger{% endif %}">{{queue.counts.failed}}</p>
-          <p class="kpi-label">Failed</p>
-        </article>
-        <article class="card">
-          <p class="kpi">{{queue.counts.done}}</p>
-          <p class="kpi-label">Completed</p>
-        </article>
-      </section>
+      <!-- ── Zone 2: Primary action surfaces ─────────────────────── -->
+      <div class="dash-zone dash-zone--primary">
 
-      <!-- Approval Command Center (highest-priority actionable) -->
-      <div class="section-label">Approvals</div>
-      <section class="card mb">
-        <h2>Approval Command Center</h2>
-        <p class="muted text-sm">Approve or deny pending actions directly from the Control panel.</p>
-        {% if queue.pending_approvals|length == 0 %}
-          <div class="empty-state">No pending queue approvals — all clear.</div>
-        {% else %}
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Job</th>
-                  <th>Step / Skill</th>
-                  <th>Capability</th>
-                  <th>Policy Reason</th>
-                  <th>Target</th>
-                  <th>Scope</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-              {% for item in queue.pending_approvals %}
-                <tr>
-                  <td class="mono text-sm">{{item.job}}</td>
-                  <td>{{item.step}}<br/><span class="muted text-xs">{{item.skill}}</span></td>
-                  <td>{{item.capability}}</td>
-                  <td>{{item.policy_reason or item.reason}}</td>
-                  <td class="text-sm">{{item.target.type}}: {{item.target.value}}</td>
-                  <td>
-                    <div class="scope-tags">
-                      <span class="scope-tag">Files: {{item.scope.fs_scope or 'none'}}</span>
-                      {% if item.scope.needs_network %}<span class="scope-tag">Network: yes</span>{% endif %}
-                    </div>
-                  </td>
-                  <td>
-                    <div class="action-group">
-                      <form method="post" action="/queue/approvals/{{item.job}}/approve">
-                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                        <button class="btn btn-sm btn-approve" type="submit">Approve</button>
-                      </form>
-                      <form method="post" action="/queue/approvals/{{item.job}}/approve-always">
-                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                        <button class="btn btn-sm" type="submit">Always</button>
-                      </form>
-                      <form method="post" action="/queue/approvals/{{item.job}}/deny">
-                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                        <button class="btn btn-sm btn-deny" type="submit">Deny</button>
-                      </form>
-                      <form method="post" action="/queue/jobs/{{item.job}}/cancel">
-                        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                        <button class="btn btn-sm btn-deny" type="submit">Cancel</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% endif %}
-      </section>
-
-      <!-- Active Work + Failed Jobs -->
-      <div class="section-label">Live Work</div>
-      <section class="grid grid-2 mb">
-        <article class="card">
-          <h2>Active Work</h2>
-          {% if active_jobs|length == 0 %}
-            <div class="empty-state">No active jobs currently.</div>
+        <!-- Approval Command Center (highest-priority actionable) -->
+        <div class="section-label">Approvals</div>
+        <section class="card dash-card-primary mb">
+          <h2>Approval Command Center</h2>
+          <p class="muted text-sm">Approve or deny pending actions directly from the Control panel.</p>
+          {% if queue.pending_approvals|length == 0 %}
+            <div class="empty-state">No pending queue approvals — all clear.</div>
           {% else %}
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Job</th><th>Mission</th><th>Goal</th><th>State</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Job</th>
+                    <th>Step / Skill</th>
+                    <th>Capability</th>
+                    <th>Policy Reason</th>
+                    <th>Target</th>
+                    <th>Scope</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
                 <tbody>
-                {% for item in active_jobs %}
+                {% for item in queue.pending_approvals %}
                   <tr>
                     <td class="mono text-sm">{{item.job}}</td>
-                    <td>{{item.mission}}</td>
-                    <td>{{item.goal}}</td>
-                    <td><span class="badge badge-running">{{item.state}}</span></td>
-                  </tr>
-                {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% endif %}
-        </article>
-
-        <article class="card">
-          <h2>Failed Jobs</h2>
-          {% if queue.recent_failed|length == 0 %}
-            <div class="empty-state">No failed jobs.</div>
-          {% else %}
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Job</th><th>Error</th><th>Actions</th></tr></thead>
-                <tbody>
-                {% for item in queue.recent_failed %}
-                  <tr>
-                    <td><a href="/queue/jobs/{{item.job}}/detail" class="mono text-sm">{{item.job}}</a></td>
-                    <td class="text-sm muted">{{item.error}}</td>
+                    <td>{{item.step}}<br/><span class="muted text-xs">{{item.skill}}</span></td>
+                    <td>{{item.capability}}</td>
+                    <td>{{item.policy_reason or item.reason}}</td>
+                    <td class="text-sm">{{item.target.type}}: {{item.target.value}}</td>
+                    <td>
+                      <div class="scope-tags">
+                        <span class="scope-tag">Files: {{item.scope.fs_scope or 'none'}}</span>
+                        {% if item.scope.needs_network %}<span class="scope-tag">Network: yes</span>{% endif %}
+                      </div>
+                    </td>
                     <td>
                       <div class="action-group">
-                        <form method="post" action="/queue/jobs/{{item.job}}/retry">
+                        <form method="post" action="/queue/approvals/{{item.job}}/approve">
                           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                          <button class="btn btn-sm" type="submit">Retry</button>
+                          <button class="btn btn-sm btn-approve" type="submit">Approve</button>
+                        </form>
+                        <form method="post" action="/queue/approvals/{{item.job}}/approve-always">
+                          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                          <button class="btn btn-sm" type="submit">Always</button>
+                        </form>
+                        <form method="post" action="/queue/approvals/{{item.job}}/deny">
+                          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                          <button class="btn btn-sm btn-deny" type="submit">Deny</button>
                         </form>
                         <form method="post" action="/queue/jobs/{{item.job}}/cancel">
                           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
@@ -213,210 +160,292 @@
               </table>
             </div>
           {% endif %}
-        </article>
-      </section>
+        </section>
 
-      <!-- Create mission forms -->
-      <div class="section-label">Dispatch</div>
-      <section class="grid grid-2 mb">
-        <article class="card">
-          <h2>Create Mission</h2>
-          <form class="form-stack" method="post" action="/missions/create">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <label>Prompt / Goal
-              <textarea class="textarea" name="prompt" rows="4" placeholder="Describe what the mission should do" required></textarea>
-            </label>
-            <label style="display:flex; gap:8px; align-items:center; font-weight:400;">
-              <input type="checkbox" name="approval_required" value="1" checked />
-              Require approval before execution
-            </label>
-            <button class="btn btn-primary" type="submit">Create Mission</button>
-          </form>
-        </article>
-
-        <article class="card">
-          <h2>Create Mission Template</h2>
-          <form class="form-stack" method="post" action="/missions/templates/create">
-            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-            <div class="form-row">
-              <label>ID <input class="input" type="text" name="mission_id" placeholder="my_mission" required /></label>
-              <label>Title <input class="input" type="text" name="title" placeholder="My Mission" /></label>
-            </div>
-            <label>Goal <input class="input" type="text" name="goal" placeholder="Outcome this mission should reach" /></label>
-            <label>Notes <input class="input" type="text" name="notes" placeholder="Optional notes" /></label>
-            <label>Steps JSON
-              <textarea class="textarea" name="steps_json" rows="4">[{"skill_id":"system.status","args":{}}]</textarea>
-            </label>
-            <button class="btn" type="submit">Save Template</button>
-          </form>
-        </article>
-      </section>
-
-      <!-- Queue Status + health (secondary details) -->
-      <div class="section-label">Queue Details</div>
-      <section class="card mb">
-        <h2>Queue Status</h2>
-        {% if not queue.exists %}
-          <div class="alert alert-warn">Queue root not found: <span class="mono text-xs">{{queue_root}}</span></div>
-        {% endif %}
-        <div class="grid grid-3">
-          <div>
-            <h3>Bucket Counts</h3>
-            <div class="queue-detail-row"><span class="queue-detail-label">Inbox</span><span class="queue-detail-value">{{queue.counts.inbox}}</span></div>
-            <div class="queue-detail-row"><span class="queue-detail-label">In Progress</span><span class="queue-detail-value">{{queue.counts.pending}}</span></div>
-            <div class="queue-detail-row"><span class="queue-detail-label">Awaiting Approval</span><span class="queue-detail-value">{{queue.counts.pending_approvals}}</span></div>
-            <div class="queue-detail-row"><span class="queue-detail-label">Completed</span><span class="queue-detail-value">{{queue.counts.done}}</span></div>
-            <div class="queue-detail-row"><span class="queue-detail-label">Failed</span><span class="queue-detail-value">{{queue.counts.failed}}</span></div>
-          </div>
-          <div>
-            <h3>Failed Record Health</h3>
-            <div class="queue-detail-row"><span class="queue-detail-label">Valid records</span><span class="queue-detail-value">{{queue.failed_sidecars_valid}}</span></div>
-            <div class="queue-detail-row"><span class="queue-detail-label">Invalid records</span><span class="queue-detail-value">{{queue.failed_sidecars_invalid}}</span></div>
-            <div class="queue-detail-row"><span class="queue-detail-label">Missing records</span><span class="queue-detail-value">{{queue.failed_sidecars_missing}}</span></div>
-            <h3 style="margin-top:var(--space-3);">Retention Policy</h3>
-            <div class="queue-detail-row">
-              <span class="queue-detail-label">Max age</span>
-              <span class="queue-detail-value">{% if queue.failed_retention.max_age_s is not none %}{{queue.failed_retention.max_age_s}}s{% else %}not set{% endif %}</span>
-            </div>
-            <div class="queue-detail-row">
-              <span class="queue-detail-label">Max count</span>
-              <span class="queue-detail-value">{% if queue.failed_retention.max_count is not none %}{{queue.failed_retention.max_count}}{% else %}not set{% endif %}</span>
-            </div>
-            <div class="queue-detail-row">
-              <span class="queue-detail-label">Last prune removed</span>
-              <span class="queue-detail-value">{{queue.failed_prune_last.removed_jobs}} jobs / {{queue.failed_prune_last.removed_sidecars}} records</span>
-            </div>
-          </div>
-          <div>
-            <h3>Runtime Status</h3>
-            <div class="queue-detail-row"><span class="queue-detail-label">Paused</span><span class="queue-detail-value">{{queue.paused}}</span></div>
-            <div class="queue-detail-row">
-              <span class="queue-detail-label">Last healthy event</span>
-              <span class="queue-detail-value text-sm">{{queue.last_ok_event or "—"}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% endif %}</span>
-            </div>
-            <div class="queue-detail-row">
-              <span class="queue-detail-label">Last error</span>
-              <span class="queue-detail-value text-sm">{{queue.last_error or "—"}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% endif %}</span>
-            </div>
-            <div class="queue-detail-row">
-              <span class="queue-detail-label">Queue root</span>
-              <span class="muted mono text-xs" style="word-break:break-all;">{{queue_root}}</span>
-            </div>
-            <div class="action-group" style="margin-top:var(--space-3);">
-              <form method="post" action="/queue/pause">
-                <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                <button class="btn btn-sm" type="submit">Pause Queue</button>
-              </form>
-              <form method="post" action="/queue/resume">
-                <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                <button class="btn btn-sm btn-primary" type="submit">Resume Queue</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Diagnostic counters -->
-      <section class="grid grid-2 mb">
-        <article class="card">
-          <h2>Daemon Lock History</h2>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Event</th><th>Count</th></tr></thead>
-            <tbody>
-              <tr><td>Lock acquired</td><td>{{queue.daemon_lock_counters.lock_acquire_ok or 0}}</td></tr>
-              <tr><td>Lock released cleanly</td><td>{{queue.daemon_lock_counters.lock_released or 0}}</td></tr>
-              <tr><td>Stale lock reclaimed</td><td>{{queue.daemon_lock_counters.lock_reclaimed or 0}}</td></tr>
-              <tr><td>Acquire blocked (live lock)</td><td>{{queue.daemon_lock_counters.lock_acquire_fail or 0}}</td></tr>
-              <tr><td>Stale lock cleared</td><td>{{queue.daemon_lock_counters.unlock_ok or 0}}</td></tr>
-              <tr><td>Unlock refused (live PID)</td><td>{{queue.daemon_lock_counters.unlock_refused or 0}}</td></tr>
-              <tr><td>Force-unlocked</td><td>{{queue.daemon_lock_counters.force_unlock_count or 0}}</td></tr>
-            </tbody>
-          </table></div>
-        </article>
-
-        <article class="card">
-          <h2>Panel Security Counters</h2>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Event</th><th>Count</th></tr></thead>
-            <tbody>
-              <tr><td>Mutations allowed</td><td>{{panel_security_counters.panel_mutation_allowed or 0}}</td></tr>
-              <tr><td>Unauthorized (401)</td><td>{{panel_security_counters.panel_401_count or 0}}</td></tr>
-              <tr><td>Forbidden (403)</td><td>{{panel_security_counters.panel_403_count or 0}}</td></tr>
-              <tr><td>Bad credentials</td><td>{{panel_security_counters.panel_auth_invalid or 0}}</td></tr>
-              <tr><td>CSRF token missing</td><td>{{panel_security_counters.panel_csrf_missing or 0}}</td></tr>
-              <tr><td>CSRF token invalid</td><td>{{panel_security_counters.panel_csrf_invalid or 0}}</td></tr>
-            </tbody>
-          </table></div>
-        </article>
-      </section>
-
-      <!-- Completed jobs -->
-      <div class="section-label">History</div>
-      <section class="card mb">
-        <h2>Completed Jobs</h2>
-        {% if queue.done_jobs|length == 0 %}<p class="muted">No completed jobs.</p>{% else %}
-        <div class="table-wrap"><table><thead><tr><th>Job</th><th>Artifacts</th></tr></thead><tbody>
-        {% for job in queue.done_jobs %}<tr><td class="mono text-sm">{{job}}</td><td><a href="/queue/jobs/{{job}}/detail">Open detail →</a></td></tr>{% endfor %}
-        </tbody></table></div>{% endif %}
-      </section>
-
-      {% if vera_activity %}
-      <!-- Vera activity (read-only, supplemental only) -->
-      <div class="section-label">Vera Activity</div>
-      <section class="card mb" data-testid="home-vera-activity-strip">
-        <p class="muted text-sm" style="margin-top:0;">
-          Read-only shared Vera session context. Supplemental only &mdash; canonical queue, daemon health, and approvals above remain primary.
-        </p>
-        <dl class="detail-grid" style="margin-bottom:0;">
-          {% if vera_activity.active_topic %}
-            <dt>Active topic</dt><dd>{{vera_activity.active_topic}}</dd>
-          {% endif %}
-          {% if vera_activity.active_draft_ref %}
-            <dt>Active draft</dt><dd class="mono text-sm">{{vera_activity.active_draft_ref}}</dd>
-          {% endif %}
-          {% if vera_activity.last_saved_file_ref %}
-            <dt>Last saved file</dt><dd class="mono text-sm">{{vera_activity.last_saved_file_ref}}</dd>
-          {% endif %}
-          {% if vera_activity.last_submitted_job_ref %}
-            <dt>Last submitted job</dt><dd class="mono text-sm">{{vera_activity.last_submitted_job_ref}}</dd>
-          {% endif %}
-          {% if vera_activity.last_completed_job_ref %}
-            <dt>Last completed job</dt><dd class="mono text-sm">{{vera_activity.last_completed_job_ref}}</dd>
-          {% endif %}
-          <dt>Context freshness</dt>
-          <dd>
-            {% if vera_activity.freshness == "fresh" %}
-              <span class="badge badge-done">fresh</span>
-            {% elif vera_activity.freshness == "aging" %}
-              <span class="badge badge-pending">aging</span>
-            {% elif vera_activity.freshness == "stale" %}
-              <span class="badge badge-pending">stale</span>
+        <!-- Active Work + Failed Jobs -->
+        <div class="section-label">Live Work</div>
+        <section class="grid grid-2 mb">
+          <article class="card dash-card-primary">
+            <h2>Active Work</h2>
+            {% if active_jobs|length == 0 %}
+              <div class="empty-state">No active jobs currently.</div>
             {% else %}
-              <span class="muted">unknown</span>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Job</th><th>Mission</th><th>Goal</th><th>State</th></tr></thead>
+                  <tbody>
+                  {% for item in active_jobs %}
+                    <tr>
+                      <td class="mono text-sm">{{item.job}}</td>
+                      <td>{{item.mission}}</td>
+                      <td>{{item.goal}}</td>
+                      <td><span class="badge badge-running">{{item.state}}</span></td>
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
             {% endif %}
-          </dd>
-        </dl>
-      </section>
-      {% endif %}
+          </article>
 
-      <!-- Mission library -->
-      <div class="section-label">Mission Library</div>
-      <section class="card">
-        <h2>Mission Library</h2>
-        <div class="table-wrap"><table>
-          <thead><tr><th>ID</th><th>Title</th><th>Goal</th><th>Steps</th></tr></thead>
-          <tbody>
-          {% for mission in missions %}
-            <tr>
-              <td class="mono text-sm">{{mission.id}}</td>
-              <td>{{mission.title}}</td>
-              <td>{{mission.goal}}</td>
-              <td>{{mission.steps|length}}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table></div>
-      </section>
+          <article class="card dash-card-primary">
+            <h2>Failed Jobs</h2>
+            {% if queue.recent_failed|length == 0 %}
+              <div class="empty-state">No failed jobs.</div>
+            {% else %}
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Job</th><th>Error</th><th>Actions</th></tr></thead>
+                  <tbody>
+                  {% for item in queue.recent_failed %}
+                    <tr>
+                      <td><a href="/queue/jobs/{{item.job}}/detail" class="mono text-sm">{{item.job}}</a></td>
+                      <td class="text-sm muted">{{item.error}}</td>
+                      <td>
+                        <div class="action-group">
+                          <form method="post" action="/queue/jobs/{{item.job}}/retry">
+                            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                            <button class="btn btn-sm" type="submit">Retry</button>
+                          </form>
+                          <form method="post" action="/queue/jobs/{{item.job}}/cancel">
+                            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                            <button class="btn btn-sm btn-deny" type="submit">Cancel</button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+          </article>
+        </section>
+
+      </div>
+
+      <!-- ── Zone 3: Secondary monitoring ────────────────────────── -->
+      <div class="dash-zone dash-zone--secondary">
+        <div class="dash-zone-divider"></div>
+
+        <!-- Daemon health -->
+        {% include "_daemon_health_widget.html" %}
+
+        <!-- Queue Status + health details -->
+        <div class="section-label">Queue Details</div>
+        <section class="card dash-card-secondary mb">
+          <h2>Queue Status</h2>
+          {% if not queue.exists %}
+            <div class="alert alert-warn">Queue root not found: <span class="mono text-xs">{{queue_root}}</span></div>
+          {% endif %}
+          <div class="grid grid-3">
+            <div>
+              <h3>Bucket Counts</h3>
+              <div class="queue-detail-row"><span class="queue-detail-label">Inbox</span><span class="queue-detail-value">{{queue.counts.inbox}}</span></div>
+              <div class="queue-detail-row"><span class="queue-detail-label">In Progress</span><span class="queue-detail-value">{{queue.counts.pending}}</span></div>
+              <div class="queue-detail-row"><span class="queue-detail-label">Awaiting Approval</span><span class="queue-detail-value">{{queue.counts.pending_approvals}}</span></div>
+              <div class="queue-detail-row"><span class="queue-detail-label">Completed</span><span class="queue-detail-value">{{queue.counts.done}}</span></div>
+              <div class="queue-detail-row"><span class="queue-detail-label">Failed</span><span class="queue-detail-value">{{queue.counts.failed}}</span></div>
+            </div>
+            <div>
+              <h3>Failed Record Health</h3>
+              <div class="queue-detail-row"><span class="queue-detail-label">Valid records</span><span class="queue-detail-value">{{queue.failed_sidecars_valid}}</span></div>
+              <div class="queue-detail-row"><span class="queue-detail-label">Invalid records</span><span class="queue-detail-value">{{queue.failed_sidecars_invalid}}</span></div>
+              <div class="queue-detail-row"><span class="queue-detail-label">Missing records</span><span class="queue-detail-value">{{queue.failed_sidecars_missing}}</span></div>
+              <h3 class="dash-sub-heading">Retention Policy</h3>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Max age</span>
+                <span class="queue-detail-value">{% if queue.failed_retention.max_age_s is not none %}{{queue.failed_retention.max_age_s}}s{% else %}not set{% endif %}</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Max count</span>
+                <span class="queue-detail-value">{% if queue.failed_retention.max_count is not none %}{{queue.failed_retention.max_count}}{% else %}not set{% endif %}</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Last prune removed</span>
+                <span class="queue-detail-value">{{queue.failed_prune_last.removed_jobs}} jobs / {{queue.failed_prune_last.removed_sidecars}} records</span>
+              </div>
+            </div>
+            <div>
+              <h3>Runtime Status</h3>
+              <div class="queue-detail-row"><span class="queue-detail-label">Paused</span><span class="queue-detail-value">{{queue.paused}}</span></div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Last healthy event</span>
+                <span class="queue-detail-value text-sm">{{queue.last_ok_event or "—"}}{% if queue.last_ok_ts_ms %} @ {{queue.last_ok_ts_ms}}{% endif %}</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Last error</span>
+                <span class="queue-detail-value text-sm">{{queue.last_error or "—"}}{% if queue.last_error_ts_ms %} @ {{queue.last_error_ts_ms}}{% endif %}</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Queue root</span>
+                <span class="muted mono text-xs" style="word-break:break-all;">{{queue_root}}</span>
+              </div>
+              <div class="action-group dash-queue-actions">
+                <form method="post" action="/queue/pause">
+                  <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                  <button class="btn btn-sm" type="submit">Pause Queue</button>
+                </form>
+                <form method="post" action="/queue/resume">
+                  <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+                  <button class="btn btn-sm btn-primary" type="submit">Resume Queue</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Diagnostic counters -->
+        <section class="grid grid-2 mb">
+          <article class="card dash-card-secondary">
+            <h2>Daemon Lock History</h2>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Event</th><th>Count</th></tr></thead>
+              <tbody>
+                <tr><td>Lock acquired</td><td>{{queue.daemon_lock_counters.lock_acquire_ok or 0}}</td></tr>
+                <tr><td>Lock released cleanly</td><td>{{queue.daemon_lock_counters.lock_released or 0}}</td></tr>
+                <tr><td>Stale lock reclaimed</td><td>{{queue.daemon_lock_counters.lock_reclaimed or 0}}</td></tr>
+                <tr><td>Acquire blocked (live lock)</td><td>{{queue.daemon_lock_counters.lock_acquire_fail or 0}}</td></tr>
+                <tr><td>Stale lock cleared</td><td>{{queue.daemon_lock_counters.unlock_ok or 0}}</td></tr>
+                <tr><td>Unlock refused (live PID)</td><td>{{queue.daemon_lock_counters.unlock_refused or 0}}</td></tr>
+                <tr><td>Force-unlocked</td><td>{{queue.daemon_lock_counters.force_unlock_count or 0}}</td></tr>
+              </tbody>
+            </table></div>
+          </article>
+
+          <article class="card dash-card-secondary">
+            <h2>Panel Security Counters</h2>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Event</th><th>Count</th></tr></thead>
+              <tbody>
+                <tr><td>Mutations allowed</td><td>{{panel_security_counters.panel_mutation_allowed or 0}}</td></tr>
+                <tr><td>Unauthorized (401)</td><td>{{panel_security_counters.panel_401_count or 0}}</td></tr>
+                <tr><td>Forbidden (403)</td><td>{{panel_security_counters.panel_403_count or 0}}</td></tr>
+                <tr><td>Bad credentials</td><td>{{panel_security_counters.panel_auth_invalid or 0}}</td></tr>
+                <tr><td>CSRF token missing</td><td>{{panel_security_counters.panel_csrf_missing or 0}}</td></tr>
+                <tr><td>CSRF token invalid</td><td>{{panel_security_counters.panel_csrf_invalid or 0}}</td></tr>
+              </tbody>
+            </table></div>
+          </article>
+        </section>
+
+      </div>
+
+      <!-- ── Zone 4: Tertiary context ────────────────────────────── -->
+      <div class="dash-zone dash-zone--tertiary">
+        <div class="dash-zone-divider"></div>
+
+        {% if vera_activity %}
+        <!-- Vera activity (read-only, supplemental only) -->
+        <div class="section-label">Vera Activity</div>
+        <section class="card dash-card-tertiary mb" data-testid="home-vera-activity-strip">
+          <p class="muted text-sm" style="margin-top:0;">
+            Read-only shared Vera session context. Supplemental only &mdash; canonical queue, daemon health, and approvals above remain primary.
+          </p>
+          <dl class="detail-grid" style="margin-bottom:0;">
+            {% if vera_activity.active_topic %}
+              <dt>Active topic</dt><dd>{{vera_activity.active_topic}}</dd>
+            {% endif %}
+            {% if vera_activity.active_draft_ref %}
+              <dt>Active draft</dt><dd class="mono text-sm">{{vera_activity.active_draft_ref}}</dd>
+            {% endif %}
+            {% if vera_activity.last_saved_file_ref %}
+              <dt>Last saved file</dt><dd class="mono text-sm">{{vera_activity.last_saved_file_ref}}</dd>
+            {% endif %}
+            {% if vera_activity.last_submitted_job_ref %}
+              <dt>Last submitted job</dt><dd class="mono text-sm">{{vera_activity.last_submitted_job_ref}}</dd>
+            {% endif %}
+            {% if vera_activity.last_completed_job_ref %}
+              <dt>Last completed job</dt><dd class="mono text-sm">{{vera_activity.last_completed_job_ref}}</dd>
+            {% endif %}
+            <dt>Context freshness</dt>
+            <dd>
+              {% if vera_activity.freshness == "fresh" %}
+                <span class="badge badge-done">fresh</span>
+              {% elif vera_activity.freshness == "aging" %}
+                <span class="badge badge-pending">aging</span>
+              {% elif vera_activity.freshness == "stale" %}
+                <span class="badge badge-pending">stale</span>
+              {% else %}
+                <span class="muted">unknown</span>
+              {% endif %}
+            </dd>
+          </dl>
+        </section>
+        {% endif %}
+
+        <!-- Completed jobs -->
+        <div class="section-label">History</div>
+        <section class="card dash-card-tertiary mb">
+          <h2>Completed Jobs</h2>
+          {% if queue.done_jobs|length == 0 %}<p class="muted">No completed jobs.</p>{% else %}
+          <div class="table-wrap"><table><thead><tr><th>Job</th><th>Artifacts</th></tr></thead><tbody>
+          {% for job in queue.done_jobs %}<tr><td class="mono text-sm">{{job}}</td><td><a href="/queue/jobs/{{job}}/detail">Open detail →</a></td></tr>{% endfor %}
+          </tbody></table></div>{% endif %}
+        </section>
+
+      </div>
+
+      <!-- ── Zone 5: Bottom — Mission Library + Dispatch ──────────── -->
+      <div class="dash-zone dash-zone--bottom">
+        <div class="dash-zone-divider"></div>
+
+        <!-- Mission library -->
+        <div class="section-label">Mission Library</div>
+        <section class="card dash-card-tertiary mb">
+          <h2>Mission Library</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>ID</th><th>Title</th><th>Goal</th><th>Steps</th></tr></thead>
+            <tbody>
+            {% for mission in missions %}
+              <tr>
+                <td class="mono text-sm">{{mission.id}}</td>
+                <td>{{mission.title}}</td>
+                <td>{{mission.goal}}</td>
+                <td>{{mission.steps|length}}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table></div>
+        </section>
+
+        <!-- Create mission forms -->
+        <div class="section-label">Dispatch</div>
+        <section class="grid grid-2">
+          <article class="card">
+            <h2>Create Mission</h2>
+            <form class="form-stack" method="post" action="/missions/create">
+              <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+              <label>Prompt / Goal
+                <textarea class="textarea" name="prompt" rows="4" placeholder="Describe what the mission should do" required></textarea>
+              </label>
+              <label class="dash-checkbox-label">
+                <input type="checkbox" name="approval_required" value="1" checked />
+                Require approval before execution
+              </label>
+              <button class="btn btn-primary" type="submit">Create Mission</button>
+            </form>
+          </article>
+
+          <article class="card">
+            <h2>Create Mission Template</h2>
+            <form class="form-stack" method="post" action="/missions/templates/create">
+              <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+              <div class="form-row">
+                <label>ID <input class="input" type="text" name="mission_id" placeholder="my_mission" required /></label>
+                <label>Title <input class="input" type="text" name="title" placeholder="My Mission" /></label>
+              </div>
+              <label>Goal <input class="input" type="text" name="goal" placeholder="Outcome this mission should reach" /></label>
+              <label>Notes <input class="input" type="text" name="notes" placeholder="Optional notes" /></label>
+              <label>Steps JSON
+                <textarea class="textarea" name="steps_json" rows="4">[{"skill_id":"system.status","args":{}}]</textarea>
+              </label>
+              <button class="btn" type="submit">Save Template</button>
+            </form>
+          </article>
+        </section>
+
+      </div>
 
     </section>
     <!-- end control tab -->

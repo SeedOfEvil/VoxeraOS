@@ -1,3 +1,21 @@
+## 2026-04-13 — feat(panel): refresh home dashboard layout hierarchy
+
+- **Motivation**: the panel home page contained all the right information but presented it as a flat list of cards with no visual priority signal. Approvals and active work competed visually with daemon lock counters and completed-job history. This PR restructures the Control tab into clearly prioritized zones so operators can scan status at a glance.
+- **What shipped**:
+  - **Template restructure** (`home.html`): the Control tab is now organized into five semantic zones wrapped in `dash-zone` containers — KPI summary (top, 5-column card row: inbox / need approval / in progress / failed / completed), Primary action (Approvals + Active Work/Failed Jobs with left-accent border), Secondary monitoring (Daemon Health + Queue Details + diagnostic counters with quieter styling), Tertiary context (Vera Activity + Completed Jobs with minimal card treatment), and Bottom (Mission Library + Dispatch forms). Zone dividers provide subtle visual separation.
+  - **Dashboard CSS classes** (`panel.css`): new `dash-zone`, `dash-zone--kpi/--primary/--secondary/--tertiary/--bottom`, `dash-zone-divider`, `dash-kpi-card`, `dash-card-primary` (left accent border), `dash-card-secondary` (softer shadow), `dash-card-tertiary` (surface-2 background, no shadow), `dash-sub-heading`, `dash-queue-actions`, `dash-checkbox-label`. KPI zone uses a 5-column grid with responsive breakpoints. No design-language changes — all new classes use existing design tokens.
+  - **Inline style cleanup**: replaced `style="margin-top:var(--space-3);"` with `.dash-sub-heading` and `.dash-queue-actions` classes; replaced inline `style="display:flex; gap:8px; ..."` on checkbox label with `.dash-checkbox-label` class.
+- **Scope (deliberately bounded)**:
+  - Template + CSS only. No route, payload, or backend changes.
+  - No changes to Logging or Performance Stats tabs.
+  - No new JavaScript interactions.
+  - No mobile/accessibility pass beyond what the existing responsive rules already provide.
+- **Tests**: 1 new focused test `test_home_dashboard_zone_hierarchy` in `tests/test_panel.py` — verifies all five zone wrapper classes are present, key sections still render, and zone ordering is correct (KPI < Primary < Secondary < Tertiary < Bottom; Approvals before Daemon Health; Active Work before Queue Details). All 142 existing panel/contract/session-context tests pass unchanged.
+- **Docs**: `docs/CODEX_MEMORY.md` (this entry), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing update).
+- **Files touched**: `src/voxera/panel/templates/home.html` (template restructure), `src/voxera/panel/static/panel.css` (dashboard-specific classes), `tests/test_panel.py` (1 new test), `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`.
+- **Invariants preserved**: all existing text content, data bindings, form actions, and route contracts unchanged; Vera Activity strip remains supplemental and positioned after canonical queue/health sections; daemon health widget unchanged; Performance Stats and Logging tabs untouched; no payload shape changes.
+- **Next safe step**: table polish (sortable columns, density controls), Vera chat redesign, job detail page refresh, or accessibility/mobile pass in subsequent PRs.
+
 ## 2026-04-13 — feat(first-run): add interactive Vera walkthrough for preview refinement and governed submission
 
 - **Motivation**: prior first-run PRs (config guard, validation, next-steps) gave the user a clean start but never taught the actual Vera interaction model. A static "tour mission" preview would have skipped straight to a canned submission — the user would learn that Voxera runs missions, but not how to draft, refine, and submit a preview step by step. This PR adds a bounded interactive walkthrough that teaches the real loop: draft → refine in chat → preview updates → governed submit.
