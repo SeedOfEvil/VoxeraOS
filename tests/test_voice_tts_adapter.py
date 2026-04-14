@@ -16,6 +16,7 @@ from voxera.voice.tts_adapter import (
     TTSBackend,
     TTSBackendUnsupportedError,
     synthesize_tts_request,
+    synthesize_tts_request_async,
 )
 from voxera.voice.tts_protocol import (
     TTS_ERROR_BACKEND_ERROR,
@@ -611,8 +612,6 @@ class TestNeverRaises:
 class TestSynthesizeAsync:
     @pytest.mark.asyncio
     async def test_async_returns_same_as_sync(self) -> None:
-        from voxera.voice.tts_adapter import synthesize_tts_request_async
-
         req = build_tts_request(text="Hello world", request_id="async-ok")
         resp = await synthesize_tts_request_async(req, adapter=StubSuccessBackend())
         assert resp.status == TTS_STATUS_SUCCEEDED
@@ -621,8 +620,6 @@ class TestSynthesizeAsync:
 
     @pytest.mark.asyncio
     async def test_async_preserves_fail_soft(self) -> None:
-        from voxera.voice.tts_adapter import synthesize_tts_request_async
-
         req = build_tts_request(text="Hello world", request_id="async-fail")
         resp = await synthesize_tts_request_async(req, adapter=None)
         assert resp.status == TTS_STATUS_UNAVAILABLE
@@ -630,8 +627,6 @@ class TestSynthesizeAsync:
 
     @pytest.mark.asyncio
     async def test_async_exception_is_fail_soft(self) -> None:
-        from voxera.voice.tts_adapter import synthesize_tts_request_async
-
         req = build_tts_request(text="Hello world", request_id="async-crash")
         resp = await synthesize_tts_request_async(req, adapter=StubCrashingBackend())
         assert resp.status == TTS_STATUS_FAILED
@@ -639,8 +634,6 @@ class TestSynthesizeAsync:
 
     @pytest.mark.asyncio
     async def test_async_returns_tts_response(self) -> None:
-        from voxera.voice.tts_adapter import synthesize_tts_request_async
-
         req = build_tts_request(text="Hello world", request_id="async-shape")
         resp = await synthesize_tts_request_async(req, adapter=StubSuccessBackend())
         assert isinstance(resp, TTSResponse)

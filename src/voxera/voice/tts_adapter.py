@@ -234,6 +234,9 @@ def synthesize_tts_request(
         )
 
     # -- verify audio artifact -----------------------------------------------
+    # Strip whitespace from audio_path (matches build_tts_response behavior).
+    # Backends returning "  /tmp/out.wav  " will see "/tmp/out.wav" in the
+    # response — the response may differ from the raw adapter result.
     cleaned_audio_path: str | None = None
     if result.audio_path is not None:
         cleaned_audio_path = str(result.audio_path).strip() or None
