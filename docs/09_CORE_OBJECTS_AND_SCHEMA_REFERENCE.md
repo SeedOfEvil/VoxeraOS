@@ -410,6 +410,66 @@ Unknown `status` values normalize fail-closed to `"unavailable"`.
 
 `tts_request_as_dict(request)` / `tts_response_as_dict(response)` serialize to plain dicts for JSON/logging/audit.
 
+## TTS backend adapter boundary
+
+`voice/tts_adapter.py`. Runtime adapter interface for text-to-speech backends and the fail-soft synthesis entry point. This is the protocol-to-runtime bridge layer — it consumes `TTSRequest` and returns `TTSResponse` through an explicit adapter boundary.
+
+### `TTSBackend` (Protocol)
+
+Structural interface (mirrors the `STTBackend` protocol in `stt_adapter.py`). Implementations do not need to inherit — they only satisfy the structural signature.
+
+```python
+class TTSBackend(Protocol):
+    @property
+    def backend_name(self) -> str: ...
+    def supports_voice(self, voice_id: str) -> bool: ...
+    def synthesize(self, request: TTSRequest) -> TTSAdapterResult: ...
+```
+
+`supports_voice(voice_id)` allows callers to check voice support upfront (e.g. for UI gating) without triggering a full synthesis attempt.
+
+### `TTSAdapterResult`
+
+Frozen dataclass. Adapter-internal result shape returned by `TTSBackend.synthesize()`.
+
+```jsonc
+{
+  "audio_path": "/path/to/output.wav",           // nullable
+  "audio_duration_ms": 3500,                     // nullable; duration of output audio
+  "inference_ms": 150,                           // nullable; adapter-reported synthesis time
+  "error": "reason string",                      // nullable
+  "error_class": "custom_error"                  // nullable; passthrough
+}
+```
+
+### `NullTTSBackend`
+
+Default adapter when no real backend is configured. Always returns an honest `TTSAdapterResult` with `error_class="backend_missing"` — never pretends synthesis occurred. `supports_voice()` returns `False` for all voices. Accepts an optional `reason` keyword argument at construction to distinguish "not configured" from "unrecognized backend" in error messages (default: `"No TTS backend is configured"`).
+
+### `TTSBackendUnsupportedError`
+
+Exception raised by adapters when they do not support the requested voice or format. Caught by `synthesize_tts_request` and mapped to an `unsupported` response.
+
+### `synthesize_tts_request(request, adapter=None) -> TTSResponse`
+
+Canonical fail-soft synthesis entry point. Never raises. Returns a truthful `TTSResponse` for every path:
+
+### `synthesize_tts_request_async(request, adapter=None) -> TTSResponse`
+
+Async wrapper around `synthesize_tts_request`. Runs the synchronous backend path in a thread via `asyncio.to_thread()`. Preserves all fail-soft semantics.
+
+| Condition | Status | Error class |
+|---|---|---|
+| No adapter (`None`) | `unavailable` | `backend_missing` |
+| Adapter raises `TTSBackendUnsupportedError` | `unsupported` | `unsupported_format` |
+| Adapter raises unexpected exception | `failed` | `backend_error` |
+| Adapter result with availability error (`disabled`, `backend_missing`) | `unavailable` | passthrough |
+| Adapter result with runtime error (any other `error_class`) | `failed` | passthrough |
+| No `audio_path` after synthesis | `failed` | `backend_error` |
+| Valid `audio_path` | `succeeded` | (none) |
+
+No real synthesis backend is wired yet. The adapter boundary exists and is tested — real backends are a subsequent PR.
+
 ## STT backend adapter boundary
 
 `voice/stt_adapter.py`. Runtime adapter interface for speech-to-text backends and the fail-soft transcription entry point. This is the protocol-to-runtime bridge layer — it consumes `STTRequest` and returns `STTResponse` through an explicit adapter boundary.
