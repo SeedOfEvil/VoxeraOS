@@ -308,18 +308,22 @@ def test_css_has_jobs_filter_responsive_classes():
     assert ".jobs-filter-row" in css
 
 
-def test_css_detail_grid_responsive():
-    """Detail grid should collapse to single column at tablet width."""
+def test_css_detail_grid_collapses_to_single_column():
+    """Detail grid should collapse to single column at the tablet breakpoint."""
     css = _read_css()
-    # The responsive rule for detail-grid should exist within a media query
-    assert ".detail-grid" in css
+    # The 768px media query should override detail-grid to 1-column
+    tablet_block = css.split("max-width: 768px")[1] if "max-width: 768px" in css else ""
+    assert ".detail-grid" in tablet_block
+    assert "grid-template-columns: 1fr" in tablet_block
 
 
-def test_css_has_mobile_tap_target_improvements():
-    """At narrow widths, button padding should increase for tap targets."""
+def test_css_mobile_btn_tap_targets_increase():
+    """At 540px, .btn padding should be larger than the desktop default."""
     css = _read_css()
-    # The 540px breakpoint should contain btn padding adjustments
-    assert "max-width: 540px" in css
+    # The 540px media query should contain .btn with increased padding
+    mobile_block = css.split("max-width: 540px")[1] if "max-width: 540px" in css else ""
+    assert ".btn" in mobile_block
+    assert "padding:" in mobile_block
 
 
 # ---------------------------------------------------------------------------

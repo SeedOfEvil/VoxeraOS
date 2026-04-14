@@ -772,29 +772,25 @@ td > .empty-state {
 /* Consistent visible focus ring for keyboard navigation across all interactive
    elements. Uses :focus-visible to avoid showing on mouse clicks. */
 .btn:focus-visible,
-.tab-btn:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
+.tab-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  border-bottom-color: var(--accent);
+  z-index: 1;
+  position: relative;
+}
+
 .collapsible summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
   box-shadow: 0 0 0 4px var(--accent-soft);
-}
-
-.badge:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-/* Ensure tab buttons show focus within the tab bar context */
-.tab-btn:focus-visible {
-  border-bottom-color: var(--accent);
-  z-index: 1;
-  position: relative;
 }
 
 /* ─── Skip-to-content link ──────────────────────────────────────────────────── */
@@ -887,10 +883,6 @@ a:focus-visible {
     min-width: 0;
   }
 
-  /* KPI grid for tablets */
-  .dash-kpi-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
   .dash-kpi-card .kpi {
     font-size: 1.5rem;
   }

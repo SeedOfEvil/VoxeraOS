@@ -11,7 +11,7 @@
 <div class="container">
 
   {# ── 1. Status Banner ──────────────────────────────────────────────────── #}
-  <header role="banner" class="jd-status-banner
+  <header class="jd-status-banner
     {% if payload.bucket == 'failed' %}jd-status-failed
     {% elif payload.bucket == 'done' %}jd-status-done
     {% elif payload.bucket == 'approvals' or (payload.bucket == 'pending' and payload.has_approval) %}jd-status-approval
@@ -83,7 +83,7 @@
   {% endif %}
 
   {# ── 4. Actions Bar ─────────────────────────────────────────────────────── #}
-  <section class="jd-actions-section mb" aria-label="Job actions">
+  <section class="jd-actions-section mb">
     <div class="jd-action-bar" role="group" aria-label="Job actions">
       {% if payload.can_retry %}<form method="post" action="/queue/jobs/{{payload.job_id}}/retry"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-primary jd-action-btn" type="submit">Retry Job</button></form>{% endif %}
       {% if payload.can_cancel %}<form method="post" action="/queue/jobs/{{payload.job_id}}/cancel"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny jd-action-btn" type="submit">Cancel Job</button></form>{% endif %}
