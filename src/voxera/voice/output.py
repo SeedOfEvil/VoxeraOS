@@ -107,35 +107,7 @@ async def synthesize_text_async(
     import asyncio
 
     return await asyncio.to_thread(
-        _synthesize_text_sync,
-        text=text,
-        flags=flags,
-        voice_id=voice_id,
-        language=language,
-        speed=speed,
-        output_format=output_format,
-        session_id=session_id,
-        backend=backend,
-    )
-
-
-def _synthesize_text_sync(
-    *,
-    text: str,
-    flags: VoiceFoundationFlags,
-    voice_id: str | None = None,
-    language: str | None = None,
-    speed: float = 1.0,
-    output_format: str = "wav",
-    session_id: str | None = None,
-    backend: TTSBackend | None = None,
-) -> TTSResponse:
-    """Internal sync implementation for the async wrapper.
-
-    Identical to ``synthesize_text`` — exists only so
-    ``asyncio.to_thread`` can call it with keyword arguments.
-    """
-    return synthesize_text(
+        synthesize_text,
         text=text,
         flags=flags,
         voice_id=voice_id,

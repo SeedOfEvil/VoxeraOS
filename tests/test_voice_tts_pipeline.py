@@ -50,6 +50,30 @@ def _make_flags(
     )
 
 
+class _CapturingBackend:
+    """Stub backend that captures the request and returns a configurable result.
+
+    Used across multiple test classes to verify request pass-through
+    without repeating a local class definition each time.
+    """
+
+    def __init__(self, audio_path: str, *, name: str = "capturing") -> None:
+        self._audio_path = audio_path
+        self._name = name
+        self.last_request: object | None = None
+
+    @property
+    def backend_name(self) -> str:
+        return self._name
+
+    def supports_voice(self, voice_id: str) -> bool:
+        return True
+
+    def synthesize(self, request):  # noqa: ANN001, ANN201
+        self.last_request = request
+        return TTSAdapterResult(audio_path=self._audio_path)
+
+
 # =============================================================================
 # Section 1: build_tts_backend factory
 # =============================================================================
@@ -238,30 +262,17 @@ class TestSynthesizeTextSuccess:
         audio_file = tmp_path / "output.wav"
         audio_file.write_bytes(b"fake-audio")
 
-        captured_request = None
-
-        class CapturingBackend:
-            @property
-            def backend_name(self) -> str:
-                return "piper_local"
-
-            def supports_voice(self, voice_id: str) -> bool:
-                return True
-
-            def synthesize(self, request):
-                nonlocal captured_request
-                captured_request = request
-                return TTSAdapterResult(audio_path=str(audio_file))
+        stub = _CapturingBackend(str(audio_file), name="piper_local")
 
         with patch(
             "voxera.voice.tts_backend_factory.PiperLocalBackend",
-            return_value=CapturingBackend(),
+            return_value=stub,
         ):
             resp = synthesize_text(text="Hello world", flags=_make_flags(tts_backend="piper_local"))
 
         assert resp.status == TTS_STATUS_SUCCEEDED
-        assert captured_request is not None
-        assert captured_request.text == "Hello world"
+        assert stub.last_request is not None
+        assert stub.last_request.text == "Hello world"
 
 
 class TestSynthesizeTextFailurePaths:
@@ -323,152 +334,77 @@ class TestPipelineUsesCanonicalPath:
     def test_voice_id_passes_through(self, tmp_path) -> None:
         audio_file = tmp_path / "output.wav"
         audio_file.write_bytes(b"fake-audio")
-
-        captured_request = None
-
-        class CapturingBackend:
-            @property
-            def backend_name(self) -> str:
-                return "capturing"
-
-            def supports_voice(self, voice_id: str) -> bool:
-                return True
-
-            def synthesize(self, request):
-                nonlocal captured_request
-                captured_request = request
-                return TTSAdapterResult(audio_path=str(audio_file))
-
+        stub = _CapturingBackend(str(audio_file))
         flags = _make_flags(tts_backend="piper_local")
 
         with patch(
             "voxera.voice.tts_backend_factory.PiperLocalBackend",
-            return_value=CapturingBackend(),
+            return_value=stub,
         ):
             synthesize_text(text="hello", flags=flags, voice_id="en-female-1")
 
-        assert captured_request is not None
-        assert captured_request.voice_id == "en-female-1"
+        assert stub.last_request is not None
+        assert stub.last_request.voice_id == "en-female-1"
 
     def test_language_passes_through(self, tmp_path) -> None:
         audio_file = tmp_path / "output.wav"
         audio_file.write_bytes(b"fake-audio")
-
-        captured_request = None
-
-        class CapturingBackend:
-            @property
-            def backend_name(self) -> str:
-                return "capturing"
-
-            def supports_voice(self, voice_id: str) -> bool:
-                return True
-
-            def synthesize(self, request):
-                nonlocal captured_request
-                captured_request = request
-                return TTSAdapterResult(audio_path=str(audio_file))
-
+        stub = _CapturingBackend(str(audio_file))
         flags = _make_flags(tts_backend="piper_local")
 
         with patch(
             "voxera.voice.tts_backend_factory.PiperLocalBackend",
-            return_value=CapturingBackend(),
+            return_value=stub,
         ):
             synthesize_text(text="bonjour", flags=flags, language="fr")
 
-        assert captured_request is not None
-        assert captured_request.language == "fr"
+        assert stub.last_request is not None
+        assert stub.last_request.language == "fr"
 
     def test_session_id_passes_through(self, tmp_path) -> None:
         audio_file = tmp_path / "output.wav"
         audio_file.write_bytes(b"fake-audio")
-
-        captured_request = None
-
-        class CapturingBackend:
-            @property
-            def backend_name(self) -> str:
-                return "capturing"
-
-            def supports_voice(self, voice_id: str) -> bool:
-                return True
-
-            def synthesize(self, request):
-                nonlocal captured_request
-                captured_request = request
-                return TTSAdapterResult(audio_path=str(audio_file))
-
+        stub = _CapturingBackend(str(audio_file))
         flags = _make_flags(tts_backend="piper_local")
 
         with patch(
             "voxera.voice.tts_backend_factory.PiperLocalBackend",
-            return_value=CapturingBackend(),
+            return_value=stub,
         ):
             synthesize_text(text="hello", flags=flags, session_id="sess-abc")
 
-        assert captured_request is not None
-        assert captured_request.session_id == "sess-abc"
+        assert stub.last_request is not None
+        assert stub.last_request.session_id == "sess-abc"
 
     def test_speed_passes_through(self, tmp_path) -> None:
         audio_file = tmp_path / "output.wav"
         audio_file.write_bytes(b"fake-audio")
-
-        captured_request = None
-
-        class CapturingBackend:
-            @property
-            def backend_name(self) -> str:
-                return "capturing"
-
-            def supports_voice(self, voice_id: str) -> bool:
-                return True
-
-            def synthesize(self, request):
-                nonlocal captured_request
-                captured_request = request
-                return TTSAdapterResult(audio_path=str(audio_file))
-
+        stub = _CapturingBackend(str(audio_file))
         flags = _make_flags(tts_backend="piper_local")
 
         with patch(
             "voxera.voice.tts_backend_factory.PiperLocalBackend",
-            return_value=CapturingBackend(),
+            return_value=stub,
         ):
             synthesize_text(text="hello", flags=flags, speed=1.5)
 
-        assert captured_request is not None
-        assert captured_request.speed == 1.5
+        assert stub.last_request is not None
+        assert stub.last_request.speed == 1.5
 
     def test_output_format_passes_through(self, tmp_path) -> None:
         audio_file = tmp_path / "output.ogg"
         audio_file.write_bytes(b"fake-audio")
-
-        captured_request = None
-
-        class CapturingBackend:
-            @property
-            def backend_name(self) -> str:
-                return "capturing"
-
-            def supports_voice(self, voice_id: str) -> bool:
-                return True
-
-            def synthesize(self, request):
-                nonlocal captured_request
-                captured_request = request
-                return TTSAdapterResult(audio_path=str(audio_file))
-
+        stub = _CapturingBackend(str(audio_file))
         flags = _make_flags(tts_backend="piper_local")
 
         with patch(
             "voxera.voice.tts_backend_factory.PiperLocalBackend",
-            return_value=CapturingBackend(),
+            return_value=stub,
         ):
             synthesize_text(text="hello", flags=flags, output_format="ogg")
 
-        assert captured_request is not None
-        assert captured_request.output_format == "ogg"
+        assert stub.last_request is not None
+        assert stub.last_request.output_format == "ogg"
 
     def test_empty_text_raises_value_error(self) -> None:
         """Empty text is a request validation error, not a synthesis failure."""
