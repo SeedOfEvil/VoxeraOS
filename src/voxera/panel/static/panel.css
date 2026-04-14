@@ -90,7 +90,7 @@ a:hover { text-decoration: underline; }
 .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
 @media (max-width: 980px) {
-  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
   .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 540px) {
@@ -766,4 +766,197 @@ td > .empty-state {
 @media (max-width: 680px) {
   .jd-status-top { flex-direction: column; }
   .jd-actions-section { flex-wrap: wrap; }
+}
+
+/* ─── Focus visibility ──────────────────────────────────────────────────────── */
+/* Consistent visible focus ring for keyboard navigation across all interactive
+   elements. Uses :focus-visible to avoid showing on mouse clicks. */
+.btn:focus-visible,
+.tab-btn:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.collapsible summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Ensure tab buttons show focus within the tab bar context */
+.tab-btn:focus-visible {
+  border-bottom-color: var(--accent);
+  z-index: 1;
+  position: relative;
+}
+
+/* ─── Skip-to-content link ──────────────────────────────────────────────────── */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--space-3);
+  background: var(--accent);
+  color: #fff;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+  z-index: 100;
+  text-decoration: none;
+}
+.skip-link:focus {
+  top: var(--space-3);
+}
+
+/* ─── KPI status text hint (non-color reinforcement) ────────────────────────── */
+.kpi-status-hint {
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ─── Jobs filter form ──────────────────────────────────────────────────────── */
+.jobs-filter-form {
+  padding: var(--space-3) var(--space-4);
+}
+.jobs-filter-row {
+  grid-template-columns: 1fr 2fr auto auto;
+  align-items: end;
+}
+
+/* ─── Responsive: tablet breakpoint (~768px) ───────────────────────────────── */
+@media (max-width: 768px) {
+  .container {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .title { font-size: 1.4rem; }
+
+  /* Tabs scroll horizontally on narrow screens */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+
+  /* Jobs filter stacks vertically */
+  .jobs-filter-row {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+
+  /* Detail grid stacks on narrow screens */
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .detail-grid dt {
+    white-space: normal;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+  .detail-grid dd {
+    margin-bottom: var(--space-2);
+  }
+
+  /* Queue detail rows tighter on tablet */
+  .queue-detail-row {
+    font-size: 0.825rem;
+  }
+
+  /* Action bars and groups wrap and grow to fill */
+  .jd-action-bar {
+    width: 100%;
+  }
+  .jd-action-btn {
+    flex: 1 1 auto;
+    text-align: center;
+    min-width: 0;
+  }
+
+  /* KPI grid for tablets */
+  .dash-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dash-kpi-card .kpi {
+    font-size: 1.5rem;
+  }
+
+  /* Grid-3 to 2 columns at tablet, then 1 below */
+  .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ─── Responsive: narrow mobile (~540px) ───────────────────────────────────── */
+@media (max-width: 540px) {
+  .container {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  /* Jobs filter fully stacked */
+  .jobs-filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  /* Page nav wraps cleanly */
+  .page-nav {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-1);
+    font-size: 0.8rem;
+  }
+
+  /* KPI grid 2 columns on narrow */
+  .dash-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dash-kpi-card .kpi {
+    font-size: 1.3rem;
+  }
+
+  /* Buttons: increase tap target */
+  .btn {
+    padding: 8px 14px;
+  }
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 0.825rem;
+  }
+
+  /* Grid-3 collapses to single column */
+  .grid-3 { grid-template-columns: 1fr; }
+
+  /* Collapsible summary readable on small screens */
+  .collapsible summary {
+    padding: var(--space-3);
+    font-size: 0.825rem;
+  }
+
+  /* Job detail status banner tighter padding */
+  .jd-status-banner {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* Pre blocks: prevent overflow */
+  pre {
+    font-size: 0.72rem;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  /* Section labels tighter */
+  .section-label {
+    margin: var(--space-4) 0 var(--space-2);
+  }
 }
