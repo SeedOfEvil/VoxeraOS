@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Voxera Panel · Voice Status</title>
+  <link rel="stylesheet" href="/static/panel.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <div>
+        <h1 class="title">Voice Status</h1>
+        <p class="subtitle">Operator-facing diagnostic view of STT/TTS configuration and availability. Status reflects config state only &mdash; it does not verify that backends can perform transcription or synthesis at runtime.</p>
+      </div>
+      <a class="btn" href="/">&#8592; Back to Panel</a>
+    </header>
+
+    {% if error %}
+      <div class="alert alert-danger">{{error}}</div>
+    {% elif summary %}
+
+      <div class="section-label">Foundation</div>
+      <section class="card mb">
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Voice Foundation</span>
+          <span class="queue-detail-value">
+            {% if summary.voice_foundation_enabled %}
+              <span class="badge badge-ok">enabled</span>
+            {% else %}
+              <span class="badge badge-paused">disabled</span>
+            {% endif %}
+          </span>
+        </div>
+      </section>
+
+      <div class="section-label">Speech-to-Text (STT)</div>
+      <section class="card mb">
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Status</span>
+          <span class="queue-detail-value">
+            {% if summary.stt.status == "available" %}
+              <span class="badge badge-ok">{{summary.stt.status}}</span>
+            {% elif summary.stt.status == "disabled" %}
+              <span class="badge badge-paused">{{summary.stt.status}}</span>
+            {% else %}
+              <span class="badge badge-warn">{{summary.stt.status}}</span>
+            {% endif %}
+          </span>
+        </div>
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Enabled</span>
+          <span class="queue-detail-value">{{summary.stt.enabled}}</span>
+        </div>
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Configured</span>
+          <span class="queue-detail-value">{{summary.stt.configured}}</span>
+        </div>
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Backend</span>
+          <span class="queue-detail-value mono">{{summary.stt.backend or "&#8212;"}}</span>
+        </div>
+        {% if summary.stt.reason %}
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Reason</span>
+          <span class="queue-detail-value muted">{{summary.stt.reason}}</span>
+        </div>
+        {% endif %}
+        {% if summary.stt_dependency.checked %}
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Dependency ({{summary.stt_dependency.package}})</span>
+          <span class="queue-detail-value">
+            {% if summary.stt_dependency.available %}
+              <span class="badge badge-ok">installed</span>
+            {% else %}
+              <span class="badge badge-fail">missing</span>
+              {% if summary.stt_dependency.hint %}
+                <span class="muted text-sm" style="margin-left:var(--space-2);">{{summary.stt_dependency.hint}}</span>
+              {% endif %}
+            {% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </section>
+
+      <div class="section-label">Text-to-Speech (TTS)</div>
+      <section class="card mb">
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Status</span>
+          <span class="queue-detail-value">
+            {% if summary.tts.status == "available" %}
+              <span class="badge badge-ok">{{summary.tts.status}}</span>
+            {% elif summary.tts.status == "disabled" %}
+              <span class="badge badge-paused">{{summary.tts.status}}</span>
+            {% else %}
+              <span class="badge badge-warn">{{summary.tts.status}}</span>
+            {% endif %}
+          </span>
+        </div>
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Enabled</span>
+          <span class="queue-detail-value">{{summary.tts.enabled}}</span>
+        </div>
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Configured</span>
+          <span class="queue-detail-value">{{summary.tts.configured}}</span>
+        </div>
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Backend</span>
+          <span class="queue-detail-value mono">{{summary.tts.backend or "&#8212;"}}</span>
+        </div>
+        {% if summary.tts.reason %}
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Reason</span>
+          <span class="queue-detail-value muted">{{summary.tts.reason}}</span>
+        </div>
+        {% endif %}
+        {% if summary.tts.last_error %}
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Last Error</span>
+          <span class="queue-detail-value muted">{{summary.tts.last_error}}</span>
+        </div>
+        {% endif %}
+        {% if summary.tts_dependency.checked %}
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Dependency ({{summary.tts_dependency.package}})</span>
+          <span class="queue-detail-value">
+            {% if summary.tts_dependency.available %}
+              <span class="badge badge-ok">installed</span>
+            {% else %}
+              <span class="badge badge-fail">missing</span>
+              {% if summary.tts_dependency.hint %}
+                <span class="muted text-sm" style="margin-left:var(--space-2);">{{summary.tts_dependency.hint}}</span>
+              {% endif %}
+            {% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </section>
+
+      <div class="section-label">JSON</div>
+      <section class="card mb">
+        <p class="muted text-sm" style="margin-top:0;">Machine-readable endpoint: <a href="/voice/status.json" class="mono">/voice/status.json</a></p>
+        <details class="collapsible">
+          <summary>Raw status payload</summary>
+          <div class="collapsible-body"><pre>{{summary | tojson(indent=2)}}</pre></div>
+        </details>
+      </section>
+
+    {% else %}
+      <div class="alert alert-danger">Voice status unavailable.</div>
+    {% endif %}
+  </div>
+</body>
+</html>

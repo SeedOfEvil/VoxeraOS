@@ -1,3 +1,15 @@
+## 2026-04-14 — feat(voice): add operator-facing STT/TTS status and config surface
+
+- **Motivation**: expose voice readiness/config state to operators as a bounded, read-only diagnostic surface. No playback UI, no audio controls, no voice lane.
+- **Changes**:
+  - `src/voxera/voice/voice_status_summary.py` (new): `build_voice_status_summary(flags)` builds a combined payload reusing `build_stt_status`/`build_tts_status` plus dependency availability checks for whisper_local (`faster-whisper`) and piper_local (`piper-tts`). Catches `ImportError | OSError` to handle partial/broken installs. Schema version 1.
+  - `src/voxera/panel/routes_voice.py` (new): `GET /voice/status` (HTML) and `GET /voice/status.json` (JSON). Both require operator Basic auth. Read-only, no mutations.
+  - `src/voxera/panel/templates/voice.html` (new): foundation state, STT/TTS status badges, backend names, reason strings, dependency availability, raw JSON view. Subtitle clarifies status reflects config state, not runtime readiness.
+  - `src/voxera/panel/app.py`: register `register_voice_routes`.
+- **Key design**: status `available` means configured + enabled, NOT that transcription/synthesis works. Config status and dependency availability are separate truthful concerns reported independently. The page makes this explicit.
+- **Test coverage**: `test_voice_status_summary.py` (19 tests), `test_panel_voice_status.py` (18 tests). Covers disabled/unconfigured/available states, dependency checks, no-fake-ready invariant, config-not-runtime note, auth enforcement.
+- **Invariants preserved**: no queue/artifact drift; no backend behavior changes; no playback/audio UI; truthful status only.
+
 ## 2026-04-14 — feat(voice): wire TTS backend selection into output pipeline
 
 - **Motivation**: final TTS foundation layer — adds backend selection and canonical high-level synthesis entry points so the TTS stack can be called through a config-driven path. Mirrors the STT factory/pipeline pattern (`stt_backend_factory.py` + `input.py`).

@@ -13,7 +13,7 @@ VoxeraOS exposes three operator surfaces, all backed by the same queue.
    - Sub-apps registered on the root:
      `config`, `artifacts`, `skills`, `missions`, `queue`, `ops`, `inbox`, `secrets`.
 2. **Web panel — `voxera panel`** (`src/voxera/panel/app.py`)
-   - FastAPI app with `title="Voxera Panel"`. Default bind `127.0.0.1:8844`. Route families split into `routes_home`, `routes_jobs`, `routes_queue_control`, `routes_missions`, `routes_hygiene`, `routes_recovery`, `routes_bundle`, `routes_assistant`, `routes_automations`.
+   - FastAPI app with `title="Voxera Panel"`. Default bind `127.0.0.1:8844`. Route families split into `routes_home`, `routes_jobs`, `routes_queue_control`, `routes_missions`, `routes_hygiene`, `routes_recovery`, `routes_bundle`, `routes_assistant`, `routes_automations`, `routes_voice`.
    - Shared auth/CSRF/mutation-guard plumbing lives in `panel/app.py` and is passed into each `register_*_routes(...)` call.
 3. **Vera web — `voxera vera` / `make vera` / `voxera-vera.service`** (`src/voxera/vera_web/app.py`)
    - FastAPI app with `POST /chat`, `GET /chat/updates`, `POST /handoff`, `POST /clear`, `GET /vera/debug/session.json`. Default bind `127.0.0.1:8790`.
@@ -256,5 +256,20 @@ The first real TTS backend is `PiperLocalBackend` (`voice/piper_backend.py`), wh
 Backend selection is handled by `build_tts_backend(flags)` (`voice/tts_backend_factory.py`), which maps `VoiceFoundationFlags.voice_tts_backend` to the appropriate `TTSBackend` implementation. When voice output is disabled, no backend is configured, or the backend identifier is unrecognized, it returns `NullTTSBackend`. When `voice_tts_backend` is `"piper_local"`, it returns `PiperLocalBackend`. The factory is the single point of backend selection logic.
 
 The recommended entry point for text-to-speech synthesis is `synthesize_text(text, flags, ...)` (`voice/output.py`). It builds a `TTSRequest`, selects the backend via the factory (or uses a caller-supplied `backend` to avoid per-call model reload), and runs the request through `synthesize_tts_request()`. It always returns a truthful `TTSResponse` — never raises on synthesis failure. Output is artifact-oriented (`audio_path`), not playback-oriented. An async variant `synthesize_text_async(...)` runs the synthesis in a thread via `asyncio.to_thread()` for use in async contexts (Vera chat, FastAPI routes).
+
+### Voice status panel surface
+
+The operator panel includes a read-only voice status page at `GET /voice/status` (`panel/routes_voice.py`). This is a diagnostic surface — it shows configuration and availability state, not interactive audio controls.
+
+The page shows:
+- Voice foundation enabled/disabled
+- STT status, backend, and dependency availability
+- TTS status, backend, and dependency availability
+- Reason strings when a subsystem is unavailable
+- Install hints when a backend dependency is missing
+
+A machine-readable JSON endpoint is available at `GET /voice/status.json`. Both endpoints require operator Basic auth.
+
+The combined status is built by `voice/voice_status_summary.py::build_voice_status_summary(flags)`, which reuses the existing `build_stt_status` and `build_tts_status` surfaces and adds dependency checks for known backends (whisper_local checks `faster-whisper`; piper_local checks `piper-tts`). The summary is truthful: it never implies readiness when something is disabled, misconfigured, or missing a dependency.
 
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.

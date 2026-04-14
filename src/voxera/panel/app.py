@@ -44,6 +44,7 @@ from .routes_jobs import register_job_routes
 from .routes_missions import register_mission_routes
 from .routes_queue_control import register_queue_control_routes
 from .routes_recovery import register_recovery_routes
+from .routes_voice import register_voice_routes
 from .security_health_helpers import (
     auth_setup_banner as _auth_setup_banner_impl,
 )
@@ -449,4 +450,10 @@ register_automation_routes(
     panel_security_counter_incr=_panel_security_counter_incr,
     auth_setup_banner=_auth_setup_banner,
     format_ts_ms=_format_ts,
+)
+
+register_voice_routes(
+    app,
+    templates=templates,
+    require_operator_auth_from_request=_require_operator_auth_from_request,
 )
