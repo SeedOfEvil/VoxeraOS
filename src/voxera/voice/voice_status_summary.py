@@ -35,7 +35,7 @@ def _check_stt_dependency(backend: str | None) -> dict[str, Any]:
             import faster_whisper  # noqa: F401
 
             return {"checked": True, "available": True, "package": "faster-whisper"}
-        except ModuleNotFoundError:
+        except (ImportError, OSError):
             return {
                 "checked": True,
                 "available": False,
@@ -57,7 +57,7 @@ def _check_tts_dependency(backend: str | None) -> dict[str, Any]:
             import piper  # noqa: F401
 
             return {"checked": True, "available": True, "package": "piper-tts"}
-        except ModuleNotFoundError:
+        except (ImportError, OSError):
             return {
                 "checked": True,
                 "available": False,

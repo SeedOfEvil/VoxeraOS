@@ -1,23 +1,14 @@
 ## 2026-04-14 — feat(voice): add operator-facing STT/TTS status and config surface
 
-- **Motivation**: with STT and TTS foundations complete (protocol, adapter, backend, factory, pipeline), the next safest step is exposing voice readiness/config state to operators. This PR adds a bounded, read-only diagnostic surface — no playback UI, no audio controls, no voice lane.
-- **Chosen surface**: panel page + JSON API. The operator panel already has modular route registration; a small voice status page fits naturally alongside hygiene, recovery, and automations.
-- **New module — `src/voxera/voice/voice_status_summary.py`**:
-  - `build_voice_status_summary(flags, *, last_tts_error=None) -> dict`: builds a combined voice status payload reusing `build_stt_status` and `build_tts_status`, plus dependency availability checks for configured backends (whisper_local checks `faster-whisper`, piper_local checks `piper-tts`).
-  - `VOICE_STATUS_SUMMARY_SCHEMA_VERSION = 1`.
-  - Dependency checks report `checked`, `available`, `package`, and `hint` (install command) when a known backend's dependency is missing. Unknown backends report `checked=False` with a reason string.
-- **New panel routes — `src/voxera/panel/routes_voice.py`**:
-  - `GET /voice/status` — HTML page showing foundation state, STT status/backend/dependency, TTS status/backend/dependency, reason strings, and a collapsible raw JSON view.
-  - `GET /voice/status.json` — machine-readable JSON endpoint returning the full `build_voice_status_summary` payload.
-  - Both routes require operator Basic auth. No mutation endpoints, no CSRF needed.
-- **New template — `src/voxera/panel/templates/voice.html`**: uses existing panel CSS classes (`card`, `badge-ok`, `badge-paused`, `badge-warn`, `badge-fail`, `queue-detail-row`). Shows foundation enabled/disabled, per-subsystem status badges, backend names, reason strings, dependency availability, and a link to the JSON endpoint.
-- **Registration — `src/voxera/panel/app.py`**: imports `register_voice_routes` and calls it with `templates` and `require_operator_auth_from_request`.
-- **Test coverage**:
-  - `tests/test_voice_status_summary.py` (19 tests): all-disabled defaults, fully configured STT+TTS, foundation-disabled overrides backend config, STT/TTS enabled-but-unconfigured, JSON serializability, last_tts_error passthrough, dependency checks for whisper_local/piper_local (checked + package + hint when missing), no-backend-not-checked, unknown-backend-not-checked, no fake ready when disabled/backend missing, available does not imply runtime success, available-can-coexist-with-missing-dependency (config status independent of dependency), reason strings present for all unavailable states.
-  - `tests/test_panel_voice_status.py` (18 tests): HTML page renders, foundation/STT/TTS sections present, disabled badges when foundation off, JSON link present, enabled+configured state shows available/backend names, no fake ready badges (strict: no badge-ok when disabled), config-not-runtime note present, JSON endpoint ok/shape/stt-fields/tts-fields/disabled-state/configured-state/serializable, auth required for both endpoints.
-- **Docs updated**: `docs/CODEX_MEMORY.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`.
-- **Files touched**: `src/voxera/voice/voice_status_summary.py` (new), `src/voxera/panel/routes_voice.py` (new), `src/voxera/panel/templates/voice.html` (new), `src/voxera/panel/app.py` (registration), `tests/test_voice_status_summary.py` (new, 18 tests), `tests/test_panel_voice_status.py` (new, 17 tests), docs.
-- **Invariants preserved**: no queue/artifact truth drift; no route contract drift (small bounded addition only); no backend behavior changes; no playback/audio UI; no broad panel redesign; status surface is truthful (never implies readiness when disabled/misconfigured/missing dependency); existing voice tests unchanged.
+- **Motivation**: expose voice readiness/config state to operators as a bounded, read-only diagnostic surface. No playback UI, no audio controls, no voice lane.
+- **Changes**:
+  - `src/voxera/voice/voice_status_summary.py` (new): `build_voice_status_summary(flags)` builds a combined payload reusing `build_stt_status`/`build_tts_status` plus dependency availability checks for whisper_local (`faster-whisper`) and piper_local (`piper-tts`). Catches `ImportError | OSError` to handle partial/broken installs. Schema version 1.
+  - `src/voxera/panel/routes_voice.py` (new): `GET /voice/status` (HTML) and `GET /voice/status.json` (JSON). Both require operator Basic auth. Read-only, no mutations.
+  - `src/voxera/panel/templates/voice.html` (new): foundation state, STT/TTS status badges, backend names, reason strings, dependency availability, raw JSON view. Subtitle clarifies status reflects config state, not runtime readiness.
+  - `src/voxera/panel/app.py`: register `register_voice_routes`.
+- **Key design**: status `available` means configured + enabled, NOT that transcription/synthesis works. Config status and dependency availability are separate truthful concerns reported independently. The page makes this explicit.
+- **Test coverage**: `test_voice_status_summary.py` (19 tests), `test_panel_voice_status.py` (18 tests). Covers disabled/unconfigured/available states, dependency checks, no-fake-ready invariant, config-not-runtime note, auth enforcement.
+- **Invariants preserved**: no queue/artifact drift; no backend behavior changes; no playback/audio UI; truthful status only.
 
 ## 2026-04-14 — feat(voice): wire TTS backend selection into output pipeline
 
