@@ -18,7 +18,7 @@ def voice_output_status(flags: VoiceFoundationFlags) -> dict[str, object]:
     elif not configured:
         reason = "voice_output_backend_missing"
     else:
-        reason = "voice_output_placeholder_only"
+        reason = "voice_output_ready"
     return {
         "voice_output_attempted": attempted,
         "voice_output_backend": flags.voice_tts_backend,

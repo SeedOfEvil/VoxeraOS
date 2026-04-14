@@ -410,6 +410,72 @@ class TestPipelineUsesCanonicalPath:
         assert captured_request is not None
         assert captured_request.session_id == "sess-abc"
 
+    def test_speed_passes_through(self, tmp_path) -> None:
+        audio_file = tmp_path / "output.wav"
+        audio_file.write_bytes(b"fake-audio")
+
+        captured_request = None
+
+        class CapturingBackend:
+            @property
+            def backend_name(self) -> str:
+                return "capturing"
+
+            def supports_voice(self, voice_id: str) -> bool:
+                return True
+
+            def synthesize(self, request):
+                nonlocal captured_request
+                captured_request = request
+                return TTSAdapterResult(audio_path=str(audio_file))
+
+        flags = _make_flags(tts_backend="piper_local")
+
+        with patch(
+            "voxera.voice.tts_backend_factory.PiperLocalBackend",
+            return_value=CapturingBackend(),
+        ):
+            synthesize_text(text="hello", flags=flags, speed=1.5)
+
+        assert captured_request is not None
+        assert captured_request.speed == 1.5
+
+    def test_output_format_passes_through(self, tmp_path) -> None:
+        audio_file = tmp_path / "output.ogg"
+        audio_file.write_bytes(b"fake-audio")
+
+        captured_request = None
+
+        class CapturingBackend:
+            @property
+            def backend_name(self) -> str:
+                return "capturing"
+
+            def supports_voice(self, voice_id: str) -> bool:
+                return True
+
+            def synthesize(self, request):
+                nonlocal captured_request
+                captured_request = request
+                return TTSAdapterResult(audio_path=str(audio_file))
+
+        flags = _make_flags(tts_backend="piper_local")
+
+        with patch(
+            "voxera.voice.tts_backend_factory.PiperLocalBackend",
+            return_value=CapturingBackend(),
+        ):
+            synthesize_text(text="hello", flags=flags, output_format="ogg")
+
+        assert captured_request is not None
+        assert captured_request.output_format == "ogg"
+
+    def test_empty_text_raises_value_error(self) -> None:
+        """Empty text is a request validation error, not a synthesis failure."""
+        flags = _make_flags(tts_backend="piper_local")
+        with pytest.raises(ValueError, match="non-empty"):
+            synthesize_text(text="", flags=flags)
+
 
 # =============================================================================
 # Section 4: backend name propagation
