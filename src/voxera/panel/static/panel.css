@@ -919,10 +919,10 @@ a:focus-visible {
 
   /* Buttons: increase tap target */
   .btn {
-    padding: 8px 14px;
+    padding: var(--space-2) var(--space-4);
   }
   .btn-sm {
-    padding: 6px 12px;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.825rem;
   }
 

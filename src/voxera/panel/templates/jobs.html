@@ -20,7 +20,7 @@
     <main id="main-content">
 
     {% if auth_setup_banner %}
-      <div class="alert alert-info" role="alert">
+      <div class="alert alert-info">
         <div>
           <b>{{auth_setup_banner.title}}</b><br/>
           {{auth_setup_banner.detail}}<br/>
@@ -31,7 +31,7 @@
     {% endif %}
 
     {% if flash %}
-      <div class="alert alert-success" role="status">{{flash}}</div>
+      <div class="alert alert-success">{{flash}}</div>
     {% endif %}
 
     <!-- Filter form -->

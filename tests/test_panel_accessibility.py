@@ -143,6 +143,9 @@ def test_home_tabs_use_aria_tablist_pattern(tmp_path, monkeypatch):
     assert 'aria-labelledby="tab-control"' in body
     assert 'aria-labelledby="tab-logging"' in body
     assert 'aria-labelledby="tab-performance"' in body
+    # Roving tabindex: active tab tabindex="0", inactive tabs tabindex="-1"
+    assert 'tabindex="0"' in body
+    assert 'tabindex="-1"' in body
 
 
 def test_home_tab_keyboard_navigation_script_present(tmp_path, monkeypatch):
@@ -151,16 +154,19 @@ def test_home_tab_keyboard_navigation_script_present(tmp_path, monkeypatch):
     assert "ArrowRight" in body
     assert "ArrowLeft" in body
     assert "aria-selected" in body
+    # JS should manage roving tabindex
+    assert "tabindex" in body
 
 
 # ---------------------------------------------------------------------------
-# 3. Alert roles
+# 3. Queue status badge
 # ---------------------------------------------------------------------------
 
 
-def test_home_queue_status_badge_has_role_status(tmp_path, monkeypatch):
+def test_home_queue_status_badge_has_text(tmp_path, monkeypatch):
+    """Queue badge communicates status via text, not color alone."""
     body = _get_home(tmp_path, monkeypatch)
-    assert 'role="status"' in body
+    assert "Queue Active" in body or "Queue Paused" in body
 
 
 # ---------------------------------------------------------------------------

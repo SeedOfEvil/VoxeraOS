@@ -15,9 +15,9 @@
         <p class="subtitle">Operator control panel &mdash; queue orchestration, approvals, and live activity.</p>
       </div>
       {% if queue.paused %}
-        <span class="badge badge-paused" role="status">Queue Paused</span>
+        <span class="badge badge-paused">Queue Paused</span>
       {% else %}
-        <span class="badge badge-ok" role="status">Queue Active</span>
+        <span class="badge badge-ok">Queue Active</span>
       {% endif %}
     </header>
 
@@ -38,9 +38,8 @@
     </nav>
 
     <main id="main-content">
-
     {% if auth_setup_banner %}
-      <div class="alert alert-info" role="alert">
+      <div class="alert alert-info">
         <div>
           <b>{{auth_setup_banner.title}}</b><br/>
           {{auth_setup_banner.detail}}<br/>
@@ -51,22 +50,22 @@
     {% endif %}
 
     {% if created %}
-      <div class="alert alert-success" role="status">Queued new job: <b>{{created}}</b>.</div>
+      <div class="alert alert-success">Queued new job: <b>{{created}}</b>.</div>
     {% endif %}
     {% if mission_created %}
-      <div class="alert alert-success" role="status">Created mission template: <b>{{mission_created}}</b>.</div>
+      <div class="alert alert-success">Created mission template: <b>{{mission_created}}</b>.</div>
     {% endif %}
     {% if error %}
-      <div class="alert alert-danger" role="alert">Action failed: {{error_message or error}}</div>
+      <div class="alert alert-danger">Action failed: {{error_message or error}}</div>
     {% endif %}
     {% if get_mutations_enabled %}
-      <div class="alert alert-warn" role="alert">Compatibility mode: GET mutation endpoints are enabled for tests/dev only.</div>
+      <div class="alert alert-warn">Compatibility mode: GET mutation endpoints are enabled for tests/dev only.</div>
     {% endif %}
 
     <div class="tabs" role="tablist" aria-label="Panel views">
-      <button class="tab-btn is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-control" id="tab-control" data-tab-btn="control">Control</button>
-      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="panel-logging" id="tab-logging" data-tab-btn="logging">Logging</button>
-      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="panel-performance" id="tab-performance" data-tab-btn="performance">Performance Stats</button>
+      <button class="tab-btn is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-control" id="tab-control" tabindex="0" data-tab-btn="control">Control</button>
+      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="panel-logging" id="tab-logging" tabindex="-1" data-tab-btn="logging">Logging</button>
+      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="panel-performance" id="tab-performance" tabindex="-1" data-tab-btn="performance">Performance Stats</button>
     </div>
 
     <!-- ═══════════════════════ CONTROL TAB ═══════════════════════ -->
@@ -602,6 +601,7 @@
         const isActive = b.dataset.tabBtn === name;
         b.classList.toggle('is-active', isActive);
         b.setAttribute('aria-selected', String(isActive));
+        b.setAttribute('tabindex', isActive ? '0' : '-1');
       });
       tabPanels.forEach((p)  => p.classList.toggle('is-hidden', p.dataset.tabPanel !== name));
     }
