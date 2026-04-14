@@ -695,9 +695,17 @@ td > .empty-state {
   color: var(--muted);
 }
 
-/* Operator summary card — tighter interior */
+/* Operator summary card */
 .jd-summary-card {
   padding: var(--space-3) var(--space-4);
+}
+.jd-summary-label {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.jd-summary-headline {
+  margin: 0 0 var(--space-2);
 }
 .jd-summary-body p { margin: 0 0 var(--space-2); }
 .jd-summary-body p:last-child { margin-bottom: 0; }

@@ -13,7 +13,7 @@
   <header class="jd-status-banner
     {% if payload.bucket == 'failed' %}jd-status-failed
     {% elif payload.bucket == 'done' %}jd-status-done
-    {% elif payload.bucket == 'approvals' or payload.bucket == 'pending' and payload.has_approval %}jd-status-approval
+    {% elif payload.bucket == 'approvals' or (payload.bucket == 'pending' and payload.has_approval) %}jd-status-approval
     {% elif payload.bucket == 'pending' %}jd-status-pending
     {% elif payload.bucket == 'canceled' %}jd-status-canceled
     {% else %}jd-status-running{% endif %}">
@@ -50,6 +50,8 @@
     {% elif payload.operator_summary.severity == 'danger' %}alert-danger
     {% else %}alert-info{% endif %}">
     <div class="jd-summary-body">
+      <h2 class="jd-summary-label">{{payload.operator_summary.label}}</h2>
+      <p class="jd-summary-headline"><b>{{payload.operator_summary.headline}}</b></p>
       {% if payload.operator_summary.reason %}
         <p class="jd-summary-reason"><span class="muted">Reason:</span> {{payload.operator_summary.reason}}</p>
       {% endif %}
@@ -82,8 +84,8 @@
     <div class="jd-action-bar">
       {% if payload.can_retry %}<form method="post" action="/queue/jobs/{{payload.job_id}}/retry"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-primary jd-action-btn" type="submit">Retry Job</button></form>{% endif %}
       {% if payload.can_cancel %}<form method="post" action="/queue/jobs/{{payload.job_id}}/cancel"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny jd-action-btn" type="submit">Cancel Job</button></form>{% endif %}
-      {% if payload.can_delete %}<form method="post" action="/queue/jobs/{{payload.job_id}}/delete"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="confirm" value="{{payload.job_id}}" /><button class="btn btn-deny jd-action-btn" type="submit">Delete Job</button></form>{% endif %}
       <a href="/jobs/{{payload.job_id}}/bundle" class="btn jd-action-btn">Download Incident Bundle (.zip)</a>
+      {% if payload.can_delete %}<form method="post" action="/queue/jobs/{{payload.job_id}}/delete" onsubmit="return confirm('Permanently delete job {{payload.job_id}}?');"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="confirm" value="{{payload.job_id}}" /><button class="btn btn-deny jd-action-btn" type="submit">Delete Job</button></form>{% endif %}
     </div>
   </section>
 
@@ -134,6 +136,7 @@
     {% if payload.artifact_anomalies %}
       <div class="alert alert-info">Soft anomaly: {{payload.artifact_anomalies|join('; ')}}</div>
     {% endif %}
+    {% if payload.artifact_inventory %}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Artifact</th><th>Contract</th><th>Status</th><th>Notes</th></tr></thead>
@@ -153,6 +156,9 @@
         </tbody>
       </table>
     </div>
+    {% else %}
+    <div class="empty-state">No artifact inventory available.</div>
+    {% endif %}
   </section>
 
   {# ── 6. Output ─────────────────────────────────────────────────────────── #}
