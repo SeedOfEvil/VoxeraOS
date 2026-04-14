@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/panel.css" />
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
   <div class="container">
     <header class="page-header">
       <div>
@@ -23,6 +24,7 @@
       </div>
     </div>
 
+    <main id="main-content">
     {% if error %}<div class="alert alert-danger" role="alert">{{error}}</div>{% endif %}
 
     <!-- Conversation thread -->
@@ -65,6 +67,7 @@
         </div>
       </form>
     </section>
+    </main>
 
   </div>
 

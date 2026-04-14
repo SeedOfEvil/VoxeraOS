@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/panel.css" />
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
   <div class="container">
     <header class="page-header">
       <div>
@@ -20,22 +21,23 @@
       {% endif %}
     </header>
 
-    <nav class="page-nav">
+    <nav class="page-nav" aria-label="Panel sections">
       <a href="/jobs">Job Browser</a>
-      <span class="sep">·</span>
+      <span class="sep" aria-hidden="true">·</span>
       <a href="/automations">Automations</a>
-      <span class="sep">·</span>
+      <span class="sep" aria-hidden="true">·</span>
       <a href="/hygiene">Queue Hygiene</a>
-      <span class="sep">·</span>
+      <span class="sep" aria-hidden="true">·</span>
       <a href="/assistant">Operator Assistant</a>
-      <span class="sep">·</span>
+      <span class="sep" aria-hidden="true">·</span>
       <a href="/recovery">Recovery Inspector</a>
-      <span class="sep">·</span>
+      <span class="sep" aria-hidden="true">·</span>
       <a href="/vera">Vera</a>
-      <span class="sep">·</span>
+      <span class="sep" aria-hidden="true">·</span>
       <a href="/bundle/system">System Bundle</a>
     </nav>
 
+    <main id="main-content">
     {% if auth_setup_banner %}
       <div class="alert alert-info">
         <div>
@@ -60,14 +62,14 @@
       <div class="alert alert-warn">Compatibility mode: GET mutation endpoints are enabled for tests/dev only.</div>
     {% endif %}
 
-    <nav class="tabs" aria-label="Panel views">
-      <button class="tab-btn is-active" type="button" data-tab-btn="control">Control</button>
-      <button class="tab-btn" type="button" data-tab-btn="logging">Logging</button>
-      <button class="tab-btn" type="button" data-tab-btn="performance">Performance Stats</button>
-    </nav>
+    <div class="tabs" role="tablist" aria-label="Panel views">
+      <button class="tab-btn is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-control" id="tab-control" tabindex="0" data-tab-btn="control">Control</button>
+      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="panel-logging" id="tab-logging" tabindex="-1" data-tab-btn="logging">Logging</button>
+      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="panel-performance" id="tab-performance" tabindex="-1" data-tab-btn="performance">Performance Stats</button>
+    </div>
 
     <!-- ═══════════════════════ CONTROL TAB ═══════════════════════ -->
-    <section class="tab-panel" data-tab-panel="control">
+    <section class="tab-panel" role="tabpanel" id="panel-control" aria-labelledby="tab-control" data-tab-panel="control">
 
       <!-- ── Zone 1: KPI summary ─────────────────────────────────── -->
       <div class="dash-zone dash-zone--kpi">
@@ -79,7 +81,7 @@
           </article>
           <article class="card dash-kpi-card">
             <p class="kpi {% if queue.counts.pending_approvals > 0 %}kpi-warn{% endif %}">{{queue.counts.pending_approvals}}</p>
-            <p class="kpi-label">Need Approval</p>
+            <p class="kpi-label">Need Approval{% if queue.counts.pending_approvals > 0 %} <span class="kpi-status-hint">(action needed)</span>{% endif %}</p>
           </article>
           <article class="card dash-kpi-card">
             <p class="kpi">{{queue.counts.pending}}</p>
@@ -87,7 +89,7 @@
           </article>
           <article class="card dash-kpi-card">
             <p class="kpi {% if queue.counts.failed > 0 %}kpi-danger{% endif %}">{{queue.counts.failed}}</p>
-            <p class="kpi-label">Failed</p>
+            <p class="kpi-label">Failed{% if queue.counts.failed > 0 %} <span class="kpi-status-hint">(attention)</span>{% endif %}</p>
           </article>
           <article class="card dash-kpi-card">
             <p class="kpi">{{queue.counts.done}}</p>
@@ -138,19 +140,19 @@
                       <div class="action-group">
                         <form method="post" action="/queue/approvals/{{item.job}}/approve">
                           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                          <button class="btn btn-sm btn-approve" type="submit">Approve</button>
+                          <button class="btn btn-sm btn-approve" type="submit" aria-label="Approve job {{item.job}}">Approve</button>
                         </form>
                         <form method="post" action="/queue/approvals/{{item.job}}/approve-always">
                           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                          <button class="btn btn-sm" type="submit">Always</button>
+                          <button class="btn btn-sm" type="submit" aria-label="Always approve job {{item.job}}">Always</button>
                         </form>
                         <form method="post" action="/queue/approvals/{{item.job}}/deny">
                           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                          <button class="btn btn-sm btn-deny" type="submit">Deny</button>
+                          <button class="btn btn-sm btn-deny" type="submit" aria-label="Deny job {{item.job}}">Deny</button>
                         </form>
                         <form method="post" action="/queue/jobs/{{item.job}}/cancel">
                           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                          <button class="btn btn-sm btn-deny" type="submit">Cancel</button>
+                          <button class="btn btn-sm btn-deny" type="submit" aria-label="Cancel job {{item.job}}">Cancel</button>
                         </form>
                       </div>
                     </td>
@@ -205,11 +207,11 @@
                         <div class="action-group">
                           <form method="post" action="/queue/jobs/{{item.job}}/retry">
                             <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                            <button class="btn btn-sm" type="submit">Retry</button>
+                            <button class="btn btn-sm" type="submit" aria-label="Retry job {{item.job}}">Retry</button>
                           </form>
                           <form method="post" action="/queue/jobs/{{item.job}}/cancel">
                             <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-                            <button class="btn btn-sm btn-deny" type="submit">Cancel</button>
+                            <button class="btn btn-sm btn-deny" type="submit" aria-label="Cancel job {{item.job}}">Cancel</button>
                           </form>
                         </div>
                       </td>
@@ -281,7 +283,7 @@
                 <span class="queue-detail-label">Queue root</span>
                 <span class="muted mono text-xs" style="word-break:break-all;">{{queue_root}}</span>
               </div>
-              <div class="action-group dash-queue-actions">
+              <div class="action-group dash-queue-actions" role="group" aria-label="Queue controls">
                 <form method="post" action="/queue/pause">
                   <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
                   <button class="btn btn-sm" type="submit">Pause Queue</button>
@@ -470,7 +472,7 @@
 
 
     <!-- ═══════════════════════ LOGGING TAB ═══════════════════════ -->
-    <section class="tab-panel is-hidden" data-tab-panel="logging">
+    <section class="tab-panel is-hidden" role="tabpanel" id="panel-logging" aria-labelledby="tab-logging" data-tab-panel="logging">
       <section class="grid grid-2 mb">
         <article class="card">
           <h2>Recent Activity</h2>
@@ -520,7 +522,7 @@
 
 
     <!-- ═══════════════════════ PERFORMANCE TAB ═══════════════════════ -->
-    <section class="tab-panel is-hidden" data-tab-panel="performance">
+    <section class="tab-panel is-hidden" role="tabpanel" id="panel-performance" aria-labelledby="tab-performance" data-tab-panel="performance">
       <section class="grid grid-2 mb">
         <article class="card">
           <h2>Queue Counts</h2>
@@ -587,6 +589,7 @@
     </section>
     <!-- end performance tab -->
 
+    </main>
   </div>
 
   <script>
@@ -594,11 +597,32 @@
     const tabPanels  = document.querySelectorAll('[data-tab-panel]');
 
     function activateTab(name) {
-      tabButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.tabBtn === name));
+      tabButtons.forEach((b) => {
+        const isActive = b.dataset.tabBtn === name;
+        b.classList.toggle('is-active', isActive);
+        b.setAttribute('aria-selected', String(isActive));
+        b.setAttribute('tabindex', isActive ? '0' : '-1');
+      });
       tabPanels.forEach((p)  => p.classList.toggle('is-hidden', p.dataset.tabPanel !== name));
     }
 
-    tabButtons.forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tabBtn)));
+    tabButtons.forEach((b) => {
+      b.addEventListener('click', () => activateTab(b.dataset.tabBtn));
+      b.addEventListener('keydown', (e) => {
+        const btns = Array.from(tabButtons);
+        const idx = btns.indexOf(b);
+        let target = -1;
+        if (e.key === 'ArrowRight') target = (idx + 1) % btns.length;
+        else if (e.key === 'ArrowLeft') target = (idx - 1 + btns.length) % btns.length;
+        else if (e.key === 'Home') target = 0;
+        else if (e.key === 'End') target = btns.length - 1;
+        if (target >= 0) {
+          e.preventDefault();
+          btns[target].focus();
+          activateTab(btns[target].dataset.tabBtn);
+        }
+      });
+    });
   </script>
 </body>
 </html>

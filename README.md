@@ -43,7 +43,7 @@ This is a **one-person evenings-and-weekends project**. The architecture is real
 - Voice-first interaction UX (full duplex voice loop is not yet built; only a bounded voice foundation seam exists today)
 - Mission/catalog breadth is growing (current in-code catalog ships 9 built-in templates; broader community catalog remains future work)
 - Provider compatibility beyond OpenRouter (see below)
-- Panel UX polish and mobile responsiveness
+- Panel UX polish and mobile responsiveness (initial accessibility and tablet-responsive hardening pass landed; further refinement ongoing)
 - Multi-step orchestration maturity
 - Setup and onboarding smoothness
 

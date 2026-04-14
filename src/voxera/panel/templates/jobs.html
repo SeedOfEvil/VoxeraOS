@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/panel.css" />
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
   <div class="container">
     <header class="page-header">
       <div>
@@ -15,6 +16,8 @@
       </div>
       <a class="btn" href="/">← Back to Panel</a>
     </header>
+
+    <main id="main-content">
 
     {% if auth_setup_banner %}
       <div class="alert alert-info">
@@ -32,8 +35,8 @@
     {% endif %}
 
     <!-- Filter form -->
-    <form method="get" action="/jobs" class="card mb" style="padding:var(--space-3) var(--space-4);">
-      <div class="form-row" style="grid-template-columns: 1fr 2fr auto auto; align-items:end;">
+    <form method="get" action="/jobs" class="card mb jobs-filter-form" aria-label="Job filter">
+      <div class="form-row jobs-filter-row">
         <label>Bucket
           <select class="select" name="bucket">
             {% for opt in buckets %}
@@ -48,7 +51,7 @@
           <input class="input" type="number" min="1" max="200" name="n" value="{{n}}" style="width:80px;" />
         </label>
         <div>
-          <button class="btn btn-primary" type="submit" style="margin-top:20px;">Filter</button>
+          <button class="btn btn-primary" type="submit">Filter</button>
         </div>
       </div>
     </form>
@@ -93,10 +96,10 @@
                 </td>
                 <td>
                   <div class="artifact-pills">
-                    <span class="artifact-pill {% if row.artifacts.plan %}present{% else %}missing{% endif %}">plan</span>
-                    <span class="artifact-pill {% if row.artifacts.actions %}present{% else %}missing{% endif %}">actions</span>
-                    <span class="artifact-pill {% if row.artifacts.stdout %}present{% else %}missing{% endif %}">stdout</span>
-                    <span class="artifact-pill {% if row.artifacts.stderr %}present{% else %}missing{% endif %}">stderr</span>
+                    <span class="artifact-pill {% if row.artifacts.plan %}present{% else %}missing{% endif %}" title="{% if row.artifacts.plan %}plan present{% else %}plan not present{% endif %}">{% if row.artifacts.plan %}&#10003;{% else %}&#10005;{% endif %} plan</span>
+                    <span class="artifact-pill {% if row.artifacts.actions %}present{% else %}missing{% endif %}" title="{% if row.artifacts.actions %}actions present{% else %}actions not present{% endif %}">{% if row.artifacts.actions %}&#10003;{% else %}&#10005;{% endif %} actions</span>
+                    <span class="artifact-pill {% if row.artifacts.stdout %}present{% else %}missing{% endif %}" title="{% if row.artifacts.stdout %}stdout present{% else %}stdout not present{% endif %}">{% if row.artifacts.stdout %}&#10003;{% else %}&#10005;{% endif %} stdout</span>
+                    <span class="artifact-pill {% if row.artifacts.stderr %}present{% else %}missing{% endif %}" title="{% if row.artifacts.stderr %}stderr present{% else %}stderr not present{% endif %}">{% if row.artifacts.stderr %}&#10003;{% else %}&#10005;{% endif %} stderr</span>
                   </div>
                 </td>
                 <td class="mono text-xs muted">{{row.last_activity}}</td>
@@ -114,14 +117,14 @@
                       <input type="hidden" name="bucket" value="{{bucket}}" />
                       <input type="hidden" name="q" value="{{q}}" />
                       <input type="hidden" name="n" value="{{n}}" />
-                      <button class="btn btn-sm btn-approve" type="submit">Approve</button>
+                      <button class="btn btn-sm btn-approve" type="submit" aria-label="Approve job {{row.job_id}}">Approve</button>
                     </form>
                     <form method="post" action="/queue/approvals/{{row.job_id}}/deny" style="display:contents;">
                       <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
                       <input type="hidden" name="bucket" value="{{bucket}}" />
                       <input type="hidden" name="q" value="{{q}}" />
                       <input type="hidden" name="n" value="{{n}}" />
-                      <button class="btn btn-sm btn-deny" type="submit">Deny</button>
+                      <button class="btn btn-sm btn-deny" type="submit" aria-label="Deny job {{row.job_id}}">Deny</button>
                     </form>
                     {% endif %}
 
@@ -131,7 +134,7 @@
                       <input type="hidden" name="bucket" value="{{bucket}}" />
                       <input type="hidden" name="q" value="{{q}}" />
                       <input type="hidden" name="n" value="{{n}}" />
-                      <button class="btn btn-sm btn-deny" type="submit">Cancel</button>
+                      <button class="btn btn-sm btn-deny" type="submit" aria-label="Cancel job {{row.job_id}}">Cancel</button>
                     </form>
                     {% endif %}
 
@@ -141,7 +144,7 @@
                       <input type="hidden" name="bucket" value="{{bucket}}" />
                       <input type="hidden" name="q" value="{{q}}" />
                       <input type="hidden" name="n" value="{{n}}" />
-                      <button class="btn btn-sm" type="submit">Retry</button>
+                      <button class="btn btn-sm" type="submit" aria-label="Retry job {{row.job_id}}">Retry</button>
                     </form>
                     {% endif %}
 
@@ -152,7 +155,7 @@
                       <input type="hidden" name="q" value="{{q}}" />
                       <input type="hidden" name="n" value="{{n}}" />
                       <input type="hidden" name="confirm" value="{{row.job_id}}" />
-                      <button class="btn btn-sm btn-deny" type="submit">Delete</button>
+                      <button class="btn btn-sm btn-deny" type="submit" aria-label="Delete job {{row.job_id}}">Delete</button>
                     </form>
                     {% endif %}
                   </div>
@@ -163,6 +166,8 @@
         </tbody>
       </table>
     </div>
+
+    </main>
   </div>
 </body>
 </html>
