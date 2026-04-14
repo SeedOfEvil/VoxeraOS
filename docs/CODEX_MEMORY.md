@@ -1,3 +1,23 @@
+## 2026-04-14 — feat(voice): add TTS adapter boundary and fail-soft synthesis entry point
+
+- **Motivation**: next bounded step in the TTS voice track — bridge the TTS protocol shapes to a runtime adapter boundary. Mirrors the existing STT adapter design (`voice/stt_adapter.py`) to define the smallest credible adapter interface and a fail-soft synthesis entry point, without overreaching into real backends or pipeline wiring.
+- **Scope (deliberately bounded)**:
+  - Add TTS backend adapter (`src/voxera/voice/tts_adapter.py`): `TTSBackend` structural protocol interface, `TTSAdapterResult` frozen dataclass, `TTSBackendUnsupportedError` exception, `NullTTSBackend` truthful no-op adapter, `synthesize_tts_request()` and `synthesize_tts_request_async()` fail-soft entry points.
+  - Update voice `__init__.py` exports with new public symbols.
+  - Add focused contract-pinning tests (`tests/test_voice_tts_adapter.py`).
+  - Do NOT build a real synthesis backend, backend factory, pipeline wiring, or UI.
+- **New module — `src/voxera/voice/tts_adapter.py`**:
+  - `TTSBackend(Protocol)`: structural interface with `backend_name` property, `supports_voice(voice_id) -> bool`, and `synthesize(request) -> TTSAdapterResult`. Mirrors `STTBackend` pattern — implementations do not inherit.
+  - `TTSAdapterResult`: frozen dataclass with `audio_path`, `audio_duration_ms`, `inference_ms`, `error`, `error_class`. Adapter-internal shape wrapped by the entry point.
+  - `NullTTSBackend`: default adapter when unconfigured. `backend_name="null"`, always returns `error_class=backend_missing`. Never pretends synthesis occurred. Accepts optional `reason` keyword argument.
+  - `TTSBackendUnsupportedError`: exception for adapters to reject unsupported voices/formats.
+  - `synthesize_tts_request(request, adapter=None) -> TTSResponse`: fail-soft entry point. Never raises. Maps: no adapter → unavailable; `TTSBackendUnsupportedError` → unsupported; generic exception → failed; availability-class adapter error → unavailable; runtime adapter error → failed; missing `audio_path` → failed (does not fake success); valid `audio_path` → succeeded.
+  - `synthesize_tts_request_async(request, adapter=None) -> TTSResponse`: async wrapper via `asyncio.to_thread()`.
+- **Test coverage**: `tests/test_voice_tts_adapter.py` — TTSAdapterResult frozen immutability/defaults/timing fields, NullTTSBackend truthful behavior (backend_name, supports_voice, unavailable result, custom reason, protocol conformance), TTSBackend protocol structural conformance, synthesize_tts_request no-adapter path, NullTTSBackend synthesis path, successful adapter (audio_path, timing), missing/empty audio_path does not fake success, unsupported voice/format (empty message fallback), backend exception (never raises), availability-class vs runtime error classification, backend name propagation, error_class passthrough, supports_voice behavior, timing fields pass-through, async entry point.
+- **Docs updated**: `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` (TTS adapter boundary schema), `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md` (TTS adapter boundary description), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing), `docs/CODEX_MEMORY.md`.
+- **Invariants preserved**: existing voice foundation, protocol, and status behavior unchanged; no new runtime side effects; no network calls; no UI changes; adapter boundary is truthful (NullTTSBackend never overclaims); fail-soft entry point never raises; no real synthesis backend wired.
+- **Next safe step**: wire a real TTS backend (e.g. Piper) behind the `TTSBackend` protocol, then add a TTS backend factory mirroring `stt_backend_factory.py`.
+
 ## 2026-04-14 — feat(voice): add TTS request/response protocol surfaces
 
 - **Motivation**: second protocol-layer surface for the voice capability track. Mirrors the existing STT request/response protocol (`voice/stt_protocol.py`) to define the canonical contract shapes for text-to-speech interactions. This is protocol foundation only — no runtime synthesis, no backend selection, no adapter wiring.
