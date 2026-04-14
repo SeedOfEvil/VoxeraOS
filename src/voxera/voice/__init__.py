@@ -27,6 +27,15 @@ from .stt_protocol import (
     stt_response_as_dict,
 )
 from .stt_status import STTStatus, build_stt_status, stt_status_as_dict
+from .tts_protocol import (
+    TTSRequest,
+    TTSResponse,
+    build_tts_request,
+    build_tts_response,
+    build_tts_unavailable_response,
+    tts_request_as_dict,
+    tts_response_as_dict,
+)
 from .tts_status import TTSStatus, build_tts_status, tts_status_as_dict
 from .whisper_backend import WhisperLocalBackend
 
@@ -39,6 +48,8 @@ __all__ = [
     "STTRequest",
     "STTResponse",
     "STTStatus",
+    "TTSRequest",
+    "TTSResponse",
     "TTSStatus",
     "VoiceFoundationFlags",
     "VoiceInputDisabledError",
@@ -48,7 +59,10 @@ __all__ = [
     "build_stt_response",
     "build_stt_status",
     "build_stt_unavailable_response",
+    "build_tts_request",
+    "build_tts_response",
     "build_tts_status",
+    "build_tts_unavailable_response",
     "ingest_voice_transcript",
     "load_voice_foundation_flags",
     "normalize_input_origin",
@@ -60,6 +74,8 @@ __all__ = [
     "transcribe_audio_file_async",
     "transcribe_stt_request",
     "transcribe_stt_request_async",
+    "tts_request_as_dict",
+    "tts_response_as_dict",
     "tts_status_as_dict",
     "voice_output_status",
 ]

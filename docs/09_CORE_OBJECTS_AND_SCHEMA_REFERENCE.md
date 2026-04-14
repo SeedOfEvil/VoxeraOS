@@ -358,6 +358,58 @@ Unknown `status` values normalize fail-closed to `"unavailable"`.
 
 `stt_request_as_dict(request)` / `stt_response_as_dict(response)` serialize to plain dicts for JSON/logging/audit.
 
+## TTS request/response protocol
+
+`voice/tts_protocol.py`. Protocol-layer contract for text-to-speech interactions. This defines data shapes only — it does not perform synthesis. No backend is wired yet.
+
+### `TTSRequest`
+
+Frozen dataclass. Built via `build_tts_request(...)`.
+
+```jsonc
+{
+  "request_id": "uuid-string",                // auto-generated or caller-supplied
+  "text": "Hello world",                       // required; non-empty after strip
+  "voice_id": "default",                       // nullable; voice/speaker selection hint
+  "language": "en-US",                         // BCP-47 locale hint; nullable
+  "speed": 1.0,                                // clamped to [0.1, 10.0]; default 1.0
+  "output_format": "wav" | "mp3" | "ogg" | "raw",  // validated; default "wav"
+  "session_id": "string",                      // correlation id; nullable
+  "created_at_ms": 1712900000000,              // epoch-ms
+  "schema_version": 1
+}
+```
+
+Empty/whitespace-only `text` is rejected (`ValueError`). Unknown `output_format` values are rejected fail-closed (`ValueError`).
+
+### `TTSResponse`
+
+Frozen dataclass. Built via `build_tts_response(...)` or `build_tts_unavailable_response(...)`.
+
+```jsonc
+{
+  "request_id": "uuid-string",
+  "status": "succeeded" | "failed" | "unavailable" | "unsupported",
+  "audio_path": "/path/to/output.wav",         // nullable; artifact path on success
+  "audio_duration_ms": 3500,                   // nullable; duration of output audio
+  "error": "reason string",                    // nullable
+  "error_class": "disabled" | "backend_missing" | "backend_error" | "timeout" | "unsupported_format" | "empty_text",
+  "backend": "provider-name",                  // nullable
+  "started_at_ms": 0,                          // nullable
+  "finished_at_ms": 0,                         // nullable
+  "schema_version": 1,
+  "inference_ms": 150                          // nullable; adapter-reported synthesis time
+}
+```
+
+Key distinction from STTResponse: the output artifact is a file path (`audio_path`), not a transcript string.
+
+Unknown `status` values normalize fail-closed to `"unavailable"`.
+
+`error_class` is intentionally not validated — backends may define their own error classes beyond the canonical constants. This matches the `CanonicalSkillResult.error_class` passthrough policy.
+
+`tts_request_as_dict(request)` / `tts_response_as_dict(response)` serialize to plain dicts for JSON/logging/audit.
+
 ## STT backend adapter boundary
 
 `voice/stt_adapter.py`. Runtime adapter interface for speech-to-text backends and the fail-soft transcription entry point. This is the protocol-to-runtime bridge layer — it consumes `STTRequest` and returns `STTResponse` through an explicit adapter boundary.
