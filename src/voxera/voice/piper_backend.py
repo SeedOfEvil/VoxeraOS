@@ -21,6 +21,7 @@ Model loading is lazy: the Piper voice is loaded on the first
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 import time
@@ -131,6 +132,7 @@ class PiperLocalBackend:
 
         # -- synthesize --------------------------------------------------------
         inference_start_ms = int(time.time() * 1000)
+        tmp_path: str | None = None
         try:
             # Build speaker_id kwarg if configured
             synth_kwargs: dict[str, Any] = {}
@@ -141,9 +143,10 @@ class PiperLocalBackend:
                     synth_kwargs["speaker_id"] = self._speaker
 
             # Synthesize to raw audio bytes
-            audio_bytes = b""
+            audio_chunks: list[bytes] = []
             for audio_chunk in voice.synthesize_stream_raw(request.text, **synth_kwargs):
-                audio_bytes += audio_chunk
+                audio_chunks.append(audio_chunk)
+            audio_bytes = b"".join(audio_chunks)
 
             if not audio_bytes:
                 return TTSAdapterResult(
@@ -153,12 +156,12 @@ class PiperLocalBackend:
                 )
 
             # Write to a temp WAV file
+            sample_rate = voice.config.sample_rate
+            sample_width = 2  # 16-bit PCM
+            channels = 1  # mono
+
             tmp_fd, tmp_path = tempfile.mkstemp(suffix=".wav", prefix="voxera_tts_piper_")
             try:
-                sample_rate = voice.config.sample_rate
-                sample_width = 2  # 16-bit PCM
-                channels = 1  # mono
-
                 with wave.open(tmp_path, "wb") as wf:
                     wf.setnchannels(channels)
                     wf.setsampwidth(sample_width)
@@ -171,6 +174,10 @@ class PiperLocalBackend:
                 os.close(tmp_fd)
 
         except Exception as exc:
+            # Clean up orphaned temp file on failure
+            if tmp_path is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
             return TTSAdapterResult(
                 audio_path=None,
                 error=f"Piper synthesis failed: {exc}",
@@ -182,9 +189,7 @@ class PiperLocalBackend:
         # -- compute audio duration if possible --------------------------------
         audio_duration_ms: int | None = None
         try:
-            sample_rate = voice.config.sample_rate
-            sample_width = 2  # 16-bit PCM
-            num_frames = len(audio_bytes) // (sample_width * 1)  # mono
+            num_frames = len(audio_bytes) // (sample_width * channels)
             if sample_rate > 0 and num_frames > 0:
                 audio_duration_ms = int((num_frames / sample_rate) * 1000)
         except Exception:
