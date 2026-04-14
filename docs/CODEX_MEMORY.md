@@ -1,3 +1,28 @@
+## 2026-04-14 — feat(voice): add TTS request/response protocol surfaces
+
+- **Motivation**: second protocol-layer surface for the voice capability track. Mirrors the existing STT request/response protocol (`voice/stt_protocol.py`) to define the canonical contract shapes for text-to-speech interactions. This is protocol foundation only — no runtime synthesis, no backend selection, no adapter wiring.
+- **Scope (deliberately bounded)**:
+  - Add TTS request/response protocol definition (`src/voxera/voice/tts_protocol.py`).
+  - Add focused contract-pinning tests (`tests/test_voice_tts_protocol.py`).
+  - Update voice `__init__.py` exports.
+  - Do NOT build a synthesis backend, adapter, factory, or UI.
+- **New module — `src/voxera/voice/tts_protocol.py`**:
+  - `TTSRequest` frozen dataclass: `request_id`, `text`, `voice_id`, `language`, `speed`, `output_format`, `session_id`, `created_at_ms`, `schema_version`.
+  - `TTSResponse` frozen dataclass: `request_id`, `status`, `audio_path`, `audio_duration_ms`, `error`, `error_class`, `backend`, `started_at_ms`, `finished_at_ms`, `schema_version`, `inference_ms`.
+  - `build_tts_request(...)` — validates text (non-empty required), output_format (fail-closed to ValueError), speed (clamped to [0.1, 10.0]).
+  - `build_tts_response(...)` — normalizes status fail-closed to `"unavailable"`.
+  - `build_tts_unavailable_response(...)` — convenience builder requiring explicit `error_class`.
+  - `tts_request_as_dict(...)` / `tts_response_as_dict(...)` — plain dict serialization for JSON/logging/audit.
+  - Canonical status constants: `succeeded`, `failed`, `unavailable`, `unsupported`.
+  - Canonical output format constants: `wav`, `mp3`, `ogg`, `raw`.
+  - Canonical error class constants: `disabled`, `backend_missing`, `backend_error`, `timeout`, `unsupported_format`, `empty_text`.
+  - Schema version: `TTS_PROTOCOL_SCHEMA_VERSION = 1`.
+- **Key distinction from STT protocol**: response output is an artifact path (`audio_path`), not a transcript string. The protocol cleanly represents success, failure, unsupported, and unavailable states without implying a working backend exists.
+- **Test coverage**: `tests/test_voice_tts_protocol.py` — request construction (all valid formats, case normalization, unknown format rejection, empty text rejection, speed clamping, auto-generated ids, explicit ids/timestamps, frozen immutability), success response shape (audio_path stripping, empty audio_path → None, timing fields), audio_path semantics (present on success, None on failure/unavailable), failure response shape (error + error_class carriage, unsupported status), unavailable response convenience builder (required error_class, backend passthrough), nullable fields on failure/unavailable, fail-closed status normalization (unknown/empty/None status → unavailable), error_class passthrough policy (arbitrary strings accepted, canonical constants pass through), serialization helpers (request/response as_dict roundtrip, field-count guard, JSON serializability), schema version correctness.
+- **Docs updated**: `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` (TTS protocol schema shapes), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing), `docs/CODEX_MEMORY.md`.
+- **Invariants preserved**: existing voice foundation, protocol, and status behavior unchanged; no new runtime side effects; no network calls; no UI changes; protocol is definition-only (no synthesis execution); no backend assumptions; no fake success; response model supports truthful unavailable/unsupported/failed states.
+- **Next safe step**: add a TTS adapter boundary (mirroring `stt_adapter.py`), then wire a real TTS backend (e.g. Piper) behind the `TTSBackend` protocol.
+
 ## 2026-04-14 — feat(panel): improve accessibility and mobile responsiveness across core surfaces
 
 - **Motivation**: the panel home, jobs, job detail, and Vera surfaces were functional but lacked semantic markup for assistive technology, had no visible focus indicators for keyboard navigation, and did not adapt gracefully to tablet/narrow widths. This PR is the finishing accessibility/mobile hardening pass for the current panel UX workstream.
