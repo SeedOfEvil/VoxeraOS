@@ -360,7 +360,7 @@ Unknown `status` values normalize fail-closed to `"unavailable"`.
 
 ## TTS request/response protocol
 
-`voice/tts_protocol.py`. Protocol-layer contract for text-to-speech interactions. This defines data shapes only — it does not perform synthesis. No backend is wired yet.
+`voice/tts_protocol.py`. Protocol-layer contract for text-to-speech interactions. This defines data shapes only — it does not perform synthesis.
 
 ### `TTSRequest`
 
@@ -481,7 +481,30 @@ First real TTS backend. Uses `piper-tts` (ONNX-based Piper speech synthesis) for
 - Reports `inference_ms` and `audio_duration_ms` timing fields when synthesis succeeds.
 - Synthesizes to a real temp WAV file — never fakes audio output.
 
-No TTS backend factory or pipeline wiring is in place yet. The backend exists and is tested — factory/pipeline wiring is a subsequent PR.
+## TTS backend factory
+
+`voice/tts_backend_factory.py`. Runtime backend selection from `VoiceFoundationFlags`.
+
+### `build_tts_backend(flags) -> TTSBackend`
+
+Maps `VoiceFoundationFlags.voice_tts_backend` to the appropriate `TTSBackend` implementation. Returns `NullTTSBackend` when voice output is disabled, no backend is configured, or the backend identifier is unrecognized. Returns `PiperLocalBackend` when `voice_tts_backend` is `"piper_local"` (case-insensitive, whitespace-trimmed).
+
+Supported backend identifiers:
+
+| Identifier | Backend | Notes |
+|---|---|---|
+| `"piper_local"` | `PiperLocalBackend` | Local Piper via piper-tts |
+| (empty / None / unrecognized) | `NullTTSBackend` | Truthful unavailable |
+
+### `synthesize_text(text, flags, ..., backend=None) -> TTSResponse`
+
+`voice/output.py`. Recommended entry point for text-to-speech synthesis through the canonical TTS pipeline. Builds a `TTSRequest`, selects the backend via `build_tts_backend(flags)` (or uses a caller-supplied `backend`), and runs the request through `synthesize_tts_request()`. Always returns a truthful `TTSResponse`. Output is artifact-oriented (`audio_path`), not playback-oriented.
+
+Pass a pre-built `backend` to reuse an existing `TTSBackend` instance across calls — this avoids re-constructing the backend (and potentially re-loading heavy models like Piper) on every invocation.
+
+### `synthesize_text_async(text, flags, ..., backend=None) -> TTSResponse`
+
+`voice/output.py`. Async variant of `synthesize_text`. Runs the synchronous synthesis in a thread via `asyncio.to_thread()` so it does not block the event loop. Use from async contexts (Vera chat, FastAPI routes). Preserves all fail-soft semantics.
 
 ## STT backend adapter boundary
 
