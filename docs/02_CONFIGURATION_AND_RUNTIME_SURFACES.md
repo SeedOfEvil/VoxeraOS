@@ -247,4 +247,10 @@ Environment variables for Whisper backend configuration (loaded by `voice/whispe
 - `VOXERA_VOICE_STT_WHISPER_DEVICE` — compute device (default: `auto`).
 - `VOXERA_VOICE_STT_WHISPER_COMPUTE_TYPE` — quantization type (default: `int8`).
 
+Environment variables for Piper backend configuration (loaded by `voice/piper_backend.py`):
+- `VOXERA_VOICE_TTS_PIPER_MODEL` — Piper model name or path (default: `en_US-lessac-medium`).
+- `VOXERA_VOICE_TTS_PIPER_SPEAKER` — speaker id for multi-speaker models (optional; omitted when unset).
+
+The first real TTS backend is `PiperLocalBackend` (`voice/piper_backend.py`), which uses `piper-tts` for local speech synthesis. It supports `wav` output only — other formats are explicitly unsupported and raise `TTSBackendUnsupportedError`. The dependency is optional: install with `pip install voxera-os[piper]`. If the dependency is missing, the backend honestly reports `backend_missing`. Voice loading is lazy (first `synthesize()` call). No TTS backend factory or pipeline wiring is in place yet — the backend exists and is tested, and factory/pipeline wiring is a subsequent PR.
+
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.
