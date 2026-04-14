@@ -7,7 +7,7 @@ from .input import (
     transcribe_audio_file_async,
 )
 from .models import InputOrigin, normalize_input_origin
-from .output import voice_output_status
+from .output import synthesize_text, synthesize_text_async, voice_output_status
 from .piper_backend import PiperLocalBackend
 from .stt_adapter import (
     NullSTTBackend,
@@ -36,6 +36,7 @@ from .tts_adapter import (
     synthesize_tts_request,
     synthesize_tts_request_async,
 )
+from .tts_backend_factory import build_tts_backend
 from .tts_protocol import (
     TTSRequest,
     TTSResponse,
@@ -73,6 +74,7 @@ __all__ = [
     "build_stt_response",
     "build_stt_status",
     "build_stt_unavailable_response",
+    "build_tts_backend",
     "build_tts_request",
     "build_tts_response",
     "build_tts_status",
@@ -84,6 +86,8 @@ __all__ = [
     "stt_request_as_dict",
     "stt_response_as_dict",
     "stt_status_as_dict",
+    "synthesize_text",
+    "synthesize_text_async",
     "synthesize_tts_request",
     "synthesize_tts_request_async",
     "transcribe_audio_file",

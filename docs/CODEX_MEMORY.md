@@ -1,3 +1,25 @@
+## 2026-04-14 — feat(voice): wire TTS backend selection into output pipeline
+
+- **Motivation**: final TTS foundation layer — adds backend selection and canonical high-level synthesis entry points so the TTS stack can be called through a config-driven path. Mirrors the STT factory/pipeline pattern (`stt_backend_factory.py` + `input.py`).
+- **Changes**:
+  - Add `build_tts_backend(flags)` (`src/voxera/voice/tts_backend_factory.py`): maps `VoiceFoundationFlags.voice_tts_backend` to the appropriate `TTSBackend`. Returns `NullTTSBackend` when output disabled, unconfigured, or unrecognized. Returns `PiperLocalBackend` when `"piper_local"`.
+  - Add `synthesize_text(text, flags, ..., backend=None)` and `synthesize_text_async(...)` (`src/voxera/voice/output.py`): recommended entry points for text-to-speech synthesis. Build a `TTSRequest`, select backend via factory (or use caller-supplied backend), run through `synthesize_tts_request()`. Always return truthful `TTSResponse`. Async variant runs in thread via `asyncio.to_thread()`.
+  - Update `src/voxera/voice/__init__.py` exports: add `build_tts_backend`, `synthesize_text`, `synthesize_text_async`.
+  - Add focused pipeline tests (`tests/test_voice_tts_pipeline.py`, 47 tests).
+- **New module — `src/voxera/voice/tts_backend_factory.py`**:
+  - `TTS_BACKEND_PIPER_LOCAL = "piper_local"`: canonical backend identifier constant.
+  - `build_tts_backend(flags) -> TTSBackend`: explicit factory. Output disabled → `NullTTSBackend`. No backend configured → `NullTTSBackend`. `"piper_local"` → `PiperLocalBackend`. Unrecognized → `NullTTSBackend(reason=...)`. Case-insensitive, whitespace-trimmed.
+- **Updated module — `src/voxera/voice/output.py`**:
+  - `synthesize_text(text, flags, *, voice_id, language, speed, output_format, session_id, backend)`: sync entry point. Builds `TTSRequest` via `build_tts_request()`, selects backend via `build_tts_backend(flags)` or uses caller-supplied `backend`, runs through `synthesize_tts_request()`. Returns truthful `TTSResponse`. Output is artifact-oriented (`audio_path`), not playback-oriented.
+  - `synthesize_text_async(...)`: async variant via `asyncio.to_thread()`. Preserves all fail-soft semantics.
+  - `voice_output_status(flags)`: preserved unchanged.
+- **Tests — `tests/test_voice_tts_pipeline.py`** (47 tests): factory null cases (6), factory Piper selection (3), factory error messages (3), factory constant (1), pipeline unconfigured paths (4), pipeline success paths (2), pipeline failure paths (2), canonical path threading (4), backend name propagation (2), export surface (3), config-driven integration (4), response uniqueness (1), pre-built backend reuse (3), async entry point (6), no-fake-synthesis invariants (2).
+- **Docs updated**: `docs/CODEX_MEMORY.md`, `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`.
+- **Files touched**: `src/voxera/voice/tts_backend_factory.py` (new), `src/voxera/voice/output.py` (updated), `src/voxera/voice/__init__.py` (updated exports), `tests/test_voice_tts_pipeline.py` (new, 47 tests), `docs/CODEX_MEMORY.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md`.
+- **Invariants preserved**: existing voice foundation, protocol, adapter, and backend behavior unchanged; no new runtime side effects; no network calls; no UI changes; no playback/output UI; no browser audio; no voice lane/session design; factory is explicit and boring; output remains artifact-oriented; pipeline is truthful and fail-soft.
+- **What this does NOT do**: no playback/output UI, no browser audio support, no voice lane/session design, no speculative abstraction. This is bounded factory/pipeline wiring only.
+- **Next safe step**: higher-level voice session or playback integration, live voice lane work, or voice output UI in subsequent PRs.
+
 ## 2026-04-14 — feat(voice): add Piper local TTS backend
 
 - **Motivation**: first real TTS backend implementation behind the `TTSBackend` adapter boundary established in the previous PR. Mirrors the `WhisperLocalBackend` pattern for the STT side — one bounded backend, optional dependency, lazy loading, truthful fail-soft behavior.
