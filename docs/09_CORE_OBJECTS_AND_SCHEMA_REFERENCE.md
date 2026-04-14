@@ -468,7 +468,20 @@ Async wrapper around `synthesize_tts_request`. Runs the synchronous backend path
 | No `audio_path` after synthesis | `failed` | `backend_error` |
 | Valid `audio_path` | `succeeded` | (none) |
 
-No real synthesis backend is wired yet. The adapter boundary exists and is tested — real backends are a subsequent PR.
+### `PiperLocalBackend`
+
+First real TTS backend. Uses `piper-tts` (ONNX-based Piper speech synthesis) for local text-to-speech. See `voice/piper_backend.py`.
+
+- Supports `wav` output only. Other formats raise `TTSBackendUnsupportedError`.
+- Lazy voice loading on first `synthesize()` call.
+- Optional dependency: install with `pip install voxera-os[piper]`.
+- Configuration via env vars: `VOXERA_VOICE_TTS_PIPER_MODEL` (default: `en_US-lessac-medium`), `VOXERA_VOICE_TTS_PIPER_SPEAKER` (optional, for multi-speaker models).
+- Constructor accepts `model` and `speaker` keyword arguments; explicit args override env vars.
+- Missing `piper-tts` dependency returns truthful `backend_missing` — never crashes.
+- Reports `inference_ms` and `audio_duration_ms` timing fields when synthesis succeeds.
+- Synthesizes to a real temp WAV file — never fakes audio output.
+
+No TTS backend factory or pipeline wiring is in place yet. The backend exists and is tested — factory/pipeline wiring is a subsequent PR.
 
 ## STT backend adapter boundary
 

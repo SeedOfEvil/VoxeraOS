@@ -8,6 +8,7 @@ from .input import (
 )
 from .models import InputOrigin, normalize_input_origin
 from .output import voice_output_status
+from .piper_backend import PiperLocalBackend
 from .stt_adapter import (
     NullSTTBackend,
     STTAdapterResult,
@@ -51,6 +52,7 @@ __all__ = [
     "InputOrigin",
     "NullSTTBackend",
     "NullTTSBackend",
+    "PiperLocalBackend",
     "STTAdapterResult",
     "STTBackend",
     "STTBackendUnsupportedError",

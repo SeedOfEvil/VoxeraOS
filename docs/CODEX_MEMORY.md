@@ -1,3 +1,26 @@
+## 2026-04-14 — feat(voice): add Piper local TTS backend
+
+- **Motivation**: first real TTS backend implementation behind the `TTSBackend` adapter boundary established in the previous PR. Mirrors the `WhisperLocalBackend` pattern for the STT side — one bounded backend, optional dependency, lazy loading, truthful fail-soft behavior.
+- **Scope (deliberately bounded)**:
+  - Add `PiperLocalBackend` (`src/voxera/voice/piper_backend.py`): local TTS via `piper-tts`, supports WAV output only, lazy voice loading, environment-driven configuration.
+  - Add `piper-tts` as optional dependency: `pip install voxera-os[piper]`.
+  - Update voice `__init__.py` exports.
+  - Add focused backend tests (`tests/test_voice_piper_backend.py`, 44 tests).
+  - Do NOT add TTS backend factory, pipeline wiring, playback/output UI, or voice lane work.
+- **New module — `src/voxera/voice/piper_backend.py`**:
+  - `PiperLocalBackend`: satisfies `TTSBackend` protocol. `backend_name="piper_local"`. Lazy voice loading on first `synthesize()`. Supports `wav` only. Other formats raise `TTSBackendUnsupportedError`. Missing `piper-tts` returns truthful `backend_missing`. Reports `inference_ms` and `audio_duration_ms` on success.
+  - Configuration via env vars: `VOXERA_VOICE_TTS_PIPER_MODEL` (default: `en_US-lessac-medium`), `VOXERA_VOICE_TTS_PIPER_SPEAKER` (optional, for multi-speaker models).
+  - Constructor accepts `model` and `speaker` keyword arguments; explicit args override env vars.
+  - Synthesis writes to a real temp WAV file — never fakes audio output. Empty synthesis data returns a truthful error.
+  - Speaker selection is optional and bounded: numeric IDs are coerced to int, non-numeric passed as string, omitted when unconfigured.
+- **Tests added — `tests/test_voice_piper_backend.py`** (44 tests): protocol conformance, backend_name stability, lazy loading, supports_voice behavior, missing dependency handling (backend_missing, not crash), unsupported format handling (mp3/ogg raise TTSBackendUnsupportedError), voice load failure, successful synthesis with mocked voice (audio_path, valid WAV, timing, duration, entry point pass-through), no fake success (empty audio data, failed synthesis), synthesis failure (exception handling, no exception leakage), speaker handling (default none, explicit, env, override, pass-through to voice, no-speaker omits kwarg, non-numeric string), configuration (defaults, explicit, env, override), multi-chunk audio assembly, timing fields, async entry point (success, missing dep, exception fail-soft), export surface.
+- **Dependency wiring — `pyproject.toml`**: added `piper = ["piper-tts>=1.2,<2.0"]` optional dependency group.
+- **Docs updated**: `docs/CODEX_MEMORY.md`, `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` (PiperLocalBackend schema), `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md` (Piper config env vars), `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` (test listing).
+- **Files touched**: `src/voxera/voice/piper_backend.py` (new), `src/voxera/voice/__init__.py` (updated exports), `pyproject.toml` (piper optional dep), `tests/test_voice_piper_backend.py` (new, 44 tests), `docs/CODEX_MEMORY.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md`.
+- **What this does NOT do**: no TTS backend factory, no pipeline wiring (`synthesize_text(...)` entry point), no playback/output UI, no voice lane work. This is one bounded backend PR.
+- **Invariants preserved**: existing voice protocol/adapter/status tests unchanged; fail-soft semantics preserved; truthful behavior maintained (no fake audio, no fake duration, no fake success); schema version stays at 1; optional dependency remains optional; no backend factory wired.
+- **Next safe step**: add a TTS backend factory mirroring `stt_backend_factory.py`, then wire `PiperLocalBackend` into the voice output pipeline via flags/config.
+
 ## 2026-04-14 — feat(voice): add TTS adapter boundary and fail-soft synthesis entry point
 
 - **Motivation**: next bounded step in the TTS voice track — bridge the TTS protocol shapes to a runtime adapter boundary. Mirrors the existing STT adapter design (`voice/stt_adapter.py`) to define the smallest credible adapter interface and a fail-soft synthesis entry point, without overreaching into real backends or pipeline wiring.

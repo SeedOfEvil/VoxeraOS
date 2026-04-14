@@ -1,0 +1,212 @@
+"""Piper local TTS backend.
+
+Provides a local text-to-speech backend backed by ``piper-tts``
+(ONNX-based Piper speech synthesis).  This is the first real
+``TTSBackend`` implementation — it synthesizes text to a WAV file
+on disk.
+
+Configuration is environment-driven (backend-specific knobs, intentionally
+separate from ``VoiceFoundationFlags``; mirrors the Whisper backend pattern):
+
+- ``VOXERA_VOICE_TTS_PIPER_MODEL`` — model name or path (default: ``en_US-lessac-medium``)
+- ``VOXERA_VOICE_TTS_PIPER_SPEAKER`` — speaker id for multi-speaker models (default: ``None``)
+
+The ``piper-tts`` dependency is optional.  If not installed, the backend
+reports a truthful ``backend_missing`` error — it never crashes or
+pretends synthesis is available.
+
+Model loading is lazy: the Piper voice is loaded on the first
+``synthesize()`` call, not at construction time.
+"""
+
+from __future__ import annotations
+
+import os
+import tempfile
+import time
+import wave
+from typing import Any
+
+from .tts_adapter import TTSAdapterResult, TTSBackendUnsupportedError
+from .tts_protocol import (
+    TTS_ERROR_BACKEND_ERROR,
+    TTS_ERROR_BACKEND_MISSING,
+    TTS_FORMAT_WAV,
+    TTSRequest,
+)
+
+# -- optional dependency guard ------------------------------------------------
+
+_PIPER_AVAILABLE: bool
+try:
+    import piper  # noqa: F401
+
+    _PIPER_AVAILABLE = True
+except ModuleNotFoundError:
+    _PIPER_AVAILABLE = False
+
+# -- environment defaults -----------------------------------------------------
+
+_DEFAULT_MODEL = "en_US-lessac-medium"
+
+
+def _env_str(name: str, default: str) -> str:
+    return str(os.environ.get(name) or "").strip() or default
+
+
+def _env_str_optional(name: str) -> str | None:
+    val = str(os.environ.get(name) or "").strip()
+    return val if val else None
+
+
+# -- backend ------------------------------------------------------------------
+
+
+class PiperLocalBackend:
+    """Local Piper TTS backend via ``piper-tts``.
+
+    Satisfies the ``TTSBackend`` structural protocol.
+
+    Supports WAV output only.  Other formats raise
+    ``TTSBackendUnsupportedError``.
+
+    Model loading is lazy — the voice is not loaded until the first
+    ``synthesize()`` call.  This avoids heavy initialization at
+    construction time and allows the backend to be instantiated cheaply
+    even if it is never used.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        speaker: str | None = None,
+    ) -> None:
+        self._model_name = model or _env_str("VOXERA_VOICE_TTS_PIPER_MODEL", _DEFAULT_MODEL)
+        # Speaker: explicit arg > env var > None (use model default)
+        self._speaker: str | None = (
+            speaker if speaker is not None else _env_str_optional("VOXERA_VOICE_TTS_PIPER_SPEAKER")
+        )
+        self._voice: Any = None
+
+    # -- TTSBackend protocol ---------------------------------------------------
+
+    @property
+    def backend_name(self) -> str:
+        return "piper_local"
+
+    def supports_voice(self, voice_id: str) -> bool:
+        """Piper supports any voice_id — model selection is via config, not voice_id."""
+        return True
+
+    def synthesize(self, request: TTSRequest) -> TTSAdapterResult:
+        """Synthesize text to a WAV file using local Piper.
+
+        Returns a ``TTSAdapterResult``.  Raises
+        ``TTSBackendUnsupportedError`` for non-WAV output formats.
+        """
+        # -- dependency check --------------------------------------------------
+        if not _PIPER_AVAILABLE:
+            return TTSAdapterResult(
+                audio_path=None,
+                error=("piper-tts is not installed. Install with: pip install voxera-os[piper]"),
+                error_class=TTS_ERROR_BACKEND_MISSING,
+            )
+
+        # -- format check ------------------------------------------------------
+        if request.output_format != TTS_FORMAT_WAV:
+            raise TTSBackendUnsupportedError(
+                f"PiperLocalBackend supports 'wav' only, got {request.output_format!r}"
+            )
+
+        # -- lazy voice load ---------------------------------------------------
+        try:
+            voice = self._ensure_voice()
+        except Exception as exc:
+            return TTSAdapterResult(
+                audio_path=None,
+                error=f"Piper voice failed to load: {exc}",
+                error_class=TTS_ERROR_BACKEND_ERROR,
+            )
+
+        # -- synthesize --------------------------------------------------------
+        inference_start_ms = int(time.time() * 1000)
+        try:
+            # Build speaker_id kwarg if configured
+            synth_kwargs: dict[str, Any] = {}
+            if self._speaker is not None:
+                try:
+                    synth_kwargs["speaker_id"] = int(self._speaker)
+                except ValueError:
+                    synth_kwargs["speaker_id"] = self._speaker
+
+            # Synthesize to raw audio bytes
+            audio_bytes = b""
+            for audio_chunk in voice.synthesize_stream_raw(request.text, **synth_kwargs):
+                audio_bytes += audio_chunk
+
+            if not audio_bytes:
+                return TTSAdapterResult(
+                    audio_path=None,
+                    error="Piper synthesis produced no audio data",
+                    error_class=TTS_ERROR_BACKEND_ERROR,
+                )
+
+            # Write to a temp WAV file
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".wav", prefix="voxera_tts_piper_")
+            try:
+                sample_rate = voice.config.sample_rate
+                sample_width = 2  # 16-bit PCM
+                channels = 1  # mono
+
+                with wave.open(tmp_path, "wb") as wf:
+                    wf.setnchannels(channels)
+                    wf.setsampwidth(sample_width)
+                    wf.setframerate(sample_rate)
+                    wf.writeframes(audio_bytes)
+            except Exception:
+                os.close(tmp_fd)
+                raise
+            else:
+                os.close(tmp_fd)
+
+        except Exception as exc:
+            return TTSAdapterResult(
+                audio_path=None,
+                error=f"Piper synthesis failed: {exc}",
+                error_class=TTS_ERROR_BACKEND_ERROR,
+            )
+
+        inference_end_ms = int(time.time() * 1000)
+
+        # -- compute audio duration if possible --------------------------------
+        audio_duration_ms: int | None = None
+        try:
+            sample_rate = voice.config.sample_rate
+            sample_width = 2  # 16-bit PCM
+            num_frames = len(audio_bytes) // (sample_width * 1)  # mono
+            if sample_rate > 0 and num_frames > 0:
+                audio_duration_ms = int((num_frames / sample_rate) * 1000)
+        except Exception:
+            pass  # duration is best-effort; leave as None
+
+        return TTSAdapterResult(
+            audio_path=tmp_path,
+            audio_duration_ms=audio_duration_ms,
+            inference_ms=inference_end_ms - inference_start_ms,
+        )
+
+    # -- internals -------------------------------------------------------------
+
+    def _ensure_voice(self) -> Any:
+        """Lazy-load the Piper voice on first use."""
+        if self._voice is None:
+            from piper import PiperVoice
+
+            self._voice = PiperVoice.load(self._model_name)
+        return self._voice
+
+    @property
+    def model_loaded(self) -> bool:
+        """Whether the voice has been loaded (for testing/observability)."""
+        return self._voice is not None
