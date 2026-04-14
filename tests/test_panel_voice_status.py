@@ -102,6 +102,14 @@ class TestVoiceStatusPage:
         assert res.status_code == 200
         assert "config state only" in res.text.lower()
 
+    def test_voice_status_link_in_home_nav(self, _panel_env: None) -> None:
+        """Voice Status must appear in the panel home navigation."""
+        client = TestClient(panel_module.app)
+        res = client.get("/", headers=_operator_headers())
+        assert res.status_code == 200
+        assert "/voice/status" in res.text
+        assert "Voice Status" in res.text
+
 
 class TestVoiceStatusJSON:
     def test_json_endpoint_returns_ok(self, _panel_env: None) -> None:
