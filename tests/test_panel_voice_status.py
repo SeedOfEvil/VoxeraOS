@@ -187,6 +187,45 @@ class TestVoiceStatusJSON:
         assert isinstance(reserialized, str)
 
 
+class TestVoiceStatusErrorPath:
+    def test_html_renders_error_when_flags_fail(
+        self, _panel_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When load_voice_foundation_flags raises, the page renders the error alert."""
+        import voxera.panel.routes_voice as rv
+
+        monkeypatch.setattr(
+            rv,
+            "load_voice_foundation_flags",
+            lambda: (_ for _ in ()).throw(RuntimeError("bad config")),
+        )
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        assert "Failed to load voice status" in res.text
+        assert "RuntimeError" in res.text
+        # Should not show any status sections
+        assert "badge-ok" not in res.text
+
+    def test_json_returns_500_when_flags_fail(
+        self, _panel_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When load_voice_foundation_flags raises, the JSON endpoint returns 500."""
+        import voxera.panel.routes_voice as rv
+
+        monkeypatch.setattr(
+            rv,
+            "load_voice_foundation_flags",
+            lambda: (_ for _ in ()).throw(RuntimeError("bad config")),
+        )
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status.json", headers=_operator_headers())
+        assert res.status_code == 500
+        data = res.json()
+        assert data["ok"] is False
+        assert "RuntimeError" in data["error"]
+
+
 class TestVoiceStatusAuth:
     def test_voice_status_page_requires_auth(self, _panel_env: None) -> None:
         client = TestClient(panel_module.app, raise_server_exceptions=False)
