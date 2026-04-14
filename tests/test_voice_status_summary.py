@@ -216,6 +216,32 @@ class TestTruthfulReadiness:
         assert summary["stt"]["reason"] is None
         assert summary["tts"]["reason"] is None
 
+    def test_available_can_coexist_with_missing_dependency(self) -> None:
+        """Config status 'available' is independent of dependency presence.
+
+        An operator may see status=available (config is correct) alongside
+        dependency=missing (the Python package isn't installed). This is
+        truthful: 'available' is a configuration fact, not a runtime promise.
+        """
+        summary = build_voice_status_summary(
+            _flags(
+                foundation=True,
+                input=True,
+                output=True,
+                stt_backend="whisper_local",
+                tts_backend="piper_local",
+            )
+        )
+        # Status reflects config truth
+        assert summary["stt"]["available"] is True
+        assert summary["tts"]["available"] is True
+        # Dependency is checked independently — may be True or False
+        assert summary["stt_dependency"]["checked"] is True
+        assert summary["tts_dependency"]["checked"] is True
+        # These are separate concerns, both reported truthfully
+        assert isinstance(summary["stt_dependency"]["available"], bool)
+        assert isinstance(summary["tts_dependency"]["available"], bool)
+
     def test_reason_strings_present_when_unavailable(self) -> None:
         # foundation disabled
         s1 = build_voice_status_summary(_flags())

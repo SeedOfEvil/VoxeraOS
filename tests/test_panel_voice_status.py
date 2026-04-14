@@ -88,13 +88,19 @@ class TestVoiceStatusPage:
         assert "piper_local" in res.text
 
     def test_voice_status_page_no_fake_ready(self, _panel_env: None) -> None:
-        """When voice is disabled, page must not show 'available' as a status badge."""
+        """When voice is disabled, no green 'available' badge should appear."""
         client = TestClient(panel_module.app)
         res = client.get("/voice/status", headers=_operator_headers())
         assert res.status_code == 200
-        body = res.text
-        # badge-ok implies an 'available' badge; should not appear when disabled
-        assert "badge-ok" not in body or "disabled" in body
+        # badge-ok is the green status badge; must not appear when fully disabled
+        assert "badge-ok" not in res.text
+
+    def test_voice_status_page_shows_config_not_runtime_note(self, _panel_env: None) -> None:
+        """Page must clarify that status reflects config, not runtime readiness."""
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        assert "config state only" in res.text.lower()
 
 
 class TestVoiceStatusJSON:
