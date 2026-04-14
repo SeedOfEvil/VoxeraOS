@@ -8,89 +8,88 @@
 </head>
 <body>
 <div class="container">
-  <header class="page-header">
-    <div>
-      <h1 class="title mono">{{payload.job_id}}</h1>
-      <p class="subtitle">Job detail — <span class="mono text-sm">{{payload.bucket}}</span></p>
+
+  {# ── 1. Status Banner ──────────────────────────────────────────────────── #}
+  <header class="jd-status-banner
+    {% if payload.bucket == 'failed' %}jd-status-failed
+    {% elif payload.bucket == 'done' %}jd-status-done
+    {% elif payload.bucket == 'approvals' or (payload.bucket == 'pending' and payload.has_approval) %}jd-status-approval
+    {% elif payload.bucket == 'pending' %}jd-status-pending
+    {% elif payload.bucket == 'canceled' %}jd-status-canceled
+    {% else %}jd-status-running{% endif %}">
+    <div class="jd-status-top">
+      <div>
+        <h1 class="title mono">{{payload.job_id}}</h1>
+        <p class="subtitle">Job detail — <span class="mono text-sm">{{payload.bucket}}</span></p>
+      </div>
+      <div class="jd-status-badges">
+        <span class="badge jd-badge-lg
+          {% if payload.bucket == 'failed' %}badge-failed
+          {% elif payload.bucket == 'done' %}badge-done
+          {% elif payload.bucket == 'approvals' %}badge-approval
+          {% elif payload.bucket == 'pending' %}badge-pending
+          {% elif payload.bucket == 'inbox' %}badge-inbox
+          {% elif payload.bucket == 'canceled' %}badge-canceled
+          {% else %}badge-running{% endif %}">
+          {{payload.bucket}}
+        </span>
+        {% if payload.paused %}<span class="badge jd-badge-lg badge-paused">paused</span>{% endif %}
+        <a class="btn btn-sm" href="/jobs">← All Jobs</a>
+      </div>
     </div>
-    <div class="action-group">
-      <span class="badge
-        {% if payload.bucket == 'failed' %}badge-failed
-        {% elif payload.bucket == 'done' %}badge-done
-        {% elif payload.bucket == 'approvals' %}badge-approval
-        {% elif payload.bucket == 'pending' %}badge-pending
-        {% elif payload.bucket == 'inbox' %}badge-inbox
-        {% elif payload.bucket == 'canceled' %}badge-canceled
-        {% else %}badge-running{% endif %}">
-        {{payload.bucket}}
-      </span>
-      {% if payload.paused %}<span class="badge badge-paused">paused</span>{% endif %}
-      <a class="btn" href="/jobs">← All Jobs</a>
+    <div class="jd-status-headline">
+      <span class="jd-headline-label">{{payload.operator_summary.label}}</span>
+      <span class="jd-headline-text">{{payload.operator_summary.headline}}</span>
     </div>
   </header>
 
-  <div class="section-label">Operator Summary</div>
-  <section class="card mb
+  {# ── 2. Operator Summary ───────────────────────────────────────────────── #}
+  <section class="card jd-summary-card mb
     {% if payload.operator_summary.severity == 'success' %}alert-success
     {% elif payload.operator_summary.severity == 'warn' %}alert-warn
     {% elif payload.operator_summary.severity == 'danger' %}alert-danger
     {% else %}alert-info{% endif %}">
-    <h2 style="margin-bottom:var(--space-2);">{{payload.operator_summary.label}}</h2>
-    <p style="margin:0 0 var(--space-2);"><b>{{payload.operator_summary.headline}}</b></p>
-    {% if payload.operator_summary.reason %}
-      <p style="margin:0 0 var(--space-2);"><span class="muted">Reason:</span> {{payload.operator_summary.reason}}</p>
-    {% endif %}
-    <p style="margin:0;"><span class="muted">Next action:</span> {{payload.operator_summary.next_action}}</p>
-    <p style="margin:var(--space-2) 0 0;" class="muted text-sm">Next-action source: {{payload.operator_summary.next_action_source}}</p>
+    <div class="jd-summary-body">
+      <h2 class="jd-summary-label">{{payload.operator_summary.label}}</h2>
+      <p class="jd-summary-headline"><b>{{payload.operator_summary.headline}}</b></p>
+      {% if payload.operator_summary.reason %}
+        <p class="jd-summary-reason"><span class="muted">Reason:</span> {{payload.operator_summary.reason}}</p>
+      {% endif %}
+      <p class="jd-summary-next"><span class="muted">Next action:</span> {{payload.operator_summary.next_action}}</p>
+      <p class="muted text-sm jd-summary-source">Next-action source: {{payload.operator_summary.next_action_source}}</p>
+    </div>
   </section>
 
-  {% if payload.vera_context %}
-  <div class="section-label">Vera Activity</div>
-  <section class="card mb" data-testid="vera-activity-strip">
-    <p class="muted text-sm" style="margin-top:0;">
-      Read-only shared Vera session context. Supplemental only — canonical queue/artifact truth remains primary.
-    </p>
-    <dl class="detail-grid" style="margin-bottom:0;">
-      {% if payload.vera_context.active_topic %}
-        <dt>Active topic</dt><dd>{{payload.vera_context.active_topic}}</dd>
-      {% endif %}
-      {% if payload.vera_context.active_draft_ref %}
-        <dt>Active draft</dt><dd class="mono text-sm">{{payload.vera_context.active_draft_ref}}</dd>
-      {% endif %}
-      {% if payload.vera_context.last_saved_file_ref %}
-        <dt>Last saved file</dt><dd class="mono text-sm">{{payload.vera_context.last_saved_file_ref}}</dd>
-      {% endif %}
-      {% if payload.vera_context.last_submitted_job_ref %}
-        <dt>Last submitted job</dt><dd class="mono text-sm">{{payload.vera_context.last_submitted_job_ref}}</dd>
-      {% endif %}
-      {% if payload.vera_context.last_completed_job_ref %}
-        <dt>Last completed job</dt><dd class="mono text-sm">{{payload.vera_context.last_completed_job_ref}}</dd>
-      {% endif %}
-      <dt>Context freshness</dt>
-      <dd>
-        {% if payload.vera_context.is_stale is none %}
-          <span class="muted">unknown</span>
-        {% elif payload.vera_context.is_stale %}
-          <span class="badge badge-pending">stale</span>
-        {% else %}
-          <span class="badge badge-done">fresh</span>
-        {% endif %}
-      </dd>
+  {# ── 3. Approval Required (promoted to top for fast operator action) ──── #}
+  {% if payload.has_approval %}
+  <section class="card jd-approval-card mb">
+    <h2 class="jd-approval-heading">Approval Details</h2>
+    {% set approval_target = payload.approval.target if payload.approval.target is defined and payload.approval.target else {} %}
+    {% set approval_scope = payload.approval.scope if payload.approval.scope is defined and payload.approval.scope else {} %}
+    <dl class="detail-grid" style="margin-bottom:var(--space-3);">
+      <dt>Policy reason</dt><dd>{{payload.approval.policy_reason or payload.approval.reason or '-'}}</dd>
+      <dt>Target</dt><dd>{{approval_target.type or '-'}}: {{approval_target.value or '-'}}</dd>
+      <dt>Scope</dt><dd>fs={{approval_scope.fs_scope or '-'}}, net={{approval_scope.needs_network if approval_scope.needs_network is defined else '-'}}</dd>
     </dl>
+    <div class="jd-action-bar">
+      <form method="post" action="/queue/approvals/{{payload.job_id}}/approve"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-approve jd-action-btn" type="submit">Approve</button></form>
+      <form method="post" action="/queue/approvals/{{payload.job_id}}/approve-always"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn jd-action-btn" type="submit">Approve Always</button></form>
+      <form method="post" action="/queue/approvals/{{payload.job_id}}/deny"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny jd-action-btn" type="submit">Deny</button></form>
+    </div>
   </section>
   {% endif %}
 
-  {% if payload.policy_rationale %}
-  <div class="section-label">Policy Rationale</div>
-  <section class="card mb">
-    <dl class="detail-grid" style="margin-bottom:0;">
-      {% for item in payload.policy_rationale %}
-        <dt>{{item.label}}</dt><dd>{{item.value}}</dd>
-      {% endfor %}
-    </dl>
+  {# ── 4. Actions Bar ─────────────────────────────────────────────────────── #}
+  <section class="jd-actions-section mb">
+    <div class="jd-action-bar">
+      {% if payload.can_retry %}<form method="post" action="/queue/jobs/{{payload.job_id}}/retry"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-primary jd-action-btn" type="submit">Retry Job</button></form>{% endif %}
+      {% if payload.can_cancel %}<form method="post" action="/queue/jobs/{{payload.job_id}}/cancel"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny jd-action-btn" type="submit">Cancel Job</button></form>{% endif %}
+      <a href="/jobs/{{payload.job_id}}/bundle" class="btn jd-action-btn">Download Incident Bundle (.zip)</a>
+      {% if payload.can_delete %}<form method="post" action="/queue/jobs/{{payload.job_id}}/delete" onsubmit="return confirm('Permanently delete job {{payload.job_id}}?');"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="confirm" value="{{payload.job_id}}" /><button class="btn btn-deny jd-action-btn" type="submit">Delete Job</button></form>{% endif %}
+    </div>
   </section>
-  {% endif %}
 
+  {# ── 5. Core Evidence ──────────────────────────────────────────────────── #}
   {% if payload.evidence_summary %}
   <div class="section-label">Evidence Summary</div>
   <section class="card mb">
@@ -102,7 +101,13 @@
           {% for item in payload.evidence_summary %}
           <tr>
             <td class="mono text-sm">{{item.label}} <span class="muted">({{item.path}})</span></td>
-            <td>{% if item.present %}present{% else %}not present{% endif %}</td>
+            <td>
+              {% if item.present %}
+                <span class="badge badge-ok">present</span>
+              {% else %}
+                <span class="badge badge-fail">not present</span>
+              {% endif %}
+            </td>
             <td class="muted text-sm">{{item.proof}}</td>
           </tr>
           {% endfor %}
@@ -112,6 +117,72 @@
   </section>
   {% endif %}
 
+  <div class="section-label">Artifact Inventory</div>
+  <section class="card mb">
+    {% if payload.execution.minimum_artifacts %}
+      <div class="alert {% if payload.execution.minimum_artifacts.status == 'present' %}alert-success{% else %}alert-warn{% endif %}" style="margin-bottom:var(--space-3);">
+        <b>Minimum contract:</b> {{payload.execution.minimum_artifacts.status or 'unknown'}}.
+        {% if payload.execution.minimum_artifacts.required %}
+          Required: <span class="mono">{{payload.execution.minimum_artifacts.required|join(', ')}}</span>.
+        {% endif %}
+        {% if payload.execution.minimum_artifacts.missing %}
+          Missing required: <span class="mono">{{payload.execution.minimum_artifacts.missing|join(', ')}}</span>.
+        {% endif %}
+      </div>
+    {% endif %}
+    {% if payload.execution.expected_artifacts %}
+      <p class="muted text-sm" style="margin-top:0;">Expected artifacts (job-type dependent): <span class="mono">{{payload.execution.expected_artifacts|join(', ')}}</span></p>
+    {% endif %}
+    {% if payload.artifact_anomalies %}
+      <div class="alert alert-info">Soft anomaly: {{payload.artifact_anomalies|join('; ')}}</div>
+    {% endif %}
+    {% if payload.artifact_inventory %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Artifact</th><th>Contract</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>
+          {% for item in payload.artifact_inventory %}
+          <tr>
+            <td class="mono text-sm">{{item.label}}</td>
+            <td>{{item.contract_level}}</td>
+            <td>
+              {% if item.present %}present
+              {% elif item.expected %}missing required
+              {% else %}not present (optional){% endif %}
+            </td>
+            <td class="muted text-sm">{{item.notes}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">No artifact inventory available.</div>
+    {% endif %}
+  </section>
+
+  {# ── 6. Output ─────────────────────────────────────────────────────────── #}
+  <div class="section-label">Output</div>
+  <section class="grid grid-2 mb">
+    <article class="card">
+      <h2>Standard Output <span class="muted text-xs">(up to 64 KB)</span></h2>
+      {% if payload.stdout %}
+        <pre>{{payload.stdout}}</pre>
+      {% else %}
+        <div class="empty-state">No output captured.</div>
+      {% endif %}
+    </article>
+    <article class="card">
+      <h2>Standard Error <span class="muted text-xs">(up to 64 KB)</span></h2>
+      {% if payload.stderr %}
+        <pre class="jd-stderr-pre">{{payload.stderr}}</pre>
+      {% else %}
+        <div class="empty-state">No errors captured.</div>
+      {% endif %}
+    </article>
+  </section>
+
+  {# ── 7. Execution Detail ───────────────────────────────────────────────── #}
   <div class="section-label">Lifecycle &amp; Execution State</div>
   <section class="card mb">
     <dl class="detail-grid" style="margin-bottom:var(--space-2);">
@@ -129,64 +200,6 @@
     </dl>
   </section>
 
-  {% if payload.why_stopped %}
-  <div class="section-label">Why Stopped</div>
-  <section class="card mb">
-    <dl class="detail-grid" style="margin-bottom:0;">
-      {% for item in payload.why_stopped %}
-        <dt>{{item.label}}</dt><dd>{{item.value}}</dd>
-      {% endfor %}
-    </dl>
-  </section>
-  {% endif %}
-
-
-  {% if payload.lineage %}
-  <div class="section-label">Lineage</div>
-  <section class="card mb">
-    <dl class="detail-grid" style="margin-bottom:var(--space-2);">
-      <dt>Parent job</dt><dd>{{payload.lineage.parent_job_id or '-'}}</dd>
-      <dt>Root job</dt><dd>{{payload.lineage.root_job_id or '-'}}</dd>
-      <dt>Orchestration depth</dt><dd>{{payload.lineage.orchestration_depth if payload.lineage.orchestration_depth is not none else '-'}}</dd>
-      <dt>Sequence index</dt><dd>{{payload.lineage.sequence_index if payload.lineage.sequence_index is not none else '-'}}</dd>
-      <dt>Lineage role</dt><dd>{{payload.lineage.lineage_role or '-'}}</dd>
-    </dl>
-  </section>
-  {% endif %}
-
-  {% if payload.child_refs %}
-  <div class="section-label">Child Summary</div>
-  <section class="card mb">
-    <dl class="detail-grid" style="margin-bottom:var(--space-2);">
-      <dt>Total</dt><dd>{{payload.child_summary.total if payload.child_summary else 0}}</dd>
-      <dt>Done / succeeded</dt><dd>{{payload.child_summary.done if payload.child_summary else 0}}</dd>
-      <dt>Pending</dt><dd>{{payload.child_summary.pending if payload.child_summary else 0}}</dd>
-      <dt>Awaiting approval</dt><dd>{{payload.child_summary.awaiting_approval if payload.child_summary else 0}}</dd>
-      <dt>Failed</dt><dd>{{payload.child_summary.failed if payload.child_summary else 0}}</dd>
-      <dt>Canceled</dt><dd>{{payload.child_summary.canceled if payload.child_summary else 0}}</dd>
-      <dt>Unknown / missing</dt><dd>{{payload.child_summary.unknown if payload.child_summary else 0}}</dd>
-    </dl>
-  </section>
-
-  <div class="section-label">Child Jobs</div>
-  <section class="card mb">
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Child job id</th><th>Root job</th><th>Depth</th><th>Sequence</th></tr></thead>
-        <tbody>
-          {% for child in payload.child_refs %}
-          <tr>
-            <td class="mono text-sm">{{child.child_job_id or '-'}}</td>
-            <td class="mono text-sm">{{child.root_job_id or '-'}}</td>
-            <td>{{child.orchestration_depth if child.orchestration_depth is not none else '-'}}</td>
-            <td>{{child.sequence_index if child.sequence_index is not none else '-'}}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-  {% endif %}
   {% if payload.execution.step_summaries %}
   <div class="section-label">Canonical Step Summaries</div>
   <section class="card mb">
@@ -237,80 +250,95 @@
   </section>
   {% endif %}
 
-  {% if payload.has_approval %}
-  <div class="section-label">Approval Required</div>
-  <section class="card mb" style="border-color:var(--warn); background:var(--warn-soft);">
-    <h2 style="color:var(--warn); margin-bottom:var(--space-3);">Approval Details</h2>
-    {% set approval_target = payload.approval.target if payload.approval.target is defined and payload.approval.target else {} %}
-    {% set approval_scope = payload.approval.scope if payload.approval.scope is defined and payload.approval.scope else {} %}
-    <dl class="detail-grid" style="margin-bottom:var(--space-3);">
-      <dt>Policy reason</dt><dd>{{payload.approval.policy_reason or payload.approval.reason or '-'}}</dd>
-      <dt>Target</dt><dd>{{approval_target.type or '-'}}: {{approval_target.value or '-'}}</dd>
-      <dt>Scope</dt><dd>fs={{approval_scope.fs_scope or '-'}}, net={{approval_scope.needs_network if approval_scope.needs_network is defined else '-'}}</dd>
+  {# ── 8. Deep Evidence (collapsible) ────────────────────────────────────── #}
+  <div class="section-label">Execution</div>
+  <section class="grid grid-2 mb">
+    <details class="collapsible"><summary>Plan</summary><div class="collapsible-body"><pre>{{payload.plan | tojson(indent=2)}}</pre></div></details>
+    <details class="collapsible"><summary>Actions Timeline <span class="muted text-xs">(latest first)</span></summary><div class="collapsible-body"><pre>{{payload.actions | tojson(indent=2)}}</pre></div></details>
+  </section>
+
+  <div class="section-label">Files</div>
+  <section class="grid grid-2 mb">
+    <details class="collapsible"><summary>Generated Files</summary><div class="collapsible-body"><pre>{{payload.generated_files | tojson(indent=2)}}</pre></div></details>
+    <details class="collapsible"><summary>Artifact Files</summary><div class="collapsible-body"><pre>{{payload.artifact_files | tojson(indent=2)}}</pre></div></details>
+  </section>
+
+  {# ── 9. Context & Diagnostics ──────────────────────────────────────────── #}
+  {% if payload.failed_sidecar %}
+  <div class="section-label">Failure Details</div>
+  <section class="card jd-failure-card mb"><h2 class="jd-failure-heading">Failed Sidecar</h2><pre>{{payload.failed_sidecar | tojson(indent=2)}}</pre></section>
+  {% endif %}
+
+  {% if payload.why_stopped %}
+  <div class="section-label">Why Stopped</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:0;">
+      {% for item in payload.why_stopped %}
+        <dt>{{item.label}}</dt><dd>{{item.value}}</dd>
+      {% endfor %}
     </dl>
-    <div class="action-group">
-      <form method="post" action="/queue/approvals/{{payload.job_id}}/approve"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-approve" type="submit">Approve</button></form>
-      <form method="post" action="/queue/approvals/{{payload.job_id}}/approve-always"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Approve Always</button></form>
-      <form method="post" action="/queue/approvals/{{payload.job_id}}/deny"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Deny</button></form>
-    </div>
   </section>
   {% endif %}
 
-  <div class="section-label">Actions</div>
+  {% if payload.policy_rationale %}
+  <div class="section-label">Policy Rationale</div>
   <section class="card mb">
-    <div class="action-group">
-      <a href="/jobs/{{payload.job_id}}/bundle" class="btn">Download Incident Bundle (.zip)</a>
-      {% if payload.can_retry %}<form method="post" action="/queue/jobs/{{payload.job_id}}/retry"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn" type="submit">Retry Job</button></form>{% endif %}
-      {% if payload.can_cancel %}<form method="post" action="/queue/jobs/{{payload.job_id}}/cancel"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><button class="btn btn-deny" type="submit">Cancel Job</button></form>{% endif %}
-      {% if payload.can_delete %}<form method="post" action="/queue/jobs/{{payload.job_id}}/delete"><input type="hidden" name="csrf_token" value="{{csrf_token}}" /><input type="hidden" name="confirm" value="{{payload.job_id}}" /><button class="btn btn-deny" type="submit">Delete Job</button></form>{% endif %}
-    </div>
+    <dl class="detail-grid" style="margin-bottom:0;">
+      {% for item in payload.policy_rationale %}
+        <dt>{{item.label}}</dt><dd>{{item.value}}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+  {% endif %}
+
+  {% if payload.lineage %}
+  <div class="section-label">Lineage</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:var(--space-2);">
+      <dt>Parent job</dt><dd>{{payload.lineage.parent_job_id or '-'}}</dd>
+      <dt>Root job</dt><dd>{{payload.lineage.root_job_id or '-'}}</dd>
+      <dt>Orchestration depth</dt><dd>{{payload.lineage.orchestration_depth if payload.lineage.orchestration_depth is not none else '-'}}</dd>
+      <dt>Sequence index</dt><dd>{{payload.lineage.sequence_index if payload.lineage.sequence_index is not none else '-'}}</dd>
+      <dt>Lineage role</dt><dd>{{payload.lineage.lineage_role or '-'}}</dd>
+    </dl>
+  </section>
+  {% endif %}
+
+  {% if payload.child_refs %}
+  <div class="section-label">Child Summary</div>
+  <section class="card mb">
+    <dl class="detail-grid" style="margin-bottom:var(--space-2);">
+      <dt>Total</dt><dd>{{payload.child_summary.total if payload.child_summary else 0}}</dd>
+      <dt>Done / succeeded</dt><dd>{{payload.child_summary.done if payload.child_summary else 0}}</dd>
+      <dt>Pending</dt><dd>{{payload.child_summary.pending if payload.child_summary else 0}}</dd>
+      <dt>Awaiting approval</dt><dd>{{payload.child_summary.awaiting_approval if payload.child_summary else 0}}</dd>
+      <dt>Failed</dt><dd>{{payload.child_summary.failed if payload.child_summary else 0}}</dd>
+      <dt>Canceled</dt><dd>{{payload.child_summary.canceled if payload.child_summary else 0}}</dd>
+      <dt>Unknown / missing</dt><dd>{{payload.child_summary.unknown if payload.child_summary else 0}}</dd>
+    </dl>
   </section>
 
-  <div class="section-label">Artifact Inventory</div>
+  <div class="section-label">Child Jobs</div>
   <section class="card mb">
-    {% if payload.execution.minimum_artifacts %}
-      <div class="alert {% if payload.execution.minimum_artifacts.status == 'present' %}alert-success{% else %}alert-warn{% endif %}" style="margin-bottom:var(--space-3);">
-        <b>Minimum contract:</b> {{payload.execution.minimum_artifacts.status or 'unknown'}}.
-        {% if payload.execution.minimum_artifacts.required %}
-          Required: <span class="mono">{{payload.execution.minimum_artifacts.required|join(', ')}}</span>.
-        {% endif %}
-        {% if payload.execution.minimum_artifacts.missing %}
-          Missing required: <span class="mono">{{payload.execution.minimum_artifacts.missing|join(', ')}}</span>.
-        {% endif %}
-      </div>
-    {% endif %}
-    {% if payload.execution.expected_artifacts %}
-      <p class="muted text-sm" style="margin-top:0;">Expected artifacts (job-type dependent): <span class="mono">{{payload.execution.expected_artifacts|join(', ')}}</span></p>
-    {% endif %}
-    {% if payload.artifact_anomalies %}
-      <div class="alert alert-info">Soft anomaly: {{payload.artifact_anomalies|join('; ')}}</div>
-    {% endif %}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Artifact</th><th>Contract</th><th>Status</th><th>Notes</th></tr></thead>
+        <thead><tr><th>Child job id</th><th>Root job</th><th>Depth</th><th>Sequence</th></tr></thead>
         <tbody>
-          {% for item in payload.artifact_inventory %}
+          {% for child in payload.child_refs %}
           <tr>
-            <td class="mono text-sm">{{item.label}}</td>
-            <td>{{item.contract_level}}</td>
-            <td>
-              {% if item.present %}present
-              {% elif item.expected %}missing required
-              {% else %}not present (optional){% endif %}
-            </td>
-            <td class="muted text-sm">{{item.notes}}</td>
+            <td class="mono text-sm">{{child.child_job_id or '-'}}</td>
+            <td class="mono text-sm">{{child.root_job_id or '-'}}</td>
+            <td>{{child.orchestration_depth if child.orchestration_depth is not none else '-'}}</td>
+            <td>{{child.sequence_index if child.sequence_index is not none else '-'}}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </section>
-
-  {% if payload.failed_sidecar %}
-  <div class="section-label">Failure Details</div>
-  <section class="card mb" style="border-color:var(--danger);"><h2 style="color:var(--danger);">Failed Sidecar</h2><pre>{{payload.failed_sidecar | tojson(indent=2)}}</pre></section>
   {% endif %}
 
+  {# ── 10. Timeline ───────────────────────────────────────────────────────── #}
   <div class="section-label">Recent Action Timeline</div>
   <section class="card mb">
     {% if payload.recent_timeline|length == 0 %}
@@ -333,38 +361,44 @@
     {% endif %}
   </section>
 
-  <div class="section-label">Output</div>
-  <section class="grid grid-2 mb">
-    <article class="card">
-      <h2>Standard Output <span class="muted text-xs">(up to 64 KB)</span></h2>
-      {% if payload.stdout %}
-        <pre>{{payload.stdout}}</pre>
-      {% else %}
-        <div class="empty-state">No output captured.</div>
+  {# ── 11. Vera Activity (supplemental) ──────────────────────────────────── #}
+  {% if payload.vera_context %}
+  <div class="section-label">Vera Activity</div>
+  <section class="card jd-vera-card mb" data-testid="vera-activity-strip">
+    <p class="muted text-sm" style="margin-top:0;">
+      Read-only shared Vera session context. Supplemental only — canonical queue/artifact truth remains primary.
+    </p>
+    <dl class="detail-grid" style="margin-bottom:0;">
+      {% if payload.vera_context.active_topic %}
+        <dt>Active topic</dt><dd>{{payload.vera_context.active_topic}}</dd>
       {% endif %}
-    </article>
-    <article class="card">
-      <h2>Standard Error <span class="muted text-xs">(up to 64 KB)</span></h2>
-      {% if payload.stderr %}
-        <pre style="border-color:var(--danger); background:var(--danger-soft);">{{payload.stderr}}</pre>
-      {% else %}
-        <div class="empty-state">No errors captured.</div>
+      {% if payload.vera_context.active_draft_ref %}
+        <dt>Active draft</dt><dd class="mono text-sm">{{payload.vera_context.active_draft_ref}}</dd>
       {% endif %}
-    </article>
+      {% if payload.vera_context.last_saved_file_ref %}
+        <dt>Last saved file</dt><dd class="mono text-sm">{{payload.vera_context.last_saved_file_ref}}</dd>
+      {% endif %}
+      {% if payload.vera_context.last_submitted_job_ref %}
+        <dt>Last submitted job</dt><dd class="mono text-sm">{{payload.vera_context.last_submitted_job_ref}}</dd>
+      {% endif %}
+      {% if payload.vera_context.last_completed_job_ref %}
+        <dt>Last completed job</dt><dd class="mono text-sm">{{payload.vera_context.last_completed_job_ref}}</dd>
+      {% endif %}
+      <dt>Context freshness</dt>
+      <dd>
+        {% if payload.vera_context.is_stale is none %}
+          <span class="muted">unknown</span>
+        {% elif payload.vera_context.is_stale %}
+          <span class="badge badge-pending">stale</span>
+        {% else %}
+          <span class="badge badge-done">fresh</span>
+        {% endif %}
+      </dd>
+    </dl>
   </section>
+  {% endif %}
 
-  <div class="section-label">Execution</div>
-  <section class="grid grid-2 mb">
-    <details class="collapsible"><summary>Plan</summary><div class="collapsible-body"><pre>{{payload.plan | tojson(indent=2)}}</pre></div></details>
-    <details class="collapsible"><summary>Actions Timeline <span class="muted text-xs">(latest first)</span></summary><div class="collapsible-body"><pre>{{payload.actions | tojson(indent=2)}}</pre></div></details>
-  </section>
-
-  <div class="section-label">Files</div>
-  <section class="grid grid-2 mb">
-    <details class="collapsible"><summary>Generated Files</summary><div class="collapsible-body"><pre>{{payload.generated_files | tojson(indent=2)}}</pre></div></details>
-    <details class="collapsible"><summary>Artifact Files</summary><div class="collapsible-body"><pre>{{payload.artifact_files | tojson(indent=2)}}</pre></div></details>
-  </section>
-
+  {# ── 12. Audit & Metadata ──────────────────────────────────────────────── #}
   <div class="section-label">Audit &amp; Metadata</div>
   <section class="grid grid-2 mb">
     <details class="collapsible"><summary>Audit Timeline</summary><div class="collapsible-body">{% if payload.audit_timeline|length == 0 %}<p class="muted text-sm">Audit timeline not available.</p>{% else %}<pre>{{payload.audit_timeline | tojson(indent=2)}}</pre>{% endif %}</div></details>

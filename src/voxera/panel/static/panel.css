@@ -637,3 +637,133 @@ td > .empty-state {
 .queue-detail-row:last-child { border-bottom: none; }
 .queue-detail-label { color: var(--muted); font-weight: 500; }
 .queue-detail-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ─── Job detail page ──────────────────────────────────────────────────── */
+
+/* Status banner — full-width header with colored left accent */
+.jd-status-banner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-4);
+  box-shadow: var(--shadow);
+}
+.jd-status-banner.jd-status-done     { border-left-color: var(--success); }
+.jd-status-banner.jd-status-failed   { border-left-color: var(--danger); }
+.jd-status-banner.jd-status-approval { border-left-color: var(--warn); }
+.jd-status-banner.jd-status-pending  { border-left-color: var(--accent); }
+.jd-status-banner.jd-status-canceled { border-left-color: var(--muted); }
+.jd-status-banner.jd-status-running  { border-left-color: var(--accent); }
+
+.jd-status-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.jd-status-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jd-badge-lg {
+  padding: 4px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.jd-status-headline {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.jd-headline-label {
+  font-weight: 600;
+  margin-right: var(--space-2);
+}
+
+.jd-headline-text {
+  color: var(--muted);
+}
+
+/* Operator summary card */
+.jd-summary-card {
+  padding: var(--space-3) var(--space-4);
+}
+.jd-summary-label {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.jd-summary-headline {
+  margin: 0 0 var(--space-2);
+}
+.jd-summary-body p { margin: 0 0 var(--space-2); }
+.jd-summary-body p:last-child { margin-bottom: 0; }
+.jd-summary-source { margin-top: var(--space-1); }
+
+/* Approval card */
+.jd-approval-card {
+  border-color: var(--warn);
+  border-left-width: 4px;
+  background: var(--warn-soft);
+}
+.jd-approval-heading {
+  color: var(--warn);
+  margin-bottom: var(--space-3);
+}
+
+/* Actions section — horizontal bar with clear button spacing */
+.jd-actions-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.jd-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jd-action-btn {
+  padding: 7px 16px;
+  font-weight: 500;
+}
+
+/* Failure card */
+.jd-failure-card {
+  border-color: var(--danger);
+}
+.jd-failure-heading {
+  color: var(--danger);
+}
+
+/* Stderr pre */
+.jd-stderr-pre {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* Vera context card — subtle supplemental styling */
+.jd-vera-card {
+  border-color: var(--border-soft);
+  background: var(--surface-2);
+}
+
+@media (max-width: 680px) {
+  .jd-status-top { flex-direction: column; }
+  .jd-actions-section { flex-wrap: wrap; }
+}
