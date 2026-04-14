@@ -86,6 +86,10 @@ class TestTTSRequestShape:
         with pytest.raises(ValueError, match="TTS text must be non-empty"):
             build_tts_request(text="   ")
 
+    def test_build_request_rejects_none_text(self) -> None:
+        with pytest.raises(ValueError, match="TTS text must be non-empty"):
+            build_tts_request(text=None)  # type: ignore[arg-type]
+
     def test_build_request_strips_text(self) -> None:
         req = build_tts_request(text="  hello world  ")
         assert req.text == "hello world"

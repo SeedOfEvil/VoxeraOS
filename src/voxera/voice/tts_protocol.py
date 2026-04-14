@@ -89,7 +89,9 @@ def build_tts_request(
 
     *output_format* normalizes fail-closed: unknown values raise ``ValueError``.
 
-    *speed* is clamped to the [0.1, 10.0] range.
+    *speed* is silently clamped to the [0.1, 10.0] range — out-of-range values
+    are corrected without raising.  Callers that need to detect clamping should
+    compare the returned ``speed`` against their input.
     """
     cleaned_text = str(text or "").strip()
     if not cleaned_text:
