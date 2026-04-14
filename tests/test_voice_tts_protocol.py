@@ -17,6 +17,7 @@ from voxera.voice.tts_protocol import (
     TTS_ERROR_BACKEND_MISSING,
     TTS_ERROR_DISABLED,
     TTS_ERROR_EMPTY_TEXT,
+    TTS_ERROR_TIMEOUT,
     TTS_ERROR_UNSUPPORTED_FORMAT,
     TTS_FORMAT_MP3,
     TTS_FORMAT_OGG,
@@ -340,6 +341,10 @@ class TestTTSStatusNormalization:
         resp = build_tts_response(request_id="req-12", status=None)  # type: ignore[arg-type]
         assert resp.status == TTS_STATUS_UNAVAILABLE
 
+    def test_status_case_normalized(self) -> None:
+        resp = build_tts_response(request_id="req-13", status="SUCCEEDED")
+        assert resp.status == TTS_STATUS_SUCCEEDED
+
     def test_all_valid_statuses_pass_through(self) -> None:
         for valid in (
             TTS_STATUS_SUCCEEDED,
@@ -373,6 +378,7 @@ class TestTTSErrorClassPassthrough:
             TTS_ERROR_DISABLED,
             TTS_ERROR_BACKEND_MISSING,
             TTS_ERROR_BACKEND_ERROR,
+            TTS_ERROR_TIMEOUT,
             TTS_ERROR_EMPTY_TEXT,
             TTS_ERROR_UNSUPPORTED_FORMAT,
         ):
