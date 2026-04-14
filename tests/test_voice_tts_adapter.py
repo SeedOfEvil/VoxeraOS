@@ -28,6 +28,7 @@ from voxera.voice.tts_protocol import (
     TTS_STATUS_UNAVAILABLE,
     TTS_STATUS_UNSUPPORTED,
     TTSRequest,
+    TTSResponse,
     build_tts_request,
 )
 
@@ -278,6 +279,7 @@ class TestSynthesizeMissingAudioPath:
         assert resp.audio_path is None
         assert resp.backend == "stub-no-audio"
         assert resp.error is not None
+        assert resp.error_class == TTS_ERROR_BACKEND_ERROR
 
     def test_empty_audio_path_does_not_fake_success(self) -> None:
         """Backend result with whitespace-only audio_path is failed."""
@@ -286,6 +288,8 @@ class TestSynthesizeMissingAudioPath:
         assert resp.status == TTS_STATUS_FAILED
         assert resp.audio_path is None
         assert resp.backend == "stub-empty-audio"
+        assert resp.error is not None
+        assert resp.error_class == TTS_ERROR_BACKEND_ERROR
 
 
 # -- synthesize_tts_request: unsupported voice/format -----------------------
@@ -585,19 +589,19 @@ class TestNeverRaises:
     def test_sync_never_raises_on_crash(self) -> None:
         req = build_tts_request(text="Hello", request_id="nr-crash")
         resp = synthesize_tts_request(req, adapter=StubCrashingBackend())
-        assert isinstance(resp, object)
+        assert isinstance(resp, TTSResponse)
         assert resp.status == TTS_STATUS_FAILED
 
     def test_sync_never_raises_on_none_adapter(self) -> None:
         req = build_tts_request(text="Hello", request_id="nr-none")
         resp = synthesize_tts_request(req, adapter=None)
-        assert isinstance(resp, object)
+        assert isinstance(resp, TTSResponse)
         assert resp.status == TTS_STATUS_UNAVAILABLE
 
     def test_sync_never_raises_on_unsupported(self) -> None:
         req = build_tts_request(text="Hello", request_id="nr-unsup")
         resp = synthesize_tts_request(req, adapter=StubUnsupportedBackend())
-        assert isinstance(resp, object)
+        assert isinstance(resp, TTSResponse)
         assert resp.status == TTS_STATUS_UNSUPPORTED
 
 
@@ -636,7 +640,6 @@ class TestSynthesizeAsync:
     @pytest.mark.asyncio
     async def test_async_returns_tts_response(self) -> None:
         from voxera.voice.tts_adapter import synthesize_tts_request_async
-        from voxera.voice.tts_protocol import TTSResponse
 
         req = build_tts_request(text="Hello world", request_id="async-shape")
         resp = await synthesize_tts_request_async(req, adapter=StubSuccessBackend())
