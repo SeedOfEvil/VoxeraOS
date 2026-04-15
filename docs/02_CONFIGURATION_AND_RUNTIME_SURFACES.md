@@ -272,4 +272,19 @@ A machine-readable JSON endpoint is available at `GET /voice/status.json`. Both 
 
 The combined status is built by `voice/voice_status_summary.py::build_voice_status_summary(flags)`, which reuses the existing `build_stt_status` and `build_tts_status` surfaces and adds dependency checks for known backends (whisper_local checks `faster-whisper`; piper_local checks `piper-tts`). The summary is truthful: it never implies readiness when something is disabled, misconfigured, or missing a dependency.
 
+### Voice TTS generation surface
+
+The voice status page includes a minimal operator-facing TTS generation form that exercises the canonical `synthesize_text(...)` pipeline end to end. This is artifact-oriented — it produces a file path, not browser playback.
+
+- `POST /voice/tts/generate` — HTML form submission. Text input required; voice_id and language optional. Calls `synthesize_text(text, flags, voice_id, language)` and renders the result inline on the voice status page. Requires operator auth + CSRF.
+- `POST /voice/tts/generate.json` — JSON API equivalent. Returns `{"ok": true/false, "tts": {...}}`.
+
+The result rendering is truthful:
+- Success badge only shown when `status == "succeeded"` AND a real `audio_path` exists.
+- Failure states (disabled, unconfigured, missing backend, synthesis error) show the canonical error and error_class from the TTS pipeline.
+- Timing fields (audio duration, inference time, total elapsed) shown when available.
+- Raw TTS response available in a collapsible detail section.
+
+This is an operator/developer diagnostic tool, not a polished end-user voice experience.
+
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.
