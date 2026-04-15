@@ -1,3 +1,23 @@
+## 2026-04-15 — feat(voice): add operator-facing audio transcription form
+
+- **Motivation**: add a minimal operator-facing STT transcription flow that exercises the canonical `transcribe_audio_file(...)` pipeline end to end. The TTS generation form established the pattern; this is the symmetric STT counterpart.
+- **Scope (deliberately bounded)**: one STT transcription form on the existing voice status page. File-oriented only — accepts an audio file path, not microphone or stream input. No browser upload, no media permissions, no live transcription, no voice workbench.
+- **Changes**:
+  - `src/voxera/panel/routes_voice.py` (updated): added `POST /voice/stt/transcribe` (HTML form submission) and `POST /voice/stt/transcribe.json` (JSON API). Both require operator auth + CSRF mutation guard. Route calls canonical `transcribe_audio_file(audio_path, flags, language)`. Success is only reported when a real `transcript` exists. Updated `GET /voice/status` and `POST /voice/tts/generate` to pass `stt_result=None` to the template.
+  - `src/voxera/panel/templates/voice.html` (updated): added "STT Transcription" section with audio file path input, optional language field, CSRF token, and result rendering. Result shows: success/failure badge, transcript (success only), detected language (success only), backend, error/error_class (failure only), audio duration, inference time, total elapsed, request ID, and collapsible raw response. Input values are preserved after submission. JSON section updated to mention the transcribe.json endpoint. Subtitle updated to mention both synthesis and transcription pipelines.
+- **Truthfulness invariants**:
+  - Success badge only shown when `status == "succeeded"` AND `transcript` is truthy.
+  - Empty/whitespace path shows validation error before calling the pipeline.
+  - Disabled/unconfigured/missing backend/invalid file states surface the canonical error/error_class from the STT pipeline.
+  - No fake success when `transcript` is missing.
+  - No transcript shown on failure/unavailable responses.
+- **Test coverage**: `tests/test_panel_voice_stt_transcribe.py` (39 tests): form rendering (4), success rendering (8), failure rendering (6), config-load failure (3), no-fake-success invariants (2), canonical path invocation (3), auth/CSRF enforcement (4), JSON endpoint (4), existing voice surface preservation (5).
+- **Docs updated**: `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`.
+- **Files touched**: `src/voxera/panel/routes_voice.py` (updated), `src/voxera/panel/templates/voice.html` (updated), `tests/test_panel_voice_stt_transcribe.py` (new, 39 tests), `tests/test_panel_voice_tts_generate.py` (updated — subtitle test), `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`.
+- **Invariants preserved**: no queue/artifact drift; no broad panel redesign; no microphone/stream UX; no browser upload/recorder; no fake readiness or fake transcript; no speculative multi-step voice workflow; existing voice status, TTS generation, and JSON endpoints unchanged in behavior.
+- **What this does NOT do**: no microphone capture, no stream input, no browser media permissions, no live transcription, no voice workbench, no queue-backed STT jobs, no larger voice product architecture. This is one bounded operator-facing transcription flow only.
+- **Next safe step**: symmetric operator-grade improvements (download link for TTS artifacts, batch transcription), or voice input surfacing in Vera chat in subsequent PRs.
+
 ## 2026-04-15 — feat(voice): add minimal operator-facing text-to-speech generation flow
 
 - **Motivation**: add a minimal real consumer flow that exercises the canonical TTS pipeline end to end, producing a real audio artifact while staying bounded, truthful, and operator-grade. The TTS foundation is complete (protocol, adapter, Piper backend, factory/output wiring); this is the first surface that calls `synthesize_text(...)` and renders the result.
