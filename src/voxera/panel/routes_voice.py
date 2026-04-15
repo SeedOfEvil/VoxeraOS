@@ -74,6 +74,7 @@ def register_voice_routes(
         language = (await request_value(request, "tts_language", "")).strip() or None
 
         # Reload status summary for the page context
+        flags = None
         try:
             flags = load_voice_foundation_flags()
             summary = build_voice_status_summary(flags)
@@ -90,6 +91,12 @@ def register_voice_routes(
                 "success": False,
                 "error": "Text input is required.",
                 "status": "failed",
+            }
+        elif flags is None:
+            tts_result = {
+                "success": False,
+                "error": "Cannot synthesize: voice configuration failed to load.",
+                "status": "unavailable",
             }
         else:
             try:

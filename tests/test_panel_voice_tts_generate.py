@@ -311,6 +311,77 @@ class TestTTSGenerationFailure:
         assert "Text input is required" in res.text
 
 
+class TestTTSGenerationConfigFailure:
+    def test_flags_load_failure_shows_error_not_crash(
+        self, _panel_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When load_voice_foundation_flags raises during POST, page renders error, not 500."""
+        import voxera.panel.routes_voice as rv
+
+        monkeypatch.setattr(
+            rv,
+            "load_voice_foundation_flags",
+            lambda: (_ for _ in ()).throw(RuntimeError("bad config")),
+        )
+        client = TestClient(panel_module.app)
+        res = _authed_csrf_request(
+            client,
+            "post",
+            "/voice/tts/generate",
+            data={"tts_text": "Hello world"},
+        )
+        assert res.status_code == 200
+        # Page renders the config load error prominently
+        assert "Failed to load voice status" in res.text
+        assert "RuntimeError" in res.text
+        # No success badge
+        assert "badge-ok" not in res.text
+
+    def test_flags_load_failure_no_synthesize_call(
+        self, _panel_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When flags fail to load, synthesize_text must NOT be called."""
+        import voxera.panel.routes_voice as rv
+
+        monkeypatch.setattr(
+            rv,
+            "load_voice_foundation_flags",
+            lambda: (_ for _ in ()).throw(RuntimeError("bad config")),
+        )
+        with patch("voxera.panel.routes_voice.synthesize_text") as mock_synth:
+            client = TestClient(panel_module.app)
+            _authed_csrf_request(
+                client,
+                "post",
+                "/voice/tts/generate",
+                data={"tts_text": "Hello world"},
+            )
+        mock_synth.assert_not_called()
+
+    def test_flags_load_failure_json_returns_500(
+        self, _panel_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """JSON endpoint returns 500 when flags fail to load."""
+        import voxera.panel.routes_voice as rv
+
+        monkeypatch.setattr(
+            rv,
+            "load_voice_foundation_flags",
+            lambda: (_ for _ in ()).throw(RuntimeError("bad config")),
+        )
+        client = TestClient(panel_module.app)
+        res = _authed_csrf_request(
+            client,
+            "post",
+            "/voice/tts/generate.json",
+            data={"tts_text": "Hello world"},
+        )
+        assert res.status_code == 500
+        data = res.json()
+        assert data["ok"] is False
+        assert "RuntimeError" in data["error"]
+
+
 class TestTTSGenerationNoFakeSuccess:
     def test_no_fake_success_when_audio_path_missing(self, _panel_env: None) -> None:
         """A response with succeeded status but no audio_path must NOT show success."""
@@ -578,3 +649,10 @@ class TestExistingVoiceStatusPreserved:
         client = TestClient(panel_module.app)
         res = client.get("/voice/status", headers=_operator_headers())
         assert "config state only" in res.text.lower()
+
+    def test_subtitle_mentions_generation(self, _panel_env: None) -> None:
+        """Subtitle should acknowledge that TTS generation exercises runtime."""
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert "generation" in res.text.lower()
+        assert "synthesis pipeline at runtime" in res.text.lower()
