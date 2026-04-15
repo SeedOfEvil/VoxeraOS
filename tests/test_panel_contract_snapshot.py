@@ -59,6 +59,8 @@ def test_panel_public_route_surface_snapshot():
             ("/static", None),
             ("/voice/status", ("GET",)),
             ("/voice/status.json", ("GET",)),
+            ("/voice/tts/generate", ("POST",)),
+            ("/voice/tts/generate.json", ("POST",)),
         ]
     )
 

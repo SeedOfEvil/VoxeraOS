@@ -138,9 +138,96 @@
         {% endif %}
       </section>
 
+      <div class="section-label">TTS Generation</div>
+      <section class="card mb">
+        <p class="muted text-sm" style="margin-top:0;">Submit text to generate speech through the canonical TTS pipeline. Output is artifact-oriented &mdash; a file path, not browser playback.</p>
+
+        {% if tts_result %}
+          <div class="queue-detail-row" style="margin-bottom:var(--space-3);">
+            <span class="queue-detail-label">Result</span>
+            <span class="queue-detail-value">
+              {% if tts_result.success %}
+                <span class="badge badge-ok">succeeded</span>
+              {% else %}
+                <span class="badge badge-fail">{{tts_result.status or "failed"}}</span>
+              {% endif %}
+            </span>
+          </div>
+          {% if tts_result.success and tts_result.audio_path %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Audio Path</span>
+            <span class="queue-detail-value mono">{{tts_result.audio_path}}</span>
+          </div>
+          {% endif %}
+          {% if tts_result.backend %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Backend</span>
+            <span class="queue-detail-value mono">{{tts_result.backend}}</span>
+          </div>
+          {% endif %}
+          {% if tts_result.error %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Error</span>
+            <span class="queue-detail-value muted">{{tts_result.error}}</span>
+          </div>
+          {% endif %}
+          {% if tts_result.error_class %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Error Class</span>
+            <span class="queue-detail-value mono muted">{{tts_result.error_class}}</span>
+          </div>
+          {% endif %}
+          {% if tts_result.audio_duration_ms is not none %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Audio Duration</span>
+            <span class="queue-detail-value">{{tts_result.audio_duration_ms}} ms</span>
+          </div>
+          {% endif %}
+          {% if tts_result.inference_ms is not none %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Inference Time</span>
+            <span class="queue-detail-value">{{tts_result.inference_ms}} ms</span>
+          </div>
+          {% endif %}
+          {% if tts_result.elapsed_ms is not none %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Total Elapsed</span>
+            <span class="queue-detail-value">{{tts_result.elapsed_ms}} ms</span>
+          </div>
+          {% endif %}
+          {% if tts_result.request_id %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Request ID</span>
+            <span class="queue-detail-value mono muted">{{tts_result.request_id}}</span>
+          </div>
+          {% endif %}
+          {% if tts_result.response_dict %}
+          <details class="collapsible" style="margin-top:var(--space-3);">
+            <summary>Raw TTS response</summary>
+            <div class="collapsible-body"><pre>{{tts_result.response_dict | tojson(indent=2)}}</pre></div>
+          </details>
+          {% endif %}
+          <hr style="margin:var(--space-3) 0;border:none;border-top:1px solid var(--border);" />
+        {% endif %}
+
+        <form class="form-stack" method="post" action="/voice/tts/generate">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <label>Text
+            <textarea class="textarea" name="tts_text" rows="3" placeholder="Enter text to synthesize..." required>{% if tts_result and tts_result.input_text %}{{tts_result.input_text}}{% endif %}</textarea>
+          </label>
+          <label>Voice ID <span class="muted text-sm">(optional)</span>
+            <input class="input" type="text" name="tts_voice_id" placeholder="default" value="{% if tts_result and tts_result.input_voice_id %}{{tts_result.input_voice_id}}{% endif %}" />
+          </label>
+          <label>Language <span class="muted text-sm">(optional)</span>
+            <input class="input" type="text" name="tts_language" placeholder="en" value="{% if tts_result and tts_result.input_language %}{{tts_result.input_language}}{% endif %}" />
+          </label>
+          <button class="btn" type="submit">Generate Speech</button>
+        </form>
+      </section>
+
       <div class="section-label">JSON</div>
       <section class="card mb">
-        <p class="muted text-sm" style="margin-top:0;">Machine-readable endpoint: <a href="/voice/status.json" class="mono">/voice/status.json</a></p>
+        <p class="muted text-sm" style="margin-top:0;">Machine-readable endpoints: <a href="/voice/status.json" class="mono">/voice/status.json</a> &middot; <span class="mono">POST /voice/tts/generate.json</span></p>
         <details class="collapsible">
           <summary>Raw status payload</summary>
           <div class="collapsible-body"><pre>{{summary | tojson(indent=2)}}</pre></div>

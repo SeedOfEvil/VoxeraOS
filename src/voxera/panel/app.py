@@ -456,4 +456,7 @@ register_voice_routes(
     app,
     templates=templates,
     require_operator_auth_from_request=_require_operator_auth_from_request,
+    require_mutation_guard=_require_mutation_guard,
+    csrf_cookie=CSRF_COOKIE,
+    request_value=_request_value,
 )

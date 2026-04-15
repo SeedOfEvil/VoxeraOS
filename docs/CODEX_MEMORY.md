@@ -1,3 +1,23 @@
+## 2026-04-15 — feat(voice): add minimal operator-facing text-to-speech generation flow
+
+- **Motivation**: add a minimal real consumer flow that exercises the canonical TTS pipeline end to end, producing a real audio artifact while staying bounded, truthful, and operator-grade. The TTS foundation is complete (protocol, adapter, Piper backend, factory/output wiring); this is the first surface that calls `synthesize_text(...)` and renders the result.
+- **Scope (deliberately bounded)**: one TTS generation form on the existing voice status page. No browser playback, no audio player, no live microphone, no voice composer/workbench, no queue-backed voice jobs.
+- **Changes**:
+  - `src/voxera/panel/routes_voice.py` (updated): added `POST /voice/tts/generate` (HTML form submission) and `POST /voice/tts/generate.json` (JSON API). Both require operator auth + CSRF mutation guard. Route calls canonical `synthesize_text(text, flags, voice_id, language)`. Success is only reported when a real `audio_path` exists. Updated `register_voice_routes` signature to accept `require_mutation_guard`, `csrf_cookie`, and `request_value` dependencies. Updated `GET /voice/status` to pass `csrf_token` and `tts_result=None` to the template.
+  - `src/voxera/panel/templates/voice.html` (updated): added "TTS Generation" section with text input, optional voice_id/language fields, CSRF token, and result rendering. Result shows: success/failure badge, audio path (success only), backend, error/error_class (failure only), audio duration, inference time, total elapsed, request ID, and collapsible raw response. Input values are preserved after submission. JSON section updated to mention the generate.json endpoint.
+  - `src/voxera/panel/app.py` (updated): `register_voice_routes` call now passes `require_mutation_guard`, `csrf_cookie=CSRF_COOKIE`, and `request_value` dependencies.
+- **Truthfulness invariants**:
+  - Success badge only shown when `status == "succeeded"` AND `audio_path` is truthy.
+  - Empty/whitespace text shows validation error before calling the pipeline.
+  - Disabled/unconfigured/missing backend states surface the canonical error/error_class from the TTS pipeline.
+  - No fake success when `audio_path` is missing.
+- **Test coverage**: `tests/test_panel_voice_tts_generate.py` (39 tests): form rendering (4), success rendering (7), failure rendering (6), no-fake-success invariants (2), canonical path invocation (5), auth/CSRF enforcement (4), JSON endpoint (4), existing voice status preservation (7).
+- **Docs updated**: `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`.
+- **Files touched**: `src/voxera/panel/routes_voice.py` (updated), `src/voxera/panel/templates/voice.html` (updated), `src/voxera/panel/app.py` (updated), `tests/test_panel_voice_tts_generate.py` (new, 39 tests), `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`, `docs/02_CONFIGURATION_AND_RUNTIME_SURFACES.md`.
+- **Invariants preserved**: no queue/artifact drift; no broad panel redesign; no audio playback subsystem; no browser recording/session UX; no fake readiness or fake success; no speculative multi-step voice workflow; existing voice status page and JSON endpoint unchanged in behavior.
+- **What this does NOT do**: no browser audio playback, no live microphone UX, no voice composer/workbench, no queue-backed voice jobs, no larger voice product architecture. This is one bounded operator-facing generation flow only.
+- **Next safe step**: download link for generated artifacts, voice session integration, or voice output surfacing in Vera chat in subsequent PRs.
+
 ## 2026-04-14 — feat(voice): add operator-facing STT/TTS status and config surface
 
 - **Motivation**: expose voice readiness/config state to operators as a bounded, read-only diagnostic surface. No playback UI, no audio controls, no voice lane.
