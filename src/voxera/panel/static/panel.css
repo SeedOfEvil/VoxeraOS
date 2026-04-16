@@ -952,3 +952,139 @@ a:focus-visible {
     margin: var(--space-4) 0 var(--space-2);
   }
 }
+
+/* ─── Voice page ──────────────────────────────────────────────────────────── */
+
+/* Card heading — used for Foundation / STT / TTS config headings */
+.voice-card-heading {
+  margin: 0 0 var(--space-3);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Intro paragraph for action sections */
+.voice-section-intro {
+  margin: 0 0 var(--space-4);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* Result block — left-accent container for TTS/STT results */
+.voice-result {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--surface-2);
+}
+
+.voice-result-ok {
+  border-left-color: var(--success);
+}
+
+.voice-result-fail {
+  border-left-color: var(--danger);
+}
+
+/* Result header row — title + badge */
+.voice-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.voice-result-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/* Monospace path display — inline code block */
+.voice-path-block {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.825rem;
+  background: var(--surface-3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+/* Transcript display — block for potentially long text */
+.voice-transcript-row {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.875rem;
+}
+
+.voice-transcript-block {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  margin-top: var(--space-1);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Error text — colored for visibility */
+.voice-error-text {
+  color: var(--danger);
+}
+
+/* Timing metadata group — visually separated cluster */
+.voice-timing-group {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-soft);
+}
+
+/* Empty result state */
+.voice-empty-result {
+  text-align: center;
+  padding: var(--space-4);
+  color: var(--muted);
+  font-size: 0.875rem;
+  background: var(--surface-3);
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-4);
+}
+
+/* Form separator — top border before the action form */
+.voice-action-form {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+
+/* Raw response collapsible spacing */
+.voice-raw-details {
+  margin-top: var(--space-3);
+}
+
+/* Dependency hint inline spacing */
+.voice-dep-hint {
+  margin-left: var(--space-2);
+}
+
+/* Debug card — quieter treatment */
+.voice-debug-card {
+  border-color: var(--border-soft);
+  box-shadow: none;
+  background: var(--surface-2);
+}
+
+/* Status grid — STT/TTS side by side */
+.voice-status-grid {
+  margin-bottom: 0;
+}

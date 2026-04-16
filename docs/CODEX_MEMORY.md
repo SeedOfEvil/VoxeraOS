@@ -1,3 +1,31 @@
+## 2026-04-16 — feat(voice): polish operator voice surface and result ergonomics
+
+- **Motivation**: make the `/voice/status` page feel more polished, legible, and demo-ready. The existing voice surface (status/config, TTS generation, STT transcription) has the right capability set but presentation and ergonomics needed refinement to match other polished panel pages (home, job detail).
+- **Scope (deliberately bounded)**: UI/UX polish only. No new backend behavior, no route contract drift, no audio playback, no microphone UX, no broader voice workbench.
+- **Template improvements** (`src/voxera/panel/templates/voice.html`):
+  - Added skip-link and `<main id="main-content">` landmark (matching home/job_detail pattern).
+  - Added in-page navigation strip (`page-nav`) with anchored links to Status, TTS, STT, and Debug zones.
+  - Reorganized into four clearly labeled zones: Configuration & Status, TTS Generation, STT Transcription, JSON / Debug.
+  - Foundation card gets its own heading; STT and TTS status cards rendered side-by-side in a `grid-2` layout.
+  - TTS/STT result blocks wrapped in `.voice-result` container with colored left-accent border (success=green, failure=red), matching job-detail status banner pattern.
+  - Result header row with "Last Result" title and status badge.
+  - Audio path rendered in `.voice-path-block` inline code styling.
+  - Transcript rendered in `.voice-transcript-block` with pre-wrap for long text.
+  - Error text styled with `.voice-error-text` for colored visibility.
+  - Timing metadata (audio duration, inference, elapsed) grouped in `.voice-timing-group`.
+  - Empty-state messaging ("No TTS generation result yet" / "No STT transcription result yet") shown when no action has been performed.
+  - Forms separated with `.voice-action-form` top-border; optional fields grouped in `form-row` for side-by-side layout.
+  - Submit buttons upgraded to `btn-primary` style.
+  - Debug/JSON section rendered with quieter `.voice-debug-card` treatment.
+  - Inline styles replaced with CSS classes throughout.
+- **CSS additions** (`src/voxera/panel/static/panel.css`): 18 new voice-page-specific classes — `.voice-card-heading`, `.voice-section-intro`, `.voice-result`, `.voice-result-ok`, `.voice-result-fail`, `.voice-result-header`, `.voice-result-title`, `.voice-path-block`, `.voice-transcript-row`, `.voice-transcript-block`, `.voice-error-text`, `.voice-timing-group`, `.voice-empty-result`, `.voice-action-form`, `.voice-raw-details`, `.voice-dep-hint`, `.voice-debug-card`, `.voice-status-grid`.
+- **Test coverage**: `tests/test_panel_voice_polish.py` (36 tests): accessibility (skip-link, main landmark), navigation (page-nav, section anchors, zone ordering, nav hidden on error), hierarchy (config zone label, grid layout, card headings), section intros (TTS/STT/debug descriptions), empty-result states (TTS/STT empty messages, hidden when result present), TTS result rendering (voice-result class, ok/fail accents, result header, path-block, timing-group, raw-details), STT result rendering (voice-result class, ok/fail accents, transcript-block, timing-group, raw-details), form polish (action-form class, form-row, btn-primary), debug section (quieter card class), CSS class existence (all 18 classes pinned), error text styling (TTS/STT error-text class).
+- **Docs updated**: `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`.
+- **Files touched**: `src/voxera/panel/templates/voice.html` (updated — structural polish), `src/voxera/panel/static/panel.css` (updated — 18 new voice classes), `tests/test_panel_voice_polish.py` (new, 36 tests), `docs/CODEX_MEMORY.md`, `docs/08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md`.
+- **Invariants preserved**: no backend behavior changes; no route contract drift; no auth/CSRF drift; no queue/artifact truth drift; no fake readiness/success; no audio playback/browser media features; no broader voice workbench scope; all 102 existing voice tests pass unchanged.
+- **What this does NOT do**: no audio playback, no microphone/stream UX, no upload widgets, no voice studio/workbench, no unrelated panel redesign. This is one bounded UI/ergonomics polish pass only.
+- **Next safe step**: minor follow-up polish (copy-to-clipboard for paths, keyboard shortcuts) or broader voice feature work in subsequent PRs.
+
 ## 2026-04-16 — feat(voice): add operator-facing audio transcription form
 
 - **Motivation**: add a minimal operator-facing STT transcription flow that exercises the canonical `transcribe_audio_file(...)` pipeline end to end. The TTS generation form established the pattern; this is the symmetric STT counterpart.

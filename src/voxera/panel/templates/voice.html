@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/panel.css" />
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
   <div class="container">
     <header class="page-header">
       <div>
@@ -16,12 +17,27 @@
       <a class="btn" href="/">&#8592; Back to Panel</a>
     </header>
 
+    <main id="main-content">
+
     {% if error %}
       <div class="alert alert-danger">{{error}}</div>
     {% elif summary %}
 
-      <div class="section-label">Foundation</div>
+      <nav class="page-nav" aria-label="Voice page sections">
+        <a href="#voice-config">Status</a>
+        <span class="sep" aria-hidden="true">&middot;</span>
+        <a href="#voice-tts">TTS Generation</a>
+        <span class="sep" aria-hidden="true">&middot;</span>
+        <a href="#voice-stt">STT Transcription</a>
+        <span class="sep" aria-hidden="true">&middot;</span>
+        <a href="#voice-debug">JSON / Debug</a>
+      </nav>
+
+      {# ── Zone 1: Configuration & Status ─────────────────────────────────── #}
+      <div class="section-label" id="voice-config">Configuration &amp; Status</div>
+
       <section class="card mb">
+        <h2 class="voice-card-heading">Foundation</h2>
         <div class="queue-detail-row">
           <span class="queue-detail-label">Voice Foundation</span>
           <span class="queue-detail-value">
@@ -34,276 +50,305 @@
         </div>
       </section>
 
-      <div class="section-label">Speech-to-Text (STT)</div>
-      <section class="card mb">
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Status</span>
-          <span class="queue-detail-value">
-            {% if summary.stt.status == "available" %}
-              <span class="badge badge-ok">{{summary.stt.status}}</span>
-            {% elif summary.stt.status == "disabled" %}
-              <span class="badge badge-paused">{{summary.stt.status}}</span>
-            {% else %}
-              <span class="badge badge-warn">{{summary.stt.status}}</span>
-            {% endif %}
-          </span>
-        </div>
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Enabled</span>
-          <span class="queue-detail-value">{{summary.stt.enabled}}</span>
-        </div>
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Configured</span>
-          <span class="queue-detail-value">{{summary.stt.configured}}</span>
-        </div>
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Backend</span>
-          <span class="queue-detail-value mono">{{summary.stt.backend or "&#8212;"}}</span>
-        </div>
-        {% if summary.stt.reason %}
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Reason</span>
-          <span class="queue-detail-value muted">{{summary.stt.reason}}</span>
-        </div>
-        {% endif %}
-        {% if summary.stt_dependency.checked %}
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Dependency ({{summary.stt_dependency.package}})</span>
-          <span class="queue-detail-value">
-            {% if summary.stt_dependency.available %}
-              <span class="badge badge-ok">installed</span>
-            {% else %}
-              <span class="badge badge-fail">missing</span>
-              {% if summary.stt_dependency.hint %}
-                <span class="muted text-sm" style="margin-left:var(--space-2);">{{summary.stt_dependency.hint}}</span>
+      <div class="grid grid-2 voice-status-grid">
+        <section class="card mb">
+          <h2 class="voice-card-heading">Speech-to-Text (STT)</h2>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Status</span>
+            <span class="queue-detail-value">
+              {% if summary.stt.status == "available" %}
+                <span class="badge badge-ok">{{summary.stt.status}}</span>
+              {% elif summary.stt.status == "disabled" %}
+                <span class="badge badge-paused">{{summary.stt.status}}</span>
+              {% else %}
+                <span class="badge badge-warn">{{summary.stt.status}}</span>
               {% endif %}
-            {% endif %}
-          </span>
-        </div>
-        {% endif %}
-      </section>
-
-      <div class="section-label">Text-to-Speech (TTS)</div>
-      <section class="card mb">
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Status</span>
-          <span class="queue-detail-value">
-            {% if summary.tts.status == "available" %}
-              <span class="badge badge-ok">{{summary.tts.status}}</span>
-            {% elif summary.tts.status == "disabled" %}
-              <span class="badge badge-paused">{{summary.tts.status}}</span>
-            {% else %}
-              <span class="badge badge-warn">{{summary.tts.status}}</span>
-            {% endif %}
-          </span>
-        </div>
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Enabled</span>
-          <span class="queue-detail-value">{{summary.tts.enabled}}</span>
-        </div>
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Configured</span>
-          <span class="queue-detail-value">{{summary.tts.configured}}</span>
-        </div>
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Backend</span>
-          <span class="queue-detail-value mono">{{summary.tts.backend or "&#8212;"}}</span>
-        </div>
-        {% if summary.tts.reason %}
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Reason</span>
-          <span class="queue-detail-value muted">{{summary.tts.reason}}</span>
-        </div>
-        {% endif %}
-        {% if summary.tts.last_error %}
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Last Error</span>
-          <span class="queue-detail-value muted">{{summary.tts.last_error}}</span>
-        </div>
-        {% endif %}
-        {% if summary.tts_dependency.checked %}
-        <div class="queue-detail-row">
-          <span class="queue-detail-label">Dependency ({{summary.tts_dependency.package}})</span>
-          <span class="queue-detail-value">
-            {% if summary.tts_dependency.available %}
-              <span class="badge badge-ok">installed</span>
-            {% else %}
-              <span class="badge badge-fail">missing</span>
-              {% if summary.tts_dependency.hint %}
-                <span class="muted text-sm" style="margin-left:var(--space-2);">{{summary.tts_dependency.hint}}</span>
+            </span>
+          </div>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Enabled</span>
+            <span class="queue-detail-value">{{summary.stt.enabled}}</span>
+          </div>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Configured</span>
+            <span class="queue-detail-value">{{summary.stt.configured}}</span>
+          </div>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Backend</span>
+            <span class="queue-detail-value mono">{{summary.stt.backend or "&#8212;"}}</span>
+          </div>
+          {% if summary.stt.reason %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Reason</span>
+            <span class="queue-detail-value muted">{{summary.stt.reason}}</span>
+          </div>
+          {% endif %}
+          {% if summary.stt_dependency.checked %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Dependency ({{summary.stt_dependency.package}})</span>
+            <span class="queue-detail-value">
+              {% if summary.stt_dependency.available %}
+                <span class="badge badge-ok">installed</span>
+              {% else %}
+                <span class="badge badge-fail">missing</span>
+                {% if summary.stt_dependency.hint %}
+                  <span class="muted text-sm voice-dep-hint">{{summary.stt_dependency.hint}}</span>
+                {% endif %}
               {% endif %}
-            {% endif %}
-          </span>
-        </div>
-        {% endif %}
-      </section>
+            </span>
+          </div>
+          {% endif %}
+        </section>
 
-      <div class="section-label">TTS Generation</div>
+        <section class="card mb">
+          <h2 class="voice-card-heading">Text-to-Speech (TTS)</h2>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Status</span>
+            <span class="queue-detail-value">
+              {% if summary.tts.status == "available" %}
+                <span class="badge badge-ok">{{summary.tts.status}}</span>
+              {% elif summary.tts.status == "disabled" %}
+                <span class="badge badge-paused">{{summary.tts.status}}</span>
+              {% else %}
+                <span class="badge badge-warn">{{summary.tts.status}}</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Enabled</span>
+            <span class="queue-detail-value">{{summary.tts.enabled}}</span>
+          </div>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Configured</span>
+            <span class="queue-detail-value">{{summary.tts.configured}}</span>
+          </div>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Backend</span>
+            <span class="queue-detail-value mono">{{summary.tts.backend or "&#8212;"}}</span>
+          </div>
+          {% if summary.tts.reason %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Reason</span>
+            <span class="queue-detail-value muted">{{summary.tts.reason}}</span>
+          </div>
+          {% endif %}
+          {% if summary.tts.last_error %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Last Error</span>
+            <span class="queue-detail-value muted">{{summary.tts.last_error}}</span>
+          </div>
+          {% endif %}
+          {% if summary.tts_dependency.checked %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Dependency ({{summary.tts_dependency.package}})</span>
+            <span class="queue-detail-value">
+              {% if summary.tts_dependency.available %}
+                <span class="badge badge-ok">installed</span>
+              {% else %}
+                <span class="badge badge-fail">missing</span>
+                {% if summary.tts_dependency.hint %}
+                  <span class="muted text-sm voice-dep-hint">{{summary.tts_dependency.hint}}</span>
+                {% endif %}
+              {% endif %}
+            </span>
+          </div>
+          {% endif %}
+        </section>
+      </div>
+
+      {# ── Zone 2: TTS Generation ────────────────────────────────────────── #}
+      <div class="section-label" id="voice-tts">TTS Generation</div>
       <section class="card mb">
-        <p class="muted text-sm" style="margin-top:0;">Submit text to generate speech through the canonical TTS pipeline. Output is artifact-oriented &mdash; a file path, not browser playback.</p>
+        <p class="voice-section-intro">Submit text to generate speech through the canonical TTS pipeline. Output is artifact-oriented &mdash; a file path, not browser playback.</p>
 
         {% if tts_result %}
-          <div class="queue-detail-row" style="margin-bottom:var(--space-3);">
-            <span class="queue-detail-label">Result</span>
-            <span class="queue-detail-value">
+          <div class="voice-result {% if tts_result.success %}voice-result-ok{% else %}voice-result-fail{% endif %}">
+            <div class="voice-result-header">
+              <span class="voice-result-title">Last Result</span>
               {% if tts_result.success %}
                 <span class="badge badge-ok">succeeded</span>
               {% else %}
                 <span class="badge badge-fail">{{tts_result.status or "failed"}}</span>
               {% endif %}
-            </span>
+            </div>
+
+            {% if tts_result.success and tts_result.audio_path %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Audio Path</span>
+              <span class="queue-detail-value"><code class="voice-path-block">{{tts_result.audio_path}}</code></span>
+            </div>
+            {% endif %}
+
+            {% if tts_result.error %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Error</span>
+              <span class="queue-detail-value voice-error-text">{{tts_result.error}}</span>
+            </div>
+            {% endif %}
+            {% if tts_result.error_class %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Error Class</span>
+              <span class="queue-detail-value mono muted">{{tts_result.error_class}}</span>
+            </div>
+            {% endif %}
+
+            {% if tts_result.backend %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Backend</span>
+              <span class="queue-detail-value mono">{{tts_result.backend}}</span>
+            </div>
+            {% endif %}
+
+            {% if tts_result.audio_duration_ms is not none or tts_result.inference_ms is not none or tts_result.elapsed_ms is not none %}
+            <div class="voice-timing-group">
+              {% if tts_result.audio_duration_ms is not none %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Audio Duration</span>
+                <span class="queue-detail-value">{{tts_result.audio_duration_ms}} ms</span>
+              </div>
+              {% endif %}
+              {% if tts_result.inference_ms is not none %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Inference Time</span>
+                <span class="queue-detail-value">{{tts_result.inference_ms}} ms</span>
+              </div>
+              {% endif %}
+              {% if tts_result.elapsed_ms is not none %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Total Elapsed</span>
+                <span class="queue-detail-value">{{tts_result.elapsed_ms}} ms</span>
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+
+            {% if tts_result.request_id %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Request ID</span>
+              <span class="queue-detail-value mono muted">{{tts_result.request_id}}</span>
+            </div>
+            {% endif %}
+
+            {% if tts_result.response_dict %}
+            <details class="collapsible voice-raw-details">
+              <summary>Raw TTS response</summary>
+              <div class="collapsible-body"><pre>{{tts_result.response_dict | tojson(indent=2)}}</pre></div>
+            </details>
+            {% endif %}
           </div>
-          {% if tts_result.success and tts_result.audio_path %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Audio Path</span>
-            <span class="queue-detail-value mono">{{tts_result.audio_path}}</span>
-          </div>
-          {% endif %}
-          {% if tts_result.backend %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Backend</span>
-            <span class="queue-detail-value mono">{{tts_result.backend}}</span>
-          </div>
-          {% endif %}
-          {% if tts_result.error %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Error</span>
-            <span class="queue-detail-value muted">{{tts_result.error}}</span>
-          </div>
-          {% endif %}
-          {% if tts_result.error_class %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Error Class</span>
-            <span class="queue-detail-value mono muted">{{tts_result.error_class}}</span>
-          </div>
-          {% endif %}
-          {% if tts_result.audio_duration_ms is not none %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Audio Duration</span>
-            <span class="queue-detail-value">{{tts_result.audio_duration_ms}} ms</span>
-          </div>
-          {% endif %}
-          {% if tts_result.inference_ms is not none %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Inference Time</span>
-            <span class="queue-detail-value">{{tts_result.inference_ms}} ms</span>
-          </div>
-          {% endif %}
-          {% if tts_result.elapsed_ms is not none %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Total Elapsed</span>
-            <span class="queue-detail-value">{{tts_result.elapsed_ms}} ms</span>
-          </div>
-          {% endif %}
-          {% if tts_result.request_id %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Request ID</span>
-            <span class="queue-detail-value mono muted">{{tts_result.request_id}}</span>
-          </div>
-          {% endif %}
-          {% if tts_result.response_dict %}
-          <details class="collapsible" style="margin-top:var(--space-3);">
-            <summary>Raw TTS response</summary>
-            <div class="collapsible-body"><pre>{{tts_result.response_dict | tojson(indent=2)}}</pre></div>
-          </details>
-          {% endif %}
-          <hr style="margin:var(--space-3) 0;border:none;border-top:1px solid var(--border);" />
+        {% else %}
+          <div class="voice-empty-result">No TTS generation result yet. Use the form below to synthesize text.</div>
         {% endif %}
 
-        <form class="form-stack" method="post" action="/voice/tts/generate">
+        <form class="form-stack voice-action-form" method="post" action="/voice/tts/generate">
           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
           <label>Text
             <textarea class="textarea" name="tts_text" rows="3" placeholder="Enter text to synthesize..." required>{% if tts_result and tts_result.input_text %}{{tts_result.input_text}}{% endif %}</textarea>
           </label>
-          <label>Voice ID <span class="muted text-sm">(optional)</span>
-            <input class="input" type="text" name="tts_voice_id" placeholder="default" value="{% if tts_result and tts_result.input_voice_id %}{{tts_result.input_voice_id}}{% endif %}" />
-          </label>
-          <label>Language <span class="muted text-sm">(optional)</span>
-            <input class="input" type="text" name="tts_language" placeholder="en" value="{% if tts_result and tts_result.input_language %}{{tts_result.input_language}}{% endif %}" />
-          </label>
-          <button class="btn" type="submit">Generate Speech</button>
+          <div class="form-row">
+            <label>Voice ID <span class="muted text-sm">(optional)</span>
+              <input class="input" type="text" name="tts_voice_id" placeholder="default" value="{% if tts_result and tts_result.input_voice_id %}{{tts_result.input_voice_id}}{% endif %}" />
+            </label>
+            <label>Language <span class="muted text-sm">(optional)</span>
+              <input class="input" type="text" name="tts_language" placeholder="en" value="{% if tts_result and tts_result.input_language %}{{tts_result.input_language}}{% endif %}" />
+            </label>
+          </div>
+          <button class="btn btn-primary" type="submit">Generate Speech</button>
         </form>
       </section>
 
-      <div class="section-label">STT Transcription</div>
+      {# ── Zone 3: STT Transcription ──────────────────────────────────────── #}
+      <div class="section-label" id="voice-stt">STT Transcription</div>
       <section class="card mb">
-        <p class="muted text-sm" style="margin-top:0;">Submit an audio file path to transcribe through the canonical STT pipeline. File-oriented only &mdash; no microphone or stream input.</p>
+        <p class="voice-section-intro">Submit an audio file path to transcribe through the canonical STT pipeline. File-oriented only &mdash; no microphone or stream input.</p>
 
         {% if stt_result %}
-          <div class="queue-detail-row" style="margin-bottom:var(--space-3);">
-            <span class="queue-detail-label">Result</span>
-            <span class="queue-detail-value">
+          <div class="voice-result {% if stt_result.success %}voice-result-ok{% else %}voice-result-fail{% endif %}">
+            <div class="voice-result-header">
+              <span class="voice-result-title">Last Result</span>
               {% if stt_result.success %}
                 <span class="badge badge-ok">succeeded</span>
               {% else %}
                 <span class="badge badge-fail">{{stt_result.status or "failed"}}</span>
               {% endif %}
-            </span>
+            </div>
+
+            {% if stt_result.success and stt_result.transcript %}
+            <div class="voice-transcript-row">
+              <span class="queue-detail-label">Transcript</span>
+              <div class="voice-transcript-block">{{stt_result.transcript}}</div>
+            </div>
+            {% endif %}
+
+            {% if stt_result.success and stt_result.language %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Detected Language</span>
+              <span class="queue-detail-value mono">{{stt_result.language}}</span>
+            </div>
+            {% endif %}
+
+            {% if stt_result.error %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Error</span>
+              <span class="queue-detail-value voice-error-text">{{stt_result.error}}</span>
+            </div>
+            {% endif %}
+            {% if stt_result.error_class %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Error Class</span>
+              <span class="queue-detail-value mono muted">{{stt_result.error_class}}</span>
+            </div>
+            {% endif %}
+
+            {% if stt_result.backend %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Backend</span>
+              <span class="queue-detail-value mono">{{stt_result.backend}}</span>
+            </div>
+            {% endif %}
+
+            {% if stt_result.audio_duration_ms is not none or stt_result.inference_ms is not none or stt_result.elapsed_ms is not none %}
+            <div class="voice-timing-group">
+              {% if stt_result.audio_duration_ms is not none %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Audio Duration</span>
+                <span class="queue-detail-value">{{stt_result.audio_duration_ms}} ms</span>
+              </div>
+              {% endif %}
+              {% if stt_result.inference_ms is not none %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Inference Time</span>
+                <span class="queue-detail-value">{{stt_result.inference_ms}} ms</span>
+              </div>
+              {% endif %}
+              {% if stt_result.elapsed_ms is not none %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Total Elapsed</span>
+                <span class="queue-detail-value">{{stt_result.elapsed_ms}} ms</span>
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+
+            {% if stt_result.request_id %}
+            <div class="queue-detail-row">
+              <span class="queue-detail-label">Request ID</span>
+              <span class="queue-detail-value mono muted">{{stt_result.request_id}}</span>
+            </div>
+            {% endif %}
+
+            {% if stt_result.response_dict %}
+            <details class="collapsible voice-raw-details">
+              <summary>Raw STT response</summary>
+              <div class="collapsible-body"><pre>{{stt_result.response_dict | tojson(indent=2)}}</pre></div>
+            </details>
+            {% endif %}
           </div>
-          {% if stt_result.success and stt_result.transcript %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Transcript</span>
-            <span class="queue-detail-value">{{stt_result.transcript}}</span>
-          </div>
-          {% endif %}
-          {% if stt_result.success and stt_result.language %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Detected Language</span>
-            <span class="queue-detail-value mono">{{stt_result.language}}</span>
-          </div>
-          {% endif %}
-          {% if stt_result.backend %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Backend</span>
-            <span class="queue-detail-value mono">{{stt_result.backend}}</span>
-          </div>
-          {% endif %}
-          {% if stt_result.error %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Error</span>
-            <span class="queue-detail-value muted">{{stt_result.error}}</span>
-          </div>
-          {% endif %}
-          {% if stt_result.error_class %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Error Class</span>
-            <span class="queue-detail-value mono muted">{{stt_result.error_class}}</span>
-          </div>
-          {% endif %}
-          {% if stt_result.audio_duration_ms is not none %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Audio Duration</span>
-            <span class="queue-detail-value">{{stt_result.audio_duration_ms}} ms</span>
-          </div>
-          {% endif %}
-          {% if stt_result.inference_ms is not none %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Inference Time</span>
-            <span class="queue-detail-value">{{stt_result.inference_ms}} ms</span>
-          </div>
-          {% endif %}
-          {% if stt_result.elapsed_ms is not none %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Total Elapsed</span>
-            <span class="queue-detail-value">{{stt_result.elapsed_ms}} ms</span>
-          </div>
-          {% endif %}
-          {% if stt_result.request_id %}
-          <div class="queue-detail-row">
-            <span class="queue-detail-label">Request ID</span>
-            <span class="queue-detail-value mono muted">{{stt_result.request_id}}</span>
-          </div>
-          {% endif %}
-          {% if stt_result.response_dict %}
-          <details class="collapsible" style="margin-top:var(--space-3);">
-            <summary>Raw STT response</summary>
-            <div class="collapsible-body"><pre>{{stt_result.response_dict | tojson(indent=2)}}</pre></div>
-          </details>
-          {% endif %}
-          <hr style="margin:var(--space-3) 0;border:none;border-top:1px solid var(--border);" />
+        {% else %}
+          <div class="voice-empty-result">No STT transcription result yet. Use the form below to transcribe an audio file.</div>
         {% endif %}
 
-        <form class="form-stack" method="post" action="/voice/stt/transcribe">
+        <form class="form-stack voice-action-form" method="post" action="/voice/stt/transcribe">
           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
           <label>Audio File Path
             <input class="input" type="text" name="stt_audio_path" placeholder="/path/to/audio.wav" value="{% if stt_result and stt_result.input_audio_path %}{{stt_result.input_audio_path}}{% endif %}" required />
@@ -311,13 +356,14 @@
           <label>Language <span class="muted text-sm">(optional)</span>
             <input class="input" type="text" name="stt_language" placeholder="en" value="{% if stt_result and stt_result.input_language %}{{stt_result.input_language}}{% endif %}" />
           </label>
-          <button class="btn" type="submit">Transcribe Audio</button>
+          <button class="btn btn-primary" type="submit">Transcribe Audio</button>
         </form>
       </section>
 
-      <div class="section-label">JSON</div>
-      <section class="card mb">
-        <p class="muted text-sm" style="margin-top:0;">Machine-readable endpoints: <a href="/voice/status.json" class="mono">/voice/status.json</a> &middot; <span class="mono">POST /voice/tts/generate.json</span> &middot; <span class="mono">POST /voice/stt/transcribe.json</span></p>
+      {# ── Zone 4: JSON / Debug ───────────────────────────────────────────── #}
+      <div class="section-label" id="voice-debug">JSON / Debug</div>
+      <section class="card mb voice-debug-card">
+        <p class="voice-section-intro">Machine-readable endpoints: <a href="/voice/status.json" class="mono">/voice/status.json</a> &middot; <span class="mono">POST /voice/tts/generate.json</span> &middot; <span class="mono">POST /voice/stt/transcribe.json</span></p>
         <details class="collapsible">
           <summary>Raw status payload</summary>
           <div class="collapsible-body"><pre>{{summary | tojson(indent=2)}}</pre></div>
@@ -327,6 +373,8 @@
     {% else %}
       <div class="alert alert-danger">Voice status unavailable.</div>
     {% endif %}
+
+    </main>
   </div>
 </body>
 </html>
