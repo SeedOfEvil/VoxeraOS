@@ -26,6 +26,8 @@
       <nav class="page-nav" aria-label="Voice page sections">
         <a href="#voice-config">Status</a>
         <span class="sep" aria-hidden="true">&middot;</span>
+        <a href="#voice-workbench">Voice Workbench</a>
+        <span class="sep" aria-hidden="true">&middot;</span>
         <a href="#voice-tts">TTS Generation</a>
         <span class="sep" aria-hidden="true">&middot;</span>
         <a href="#voice-stt">STT Transcription</a>
@@ -156,7 +158,192 @@
         </section>
       </div>
 
-      {# ── Zone 2: TTS Generation ────────────────────────────────────────── #}
+      {# ── Zone 2: Voice Workbench (STT -> Vera -> optional TTS) ───────── #}
+      <div class="section-label" id="voice-workbench">Voice Workbench</div>
+      <section class="card mb">
+        <p class="voice-section-intro">
+          Bounded voice-to-Vera workflow. Transcribe an audio file through the canonical STT pipeline, optionally forward the transcript into Vera as a <span class="mono">voice_transcript</span>-origin conversational turn, and optionally synthesize Vera&rsquo;s textual reply through the canonical TTS pipeline. This lane is conversational only &mdash; it never creates a governed preview or submits a queue job. For real-world actions, continue the session in the canonical Vera chat surface.
+        </p>
+
+        {% if workbench_result %}
+          <div class="voice-workbench-result" aria-live="polite">
+
+            {# ── Source audio ── #}
+            <div class="voice-result voice-workbench-lane">
+              <div class="voice-result-header">
+                <span class="voice-result-title">Source Audio</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Audio Path</span>
+                <span class="queue-detail-value">
+                  {% if workbench_result.input_audio_path %}
+                    <code class="voice-path-block">{{workbench_result.input_audio_path}}</code>
+                  {% else %}
+                    <span class="muted">&mdash;</span>
+                  {% endif %}
+                </span>
+              </div>
+              {% if workbench_result.input_language %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Language Hint</span>
+                <span class="queue-detail-value mono">{{workbench_result.input_language}}</span>
+              </div>
+              {% endif %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Session ID</span>
+                <span class="queue-detail-value mono muted">{{workbench_result.session_id}}</span>
+              </div>
+            </div>
+
+            {# ── Transcript ── #}
+            {% if workbench_result.stt %}
+            <div class="voice-result voice-workbench-lane {% if workbench_result.stt.success %}voice-result-ok{% else %}voice-result-fail{% endif %}">
+              <div class="voice-result-header">
+                <span class="voice-result-title">Transcript</span>
+                {% if workbench_result.stt.success %}
+                  <span class="badge badge-ok">transcribed</span>
+                {% else %}
+                  <span class="badge badge-fail">{{workbench_result.stt.status or "failed"}}</span>
+                {% endif %}
+              </div>
+              {% if workbench_result.stt.success and workbench_result.stt.transcript %}
+              <div class="voice-transcript-row">
+                <span class="queue-detail-label">Text</span>
+                <div class="voice-transcript-block">{{workbench_result.stt.transcript}}</div>
+              </div>
+              {% endif %}
+              {% if workbench_result.stt.error %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Error</span>
+                <span class="queue-detail-value voice-error-text">{{workbench_result.stt.error}}</span>
+              </div>
+              {% endif %}
+              {% if workbench_result.stt.backend %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Backend</span>
+                <span class="queue-detail-value mono">{{workbench_result.stt.backend}}</span>
+              </div>
+              {% endif %}
+            </div>
+            {% else %}
+            <div class="voice-empty-result">No transcription attempted yet.</div>
+            {% endif %}
+
+            {# ── Vera reply ── #}
+            {% if workbench_result.vera %}
+            <div class="voice-result voice-workbench-lane {% if workbench_result.vera.success %}voice-result-ok{% else %}voice-result-fail{% endif %}">
+              <div class="voice-result-header">
+                <span class="voice-result-title">Vera Response</span>
+                {% if workbench_result.vera.success %}
+                  <span class="badge badge-ok">answered</span>
+                {% else %}
+                  <span class="badge badge-fail">{{workbench_result.vera.status or "failed"}}</span>
+                {% endif %}
+              </div>
+              {% if workbench_result.vera.success and workbench_result.vera.answer %}
+              <div class="voice-transcript-row">
+                <span class="queue-detail-label">Answer</span>
+                <div class="voice-transcript-block">{{workbench_result.vera.answer}}</div>
+              </div>
+              {% endif %}
+              {% if workbench_result.vera.vera_status %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Vera Status</span>
+                <span class="queue-detail-value mono muted">{{workbench_result.vera.vera_status}}</span>
+              </div>
+              {% endif %}
+              {% if workbench_result.vera.error %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Error</span>
+                <span class="queue-detail-value voice-error-text">{{workbench_result.vera.error}}</span>
+              </div>
+              {% endif %}
+            </div>
+            {% elif workbench_result.send_to_vera_requested %}
+            <div class="voice-empty-result">Vera was not called &mdash; upstream transcription did not produce a real transcript.</div>
+            {% else %}
+            <div class="voice-empty-result">Vera was not called (&ldquo;Send to Vera&rdquo; was not selected).</div>
+            {% endif %}
+
+            {# ── Governed handoff / linked job status (truthful empty state) ── #}
+            <div class="voice-result voice-workbench-lane">
+              <div class="voice-result-header">
+                <span class="voice-result-title">Governed Handoff</span>
+                <span class="badge badge-paused">not attempted</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-value muted">
+                  This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, continue the session in the canonical Vera chat surface &mdash; preview/handoff semantics are enforced there.
+                </span>
+              </div>
+            </div>
+
+            {# ── Optional TTS response ── #}
+            {% if workbench_result.tts %}
+            <div class="voice-result voice-workbench-lane {% if workbench_result.tts.success %}voice-result-ok{% else %}voice-result-fail{% endif %}">
+              <div class="voice-result-header">
+                <span class="voice-result-title">Spoken Response (TTS)</span>
+                {% if workbench_result.tts.success %}
+                  <span class="badge badge-ok">synthesized</span>
+                {% else %}
+                  <span class="badge badge-fail">{{workbench_result.tts.status or "failed"}}</span>
+                {% endif %}
+              </div>
+              {% if workbench_result.tts.success and workbench_result.tts.audio_path %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Audio Path</span>
+                <span class="queue-detail-value"><code class="voice-path-block">{{workbench_result.tts.audio_path}}</code></span>
+              </div>
+              {% endif %}
+              {% if workbench_result.tts.error %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Error</span>
+                <span class="queue-detail-value voice-error-text">{{workbench_result.tts.error}}</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-value muted">Text response above is authoritative; speech synthesis failed.</span>
+              </div>
+              {% endif %}
+              {% if workbench_result.tts.backend %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Backend</span>
+                <span class="queue-detail-value mono">{{workbench_result.tts.backend}}</span>
+              </div>
+              {% endif %}
+            </div>
+            {% elif workbench_result.speak_response_requested %}
+            <div class="voice-empty-result">TTS was not run &mdash; Vera did not produce a real textual response to synthesize.</div>
+            {% else %}
+            <div class="voice-empty-result">TTS was not requested.</div>
+            {% endif %}
+
+          </div>
+        {% else %}
+          <div class="voice-empty-result">No workbench run yet. Use the form below to transcribe an audio file and optionally send the transcript to Vera.</div>
+        {% endif %}
+
+        <form class="form-stack voice-action-form" method="post" action="/voice/workbench/run">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <input type="hidden" name="workbench_session_id" value="{{workbench_session_id or (workbench_result.session_id if workbench_result else '')}}" />
+          <label>Audio File Path
+            <input class="input" type="text" name="workbench_audio_path" placeholder="/path/to/audio.wav" value="{% if workbench_result and workbench_result.input_audio_path %}{{workbench_result.input_audio_path}}{% endif %}" required />
+          </label>
+          <label>Language <span class="muted text-sm">(optional)</span>
+            <input class="input" type="text" name="workbench_language" placeholder="en" value="{% if workbench_result and workbench_result.input_language %}{{workbench_result.input_language}}{% endif %}" />
+          </label>
+          <label class="voice-checkbox-row">
+            <input type="checkbox" name="workbench_send_to_vera" value="1" {% if not workbench_result or workbench_result.send_to_vera_requested %}checked{% endif %} />
+            Send transcript to Vera as a voice-origin turn
+          </label>
+          <label class="voice-checkbox-row">
+            <input type="checkbox" name="workbench_speak_response" value="1" {% if workbench_result and workbench_result.speak_response_requested %}checked{% endif %} />
+            Speak Vera&rsquo;s response (run canonical TTS on the text reply)
+          </label>
+          <button class="btn btn-primary" type="submit">Run Voice Workbench</button>
+        </form>
+      </section>
+
+      {# ── Zone 3: TTS Generation ────────────────────────────────────────── #}
       <div class="section-label" id="voice-tts">TTS Generation</div>
       <section class="card mb">
         <p class="voice-section-intro">Submit text to generate speech through the canonical TTS pipeline. Output is artifact-oriented &mdash; a file path, not browser playback.</p>
@@ -257,7 +444,7 @@
         </form>
       </section>
 
-      {# ── Zone 3: STT Transcription ──────────────────────────────────────── #}
+      {# ── Zone 4: STT Transcription ──────────────────────────────────────── #}
       <div class="section-label" id="voice-stt">STT Transcription</div>
       <section class="card mb">
         <p class="voice-section-intro">Submit an audio file path to transcribe through the canonical STT pipeline. File-oriented only &mdash; no microphone or stream input.</p>
@@ -360,7 +547,7 @@
         </form>
       </section>
 
-      {# ── Zone 4: JSON / Debug ───────────────────────────────────────────── #}
+      {# ── Zone 5: JSON / Debug ───────────────────────────────────────────── #}
       <div class="section-label" id="voice-debug">JSON / Debug</div>
       <section class="card mb voice-debug-card">
         <p class="voice-section-intro">Machine-readable endpoints: <a href="/voice/status.json" class="mono">/voice/status.json</a> &middot; <span class="mono">POST /voice/tts/generate.json</span> &middot; <span class="mono">POST /voice/stt/transcribe.json</span></p>

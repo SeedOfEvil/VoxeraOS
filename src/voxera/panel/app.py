@@ -459,4 +459,5 @@ register_voice_routes(
     require_mutation_guard=_require_mutation_guard,
     csrf_cookie=CSRF_COOKIE,
     request_value=_request_value,
+    queue_root=_queue_root,
 )
