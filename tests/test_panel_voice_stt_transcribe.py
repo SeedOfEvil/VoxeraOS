@@ -331,6 +331,25 @@ class TestSTTTranscriptionFailure:
         assert "badge-fail" in res.text
         assert "Audio file path is required" in res.text
 
+    def test_unexpected_exception_shows_error_not_crash(self, _panel_env: None) -> None:
+        """When transcribe_audio_file raises unexpectedly, page renders error, not 500."""
+        with patch(
+            "voxera.panel.routes_voice.transcribe_audio_file",
+            side_effect=RuntimeError("unexpected segfault"),
+        ):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/stt/transcribe",
+                data={"stt_audio_path": "/tmp/test.wav"},
+            )
+        assert res.status_code == 200
+        assert "badge-fail" in res.text
+        assert "Unexpected error" in res.text
+        assert "segfault" in res.text
+        assert "badge-ok" not in res.text
+
 
 class TestSTTTranscriptionConfigFailure:
     def test_flags_load_failure_shows_error_not_crash(
@@ -594,6 +613,24 @@ class TestSTTTranscriptionJSON:
         data = res.json()
         reserialized = json.dumps(data)
         assert isinstance(reserialized, str)
+
+    def test_json_endpoint_unexpected_exception(self, _panel_env: None) -> None:
+        """JSON endpoint returns 500 on unexpected pipeline exception."""
+        with patch(
+            "voxera.panel.routes_voice.transcribe_audio_file",
+            side_effect=RuntimeError("unexpected crash"),
+        ):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/stt/transcribe.json",
+                data={"stt_audio_path": "/tmp/test.wav"},
+            )
+        assert res.status_code == 500
+        data = res.json()
+        assert data["ok"] is False
+        assert "RuntimeError" in data["error"]
 
 
 class TestExistingVoiceSurfacesPreserved:
