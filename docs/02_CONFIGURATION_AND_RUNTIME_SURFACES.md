@@ -287,4 +287,20 @@ The result rendering is truthful:
 
 This is an operator/developer diagnostic tool, not a polished end-user voice experience.
 
+### Voice STT transcription surface
+
+The voice status page includes a minimal operator-facing STT transcription form that exercises the canonical `transcribe_audio_file(...)` pipeline end to end. This is file-oriented — it accepts an audio file path, not microphone or stream input.
+
+- `POST /voice/stt/transcribe` — HTML form submission. Audio file path required; language optional. Calls `transcribe_audio_file(audio_path, flags, language)` and renders the result inline on the voice status page. Requires operator auth + CSRF.
+- `POST /voice/stt/transcribe.json` — JSON API equivalent. Returns `{"ok": true/false, "stt": {...}}`.
+
+The result rendering is truthful:
+- Success badge only shown when `status == "succeeded"` AND a real `transcript` exists.
+- Transcript text and detected language shown on success.
+- Failure states (disabled, unconfigured, missing backend, invalid file, transcription error) show the canonical error and error_class from the STT pipeline.
+- Timing fields (audio duration, inference time, total elapsed) shown when available.
+- Raw STT response available in a collapsible detail section.
+
+This is an operator/developer diagnostic tool for exercising the STT pipeline, not a live voice transcription experience. No microphone capture, no stream input, no browser media permissions.
+
 See `08_TESTS_OPERATIONS_AND_CHANGE_SURFACES.md` for how these wire into STV validation.

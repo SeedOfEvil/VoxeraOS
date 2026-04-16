@@ -1,11 +1,14 @@
-"""Panel routes for the operator-facing voice status and TTS generation surface.
+"""Panel routes for the operator-facing voice status, TTS generation, and STT transcription surfaces.
 
 Read-only diagnostic routes for STT/TTS configuration and availability,
-plus a minimal operator-facing TTS generation form that exercises the
-canonical ``synthesize_text(...)`` pipeline end to end.
+plus minimal operator-facing generation/transcription forms that exercise
+the canonical ``synthesize_text(...)`` and ``transcribe_audio_file(...)``
+pipelines end to end.
 
-The generation surface is artifact-oriented: it produces a real audio
+The TTS generation surface is artifact-oriented: it produces a real audio
 file on success and reports the output path and key response fields.
+The STT transcription surface is file-oriented: it accepts an audio file
+path, runs transcription, and renders the truthful result inline.
 No browser playback, no audio player, no live microphone UX.
 """
 
@@ -20,7 +23,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..voice.flags import load_voice_foundation_flags
+from ..voice.input import transcribe_audio_file
 from ..voice.output import synthesize_text
+from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, stt_response_as_dict
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, tts_response_as_dict
 from ..voice.voice_status_summary import build_voice_status_summary
 
@@ -47,7 +52,13 @@ def register_voice_routes(
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
         tmpl = templates.get_template("voice.html")
-        html = tmpl.render(summary=summary, error=error, csrf_token=csrf_token, tts_result=None)
+        html = tmpl.render(
+            summary=summary,
+            error=error,
+            csrf_token=csrf_token,
+            tts_result=None,
+            stt_result=None,
+        )
         response = HTMLResponse(content=html)
         response.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
         return response
@@ -146,6 +157,7 @@ def register_voice_routes(
             error=page_error,
             csrf_token=csrf_token,
             tts_result=tts_result,
+            stt_result=None,
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -184,6 +196,118 @@ def register_voice_routes(
             return JSONResponse(
                 {"ok": False, "error": str(exc)},
                 status_code=400,
+            )
+        except Exception as exc:
+            return JSONResponse(
+                {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                status_code=500,
+            )
+
+    @app.post("/voice/stt/transcribe", response_class=HTMLResponse)
+    async def voice_stt_transcribe(request: Request) -> HTMLResponse:
+        await require_mutation_guard(request)
+
+        audio_path = (await request_value(request, "stt_audio_path", "")).strip()
+        language = (await request_value(request, "stt_language", "")).strip() or None
+
+        # Reload status summary for the page context
+        flags = None
+        try:
+            flags = load_voice_foundation_flags()
+            summary = build_voice_status_summary(flags)
+            page_error = None
+        except Exception as exc:
+            summary = None
+            page_error = f"Failed to load voice status: {type(exc).__name__}: {exc}"
+
+        stt_result: dict[str, object]
+
+        # Validate audio path input
+        if not audio_path:
+            stt_result = {
+                "success": False,
+                "error": "Audio file path is required.",
+                "status": "failed",
+            }
+        elif flags is None:
+            stt_result = {
+                "success": False,
+                "error": "Cannot transcribe: voice configuration failed to load.",
+                "status": "unavailable",
+            }
+        else:
+            try:
+                start_ms = int(time.time() * 1000)
+                response = transcribe_audio_file(
+                    audio_path=audio_path,
+                    flags=flags,
+                    language=language,
+                )
+                elapsed_ms = int(time.time() * 1000) - start_ms
+
+                succeeded = response.status == STT_STATUS_SUCCEEDED and response.transcript
+                stt_result = {
+                    "success": bool(succeeded),
+                    "status": response.status,
+                    "transcript": response.transcript if succeeded else None,
+                    "language": response.language if succeeded else None,
+                    "backend": response.backend,
+                    "error": response.error if not succeeded else None,
+                    "error_class": response.error_class if not succeeded else None,
+                    "audio_duration_ms": response.audio_duration_ms,
+                    "inference_ms": response.inference_ms,
+                    "elapsed_ms": elapsed_ms,
+                    "request_id": response.request_id,
+                    "input_audio_path": audio_path,
+                    "input_language": language,
+                    "response_dict": stt_response_as_dict(response),
+                }
+            except Exception as exc:
+                stt_result = {
+                    "success": False,
+                    "error": f"Unexpected error: {type(exc).__name__}: {exc}",
+                    "status": "failed",
+                }
+
+        csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
+        tmpl = templates.get_template("voice.html")
+        html = tmpl.render(
+            summary=summary,
+            error=page_error,
+            csrf_token=csrf_token,
+            tts_result=None,
+            stt_result=stt_result,
+        )
+        resp = HTMLResponse(content=html)
+        resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
+        return resp
+
+    @app.post("/voice/stt/transcribe.json")
+    async def voice_stt_transcribe_json(request: Request) -> JSONResponse:
+        await require_mutation_guard(request)
+
+        audio_path = (await request_value(request, "stt_audio_path", "")).strip()
+        language = (await request_value(request, "stt_language", "")).strip() or None
+
+        if not audio_path:
+            return JSONResponse(
+                {"ok": False, "error": "Audio file path is required."},
+                status_code=400,
+            )
+
+        try:
+            flags = load_voice_foundation_flags()
+            response = transcribe_audio_file(
+                audio_path=audio_path,
+                flags=flags,
+                language=language,
+            )
+            succeeded = response.status == STT_STATUS_SUCCEEDED and response.transcript
+            return JSONResponse(
+                {
+                    "ok": bool(succeeded),
+                    "stt": stt_response_as_dict(response),
+                }
             )
         except Exception as exc:
             return JSONResponse(

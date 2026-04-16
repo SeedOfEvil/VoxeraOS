@@ -651,8 +651,9 @@ class TestExistingVoiceStatusPreserved:
         assert "config state only" in res.text.lower()
 
     def test_subtitle_mentions_generation(self, _panel_env: None) -> None:
-        """Subtitle should acknowledge that TTS generation exercises runtime."""
+        """Subtitle should acknowledge that TTS generation and STT transcription exercise runtime."""
         client = TestClient(panel_module.app)
         res = client.get("/voice/status", headers=_operator_headers())
         assert "generation" in res.text.lower()
-        assert "synthesis pipeline at runtime" in res.text.lower()
+        assert "transcription" in res.text.lower()
+        assert "synthesis and transcription pipelines at runtime" in res.text.lower()
