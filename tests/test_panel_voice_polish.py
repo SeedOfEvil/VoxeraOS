@@ -132,6 +132,24 @@ class TestVoicePageNavigation:
         assert 'id="voice-stt"' in res.text
         assert 'id="voice-debug"' in res.text
 
+    def test_page_nav_hidden_on_error(
+        self, _panel_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When voice status fails to load, the in-page nav should not render."""
+        import voxera.panel.routes_voice as rv
+
+        monkeypatch.setattr(
+            rv,
+            "load_voice_foundation_flags",
+            lambda: (_ for _ in ()).throw(RuntimeError("bad config")),
+        )
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        assert "Failed to load voice status" in res.text
+        # Nav should not render when there are no sections to navigate to
+        assert 'aria-label="Voice page sections"' not in res.text
+
 
 class TestVoicePageHierarchy:
     """Pins the zone-based layout hierarchy."""
@@ -427,6 +445,7 @@ class TestVoiceCSSClassesExist:
             ".voice-result-header",
             ".voice-result-title",
             ".voice-path-block",
+            ".voice-transcript-row",
             ".voice-transcript-block",
             ".voice-error-text",
             ".voice-timing-group",

@@ -17,21 +17,21 @@
       <a class="btn" href="/">&#8592; Back to Panel</a>
     </header>
 
-    <nav class="page-nav" aria-label="Voice page sections">
-      <a href="#voice-config">Status</a>
-      <span class="sep" aria-hidden="true">&middot;</span>
-      <a href="#voice-tts">TTS Generation</a>
-      <span class="sep" aria-hidden="true">&middot;</span>
-      <a href="#voice-stt">STT Transcription</a>
-      <span class="sep" aria-hidden="true">&middot;</span>
-      <a href="#voice-debug">JSON / Debug</a>
-    </nav>
-
     <main id="main-content">
 
     {% if error %}
       <div class="alert alert-danger">{{error}}</div>
     {% elif summary %}
+
+      <nav class="page-nav" aria-label="Voice page sections">
+        <a href="#voice-config">Status</a>
+        <span class="sep" aria-hidden="true">&middot;</span>
+        <a href="#voice-tts">TTS Generation</a>
+        <span class="sep" aria-hidden="true">&middot;</span>
+        <a href="#voice-stt">STT Transcription</a>
+        <span class="sep" aria-hidden="true">&middot;</span>
+        <a href="#voice-debug">JSON / Debug</a>
+      </nav>
 
       {# ── Zone 1: Configuration & Status ─────────────────────────────────── #}
       <div class="section-label" id="voice-config">Configuration &amp; Status</div>
