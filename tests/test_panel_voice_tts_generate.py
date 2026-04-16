@@ -310,6 +310,24 @@ class TestTTSGenerationFailure:
         assert "badge-fail" in res.text
         assert "Text input is required" in res.text
 
+    def test_value_error_from_synthesize_shows_failure(self, _panel_env: None) -> None:
+        """When synthesize_text raises ValueError, the HTML page shows the error."""
+        with patch(
+            "voxera.panel.routes_voice.synthesize_text",
+            side_effect=ValueError("Invalid voice configuration"),
+        ):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/tts/generate",
+                data={"tts_text": "Hello world"},
+            )
+        assert res.status_code == 200
+        assert "badge-fail" in res.text
+        assert "Invalid voice configuration" in res.text
+        assert "badge-ok" not in res.text
+
 
 class TestTTSGenerationConfigFailure:
     def test_flags_load_failure_shows_error_not_crash(
@@ -601,6 +619,24 @@ class TestTTSGenerationJSON:
         data = res.json()
         reserialized = json.dumps(data)
         assert isinstance(reserialized, str)
+
+    def test_json_endpoint_value_error_returns_400(self, _panel_env: None) -> None:
+        """When synthesize_text raises ValueError, JSON endpoint returns 400."""
+        with patch(
+            "voxera.panel.routes_voice.synthesize_text",
+            side_effect=ValueError("Invalid voice configuration"),
+        ):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/tts/generate.json",
+                data={"tts_text": "Hello world"},
+            )
+        assert res.status_code == 400
+        data = res.json()
+        assert data["ok"] is False
+        assert "Invalid voice configuration" in data["error"]
 
 
 class TestExistingVoiceStatusPreserved:
