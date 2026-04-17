@@ -23,8 +23,7 @@ from .health import read_health_snapshot
 from .health_semantics import build_health_semantic_sections
 from .skills.registry import SkillRegistry
 from .voice.flags import load_voice_foundation_flags
-from .voice.stt_status import build_stt_status
-from .voice.tts_status import build_tts_status
+from .voice.voice_status_summary import build_voice_status_summary
 
 console = Console()
 _STALE_LAST_ERROR_THRESHOLD_MS = 5 * 60 * 1000
@@ -431,27 +430,38 @@ def run_quick_doctor(
     )
 
     try:
-        voice_flags = load_voice_foundation_flags()
+        voice_summary: dict[str, Any] | None = build_voice_status_summary(
+            load_voice_foundation_flags()
+        )
     except Exception:
-        voice_flags = None
+        voice_summary = None
 
     # -- STT status check --
-    if voice_flags is not None:
-        stt = build_stt_status(voice_flags)
+    # Uses ``build_voice_status_summary`` so doctor, /voice/status, and
+    # /voice/status.json all report the same diagnosis and next-step hint.
+    if voice_summary is not None:
+        stt_block = voice_summary["stt"]
+        stt_dep = voice_summary["stt_dependency"]
         stt_detail = (
-            f"status={stt.status} available={stt.available} "
-            f"enabled={stt.enabled} configured={stt.configured} "
-            f"backend={stt.backend or '-'}"
+            f"status={stt_block['status']} available={stt_block['available']} "
+            f"enabled={stt_block['enabled']} configured={stt_block['configured']} "
+            f"backend={stt_block['backend'] or '-'}"
         )
-        if stt.reason:
-            stt_detail += f" reason={stt.reason}"
-        stt_check_status = "ok" if stt.available else "warn" if stt.enabled else "ok"
-        if stt_check_status == "warn" and stt.reason == "voice_stt_backend_not_configured":
-            stt_hint = "Set voice_stt_backend in config or VOXERA_VOICE_STT_BACKEND env var."
-        elif stt_check_status == "warn":
-            stt_hint = f"STT enabled but {stt.status}: {stt.reason}."
+        if stt_block.get("reason"):
+            stt_detail += f" reason={stt_block['reason']}"
+        if stt_dep.get("checked") and stt_dep.get("available") is False:
+            stt_detail += f" dependency_missing={stt_dep.get('package', '-')}"
+        # warn only when STT is enabled but not yet fully usable --
+        # disabled-by-config is an intentional state.
+        if stt_block["available"] and not (
+            stt_dep.get("checked") and stt_dep.get("available") is False
+        ):
+            stt_check_status = "ok"
+        elif stt_block["enabled"]:
+            stt_check_status = "warn"
         else:
-            stt_hint = ""
+            stt_check_status = "ok"
+        stt_hint = str(stt_block.get("next_step") or "")
     else:
         stt_detail = "error loading voice flags"
         stt_check_status = "warn"
@@ -466,24 +476,41 @@ def run_quick_doctor(
     )
 
     # -- TTS status check --
-    if voice_flags is not None:
-        tts = build_tts_status(voice_flags)
+    if voice_summary is not None:
+        tts_block = voice_summary["tts"]
+        tts_dep = voice_summary["tts_dependency"]
         tts_detail = (
-            f"status={tts.status} available={tts.available} "
-            f"enabled={tts.enabled} configured={tts.configured} "
-            f"backend={tts.backend or '-'}"
+            f"status={tts_block['status']} available={tts_block['available']} "
+            f"enabled={tts_block['enabled']} configured={tts_block['configured']} "
+            f"backend={tts_block['backend'] or '-'}"
         )
-        if tts.reason:
-            tts_detail += f" reason={tts.reason}"
-        # warn only when voice output is enabled but not fully available
-        # (e.g. backend missing); disabled-by-config is an intentional state.
-        tts_check_status = "ok" if tts.available else "warn" if tts.enabled else "ok"
-        if tts_check_status == "warn" and tts.reason == "voice_tts_backend_not_configured":
-            tts_hint = "Set voice_tts_backend in config or VOXERA_VOICE_TTS_BACKEND env var."
-        elif tts_check_status == "warn":
-            tts_hint = f"TTS enabled but {tts.status}: {tts.reason}."
+        if tts_block.get("reason"):
+            tts_detail += f" reason={tts_block['reason']}"
+        if tts_dep.get("checked") and tts_dep.get("available") is False:
+            tts_detail += f" dependency_missing={tts_dep.get('package', '-')}"
+        piper_model = tts_dep.get("piper_model") if isinstance(tts_dep, dict) else None
+        if isinstance(piper_model, dict) and piper_model.get("kind") == "path":
+            if not piper_model.get("exists"):
+                tts_detail += " piper_model=missing"
+            elif not piper_model.get("metadata_exists"):
+                tts_detail += " piper_model_metadata=missing"
+        if tts_block["available"] and not (
+            tts_dep.get("checked") and tts_dep.get("available") is False
+        ):
+            # piper_model path exists-but-metadata-missing should still warn
+            if (
+                isinstance(piper_model, dict)
+                and piper_model.get("kind") == "path"
+                and (not piper_model.get("exists") or not piper_model.get("metadata_exists"))
+            ):
+                tts_check_status = "warn"
+            else:
+                tts_check_status = "ok"
+        elif tts_block["enabled"]:
+            tts_check_status = "warn"
         else:
-            tts_hint = ""
+            tts_check_status = "ok"
+        tts_hint = str(tts_block.get("next_step") or "")
     else:
         tts_detail = "error loading voice flags"
         tts_check_status = "warn"

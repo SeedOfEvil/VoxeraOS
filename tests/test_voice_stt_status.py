@@ -193,7 +193,9 @@ class TestSTTStatusInDoctor:
         stt_check = next(c for c in checks if c["check"] == "voice: stt status")
         assert stt_check["status"] == "ok"
         assert "disabled" in stt_check["detail"]
-        assert stt_check["hint"] == ""
+        # New voice-onboarding contract: even when disabled, give the brand-new
+        # operator a concrete pointer to `voxera setup`.
+        assert "voxera setup" in stt_check["hint"]
 
     def test_stt_check_warn_when_enabled_but_unconfigured(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -211,4 +213,4 @@ class TestSTTStatusInDoctor:
         stt_check = next(c for c in checks if c["check"] == "voice: stt status")
         assert stt_check["status"] == "warn"
         assert "unconfigured" in stt_check["detail"]
-        assert "VOXERA_VOICE_STT_BACKEND" in stt_check["hint"]
+        assert "STT backend" in stt_check["hint"]

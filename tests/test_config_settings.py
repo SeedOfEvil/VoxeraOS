@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from voxera.config import VoxeraConfig, load_config, load_env_file
+from voxera.config import VoxeraConfig, load_config, load_env_file, update_runtime_config
 
 
 def test_config_precedence_file_env_overrides(
@@ -91,3 +91,49 @@ def test_load_env_file_rejects_invalid_lines(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="expected KEY=VALUE"):
         load_env_file(env_file)
+
+
+def test_update_runtime_config_creates_file_when_absent(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "config.json"
+    written = update_runtime_config({"panel_port": 9100}, config_path=cfg_path)
+
+    assert written == cfg_path
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert data == {"panel_port": 9100}
+
+
+def test_update_runtime_config_merges_without_clobbering(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(
+        json.dumps({"panel_port": 8844, "queue_lock_stale_s": 123.0}),
+        encoding="utf-8",
+    )
+    update_runtime_config(
+        {"voice_stt_backend": "whisper_local", "voice_tts_backend": "piper_local"},
+        config_path=cfg_path,
+    )
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert data["panel_port"] == 8844
+    assert data["queue_lock_stale_s"] == 123.0
+    assert data["voice_stt_backend"] == "whisper_local"
+    assert data["voice_tts_backend"] == "piper_local"
+
+
+def test_update_runtime_config_none_value_removes_key(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(
+        json.dumps({"voice_stt_backend": "whisper_local", "panel_port": 8844}),
+        encoding="utf-8",
+    )
+    update_runtime_config({"voice_stt_backend": None}, config_path=cfg_path)
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert "voice_stt_backend" not in data
+    assert data["panel_port"] == 8844
+
+
+def test_update_runtime_config_creates_parent_directory(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "nested" / "config.json"
+    assert not cfg_path.parent.exists()
+    update_runtime_config({"panel_port": 9100}, config_path=cfg_path)
+    assert cfg_path.parent.is_dir()
+    assert json.loads(cfg_path.read_text(encoding="utf-8")) == {"panel_port": 9100}

@@ -184,6 +184,37 @@ def _load_runtime_config_file(path: Path) -> dict[str, Any]:
     return payload
 
 
+def update_runtime_config(
+    updates: Mapping[str, Any],
+    *,
+    config_path: Path | None = None,
+) -> Path:
+    """Merge ``updates`` into the runtime config JSON at ``config_path``.
+
+    Reads the existing JSON (if any), overlays ``updates`` at the top level,
+    and atomically writes the result back.  Keys whose value is ``None`` are
+    removed from the file so callers can clear a setting explicitly.
+
+    Returns the resolved config path that was written.
+    """
+    path = resolve_config_path(config_path)
+    existing = _load_runtime_config_file(path)
+    merged: dict[str, Any] = dict(existing)
+    for key, value in updates.items():
+        if value is None:
+            merged.pop(key, None)
+        else:
+            merged[key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(json.dumps(merged, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return path
+
+
 def _queue_root_default(cwd: Path) -> Path:
     _ = cwd
     return default_queue_root()

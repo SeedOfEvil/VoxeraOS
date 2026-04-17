@@ -219,9 +219,9 @@ From the README and the curated catalog under `src/voxera/data/openrouter_catalo
 
 ### Voice subsystem status
 
-`voxera doctor --quick` now includes symmetric `voice: stt status` and `voice: tts status` checks that report each subsystem's configuration and availability state. The checks load `VoiceFoundationFlags` from the runtime config and produce `STTStatus` (`voice/stt_status.py`) and `TTSStatus` (`voice/tts_status.py`) surfaces.
+`voxera doctor --quick` now includes symmetric `voice: stt status` and `voice: tts status` checks that report each subsystem's configuration and availability state. The checks load `VoiceFoundationFlags` from the runtime config and consume the combined status payload from `voice/voice_status_summary.py::build_voice_status_summary(flags)`, so doctor, `GET /voice/status`, and `GET /voice/status.json` share one truthful diagnosis and next-step hint.
 
-Status labels: `available` (foundation + input/output enabled + backend configured), `unconfigured` (enabled but no backend), `disabled` (foundation or input/output off). `available` means configured and enabled — it does NOT imply that transcription or synthesis has been tested or will succeed. Disabled-by-config is an intentional state and reports `ok`; enabled-but-unconfigured reports `warn` with actionable hints.
+Status labels: `available` (foundation + input/output enabled + backend configured), `unconfigured` (enabled but no backend), `disabled` (foundation or input/output off). `available` means configured and enabled — it does NOT imply that transcription or synthesis has been tested or will succeed. Disabled-by-config is an intentional state and reports `ok`; enabled-but-unconfigured reports `warn`. Each subsystem carries a `next_step` hint that describes the first missing precondition (foundation disabled / STT or TTS disabled / backend unconfigured / backend dependency missing / Piper model file or metadata missing) and either points the operator at `voxera setup` or the exact `pip install` command.
 
 The STT request/response protocol (`voice/stt_protocol.py`) defines the canonical contract shapes for speech-to-text interactions. The STT backend adapter boundary (`voice/stt_adapter.py`) provides the protocol-to-runtime bridge: an `STTBackend` protocol interface, a `NullSTTBackend` for unconfigured systems, and `transcribe_stt_request()` / `transcribe_stt_request_async()` fail-soft entry points that consume `STTRequest` and always return a truthful `STTResponse`.
 
@@ -235,12 +235,15 @@ The recommended entry point for audio-file transcription is `transcribe_audio_fi
 
 See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
 
-Environment variables for voice configuration (loaded by `voice/flags.py`):
+The recommended configuration path for voice is the setup wizard: `voxera setup` now includes a short voice step that asks whether to enable the foundation, STT, TTS, picks backends (`whisper_local`, `piper_local`), and — when Piper TTS is selected — optionally accepts a Piper model name or path. The wizard's answers are persisted to the runtime config JSON (`~/.config/voxera/config.json`) via `config.update_runtime_config(...)` under keys: `enable_voice_foundation`, `enable_voice_input`, `enable_voice_output`, `voice_stt_backend`, `voice_tts_backend`, `voice_tts_piper_model`. Declining the foundation clears every voice key from the file so state cannot go stale against the most recent answer. Unrelated runtime keys (panel host/port, queue settings, etc.) are preserved.
+
+Environment variables remain supported as overrides for operators who prefer to manage voice via env. When both a runtime-config value and an environment variable are present, the environment variable wins:
 - `VOXERA_ENABLE_VOICE_FOUNDATION` — master toggle for the voice subsystem.
 - `VOXERA_ENABLE_VOICE_INPUT` — enable STT input path.
 - `VOXERA_ENABLE_VOICE_OUTPUT` — enable TTS output path.
 - `VOXERA_VOICE_STT_BACKEND` — STT backend identifier.
 - `VOXERA_VOICE_TTS_BACKEND` — TTS backend identifier.
+- `VOXERA_VOICE_TTS_PIPER_MODEL` — Piper model name or path. Overrides the runtime config value.
 
 Environment variables for Whisper backend configuration (loaded by `voice/whisper_backend.py`):
 - `VOXERA_VOICE_STT_WHISPER_MODEL` — Whisper model size (default: `base`).
@@ -265,12 +268,13 @@ The page shows:
 - Voice foundation enabled/disabled
 - STT status, backend, and dependency availability
 - TTS status, backend, and dependency availability
+- Piper model metadata (file/metadata presence, or resolved-at-load-time name)
 - Reason strings when a subsystem is unavailable
-- Install hints when a backend dependency is missing
+- `Next Step` rows surfacing the first missing precondition from the status summary (point at `voxera setup`, at a specific `pip install`, or at the missing Piper model path)
 
 A machine-readable JSON endpoint is available at `GET /voice/status.json`. Both endpoints require operator Basic auth.
 
-The combined status is built by `voice/voice_status_summary.py::build_voice_status_summary(flags)`, which reuses the existing `build_stt_status` and `build_tts_status` surfaces and adds dependency checks for known backends (whisper_local checks `faster-whisper`; piper_local checks `piper-tts`). The summary is truthful: it never implies readiness when something is disabled, misconfigured, or missing a dependency.
+The combined status is built by `voice/voice_status_summary.py::build_voice_status_summary(flags)`, which reuses the existing `build_stt_status` and `build_tts_status` surfaces, adds dependency checks for known backends (whisper_local checks `faster-whisper`; piper_local checks `piper-tts`), validates the Piper model path (file + `.onnx.json` metadata sidecar) when a path-style value is configured, and computes an operator-facing `next_step` string per subsystem. The summary is truthful: it never implies readiness when something is disabled, misconfigured, or missing a dependency. Schema version is pinned as `VOICE_STATUS_SUMMARY_SCHEMA_VERSION`.
 
 ### Voice TTS generation surface
 

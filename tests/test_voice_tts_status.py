@@ -237,7 +237,9 @@ class TestTTSStatusInDoctor:
         tts_check = next(c for c in checks if c["check"] == "voice: tts status")
         assert tts_check["status"] == "ok"
         assert "disabled" in tts_check["detail"]
-        assert tts_check["hint"] == ""
+        # New voice-onboarding contract: even when disabled, give the brand-new
+        # operator a concrete pointer to `voxera setup`.
+        assert "voxera setup" in tts_check["hint"]
 
     def test_tts_check_warn_when_enabled_but_unconfigured(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -256,4 +258,4 @@ class TestTTSStatusInDoctor:
         tts_check = next(c for c in checks if c["check"] == "voice: tts status")
         assert tts_check["status"] == "warn"
         assert "unconfigured" in tts_check["detail"]
-        assert "VOXERA_VOICE_TTS_BACKEND" in tts_check["hint"]
+        assert "TTS backend" in tts_check["hint"]

@@ -17,7 +17,13 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
-from .config import capabilities_report_path, default_config_path, save_config, save_policy
+from .config import (
+    capabilities_report_path,
+    default_config_path,
+    save_config,
+    save_policy,
+    update_runtime_config,
+)
 from .doctor import run_quick_doctor
 from .models import AppConfig, BrainConfig, PolicyApprovals, PrivacyConfig, WebInvestigationConfig
 from .openrouter_catalog import (
@@ -27,6 +33,8 @@ from .openrouter_catalog import (
 )
 from .paths import ensure_dirs
 from .secrets import get_secret, set_secret
+from .voice.stt_backend_factory import STT_BACKEND_WHISPER_LOCAL
+from .voice.tts_backend_factory import TTS_BACKEND_PIPER_LOCAL
 
 console = Console()
 
@@ -637,6 +645,96 @@ def _post_setup_validation(cfg: AppConfig) -> None:
     _render_validation_summary(checks)
 
 
+STT_BACKEND_CHOICES = (STT_BACKEND_WHISPER_LOCAL,)
+TTS_BACKEND_CHOICES = (TTS_BACKEND_PIPER_LOCAL,)
+
+
+def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, object]:
+    """Ask the operator about voice and persist the answers to runtime config JSON.
+
+    Writes exactly the voice fields into ``~/.config/voxera/config.json`` (or the
+    provided ``runtime_config_path``) using a partial merge so unrelated runtime
+    keys are preserved.  Returns the voice answers that were written (or cleared)
+    for downstream summary / testing.
+
+    The wizard is voice-first-safe but does not assume voice is wanted.  If the
+    operator declines the foundation the existing voice-related keys in the
+    runtime config are cleared so state cannot go stale against the wizard's
+    most recent answer.
+    """
+    console.print(
+        Panel(
+            "Voice foundation is optional.  If enabled, Vera can accept voice input "
+            "(speech-to-text) and/or speak responses (text-to-speech).  Everything "
+            "runs locally by default -- no audio is sent to the cloud.  You can "
+            "change these answers later by re-running `voxera setup`.",
+            title="Voice Setup",
+        )
+    )
+
+    answers: dict[str, object] = {
+        "enable_voice_foundation": False,
+        "enable_voice_input": False,
+        "enable_voice_output": False,
+        "voice_stt_backend": None,
+        "voice_tts_backend": None,
+        "voice_tts_piper_model": None,
+    }
+
+    enable_foundation = Confirm.ask("Enable voice foundation?", default=False)
+    answers["enable_voice_foundation"] = enable_foundation
+
+    if enable_foundation:
+        enable_input = Confirm.ask("Enable speech-to-text (voice input)?", default=True)
+        answers["enable_voice_input"] = enable_input
+        if enable_input:
+            stt_backend = Prompt.ask(
+                "Speech-to-text backend",
+                choices=list(STT_BACKEND_CHOICES),
+                default=STT_BACKEND_WHISPER_LOCAL,
+            )
+            answers["voice_stt_backend"] = stt_backend
+            console.print(
+                "[dim]If faster-whisper is not installed, run "
+                "`pip install voxera-os[whisper]`.[/dim]"
+            )
+
+        enable_output = Confirm.ask("Enable text-to-speech (voice output)?", default=True)
+        answers["enable_voice_output"] = enable_output
+        if enable_output:
+            tts_backend = Prompt.ask(
+                "Text-to-speech backend",
+                choices=list(TTS_BACKEND_CHOICES),
+                default=TTS_BACKEND_PIPER_LOCAL,
+            )
+            answers["voice_tts_backend"] = tts_backend
+            console.print(
+                "[dim]If piper-tts is not installed, run `pip install voxera-os[piper]`.[/dim]"
+            )
+            if tts_backend == TTS_BACKEND_PIPER_LOCAL:
+                model = Prompt.ask(
+                    "Piper model (name or path to .onnx). Leave blank to use the "
+                    "default 'en_US-lessac-medium'",
+                    default="",
+                ).strip()
+                answers["voice_tts_piper_model"] = model or None
+
+    # Persist answers.  When the foundation is disabled we explicitly null
+    # every voice key so the runtime config reflects the wizard's answer
+    # (no silently-stale backend choices from a prior run).
+    updates: dict[str, object | None] = {
+        "enable_voice_foundation": bool(answers["enable_voice_foundation"]),
+        "enable_voice_input": bool(answers["enable_voice_input"]),
+        "enable_voice_output": bool(answers["enable_voice_output"]),
+        "voice_stt_backend": answers["voice_stt_backend"],
+        "voice_tts_backend": answers["voice_tts_backend"],
+        "voice_tts_piper_model": answers["voice_tts_piper_model"],
+    }
+    path = update_runtime_config(updates, config_path=runtime_config_path)
+    console.print(f"Voice settings written to {path}.")
+    return answers
+
+
 async def run_setup(*, verbose_next: bool = False) -> AppConfig:
     ensure_dirs()
     mode = _pick_mode()
@@ -657,7 +755,8 @@ async def run_setup(*, verbose_next: bool = False) -> AppConfig:
         Panel(
             "Config separation:\n"
             "- App/brain config: ~/.config/voxera/config.yml (written by setup)\n"
-            "- Runtime ops config: ~/.config/voxera/config.json (optional, operator-managed)",
+            "- Runtime ops + voice config: ~/.config/voxera/config.json "
+            "(written by setup for voice, else operator-managed)",
             title="Config Files",
         )
     )
@@ -680,6 +779,7 @@ async def run_setup(*, verbose_next: bool = False) -> AppConfig:
 
     cfg.policy = _policy_defaults()
     _configure_web_investigation(cfg)
+    _configure_voice()
 
     if _confirm_write_config(config_path):
         save_config(cfg, path=config_path)
