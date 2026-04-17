@@ -140,15 +140,25 @@ class TestWorkbenchFormRendering:
         assert 'name="workbench_session_id"' in res.text
 
     def test_workbench_form_advertises_conversational_only_scope(self, _panel_env: Path) -> None:
-        """The form intro text must not imply the lane submits jobs."""
+        """The form intro text must not imply the lane submits jobs.
+
+        Two independent assertions: the page must carry the descriptive
+        "conversational only" copy AND must never carry bare success
+        claims like "job submitted" or "has been submitted". Splitting
+        catches regressions where new wording adds a success claim
+        alongside the existing guard language.
+        """
         client = TestClient(panel_module.app)
         res = client.get("/voice/status", headers=_operator_headers())
         assert res.status_code == 200
         lowered = res.text.lower()
-        # The lane must describe itself as conversational only.
+        # 1. Descriptive copy that describes this lane as conversational only.
         assert "conversational only" in lowered
-        # And must not claim it submits or executes anything.
-        assert "submit" not in lowered or "never" in lowered or "not submit" in lowered
+        # 2. No bare success claims that would imply a queue submission
+        #    happened on this lane.
+        assert "job submitted" not in lowered
+        assert "has been submitted" not in lowered
+        assert "executed successfully" not in lowered
 
 
 class TestWorkbenchHappyPath:
@@ -248,9 +258,11 @@ class TestWorkbenchFailClosed:
         assert "Audio file path is required" in res.text
         # Vera must not have been called, so no "Vera Response" success badge.
         assert "answered" not in res.text
-        # No "submitted" or "executed" wording.
+        # No bare success-claim wording.
         lowered = res.text.lower()
-        assert "submitted" not in lowered or "no queue job was submitted" in lowered
+        assert "job submitted" not in lowered
+        assert "has been submitted" not in lowered
+        assert "executed successfully" not in lowered
 
     def test_stt_unavailable_fails_closed(
         self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -438,10 +450,9 @@ class TestWorkbenchTrustModel:
         # on the conversational-only lane.
         assert "Governed Handoff" in res.text
         assert "not attempted" in res.text
-        assert (
-            "No queue preview was drafted" in res.text
-            or "no queue job was submitted" in res.text.lower()
-        )
+        # The descriptive copy must match the canonical template wording.
+        assert "No queue preview was drafted" in res.text
+        assert "no queue job was submitted" in res.text.lower()
         # No "submitted" or "executed" success claims.
         lowered = res.text.lower()
         assert "job submitted" not in lowered
@@ -619,6 +630,42 @@ class TestWorkbenchBadgeTruthfulness:
         assert "no_audio_artifact" in res.text
         # No fake audio path claim.
         assert "/tmp/vera_reply.wav" not in res.text
+
+    def test_vera_empty_answer_surfaces_upstream_vera_status_on_fail_card(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When Vera returns an empty answer with a concrete upstream status
+        (e.g. ``degraded_unavailable``), the Vera failure card must surface
+        BOTH the local display_status (``vera_empty_answer``) AND the
+        upstream Vera status as a secondary ``Vera Status`` detail line so
+        an operator can tell why the answer was empty."""
+
+        async def _empty_degraded(**_kwargs: Any) -> dict[str, Any]:
+            return {"answer": "   ", "status": "degraded_unavailable"}
+
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _empty_degraded)
+        stt = _make_stt_response(transcript="hi")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/test.wav",
+                    "workbench_send_to_vera": "1",
+                },
+            )
+        assert res.status_code == 200
+        # Failure-styled block with local reason.
+        assert "badge-fail" in res.text
+        assert "vera_empty_answer" in res.text
+        # Upstream Vera status detail is rendered so the operator can tell
+        # *why* the answer was empty (degraded brain provider, etc.).
+        assert "Vera Status" in res.text
+        assert "degraded_unavailable" in res.text
+        # No fabricated answer body.
+        assert "answered" not in res.text
 
 
 class TestWorkbenchOperatorContracts:

@@ -221,7 +221,8 @@ class TestVoiceToVeraTruthfulness:
         assert "handoff" not in data
         # The result also does not carry any "submitted"/"executed" claims.
         assert result.ok is True
-        assert "submitted" not in (result.vera_answer or "").lower() or True
+        assert "submitted" not in (result.vera_answer or "").lower()
+        assert "executed" not in (result.vera_answer or "").lower()
         # And the orchestrator does not invent a preview snapshot.
         assert result.preview_snapshot is None
         assert result.handoff_snapshot is None

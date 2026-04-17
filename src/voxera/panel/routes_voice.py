@@ -31,10 +31,38 @@ from ..vera.session_store import new_session_id
 from ..voice.flags import load_voice_foundation_flags
 from ..voice.input import transcribe_audio_file
 from ..voice.output import synthesize_text, synthesize_text_async
-from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, stt_response_as_dict
-from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, tts_response_as_dict
+from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse, stt_response_as_dict
+from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response_as_dict
 from ..voice.voice_status_summary import build_voice_status_summary
 from . import voice_workbench
+
+
+def _display_status_for_stt(response: STTResponse, *, ok: bool) -> str:
+    """Return the operator-facing status label for the STT result card.
+
+    Protects against adapter pathology where ``status`` reads ``succeeded``
+    but no transcript was produced — the card is failure-styled, so the
+    badge must never read ``succeeded``.
+    """
+    if ok:
+        return response.status
+    if response.status == STT_STATUS_SUCCEEDED:
+        return "no_transcript"
+    return response.status or "failed"
+
+
+def _display_status_for_tts(response: TTSResponse, *, ok: bool) -> str:
+    """Return the operator-facing status label for the TTS result card.
+
+    Protects against adapter pathology where ``status`` reads ``succeeded``
+    but no ``audio_path`` was produced — the card is failure-styled, so the
+    badge must never read ``succeeded``.
+    """
+    if ok:
+        return response.status
+    if response.status == TTS_STATUS_SUCCEEDED:
+        return "no_audio_artifact"
+    return response.status or "failed"
 
 
 def register_voice_routes(
@@ -371,24 +399,29 @@ def register_voice_routes(
             "tts": None,
         }
 
-        # ── Step 1: STT ──────────────────────────────────────────────
-        stt_ok = False
-        transcript_text: str | None = None
-        if not audio_path:
-            workbench_result["stt"] = {
-                "success": False,
-                "status": "failed",
-                "display_status": "failed",
-                "error": "Audio file path is required.",
-            }
-        elif flags is None:
+        # Flag-load failure is the single early gate: if the voice config
+        # failed to load, no downstream step can run, and the operator sees
+        # the truthful "voice configuration failed to load" error once.
+        if flags is None:
             workbench_result["stt"] = {
                 "success": False,
                 "status": "unavailable",
                 "display_status": "unavailable",
                 "error": "Cannot transcribe: voice configuration failed to load.",
             }
+            stt_ok = False
+            transcript_text: str | None = None
+        elif not audio_path:
+            workbench_result["stt"] = {
+                "success": False,
+                "status": "failed",
+                "display_status": "failed",
+                "error": "Audio file path is required.",
+            }
+            stt_ok = False
+            transcript_text = None
         else:
+            # ── Step 1: STT ──────────────────────────────────────────
             try:
                 start_ms = int(time.time() * 1000)
                 stt_response = transcribe_audio_file(
@@ -402,19 +435,10 @@ def register_voice_routes(
                     stt_response.status == STT_STATUS_SUCCEEDED and stt_response.transcript
                 )
                 transcript_text = stt_response.transcript if stt_ok else None
-                # Never show a success-looking status label on a failure-styled
-                # block: an adapter reporting ``succeeded`` with an empty
-                # transcript is still a failure from the operator's POV.
-                if stt_ok:
-                    display_status = stt_response.status
-                elif stt_response.status == STT_STATUS_SUCCEEDED:
-                    display_status = "no_transcript"
-                else:
-                    display_status = stt_response.status or "failed"
                 workbench_result["stt"] = {
                     "success": stt_ok,
                     "status": stt_response.status,
-                    "display_status": display_status,
+                    "display_status": _display_status_for_stt(stt_response, ok=stt_ok),
                     "transcript": transcript_text,
                     "language": stt_response.language if stt_ok else None,
                     "backend": stt_response.backend,
@@ -433,11 +457,17 @@ def register_voice_routes(
                     "display_status": "failed",
                     "error": f"Unexpected error: {type(exc).__name__}: {exc}",
                 }
+                stt_ok = False
+                transcript_text = None
 
         # ── Step 2: Vera (only when a real transcript exists AND operator opted in) ──
+        # ``flags is not None`` is guaranteed here: stt_ok cannot be True under
+        # the flag-load-failed branch above.  We keep the runtime assertion
+        # narrow and explicit so mypy and the reader see the same invariant.
         vera_ok = False
         vera_answer: str | None = None
-        if stt_ok and transcript_text and send_to_vera and flags is not None:
+        if stt_ok and transcript_text and send_to_vera:
+            assert flags is not None  # noqa: S101 — invariant: stt_ok implies flags loaded
             vera_result = await voice_workbench.run_transcript_to_vera_turn(
                 transcript_text=transcript_text,
                 session_id=session_id,
@@ -456,18 +486,10 @@ def register_voice_routes(
                 "vera_status": vera_result.vera_status,
                 "error": vera_result.error,
             }
-        elif stt_ok and transcript_text and send_to_vera and flags is None:
-            workbench_result["vera"] = {
-                "success": False,
-                "status": voice_workbench.STATUS_VOICE_INPUT_DISABLED,
-                "display_status": voice_workbench.STATUS_VOICE_INPUT_DISABLED,
-                "answer": None,
-                "vera_status": None,
-                "error": "Cannot send to Vera: voice configuration failed to load.",
-            }
 
         # ── Step 3: optional TTS on Vera's reply ────────────────────
-        if vera_ok and vera_answer and speak_response and flags is not None:
+        if vera_ok and vera_answer and speak_response:
+            assert flags is not None  # noqa: S101 — invariant: vera_ok implies flags loaded
             try:
                 start_ms = int(time.time() * 1000)
                 tts_response = await synthesize_text_async(
@@ -479,19 +501,10 @@ def register_voice_routes(
                 tts_ok = bool(
                     tts_response.status == TTS_STATUS_SUCCEEDED and tts_response.audio_path
                 )
-                # Never show a success-looking label on a failure-styled block:
-                # an adapter reporting ``succeeded`` with no audio_path is a
-                # failure from the operator's POV.
-                if tts_ok:
-                    tts_display_status = tts_response.status
-                elif tts_response.status == TTS_STATUS_SUCCEEDED:
-                    tts_display_status = "no_audio_artifact"
-                else:
-                    tts_display_status = tts_response.status or "failed"
                 workbench_result["tts"] = {
                     "success": tts_ok,
                     "status": tts_response.status,
-                    "display_status": tts_display_status,
+                    "display_status": _display_status_for_tts(tts_response, ok=tts_ok),
                     "audio_path": tts_response.audio_path if tts_ok else None,
                     "backend": tts_response.backend,
                     "error": tts_response.error if not tts_ok else None,
@@ -516,13 +529,6 @@ def register_voice_routes(
                     "display_status": "failed",
                     "error": f"Unexpected error: {type(exc).__name__}: {exc}",
                 }
-        elif vera_ok and speak_response and flags is None:
-            workbench_result["tts"] = {
-                "success": False,
-                "status": "unavailable",
-                "display_status": "unavailable",
-                "error": "Cannot synthesize: voice configuration failed to load.",
-            }
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
         tmpl = templates.get_template("voice.html")

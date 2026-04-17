@@ -147,9 +147,9 @@ async def run_transcript_to_vera_turn(
 
     answer_raw = reply.get("answer") if isinstance(reply, dict) else None
     answer = str(answer_raw or "").strip()
-    vera_status = (
-        str(reply.get("status") or "").strip() or None if isinstance(reply, dict) else None
-    )
+    vera_status: str | None = None
+    if isinstance(reply, dict):
+        vera_status = str(reply.get("status") or "").strip() or None
 
     if not answer:
         return VoiceWorkbenchVeraResult(
