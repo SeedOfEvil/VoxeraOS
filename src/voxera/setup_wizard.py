@@ -12,6 +12,7 @@ from typing import Literal, cast
 
 import yaml
 from rich.console import Console
+from rich.markup import escape as _markup_escape
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -20,6 +21,7 @@ from rich.text import Text
 from .config import (
     capabilities_report_path,
     default_config_path,
+    resolve_config_path,
     save_config,
     save_policy,
     update_runtime_config,
@@ -605,9 +607,15 @@ def _render_validation_summary(checks: list[dict[str, str]]) -> None:
     if ok_count:
         lines.append(f"✅ {ok_count} check{'s' if ok_count != 1 else ''} passed")
     for c in non_ok:
-        lines.append(f"{icon.get(c['status'], '⚠️')} {c['check']}: {c['detail']}")
+        # Escape dynamic fields -- doctor hints can legitimately contain
+        # square brackets (e.g. `pip install voxera-os[piper]`) that Rich
+        # would otherwise consume as style markup.
+        name_s = _markup_escape(str(c.get("check", "")))
+        detail_s = _markup_escape(str(c.get("detail", "")))
+        lines.append(f"{icon.get(c['status'], '⚠️')} {name_s}: {detail_s}")
         if c.get("hint"):
-            lines.append(f"   → {c['hint']}")
+            hint_s = _markup_escape(str(c["hint"]))
+            lines.append(f"   → {hint_s}")
 
     if fail_count:
         lines.append("")
@@ -637,10 +645,14 @@ def _post_setup_validation(cfg: AppConfig) -> None:
             # checks ("no health event", "lock absent", …) are expected-
             # default-state noise, not actionable blockers.
             #
-            # Only surface doctor results that report an actual failure
-            # (status "fail").  Warn-level runtime state is left to
-            # `voxera doctor --quick` which the summary already recommends.
-            if rc["status"] in {"ok", "fail"}:
+            # Exception: voice: * warn checks carry actionable setup-pointing
+            # hints (install an optional dep, fix a Piper model path, pick a
+            # backend).  Suppressing them here would make "Setup complete"
+            # misleading for a user who just enabled voice and is missing a
+            # dependency.  Fail-level checks always surface.
+            status = rc["status"]
+            name = str(rc.get("check", ""))
+            if status in {"ok", "fail"} or (status == "warn" and name.startswith("voice:")):
                 checks.append(rc)
     _render_validation_summary(checks)
 
@@ -670,6 +682,21 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
             "change these answers later by re-running `voxera setup`.",
             title="Voice Setup",
         )
+    )
+
+    # Read the existing runtime config so re-running setup can pre-fill the
+    # Piper model prompt with the previously-stored value.  Any failure here
+    # is non-fatal -- we just fall back to an empty default.
+    existing_runtime: dict[str, object] = {}
+    with contextlib.suppress(Exception):
+        path = resolve_config_path(runtime_config_path)
+        if path.exists():
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing_runtime = loaded
+    existing_piper_model_raw = existing_runtime.get("voice_tts_piper_model")
+    existing_piper_model = (
+        str(existing_piper_model_raw).strip() if isinstance(existing_piper_model_raw, str) else ""
     )
 
     answers: dict[str, object] = {
@@ -712,11 +739,25 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
                 "[dim]If piper-tts is not installed, run `pip install voxera-os[piper]`.[/dim]"
             )
             if tts_backend == TTS_BACKEND_PIPER_LOCAL:
-                model = Prompt.ask(
-                    "Piper model (name or path to .onnx). Leave blank to use the "
-                    "default 'en_US-lessac-medium'",
-                    default="",
-                ).strip()
+                # Pre-fill with the existing stored value so re-running the
+                # wizard does not silently wipe a configured model path.
+                if existing_piper_model:
+                    piper_prompt = (
+                        "Piper model (name or path to .onnx). "
+                        "Press Enter to keep the current value, or type a new "
+                        "name/path.  Type 'default' to clear and fall back to "
+                        "'en_US-lessac-medium'"
+                    )
+                    piper_default = existing_piper_model
+                else:
+                    piper_prompt = (
+                        "Piper model (name or path to .onnx). Leave blank to "
+                        "use the default 'en_US-lessac-medium'"
+                    )
+                    piper_default = ""
+                model = Prompt.ask(piper_prompt, default=piper_default).strip()
+                if model.lower() == "default":
+                    model = ""
                 answers["voice_tts_piper_model"] = model or None
 
     # Persist answers.  When the foundation is disabled we explicitly null

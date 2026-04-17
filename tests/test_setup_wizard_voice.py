@@ -184,6 +184,67 @@ class TestConfigureVoiceEnabled:
         data = json.loads(cfg_path.read_text(encoding="utf-8"))
         assert "voice_tts_piper_model" not in data
 
+    def test_rerun_prefills_existing_piper_model_as_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Re-running setup with an existing piper_model keeps it when the user presses Enter."""
+        cfg_path = tmp_path / "config.json"
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "enable_voice_foundation": True,
+                    "enable_voice_output": True,
+                    "voice_tts_backend": "piper_local",
+                    "voice_tts_piper_model": "/models/existing-voice.onnx",
+                }
+            ),
+            encoding="utf-8",
+        )
+        _monkey_confirm(monkeypatch, [True, False, True])
+
+        captured_defaults: list[object] = []
+        answer_queue = iter(["piper_local", "/models/existing-voice.onnx"])
+
+        def _ask(prompt, **kwargs):
+            captured_defaults.append(kwargs.get("default"))
+            return next(answer_queue)
+
+        monkeypatch.setattr(setup_wizard.Prompt, "ask", _ask)
+
+        answers = setup_wizard._configure_voice(runtime_config_path=cfg_path)
+
+        # The Piper-model prompt must have been offered the existing value as default.
+        assert "/models/existing-voice.onnx" in captured_defaults
+        # The existing value is preserved, not wiped, on an Enter-press re-run.
+        assert answers["voice_tts_piper_model"] == "/models/existing-voice.onnx"
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert data["voice_tts_piper_model"] == "/models/existing-voice.onnx"
+
+    def test_rerun_explicit_default_clears_piper_model(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Typing 'default' at the Piper prompt clears the stored model."""
+        cfg_path = tmp_path / "config.json"
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "enable_voice_foundation": True,
+                    "enable_voice_output": True,
+                    "voice_tts_backend": "piper_local",
+                    "voice_tts_piper_model": "/models/existing-voice.onnx",
+                }
+            ),
+            encoding="utf-8",
+        )
+        _monkey_confirm(monkeypatch, [True, False, True])
+        _monkey_prompt(monkeypatch, ["piper_local", "default"])
+
+        answers = setup_wizard._configure_voice(runtime_config_path=cfg_path)
+
+        assert answers["voice_tts_piper_model"] is None
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert "voice_tts_piper_model" not in data
+
     def test_voice_answers_load_back_through_flags(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
