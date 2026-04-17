@@ -9,6 +9,7 @@ These tests mock the Piper dependency so they run without piper-tts installed.
 
 from __future__ import annotations
 
+import tempfile
 import wave
 from pathlib import Path
 from typing import Any
@@ -51,7 +52,7 @@ def _make_backend_with_mock_voice(voice_mock: Any) -> PiperLocalBackend:
 # ---------------------------------------------------------------------------
 
 
-def test_piper_synthesize_wav_success(tmp_path: Path) -> None:
+def test_piper_synthesize_wav_success() -> None:
     voice_mock = mock.MagicMock()
     voice_mock.synthesize_wav.side_effect = _fake_synthesize_wav
 
@@ -98,11 +99,10 @@ def test_piper_synthesize_wav_is_called_not_stream_raw() -> None:
 
 
 def test_piper_missing_synthesize_wav_returns_backend_error() -> None:
-    """If synthesize_wav raises AttributeError (method absent), report backend_error."""
-    voice_mock = mock.MagicMock(spec=[])  # no attributes at all
-    # Accessing synthesize_wav on a spec=[] mock raises AttributeError
-    type(voice_mock).synthesize_wav = mock.PropertyMock(
-        side_effect=AttributeError("'PiperVoice' object has no attribute 'synthesize_wav'")
+    """If synthesize_wav is absent on the voice object, report failed/backend_error."""
+    voice_mock = mock.MagicMock()
+    voice_mock.synthesize_wav.side_effect = AttributeError(
+        "'PiperVoice' object has no attribute 'synthesize_wav'"
     )
 
     backend = _make_backend_with_mock_voice(voice_mock)
@@ -168,7 +168,7 @@ def test_piper_zero_frame_artifact_returns_backend_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_piper_response_contract_on_success(tmp_path: Path) -> None:
+def test_piper_response_contract_on_success() -> None:
     """Verify all required contract fields are present and correct on success."""
     voice_mock = mock.MagicMock()
     voice_mock.synthesize_wav.side_effect = _fake_synthesize_wav
@@ -239,3 +239,70 @@ def test_piper_non_wav_format_returns_unsupported() -> None:
 
     assert result.status == TTS_STATUS_UNSUPPORTED
     assert result.audio_path is None
+
+
+# ---------------------------------------------------------------------------
+# 7. Temp file cleanup on failure — no orphans left on disk
+# ---------------------------------------------------------------------------
+
+
+def test_piper_temp_file_cleaned_up_on_synthesis_exception() -> None:
+    """When synthesize_wav raises, the temp file must be deleted, not leaked."""
+    voice_mock = mock.MagicMock()
+    voice_mock.synthesize_wav.side_effect = RuntimeError("inference crash")
+
+    backend = _make_backend_with_mock_voice(voice_mock)
+    request = _make_request()
+
+    created: list[str] = []
+    _real_mkstemp = tempfile.mkstemp
+
+    def recording_mkstemp(*args: Any, **kwargs: Any) -> tuple[int, str]:
+        fd, path = _real_mkstemp(*args, **kwargs)
+        created.append(path)
+        return fd, path
+
+    with (
+        mock.patch("voxera.voice.piper_backend._PIPER_AVAILABLE", True),
+        mock.patch("voxera.voice.piper_backend.tempfile.mkstemp", side_effect=recording_mkstemp),
+    ):
+        result = synthesize_tts_request(request, adapter=backend)
+
+    assert result.status == TTS_STATUS_FAILED
+    assert result.audio_path is None
+    assert len(created) == 1, "expected exactly one temp file to be created"
+    assert not Path(created[0]).exists(), f"orphaned temp file left on disk: {created[0]}"
+
+
+def test_piper_temp_file_cleaned_up_on_zero_frames() -> None:
+    """When synthesize_wav writes zero frames, the temp file must be deleted."""
+    voice_mock = mock.MagicMock()
+
+    def write_zero_frames(text: str, wav_file: wave.Wave_write, **kwargs: Any) -> None:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(22050)
+
+    voice_mock.synthesize_wav.side_effect = write_zero_frames
+
+    backend = _make_backend_with_mock_voice(voice_mock)
+    request = _make_request()
+
+    created: list[str] = []
+    _real_mkstemp = tempfile.mkstemp
+
+    def recording_mkstemp(*args: Any, **kwargs: Any) -> tuple[int, str]:
+        fd, path = _real_mkstemp(*args, **kwargs)
+        created.append(path)
+        return fd, path
+
+    with (
+        mock.patch("voxera.voice.piper_backend._PIPER_AVAILABLE", True),
+        mock.patch("voxera.voice.piper_backend.tempfile.mkstemp", side_effect=recording_mkstemp),
+    ):
+        result = synthesize_tts_request(request, adapter=backend)
+
+    assert result.status == TTS_STATUS_FAILED
+    assert result.audio_path is None
+    assert len(created) == 1
+    assert not Path(created[0]).exists(), f"orphaned temp file left on disk: {created[0]}"
