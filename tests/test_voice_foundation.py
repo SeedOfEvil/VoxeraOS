@@ -38,12 +38,15 @@ def test_voice_input_requires_enabled_flag() -> None:
         ingest_voice_transcript(transcript_text="hello", voice_input_enabled=False)
 
 
-def test_voice_output_status_reports_placeholder_when_backend_missing() -> None:
+def test_voice_output_status_reports_placeholder_when_backend_missing(
+    tmp_path: Path,
+) -> None:
     flags = load_voice_foundation_flags(
+        config_path=tmp_path / "config.json",  # non-existent → no backend in file
         environ={
             "VOXERA_ENABLE_VOICE_FOUNDATION": "1",
             "VOXERA_ENABLE_VOICE_OUTPUT": "1",
-        }
+        },
     )
 
     payload = voice_output_status(flags)
