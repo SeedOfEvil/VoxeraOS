@@ -180,23 +180,27 @@ class TestPiperVoiceLoadFailure:
 
 def _make_mock_voice(
     *,
-    audio_bytes: bytes | None = None,
+    num_samples: int | None = None,
     sample_rate: int = 22050,
 ) -> MagicMock:
-    """Build a mock PiperVoice that returns fixed audio data.
+    """Build a mock PiperVoice that writes fixed audio via synthesize_wav.
 
     Produces 16-bit PCM mono audio by default (0.5s of silence at 22050 Hz).
+    Uses the piper-tts 1.4.2 synthesize_wav(text, wav_file, ...) API.
     """
-    if audio_bytes is None:
-        # 0.5 seconds of silence: 22050 * 0.5 * 2 bytes = 22050 bytes
+    if num_samples is None:
         num_samples = int(sample_rate * 0.5)
-        audio_bytes = b"\x00\x00" * num_samples
+    audio_frames = b"\x00\x00" * num_samples
+    _sample_rate = sample_rate
+
+    def _write_wav(text: str, wav_file: wave.Wave_write, **kwargs: object) -> None:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(_sample_rate)
+        wav_file.writeframes(audio_frames)
 
     mock_voice = MagicMock()
-    mock_voice.synthesize_stream_raw.return_value = iter([audio_bytes])
-    mock_config = MagicMock()
-    mock_config.sample_rate = sample_rate
-    mock_voice.config = mock_config
+    mock_voice.synthesize_wav.side_effect = _write_wav
     return mock_voice
 
 
@@ -303,13 +307,17 @@ class TestPiperSynthesisSuccess:
 
 class TestPiperNoFakeSuccess:
     def test_empty_audio_data_returns_error(self) -> None:
-        """If synthesis produces no audio bytes, return error — not fake success."""
+        """If synthesize_wav writes no frames, return error — not fake success."""
         backend = PiperLocalBackend()
         mock_voice = MagicMock()
-        mock_voice.synthesize_stream_raw.return_value = iter([b""])
-        mock_config = MagicMock()
-        mock_config.sample_rate = 22050
-        mock_voice.config = mock_config
+
+        def write_empty_wav(text: str, wav_file: wave.Wave_write, **kwargs: object) -> None:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(22050)
+            # intentionally no writeframes() — zero-frame WAV
+
+        mock_voice.synthesize_wav.side_effect = write_empty_wav
         backend._voice = mock_voice
 
         req = build_tts_request(text="Hello", request_id="no-audio")
@@ -324,7 +332,7 @@ class TestPiperNoFakeSuccess:
         """Backend should never return a fake placeholder path."""
         backend = PiperLocalBackend()
         mock_voice = MagicMock()
-        mock_voice.synthesize_stream_raw.side_effect = RuntimeError("engine crash")
+        mock_voice.synthesize_wav.side_effect = RuntimeError("engine crash")
         backend._voice = mock_voice
 
         req = build_tts_request(text="Hello", request_id="no-fake")
@@ -342,7 +350,7 @@ class TestPiperSynthesisFailure:
     def test_backend_exception_returns_error_result(self) -> None:
         backend = PiperLocalBackend()
         mock_voice = MagicMock()
-        mock_voice.synthesize_stream_raw.side_effect = RuntimeError("native library crash")
+        mock_voice.synthesize_wav.side_effect = RuntimeError("native library crash")
         backend._voice = mock_voice
 
         req = build_tts_request(text="Hello", request_id="fail-1")
@@ -356,7 +364,7 @@ class TestPiperSynthesisFailure:
     def test_backend_exception_through_entry_point(self) -> None:
         backend = PiperLocalBackend()
         mock_voice = MagicMock()
-        mock_voice.synthesize_stream_raw.side_effect = RuntimeError("segfault")
+        mock_voice.synthesize_wav.side_effect = RuntimeError("segfault")
         backend._voice = mock_voice
 
         req = build_tts_request(text="Hello", request_id="fail-ep")
@@ -370,7 +378,7 @@ class TestPiperSynthesisFailure:
         """No exceptions should escape the backend through the entry point."""
         backend = PiperLocalBackend()
         mock_voice = MagicMock()
-        mock_voice.synthesize_stream_raw.side_effect = MemoryError("OOM")
+        mock_voice.synthesize_wav.side_effect = MemoryError("OOM")
         backend._voice = mock_voice
 
         req = build_tts_request(text="Hello", request_id="no-leak")
@@ -404,7 +412,7 @@ class TestPiperSpeakerHandling:
         assert backend._speaker == "5"
 
     def test_speaker_passed_to_synthesize(self) -> None:
-        """When speaker is configured, it should be passed to the voice."""
+        """When speaker is configured, it should be passed to synthesize_wav."""
         backend = PiperLocalBackend(speaker="2")
         mock_voice = _make_mock_voice()
         backend._voice = mock_voice
@@ -413,8 +421,8 @@ class TestPiperSpeakerHandling:
         with patch("voxera.voice.piper_backend._PIPER_AVAILABLE", True):
             result = backend.synthesize(req)
 
-        mock_voice.synthesize_stream_raw.assert_called_once()
-        call_kwargs = mock_voice.synthesize_stream_raw.call_args
+        mock_voice.synthesize_wav.assert_called_once()
+        call_kwargs = mock_voice.synthesize_wav.call_args
         assert call_kwargs[1].get("speaker_id") == 2
 
         if result.audio_path:
@@ -430,7 +438,7 @@ class TestPiperSpeakerHandling:
         with patch("voxera.voice.piper_backend._PIPER_AVAILABLE", True):
             result = backend.synthesize(req)
 
-        call_kwargs = mock_voice.synthesize_stream_raw.call_args
+        call_kwargs = mock_voice.synthesize_wav.call_args
         assert "speaker_id" not in call_kwargs[1]
 
         if result.audio_path:
@@ -446,7 +454,7 @@ class TestPiperSpeakerHandling:
         with patch("voxera.voice.piper_backend._PIPER_AVAILABLE", True):
             result = backend.synthesize(req)
 
-        call_kwargs = mock_voice.synthesize_stream_raw.call_args
+        call_kwargs = mock_voice.synthesize_wav.call_args
         assert call_kwargs[1].get("speaker_id") == "narrator"
 
         if result.audio_path:
@@ -487,27 +495,29 @@ class TestPiperConfiguration:
 
 
 class TestPiperMultiChunk:
-    def test_multi_chunk_audio_assembled(self) -> None:
-        """Piper streams audio in chunks; all chunks should be assembled."""
+    def test_audio_content_written_to_wav(self) -> None:
+        """synthesize_wav writes audio content faithfully to the output WAV file."""
         backend = PiperLocalBackend()
-        chunk1 = b"\x00\x00" * 1000
-        chunk2 = b"\x01\x01" * 1000
+        audio_data = b"\xab\xcd" * 2000  # distinct pattern, 2000 frames
+
+        def write_audio(text: str, wav_file: wave.Wave_write, **kwargs: object) -> None:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(22050)
+            wav_file.writeframes(audio_data)
+
         mock_voice = MagicMock()
-        mock_voice.synthesize_stream_raw.return_value = iter([chunk1, chunk2])
-        mock_config = MagicMock()
-        mock_config.sample_rate = 22050
-        mock_voice.config = mock_config
+        mock_voice.synthesize_wav.side_effect = write_audio
         backend._voice = mock_voice
 
-        req = build_tts_request(text="Hello", request_id="multi-chunk")
+        req = build_tts_request(text="Hello", request_id="audio-content")
         with patch("voxera.voice.piper_backend._PIPER_AVAILABLE", True):
             result = backend.synthesize(req)
 
         assert result.audio_path is not None
-        # Verify the file has all the data
         with wave.open(result.audio_path, "rb") as wf:
             frames = wf.readframes(wf.getnframes())
-            assert len(frames) == len(chunk1) + len(chunk2)
+            assert frames == audio_data
 
         os.unlink(result.audio_path)
 
@@ -519,8 +529,7 @@ class TestPiperTimingFields:
     def test_invalid_sample_rate_does_not_crash(self) -> None:
         """An invalid sample_rate (0) causes WAV write failure, handled as synthesis error."""
         backend = PiperLocalBackend()
-        # Pass explicit audio bytes so we don't hit the empty-audio guard
-        mock_voice = _make_mock_voice(audio_bytes=b"\x00\x00" * 100, sample_rate=0)
+        mock_voice = _make_mock_voice(sample_rate=0)
         backend._voice = mock_voice
 
         req = build_tts_request(text="Hello", request_id="dur-zero")
@@ -605,7 +614,7 @@ class TestPiperAsync:
 
         backend = PiperLocalBackend()
         mock_voice = MagicMock()
-        mock_voice.synthesize_stream_raw.side_effect = RuntimeError("crash")
+        mock_voice.synthesize_wav.side_effect = RuntimeError("crash")
         backend._voice = mock_voice
 
         req = build_tts_request(text="Hello", request_id="async-crash")

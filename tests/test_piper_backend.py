@@ -139,18 +139,22 @@ def test_piper_synthesize_wav_raises_returns_backend_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_piper_empty_artifact_returns_backend_error() -> None:
-    """A zero-byte output file must not be returned as success."""
+def test_piper_zero_frame_artifact_returns_backend_error() -> None:
+    """A WAV file with zero audio frames must not be returned as success."""
     voice_mock = mock.MagicMock()
-    voice_mock.synthesize_wav.side_effect = _fake_synthesize_wav
+
+    def write_zero_frames(text: str, wav_file: wave.Wave_write, **kwargs: object) -> None:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(22050)
+        # no writeframes() — zero-frame WAV
+
+    voice_mock.synthesize_wav.side_effect = write_zero_frames
 
     backend = _make_backend_with_mock_voice(voice_mock)
     request = _make_request()
 
-    with (
-        mock.patch("voxera.voice.piper_backend._PIPER_AVAILABLE", True),
-        mock.patch("voxera.voice.piper_backend.os.path.getsize", return_value=0),
-    ):
+    with mock.patch("voxera.voice.piper_backend._PIPER_AVAILABLE", True):
         result = synthesize_tts_request(request, adapter=backend)
 
     assert result.status == TTS_STATUS_FAILED

@@ -151,9 +151,19 @@ class PiperLocalBackend:
             with wave.open(tmp_path, "wb") as wav_file:
                 voice.synthesize_wav(request.text, wav_file, **synth_kwargs)
 
-            # Verify artifact is non-empty
-            if os.path.getsize(tmp_path) == 0:
-                os.unlink(tmp_path)
+            # Read back WAV metadata to verify frames were written and compute duration
+            n_frames: int = 0
+            sample_rate: int = 0
+            try:
+                with wave.open(tmp_path, "rb") as wf:
+                    n_frames = wf.getnframes()
+                    sample_rate = wf.getframerate()
+            except Exception:
+                pass
+
+            if n_frames == 0:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
                 tmp_path = None
                 return TTSAdapterResult(
                     audio_path=None,
@@ -161,15 +171,8 @@ class PiperLocalBackend:
                     error_class=TTS_ERROR_BACKEND_ERROR,
                 )
 
-            # Best-effort duration from WAV metadata
-            try:
-                with wave.open(tmp_path, "rb") as wf:
-                    frames = wf.getnframes()
-                    rate = wf.getframerate()
-                    if rate > 0 and frames > 0:
-                        audio_duration_ms = int((frames / rate) * 1000)
-            except Exception:
-                pass
+            if sample_rate > 0:
+                audio_duration_ms = int((n_frames / sample_rate) * 1000)
 
         except Exception as exc:
             # Clean up orphaned temp file on failure
