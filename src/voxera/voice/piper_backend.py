@@ -133,6 +133,7 @@ class PiperLocalBackend:
         # -- synthesize --------------------------------------------------------
         inference_start_ms = int(time.time() * 1000)
         tmp_path: str | None = None
+        audio_duration_ms: int | None = None
         try:
             # Build speaker_id kwarg if configured
             synth_kwargs: dict[str, Any] = {}
@@ -142,36 +143,33 @@ class PiperLocalBackend:
                 except ValueError:
                     synth_kwargs["speaker_id"] = self._speaker
 
-            # Synthesize to raw audio bytes
-            audio_chunks: list[bytes] = []
-            for audio_chunk in voice.synthesize_stream_raw(request.text, **synth_kwargs):
-                audio_chunks.append(audio_chunk)
-            audio_bytes = b"".join(audio_chunks)
+            # synthesize_wav writes WAV directly to the provided wave.Wave_write
+            # object (piper-tts 1.4.2 API — no synthesize_stream_raw)
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".wav", prefix="voxera_tts_piper_")
+            os.close(tmp_fd)
 
-            if not audio_bytes:
+            with wave.open(tmp_path, "wb") as wav_file:
+                voice.synthesize_wav(request.text, wav_file, **synth_kwargs)
+
+            # Verify artifact is non-empty
+            if os.path.getsize(tmp_path) == 0:
+                os.unlink(tmp_path)
+                tmp_path = None
                 return TTSAdapterResult(
                     audio_path=None,
                     error="Piper synthesis produced no audio data",
                     error_class=TTS_ERROR_BACKEND_ERROR,
                 )
 
-            # Write to a temp WAV file
-            sample_rate = voice.config.sample_rate
-            sample_width = 2  # 16-bit PCM
-            channels = 1  # mono
-
-            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".wav", prefix="voxera_tts_piper_")
+            # Best-effort duration from WAV metadata
             try:
-                with wave.open(tmp_path, "wb") as wf:
-                    wf.setnchannels(channels)
-                    wf.setsampwidth(sample_width)
-                    wf.setframerate(sample_rate)
-                    wf.writeframes(audio_bytes)
+                with wave.open(tmp_path, "rb") as wf:
+                    frames = wf.getnframes()
+                    rate = wf.getframerate()
+                    if rate > 0 and frames > 0:
+                        audio_duration_ms = int((frames / rate) * 1000)
             except Exception:
-                os.close(tmp_fd)
-                raise
-            else:
-                os.close(tmp_fd)
+                pass
 
         except Exception as exc:
             # Clean up orphaned temp file on failure
@@ -185,15 +183,6 @@ class PiperLocalBackend:
             )
 
         inference_end_ms = int(time.time() * 1000)
-
-        # -- compute audio duration if possible --------------------------------
-        audio_duration_ms: int | None = None
-        try:
-            num_frames = len(audio_bytes) // (sample_width * channels)
-            if sample_rate > 0 and num_frames > 0:
-                audio_duration_ms = int((num_frames / sample_rate) * 1000)
-        except Exception:
-            pass  # duration is best-effort; leave as None
 
         return TTSAdapterResult(
             audio_path=tmp_path,
