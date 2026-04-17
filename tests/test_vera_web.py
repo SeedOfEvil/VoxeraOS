@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from voxera import config as _voxera_config
 from voxera.core.writing_draft_intent import extract_text_draft_from_reply
 from voxera.models import AppConfig, WebInvestigationConfig
 from voxera.vera import prompt as vera_prompt
@@ -271,6 +272,7 @@ def test_vera_web_voice_transcript_fails_closed_when_disabled(tmp_path, monkeypa
         return {"answer": f"Echo: {user_message}", "status": "ok:test"}
 
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+    monkeypatch.setattr(_voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json")
     monkeypatch.delenv("VOXERA_ENABLE_VOICE_FOUNDATION", raising=False)
     monkeypatch.delenv("VOXERA_ENABLE_VOICE_INPUT", raising=False)
     client = TestClient(vera_app_module.app)

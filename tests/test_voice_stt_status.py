@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from voxera import config as _voxera_config
 from voxera.voice.flags import VoiceFoundationFlags, load_voice_foundation_flags
 from voxera.voice.stt_status import (
     STT_STATUS_LABEL_AVAILABLE,
@@ -179,9 +180,12 @@ class TestSTTStatusInDoctor:
         stt_checks = [c for c in checks if c["check"] == "voice: stt status"]
         assert len(stt_checks) == 1
 
-    def test_stt_check_ok_when_disabled(self, tmp_path: Path) -> None:
+    def test_stt_check_ok_when_disabled(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from voxera.doctor import run_quick_doctor
 
+        monkeypatch.setattr(_voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json")
         queue_root = self._make_queue(tmp_path)
         checks = run_quick_doctor(queue_root=queue_root)
         stt_check = next(c for c in checks if c["check"] == "voice: stt status")
@@ -194,6 +198,7 @@ class TestSTTStatusInDoctor:
     ) -> None:
         from voxera.doctor import run_quick_doctor
 
+        monkeypatch.setattr(_voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json")
         monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
         monkeypatch.setenv("VOXERA_ENABLE_VOICE_INPUT", "1")
 

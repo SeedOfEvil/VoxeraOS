@@ -14,6 +14,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from voxera import config as _voxera_config
 from voxera.panel import app as panel_module
 from voxera.voice.tts_protocol import (
     TTS_STATUS_FAILED,
@@ -47,6 +48,7 @@ def _panel_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (queue_dir / "health.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
     monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setattr(_voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json")
 
 
 def _make_tts_response(

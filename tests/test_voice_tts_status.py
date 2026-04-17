@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from voxera import config as _voxera_config
 from voxera.voice.flags import VoiceFoundationFlags, load_voice_foundation_flags
 from voxera.voice.tts_status import (
     TTS_STATUS_AVAILABLE,
@@ -222,10 +223,13 @@ class TestTTSStatusInDoctor:
         tts_checks = [c for c in checks if c["check"] == "voice: tts status"]
         assert len(tts_checks) == 1
 
-    def test_tts_check_ok_when_disabled(self, tmp_path: Path) -> None:
+    def test_tts_check_ok_when_disabled(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Disabled-by-config is intentional; should be ok, not warn."""
         from voxera.doctor import run_quick_doctor
 
+        monkeypatch.setattr(_voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json")
         queue_root = self._make_queue(tmp_path)
         checks = run_quick_doctor(queue_root=queue_root)
         tts_check = next(c for c in checks if c["check"] == "voice: tts status")
@@ -238,6 +242,7 @@ class TestTTSStatusInDoctor:
     ) -> None:
         from voxera.doctor import run_quick_doctor
 
+        monkeypatch.setattr(_voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json")
         monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
         monkeypatch.setenv("VOXERA_ENABLE_VOICE_OUTPUT", "1")
         # no VOXERA_VOICE_TTS_BACKEND set
