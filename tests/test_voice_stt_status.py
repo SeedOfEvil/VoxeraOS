@@ -185,7 +185,9 @@ class TestSTTStatusInDoctor:
     ) -> None:
         from voxera.doctor import run_quick_doctor
 
-        monkeypatch.setattr(_voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json")
+        monkeypatch.setattr(
+            _voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json"
+        )
         queue_root = self._make_queue(tmp_path)
         checks = run_quick_doctor(queue_root=queue_root)
         stt_check = next(c for c in checks if c["check"] == "voice: stt status")
@@ -198,7 +200,9 @@ class TestSTTStatusInDoctor:
     ) -> None:
         from voxera.doctor import run_quick_doctor
 
-        monkeypatch.setattr(_voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json")
+        monkeypatch.setattr(
+            _voxera_config, "_DEFAULT_RUNTIME_CONFIG", tmp_path / "voxera_config.json"
+        )
         monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
         monkeypatch.setenv("VOXERA_ENABLE_VOICE_INPUT", "1")
 
