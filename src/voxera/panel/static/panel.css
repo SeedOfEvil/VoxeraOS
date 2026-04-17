@@ -1088,3 +1088,24 @@ a:focus-visible {
 .voice-status-grid {
   margin-bottom: 0;
 }
+
+/* Workbench lanes — stacked bounded panels */
+.voice-workbench-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.voice-workbench-lane {
+  margin-bottom: 0;
+}
+.voice-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.9rem;
+}
+.voice-checkbox-row input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+}
