@@ -533,3 +533,356 @@ class TestWorkbenchSecurityEnforcement:
             follow_redirects=False,
         )
         assert res.status_code in (401, 403)
+
+
+class TestWorkbenchBadgeTruthfulness:
+    """Pin that failure-styled blocks never carry success-looking labels.
+
+    The adapter-reported ``status`` string can legitimately be ``succeeded``
+    even on a truthful failure (e.g. ``SUCCEEDED`` with empty transcript, or
+    ``SUCCEEDED`` with no audio_path). The route must translate that into a
+    ``display_status`` the UI surfaces so badges never read ``succeeded`` on
+    a fail-styled card.
+    """
+
+    def test_stt_succeeded_but_no_transcript_displays_no_transcript_badge(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Adapter pathology: status=succeeded but transcript is None."""
+        stt = _make_stt_response(
+            status=STT_STATUS_SUCCEEDED,
+            transcript=None,
+            error="Adapter returned empty transcript",
+            error_class="empty_audio",
+        )
+        called = {"vera": False}
+
+        async def _must_not_call_vera(**_kwargs: Any) -> dict[str, Any]:  # pragma: no cover
+            called["vera"] = True
+            return {"answer": "x", "status": "ok:test"}
+
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _must_not_call_vera)
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/test.wav",
+                    "workbench_send_to_vera": "1",
+                },
+            )
+        assert res.status_code == 200
+        # The Transcript block is failure-styled AND the badge must not read
+        # "succeeded".
+        assert "badge-fail" in res.text
+        assert "no_transcript" in res.text
+        # The Vera lane must not have been called and no "answered" success
+        # badge must appear.
+        assert called["vera"] is False
+        assert "answered" not in res.text
+
+    def test_tts_succeeded_but_no_audio_path_displays_no_audio_artifact(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Adapter pathology: TTS status=succeeded but audio_path is None."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt_response(transcript="ping")
+        tts_bad = _make_tts_response(
+            status=TTS_STATUS_SUCCEEDED,
+            audio_path=None,
+            error="Adapter reported success but produced no file",
+            error_class="backend_error",
+        )
+
+        async def _fake_tts_async(**_kwargs: Any) -> TTSResponse:
+            return tts_bad
+
+        with (
+            patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt),
+            patch("voxera.panel.routes_voice.synthesize_text_async", side_effect=_fake_tts_async),
+        ):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/test.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_speak_response": "1",
+                },
+            )
+        assert res.status_code == 200
+        assert "Spoken Response (TTS)" in res.text
+        assert "no_audio_artifact" in res.text
+        # No fake audio path claim.
+        assert "/tmp/vera_reply.wav" not in res.text
+
+
+class TestWorkbenchOperatorContracts:
+    """Operator-facing behavior contracts that must not regress."""
+
+    def test_speak_response_unchecked_does_not_call_tts(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TTS must only run when the operator explicitly opted in."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        tts_called = {"n": 0}
+
+        async def _count_tts(**_kwargs: Any) -> TTSResponse:  # pragma: no cover
+            tts_called["n"] += 1
+            return _make_tts_response()
+
+        stt = _make_stt_response(transcript="hello")
+        with (
+            patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt),
+            patch("voxera.panel.routes_voice.synthesize_text_async", side_effect=_count_tts),
+        ):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/test.wav",
+                    "workbench_send_to_vera": "1",
+                    # speak_response deliberately unchecked
+                },
+            )
+        assert res.status_code == 200
+        assert tts_called["n"] == 0
+        # The empty state explicitly surfaces "TTS was not requested".
+        assert "TTS was not requested" in res.text
+
+    def test_language_is_passed_to_stt(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Operator-supplied language must reach the canonical STT call."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt_response(transcript="hola")
+        captured: dict[str, Any] = {}
+
+        def _capture_transcribe(**kwargs: Any) -> STTResponse:
+            captured.update(kwargs)
+            return stt
+
+        with patch(
+            "voxera.panel.routes_voice.transcribe_audio_file", side_effect=_capture_transcribe
+        ):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/test.wav",
+                    "workbench_language": "es",
+                    "workbench_send_to_vera": "1",
+                },
+            )
+        assert res.status_code == 200
+        assert captured["audio_path"] == "/tmp/test.wav"
+        assert captured["language"] == "es"
+
+    def test_session_id_is_preserved_across_subsequent_workbench_runs(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two consecutive workbench runs with the same session_id must share
+        the Vera session (so the voice turns appear in order in one thread)."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        stt_one = _make_stt_response(transcript="first")
+        stt_two = _make_stt_response(transcript="second")
+        session_id = "vera-wb-preserved"
+
+        client = TestClient(panel_module.app)
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt_one):
+            _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/a.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt_two):
+            _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/b.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        turns = session_store.read_session_turns(queue_dir, session_id)
+        # Expect: [user:first (voice), assistant:Ack first, user:second (voice), assistant:Ack second]
+        assert len(turns) == 4
+        assert turns[0]["role"] == "user" and turns[0]["input_origin"] == "voice_transcript"
+        assert turns[0]["text"] == "first"
+        assert turns[2]["role"] == "user" and turns[2]["input_origin"] == "voice_transcript"
+        assert turns[2]["text"] == "second"
+
+    def test_path_traversal_in_session_id_is_clamped(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Session JSON must never be written outside vera_sessions/."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        stt = _make_stt_response(transcript="clamp")
+        malicious = "../../etc/evil"
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": malicious,
+                },
+            )
+        assert res.status_code == 200
+        # Canonical session_store writes to queue_root/artifacts/vera_sessions/<basename>.json.
+        sessions_dir = queue_dir / "artifacts" / "vera_sessions"
+        written = list(sessions_dir.glob("*.json"))
+        # At least one file was written under the canonical sessions directory.
+        assert written, "no session file was written"
+        # Nothing outside vera_sessions/ was created from this request.
+        for path in written:
+            assert path.parent == sessions_dir
+            assert path.name in {"evil.json"}, f"unexpected session file {path.name!r}"
+
+    def test_no_turns_written_when_stt_fails(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A failed STT must not append a voice-origin turn to the session."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        stt = _make_stt_response(
+            status=STT_STATUS_UNAVAILABLE,
+            transcript=None,
+            error="STT disabled",
+            error_class="disabled",
+        )
+        session_id = "vera-wb-stt-fail"
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        turns = session_store.read_session_turns(queue_dir, session_id)
+        assert turns == []
+
+    def test_vera_empty_answer_does_not_trigger_tts(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If Vera returns an empty answer, TTS must not run (text is absent,
+        so there is nothing truthful to synthesize)."""
+
+        async def _empty_vera_reply(**_kwargs: Any) -> dict[str, Any]:
+            return {"answer": "   ", "status": "degraded_unavailable"}
+
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _empty_vera_reply)
+        tts_called = {"n": 0}
+
+        async def _count_tts(**_kwargs: Any) -> TTSResponse:  # pragma: no cover
+            tts_called["n"] += 1
+            return _make_tts_response()
+
+        stt = _make_stt_response(transcript="hi")
+        with (
+            patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt),
+            patch("voxera.panel.routes_voice.synthesize_text_async", side_effect=_count_tts),
+        ):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_speak_response": "1",
+                },
+            )
+        assert res.status_code == 200
+        assert tts_called["n"] == 0
+        # The page must truthfully surface that the TTS step did not run.
+        assert "Vera did not produce a real textual response" in res.text
+
+
+class TestWorkbenchHandoffAndQueueBoundary:
+    """Pin the queue/preview boundary: this lane never mutates queue state."""
+
+    def test_happy_path_does_not_write_job_files_to_queue_buckets(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        stt = _make_stt_response(transcript="do something")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": "vera-wb-boundary",
+                },
+            )
+        assert res.status_code == 200
+        # No queue job files (*.json) must exist in any canonical bucket.
+        # Subdirectories may be created by panel startup (e.g.
+        # ``pending/approvals``) but must remain empty of jobs.
+        for bucket in ("inbox", "pending", "running", "done", "failed", "canceled", "approvals"):
+            bucket_dir = queue_dir / bucket
+            if not bucket_dir.exists():
+                continue
+            job_files = [p for p in bucket_dir.rglob("*.json")]
+            assert job_files == [], f"unexpected job file(s) in {bucket}: {job_files}"
+
+    def test_session_does_not_claim_preview_or_handoff_state(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """After a happy run, the Vera session JSON must carry no
+        ``pending_job_preview`` or ``handoff`` fields — this lane never
+        claims either."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        stt = _make_stt_response(transcript="please do the thing")
+        session_id = "vera-wb-no-preview"
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        import json as _json
+
+        path = queue_dir / "artifacts" / "vera_sessions" / f"{session_id}.json"
+        assert path.exists()
+        data = _json.loads(path.read_text(encoding="utf-8"))
+        assert "pending_job_preview" not in data
+        assert "handoff" not in data

@@ -203,7 +203,7 @@
                 {% if workbench_result.stt.success %}
                   <span class="badge badge-ok">transcribed</span>
                 {% else %}
-                  <span class="badge badge-fail">{{workbench_result.stt.status or "failed"}}</span>
+                  <span class="badge badge-fail">{{workbench_result.stt.display_status or workbench_result.stt.status or "failed"}}</span>
                 {% endif %}
               </div>
               {% if workbench_result.stt.success and workbench_result.stt.transcript %}
@@ -237,7 +237,7 @@
                 {% if workbench_result.vera.success %}
                   <span class="badge badge-ok">answered</span>
                 {% else %}
-                  <span class="badge badge-fail">{{workbench_result.vera.status or "failed"}}</span>
+                  <span class="badge badge-fail">{{workbench_result.vera.display_status or workbench_result.vera.status or "failed"}}</span>
                 {% endif %}
               </div>
               {% if workbench_result.vera.success and workbench_result.vera.answer %}
@@ -286,7 +286,7 @@
                 {% if workbench_result.tts.success %}
                   <span class="badge badge-ok">synthesized</span>
                 {% else %}
-                  <span class="badge badge-fail">{{workbench_result.tts.status or "failed"}}</span>
+                  <span class="badge badge-fail">{{workbench_result.tts.display_status or workbench_result.tts.status or "failed"}}</span>
                 {% endif %}
               </div>
               {% if workbench_result.tts.success and workbench_result.tts.audio_path %}

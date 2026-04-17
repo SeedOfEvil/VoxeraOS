@@ -378,12 +378,14 @@ def register_voice_routes(
             workbench_result["stt"] = {
                 "success": False,
                 "status": "failed",
+                "display_status": "failed",
                 "error": "Audio file path is required.",
             }
         elif flags is None:
             workbench_result["stt"] = {
                 "success": False,
                 "status": "unavailable",
+                "display_status": "unavailable",
                 "error": "Cannot transcribe: voice configuration failed to load.",
             }
         else:
@@ -400,9 +402,19 @@ def register_voice_routes(
                     stt_response.status == STT_STATUS_SUCCEEDED and stt_response.transcript
                 )
                 transcript_text = stt_response.transcript if stt_ok else None
+                # Never show a success-looking status label on a failure-styled
+                # block: an adapter reporting ``succeeded`` with an empty
+                # transcript is still a failure from the operator's POV.
+                if stt_ok:
+                    display_status = stt_response.status
+                elif stt_response.status == STT_STATUS_SUCCEEDED:
+                    display_status = "no_transcript"
+                else:
+                    display_status = stt_response.status or "failed"
                 workbench_result["stt"] = {
                     "success": stt_ok,
                     "status": stt_response.status,
+                    "display_status": display_status,
                     "transcript": transcript_text,
                     "language": stt_response.language if stt_ok else None,
                     "backend": stt_response.backend,
@@ -418,6 +430,7 @@ def register_voice_routes(
                 workbench_result["stt"] = {
                     "success": False,
                     "status": "failed",
+                    "display_status": "failed",
                     "error": f"Unexpected error: {type(exc).__name__}: {exc}",
                 }
 
@@ -436,6 +449,9 @@ def register_voice_routes(
             workbench_result["vera"] = {
                 "success": vera_result.ok,
                 "status": vera_result.status,
+                "display_status": (
+                    vera_result.status if not vera_result.ok else voice_workbench.STATUS_OK
+                ),
                 "answer": vera_result.vera_answer,
                 "vera_status": vera_result.vera_status,
                 "error": vera_result.error,
@@ -444,6 +460,7 @@ def register_voice_routes(
             workbench_result["vera"] = {
                 "success": False,
                 "status": voice_workbench.STATUS_VOICE_INPUT_DISABLED,
+                "display_status": voice_workbench.STATUS_VOICE_INPUT_DISABLED,
                 "answer": None,
                 "vera_status": None,
                 "error": "Cannot send to Vera: voice configuration failed to load.",
@@ -462,9 +479,19 @@ def register_voice_routes(
                 tts_ok = bool(
                     tts_response.status == TTS_STATUS_SUCCEEDED and tts_response.audio_path
                 )
+                # Never show a success-looking label on a failure-styled block:
+                # an adapter reporting ``succeeded`` with no audio_path is a
+                # failure from the operator's POV.
+                if tts_ok:
+                    tts_display_status = tts_response.status
+                elif tts_response.status == TTS_STATUS_SUCCEEDED:
+                    tts_display_status = "no_audio_artifact"
+                else:
+                    tts_display_status = tts_response.status or "failed"
                 workbench_result["tts"] = {
                     "success": tts_ok,
                     "status": tts_response.status,
+                    "display_status": tts_display_status,
                     "audio_path": tts_response.audio_path if tts_ok else None,
                     "backend": tts_response.backend,
                     "error": tts_response.error if not tts_ok else None,
@@ -479,18 +506,21 @@ def register_voice_routes(
                 workbench_result["tts"] = {
                     "success": False,
                     "status": "failed",
+                    "display_status": "failed",
                     "error": str(exc),
                 }
             except Exception as exc:
                 workbench_result["tts"] = {
                     "success": False,
                     "status": "failed",
+                    "display_status": "failed",
                     "error": f"Unexpected error: {type(exc).__name__}: {exc}",
                 }
         elif vera_ok and speak_response and flags is None:
             workbench_result["tts"] = {
                 "success": False,
                 "status": "unavailable",
+                "display_status": "unavailable",
                 "error": "Cannot synthesize: voice configuration failed to load.",
             }
 

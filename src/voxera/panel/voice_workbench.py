@@ -9,18 +9,21 @@ appends the reply as an assistant turn.
 This module is deliberately narrow:
 
 - It is conversational only. It does **not** create queue previews,
-  does **not** submit jobs, and does **not** mutate any real-world
-  state. If the transcript describes an action that would affect the
-  real world, Vera's reply is still just text; the operator must use
-  the canonical /vera chat path to draft/preview/hand off through
-  governed rails.
-- It uses the existing Vera session store (same JSON files, same
-  turn shape, same origin field) so a session started here is
-  trivially continued in the canonical Vera surface.
+  does **not** submit queue jobs, and does **not** trigger any queued
+  or real-world execution. If the transcript describes an action that
+  would affect the real world, Vera's reply is still just text; the
+  operator must use the canonical ``/vera`` chat path so the action
+  flows through preview/handoff/governed rails.
+- It DOES persist to the canonical Vera session JSON file (same path
+  and turn shape that ``vera_web`` writes) — that is what
+  "conversational turn" means. A session started here is trivially
+  continued in the canonical Vera surface. No other state is written.
 - It fails closed and truthfully: disabled voice input, empty
   transcript, Vera errors, and empty Vera answers all produce a
   typed :class:`VoiceWorkbenchVeraResult` with ``ok=False`` and a
-  concrete ``status``/``error`` that the UI surfaces as-is.
+  concrete ``status``/``error`` that the UI surfaces as-is.  Stale
+  results are impossible because every run is a single request whose
+  result is owned by the caller; nothing is cached on the orchestrator.
 """
 
 from __future__ import annotations
