@@ -707,7 +707,11 @@ def register_voice_routes(
         elif vera_ok and vera_answer and speak_response:
             tts_source_text = vera_answer
         if tts_source_text:
-            assert flags is not None  # noqa: S101 — invariant: any TTS path implies flags loaded
+            # Invariant: any TTS source text (a lifecycle ack or a Vera
+            # answer) can only exist when ``stt_ok and transcript_text
+            # and send_to_vera`` was true earlier in the handler, which
+            # itself requires ``flags`` to have loaded successfully.
+            assert flags is not None  # noqa: S101
             try:
                 start_ms = int(time.time() * 1000)
                 tts_response = await synthesize_text_async(

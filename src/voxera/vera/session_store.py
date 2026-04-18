@@ -477,6 +477,32 @@ def read_linked_job_completions(queue_root: Path, session_id: str) -> list[dict[
     return [item for item in completions if isinstance(item, dict)]
 
 
+def read_session_linked_job_refs(queue_root: Path, session_id: str) -> list[str]:
+    """Return the canonical ``inbox-<uuid>.json`` refs linked to a session.
+
+    Public accessor over the session's linked-job registry for callers
+    that only need the set of tracked job refs and do not need the full
+    tracked-job metadata (``linked_at_ms``, ``completion_ingested``, …).
+    Returns an empty list on any read failure or missing registry — the
+    safe default for fail-closed callers.
+    """
+    try:
+        registry = _read_linked_job_registry(queue_root, session_id)
+    except Exception:
+        return []
+    tracked = registry.get("tracked") if isinstance(registry, dict) else None
+    if not isinstance(tracked, list):
+        return []
+    refs: list[str] = []
+    for item in tracked:
+        if not isinstance(item, dict):
+            continue
+        raw = str(item.get("job_ref") or "").strip()
+        if raw:
+            refs.append(Path(raw).name)
+    return refs
+
+
 def read_session_conversational_planning_active(queue_root: Path, session_id: str) -> bool:
     """Return True if the previous turn was a conversational answer-first planning turn."""
     payload = _read_session_payload(queue_root, session_id)

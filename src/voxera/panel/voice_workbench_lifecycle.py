@@ -3,11 +3,10 @@
 Operators working through the Voice Workbench can — after Vera has
 drafted a preview or the canonical queue has raised a pending approval
 — say short bounded phrases like ``submit it``, ``send it``, ``run it``,
-``save it``, ``approve it``, or ``deny it`` to move the existing
-canonical artefact along its lifecycle.  This module is the narrow
-bridge that turns such a transcript into a real lifecycle action on
-**canonical** state only — never fabricating what the operator is
-referring to.
+``approve it``, or ``deny it`` to move the existing canonical artefact
+along its lifecycle.  This module is the narrow bridge that turns such
+a transcript into a real lifecycle action on **canonical** state only
+— never fabricating what the operator is referring to.
 
 Trust model, re-stated
 ----------------------
@@ -23,9 +22,9 @@ Trust model, re-stated
   returns a truthful negative result.  It never submits, approves, or
   denies something the operator did not actually authorize.
 * Bounded phrase matching: the classifier only fires on exact short
-  phrases (``submit it`` / ``send it`` / ``run it`` / ``save it`` for
-  submit; ``approve it`` for approve; ``deny it`` / ``reject it`` for
-  deny), with optional trailing punctuation.  Anything richer — a full
+  phrases (``submit it`` / ``send it`` / ``run it`` for submit;
+  ``approve it`` for approve; ``deny it`` / ``reject it`` for deny),
+  with optional trailing punctuation.  Anything richer — a full
   sentence, a question, a new drafting request — stays in the regular
   Vera conversational lane where the canonical preview drafter and
   classifier can handle it.
@@ -65,7 +64,14 @@ LIFECYCLE_STATUS_SUBMIT_FAILED = "submit_failed"
 LIFECYCLE_STATUS_AMBIGUOUS_PREVIEW = "ambiguous_preview"
 LIFECYCLE_STATUS_APPROVED = "approved"
 LIFECYCLE_STATUS_DENIED = "denied"
+# ``no_pending_approval`` — the canonical queue has no pending approvals at
+# all, so nothing exists for the operator to act on.
 LIFECYCLE_STATUS_NO_PENDING_APPROVAL = "no_pending_approval"
+# ``no_session_scoped_approval`` — the queue has pending approvals, but
+# none of them belong to a job this session linked.  Separate from
+# ``no_pending_approval`` so operators and telemetry can distinguish
+# "nothing exists" from "something exists but it isn't yours".
+LIFECYCLE_STATUS_NO_SESSION_SCOPED_APPROVAL = "no_session_scoped_approval"
 LIFECYCLE_STATUS_AMBIGUOUS_PENDING_APPROVAL = "ambiguous_pending_approval"
 LIFECYCLE_STATUS_APPROVAL_FAILED = "approval_failed"
 LIFECYCLE_STATUS_ERROR = "error"
@@ -82,7 +88,15 @@ _REASON_NO_MATCH = "no_lifecycle_phrase_matched"
 # We deliberately do NOT accept free-form sentences here; richer
 # phrasings stay in the normal Vera drafting / confirmation lanes so
 # the two surfaces cannot disagree on what "it" means.
-_SUBMIT_RE = re.compile(r"^(?:submit|send|run|save)\s+(?:it|this|that)[.!?]*$", re.IGNORECASE)
+#
+# Note: "save it" is intentionally NOT included in the submit alias
+# set.  In voice workflows "save it" is ambiguous — operators often
+# mean "save the preview for later, don't submit yet" — and acting on
+# that as a submit would be a truthful-surface violation.  ``submit``,
+# ``send``, and ``run`` are unambiguous commit verbs; the richer
+# canonical ``save it`` handling lives in the regular Vera drafting
+# / confirmation lane where it can be resolved in context.
+_SUBMIT_RE = re.compile(r"^(?:submit|send|run)\s+(?:it|this|that)[.!?]*$", re.IGNORECASE)
 _APPROVE_RE = re.compile(r"^approve\s+(?:it|this|that)[.!?]*$", re.IGNORECASE)
 _DENY_RE = re.compile(r"^(?:deny|reject)\s+(?:it|this|that)[.!?]*$", re.IGNORECASE)
 
@@ -175,29 +189,30 @@ def classify_lifecycle_phrase(
 def _session_linked_job_refs(queue_root: Path, session_id: str) -> set[str]:
     """Return the canonical ``inbox-<uuid>.json`` refs linked to this session.
 
-    Reads the session's linked-job registry through the canonical
-    session-store accessor.  On any read failure returns an empty set —
-    callers treat that as "no linked jobs on this session" and fail
-    closed, which is the safe default for approve/deny dispatch.
+    Thin wrapper over :func:`session_store.read_session_linked_job_refs`
+    that exposes the refs as a set for the scoping intersection below.
+    On any read failure the accessor returns an empty list — callers
+    treat that as "no linked jobs on this session" and fail closed,
+    which is the safe default for approve/deny dispatch.
     """
-    try:
-        # ``_read_linked_job_registry`` is the internal canonical accessor
-        # used throughout ``session_debug_info``; we reuse it rather than
-        # re-parse the session payload.
-        registry = session_store._read_linked_job_registry(queue_root, session_id)
-    except Exception:
-        return set()
-    tracked = registry.get("tracked") if isinstance(registry, dict) else None
-    if not isinstance(tracked, list):
-        return set()
-    refs: set[str] = set()
-    for item in tracked:
-        if not isinstance(item, dict):
-            continue
-        raw = str(item.get("job_ref") or "").strip()
-        if raw:
-            refs.add(Path(raw).name)
-    return refs
+    return set(session_store.read_session_linked_job_refs(queue_root, session_id))
+
+
+def _register_linked_job_positional(queue_root: Path, session_id: str, job_ref: str) -> None:
+    """Adapter that matches the positional ``register_linked_job`` contract.
+
+    :func:`submit_active_preview_for_session` invokes its
+    ``register_linked_job`` callback positionally (``(queue_root,
+    session_id, job_ref)``), but the canonical
+    :func:`session_store.register_session_linked_job` accepts ``job_ref``
+    as keyword-only.  Calling the canonical helper directly through the
+    submit seam raises ``TypeError: takes 2 positional arguments but 3
+    were given`` and blocks every spoken submit.  Wrapping here — same
+    pattern canonical Vera uses in ``vera_web.app`` — keeps the submit
+    seam's contract clean and the canonical helper's keyword-only
+    discipline intact.
+    """
+    session_store.register_session_linked_job(queue_root, session_id, job_ref=job_ref)
 
 
 def _dispatch_submit(
@@ -221,7 +236,7 @@ def _dispatch_submit(
             queue_root=queue_root,
             session_id=session_id,
             preview=None,
-            register_linked_job=session_store.register_session_linked_job,
+            register_linked_job=_register_linked_job_positional,
         )
     except Exception as exc:
         return VoiceWorkbenchLifecycleResult(
@@ -274,18 +289,24 @@ def _select_session_scoped_approval(
 
     Returns ``(approval, status)`` where ``status`` is one of:
 
-    * ``LIFECYCLE_STATUS_NO_PENDING_APPROVAL`` — no approvals intersect
-      the session's linked-job set.
+    * ``LIFECYCLE_STATUS_NO_PENDING_APPROVAL`` — the canonical queue has
+      no pending approvals at all.
+    * ``LIFECYCLE_STATUS_NO_SESSION_SCOPED_APPROVAL`` — the queue has
+      pending approvals but none belong to a job this session linked,
+      so "it" still cannot refer to anything actionable from here.
     * ``LIFECYCLE_STATUS_AMBIGUOUS_PENDING_APPROVAL`` — more than one
-      approval intersects, so "it" is ambiguous and we fail closed.
+      session-scoped approval matches, so "it" is ambiguous and we
+      fail closed.
     * empty string — one unambiguous match, returned as ``approval``.
 
     Matching uses the canonical ``job`` field (``inbox-<uuid>.json``)
     which is the same shape ``register_session_linked_job`` normalizes
     the ref to.
     """
-    if not linked_refs:
+    if not approvals:
         return None, LIFECYCLE_STATUS_NO_PENDING_APPROVAL
+    if not linked_refs:
+        return None, LIFECYCLE_STATUS_NO_SESSION_SCOPED_APPROVAL
     matches: list[dict[str, Any]] = []
     for item in approvals:
         if not isinstance(item, dict):
@@ -296,7 +317,7 @@ def _select_session_scoped_approval(
         if Path(job).name in linked_refs:
             matches.append(item)
     if not matches:
-        return None, LIFECYCLE_STATUS_NO_PENDING_APPROVAL
+        return None, LIFECYCLE_STATUS_NO_SESSION_SCOPED_APPROVAL
     if len(matches) > 1:
         return None, LIFECYCLE_STATUS_AMBIGUOUS_PENDING_APPROVAL
     return matches[0], ""
@@ -336,18 +357,21 @@ def _dispatch_approval(
         linked_refs=linked_refs,
     )
     if approval is None:
+        verb = "approve" if approve else "deny"
         if scope_status == LIFECYCLE_STATUS_AMBIGUOUS_PENDING_APPROVAL:
             ack = (
-                "I did not "
-                + ("approve" if approve else "deny")
-                + " anything because this session has more than one pending approval. "
-                "Please specify which one in canonical Vera."
+                f"I did not {verb} anything because this session has more than one "
+                "pending approval. Please specify which one in canonical Vera."
+            )
+        elif scope_status == LIFECYCLE_STATUS_NO_SESSION_SCOPED_APPROVAL:
+            ack = (
+                f"I did not {verb} anything because the pending approval(s) in the "
+                "queue are not linked to this voice session. Please drive them from "
+                "canonical Vera."
             )
         else:
             ack = (
-                "I did not "
-                + ("approve" if approve else "deny")
-                + " anything because this session has no pending approval to act on."
+                f"I did not {verb} anything because this session has no pending approval to act on."
             )
         return VoiceWorkbenchLifecycleResult(
             ok=False,
@@ -450,6 +474,12 @@ def dispatch_spoken_lifecycle_command(
             canonicalize_ref_hook = canonicalize_ref_hook or daemon.canonicalize_approval_ref
 
             def _default_resolve(ref: str, approve: bool) -> bool:
+                # Intentionally does NOT forward ``approve_always``.
+                # A single spoken "approve it" resolves a single pending
+                # approval; operators must drive persistent
+                # approve-always policy from canonical Vera where the
+                # scope is explicit, so the voice lane cannot silently
+                # bind future approvals.
                 return bool(daemon.resolve_approval(ref, approve=approve))
 
             resolve_approval_hook = resolve_approval_hook or _default_resolve

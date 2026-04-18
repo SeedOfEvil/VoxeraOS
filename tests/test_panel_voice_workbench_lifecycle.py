@@ -40,8 +40,10 @@ from voxera.panel.voice_workbench_lifecycle import (
     LIFECYCLE_STATUS_APPROVAL_FAILED,
     LIFECYCLE_STATUS_APPROVED,
     LIFECYCLE_STATUS_DENIED,
+    LIFECYCLE_STATUS_ERROR,
     LIFECYCLE_STATUS_NO_PENDING_APPROVAL,
     LIFECYCLE_STATUS_NO_PREVIEW,
+    LIFECYCLE_STATUS_NO_SESSION_SCOPED_APPROVAL,
     LIFECYCLE_STATUS_SUBMITTED,
     VoiceWorkbenchLifecycleClassification,
     classify_lifecycle_phrase,
@@ -122,7 +124,6 @@ class TestClassifier:
             "Submit it.",
             "SEND IT",
             "run it!",
-            "save it",
             "submit this",
             "submit that.",
             "send this",
@@ -160,6 +161,13 @@ class TestClassifier:
             "approve me",  # non-pronoun target
             "submit it please now",  # trailing words beyond punctuation
             "write a note called hello.txt",  # regular drafting request
+            # "save it" intentionally routes to the regular Vera lane:
+            # in voice workflows it is ambiguous ("save for later" vs
+            # "commit to queue") and must not reach the submit
+            # dispatcher.
+            "save it",
+            "Save it.",
+            "save this",
         ],
     )
     def test_non_lifecycle_phrases_classify_as_none(self, phrase: str) -> None:
@@ -219,7 +227,7 @@ class TestDispatchSubmit:
         )
         assert result.ok is False
         assert result.status == LIFECYCLE_STATUS_NO_PREVIEW
-        assert result.ack and "did not submit" in result.ack.lower() or result.ack
+        assert result.ack is not None
 
     def test_submit_with_ambiguous_preview_state_fails_closed(self, tmp_path: Path) -> None:
         def fake_submit(**kwargs: Any) -> tuple[str, str]:
@@ -245,9 +253,118 @@ class TestDispatchSubmit:
             submit_hook=fake_submit,
         )
         assert result.ok is False
-        assert result.status == "error"
+        assert result.status == LIFECYCLE_STATUS_ERROR
         assert result.error is not None
         assert "RuntimeError" in result.error
+
+    def test_submit_hook_passes_register_linked_job_callable_with_positional_job_ref(
+        self, tmp_path: Path
+    ) -> None:
+        """PR #350 regression: the lifecycle submit dispatcher must pass a
+        ``register_linked_job`` callable whose signature matches the
+        canonical ``submit_active_preview_for_session`` positional
+        contract (``queue_root, session_id, job_ref``), **without**
+        raising ``TypeError: takes 2 positional arguments but 3 were
+        given`` when the canonical ``session_store.register_session_linked_job``
+        (which has a keyword-only ``job_ref``) is ultimately invoked.
+        """
+        seen_positional: list[tuple[Path, str, str]] = []
+
+        def capturing_submit(
+            *,
+            queue_root: Path,
+            session_id: str,
+            preview: Any,
+            register_linked_job: Any,
+        ) -> tuple[str, str]:
+            # Invoke the callback exactly the way the canonical
+            # ``submit_active_preview_for_session`` does: positionally
+            # with ``(queue_root, session_id, job_ref)``.  This is the
+            # call that triggered the reported TypeError when the
+            # lifecycle dispatcher wired in the raw canonical helper.
+            register_linked_job(queue_root, session_id, "inbox-regress.json")
+            seen_positional.append((queue_root, session_id, "inbox-regress.json"))
+            session_store.write_session_handoff_state(
+                queue_root,
+                session_id,
+                attempted=True,
+                queue_path=str(queue_root),
+                status="submitted",
+                job_id="regress",
+            )
+            return ("ack", "handoff_submitted")
+
+        result = dispatch_spoken_lifecycle_command(
+            classification=self._classification(),
+            session_id="lc-submit-sig",
+            queue_root=tmp_path,
+            submit_hook=capturing_submit,
+        )
+        assert result.ok is True
+        assert result.status == LIFECYCLE_STATUS_SUBMITTED
+        assert seen_positional == [(tmp_path, "lc-submit-sig", "inbox-regress.json")]
+        # And the real canonical registry actually recorded the ref,
+        # confirming the positional-to-keyword adapter forwarded it
+        # through to the keyword-only ``register_session_linked_job``.
+        assert "inbox-regress.json" in session_store.read_session_linked_job_refs(
+            tmp_path, "lc-submit-sig"
+        )
+
+    def test_submit_end_to_end_through_canonical_helper_writes_inbox_job(
+        self, tmp_path: Path
+    ) -> None:
+        """PR #350 regression: driving a spoken ``submit it`` through the
+        real ``submit_active_preview_for_session`` (not a fake) with a
+        real canonical preview must:
+
+        1. Create a real inbox job file under ``<queue>/inbox/``.
+        2. Clear the canonical session preview.
+        3. Register the linked job via ``register_session_linked_job``
+           without raising ``TypeError``.
+        4. Emit ``LIFECYCLE_STATUS_SUBMITTED`` with the real ``job_id``.
+        """
+        session_id = "lc-submit-real"
+        preview = {
+            "goal": "write a file called regression.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/regression.txt",
+                "content": "canonical preview body",
+                "mode": "overwrite",
+            },
+        }
+        session_store.write_session_preview(tmp_path, session_id, preview)
+
+        result = dispatch_spoken_lifecycle_command(
+            classification=self._classification(),
+            session_id=session_id,
+            queue_root=tmp_path,
+        )
+        assert result.ok is True
+        assert result.status == LIFECYCLE_STATUS_SUBMITTED
+        assert result.job_id
+        inbox_files = list((tmp_path / "inbox").glob("inbox-*.json"))
+        assert len(inbox_files) == 1
+        # Canonical preview is cleared on success.
+        assert session_store.read_session_preview(tmp_path, session_id) is None
+        # The canonical keyword-only ``register_session_linked_job`` was
+        # reached through the positional adapter.
+        linked = session_store.read_session_linked_job_refs(tmp_path, session_id)
+        assert any(ref.startswith("inbox-") for ref in linked)
+
+    def test_submit_end_to_end_without_preview_fails_closed(self, tmp_path: Path) -> None:
+        """PR #350 regression: no-preview case through the real helper
+        must refuse to queue and emit ``LIFECYCLE_STATUS_NO_PREVIEW``."""
+        result = dispatch_spoken_lifecycle_command(
+            classification=self._classification(),
+            session_id="lc-submit-real-none",
+            queue_root=tmp_path,
+        )
+        assert result.ok is False
+        assert result.status == LIFECYCLE_STATUS_NO_PREVIEW
+        # No inbox artefact was created.
+        inbox = tmp_path / "inbox"
+        if inbox.exists():
+            assert list(inbox.glob("inbox-*.json")) == []
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -279,7 +396,9 @@ class TestDispatchApproval:
 
     def test_approve_with_no_linked_jobs_fails_closed(self, tmp_path: Path) -> None:
         # Pending approval exists in the queue but this session has no
-        # linked jobs — the dispatcher refuses to act on unrelated state.
+        # linked jobs — the dispatcher refuses to act on unrelated state
+        # and emits the distinct ``no_session_scoped_approval`` status so
+        # telemetry can tell this apart from "queue has no approvals".
         resolve_called = {"count": 0}
 
         def fake_resolve(ref: str, approve: bool) -> bool:
@@ -295,7 +414,33 @@ class TestDispatchApproval:
             resolve_approval_hook=fake_resolve,
         )
         assert result.ok is False
-        assert result.status == LIFECYCLE_STATUS_NO_PENDING_APPROVAL
+        assert result.status == LIFECYCLE_STATUS_NO_SESSION_SCOPED_APPROVAL
+        assert resolve_called["count"] == 0
+
+    def test_approve_with_linked_jobs_but_no_matching_approval_fails_closed(
+        self, tmp_path: Path
+    ) -> None:
+        # Session has a linked job but the queue's pending approvals
+        # belong to a different job — fail closed with the scoped status
+        # (not the "no approvals at all" status).
+        session_id = "lc-approve-linked-but-mismatched"
+        session_store.register_session_linked_job(tmp_path, session_id, job_ref="inbox-linked.json")
+        resolve_called = {"count": 0}
+
+        def fake_resolve(ref: str, approve: bool) -> bool:
+            resolve_called["count"] += 1
+            return True
+
+        result = dispatch_spoken_lifecycle_command(
+            classification=self._approve_classification(),
+            session_id=session_id,
+            queue_root=tmp_path,
+            approvals_list_hook=lambda: [{"job": "inbox-unrelated.json"}],
+            canonicalize_ref_hook=lambda ref: ref,
+            resolve_approval_hook=fake_resolve,
+        )
+        assert result.ok is False
+        assert result.status == LIFECYCLE_STATUS_NO_SESSION_SCOPED_APPROVAL
         assert resolve_called["count"] == 0
 
     def test_approve_with_single_scoped_approval_resolves(self, tmp_path: Path) -> None:
@@ -426,7 +571,13 @@ class TestRouteLifecycleSubmit:
             )
             session_store.write_session_preview(queue_root, session_id, None)
             if register_linked_job is not None:
-                register_linked_job(queue_root, session_id, job_ref="inbox-fakejob1.json")
+                # Invoke the callback exactly the way the real canonical
+                # ``submit_active_preview_for_session`` does — positionally
+                # with ``(queue_root, session_id, job_ref)``.  This pins
+                # the lifecycle submit wiring to the canonical positional
+                # contract (the PR #350 bug was calling the keyword-only
+                # ``register_session_linked_job`` with a raw positional).
+                register_linked_job(queue_root, session_id, "inbox-fakejob1.json")
             return ("I submitted the job to VoxeraOS. Job id: fakejob1.", "handoff_submitted")
 
         monkeypatch.setattr(
