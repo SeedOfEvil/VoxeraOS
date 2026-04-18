@@ -36,20 +36,37 @@ from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response
 from ..voice.voice_status_summary import build_voice_status_summary
 from . import voice_workbench
 
+_DEFAULT_VERA_WEB_BASE_URL = "http://127.0.0.1:8790"
 
-def _continue_in_vera_url(session_id: str) -> str:
-    """Build a canonical ``/vera?session_id=<id>`` continuation link.
+
+def _continue_in_vera_url(session_id: str, base_url: str) -> str:
+    """Build a continuation link into the canonical Vera web surface.
+
+    The panel (default 8844) and the canonical Vera web app (default
+    8790) run as two separate uvicorn processes, so a relative
+    ``/vera`` link 404s on the panel host in the supported deployment
+    model.  Build the link against the configured canonical Vera web
+    base URL (``vera_web_base_url``) and target ``GET /``, which
+    already accepts ``?session_id=<id>`` for cross-surface handoff.
 
     The session id is clamped to a single path component through
     ``Path(...).name`` so the link can only ever resolve to a session
-    file under ``artifacts/vera_sessions/``.  Empty or invalid values
-    produce a bare ``/vera`` link (no query string) so the canonical
-    Vera surface falls back to its own cookie/new-session behavior.
+    file under ``artifacts/vera_sessions/``.  Empty, invalid, or
+    traversal-shaped values produce a bare ``{base}/`` link (no query
+    string) so the canonical Vera surface falls back to its own
+    cookie/new-session behaviour.
+
+    An unusable base URL (blank or not ``http``/``https``) collapses
+    to the canonical default so the link can never degrade to a
+    broken ``/vera`` relative path on the panel host.
     """
+    base = (base_url or "").strip().rstrip("/")
+    if not (base.startswith("http://") or base.startswith("https://")):
+        base = _DEFAULT_VERA_WEB_BASE_URL
     clamped = Path(session_id or ".").name
     if not clamped or clamped == ".":
-        return "/vera"
-    return f"/vera?session_id={clamped}"
+        return f"{base}/"
+    return f"{base}/?session_id={clamped}"
 
 
 def _safe_prior_turn_count(queue_root: Path, session_id: str) -> int:
@@ -118,7 +135,11 @@ def register_voice_routes(
     csrf_cookie: str,
     request_value: Callable[..., Awaitable[str]],
     queue_root: Callable[[], Path],
+    vera_web_base_url: Callable[[], str],
 ) -> None:
+    def _continue_url(session_id: str) -> str:
+        return _continue_in_vera_url(session_id, vera_web_base_url())
+
     @app.get("/voice/status", response_class=HTMLResponse)
     def voice_status_page(request: Request) -> HTMLResponse:
         require_operator_auth_from_request(request)
@@ -147,7 +168,7 @@ def register_voice_routes(
             workbench_result=None,
             workbench_session_id=session_id,
             workbench_session_prior_turn_count=prior_turn_count,
-            workbench_continue_in_vera_url=_continue_in_vera_url(session_id),
+            workbench_continue_in_vera_url=_continue_url(session_id),
         )
         response = HTMLResponse(content=html)
         response.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -254,7 +275,7 @@ def register_voice_routes(
             workbench_result=None,
             workbench_session_id=session_id,
             workbench_session_prior_turn_count=prior_turn_count,
-            workbench_continue_in_vera_url=_continue_in_vera_url(session_id),
+            workbench_continue_in_vera_url=_continue_url(session_id),
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -380,7 +401,7 @@ def register_voice_routes(
             workbench_result=None,
             workbench_session_id=session_id,
             workbench_session_prior_turn_count=prior_turn_count,
-            workbench_continue_in_vera_url=_continue_in_vera_url(session_id),
+            workbench_continue_in_vera_url=_continue_url(session_id),
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -474,7 +495,7 @@ def register_voice_routes(
             "session_prior_turn_count": prior_turn_count,
             "session_turn_count": prior_turn_count,
             "run_started_at_ms": run_started_at_ms,
-            "continue_in_vera_url": _continue_in_vera_url(session_id),
+            "continue_in_vera_url": _continue_url(session_id),
         }
 
         # Flag-load failure is the single early gate: if the voice config
@@ -627,7 +648,7 @@ def register_voice_routes(
             workbench_result=workbench_result,
             workbench_session_id=session_id,
             workbench_session_prior_turn_count=prior_turn_count,
-            workbench_continue_in_vera_url=_continue_in_vera_url(session_id),
+            workbench_continue_in_vera_url=_continue_url(session_id),
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")

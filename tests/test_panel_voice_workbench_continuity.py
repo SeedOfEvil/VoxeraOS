@@ -50,6 +50,13 @@ def _operator_headers(user: str = "admin", password: str = "secret") -> dict[str
     return {"Authorization": f"Basic {token}"}
 
 
+# The canonical Vera web app defaults to ``http://127.0.0.1:8790`` (see
+# ``VoxeraConfig.vera_web_base_url``).  The panel runs on a separate
+# uvicorn process so continuation links must be absolute against this
+# base URL — a relative ``/vera`` would 404 on the panel host.
+_DEFAULT_VERA_WEB_BASE_URL = "http://127.0.0.1:8790"
+
+
 def _authed_csrf_request(client: TestClient, method: str, url: str, *, data: dict[str, str]):
     auth = _operator_headers()
     home = client.get("/", headers=auth)
@@ -136,7 +143,7 @@ class TestInitialPageContinuityBanner:
         assert "2 turns recorded" in res.text
         # Banner's continue-in-Vera link must carry the session id so
         # the canonical Vera surface picks up the same session.
-        assert f"/vera?session_id={session_id}" in res.text
+        assert f"{_DEFAULT_VERA_WEB_BASE_URL}/?session_id={session_id}" in res.text
 
 
 class TestContinueInVeraLinkOnResult:
@@ -163,7 +170,7 @@ class TestContinueInVeraLinkOnResult:
         assert res.status_code == 200
         # Both the banner and the governed-handoff block should link to
         # the same canonical session via the ``?session_id=`` query.
-        assert f"/vera?session_id={session_id}" in res.text
+        assert f"{_DEFAULT_VERA_WEB_BASE_URL}/?session_id={session_id}" in res.text
         # Text-level affordance must be obvious to the operator.
         assert "Continue in Vera" in res.text
 
@@ -189,9 +196,15 @@ class TestContinueInVeraLinkOnResult:
                 },
             )
         assert res.status_code == 200
-        # The clamped component is "evil" — never the original traversal.
-        assert "/vera?session_id=evil" in res.text
-        assert "/vera?session_id=../../etc/evil" not in res.text
+        # The clamped component is "evil" — never the original traversal
+        # in any continuation URL.  (The raw workbench_session_id may still
+        # appear as display text in the banner and as a round-tripped
+        # hidden form value — the safety contract is that the
+        # ``Continue in Vera`` HREF is clamped to the basename.)
+        assert f"{_DEFAULT_VERA_WEB_BASE_URL}/?session_id=evil" in res.text
+        # No continuation-URL query string ever carries the traversal.
+        assert "?session_id=../../etc/evil" not in res.text
+        assert "?session_id=../" not in res.text
 
 
 class TestCurrentRunFraming:
@@ -344,9 +357,10 @@ class TestTruthModelPreservation:
                 },
             )
         assert res.status_code == 200
-        # At least one anchor to /vera?session_id=<id> must appear on the
-        # page (banner). The handoff block links to the same target.
-        assert f'href="/vera?session_id={session_id}"' in res.text
+        # At least one anchor pointing at the canonical Vera web app with
+        # ``?session_id=<id>`` must appear on the page (banner). The
+        # handoff block links to the same target.
+        assert f'href="{_DEFAULT_VERA_WEB_BASE_URL}/?session_id={session_id}"' in res.text
 
 
 class TestVeraWebSessionIdQueryParam:
@@ -559,3 +573,146 @@ class TestPluralizationEdgeCases:
         assert res.status_code == 200
         assert "1 turn recorded" in res.text
         assert "1 turns recorded" not in res.text
+
+
+class TestContinueInVeraUrlBuilder:
+    """Pin ``_continue_in_vera_url`` so the continuation link always points at
+    the canonical Vera web base URL (default ``http://127.0.0.1:8790``),
+    not a relative ``/vera`` path that 404s on the panel host.
+
+    PR #347 manual validation caught a runtime 404: the panel process
+    (default 8844) does not register ``/vera``; the canonical Vera surface
+    runs as a separate uvicorn process at ``vera_web_base_url`` and that
+    is the only surface where ``?session_id=<id>`` handoff actually works.
+    """
+
+    def test_builder_produces_absolute_url_for_valid_session_id(self) -> None:
+        from voxera.panel.routes_voice import _continue_in_vera_url
+
+        url = _continue_in_vera_url("abc123", "http://127.0.0.1:8790")
+        assert url == "http://127.0.0.1:8790/?session_id=abc123"
+        # Never a relative link that would 404 on the panel host.
+        assert not url.startswith("/vera")
+
+    def test_builder_honours_custom_base_url(self) -> None:
+        from voxera.panel.routes_voice import _continue_in_vera_url
+
+        url = _continue_in_vera_url("s1", "https://vera.example.com:9000")
+        assert url == "https://vera.example.com:9000/?session_id=s1"
+
+    def test_builder_strips_trailing_slash_on_base_url(self) -> None:
+        from voxera.panel.routes_voice import _continue_in_vera_url
+
+        url = _continue_in_vera_url("s1", "http://127.0.0.1:8790/")
+        assert url == "http://127.0.0.1:8790/?session_id=s1"
+        # Never doubles the slash before the query.
+        assert "//?session_id" not in url
+
+    def test_builder_clamps_path_traversal_session_ids(self) -> None:
+        from voxera.panel.routes_voice import _continue_in_vera_url
+
+        url = _continue_in_vera_url("../../etc/evil", "http://127.0.0.1:8790")
+        assert url == "http://127.0.0.1:8790/?session_id=evil"
+        assert "../../etc/evil" not in url
+
+    def test_builder_empty_session_id_drops_query(self) -> None:
+        from voxera.panel.routes_voice import _continue_in_vera_url
+
+        # Blank id → base landing page (canonical Vera falls back to cookie
+        # or mints a new session).  No ``?session_id=`` query.
+        assert _continue_in_vera_url("", "http://127.0.0.1:8790") == "http://127.0.0.1:8790/"
+        assert _continue_in_vera_url(".", "http://127.0.0.1:8790") == "http://127.0.0.1:8790/"
+
+    def test_builder_rejects_unusable_base_url_and_falls_back_to_default(self) -> None:
+        """An empty or non-http(s) base URL must collapse to the default
+        canonical Vera base URL so the link never degrades to a broken
+        relative ``/vera`` path."""
+        from voxera.panel.routes_voice import _continue_in_vera_url
+
+        # Empty → default.
+        assert _continue_in_vera_url("s1", "") == "http://127.0.0.1:8790/?session_id=s1"
+        # Suspicious scheme → default.
+        assert (
+            _continue_in_vera_url("s1", "javascript:alert(1)")
+            == "http://127.0.0.1:8790/?session_id=s1"
+        )
+        # Relative path → default.
+        assert _continue_in_vera_url("s1", "/vera") == "http://127.0.0.1:8790/?session_id=s1"
+
+
+class TestContinuationUrlRespectsConfiguredBaseUrl:
+    """End-to-end: a non-default ``vera_web_base_url`` setting flows all the
+    way into the rendered ``Continue in Vera`` link.  This pins the
+    deployment model where the canonical Vera surface lives on a
+    non-default host/port."""
+
+    def test_voice_status_uses_configured_base_url(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("VOXERA_VERA_WEB_BASE_URL", "https://vera.example.test:9443")
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        assert "https://vera.example.test:9443/?session_id=" in res.text
+        # No stray relative link that would 404 on the panel host.
+        assert 'href="/vera?session_id=' not in res.text
+
+    def test_workbench_run_uses_configured_base_url(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("VOXERA_VERA_WEB_BASE_URL", "https://vera.example.test:9443")
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt_response(transcript="hello")
+        session_id = "vera-wb-cty-base-url"
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        assert res.status_code == 200
+        assert f'href="https://vera.example.test:9443/?session_id={session_id}"' in res.text
+        # Never the broken relative link.
+        assert f'href="/vera?session_id={session_id}"' not in res.text
+
+
+class TestNoBrokenRelativeVeraLink:
+    """Regression: the rendered page must never emit a relative ``/vera``
+    link for the continuation affordance under the split-process
+    deployment model, since ``/vera`` is not mounted on the panel host."""
+
+    def test_voice_status_never_emits_relative_vera_continuation_link(
+        self, _panel_env: Path
+    ) -> None:
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        # Relative href="/vera..." would 404 on the panel host.
+        assert 'href="/vera"' not in res.text
+        assert 'href="/vera?' not in res.text
+
+    def test_workbench_run_never_emits_relative_vera_continuation_link(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt_response(transcript="ping")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                },
+            )
+        assert res.status_code == 200
+        assert 'href="/vera"' not in res.text
+        assert 'href="/vera?' not in res.text

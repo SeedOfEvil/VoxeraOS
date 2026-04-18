@@ -198,7 +198,8 @@
 
       {# ── Zone 2: Voice Workbench (STT -> Vera -> optional TTS) ───────── #}
       {%- set _wb_session_id = workbench_result.session_id if workbench_result else workbench_session_id -%}
-      {%- set _wb_continue_url = (workbench_result.continue_in_vera_url if workbench_result else workbench_continue_in_vera_url) or "/vera" -%}
+      {# The backend always passes a concrete absolute URL; the "#" fallback is a defensive no-op for unforeseen template contexts. #}
+      {%- set _wb_continue_url = (workbench_result.continue_in_vera_url if workbench_result else workbench_continue_in_vera_url) or "#" -%}
       {%- set _wb_prior_turns = (workbench_result.session_prior_turn_count if workbench_result else workbench_session_prior_turn_count) or 0 -%}
       {%- set _wb_total_turns = (workbench_result.session_turn_count if workbench_result else workbench_session_prior_turn_count) or 0 -%}
       <div class="section-label" id="voice-workbench">Voice Workbench</div>
@@ -344,7 +345,7 @@
               </div>
               <div class="queue-detail-row">
                 <span class="queue-detail-value muted">
-                  This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, <a href="{{workbench_result.continue_in_vera_url or '/vera'}}">continue the session in the canonical Vera chat surface</a> &mdash; preview/handoff semantics are enforced there.
+                  This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, <a href="{{workbench_result.continue_in_vera_url or '#'}}">continue the session in the canonical Vera chat surface</a> &mdash; preview/handoff semantics are enforced there.
                 </span>
               </div>
             </div>
