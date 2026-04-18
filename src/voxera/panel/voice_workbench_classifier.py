@@ -1,0 +1,273 @@
+"""Bounded action-oriented vs informational classifier for Voice Workbench.
+
+The Voice Workbench is conversational only: it never drafts previews,
+submits jobs, or triggers real-world side effects.  But when a spoken
+request *sounds* like real governed work ("delete that file", "restart
+the daemon", "submit the mission"), the generic "continue in Vera"
+boundary note is not useful.  The operator is better served by a
+clearer, truth-preserving guidance block that says: this needs
+governed preview/handoff, continue in canonical Vera on the same
+session.
+
+This module is the narrow classification seam that decides whether a
+run looks action-oriented.  It is deterministic, bounded, and
+explainable:
+
+- input: the normalized voice transcript (string or ``None``)
+- output: a typed :class:`VoiceWorkbenchClassification`
+
+The classifier intentionally leans **conservative**:
+
+- Question-form phrasings ("what is", "how do I", "why does") are
+  always informational, even when they mention mutation verbs —
+  asking *how* to delete a file is not the same as asking to delete
+  a file.
+- Action-oriented firing requires both a direct mutation verb AND a
+  plausible target noun (or an explicit imperative prefix like
+  "please" / "go ahead and").  This keeps idle chat and generic
+  "could you help me?" requests from triggering a governed-action
+  guidance block.
+- Empty / missing transcripts classify as informational so the UI
+  never surfaces a stronger warning on a no-op run.
+
+The classifier does NOT call Vera, does NOT inspect preview/queue
+state, and does NOT mutate anything.  It is a pure string scanner
+over the transcript text.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+# Canonical classification kinds.  Kept as bare strings so template
+# conditionals and tests can compare against stable literals without
+# importing the module.
+CLASSIFICATION_INFORMATIONAL = "informational"
+CLASSIFICATION_ACTION_ORIENTED = "action_oriented"
+
+# Reason codes surface the branch of the classifier that fired so the
+# decision is explainable in tests and debug surfaces.  These are NOT
+# operator-facing strings — the UI renders its own guidance copy.
+_REASON_EMPTY = "empty_or_missing_transcript"
+_REASON_QUESTION_FORM = "question_form"
+_REASON_ACTION_VERB_WITH_TARGET = "action_verb_with_target"
+_REASON_IMPERATIVE_WITH_ACTION_VERB = "imperative_with_action_verb"
+_REASON_DEFAULT_CONVERSATIONAL = "default_conversational"
+
+# Mutation / execution verbs that plausibly indicate a governed real
+# action.  Listed as whole-word tokens; the matcher expands them with
+# ``\b`` so "recreate" or "rundown" won't spuriously match "create"
+# or "run".
+_ACTION_VERBS: tuple[str, ...] = (
+    "delete",
+    "remove",
+    "rename",
+    "move",
+    "copy",
+    "create",
+    "make",
+    "write",
+    "install",
+    "uninstall",
+    "run",
+    "execute",
+    "trigger",
+    "submit",
+    "queue",
+    "schedule",
+    "restart",
+    "stop",
+    "start",
+    "kill",
+    "enable",
+    "disable",
+    "organize",
+    "save",
+    "send",
+    "launch",
+)
+
+# Plausible targets for a governed real action.  A match here,
+# combined with an action verb, is what flips the classifier to
+# action-oriented.
+_ACTION_TARGETS: tuple[str, ...] = (
+    "file",
+    "files",
+    "folder",
+    "folders",
+    "directory",
+    "directories",
+    "script",
+    "scripts",
+    "note",
+    "notes",
+    "job",
+    "jobs",
+    "mission",
+    "missions",
+    "skill",
+    "skills",
+    "automation",
+    "automations",
+    "service",
+    "services",
+    "daemon",
+    "queue",
+    "panel",
+    "command",
+    "process",
+    "package",
+    "config",
+    "configuration",
+)
+
+# Imperative-style prefixes — when these appear with an action verb,
+# the classifier treats the turn as action-oriented even if no
+# explicit target noun is present.  This catches short, voice-native
+# phrasings like "please delete it" or "go ahead and restart".
+_IMPERATIVE_PREFIXES: tuple[str, ...] = (
+    "please ",
+    "go ahead and ",
+    "go ahead, ",
+    "could you ",
+    "can you ",
+    "would you ",
+    "i need you to ",
+    "i want you to ",
+    "let's ",
+    "lets ",
+)
+
+# Question-form starters that always classify as informational.  A
+# question about an action is not the same as an action.
+_QUESTION_STARTERS: tuple[str, ...] = (
+    "what ",
+    "what's ",
+    "whats ",
+    "what is ",
+    "what are ",
+    "why ",
+    "how ",
+    "how's ",
+    "hows ",
+    "when ",
+    "where ",
+    "who ",
+    "which ",
+    "did ",
+    "does ",
+    "do ",
+    "is ",
+    "are ",
+    "was ",
+    "were ",
+    "tell me ",
+    "show me ",
+    "explain ",
+    "describe ",
+)
+
+
+@dataclass(frozen=True)
+class VoiceWorkbenchClassification:
+    """Typed classification result for a Voice Workbench transcript.
+
+    ``kind`` is one of :data:`CLASSIFICATION_INFORMATIONAL` or
+    :data:`CLASSIFICATION_ACTION_ORIENTED`.
+
+    ``reason`` is the internal code for the classifier branch that
+    fired, for debugging and tests.  It is not operator-facing copy.
+
+    ``matched_signals`` is the small list of lowercase tokens that the
+    classifier matched (e.g. ``("delete", "file")``).  Empty on
+    informational outcomes.
+    """
+
+    kind: str
+    reason: str
+    matched_signals: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def is_action_oriented(self) -> bool:
+        return self.kind == CLASSIFICATION_ACTION_ORIENTED
+
+
+def _normalize(text: str) -> str:
+    return re.sub(r"\s+", " ", text.lower()).strip()
+
+
+def _looks_like_question(lowered: str) -> bool:
+    if lowered.endswith("?"):
+        return True
+    return any(lowered.startswith(starter) for starter in _QUESTION_STARTERS)
+
+
+def _match_action_verbs(lowered: str) -> list[str]:
+    hits: list[str] = []
+    for verb in _ACTION_VERBS:
+        if re.search(rf"\b{re.escape(verb)}\b", lowered):
+            hits.append(verb)
+    return hits
+
+
+def _match_action_targets(lowered: str) -> list[str]:
+    hits: list[str] = []
+    for target in _ACTION_TARGETS:
+        if re.search(rf"\b{re.escape(target)}\b", lowered):
+            hits.append(target)
+    return hits
+
+
+def _has_imperative_prefix(lowered: str) -> bool:
+    return any(lowered.startswith(prefix) for prefix in _IMPERATIVE_PREFIXES)
+
+
+def classify_workbench_transcript(
+    transcript_text: str | None,
+) -> VoiceWorkbenchClassification:
+    """Classify a voice transcript as informational vs action-oriented.
+
+    Deterministic, bounded, and explainable.  Defaults to informational
+    to keep conversational runs clean; only fires action-oriented when
+    a clear mutation verb pattern is present in a non-question context.
+    """
+    if transcript_text is None:
+        return VoiceWorkbenchClassification(kind=CLASSIFICATION_INFORMATIONAL, reason=_REASON_EMPTY)
+    raw = transcript_text.strip()
+    if not raw:
+        return VoiceWorkbenchClassification(kind=CLASSIFICATION_INFORMATIONAL, reason=_REASON_EMPTY)
+
+    lowered = _normalize(raw)
+
+    if _looks_like_question(lowered):
+        return VoiceWorkbenchClassification(
+            kind=CLASSIFICATION_INFORMATIONAL, reason=_REASON_QUESTION_FORM
+        )
+
+    verb_hits = _match_action_verbs(lowered)
+    if not verb_hits:
+        return VoiceWorkbenchClassification(
+            kind=CLASSIFICATION_INFORMATIONAL,
+            reason=_REASON_DEFAULT_CONVERSATIONAL,
+        )
+
+    target_hits = _match_action_targets(lowered)
+    if target_hits:
+        return VoiceWorkbenchClassification(
+            kind=CLASSIFICATION_ACTION_ORIENTED,
+            reason=_REASON_ACTION_VERB_WITH_TARGET,
+            matched_signals=tuple(verb_hits + target_hits),
+        )
+
+    if _has_imperative_prefix(lowered):
+        return VoiceWorkbenchClassification(
+            kind=CLASSIFICATION_ACTION_ORIENTED,
+            reason=_REASON_IMPERATIVE_WITH_ACTION_VERB,
+            matched_signals=tuple(verb_hits),
+        )
+
+    return VoiceWorkbenchClassification(
+        kind=CLASSIFICATION_INFORMATIONAL,
+        reason=_REASON_DEFAULT_CONVERSATIONAL,
+    )

@@ -337,6 +337,21 @@
             <div class="voice-empty-result">Vera was not called (&ldquo;Send to Vera&rdquo; was not selected).</div>
             {% endif %}
 
+            {# ── Action-oriented guidance (only when the transcript looks like real governed work) ── #}
+            {% if workbench_result.show_action_guidance %}
+            <div class="voice-result voice-workbench-lane voice-action-guidance" data-testid="voice-workbench-action-guidance">
+              <div class="voice-result-header">
+                <span class="voice-result-title">Looks like governed work</span>
+                <span class="badge badge-warn">action-oriented</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-value">
+                  This request sounds like something that would change the real world. The Voice Workbench does not draft previews or submit jobs &mdash; it is conversational only. To actually proceed, <a href="{{workbench_result.continue_in_vera_url or '#'}}" data-testid="voice-workbench-action-continue">continue the session in canonical Vera</a>, where the request can go through governed preview and handoff. Nothing has been drafted, queued, or executed from this surface.
+                </span>
+              </div>
+            </div>
+            {% endif %}
+
             {# ── Governed handoff / linked job status (truthful empty state) ── #}
             <div class="voice-result voice-workbench-lane">
               <div class="voice-result-header">

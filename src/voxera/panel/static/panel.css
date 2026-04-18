@@ -1149,3 +1149,12 @@ a:focus-visible {
   width: 1rem;
   height: 1rem;
 }
+
+/* Action-oriented guidance — rendered when the transcript looks like
+   real governed work.  Visually distinct from the always-present
+   "Governed Handoff: not attempted" row so the operator can tell at
+   a glance this is extra guidance, not a status change. */
+.voice-action-guidance {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
