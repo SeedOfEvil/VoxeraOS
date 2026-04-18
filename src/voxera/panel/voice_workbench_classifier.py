@@ -59,6 +59,13 @@ _REASON_DEFAULT_CONVERSATIONAL = "default_conversational"
 # action.  Listed as whole-word tokens; the matcher expands them with
 # ``\b`` so "recreate" or "rundown" won't spuriously match "create"
 # or "run".
+#
+# Intentionally excluded: "queue".  In VoxeraOS operator jargon "queue"
+# is overwhelmingly a noun ("the queue is slow", "queue depth"), and
+# including it as a verb caused "the queue is ..." to fire
+# action-oriented on its own.  Operators who really mean *to queue*
+# something reliably say "submit" or "schedule", both of which are in
+# this list.
 _ACTION_VERBS: tuple[str, ...] = (
     "delete",
     "remove",
@@ -74,7 +81,6 @@ _ACTION_VERBS: tuple[str, ...] = (
     "execute",
     "trigger",
     "submit",
-    "queue",
     "schedule",
     "restart",
     "stop",
@@ -203,11 +209,55 @@ def _looks_like_question(lowered: str) -> bool:
     return any(lowered.startswith(starter) for starter in _QUESTION_STARTERS)
 
 
+def _all_occurrences_inside_idiom(lowered: str, word: str, idioms: tuple[str, ...]) -> bool:
+    """Return True iff every whole-word match of ``word`` falls inside
+    one of the ``idioms`` spans.
+
+    Used to suppress verb hits that are only present as part of a
+    conversational idiom ("make sure", "makes sense"), so the
+    classifier does not flip action-oriented on phrasings like
+    "let's make sure the daemon is healthy".  If the verb *also*
+    appears outside an idiom (e.g. "make sure to delete the file"
+    would still hit "delete"), the verb is treated as a real verb
+    — idiom suppression only drops the idiom-bound occurrences.
+    """
+    verb_spans = [(m.start(), m.end()) for m in re.finditer(rf"\b{re.escape(word)}\b", lowered)]
+    if not verb_spans:
+        return False
+    idiom_spans: list[tuple[int, int]] = []
+    for idiom in idioms:
+        idiom_spans.extend((m.start(), m.end()) for m in re.finditer(re.escape(idiom), lowered))
+    if not idiom_spans:
+        return False
+    for v_start, v_end in verb_spans:
+        if not any(i_start <= v_start and v_end <= i_end for i_start, i_end in idiom_spans):
+            return False
+    return True
+
+
+# Verb-in-idiom suppression table.  Each key is a whole-word action
+# verb whose plain meaning is mutation; each value is a tuple of
+# conversational idioms where that verb does NOT carry action intent
+# ("make sure" = "ensure", "makes sense" = comprehension).  A verb
+# hit is dropped only when *every* whole-word occurrence of that verb
+# falls inside an idiom span — if the verb also appears standalone
+# ("make sure to delete the file" still hits "delete"), the standalone
+# usage wins.  Kept small and explicit: the table is the entire list
+# of carve-outs.
+_IDIOMATIC_VERB_PHRASES: dict[str, tuple[str, ...]] = {
+    "make": ("make sure", "makes sense"),
+}
+
+
 def _match_action_verbs(lowered: str) -> list[str]:
     hits: list[str] = []
     for verb in _ACTION_VERBS:
-        if re.search(rf"\b{re.escape(verb)}\b", lowered):
-            hits.append(verb)
+        if not re.search(rf"\b{re.escape(verb)}\b", lowered):
+            continue
+        idioms = _IDIOMATIC_VERB_PHRASES.get(verb)
+        if idioms and _all_occurrences_inside_idiom(lowered, verb, idioms):
+            continue
+        hits.append(verb)
     return hits
 
 
@@ -217,6 +267,13 @@ def _match_action_targets(lowered: str) -> list[str]:
         if re.search(rf"\b{re.escape(target)}\b", lowered):
             hits.append(target)
     return hits
+
+
+def _dedupe_ordered(items: list[str]) -> tuple[str, ...]:
+    """Dedupe while preserving first-seen order.  Used so a signal
+    shared between the verb and target lexicons (should any ever
+    overlap again) never surfaces twice in ``matched_signals``."""
+    return tuple(dict.fromkeys(items))
 
 
 def _has_imperative_prefix(lowered: str) -> bool:
@@ -257,14 +314,14 @@ def classify_workbench_transcript(
         return VoiceWorkbenchClassification(
             kind=CLASSIFICATION_ACTION_ORIENTED,
             reason=_REASON_ACTION_VERB_WITH_TARGET,
-            matched_signals=tuple(verb_hits + target_hits),
+            matched_signals=_dedupe_ordered(verb_hits + target_hits),
         )
 
     if _has_imperative_prefix(lowered):
         return VoiceWorkbenchClassification(
             kind=CLASSIFICATION_ACTION_ORIENTED,
             reason=_REASON_IMPERATIVE_WITH_ACTION_VERB,
-            matched_signals=tuple(verb_hits),
+            matched_signals=_dedupe_ordered(verb_hits),
         )
 
     return VoiceWorkbenchClassification(

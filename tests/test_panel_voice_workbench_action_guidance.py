@@ -133,6 +133,40 @@ class TestInformationalRunStaysClean:
         assert res.status_code == 200
         assert _ACTION_GUIDANCE_TESTID not in res.text
 
+    @pytest.mark.parametrize(
+        "transcript",
+        [
+            "the queue is slow today",
+            "let's make sure the daemon is healthy",
+            "that makes sense to me",
+        ],
+    )
+    def test_operator_jargon_and_idioms_do_not_render_action_guidance(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch, transcript: str
+    ) -> None:
+        """Regressions for two real false-positive shapes the hardening
+        pass removed: bare "the queue is ..." observations (queue is a
+        noun in operator jargon, not a verb) and "make sure" / "makes
+        sense" conversational idioms.  Keeping these informational is
+        what lets normal shop-talk runs stay clean instead of throwing
+        a yellow 'looks like governed work' block every time."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt_response(transcript=transcript)
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                },
+            )
+        assert res.status_code == 200
+        assert _ACTION_GUIDANCE_TESTID not in res.text
+        assert "Looks like governed work" not in res.text
+
 
 class TestActionOrientedRunRendersGuidance:
     """Clearly action-oriented transcripts render the guidance block."""

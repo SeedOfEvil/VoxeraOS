@@ -151,6 +151,55 @@ class TestConservativeDefaults:
             == CLASSIFICATION_INFORMATIONAL
         )
 
+    @pytest.mark.parametrize(
+        "transcript",
+        [
+            # "queue" is operator jargon for the noun, not a verb command.
+            # A bare "the queue is ..." must never fire action-oriented.
+            "the queue is slow",
+            "the queue looks fine today",
+            "i think the queue is backed up",
+            "our queue has 5 jobs in it",
+        ],
+    )
+    def test_queue_noun_jargon_stays_informational(self, transcript: str) -> None:
+        """The word 'queue' is core operator vocabulary for the noun
+        ('the queue').  Treating it as a verb flips every "the queue
+        is ..." observation into a fake action-oriented warning, so
+        queue is intentionally excluded from the action-verb lexicon."""
+        result = classify_workbench_transcript(transcript)
+        assert result.kind == CLASSIFICATION_INFORMATIONAL
+        assert result.matched_signals == ()
+
+    @pytest.mark.parametrize(
+        "transcript",
+        [
+            # "make sure" = "ensure"; not a mutation verb in context.
+            "let's make sure the daemon is healthy",
+            "make sure the panel is up",
+            "i want to make sure the service is stable",
+            "that makes sense to me",
+            "it makes sense for the mission",
+        ],
+    )
+    def test_make_idiom_does_not_flip_action_oriented(self, transcript: str) -> None:
+        """'make sure' / 'makes sense' are conversational idioms, not
+        mutation verbs.  The idiom-suppression table drops these occurrences
+        so a stray 'make' inside an idiom does not combine with a nearby
+        target noun to falsely flip action-oriented."""
+        result = classify_workbench_transcript(transcript)
+        assert result.kind == CLASSIFICATION_INFORMATIONAL
+
+    def test_standalone_verb_beats_idiom_suppression(self) -> None:
+        """If the same verb appears both inside an idiom AND standalone,
+        the standalone usage wins — the suppression only drops the
+        idiom-bound occurrences.  Here 'delete' is also present and
+        must still carry the classification."""
+        result = classify_workbench_transcript("please make sure to delete the file")
+        assert result.kind == CLASSIFICATION_ACTION_ORIENTED
+        assert "delete" in result.matched_signals
+        assert "file" in result.matched_signals
+
 
 class TestReasonAndMatchedSignalsAreExplainable:
     """The classifier result carries the branch that fired, for debug."""
