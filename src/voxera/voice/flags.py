@@ -16,6 +16,7 @@ class VoiceFoundationFlags:
     enable_voice_output: bool
     voice_stt_backend: str | None
     voice_tts_backend: str | None
+    voice_tts_piper_model: str | None = None
 
     @property
     def voice_input_enabled(self) -> bool:
@@ -70,6 +71,7 @@ def load_voice_foundation_flags(
     env_enable_voice_output = env.get("VOXERA_ENABLE_VOICE_OUTPUT")
     env_voice_stt_backend = env.get("VOXERA_VOICE_STT_BACKEND")
     env_voice_tts_backend = env.get("VOXERA_VOICE_TTS_BACKEND")
+    env_voice_tts_piper_model = env.get("VOXERA_VOICE_TTS_PIPER_MODEL")
 
     enable_voice_foundation = _parse_bool(
         "VOXERA_ENABLE_VOICE_FOUNDATION",
@@ -89,9 +91,11 @@ def load_voice_foundation_flags(
 
     file_stt_backend = str(file_values.get("voice_stt_backend") or "").strip() or None
     file_tts_backend = str(file_values.get("voice_tts_backend") or "").strip() or None
+    file_tts_piper_model = str(file_values.get("voice_tts_piper_model") or "").strip() or None
 
     voice_stt_backend = str(env_voice_stt_backend or "").strip() or file_stt_backend
     voice_tts_backend = str(env_voice_tts_backend or "").strip() or file_tts_backend
+    voice_tts_piper_model = str(env_voice_tts_piper_model or "").strip() or file_tts_piper_model
 
     return VoiceFoundationFlags(
         enable_voice_foundation=enable_voice_foundation,
@@ -99,4 +103,5 @@ def load_voice_foundation_flags(
         enable_voice_output=enable_voice_output,
         voice_stt_backend=voice_stt_backend,
         voice_tts_backend=voice_tts_backend,
+        voice_tts_piper_model=voice_tts_piper_model,
     )

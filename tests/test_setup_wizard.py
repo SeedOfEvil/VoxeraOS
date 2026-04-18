@@ -231,6 +231,7 @@ def test_run_setup_finish_path_ensures_services_before_launch(monkeypatch):
     monkeypatch.setattr(setup_wizard, "_pick_brain_type", lambda: "cloud")
     monkeypatch.setattr(setup_wizard, "_configure_cloud_brains", lambda cfg: None)
     monkeypatch.setattr(setup_wizard, "_configure_web_investigation", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_configure_voice", lambda: {})
     monkeypatch.setattr(setup_wizard, "_policy_defaults", lambda: setup_wizard.PolicyApprovals())
     monkeypatch.setattr(setup_wizard, "_confirm_write_config", lambda path: True)
     monkeypatch.setattr(setup_wizard, "save_config", lambda *args, **kwargs: None)
@@ -542,8 +543,8 @@ def test_render_validation_summary_mixed_no_fake_success(capsys):
     assert "Setup complete. Try: voxera vera" not in out
 
 
-def test_post_setup_validation_suppresses_all_doctor_warns(monkeypatch, capsys):
-    """All doctor warn checks are suppressed — only ok and fail pass through."""
+def test_post_setup_validation_suppresses_daemon_lifecycle_warns(monkeypatch, capsys):
+    """Daemon-lifecycle warns are suppressed; voice: * warns DO surface."""
     monkeypatch.setenv("TEST_KEY", "sk-test")
     cfg = AppConfig(
         brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="TEST_KEY")}
@@ -557,10 +558,10 @@ def test_post_setup_validation_suppresses_all_doctor_warns(monkeypatch, capsys):
             "hint": "No recent successful health event recorded.",
         },
         {
-            "check": "voice: stt",
+            "check": "voice: stt status",
             "status": "warn",
             "detail": "unconfigured",
-            "hint": "Set voice_stt_backend.",
+            "hint": "Run `voxera setup` and pick an STT backend.",
         },
         {"check": "queue counts", "status": "ok", "detail": "all zero", "hint": ""},
     ]
@@ -569,12 +570,37 @@ def test_post_setup_validation_suppresses_all_doctor_warns(monkeypatch, capsys):
     setup_wizard._post_setup_validation(cfg)
     out = capsys.readouterr().out
 
-    # brain ok (1) + doctor ok (1) = 2 passed; all doctor warns dropped
-    assert "2 checks passed" in out
+    # Daemon-lifecycle warns remain suppressed.
     assert "lock status" not in out
     assert "last_ok" not in out
-    assert "voice" not in out
-    assert "Setup complete. Try: voxera vera" in out
+    # Voice warn DOES surface, with its actionable hint.
+    assert "voice: stt status" in out
+    assert "voxera setup" in out
+    # With a warn surfaced, the panel shows the warning framing, not "Setup complete."
+    assert "Setup complete. Try: voxera vera" not in out
+
+
+def test_post_setup_validation_surfaces_voice_warn_when_dep_missing(monkeypatch, capsys):
+    """A brand-new user who enables voice but lacks the dep sees it at setup end."""
+    monkeypatch.setenv("TEST_KEY", "sk-test")
+    cfg = AppConfig(
+        brain={"primary": BrainConfig(type="openai_compat", model="m1", api_key_ref="TEST_KEY")}
+    )
+    doctor_result = [
+        {
+            "check": "voice: tts status",
+            "status": "warn",
+            "detail": "status=available dependency_missing=piper-tts",
+            "hint": "Install the Piper extra: pip install voxera-os[piper]",
+        },
+    ]
+    monkeypatch.setattr(setup_wizard, "run_quick_doctor", lambda: doctor_result)
+
+    setup_wizard._post_setup_validation(cfg)
+    out = capsys.readouterr().out
+
+    assert "voice: tts status" in out
+    assert "pip install voxera-os[piper]" in out
 
 
 def test_post_setup_validation_surfaces_doctor_fail(monkeypatch, capsys):
@@ -642,6 +668,7 @@ def test_run_setup_calls_post_setup_validation(monkeypatch):
     monkeypatch.setattr(setup_wizard, "_pick_brain_type", lambda: "cloud")
     monkeypatch.setattr(setup_wizard, "_configure_cloud_brains", lambda cfg: None)
     monkeypatch.setattr(setup_wizard, "_configure_web_investigation", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_configure_voice", lambda: {})
     monkeypatch.setattr(setup_wizard, "_policy_defaults", lambda: setup_wizard.PolicyApprovals())
     monkeypatch.setattr(setup_wizard, "_confirm_write_config", lambda path: True)
     monkeypatch.setattr(setup_wizard, "save_config", lambda *args, **kwargs: None)
@@ -676,6 +703,7 @@ def test_run_setup_completes_with_validation_warnings(monkeypatch):
     monkeypatch.setattr(setup_wizard, "_pick_brain_type", lambda: "cloud")
     monkeypatch.setattr(setup_wizard, "_configure_cloud_brains", lambda cfg: None)
     monkeypatch.setattr(setup_wizard, "_configure_web_investigation", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_configure_voice", lambda: {})
     monkeypatch.setattr(setup_wizard, "_policy_defaults", lambda: setup_wizard.PolicyApprovals())
     monkeypatch.setattr(setup_wizard, "_confirm_write_config", lambda path: True)
     monkeypatch.setattr(setup_wizard, "save_config", lambda *args, **kwargs: None)
@@ -795,6 +823,7 @@ def test_run_setup_passes_verbose_next_flag(monkeypatch):
     monkeypatch.setattr(setup_wizard, "_pick_brain_type", lambda: "cloud")
     monkeypatch.setattr(setup_wizard, "_configure_cloud_brains", lambda cfg: None)
     monkeypatch.setattr(setup_wizard, "_configure_web_investigation", lambda cfg: None)
+    monkeypatch.setattr(setup_wizard, "_configure_voice", lambda: {})
     monkeypatch.setattr(setup_wizard, "_policy_defaults", lambda: setup_wizard.PolicyApprovals())
     monkeypatch.setattr(setup_wizard, "_confirm_write_config", lambda path: True)
     monkeypatch.setattr(setup_wizard, "save_config", lambda *args, **kwargs: None)

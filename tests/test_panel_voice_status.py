@@ -228,6 +228,42 @@ class TestVoiceStatusErrorPath:
         assert "RuntimeError" in data["error"]
 
 
+class TestVoiceStatusGuidance:
+    """Panel surfaces the operator-facing next-step hints from the status summary."""
+
+    def test_page_shows_setup_hint_when_foundation_disabled(self, _panel_env: None) -> None:
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        assert "voxera setup" in res.text
+
+    def test_json_carries_next_step_fields(self, _panel_env: None) -> None:
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status.json", headers=_operator_headers())
+        voice = res.json()["voice"]
+        assert "voice_foundation_next_step" in voice
+        assert "next_step" in voice["stt"]
+        assert "next_step" in voice["tts"]
+
+    def test_json_next_step_clears_when_fully_enabled(
+        self, _panel_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
+        client = TestClient(panel_module.app)
+        voice = client.get("/voice/status.json", headers=_operator_headers()).json()["voice"]
+        assert voice["voice_foundation_next_step"] is None
+
+    def test_json_piper_model_sub_block_present_for_piper_backend(
+        self, _panel_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
+        monkeypatch.setenv("VOXERA_ENABLE_VOICE_OUTPUT", "1")
+        monkeypatch.setenv("VOXERA_VOICE_TTS_BACKEND", "piper_local")
+        client = TestClient(panel_module.app)
+        voice = client.get("/voice/status.json", headers=_operator_headers()).json()["voice"]
+        assert "piper_model" in voice["tts_dependency"]
+
+
 class TestVoiceStatusAuth:
     def test_voice_status_page_requires_auth(self, _panel_env: None) -> None:
         client = TestClient(panel_module.app, raise_server_exceptions=False)

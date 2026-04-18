@@ -23,6 +23,7 @@ def _flags(
     output: bool = False,
     stt_backend: str | None = None,
     tts_backend: str | None = None,
+    tts_piper_model: str | None = None,
 ) -> VoiceFoundationFlags:
     return VoiceFoundationFlags(
         enable_voice_foundation=foundation,
@@ -30,6 +31,7 @@ def _flags(
         enable_voice_output=output,
         voice_stt_backend=stt_backend,
         voice_tts_backend=tts_backend,
+        voice_tts_piper_model=tts_piper_model,
     )
 
 
@@ -257,3 +259,162 @@ class TestTruthfulReadiness:
         s3 = build_voice_status_summary(_flags(foundation=True, input=True, output=True))
         assert s3["stt"]["reason"] == "voice_stt_backend_not_configured"
         assert s3["tts"]["reason"] == "voice_tts_backend_not_configured"
+
+
+# -- next_step hints -------------------------------------------------------
+
+
+class TestNextStepHints:
+    def test_foundation_disabled_yields_run_setup_hint(self) -> None:
+        summary = build_voice_status_summary(_flags())
+        assert summary["voice_foundation_next_step"] is not None
+        assert "voxera setup" in summary["voice_foundation_next_step"]
+        assert summary["stt"]["next_step"] is not None
+        assert "voxera setup" in summary["stt"]["next_step"]
+        assert summary["tts"]["next_step"] is not None
+        assert "voxera setup" in summary["tts"]["next_step"]
+
+    def test_foundation_enabled_clears_foundation_hint(self) -> None:
+        summary = build_voice_status_summary(_flags(foundation=True))
+        assert summary["voice_foundation_next_step"] is None
+
+    def test_stt_enabled_but_no_backend_hint(self) -> None:
+        summary = build_voice_status_summary(_flags(foundation=True, input=True))
+        assert summary["stt"]["next_step"] is not None
+        assert "STT backend" in summary["stt"]["next_step"]
+
+    def test_tts_enabled_but_no_backend_hint(self) -> None:
+        summary = build_voice_status_summary(_flags(foundation=True, output=True))
+        assert summary["tts"]["next_step"] is not None
+        assert "TTS backend" in summary["tts"]["next_step"]
+
+    def test_input_disabled_hint_tells_operator_to_enable_stt(self) -> None:
+        summary = build_voice_status_summary(_flags(foundation=True))
+        assert summary["stt"]["next_step"] is not None
+        assert "speech-to-text" in summary["stt"]["next_step"]
+
+    def test_output_disabled_hint_tells_operator_to_enable_tts(self) -> None:
+        summary = build_voice_status_summary(_flags(foundation=True))
+        assert summary["tts"]["next_step"] is not None
+        assert "text-to-speech" in summary["tts"]["next_step"]
+
+    def test_fully_configured_no_hint_when_deps_available(self) -> None:
+        summary = build_voice_status_summary(
+            _flags(
+                foundation=True,
+                input=True,
+                output=True,
+                stt_backend="whisper_local",
+                tts_backend="piper_local",
+            )
+        )
+        # When deps are installed in the test env, no next_step; when deps are
+        # missing, the hint must describe the dependency. Assert the invariant.
+        stt_dep = summary["stt_dependency"]
+        if stt_dep["checked"] and stt_dep["available"]:
+            assert summary["stt"]["next_step"] is None
+        else:
+            assert "pip install" in (summary["stt"]["next_step"] or "")
+        tts_dep = summary["tts_dependency"]
+        if tts_dep["checked"] and tts_dep["available"]:
+            # next_step may still be present if piper_model check fails for
+            # a path-style value; the default name-style model has kind="name".
+            pm = tts_dep.get("piper_model") or {}
+            if pm.get("kind") != "path" or (pm.get("exists") and pm.get("metadata_exists")):
+                assert summary["tts"]["next_step"] is None
+        else:
+            assert "pip install" in (summary["tts"]["next_step"] or "")
+
+
+# -- Piper model path validation -------------------------------------------
+
+
+class TestPiperModelCheck:
+    def test_no_model_configured_reports_not_configured(self) -> None:
+        summary = build_voice_status_summary(
+            _flags(foundation=True, output=True, tts_backend="piper_local")
+        )
+        dep = summary["tts_dependency"]
+        pm = dep.get("piper_model")
+        assert pm is not None
+        assert pm.get("configured") is False
+
+    def test_named_model_reports_kind_name(self) -> None:
+        summary = build_voice_status_summary(
+            _flags(
+                foundation=True,
+                output=True,
+                tts_backend="piper_local",
+                tts_piper_model="en_US-amy-medium",
+            )
+        )
+        pm = summary["tts_dependency"].get("piper_model") or {}
+        assert pm.get("configured") is True
+        assert pm.get("kind") == "name"
+        assert pm.get("value") == "en_US-amy-medium"
+
+    def test_path_model_missing_file_reports_missing(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        assert isinstance(tmp_path, Path)
+        missing = tmp_path / "does_not_exist.onnx"
+        summary = build_voice_status_summary(
+            _flags(
+                foundation=True,
+                output=True,
+                tts_backend="piper_local",
+                tts_piper_model=str(missing),
+            )
+        )
+        pm = summary["tts_dependency"].get("piper_model") or {}
+        assert pm.get("kind") == "path"
+        assert pm.get("exists") is False
+        assert "hint" in pm
+        # The TTS next_step must point at the missing file, not pip install.
+        tts_dep = summary["tts_dependency"]
+        if tts_dep.get("checked") and tts_dep.get("available"):
+            assert summary["tts"]["next_step"] is not None
+            assert "Piper model path" in summary["tts"]["next_step"]
+
+    def test_path_model_metadata_missing_reports_metadata(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        assert isinstance(tmp_path, Path)
+        model_file = tmp_path / "voice.onnx"
+        model_file.write_bytes(b"")  # pretend the ONNX exists
+        summary = build_voice_status_summary(
+            _flags(
+                foundation=True,
+                output=True,
+                tts_backend="piper_local",
+                tts_piper_model=str(model_file),
+            )
+        )
+        pm = summary["tts_dependency"].get("piper_model") or {}
+        assert pm.get("kind") == "path"
+        assert pm.get("exists") is True
+        assert pm.get("metadata_exists") is False
+        tts_dep = summary["tts_dependency"]
+        if tts_dep.get("checked") and tts_dep.get("available"):
+            assert summary["tts"]["next_step"] is not None
+            assert "metadata" in summary["tts"]["next_step"]
+
+    def test_path_model_with_metadata_is_present(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        assert isinstance(tmp_path, Path)
+        model_file = tmp_path / "voice.onnx"
+        model_file.write_bytes(b"")
+        (tmp_path / "voice.onnx.json").write_text("{}", encoding="utf-8")
+        summary = build_voice_status_summary(
+            _flags(
+                foundation=True,
+                output=True,
+                tts_backend="piper_local",
+                tts_piper_model=str(model_file),
+            )
+        )
+        pm = summary["tts_dependency"].get("piper_model") or {}
+        assert pm.get("kind") == "path"
+        assert pm.get("exists") is True
+        assert pm.get("metadata_exists") is True

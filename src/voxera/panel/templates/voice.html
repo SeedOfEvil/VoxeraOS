@@ -50,6 +50,12 @@
             {% endif %}
           </span>
         </div>
+        {% if summary.voice_foundation_next_step %}
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Next Step</span>
+          <span class="queue-detail-value muted voice-next-step">{{summary.voice_foundation_next_step}}</span>
+        </div>
+        {% endif %}
       </section>
 
       <div class="grid grid-2 voice-status-grid">
@@ -98,6 +104,12 @@
                 {% endif %}
               {% endif %}
             </span>
+          </div>
+          {% endif %}
+          {% if summary.stt.next_step %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Next Step</span>
+            <span class="queue-detail-value muted voice-next-step">{{summary.stt.next_step}}</span>
           </div>
           {% endif %}
         </section>
@@ -153,6 +165,32 @@
                 {% endif %}
               {% endif %}
             </span>
+          </div>
+          {% endif %}
+          {% if summary.tts_dependency.piper_model and summary.tts_dependency.piper_model.configured %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Piper Model</span>
+            <span class="queue-detail-value">
+              {% if summary.tts_dependency.piper_model.kind == "path" %}
+                <code class="voice-path-block">{{summary.tts_dependency.piper_model.value}}</code>
+                {% if summary.tts_dependency.piper_model.exists and summary.tts_dependency.piper_model.metadata_exists %}
+                  <span class="badge badge-ok">present</span>
+                {% elif not summary.tts_dependency.piper_model.exists %}
+                  <span class="badge badge-fail">file missing</span>
+                {% else %}
+                  <span class="badge badge-warn">metadata missing</span>
+                {% endif %}
+              {% else %}
+                <span class="mono">{{summary.tts_dependency.piper_model.value}}</span>
+                <span class="muted text-sm">(resolved at load time)</span>
+              {% endif %}
+            </span>
+          </div>
+          {% endif %}
+          {% if summary.tts.next_step %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Next Step</span>
+            <span class="queue-detail-value muted voice-next-step">{{summary.tts.next_step}}</span>
           </div>
           {% endif %}
         </section>

@@ -175,13 +175,51 @@ def load_config(
 def _load_runtime_config_file(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
+    # An empty / whitespace-only file is a common intentional state (e.g. the
+    # operator `touch`ed the path, or a previous half-write left nothing
+    # behind).  Treat it as empty config rather than crashing setup with a
+    # raw JSONDecodeError -- strictly more permissive, never destructive.
+    raw = path.read_text(encoding="utf-8")
+    if not raw.strip():
+        return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid runtime config JSON at {path}: {exc.msg}") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"Invalid runtime config JSON at {path}: expected top-level object")
     return payload
+
+
+def update_runtime_config(
+    updates: Mapping[str, Any],
+    *,
+    config_path: Path | None = None,
+) -> Path:
+    """Merge ``updates`` into the runtime config JSON at ``config_path``.
+
+    Reads the existing JSON (if any), overlays ``updates`` at the top level,
+    and atomically writes the result back.  Keys whose value is ``None`` are
+    removed from the file so callers can clear a setting explicitly.
+
+    Returns the resolved config path that was written.
+    """
+    path = resolve_config_path(config_path)
+    existing = _load_runtime_config_file(path)
+    merged: dict[str, Any] = dict(existing)
+    for key, value in updates.items():
+        if value is None:
+            merged.pop(key, None)
+        else:
+            merged[key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(json.dumps(merged, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return path
 
 
 def _queue_root_default(cwd: Path) -> Path:

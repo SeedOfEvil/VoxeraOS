@@ -46,7 +46,7 @@ def build_tts_backend(flags: VoiceFoundationFlags) -> TTSBackend:
         return NullTTSBackend()
 
     if backend_id == TTS_BACKEND_PIPER_LOCAL:
-        return PiperLocalBackend()
+        return PiperLocalBackend(model=flags.voice_tts_piper_model)
 
     # Unrecognized backend — return NullTTSBackend with a specific reason
     # so operators can see which identifier was rejected.
