@@ -678,8 +678,11 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
         Panel(
             "Voice foundation is optional.  If enabled, Vera can accept voice input "
             "(speech-to-text) and/or speak responses (text-to-speech).  Everything "
-            "runs locally by default -- no audio is sent to the cloud.  You can "
-            "change these answers later by re-running `voxera setup`.",
+            "runs locally by default -- no audio is sent to the cloud.\n\n"
+            "Note: voice answers are written to ~/.config/voxera/config.json "
+            'as soon as you finish this step -- before the final "write config?" '
+            "prompt -- so declining that prompt will not roll them back.  Re-run "
+            "`voxera setup` to change them.",
             title="Voice Setup",
         )
     )

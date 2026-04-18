@@ -54,6 +54,21 @@ def _monkey_confirm(monkeypatch: pytest.MonkeyPatch, answers: list[bool]) -> lis
 
 
 class TestConfigureVoiceDeclined:
+    def test_voice_step_announces_immediate_write(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """_configure_voice must warn the operator that answers persist before the final YAML confirm."""
+        cfg_path = tmp_path / "config.json"
+        _monkey_confirm(monkeypatch, [False])
+        _monkey_prompt(monkeypatch, [])
+
+        setup_wizard._configure_voice(runtime_config_path=cfg_path)
+
+        out = capsys.readouterr().out
+        assert "config.json" in out
+        # Must make clear the write happens before the final write-config prompt.
+        assert "before" in out.lower()
+
     def test_declining_foundation_writes_all_voice_keys_as_disabled(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
