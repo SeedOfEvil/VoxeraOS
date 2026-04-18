@@ -102,6 +102,52 @@ def test_update_runtime_config_creates_file_when_absent(tmp_path: Path) -> None:
     assert data == {"panel_port": 9100}
 
 
+def test_update_runtime_config_treats_empty_file_as_empty_config(tmp_path: Path) -> None:
+    """A 0-byte config.json is a common intentional state; setup must not crash."""
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("", encoding="utf-8")
+
+    update_runtime_config({"panel_port": 9100}, config_path=cfg_path)
+
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert data == {"panel_port": 9100}
+
+
+def test_update_runtime_config_treats_whitespace_only_file_as_empty_config(
+    tmp_path: Path,
+) -> None:
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("   \n\t\n", encoding="utf-8")
+
+    update_runtime_config({"panel_port": 9100}, config_path=cfg_path)
+
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert data == {"panel_port": 9100}
+
+
+def test_update_runtime_config_rejects_malformed_json(tmp_path: Path) -> None:
+    """Non-empty, malformed JSON must raise ValueError (non-destructive)."""
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("{not valid json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid runtime config JSON"):
+        update_runtime_config({"panel_port": 9100}, config_path=cfg_path)
+
+    # The malformed file must be left untouched (no destructive overwrite).
+    assert cfg_path.read_text(encoding="utf-8") == "{not valid json"
+
+
+def test_load_config_treats_empty_file_as_empty_config(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("", encoding="utf-8")
+
+    loaded = load_config(config_path=cfg_path)
+
+    # Defaults are used; no crash.
+    assert loaded.panel_port == 8844
+    assert loaded.config_path == cfg_path
+
+
 def test_update_runtime_config_merges_without_clobbering(tmp_path: Path) -> None:
     cfg_path = tmp_path / "config.json"
     cfg_path.write_text(

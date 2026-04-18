@@ -260,6 +260,63 @@ class TestConfigureVoiceEnabled:
         data = json.loads(cfg_path.read_text(encoding="utf-8"))
         assert "voice_tts_piper_model" not in data
 
+    def test_empty_runtime_config_file_does_not_crash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A 0-byte config.json (`touch config.json`) must not crash voice setup."""
+        cfg_path = tmp_path / "config.json"
+        cfg_path.write_text("", encoding="utf-8")
+
+        _monkey_confirm(monkeypatch, [False])  # decline foundation
+        _monkey_prompt(monkeypatch, [])
+
+        answers = setup_wizard._configure_voice(runtime_config_path=cfg_path)
+
+        assert answers["enable_voice_foundation"] is False
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert data["enable_voice_foundation"] is False
+
+    def test_missing_runtime_config_file_does_not_crash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No file at all is the first-run case; setup must create it cleanly."""
+        cfg_path = tmp_path / "config.json"
+        assert not cfg_path.exists()
+
+        _monkey_confirm(monkeypatch, [True, True, False])
+        _monkey_prompt(monkeypatch, ["whisper_local"])
+
+        answers = setup_wizard._configure_voice(runtime_config_path=cfg_path)
+
+        assert answers["voice_stt_backend"] == "whisper_local"
+        assert cfg_path.exists()
+
+    def test_malformed_runtime_config_skips_voice_without_crash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Invalid JSON must NOT raise and must NOT overwrite the user's file."""
+        cfg_path = tmp_path / "config.json"
+        original = "{this is: not json,"
+        cfg_path.write_text(original, encoding="utf-8")
+
+        # No prompts should fire -- the wizard should short-circuit before asking.
+        recorded_confirms = _monkey_confirm(monkeypatch, [])
+        recorded_prompts = _monkey_prompt(monkeypatch, [])
+
+        answers = setup_wizard._configure_voice(runtime_config_path=cfg_path)
+
+        # Skipped: all voice keys reflect "not enabled", nothing written.
+        assert answers["enable_voice_foundation"] is False
+        assert recorded_confirms == []
+        assert recorded_prompts == []
+        # Operator file is NOT clobbered.
+        assert cfg_path.read_text(encoding="utf-8") == original
+        # Clean operator-facing message was rendered (no raw traceback).
+        out = capsys.readouterr().out
+        assert "Voice Setup skipped" in out
+        assert "not valid JSON" in out
+        assert "voxera setup" in out
+
     def test_voice_answers_load_back_through_flags(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

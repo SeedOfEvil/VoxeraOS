@@ -688,13 +688,39 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
     )
 
     # Read the existing runtime config so re-running setup can pre-fill the
-    # Piper model prompt with the previously-stored value.  Any failure here
-    # is non-fatal -- we just fall back to an empty default.
+    # Piper model prompt with the previously-stored value.  Absent / empty
+    # files are fine; malformed JSON is surfaced cleanly so the wizard never
+    # overwrites (or crashes on top of) a corrupted operator-managed file.
+    runtime_path = resolve_config_path(runtime_config_path)
     existing_runtime: dict[str, object] = {}
-    with contextlib.suppress(Exception):
-        path = resolve_config_path(runtime_config_path)
-        if path.exists():
-            loaded = json.loads(path.read_text(encoding="utf-8"))
+    if runtime_path.exists():
+        raw = ""
+        with contextlib.suppress(Exception):
+            raw = runtime_path.read_text(encoding="utf-8")
+        if raw.strip():
+            try:
+                loaded = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                console.print(
+                    Panel(
+                        f"The runtime config at {runtime_path} is not valid JSON "
+                        f"({exc.msg} at line {exc.lineno}, column {exc.colno}), so "
+                        "voice setup was skipped to avoid overwriting it.\n\n"
+                        "Fix or remove the file, then re-run `voxera setup` to "
+                        "configure voice.  The rest of setup will continue with "
+                        "your existing voice answers untouched.",
+                        title="Voice Setup skipped",
+                        border_style="yellow",
+                    )
+                )
+                return {
+                    "enable_voice_foundation": False,
+                    "enable_voice_input": False,
+                    "enable_voice_output": False,
+                    "voice_stt_backend": None,
+                    "voice_tts_backend": None,
+                    "voice_tts_piper_model": None,
+                }
             if isinstance(loaded, dict):
                 existing_runtime = loaded
     existing_piper_model_raw = existing_runtime.get("voice_tts_piper_model")
