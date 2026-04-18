@@ -55,7 +55,18 @@ def register_vera_routes(
     @app.get("/vera", response_class=HTMLResponse)
     def vera_page(request: Request):
         require_operator_auth_from_request(request)
-        session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+        # ``?session_id=<id>`` lets other panel surfaces (e.g. the Voice
+        # Workbench) hand the operator a direct link into the same
+        # canonical Vera session they were just working in.  The value
+        # is clamped through ``Path(...).name`` so it can only resolve
+        # to a session file under the canonical sessions directory.
+        query_session_id = Path((request.query_params.get("session_id") or "").strip() or ".").name
+        cookie_session_id = (request.cookies.get("vera_session_id") or "").strip()
+        session_id = (
+            query_session_id
+            if query_session_id and query_session_id != "."
+            else (cookie_session_id or new_session_id())
+        )
         turns = read_session_turns(queue_root(), session_id)
         return _render(request, session_id=session_id, turns=turns)
 

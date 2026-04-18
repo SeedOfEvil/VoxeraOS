@@ -27,7 +27,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from ..vera.session_store import new_session_id
+from ..vera.session_store import new_session_id, read_session_turns
 from ..voice.flags import load_voice_foundation_flags
 from ..voice.input import transcribe_audio_file
 from ..voice.output import synthesize_text, synthesize_text_async
@@ -35,6 +35,34 @@ from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse, stt_response
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response_as_dict
 from ..voice.voice_status_summary import build_voice_status_summary
 from . import voice_workbench
+
+
+def _continue_in_vera_url(session_id: str) -> str:
+    """Build a canonical ``/vera?session_id=<id>`` continuation link.
+
+    The session id is clamped to a single path component through
+    ``Path(...).name`` so the link can only ever resolve to a session
+    file under ``artifacts/vera_sessions/``.  Empty or invalid values
+    produce a bare ``/vera`` link (no query string) so the canonical
+    Vera surface falls back to its own cookie/new-session behavior.
+    """
+    clamped = Path(session_id or ".").name
+    if not clamped or clamped == ".":
+        return "/vera"
+    return f"/vera?session_id={clamped}"
+
+
+def _safe_prior_turn_count(queue_root: Path, session_id: str) -> int:
+    """Return the number of persisted turns in this Vera session.
+
+    Returns ``0`` on any read error so the UI can render a truthful
+    "new session" banner instead of crashing when a session file is
+    malformed or missing.
+    """
+    try:
+        return len(read_session_turns(queue_root, session_id))
+    except Exception:
+        return 0
 
 
 def _display_status_for_stt(response: STTResponse, *, ok: bool) -> str:
@@ -87,6 +115,12 @@ def register_voice_routes(
             error = f"Failed to load voice status: {type(exc).__name__}: {exc}"
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
+        # Prefer the operator's current Vera session cookie when the page
+        # first loads so the Voice Workbench and canonical Vera chat share
+        # the same session out of the box.  Falls back to a fresh session
+        # id when no cookie exists.
+        session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+        prior_turn_count = _safe_prior_turn_count(queue_root(), session_id)
         tmpl = templates.get_template("voice.html")
         html = tmpl.render(
             summary=summary,
@@ -95,7 +129,9 @@ def register_voice_routes(
             tts_result=None,
             stt_result=None,
             workbench_result=None,
-            workbench_session_id=new_session_id(),
+            workbench_session_id=session_id,
+            workbench_session_prior_turn_count=prior_turn_count,
+            workbench_continue_in_vera_url=_continue_in_vera_url(session_id),
         )
         response = HTMLResponse(content=html)
         response.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -189,6 +225,8 @@ def register_voice_routes(
                 }
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
+        session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+        prior_turn_count = _safe_prior_turn_count(queue_root(), session_id)
         tmpl = templates.get_template("voice.html")
         html = tmpl.render(
             summary=summary,
@@ -197,7 +235,9 @@ def register_voice_routes(
             tts_result=tts_result,
             stt_result=None,
             workbench_result=None,
-            workbench_session_id=new_session_id(),
+            workbench_session_id=session_id,
+            workbench_session_prior_turn_count=prior_turn_count,
+            workbench_continue_in_vera_url=_continue_in_vera_url(session_id),
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -310,6 +350,8 @@ def register_voice_routes(
                 }
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
+        session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+        prior_turn_count = _safe_prior_turn_count(queue_root(), session_id)
         tmpl = templates.get_template("voice.html")
         html = tmpl.render(
             summary=summary,
@@ -318,7 +360,9 @@ def register_voice_routes(
             tts_result=None,
             stt_result=stt_result,
             workbench_result=None,
-            workbench_session_id=new_session_id(),
+            workbench_session_id=session_id,
+            workbench_session_prior_turn_count=prior_turn_count,
+            workbench_continue_in_vera_url=_continue_in_vera_url(session_id),
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -388,6 +432,14 @@ def register_voice_routes(
             summary = None
             page_error = f"Failed to load voice status: {type(exc).__name__}: {exc}"
 
+        # Count turns that existed *before* this run began so the UI can
+        # distinguish "new session" from "continuing an existing N-turn
+        # session".  Wraps ``read_session_turns`` with a fail-safe so a
+        # malformed session file never breaks the page.
+        current_queue_root = queue_root()
+        prior_turn_count = _safe_prior_turn_count(current_queue_root, session_id)
+        run_started_at_ms = int(time.time() * 1000)
+
         workbench_result: dict[str, Any] = {
             "session_id": session_id,
             "input_audio_path": audio_path,
@@ -397,6 +449,13 @@ def register_voice_routes(
             "stt": None,
             "vera": None,
             "tts": None,
+            # Continuity framing — these fields let the template render
+            # the session banner ("new session" vs "continuing N-turn
+            # session") and anchor the result block to this specific run.
+            "session_prior_turn_count": prior_turn_count,
+            "session_turn_count": prior_turn_count,
+            "run_started_at_ms": run_started_at_ms,
+            "continue_in_vera_url": _continue_in_vera_url(session_id),
         }
 
         # Flag-load failure is the single early gate: if the voice config
@@ -530,6 +589,14 @@ def register_voice_routes(
                     "error": f"Unexpected error: {type(exc).__name__}: {exc}",
                 }
 
+        # Refresh the total-turn count after the Vera step so the
+        # continuity banner reflects the real state on disk (not just the
+        # snapshot taken before this run).  Read errors fall back to the
+        # pre-run count so we never over-claim.
+        workbench_result["session_turn_count"] = _safe_prior_turn_count(
+            current_queue_root, session_id
+        )
+
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
         tmpl = templates.get_template("voice.html")
         html = tmpl.render(
@@ -540,6 +607,8 @@ def register_voice_routes(
             stt_result=None,
             workbench_result=workbench_result,
             workbench_session_id=session_id,
+            workbench_session_prior_turn_count=prior_turn_count,
+            workbench_continue_in_vera_url=_continue_in_vera_url(session_id),
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
