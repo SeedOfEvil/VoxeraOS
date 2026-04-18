@@ -29,9 +29,14 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import DEFAULT_VERA_WEB_BASE_URL
 from ..vera import session_store
-from ..vera.session_store import new_session_id, read_session_turns
+from ..vera.session_store import append_session_turn, new_session_id, read_session_turns
 from ..voice.flags import load_voice_foundation_flags
-from ..voice.input import transcribe_audio_file
+from ..voice.input import (
+    VoiceInputDisabledError,
+    ingest_voice_transcript,
+    transcribe_audio_file,
+)
+from ..voice.models import InputOrigin
 from ..voice.output import synthesize_text, synthesize_text_async
 from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse, stt_response_as_dict
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response_as_dict
@@ -40,6 +45,11 @@ from . import voice_workbench
 from .voice_workbench_classifier import (
     CLASSIFICATION_ACTION_ORIENTED,
     classify_workbench_transcript,
+)
+from .voice_workbench_lifecycle import (
+    LIFECYCLE_ACTION_NONE,
+    classify_lifecycle_phrase,
+    dispatch_spoken_lifecycle_command,
 )
 from .voice_workbench_preview import (
     maybe_draft_canonical_preview_for_workbench,
@@ -572,13 +582,99 @@ def register_voice_routes(
                 stt_ok = False
                 transcript_text = None
 
-        # ── Step 2: Vera (only when a real transcript exists AND operator opted in) ──
+        # ── Step 2a: Spoken lifecycle command (bounded, canonical-state-only) ──
+        # Before routing into Vera, inspect the transcript for a short
+        # bounded lifecycle phrase ("submit it", "approve it", "deny it",
+        # etc.).  When one matches AND the operator opted in to Vera
+        # processing, dispatch the matching canonical lifecycle helper
+        # instead of a normal Vera conversational turn.  The voice
+        # transcript is still persisted as a ``voice_transcript``-origin
+        # user turn so the session's turn log truthfully records what
+        # the operator said; the assistant turn records the dispatcher's
+        # ack (submit ok / missing preview / ambiguous approval / …).
+        # Nothing is fabricated: the submit path goes through the
+        # canonical ``submit_active_preview_for_session`` seam, the
+        # approve/deny path goes through the canonical queue-daemon
+        # ``resolve_approval`` seam, and every fail-closed branch
+        # surfaces a truthful negative status.
+        lifecycle_handled = False
+        lifecycle_speak_text: str | None = None
+        if stt_ok and transcript_text and send_to_vera:
+            assert flags is not None  # noqa: S101 — invariant: stt_ok implies flags loaded
+            classification = classify_lifecycle_phrase(transcript_text)
+            if classification.kind != LIFECYCLE_ACTION_NONE:
+                lifecycle_handled = True
+                try:
+                    ingested = ingest_voice_transcript(
+                        transcript_text=transcript_text,
+                        voice_input_enabled=flags.voice_input_enabled,
+                    )
+                except VoiceInputDisabledError as exc:
+                    workbench_result["lifecycle"] = {
+                        "action": classification.kind,
+                        "matched_phrase": classification.matched_phrase,
+                        "reason": classification.reason,
+                        "ok": False,
+                        "status": "voice_input_disabled",
+                        "ack": None,
+                        "job_id": None,
+                        "approval_ref": None,
+                        "error": str(exc),
+                    }
+                except ValueError as exc:
+                    workbench_result["lifecycle"] = {
+                        "action": classification.kind,
+                        "matched_phrase": classification.matched_phrase,
+                        "reason": classification.reason,
+                        "ok": False,
+                        "status": "voice_input_invalid",
+                        "ack": None,
+                        "job_id": None,
+                        "approval_ref": None,
+                        "error": str(exc),
+                    }
+                else:
+                    append_session_turn(
+                        current_queue_root,
+                        session_id,
+                        role="user",
+                        text=ingested.transcript_text,
+                        input_origin=InputOrigin.VOICE_TRANSCRIPT.value,
+                    )
+                    dispatch_result = dispatch_spoken_lifecycle_command(
+                        classification=classification,
+                        session_id=session_id,
+                        queue_root=current_queue_root,
+                    )
+                    if dispatch_result.ack:
+                        append_session_turn(
+                            current_queue_root,
+                            session_id,
+                            role="assistant",
+                            text=dispatch_result.ack,
+                        )
+                        lifecycle_speak_text = dispatch_result.ack
+                    workbench_result["lifecycle"] = {
+                        "action": dispatch_result.action,
+                        "matched_phrase": classification.matched_phrase,
+                        "reason": classification.reason,
+                        "ok": dispatch_result.ok,
+                        "status": dispatch_result.status,
+                        "ack": dispatch_result.ack,
+                        "job_id": dispatch_result.job_id,
+                        "approval_ref": dispatch_result.approval_ref,
+                        "error": dispatch_result.error,
+                    }
+
+        # ── Step 2b: Vera (only when a real transcript exists AND operator opted in) ──
         # ``flags is not None`` is guaranteed here: stt_ok cannot be True under
         # the flag-load-failed branch above.  We keep the runtime assertion
         # narrow and explicit so mypy and the reader see the same invariant.
+        # Lifecycle phrases short-circuit the Vera call: the dispatcher has
+        # already persisted the user/assistant turns for this run.
         vera_ok = False
         vera_answer: str | None = None
-        if stt_ok and transcript_text and send_to_vera:
+        if stt_ok and transcript_text and send_to_vera and not lifecycle_handled:
             assert flags is not None  # noqa: S101 — invariant: stt_ok implies flags loaded
             vera_result = await voice_workbench.run_transcript_to_vera_turn(
                 transcript_text=transcript_text,
@@ -599,13 +695,23 @@ def register_voice_routes(
                 "error": vera_result.error,
             }
 
-        # ── Step 3: optional TTS on Vera's reply ────────────────────
-        if vera_ok and vera_answer and speak_response:
-            assert flags is not None  # noqa: S101 — invariant: vera_ok implies flags loaded
+        # ── Step 3: optional TTS on Vera's reply (or on the lifecycle ack) ──
+        # When a lifecycle phrase was handled, the dispatcher produced a
+        # short operator-facing ack (the same string persisted as the
+        # assistant turn); prefer it so the operator hears the truthful
+        # result of the lifecycle action rather than a stale / absent
+        # Vera answer.
+        tts_source_text: str | None = None
+        if lifecycle_handled and lifecycle_speak_text and speak_response:
+            tts_source_text = lifecycle_speak_text
+        elif vera_ok and vera_answer and speak_response:
+            tts_source_text = vera_answer
+        if tts_source_text:
+            assert flags is not None  # noqa: S101 — invariant: any TTS path implies flags loaded
             try:
                 start_ms = int(time.time() * 1000)
                 tts_response = await synthesize_text_async(
-                    text=vera_answer,
+                    text=tts_source_text,
                     flags=flags,
                     session_id=session_id,
                 )
@@ -661,12 +767,12 @@ def register_voice_routes(
         # not flip action-oriented by reading ``reason`` and
         # ``matched_signals``); the template only consumes the top-level
         # ``show_action_guidance`` flag below.
-        classification = classify_workbench_transcript(transcript_text)
+        action_classification = classify_workbench_transcript(transcript_text)
         workbench_result["classification"] = {
-            "kind": classification.kind,
-            "is_action_oriented": classification.is_action_oriented,
-            "reason": classification.reason,
-            "matched_signals": list(classification.matched_signals),
+            "kind": action_classification.kind,
+            "is_action_oriented": action_classification.is_action_oriented,
+            "reason": action_classification.reason,
+            "matched_signals": list(action_classification.matched_signals),
         }
 
         # ── Optional canonical preview drafting (action-oriented only) ──
@@ -690,7 +796,8 @@ def register_voice_routes(
             stt_ok
             and transcript_text
             and send_to_vera
-            and classification.kind == CLASSIFICATION_ACTION_ORIENTED
+            and not lifecycle_handled
+            and action_classification.kind == CLASSIFICATION_ACTION_ORIENTED
         )
         if preview_attempted:
             assert transcript_text is not None  # noqa: S101 — stt_ok + transcript guard
@@ -717,13 +824,17 @@ def register_voice_routes(
                     workbench_result["preview"] = preview_summary
 
         # Only render the generic action-oriented guidance block when we
-        # did NOT successfully draft a real canonical preview.  When a
+        # did NOT successfully draft a real canonical preview AND the
+        # run was not handled as a bounded lifecycle command.  When a
         # preview exists, the operator sees a stronger, more specific
-        # "Governed preview drafted" block instead.
+        # "Governed preview drafted" block; when a lifecycle command
+        # dispatched, the "Spoken lifecycle command" block is the
+        # truthful surface for that run.
         workbench_result["show_action_guidance"] = bool(
             stt_ok
             and transcript_text
-            and classification.kind == CLASSIFICATION_ACTION_ORIENTED
+            and not lifecycle_handled
+            and action_classification.kind == CLASSIFICATION_ACTION_ORIENTED
             and not workbench_result.get("preview")
         )
 

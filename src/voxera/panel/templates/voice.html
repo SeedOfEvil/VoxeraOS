@@ -331,10 +331,65 @@
               </div>
               {% endif %}
             </div>
+            {% elif workbench_result.lifecycle %}
+            <div class="voice-empty-result">Vera was not called &mdash; transcript matched a bounded lifecycle command and was dispatched against canonical state instead.</div>
             {% elif workbench_result.send_to_vera_requested %}
             <div class="voice-empty-result">Vera was not called &mdash; upstream transcription did not produce a real transcript.</div>
             {% else %}
             <div class="voice-empty-result">Vera was not called (&ldquo;Send to Vera&rdquo; was not selected).</div>
+            {% endif %}
+
+            {# ── Spoken lifecycle command (bounded canonical-state dispatch) ── #}
+            {% if workbench_result.lifecycle %}
+            <div class="voice-result voice-workbench-lane {% if workbench_result.lifecycle.ok %}voice-result-ok{% else %}voice-result-fail{% endif %}" data-testid="voice-workbench-lifecycle">
+              <div class="voice-result-header">
+                <span class="voice-result-title">Spoken lifecycle command</span>
+                {% if workbench_result.lifecycle.ok %}
+                  <span class="badge badge-ok">{{workbench_result.lifecycle.status}}</span>
+                {% else %}
+                  <span class="badge badge-fail">{{workbench_result.lifecycle.status}}</span>
+                {% endif %}
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Action</span>
+                <span class="queue-detail-value mono">{{workbench_result.lifecycle.action}}</span>
+              </div>
+              {% if workbench_result.lifecycle.matched_phrase %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Matched Phrase</span>
+                <span class="queue-detail-value">&ldquo;{{workbench_result.lifecycle.matched_phrase}}&rdquo;</span>
+              </div>
+              {% endif %}
+              {% if workbench_result.lifecycle.ack %}
+              <div class="voice-transcript-row">
+                <span class="queue-detail-label">Ack</span>
+                <div class="voice-transcript-block">{{workbench_result.lifecycle.ack}}</div>
+              </div>
+              {% endif %}
+              {% if workbench_result.lifecycle.job_id %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Job ID</span>
+                <span class="queue-detail-value mono">{{workbench_result.lifecycle.job_id}}</span>
+              </div>
+              {% endif %}
+              {% if workbench_result.lifecycle.approval_ref %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Approval Ref</span>
+                <span class="queue-detail-value mono">{{workbench_result.lifecycle.approval_ref}}</span>
+              </div>
+              {% endif %}
+              {% if workbench_result.lifecycle.error %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Error</span>
+                <span class="queue-detail-value voice-error-text">{{workbench_result.lifecycle.error}}</span>
+              </div>
+              {% endif %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-value muted">
+                  Lifecycle commands dispatch against canonical preview/approval truth only &mdash; nothing is fabricated. For review or further action, <a href="{{_wb_continue_url}}">continue the session in canonical Vera</a>.
+                </span>
+              </div>
+            </div>
             {% endif %}
 
             {# ── Governed preview drafted (only when canonical preview truly exists) ── #}
@@ -410,6 +465,9 @@
             {% endif %}
 
             {# ── Governed handoff / linked job status (truthful state reflecting preview-or-not) ── #}
+            {# Suppressed when a spoken lifecycle command was handled on this run — #}
+            {# the lifecycle card above is the authoritative surface for that run. #}
+            {% if not workbench_result.lifecycle %}
             <div class="voice-result voice-workbench-lane">
               <div class="voice-result-header">
                 <span class="voice-result-title">Governed Handoff</span>
@@ -429,6 +487,7 @@
                 </span>
               </div>
             </div>
+            {% endif %}
 
             {# ── Optional TTS response ── #}
             {% if workbench_result.tts %}
