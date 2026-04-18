@@ -650,6 +650,12 @@ def register_voice_routes(
         # implies a preview exists or a job was created; only decides
         # whether the UI should render a stronger "continue in Vera"
         # guidance block.  Informational runs stay clean.
+        #
+        # The ``classification`` sub-dict is retained for debug / inspection
+        # surfaces (it lets operators reason about *why* a run did or did
+        # not flip action-oriented by reading ``reason`` and
+        # ``matched_signals``); the template only consumes the top-level
+        # ``show_action_guidance`` flag below.
         classification = classify_workbench_transcript(transcript_text)
         workbench_result["classification"] = {
             "kind": classification.kind,

@@ -346,7 +346,7 @@
               </div>
               <div class="queue-detail-row">
                 <span class="queue-detail-value">
-                  This request sounds like something that would change the real world. The Voice Workbench does not draft previews or submit jobs &mdash; it is conversational only. To actually proceed, <a href="{{workbench_result.continue_in_vera_url or '#'}}" data-testid="voice-workbench-action-continue">continue the session in canonical Vera</a>, where the request can go through governed preview and handoff. Nothing has been drafted, queued, or executed from this surface.
+                  This request sounds like something that would change the real world. The Voice Workbench does not draft previews or submit jobs &mdash; it is conversational only. To actually proceed, <a href="{{_wb_continue_url}}" data-testid="voice-workbench-action-continue">continue the session in canonical Vera</a>, where the request can go through governed preview and handoff. Nothing has been drafted, queued, or executed from this surface.
                 </span>
               </div>
             </div>
@@ -360,7 +360,7 @@
               </div>
               <div class="queue-detail-row">
                 <span class="queue-detail-value muted">
-                  This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, <a href="{{workbench_result.continue_in_vera_url or '#'}}">continue the session in the canonical Vera chat surface</a> &mdash; preview/handoff semantics are enforced there.
+                  This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, <a href="{{_wb_continue_url}}">continue the session in the canonical Vera chat surface</a> &mdash; preview/handoff semantics are enforced there.
                 </span>
               </div>
             </div>

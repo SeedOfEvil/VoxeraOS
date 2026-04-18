@@ -147,6 +147,16 @@ _IMPERATIVE_PREFIXES: tuple[str, ...] = (
 
 # Question-form starters that always classify as informational.  A
 # question about an action is not the same as an action.
+#
+# Tradeoff note: bare single-word starters like ``"do "`` and ``"is "``
+# are inclusive by design — they cover the overwhelming majority of
+# natural questions ("do you know...", "is the daemon running...").
+# The rare cost is that genuinely action-shaped imperatives that *begin*
+# with those exact tokens ("do restart the service") fall into the
+# informational bucket.  The classifier is intentionally conservative:
+# a missed action is safe (the always-present Governed Handoff row
+# still points the operator at canonical Vera), but a false-positive
+# warning on every question would be noisy.
 _QUESTION_STARTERS: tuple[str, ...] = (
     "what ",
     "what's ",
@@ -209,32 +219,6 @@ def _looks_like_question(lowered: str) -> bool:
     return any(lowered.startswith(starter) for starter in _QUESTION_STARTERS)
 
 
-def _all_occurrences_inside_idiom(lowered: str, word: str, idioms: tuple[str, ...]) -> bool:
-    """Return True iff every whole-word match of ``word`` falls inside
-    one of the ``idioms`` spans.
-
-    Used to suppress verb hits that are only present as part of a
-    conversational idiom ("make sure", "makes sense"), so the
-    classifier does not flip action-oriented on phrasings like
-    "let's make sure the daemon is healthy".  If the verb *also*
-    appears outside an idiom (e.g. "make sure to delete the file"
-    would still hit "delete"), the verb is treated as a real verb
-    — idiom suppression only drops the idiom-bound occurrences.
-    """
-    verb_spans = [(m.start(), m.end()) for m in re.finditer(rf"\b{re.escape(word)}\b", lowered)]
-    if not verb_spans:
-        return False
-    idiom_spans: list[tuple[int, int]] = []
-    for idiom in idioms:
-        idiom_spans.extend((m.start(), m.end()) for m in re.finditer(re.escape(idiom), lowered))
-    if not idiom_spans:
-        return False
-    for v_start, v_end in verb_spans:
-        if not any(i_start <= v_start and v_end <= i_end for i_start, i_end in idiom_spans):
-            return False
-    return True
-
-
 # Verb-in-idiom suppression table.  Each key is a whole-word action
 # verb whose plain meaning is mutation; each value is a tuple of
 # conversational idioms where that verb does NOT carry action intent
@@ -248,14 +232,63 @@ _IDIOMATIC_VERB_PHRASES: dict[str, tuple[str, ...]] = {
     "make": ("make sure", "makes sense"),
 }
 
+# Pre-compiled whole-word matchers for every verb / target in the
+# lexicons.  Compiled once at module load so hot-path classification
+# never relies on ``re``'s internal pattern cache (which has a fixed
+# eviction bound and could churn in a process with many regex
+# callers).  The idiom spans used by ``_all_occurrences_inside_idiom``
+# are also pre-compiled here; each lookup collapses to a direct
+# ``dict.get`` + ``Pattern.finditer`` call at classification time.
+_VERB_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (verb, re.compile(rf"\b{re.escape(verb)}\b")) for verb in _ACTION_VERBS
+)
+_TARGET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (target, re.compile(rf"\b{re.escape(target)}\b")) for target in _ACTION_TARGETS
+)
+_IDIOM_PATTERNS: dict[str, tuple[tuple[re.Pattern[str], re.Pattern[str]], ...]] = {
+    verb: tuple(
+        (re.compile(rf"\b{re.escape(verb)}\b"), re.compile(re.escape(idiom))) for idiom in idioms
+    )
+    for verb, idioms in _IDIOMATIC_VERB_PHRASES.items()
+}
+
+
+def _all_occurrences_inside_idiom(lowered: str, verb: str) -> bool:
+    """Return True iff every whole-word match of ``verb`` in ``lowered``
+    falls inside one of the idiom spans registered for that verb.
+
+    Used to suppress verb hits that are only present as part of a
+    conversational idiom ("make sure", "makes sense"), so the
+    classifier does not flip action-oriented on phrasings like
+    "let's make sure the daemon is healthy".  If the verb *also*
+    appears outside an idiom (e.g. "make sure to delete the file"
+    would still hit "delete"), the verb is treated as a real verb
+    — idiom suppression only drops the idiom-bound occurrences.
+    """
+    patterns = _IDIOM_PATTERNS.get(verb)
+    if not patterns:
+        return False
+    verb_pattern = patterns[0][0]
+    verb_spans = [(m.start(), m.end()) for m in verb_pattern.finditer(lowered)]
+    if not verb_spans:
+        return False
+    idiom_spans: list[tuple[int, int]] = []
+    for _verb_pattern, idiom_pattern in patterns:
+        idiom_spans.extend((m.start(), m.end()) for m in idiom_pattern.finditer(lowered))
+    if not idiom_spans:
+        return False
+    for v_start, v_end in verb_spans:
+        if not any(i_start <= v_start and v_end <= i_end for i_start, i_end in idiom_spans):
+            return False
+    return True
+
 
 def _match_action_verbs(lowered: str) -> list[str]:
     hits: list[str] = []
-    for verb in _ACTION_VERBS:
-        if not re.search(rf"\b{re.escape(verb)}\b", lowered):
+    for verb, pattern in _VERB_PATTERNS:
+        if not pattern.search(lowered):
             continue
-        idioms = _IDIOMATIC_VERB_PHRASES.get(verb)
-        if idioms and _all_occurrences_inside_idiom(lowered, verb, idioms):
+        if verb in _IDIOM_PATTERNS and _all_occurrences_inside_idiom(lowered, verb):
             continue
         hits.append(verb)
     return hits
@@ -263,8 +296,8 @@ def _match_action_verbs(lowered: str) -> list[str]:
 
 def _match_action_targets(lowered: str) -> list[str]:
     hits: list[str] = []
-    for target in _ACTION_TARGETS:
-        if re.search(rf"\b{re.escape(target)}\b", lowered):
+    for target, pattern in _TARGET_PATTERNS:
+        if pattern.search(lowered):
             hits.append(target)
     return hits
 
