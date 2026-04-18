@@ -678,9 +678,14 @@ def register_voice_routes(
         # session the workbench is already writing into.  Never submits
         # to the queue — that boundary is enforced by the seam itself.
         #
-        # Preview truth is read back from canonical session state after
-        # the attempt; ``workbench_result["preview"]`` is populated only
-        # when a canonical preview actually exists on disk.
+        # Attribution rule: the "Governed preview drafted" block claims
+        # that *this run* drafted a preview.  We therefore only populate
+        # ``workbench_result["preview"]`` when the seam itself reports
+        # success (``preview_result.ok``).  If an unrelated preview was
+        # already sitting on the session from a prior canonical Vera
+        # turn, the session still has it — the operator sees it when
+        # they follow the "Continue in Vera" link — but this voice
+        # surface does not claim agency it does not have.
         preview_attempted = bool(
             stt_ok
             and transcript_text
@@ -700,15 +705,16 @@ def register_voice_routes(
                 "draft_ref": preview_result.draft_ref,
                 "error": preview_result.error,
             }
-            try:
-                canonical_preview = session_store.read_session_preview(
-                    current_queue_root, session_id
-                )
-            except Exception:
-                canonical_preview = None
-            preview_summary = summarize_canonical_preview(canonical_preview)
-            if preview_summary is not None:
-                workbench_result["preview"] = preview_summary
+            if preview_result.ok:
+                try:
+                    canonical_preview = session_store.read_session_preview(
+                        current_queue_root, session_id
+                    )
+                except Exception:
+                    canonical_preview = None
+                preview_summary = summarize_canonical_preview(canonical_preview)
+                if preview_summary is not None:
+                    workbench_result["preview"] = preview_summary
 
         # Only render the generic action-oriented guidance block when we
         # did NOT successfully draft a real canonical preview.  When a

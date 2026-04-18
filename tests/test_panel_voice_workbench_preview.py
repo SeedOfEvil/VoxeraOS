@@ -383,3 +383,138 @@ class TestDraftingFailureFallsBackTruthfully:
         assert path.exists()
         data = json.loads(path.read_text(encoding="utf-8"))
         assert "pending_job_preview" not in data
+
+
+class TestPreviewAttributionIsRunScoped:
+    """Hardening: the 'Governed preview drafted' block claims *this run*
+    drafted a preview.  When the seam reports ``ok=False`` — even if an
+    unrelated canonical preview was already sitting on the session from a
+    prior canonical Vera chat turn — the workbench must NOT surface
+    the preview block under its own attribution.
+
+    The prior canonical preview is still on disk (it belongs to the
+    session, not to this run); the operator reaches it via ``Continue in
+    Vera``, which lands on the same session.  But this voice surface
+    does not claim agency it does not have.
+    """
+
+    def test_no_draft_with_prior_canonical_preview_still_suppresses_preview_block(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        session_id = "vera-wb-pv-prior-preview-nodraft"
+
+        # Simulate a canonical Vera chat turn that drafted a preview on
+        # this session BEFORE the voice run starts.  This write goes
+        # directly through the canonical preview-ownership helper so the
+        # session file mirrors real chat-drafted state.
+        from voxera.vera.preview_ownership import reset_active_preview
+
+        # NOTE: this path is fully containerized under the tmp queue_dir
+        # via the _panel_env fixture's Path.home monkeypatch; it never
+        # touches the real user home.
+        reset_active_preview(
+            queue_dir,
+            session_id,
+            {
+                "goal": "write a file called report.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/report.txt",
+                    "content": "x",
+                    "mode": "overwrite",
+                },
+            },
+            draft_ref="~/VoxeraOS/notes/report.txt",
+        )
+        pre_preview = session_store.read_session_preview(queue_dir, session_id)
+        assert isinstance(pre_preview, dict)
+        assert pre_preview["write_file"]["path"].endswith("report.txt")
+
+        # The voice run is action-oriented ("delete the stale artifact
+        # folder") but the deterministic drafter declines — seam reports
+        # ``no_draft``.  The preview block must NOT render, because this
+        # run did not draft anything.
+        stt = _make_stt_response(transcript="delete the stale artifact folder")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        assert res.status_code == 200
+
+        # The "Governed preview drafted" block must be absent — this run
+        # did not draft.  The truthful action-guidance fallback renders
+        # instead, pointing the operator to canonical Vera.
+        assert _PREVIEW_TESTID not in res.text
+        assert _ACTION_GUIDANCE_TESTID in res.text
+        # The badge copy that announces preview_ready must not leak into
+        # the workbench section under this run's attribution.
+        assert "Governed preview drafted" not in res.text
+
+        # Canonical preview state on disk is preserved (untouched by the
+        # seam's fail-closed no_draft return).  The operator following
+        # "Continue in Vera" will see the real preview in canonical Vera.
+        post_preview = session_store.read_session_preview(queue_dir, session_id)
+        assert post_preview == pre_preview
+
+    def test_persist_failure_with_prior_preview_does_not_claim_drafted(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If ``reset_active_preview`` raises on a run that otherwise
+        would have drafted a recognized shape, the seam returns
+        ``persist_failed`` and the route must not surface any prior
+        canonical preview as though this run drafted it."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        session_id = "vera-wb-pv-prior-preview-persistfail"
+
+        from voxera.vera.preview_ownership import reset_active_preview as real_reset
+
+        real_reset(
+            queue_dir,
+            session_id,
+            {
+                "goal": "write a file called earlier.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/earlier.txt",
+                    "content": "y",
+                    "mode": "overwrite",
+                },
+            },
+            draft_ref="~/VoxeraOS/notes/earlier.txt",
+        )
+
+        def _raising_reset(*args: Any, **kwargs: Any) -> None:
+            raise OSError("simulated persist failure")
+
+        monkeypatch.setattr(
+            "voxera.panel.voice_workbench_preview.reset_active_preview",
+            _raising_reset,
+        )
+
+        stt = _make_stt_response(transcript="write a note called newer.txt")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        assert res.status_code == 200
+        assert _PREVIEW_TESTID not in res.text
+        assert "Governed preview drafted" not in res.text
+        # Action-guidance fallback renders because no preview was drafted.
+        assert _ACTION_GUIDANCE_TESTID in res.text
