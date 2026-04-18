@@ -27,6 +27,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from ..config import DEFAULT_VERA_WEB_BASE_URL
 from ..vera.session_store import new_session_id, read_session_turns
 from ..voice.flags import load_voice_foundation_flags
 from ..voice.input import transcribe_audio_file
@@ -35,8 +36,6 @@ from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse, stt_response
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response_as_dict
 from ..voice.voice_status_summary import build_voice_status_summary
 from . import voice_workbench
-
-_DEFAULT_VERA_WEB_BASE_URL = "http://127.0.0.1:8790"
 
 
 def _continue_in_vera_url(session_id: str, base_url: str) -> str:
@@ -62,7 +61,7 @@ def _continue_in_vera_url(session_id: str, base_url: str) -> str:
     """
     base = (base_url or "").strip().rstrip("/")
     if not (base.startswith("http://") or base.startswith("https://")):
-        base = _DEFAULT_VERA_WEB_BASE_URL
+        base = DEFAULT_VERA_WEB_BASE_URL
     clamped = Path(session_id or ".").name
     if not clamped or clamped == ".":
         return f"{base}/"
@@ -140,6 +139,18 @@ def register_voice_routes(
     def _continue_url(session_id: str) -> str:
         return _continue_in_vera_url(session_id, vera_web_base_url())
 
+    def _resolve_session(request: Request) -> tuple[str, int]:
+        """Resolve the operator's Vera session id and its prior turn count.
+
+        Prefers the existing ``vera_session_id`` cookie so the Voice
+        Workbench and canonical Vera chat share the same session out of
+        the box; falls back to a freshly-minted id when no cookie is
+        present.  Returns the session id plus the number of turns
+        already persisted under that id (``0`` on any read error).
+        """
+        session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+        return session_id, _safe_prior_turn_count(queue_root(), session_id)
+
     @app.get("/voice/status", response_class=HTMLResponse)
     def voice_status_page(request: Request) -> HTMLResponse:
         require_operator_auth_from_request(request)
@@ -152,12 +163,7 @@ def register_voice_routes(
             error = f"Failed to load voice status: {type(exc).__name__}: {exc}"
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
-        # Prefer the operator's current Vera session cookie when the page
-        # first loads so the Voice Workbench and canonical Vera chat share
-        # the same session out of the box.  Falls back to a fresh session
-        # id when no cookie exists.
-        session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
-        prior_turn_count = _safe_prior_turn_count(queue_root(), session_id)
+        session_id, prior_turn_count = _resolve_session(request)
         tmpl = templates.get_template("voice.html")
         html = tmpl.render(
             summary=summary,
@@ -263,8 +269,7 @@ def register_voice_routes(
                 }
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
-        session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
-        prior_turn_count = _safe_prior_turn_count(queue_root(), session_id)
+        session_id, prior_turn_count = _resolve_session(request)
         tmpl = templates.get_template("voice.html")
         html = tmpl.render(
             summary=summary,
@@ -389,8 +394,7 @@ def register_voice_routes(
                 }
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
-        session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
-        prior_turn_count = _safe_prior_turn_count(queue_root(), session_id)
+        session_id, prior_turn_count = _resolve_session(request)
         tmpl = templates.get_template("voice.html")
         html = tmpl.render(
             summary=summary,

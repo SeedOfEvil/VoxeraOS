@@ -22,6 +22,11 @@ DEFAULT_POLICY_NAME = "policy.yml"
 _DEFAULT_ENV_FILE = Path("~/.config/voxera/env").expanduser()
 _DEFAULT_RUNTIME_CONFIG = Path("~/.config/voxera/config.json").expanduser()
 
+# Single source of truth for the canonical Vera web app base URL.
+# Referenced here (defaults dict + coerce fallback) and by
+# ``voxera.panel.routes_voice`` for the continue-in-Vera link builder.
+DEFAULT_VERA_WEB_BASE_URL = "http://127.0.0.1:8790"
+
 
 @dataclass(frozen=True)
 class VoxeraConfig:
@@ -114,7 +119,7 @@ def load_config(
         "ops_bundle_dir": None,
         "dev_mode": False,
         "notify_enabled": False,
-        "vera_web_base_url": "http://127.0.0.1:8790",
+        "vera_web_base_url": DEFAULT_VERA_WEB_BASE_URL,
     }
 
     env_map: dict[str, str] = {
@@ -316,7 +321,7 @@ def _coerce(field: str, value: Any) -> Any:
     if field == "vera_web_base_url":
         text = str(value).strip() if value is not None else ""
         if not text:
-            return "http://127.0.0.1:8790"
+            return DEFAULT_VERA_WEB_BASE_URL
         if not (text.startswith("http://") or text.startswith("https://")):
             raise ValueError(
                 f"Invalid value for {field}: must start with http:// or https://, got {value!r}"

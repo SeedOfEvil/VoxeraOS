@@ -40,6 +40,12 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+# Import the canonical default so the test assertions can never drift
+# from ``VoxeraConfig.vera_web_base_url``'s own default.  The panel runs
+# as a separate uvicorn process from canonical Vera, so continuation
+# links must be absolute against this base URL — a relative ``/vera``
+# would 404 on the panel host.
+from voxera.config import DEFAULT_VERA_WEB_BASE_URL as _DEFAULT_VERA_WEB_BASE_URL
 from voxera.panel import app as panel_module
 from voxera.vera import session_store
 from voxera.voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse
@@ -48,13 +54,6 @@ from voxera.voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse
 def _operator_headers(user: str = "admin", password: str = "secret") -> dict[str, str]:
     token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
     return {"Authorization": f"Basic {token}"}
-
-
-# The canonical Vera web app defaults to ``http://127.0.0.1:8790`` (see
-# ``VoxeraConfig.vera_web_base_url``).  The panel runs on a separate
-# uvicorn process so continuation links must be absolute against this
-# base URL — a relative ``/vera`` would 404 on the panel host.
-_DEFAULT_VERA_WEB_BASE_URL = "http://127.0.0.1:8790"
 
 
 def _authed_csrf_request(client: TestClient, method: str, url: str, *, data: dict[str, str]):
