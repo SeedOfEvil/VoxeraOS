@@ -337,7 +337,64 @@
             <div class="voice-empty-result">Vera was not called (&ldquo;Send to Vera&rdquo; was not selected).</div>
             {% endif %}
 
-            {# ── Action-oriented guidance (only when the transcript looks like real governed work) ── #}
+            {# ── Governed preview drafted (only when canonical preview truly exists) ── #}
+            {% if workbench_result.preview %}
+            <div class="voice-result voice-workbench-lane voice-result-ok voice-preview-drafted" data-testid="voice-workbench-preview-drafted">
+              <div class="voice-result-header">
+                <span class="voice-result-title">Governed preview drafted</span>
+                <span class="badge badge-ok">preview_ready</span>
+              </div>
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Goal</span>
+                <span class="queue-detail-value">{{workbench_result.preview.goal}}</span>
+              </div>
+              {% if workbench_result.preview.title %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Title</span>
+                <span class="queue-detail-value">{{workbench_result.preview.title}}</span>
+              </div>
+              {% endif %}
+              {% if workbench_result.preview.mission_id %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Mission</span>
+                <span class="queue-detail-value mono">{{workbench_result.preview.mission_id}}</span>
+              </div>
+              {% endif %}
+              {% if workbench_result.preview.write_file %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Write File</span>
+                <span class="queue-detail-value">
+                  <code class="voice-path-block">{{workbench_result.preview.write_file.path}}</code>
+                  <span class="muted text-sm">mode={{workbench_result.preview.write_file.mode}}</span>
+                </span>
+              </div>
+              {% endif %}
+              {% if workbench_result.preview.file_organize %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">File Organize</span>
+                <span class="queue-detail-value">
+                  <code class="voice-path-block">{{workbench_result.preview.file_organize.source_path}}</code>
+                  <span class="muted text-sm">&rarr;</span>
+                  <code class="voice-path-block">{{workbench_result.preview.file_organize.destination_dir}}</code>
+                  <span class="muted text-sm">mode={{workbench_result.preview.file_organize.mode}}</span>
+                </span>
+              </div>
+              {% endif %}
+              {% if workbench_result.preview.step_count %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-label">Steps</span>
+                <span class="queue-detail-value">{{workbench_result.preview.step_count}}</span>
+              </div>
+              {% endif %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-value">
+                  A governed preview has been drafted on the current Vera session. Nothing has been submitted or executed from this surface &mdash; the queue boundary is untouched. <a href="{{_wb_continue_url}}" data-testid="voice-workbench-preview-continue">Continue in Vera to review, refine, or submit safely</a>.
+                </span>
+              </div>
+            </div>
+            {% endif %}
+
+            {# ── Action-oriented guidance (fail-closed fallback when no preview was drafted) ── #}
             {% if workbench_result.show_action_guidance %}
             <div class="voice-result voice-workbench-lane voice-action-guidance" data-testid="voice-workbench-action-guidance">
               <div class="voice-result-header">
@@ -352,15 +409,23 @@
             </div>
             {% endif %}
 
-            {# ── Governed handoff / linked job status (truthful empty state) ── #}
+            {# ── Governed handoff / linked job status (truthful state reflecting preview-or-not) ── #}
             <div class="voice-result voice-workbench-lane">
               <div class="voice-result-header">
                 <span class="voice-result-title">Governed Handoff</span>
-                <span class="badge badge-paused">not attempted</span>
+                {% if workbench_result.preview %}
+                  <span class="badge badge-ok">preview_ready</span>
+                {% else %}
+                  <span class="badge badge-paused">not attempted</span>
+                {% endif %}
               </div>
               <div class="queue-detail-row">
                 <span class="queue-detail-value muted">
-                  This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, <a href="{{_wb_continue_url}}">continue the session in the canonical Vera chat surface</a> &mdash; preview/handoff semantics are enforced there.
+                  {% if workbench_result.preview %}
+                    A governed preview was drafted on this session, but no queue job was submitted &mdash; the Voice Workbench never submits. For real-world execution, <a href="{{_wb_continue_url}}">continue the session in the canonical Vera chat surface</a> &mdash; preview/handoff semantics are enforced there.
+                  {% else %}
+                    This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, <a href="{{_wb_continue_url}}">continue the session in the canonical Vera chat surface</a> &mdash; preview/handoff semantics are enforced there.
+                  {% endif %}
                 </span>
               </div>
             </div>

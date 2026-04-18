@@ -28,6 +28,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import DEFAULT_VERA_WEB_BASE_URL
+from ..vera import session_store
 from ..vera.session_store import new_session_id, read_session_turns
 from ..voice.flags import load_voice_foundation_flags
 from ..voice.input import transcribe_audio_file
@@ -39,6 +40,10 @@ from . import voice_workbench
 from .voice_workbench_classifier import (
     CLASSIFICATION_ACTION_ORIENTED,
     classify_workbench_transcript,
+)
+from .voice_workbench_preview import (
+    maybe_draft_canonical_preview_for_workbench,
+    summarize_canonical_preview,
 )
 
 
@@ -663,8 +668,63 @@ def register_voice_routes(
             "reason": classification.reason,
             "matched_signals": list(classification.matched_signals),
         }
+
+        # ── Optional canonical preview drafting (action-oriented only) ──
+        # When the classifier flags the run as action-oriented AND the
+        # operator opted in to Vera processing, attempt to draft a real
+        # canonical preview via the narrow seam.  The seam reuses the
+        # canonical Vera deterministic drafting + normalization +
+        # preview-ownership writes, so the preview lands in the same
+        # session the workbench is already writing into.  Never submits
+        # to the queue — that boundary is enforced by the seam itself.
+        #
+        # Attribution rule: the "Governed preview drafted" block claims
+        # that *this run* drafted a preview.  We therefore only populate
+        # ``workbench_result["preview"]`` when the seam itself reports
+        # success (``preview_result.ok``).  If an unrelated preview was
+        # already sitting on the session from a prior canonical Vera
+        # turn, the session still has it — the operator sees it when
+        # they follow the "Continue in Vera" link — but this voice
+        # surface does not claim agency it does not have.
+        preview_attempted = bool(
+            stt_ok
+            and transcript_text
+            and send_to_vera
+            and classification.kind == CLASSIFICATION_ACTION_ORIENTED
+        )
+        if preview_attempted:
+            assert transcript_text is not None  # noqa: S101 — stt_ok + transcript guard
+            preview_result = maybe_draft_canonical_preview_for_workbench(
+                transcript_text=transcript_text,
+                session_id=session_id,
+                queue_root=current_queue_root,
+            )
+            workbench_result["preview_attempt"] = {
+                "ok": preview_result.ok,
+                "status": preview_result.status,
+                "draft_ref": preview_result.draft_ref,
+                "error": preview_result.error,
+            }
+            if preview_result.ok:
+                try:
+                    canonical_preview = session_store.read_session_preview(
+                        current_queue_root, session_id
+                    )
+                except Exception:
+                    canonical_preview = None
+                preview_summary = summarize_canonical_preview(canonical_preview)
+                if preview_summary is not None:
+                    workbench_result["preview"] = preview_summary
+
+        # Only render the generic action-oriented guidance block when we
+        # did NOT successfully draft a real canonical preview.  When a
+        # preview exists, the operator sees a stronger, more specific
+        # "Governed preview drafted" block instead.
         workbench_result["show_action_guidance"] = bool(
-            stt_ok and transcript_text and classification.kind == CLASSIFICATION_ACTION_ORIENTED
+            stt_ok
+            and transcript_text
+            and classification.kind == CLASSIFICATION_ACTION_ORIENTED
+            and not workbench_result.get("preview")
         )
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
