@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from voxera.panel import app as panel_module
 from voxera.panel.voice_workbench_preview import (
     PREVIEW_STATUS_DRAFTED,
+    PREVIEW_STATUS_ERROR,
     PREVIEW_STATUS_NO_DRAFT,
     PREVIEW_STATUS_NORMALIZE_FAILED,
     PREVIEW_STATUS_PERSIST_FAILED,
@@ -39,6 +40,7 @@ from voxera.panel.voice_workbench_preview import (
     summarize_canonical_preview,
 )
 from voxera.vera import session_store
+from voxera.vera.session_store import append_session_turn
 from voxera.voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse
 
 
@@ -172,6 +174,57 @@ class TestSeamDirect:
         )
         assert result.ok is False
         assert result.status == PREVIEW_STATUS_PERSIST_FAILED
+
+    def test_session_context_read_failure_reported_fail_closed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If a session-store read raises, the seam reports ``error`` with
+        an annotation that identifies the read-failure phase.  The
+        drafting / normalize / persist calls must not run."""
+
+        def _raising_read(*_args: Any, **_kwargs: Any) -> dict[str, Any] | None:
+            raise RuntimeError("simulated session-store read failure")
+
+        called = {"drafter": False, "normalize": False, "reset": False}
+
+        def _drafter_spy(*_args: Any, **_kwargs: Any) -> dict[str, Any] | None:
+            called["drafter"] = True
+            return {"goal": "should not run"}
+
+        def _normalize_spy(payload: dict[str, Any]) -> dict[str, Any]:
+            called["normalize"] = True
+            return payload
+
+        def _reset_spy(*_args: Any, **_kwargs: Any) -> None:
+            called["reset"] = True
+
+        monkeypatch.setattr(
+            "voxera.panel.voice_workbench_preview.session_store.read_session_preview",
+            _raising_read,
+        )
+        monkeypatch.setattr(
+            "voxera.panel.voice_workbench_preview.maybe_draft_job_payload",
+            _drafter_spy,
+        )
+        monkeypatch.setattr(
+            "voxera.panel.voice_workbench_preview.normalize_preview_payload",
+            _normalize_spy,
+        )
+        monkeypatch.setattr(
+            "voxera.panel.voice_workbench_preview.reset_active_preview",
+            _reset_spy,
+        )
+
+        result = maybe_draft_canonical_preview_for_workbench(
+            transcript_text="write a note called hello.txt",
+            session_id="vera-direct-ctxreadfail",
+            queue_root=tmp_path,
+        )
+        assert result.ok is False
+        assert result.status == PREVIEW_STATUS_ERROR
+        assert result.error is not None
+        assert result.error.startswith("session_context_read_failed:")
+        assert called == {"drafter": False, "normalize": False, "reset": False}
 
 
 class TestSummarize:
@@ -518,3 +571,104 @@ class TestPreviewAttributionIsRunScoped:
         assert "Governed preview drafted" not in res.text
         # Action-guidance fallback renders because no preview was drafted.
         assert _ACTION_GUIDANCE_TESTID in res.text
+
+
+class TestSeamNeverImportsSubmissionHelpers:
+    """Structural invariant: the seam module MUST NOT import or reference
+    any queue-submission helper.  The trust model is load-bearing and the
+    module docstring claims the seam only calls ``reset_active_preview``;
+    if a future refactor adds a submission import the invariant silently
+    breaks.  This test enforces the claim at test time by reading the
+    seam's source as text and asserting forbidden symbols never appear.
+    """
+
+    _FORBIDDEN_SYMBOLS = (
+        "submit_preview",
+        "submit_active_preview_for_session",
+        "submit_automation_preview",
+        "add_inbox_payload",
+        "inbox",
+    )
+
+    def test_seam_source_contains_no_submission_symbols(self) -> None:
+        import voxera.panel.voice_workbench_preview as seam_module
+
+        source_path = Path(seam_module.__file__)
+        source = source_path.read_text(encoding="utf-8")
+        for symbol in self._FORBIDDEN_SYMBOLS:
+            assert symbol not in source, (
+                f"Forbidden submission symbol {symbol!r} found in {source_path}. "
+                "The Voice Workbench seam must not import or reference any "
+                "queue-submission helper — it only writes the active preview "
+                "via reset_active_preview."
+            )
+
+
+class TestSeamObservesPersistedTranscriptTurn:
+    """Ordering invariant: the seam's docstring says the transcript turn
+    must already be persisted as a ``voice_transcript``-origin user turn
+    BEFORE this helper is called, because the drafter reads
+    ``recent_user_messages`` from canonical session state.  The route
+    today satisfies this by running the Vera step (which persists the
+    turn) before the preview seam, but a future refactor could silently
+    reorder that.  This test pins the load-bearing ordering by spying on
+    ``maybe_draft_job_payload`` and asserting the drafter observes the
+    persisted turn text via ``recent_user_messages``."""
+
+    def test_drafter_sees_persisted_user_turn_via_recent_user_messages(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        session_id = "vera-direct-ordering"
+        transcript = "write a note called hello.txt"
+
+        # Persist the voice_transcript user turn BEFORE calling the seam
+        # — this mirrors the route's ordering (Vera step, which persists
+        # the turn, runs before the preview seam).
+        append_session_turn(
+            tmp_path,
+            session_id,
+            role="user",
+            text=transcript,
+            input_origin="voice_transcript",
+        )
+
+        captured: dict[str, Any] = {}
+
+        def _drafter_spy(
+            transcript_text: str,
+            *,
+            active_preview: Any = None,
+            recent_user_messages: list[str] | None = None,
+            recent_assistant_messages: list[str] | None = None,
+            recent_assistant_artifacts: Any = None,
+            investigation_context: Any = None,
+            session_context: Any = None,
+        ) -> dict[str, Any] | None:
+            captured["transcript_text"] = transcript_text
+            captured["recent_user_messages"] = list(recent_user_messages or [])
+            captured["recent_assistant_messages"] = list(recent_assistant_messages or [])
+            return None
+
+        monkeypatch.setattr(
+            "voxera.panel.voice_workbench_preview.maybe_draft_job_payload",
+            _drafter_spy,
+        )
+
+        result = maybe_draft_canonical_preview_for_workbench(
+            transcript_text=transcript,
+            session_id=session_id,
+            queue_root=tmp_path,
+        )
+
+        # Drafter declined (spy returned None) — status is no_draft, but
+        # the important assertion is that the spy OBSERVED the persisted
+        # turn via recent_user_messages.
+        assert result.ok is False
+        assert result.status == PREVIEW_STATUS_NO_DRAFT
+        assert captured["transcript_text"] == transcript
+        assert transcript in captured["recent_user_messages"], (
+            "Drafter did not observe the persisted voice_transcript turn via "
+            "recent_user_messages — the seam is running before the turn is "
+            "persisted, violating the ordering invariant documented in the "
+            "seam's module docstring."
+        )

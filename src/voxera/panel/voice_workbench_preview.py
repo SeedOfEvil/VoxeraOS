@@ -97,25 +97,39 @@ def maybe_draft_canonical_preview_for_workbench(
     if not normalized_transcript:
         return VoiceWorkbenchPreviewResult(ok=False, status=PREVIEW_STATUS_NO_DRAFT)
 
+    # ── Gather canonical session context (read-only) ─────────────────
+    # Split from the drafting call so a session-store read failure is
+    # diagnosable on its own (``error`` with an ``exc`` pointing at a
+    # read helper), instead of being conflated with a drafter-internal
+    # exception.
     try:
         active_preview = session_store.read_session_preview(queue_root, session_id)
         session_context = session_store.read_session_context(queue_root, session_id)
         turns = session_store.read_session_turns(queue_root, session_id)
-        recent_user_messages = [
-            str(turn.get("text") or "")
-            for turn in turns
-            if str(turn.get("role") or "").strip().lower() == "user"
-        ]
-        recent_assistant_messages = [
-            str(turn.get("text") or "")
-            for turn in turns
-            if str(turn.get("role") or "").strip().lower() == "assistant"
-        ]
         recent_assistant_artifacts = session_store.read_session_saveable_assistant_artifacts(
             queue_root, session_id
         )
         investigation_context = session_store.read_session_investigation(queue_root, session_id)
+    except Exception as exc:
+        return VoiceWorkbenchPreviewResult(
+            ok=False,
+            status=PREVIEW_STATUS_ERROR,
+            error=f"session_context_read_failed: {type(exc).__name__}: {exc}",
+        )
 
+    recent_user_messages = [
+        str(turn.get("text") or "")
+        for turn in turns
+        if str(turn.get("role") or "").strip().lower() == "user"
+    ]
+    recent_assistant_messages = [
+        str(turn.get("text") or "")
+        for turn in turns
+        if str(turn.get("role") or "").strip().lower() == "assistant"
+    ]
+
+    # ── Deterministic preview drafting (canonical path) ──────────────
+    try:
         candidate = maybe_draft_job_payload(
             normalized_transcript,
             active_preview=active_preview,
@@ -129,7 +143,7 @@ def maybe_draft_canonical_preview_for_workbench(
         return VoiceWorkbenchPreviewResult(
             ok=False,
             status=PREVIEW_STATUS_ERROR,
-            error=f"{type(exc).__name__}: {exc}",
+            error=f"drafter_raised: {type(exc).__name__}: {exc}",
         )
 
     if not isinstance(candidate, dict):
@@ -144,15 +158,14 @@ def maybe_draft_canonical_preview_for_workbench(
             error=f"{type(exc).__name__}: {exc}",
         )
 
-    draft_ref = derive_preview_draft_ref(normalized_payload)
-
+    # Let ``reset_active_preview`` derive its own draft_ref from the
+    # normalized payload — its default (via ``derive_preview_draft_ref``)
+    # is the same logic this seam would use.  We derive it once here
+    # only to surface it in the returned ``VoiceWorkbenchPreviewResult``
+    # for debug visibility; the two derivations share the same helper
+    # so they cannot drift.
     try:
-        reset_active_preview(
-            queue_root,
-            session_id,
-            normalized_payload,
-            draft_ref=draft_ref,
-        )
+        reset_active_preview(queue_root, session_id, normalized_payload)
     except Exception as exc:
         return VoiceWorkbenchPreviewResult(
             ok=False,
@@ -163,7 +176,7 @@ def maybe_draft_canonical_preview_for_workbench(
     return VoiceWorkbenchPreviewResult(
         ok=True,
         status=PREVIEW_STATUS_DRAFTED,
-        draft_ref=draft_ref,
+        draft_ref=derive_preview_draft_ref(normalized_payload),
     )
 
 
@@ -176,6 +189,19 @@ def summarize_canonical_preview(
     a small dict the template can render without leaking internal
     structure.  Returns ``None`` when no canonical preview exists — the
     caller must treat that as "no preview to claim".
+
+    Coverage is intentionally narrow.  The two structural shapes this
+    surface explicitly extracts are ``write_file`` and ``file_organize``
+    because those are the payload shapes produced by the current voice
+    drafting lane for the Voice Workbench; every other canonical shape
+    (investigation saves, authored-followup drafts, generic multi-step
+    payloads, automation previews) falls back to ``goal`` + optional
+    ``title`` / ``mission_id`` / ``step_count``.  That is deliberate:
+    the workbench operator is not expected to review unfamiliar shapes
+    on this surface — they are directed to ``Continue in Vera``, where
+    the canonical preview UI renders the full payload.  If a future
+    shape becomes common enough in voice runs, extend the summary here
+    rather than widening the template branching.
     """
     if not isinstance(preview, dict):
         return None
