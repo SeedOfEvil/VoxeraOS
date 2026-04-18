@@ -1,0 +1,385 @@
+"""Tests for the Voice Workbench canonical preview drafting seam.
+
+Pins the new behavior added to the Voice Workbench:
+
+1. Informational transcripts never create a canonical preview.
+2. Action-oriented transcripts that the deterministic Vera drafter can
+   recognize DO produce a real canonical preview in the same Vera
+   session the workbench is writing into.
+3. The preview surface on the page is sourced from canonical session
+   state — it is never fabricated when canonical preview truth is
+   absent.
+4. No queue job is ever created by the Voice Workbench, even when a
+   preview is drafted.  Submit stays explicit.
+5. When drafting is attempted but the deterministic drafter returns
+   ``None``, the page falls back to the truthful action-oriented
+   guidance block (no fake preview claim).
+6. ``Continue in Vera`` links to the same session where the preview
+   actually lives.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+from pathlib import Path
+from typing import Any
+from unittest.mock import patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from voxera.panel import app as panel_module
+from voxera.panel.voice_workbench_preview import (
+    PREVIEW_STATUS_DRAFTED,
+    PREVIEW_STATUS_NO_DRAFT,
+    PREVIEW_STATUS_NORMALIZE_FAILED,
+    PREVIEW_STATUS_PERSIST_FAILED,
+    maybe_draft_canonical_preview_for_workbench,
+    summarize_canonical_preview,
+)
+from voxera.vera import session_store
+from voxera.voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse
+
+
+def _operator_headers(user: str = "admin", password: str = "secret") -> dict[str, str]:
+    token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
+    return {"Authorization": f"Basic {token}"}
+
+
+def _authed_csrf_request(client: TestClient, method: str, url: str, *, data: dict[str, str]):
+    auth = _operator_headers()
+    home = client.get("/", headers=auth)
+    assert home.status_code == 200
+    csrf = client.cookies.get("voxera_panel_csrf")
+    payload = dict(data)
+    payload["csrf_token"] = csrf or ""
+    return getattr(client, method)(url, data=payload, headers=auth, follow_redirects=False)
+
+
+@pytest.fixture()
+def _panel_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    fake_home = tmp_path / "home"
+    queue_dir = fake_home / "VoxeraOS" / "notes" / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (queue_dir / "health.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(panel_module.Path, "home", lambda: fake_home)
+    monkeypatch.setenv("VOXERA_PANEL_OPERATOR_PASSWORD", "secret")
+    monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
+    monkeypatch.setenv("VOXERA_ENABLE_VOICE_INPUT", "1")
+    monkeypatch.setenv("VOXERA_ENABLE_VOICE_OUTPUT", "1")
+    monkeypatch.setenv("VOXERA_VOICE_STT_BACKEND", "whisper_local")
+    monkeypatch.setenv("VOXERA_VOICE_TTS_BACKEND", "piper_local")
+    return queue_dir
+
+
+def _make_stt_response(*, transcript: str | None = "hello") -> STTResponse:
+    return STTResponse(
+        request_id="test-stt-preview",
+        status=STT_STATUS_SUCCEEDED,
+        transcript=transcript,
+        language="en",
+        audio_duration_ms=2000,
+        error=None,
+        error_class=None,
+        backend="whisper_local",
+        started_at_ms=1000,
+        finished_at_ms=1100,
+        schema_version=1,
+        inference_ms=100,
+    )
+
+
+async def _fake_vera_reply(**kwargs: Any) -> dict[str, Any]:
+    return {"answer": f"Ack: {kwargs['user_message']}", "status": "ok:test"}
+
+
+_PREVIEW_TESTID = 'data-testid="voice-workbench-preview-drafted"'
+_PREVIEW_CONTINUE_TESTID = 'data-testid="voice-workbench-preview-continue"'
+_ACTION_GUIDANCE_TESTID = 'data-testid="voice-workbench-action-guidance"'
+
+
+class TestSeamDirect:
+    """Direct tests for ``maybe_draft_canonical_preview_for_workbench``."""
+
+    def test_empty_transcript_returns_no_draft(self, tmp_path: Path) -> None:
+        result = maybe_draft_canonical_preview_for_workbench(
+            transcript_text="   ",
+            session_id="vera-direct-empty",
+            queue_root=tmp_path,
+        )
+        assert result.ok is False
+        assert result.status == PREVIEW_STATUS_NO_DRAFT
+
+    def test_action_oriented_transcript_drafts_and_persists_preview(self, tmp_path: Path) -> None:
+        session_id = "vera-direct-writefile"
+        result = maybe_draft_canonical_preview_for_workbench(
+            transcript_text="write a note called hello.txt",
+            session_id=session_id,
+            queue_root=tmp_path,
+        )
+        assert result.ok is True
+        assert result.status == PREVIEW_STATUS_DRAFTED
+        assert result.draft_ref is not None
+        preview = session_store.read_session_preview(tmp_path, session_id)
+        assert isinstance(preview, dict)
+        assert "goal" in preview
+        assert isinstance(preview.get("write_file"), dict)
+        assert preview["write_file"].get("path", "").endswith("hello.txt")
+
+    def test_unrecognized_transcript_returns_no_draft(self, tmp_path: Path) -> None:
+        """Deterministic drafter declines unknown shapes; seam reports no_draft."""
+        result = maybe_draft_canonical_preview_for_workbench(
+            transcript_text="delete the report file from notes",
+            session_id="vera-direct-unknown",
+            queue_root=tmp_path,
+        )
+        assert result.ok is False
+        assert result.status == PREVIEW_STATUS_NO_DRAFT
+
+    def test_normalize_failure_reported_fail_closed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raising_normalize(_: dict[str, Any]) -> dict[str, Any]:
+            raise ValueError("bad shape")
+
+        monkeypatch.setattr(
+            "voxera.panel.voice_workbench_preview.normalize_preview_payload",
+            _raising_normalize,
+        )
+        result = maybe_draft_canonical_preview_for_workbench(
+            transcript_text="write a note called hello.txt",
+            session_id="vera-direct-normalizefail",
+            queue_root=tmp_path,
+        )
+        assert result.ok is False
+        assert result.status == PREVIEW_STATUS_NORMALIZE_FAILED
+
+    def test_persist_failure_reported_fail_closed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raising_reset(*args: Any, **kwargs: Any) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(
+            "voxera.panel.voice_workbench_preview.reset_active_preview",
+            _raising_reset,
+        )
+        result = maybe_draft_canonical_preview_for_workbench(
+            transcript_text="write a note called hello.txt",
+            session_id="vera-direct-persistfail",
+            queue_root=tmp_path,
+        )
+        assert result.ok is False
+        assert result.status == PREVIEW_STATUS_PERSIST_FAILED
+
+
+class TestSummarize:
+    """summarize_canonical_preview keeps the surface bounded and truthful."""
+
+    def test_none_preview_summarizes_to_none(self) -> None:
+        assert summarize_canonical_preview(None) is None
+
+    def test_preview_without_goal_summarizes_to_none(self) -> None:
+        assert summarize_canonical_preview({"title": "no goal"}) is None
+
+    def test_preview_with_write_file_is_surfaced(self) -> None:
+        summary = summarize_canonical_preview(
+            {
+                "goal": "write a file called notes.txt",
+                "write_file": {"path": "~/notes.txt", "mode": "overwrite"},
+            }
+        )
+        assert summary is not None
+        assert summary["goal"] == "write a file called notes.txt"
+        assert summary["write_file"] == {"path": "~/notes.txt", "mode": "overwrite"}
+
+    def test_preview_with_steps_counts_them(self) -> None:
+        summary = summarize_canonical_preview(
+            {
+                "goal": "copy a.txt to b/",
+                "steps": [{"skill_id": "files.copy"}, {"skill_id": "files.copy"}],
+            }
+        )
+        assert summary is not None
+        assert summary["step_count"] == 2
+
+
+class TestInformationalRunsNeverDraftPreview:
+    def test_question_form_does_not_write_preview(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        session_id = "vera-wb-info-q"
+        stt = _make_stt_response(transcript="what is the status of the queue?")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        assert res.status_code == 200
+        assert _PREVIEW_TESTID not in res.text
+        path = queue_dir / "artifacts" / "vera_sessions" / f"{session_id}.json"
+        assert path.exists()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert "pending_job_preview" not in data
+
+
+class TestActionOrientedDraftablePreview:
+    def test_write_file_transcript_drafts_real_canonical_preview(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        session_id = "vera-wb-pv-writefile"
+        stt = _make_stt_response(transcript="write a note called hello.txt")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        assert res.status_code == 200
+        assert _PREVIEW_TESTID in res.text
+        assert "Governed preview drafted" in res.text
+        # The generic action-oriented guidance block must NOT render when we
+        # have a real preview — the operator sees the stronger specific block.
+        assert _ACTION_GUIDANCE_TESTID not in res.text
+
+        path = queue_dir / "artifacts" / "vera_sessions" / f"{session_id}.json"
+        assert path.exists()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        preview = data.get("pending_job_preview")
+        assert isinstance(preview, dict)
+        assert isinstance(preview.get("write_file"), dict)
+        assert preview["write_file"].get("path", "").endswith("hello.txt")
+
+    def test_preview_continue_link_points_to_same_session(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        session_id = "vera-wb-pv-continue"
+        stt = _make_stt_response(transcript="write a note called hello.txt")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        assert res.status_code == 200
+        assert _PREVIEW_CONTINUE_TESTID in res.text
+        assert f"?session_id={session_id}" in res.text
+
+
+class TestPreviewBlockTruthfulness:
+    """Preview block surfaces canonical truth, never fabrication."""
+
+    def test_preview_block_wording_does_not_claim_submission(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt_response(transcript="please copy report.txt into receipts")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": "vera-wb-pv-truth",
+                },
+            )
+        assert res.status_code == 200
+        assert _PREVIEW_TESTID in res.text
+        start = res.text.index(_PREVIEW_TESTID)
+        end = res.text.index("</div>", res.text.index("</div>", start) + 1)
+        block = res.text[start:end].lower()
+        # Preserve the trust-model boundary: no submission or execution claims.
+        assert "has been submitted" not in block
+        assert "has been queued" not in block
+        assert "job submitted" not in block
+        assert "executed successfully" not in block
+        assert "ready to submit" not in block
+        # Preserve the positive, truthful language the mission requires.
+        assert "governed preview drafted" in block or "governed preview has been drafted" in block
+
+    def test_preview_drafted_writes_no_queue_jobs(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        stt = _make_stt_response(transcript="write a note called draft.txt")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": "vera-wb-pv-noqueue",
+                },
+            )
+        assert res.status_code == 200
+        assert _PREVIEW_TESTID in res.text
+        for bucket in ("inbox", "pending", "running", "done", "failed", "canceled", "approvals"):
+            bucket_dir = queue_dir / bucket
+            if not bucket_dir.exists():
+                continue
+            job_files = list(bucket_dir.rglob("*.json"))
+            assert job_files == [], f"unexpected job file(s) in {bucket}: {job_files}"
+
+
+class TestDraftingFailureFallsBackTruthfully:
+    def test_no_draft_falls_back_to_action_guidance(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Action-oriented transcript the deterministic drafter can't
+        recognize must not render a fabricated preview block; the page
+        falls back to the existing truthful guidance block."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        queue_dir = _panel_env
+        session_id = "vera-wb-pv-nodraft"
+        stt = _make_stt_response(transcript="delete the stale artifact folder")
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        assert res.status_code == 200
+        assert _PREVIEW_TESTID not in res.text
+        assert _ACTION_GUIDANCE_TESTID in res.text
+        path = queue_dir / "artifacts" / "vera_sessions" / f"{session_id}.json"
+        assert path.exists()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert "pending_job_preview" not in data
