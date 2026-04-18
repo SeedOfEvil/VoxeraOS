@@ -25,6 +25,7 @@ def test_write_config_snapshot_creates_redacted_payload(tmp_path: Path) -> None:
         ops_bundle_dir=None,
         dev_mode=False,
         notify_enabled=False,
+        vera_web_base_url="http://127.0.0.1:8790",
         config_path=Path("/tmp/runtime.json"),
         sources={"panel_operator_password": "env:VOXERA_PANEL_OPERATOR_PASSWORD"},
     )

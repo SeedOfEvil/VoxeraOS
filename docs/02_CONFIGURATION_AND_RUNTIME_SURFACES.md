@@ -178,6 +178,7 @@ Observed from `Makefile` `TEST_ENV_PREFIX` and config-loading code:
 - `VOXERA_ARTIFACTS_RETENTION_DAYS`, `VOXERA_ARTIFACTS_RETENTION_MAX_COUNT` — artifacts retention.
 - `VOXERA_QUEUE_PRUNE_MAX_AGE_DAYS`, `VOXERA_QUEUE_PRUNE_MAX_COUNT` — queue prune bounds.
 - `VOXERA_PANEL_HOST`, `VOXERA_PANEL_PORT`, `VOXERA_PANEL_OPERATOR_USER`, `VOXERA_PANEL_OPERATOR_PASSWORD`, `VOXERA_PANEL_ENABLE_GET_MUTATIONS`, `VOXERA_PANEL_CSRF_ENABLED` — panel runtime toggles.
+- `VOXERA_VERA_WEB_BASE_URL` — absolute base URL of the canonical Vera web app used by cross-surface links (e.g. the panel Voice Workbench "Continue in Vera" handoff). Default `http://127.0.0.1:8790`. Must start with `http://` or `https://`. Set this when panel and `vera_web` are behind a single reverse proxy / unified origin so the handoff link targets that origin instead of the direct port.
 - `VOXERA_NOTIFY` — notification surface toggle.
 
 Any variable not listed here should be treated as unsupported until it appears in `config.py` or a CLI option.

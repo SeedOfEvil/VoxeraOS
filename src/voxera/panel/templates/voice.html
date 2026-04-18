@@ -197,13 +197,47 @@
       </div>
 
       {# ── Zone 2: Voice Workbench (STT -> Vera -> optional TTS) ───────── #}
+      {%- set _wb_session_id = workbench_result.session_id if workbench_result else workbench_session_id -%}
+      {# The backend always passes a concrete absolute URL; the "#" fallback is a defensive no-op for unforeseen template contexts. #}
+      {%- set _wb_continue_url = (workbench_result.continue_in_vera_url if workbench_result else workbench_continue_in_vera_url) or "#" -%}
+      {%- set _wb_prior_turns = (workbench_result.session_prior_turn_count if workbench_result else workbench_session_prior_turn_count) or 0 -%}
+      {%- set _wb_total_turns = (workbench_result.session_turn_count if workbench_result else workbench_session_prior_turn_count) or 0 -%}
       <div class="section-label" id="voice-workbench">Voice Workbench</div>
       <section class="card mb">
         <p class="voice-section-intro">
           Bounded voice-to-Vera workflow. Transcribe an audio file through the canonical STT pipeline, optionally forward the transcript into Vera as a <span class="mono">voice_transcript</span>-origin conversational turn, and optionally synthesize Vera&rsquo;s textual reply through the canonical TTS pipeline. This lane is conversational only &mdash; it never creates a governed preview or submits a queue job. For real-world actions, continue the session in the canonical Vera chat surface.
         </p>
 
+        {# ── Session continuity banner ── #}
+        <div class="voice-workbench-continuity" data-testid="voice-workbench-continuity">
+          <div class="voice-workbench-continuity-meta">
+            <span class="voice-workbench-continuity-label">Vera session</span>
+            <code class="mono voice-workbench-continuity-session-id">{{_wb_session_id}}</code>
+            <span class="voice-workbench-continuity-count">
+              {% if _wb_total_turns == 0 %}
+                &middot; new session
+              {% else %}
+                &middot; {{_wb_total_turns}} turn{{ "" if _wb_total_turns == 1 else "s" }} recorded
+              {% endif %}
+            </span>
+          </div>
+          <a class="btn" href="{{_wb_continue_url}}" data-testid="voice-workbench-continue-in-vera">
+            Continue in Vera &rarr;
+          </a>
+        </div>
+
         {% if workbench_result %}
+          <div class="voice-workbench-run-meta" data-testid="voice-workbench-run-meta">
+            Current run &middot;
+            {% if workbench_result.session_prior_turn_count and workbench_result.session_prior_turn_count > 0 %}
+              continuing session ({{workbench_result.session_prior_turn_count}} prior turn{{ "" if workbench_result.session_prior_turn_count == 1 else "s" }})
+            {% else %}
+              new session
+            {% endif %}
+            {% if workbench_result.run_started_at_ms %}
+              &middot; started_at_ms=<span class="mono">{{workbench_result.run_started_at_ms}}</span>
+            {% endif %}
+          </div>
           <div class="voice-workbench-result" aria-live="polite">
 
             {# ── Source audio ── #}
@@ -311,7 +345,7 @@
               </div>
               <div class="queue-detail-row">
                 <span class="queue-detail-value muted">
-                  This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, continue the session in the canonical Vera chat surface &mdash; preview/handoff semantics are enforced there.
+                  This lane is conversational only. No queue preview was drafted and no queue job was submitted on this turn. For real-world actions, <a href="{{workbench_result.continue_in_vera_url or '#'}}">continue the session in the canonical Vera chat surface</a> &mdash; preview/handoff semantics are enforced there.
                 </span>
               </div>
             </div>
@@ -357,12 +391,19 @@
 
           </div>
         {% else %}
-          <div class="voice-empty-result">No workbench run yet. Use the form below to transcribe an audio file and optionally send the transcript to Vera.</div>
+          <div class="voice-empty-result">
+            No workbench run yet.
+            {% if _wb_prior_turns and _wb_prior_turns > 0 %}
+              The next run will append to the current Vera session ({{_wb_prior_turns}} turn{{ "" if _wb_prior_turns == 1 else "s" }} already recorded).
+            {% else %}
+              The next run will start a fresh Vera session.
+            {% endif %}
+          </div>
         {% endif %}
 
         <form class="form-stack voice-action-form" method="post" action="/voice/workbench/run">
           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-          <input type="hidden" name="workbench_session_id" value="{{workbench_session_id or (workbench_result.session_id if workbench_result else '')}}" />
+          <input type="hidden" name="workbench_session_id" value="{{_wb_session_id}}" />
           <label>Audio File Path
             <input class="input" type="text" name="workbench_audio_path" placeholder="/path/to/audio.wav" value="{% if workbench_result and workbench_result.input_audio_path %}{{workbench_result.input_audio_path}}{% endif %}" required />
           </label>

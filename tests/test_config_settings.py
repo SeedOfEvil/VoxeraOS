@@ -67,6 +67,7 @@ def test_config_redacts_sensitive_fields() -> None:
         ops_bundle_dir=None,
         dev_mode=False,
         notify_enabled=False,
+        vera_web_base_url="http://127.0.0.1:8790",
         config_path=Path("/tmp/config.json"),
         sources={"panel_operator_password": "env:VOXERA_PANEL_OPERATOR_PASSWORD"},
     )

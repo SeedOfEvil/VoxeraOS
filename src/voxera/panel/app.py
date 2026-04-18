@@ -452,6 +452,11 @@ register_automation_routes(
     format_ts_ms=_format_ts,
 )
 
+
+def _vera_web_base_url() -> str:
+    return _settings().vera_web_base_url
+
+
 register_voice_routes(
     app,
     templates=templates,
@@ -460,4 +465,5 @@ register_voice_routes(
     csrf_cookie=CSRF_COOKIE,
     request_value=_request_value,
     queue_root=_queue_root,
+    vera_web_base_url=_vera_web_base_url,
 )

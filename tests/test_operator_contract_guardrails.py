@@ -137,6 +137,7 @@ def test_config_snapshot_contract_shape_required_fields(tmp_path):
         ops_bundle_dir=None,
         dev_mode=False,
         notify_enabled=False,
+        vera_web_base_url="http://127.0.0.1:8790",
         config_path=tmp_path / "runtime.json",
         sources={},
     )

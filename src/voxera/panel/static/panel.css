@@ -1099,6 +1099,46 @@ a:focus-visible {
 .voice-workbench-lane {
   margin-bottom: 0;
 }
+
+/* Continuity banner — session id + continue-in-Vera affordance.
+   Sits above the result lanes and anchors the workbench to a specific
+   Vera session.  Matches the operator tone of other panel cards: compact,
+   monospace for the id, a clear action on the right. */
+.voice-workbench-continuity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+.voice-workbench-continuity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+}
+.voice-workbench-continuity-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+.voice-workbench-continuity-session-id {
+  user-select: all;
+  word-break: break-all;
+}
+.voice-workbench-continuity-count {
+  color: var(--muted);
+}
+.voice-workbench-run-meta {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin-bottom: var(--space-2);
+}
 .voice-checkbox-row {
   display: flex;
   align-items: center;

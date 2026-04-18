@@ -567,7 +567,20 @@ def _main_screen_guidance(*, show_tour_hint: bool = False) -> dict[str, object]:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+    # ``?session_id=<id>`` lets another surface (e.g. the panel Voice
+    # Workbench) hand the operator a direct link to the same canonical
+    # Vera session that voice turns were persisted under.  The value is
+    # clamped through ``Path(...).name`` so it can only resolve to a
+    # session file under the canonical sessions directory.  Empty or
+    # whitespace-only values fall back to the cookie / new session
+    # behavior as before.
+    query_session_id = Path((request.query_params.get("session_id") or "").strip() or ".").name
+    cookie_session_id = (request.cookies.get("vera_session_id") or "").strip()
+    session_id = (
+        query_session_id
+        if query_session_id and query_session_id != "."
+        else (cookie_session_id or new_session_id())
+    )
     root = _active_queue_root()
     return _render_page(
         session_id=session_id,

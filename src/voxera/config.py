@@ -22,6 +22,11 @@ DEFAULT_POLICY_NAME = "policy.yml"
 _DEFAULT_ENV_FILE = Path("~/.config/voxera/env").expanduser()
 _DEFAULT_RUNTIME_CONFIG = Path("~/.config/voxera/config.json").expanduser()
 
+# Single source of truth for the canonical Vera web app base URL.
+# Referenced here (defaults dict + coerce fallback) and by
+# ``voxera.panel.routes_voice`` for the continue-in-Vera link builder.
+DEFAULT_VERA_WEB_BASE_URL = "http://127.0.0.1:8790"
+
 
 @dataclass(frozen=True)
 class VoxeraConfig:
@@ -42,6 +47,12 @@ class VoxeraConfig:
     ops_bundle_dir: Path | None
     dev_mode: bool
     notify_enabled: bool
+    # Absolute base URL of the canonical Vera web app (``vera_web``), used
+    # by cross-surface continuation links (e.g. the Voice Workbench
+    # "Continue in Vera" link).  Panel (8844) and vera_web (8790) run as
+    # separate uvicorn processes by default, so a relative ``/vera`` link
+    # 404s on the panel host — links must be built against this base URL.
+    vera_web_base_url: str
     config_path: Path
     sources: Mapping[str, str]
 
@@ -64,6 +75,7 @@ class VoxeraConfig:
             "ops_bundle_dir": str(self.ops_bundle_dir) if self.ops_bundle_dir else None,
             "dev_mode": self.dev_mode,
             "notify_enabled": self.notify_enabled,
+            "vera_web_base_url": self.vera_web_base_url,
             "config_path": str(self.config_path),
             "sources": dict(self.sources),
         }
@@ -107,6 +119,7 @@ def load_config(
         "ops_bundle_dir": None,
         "dev_mode": False,
         "notify_enabled": False,
+        "vera_web_base_url": DEFAULT_VERA_WEB_BASE_URL,
     }
 
     env_map: dict[str, str] = {
@@ -127,6 +140,7 @@ def load_config(
         "ops_bundle_dir": "VOXERA_OPS_BUNDLE_DIR",
         "dev_mode": "VOXERA_DEV_MODE",
         "notify_enabled": "VOXERA_NOTIFY",
+        "vera_web_base_url": "VOXERA_VERA_WEB_BASE_URL",
     }
 
     resolved: dict[str, Any] = {}
@@ -167,6 +181,7 @@ def load_config(
         ops_bundle_dir=resolved["ops_bundle_dir"],
         dev_mode=resolved["dev_mode"],
         notify_enabled=resolved["notify_enabled"],
+        vera_web_base_url=resolved["vera_web_base_url"],
         config_path=path,
         sources=sources,
     )
@@ -303,6 +318,15 @@ def _coerce(field: str, value: Any) -> Any:
         if value in (None, ""):
             return None
         return _parse_int_value(field, value, min_value=1)
+    if field == "vera_web_base_url":
+        text = str(value).strip() if value is not None else ""
+        if not text:
+            return DEFAULT_VERA_WEB_BASE_URL
+        if not (text.startswith("http://") or text.startswith("https://")):
+            raise ValueError(
+                f"Invalid value for {field}: must start with http:// or https://, got {value!r}"
+            )
+        return text.rstrip("/")
     return value
 
 
