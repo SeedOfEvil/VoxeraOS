@@ -65,6 +65,22 @@ def _safe_prior_turn_count(queue_root: Path, session_id: str) -> int:
         return 0
 
 
+def _persist_vera_session_cookie(response: HTMLResponse, session_id: str) -> None:
+    """Persist the resolved Vera session id onto the response.
+
+    The voice routes resolve the workbench session id from either the
+    ``vera_session_id`` cookie or (as a fallback) a freshly-minted id.
+    Without writing the cookie back, a minted id is lost on the next
+    page load and the continuity banner jumps between session ids —
+    the exact confusion the continuity polish is meant to remove.
+    Match the ``samesite="lax"`` / ``httponly=False`` posture used by
+    the panel ``/vera`` route and the canonical Vera web app so every
+    surface shares the same cookie semantics.
+    """
+    if session_id:
+        response.set_cookie("vera_session_id", session_id, httponly=False, samesite="lax")
+
+
 def _display_status_for_stt(response: STTResponse, *, ok: bool) -> str:
     """Return the operator-facing status label for the STT result card.
 
@@ -135,6 +151,7 @@ def register_voice_routes(
         )
         response = HTMLResponse(content=html)
         response.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
+        _persist_vera_session_cookie(response, session_id)
         return response
 
     @app.get("/voice/status.json")
@@ -241,6 +258,7 @@ def register_voice_routes(
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
+        _persist_vera_session_cookie(resp, session_id)
         return resp
 
     @app.post("/voice/tts/generate.json")
@@ -366,6 +384,7 @@ def register_voice_routes(
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
+        _persist_vera_session_cookie(resp, session_id)
         return resp
 
     @app.post("/voice/stt/transcribe.json")
@@ -612,4 +631,5 @@ def register_voice_routes(
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
+        _persist_vera_session_cookie(resp, session_id)
         return resp

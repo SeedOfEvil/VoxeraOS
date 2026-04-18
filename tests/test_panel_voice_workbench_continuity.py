@@ -441,3 +441,121 @@ class TestStaleResultHygieneAcrossRuns:
         assert "Current run" not in res.text
         # The "no run yet" empty state must be visible instead.
         assert "No workbench run yet" in res.text
+
+
+class TestSessionCookiePersistence:
+    """The voice surface must persist the resolved Vera session id so the
+    banner does not flip between page loads and so the canonical Vera
+    surface sees the same session the operator was just working in."""
+
+    def test_voice_status_sets_vera_session_cookie_on_first_visit(self, _panel_env: Path) -> None:
+        """Arriving on /voice/status without a cookie mints a fresh session id
+        for display.  Without persisting it, a refresh would mint a DIFFERENT
+        id and the continuity banner would jump — the exact problem the polish
+        is meant to fix.  The response must write the minted id back so the
+        next request (to /voice/status, /vera, or the canonical Vera web app)
+        sees the same session id."""
+        client = TestClient(panel_module.app)
+        # No pre-existing cookie.
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        persisted = res.cookies.get("vera_session_id")
+        assert persisted, "voice route must persist the resolved vera_session_id"
+        assert persisted.startswith("vera-")  # new_session_id() format
+        # And the banner must surface exactly that id.
+        assert persisted in res.text
+
+    def test_voice_status_preserves_existing_vera_session_cookie(self, _panel_env: Path) -> None:
+        """When the operator already has a ``vera_session_id`` cookie, the
+        response must NOT rewrite it to a different id — the voice surface
+        is adopting the canonical session, not minting a competing one."""
+        client = TestClient(panel_module.app)
+        existing = "vera-existing-cookie-session"
+        client.cookies.set("vera_session_id", existing)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        # If the response set the cookie at all, it must match what came in.
+        rewritten = res.cookies.get("vera_session_id")
+        if rewritten is not None:
+            assert rewritten == existing
+
+    def test_workbench_run_persists_run_session_cookie(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """After a POST /voice/workbench/run, the response must carry the
+        run's session id back as a cookie so a subsequent GET — whether on
+        this surface or on canonical Vera — resolves to the same session."""
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt_response(transcript="persist this")
+        session_id = "vera-wb-cty-persist"
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                    "workbench_session_id": session_id,
+                },
+            )
+        assert res.status_code == 200
+        assert res.cookies.get("vera_session_id") == session_id
+
+
+class TestFailurePathContinuityFraming:
+    """Failure-path runs must still honour the continuity contract: banner
+    renders, current-run meta is truthful, and the governed-handoff block
+    continues to read ``not attempted`` with no fabricated execution."""
+
+    def test_stt_empty_transcript_failure_keeps_continuity_banner_and_truth_model(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        # Adapter pathology: status=succeeded but no transcript.
+        stt = _make_stt_response(transcript=None)
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            client = TestClient(panel_module.app)
+            res = _authed_csrf_request(
+                client,
+                "post",
+                "/voice/workbench/run",
+                data={
+                    "workbench_audio_path": "/tmp/t.wav",
+                    "workbench_send_to_vera": "1",
+                },
+            )
+        assert res.status_code == 200
+        # Continuity banner still present.
+        assert 'data-testid="voice-workbench-continuity"' in res.text
+        # Current-run meta still present — so the operator can tell which
+        # failure corresponds to which submit.
+        assert 'data-testid="voice-workbench-run-meta"' in res.text
+        assert "Current run" in res.text
+        # Vera was not called because no real transcript — truthful wording.
+        assert "upstream transcription did not produce a real transcript" in res.text
+        # Governed handoff still truthfully ``not attempted``.
+        assert "not attempted" in res.text
+        assert "No queue preview was drafted" in res.text
+        # Must never imply success on the failure card.
+        failure_card_start = res.text.index("Transcript")
+        failure_card_end = res.text.index("</div>", failure_card_start)
+        # The transcript card should carry a failure badge, never ``transcribed``.
+        assert "transcribed" not in res.text[failure_card_start:failure_card_end]
+
+
+class TestPluralizationEdgeCases:
+    """Pin pluralization of turn counts in the banner so a single-turn
+    session reads ``1 turn recorded``, not ``1 turns recorded``."""
+
+    def test_banner_reads_singular_turn_for_one_turn_session(self, _panel_env: Path) -> None:
+        queue_dir = _panel_env
+        session_id = "vera-wb-cty-singular"
+        session_store.append_session_turn(queue_dir, session_id, role="user", text="only one")
+        client = TestClient(panel_module.app)
+        client.cookies.set("vera_session_id", session_id)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        assert "1 turn recorded" in res.text
+        assert "1 turns recorded" not in res.text
