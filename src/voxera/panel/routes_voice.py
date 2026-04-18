@@ -36,6 +36,10 @@ from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse, stt_response
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response_as_dict
 from ..voice.voice_status_summary import build_voice_status_summary
 from . import voice_workbench
+from .voice_workbench_classifier import (
+    CLASSIFICATION_ACTION_ORIENTED,
+    classify_workbench_transcript,
+)
 
 
 def _continue_in_vera_url(session_id: str, base_url: str) -> str:
@@ -639,6 +643,28 @@ def register_voice_routes(
         # pre-run count so we never over-claim.
         workbench_result["session_turn_count"] = _safe_prior_turn_count(
             current_queue_root, session_id
+        )
+
+        # ── Action-oriented classification (truth-preserving guidance) ──
+        # Deterministic, bounded scan of the real transcript only.  Never
+        # implies a preview exists or a job was created; only decides
+        # whether the UI should render a stronger "continue in Vera"
+        # guidance block.  Informational runs stay clean.
+        #
+        # The ``classification`` sub-dict is retained for debug / inspection
+        # surfaces (it lets operators reason about *why* a run did or did
+        # not flip action-oriented by reading ``reason`` and
+        # ``matched_signals``); the template only consumes the top-level
+        # ``show_action_guidance`` flag below.
+        classification = classify_workbench_transcript(transcript_text)
+        workbench_result["classification"] = {
+            "kind": classification.kind,
+            "is_action_oriented": classification.is_action_oriented,
+            "reason": classification.reason,
+            "matched_signals": list(classification.matched_signals),
+        }
+        workbench_result["show_action_guidance"] = bool(
+            stt_ok and transcript_text and classification.kind == CLASSIFICATION_ACTION_ORIENTED
         )
 
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
