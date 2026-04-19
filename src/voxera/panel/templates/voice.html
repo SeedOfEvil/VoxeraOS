@@ -26,6 +26,8 @@
       <nav class="page-nav" aria-label="Voice page sections">
         <a href="#voice-config">Status</a>
         <span class="sep" aria-hidden="true">&middot;</span>
+        <a href="#voice-options">Voice Options</a>
+        <span class="sep" aria-hidden="true">&middot;</span>
         <a href="#voice-workbench">Voice Workbench</a>
         <span class="sep" aria-hidden="true">&middot;</span>
         <a href="#voice-tts">TTS Generation</a>
@@ -102,6 +104,17 @@
                 {% if summary.stt_dependency.hint %}
                   <span class="muted text-sm voice-dep-hint">{{summary.stt_dependency.hint}}</span>
                 {% endif %}
+              {% endif %}
+            </span>
+          </div>
+          {% endif %}
+          {% if summary.stt_dependency.whisper_model %}
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Whisper Model</span>
+            <span class="queue-detail-value">
+              <span class="mono">{{summary.stt_dependency.whisper_model.effective}}</span>
+              {% if not summary.stt_dependency.whisper_model.selected %}
+                <span class="muted text-sm">(default)</span>
               {% endif %}
             </span>
           </div>
@@ -195,6 +208,66 @@
           {% endif %}
         </section>
       </div>
+
+      {# ── Zone 1b: Voice Options (operator-editable config) ──────────── #}
+      {%- set _current_whisper_model = summary.stt_dependency.whisper_model.selected if summary.stt_dependency and summary.stt_dependency.whisper_model else None -%}
+      {%- set _effective_whisper_model = summary.stt_dependency.whisper_model.effective if summary.stt_dependency and summary.stt_dependency.whisper_model else None -%}
+      <div class="section-label" id="voice-options">Voice Options</div>
+      <section class="card mb" data-testid="voice-options">
+        <h2 class="voice-card-heading">Voice Options</h2>
+        <p class="voice-section-intro">
+          Operator-editable voice configuration.  Changes are persisted to the runtime config and affect the existing local STT path only &mdash; this never enables cloud STT, streaming, or a new engine.  Leave the model selection blank to preserve the current default.
+        </p>
+
+        {% if voice_options_result %}
+          {% if voice_options_result.ok %}
+          <div class="alert alert-success" data-testid="voice-options-save-ok">
+            Voice options saved.
+            {% if voice_options_result.saved_model %}
+              STT whisper model is now <span class="mono">{{voice_options_result.saved_model}}</span>.
+            {% else %}
+              STT whisper model selection cleared &mdash; backend will use its default.
+            {% endif %}
+          </div>
+          {% else %}
+          <div class="alert alert-danger" data-testid="voice-options-save-fail">
+            {{voice_options_result.error}}
+          </div>
+          {% endif %}
+        {% endif %}
+
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Current STT Whisper Model</span>
+          <span class="queue-detail-value">
+            {% if _effective_whisper_model %}
+              <span class="mono" data-testid="voice-options-current-model">{{_effective_whisper_model}}</span>
+              {% if not _current_whisper_model %}
+                <span class="muted text-sm">(default &mdash; no explicit selection saved)</span>
+              {% else %}
+                <span class="muted text-sm">(saved in runtime config)</span>
+              {% endif %}
+            {% else %}
+              <span class="muted" data-testid="voice-options-current-model">&mdash;</span>
+            {% endif %}
+          </span>
+        </div>
+
+        <form class="form-stack voice-action-form" method="post" action="/voice/options/save" data-testid="voice-options-form">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <label>STT Whisper Model
+            <select class="input" name="stt_whisper_model" id="stt_whisper_model" data-testid="voice-options-model-select">
+              <option value="">(default &mdash; no explicit selection)</option>
+              {% for choice in stt_whisper_model_choices %}
+                <option value="{{choice}}" {% if choice == _current_whisper_model %}selected{% endif %}>{{choice}}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="muted text-sm">
+            Selects the model id passed to the local faster-whisper loader.  Use <span class="mono">distil-whisper/distil-large-v3</span> for the Distil-Whisper option.  Large models download on first use and may take a while.
+          </p>
+          <button class="btn btn-primary" type="submit" data-testid="voice-options-save">Save Voice Options</button>
+        </form>
+      </section>
 
       {# ── Zone 2: Voice Workbench (STT -> Vera -> optional TTS) ───────── #}
       {%- set _wb_session_id = workbench_result.session_id if workbench_result else workbench_session_id -%}
