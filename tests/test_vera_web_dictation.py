@@ -540,6 +540,77 @@ def test_chat_voice_stt_failure_preserves_preview_truth(
     assert payload["preview"] == preview
 
 
+def test_chat_voice_ok_true_for_clean_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``ok=True`` on a clean refusal lane (e.g. ``blocked_path``).
+
+    The new ``ok`` semantics are ``stt_ok AND chat_result is not None AND
+    not chat_result.error``.  A blocked-file-intent refusal produces a
+    canonical ``ChatTurnResult`` with a clear assistant message and an
+    EMPTY ``error`` string — the canonical path ran and produced a
+    truthful reply, it just happens to be a refusal.  Pin that this
+    reports ``ok=True`` so future refactors don't silently re-conflate
+    "refusal" with "failure".
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    stt = _make_stt(transcript="check if ../../../etc/passwd exists")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(
+            client,
+            body=b"\x00" * 32,
+            params={"session_id": "vera-ok-refusal"},
+        )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["status"] == "blocked_path"
+    assert payload["error"] == ""
+    assert payload["ok"] is True
+    assert payload["assistant_text"]  # non-empty refusal surfaced
+
+
+def test_chat_voice_ok_false_for_voice_input_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``ok=False`` when the voice transcript normalizes to empty.
+
+    ``ingest_voice_transcript`` raises ``ValueError`` for a transcript
+    that is empty after stripping.  The canonical helper catches that
+    and returns ``status="voice_input_invalid"`` with a non-empty
+    ``error`` string — ``ok`` must be ``False`` in that case.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    # Whitespace-only transcript normalises to empty inside the ingest
+    # step; STT itself reports success (transcript present) but the
+    # canonical helper then fails closed.
+    stt = _make_stt(transcript="   \n  ")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(
+            client,
+            body=b"\x00" * 32,
+            params={"session_id": "vera-ok-invalid"},
+        )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["status"] == "voice_input_invalid"
+    assert payload["error"]  # non-empty
+    assert payload["ok"] is False
+
+
 def test_chat_voice_submit_routes_through_canonical_handoff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

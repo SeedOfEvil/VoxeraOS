@@ -355,9 +355,25 @@
       try {
         window.__veraApplyServerTurns(turns, turnCount);
         return;
-      } catch (_e) {
-        // fall through to plain fallback
+      } catch (e) {
+        // Hook present but threw — surface the divergence so the
+        // escape-only fallback below isn't a silent drift from the
+        // main IIFE's bounded-markdown renderer.
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn(
+            "vera_dictation: __veraApplyServerTurns threw, " +
+              "falling back to escape-only renderer",
+            e,
+          );
+        }
       }
+    } else if (typeof console !== "undefined" && console.warn) {
+      // Hook missing entirely — same divergence, different cause
+      // (older page, load-order race, etc.).
+      console.warn(
+        "vera_dictation: __veraApplyServerTurns missing, " +
+          "falling back to escape-only renderer",
+      );
     }
     var thread = document.getElementById("thread");
     if (!thread) return;

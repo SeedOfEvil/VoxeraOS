@@ -641,8 +641,16 @@ async def run_vera_chat_turn(
     only surface-level difference is the input boundary:
 
     * Typed: ``input_origin=InputOrigin.TYPED`` from the form.
-    * Dictation: ``input_origin=InputOrigin.VOICE_TRANSCRIPT`` after
-      STT + :func:`ingest_voice_transcript` normalization.
+    * Any ``VOICE_TRANSCRIPT`` input (today only dictation, but the
+      helper treats the origin generically): after the caller has
+      already run STT and is ready to hand a transcript in, this
+      function re-runs :func:`ingest_voice_transcript` for normalization
+      + fail-closed voice-input-disabled enforcement.
+
+    The caller is responsible for resolving the active ``session_id``
+    (form field, cookie fallback, or :func:`new_session_id`) BEFORE
+    calling this helper — the helper trusts the value it is handed
+    and does not touch cookies or request state.
 
     Everything downstream — the 7-lane routing, LLM orchestration,
     post-LLM draft binding, conversational artifact mode, guardrails,
@@ -1757,6 +1765,32 @@ async def chat_voice(request: Request) -> JSONResponse:
     ``speak_response=1``) runs over the final assistant text produced
     by the canonical path — whether that text came from an early-exit
     lane, an automation lifecycle action, a preview draft, or the LLM.
+
+    JSON response shape (stable contract for the enhancer):
+
+    * ``ok`` — ``stt_ok AND chat_ran AND chat_error_empty``.  A clean
+      refusal lane (e.g. ``blocked_path``) reports ``ok=True`` because
+      the canonical path ran to completion and produced a truthful
+      reply; ``ok`` being ``False`` means the turn genuinely could not
+      complete (STT failure, voice-input-disabled, empty transcript).
+    * ``session_id``, ``status``, ``error``, ``turns``, ``turn_count``,
+      ``assistant_text`` — canonical turn result (truthful even when
+      ``ok`` is ``False``).
+    * ``preview`` + ``has_preview_truth`` — canonical preview state
+      read fresh from the session store on both branches (chat-ran and
+      STT-failed).  The enhancer refreshes the preview pane only when
+      ``has_preview_truth=True`` so it never clobbers a still-active
+      preview on a pre-chat failure.
+    * ``stt``, ``tts``, ``tts_url``, ``speak_response_requested`` —
+      per-subsystem status dicts; ``tts_url`` is ``None`` when TTS is
+      not requested or synthesis failed (text stays authoritative).
+
+    Earlier iterations carried ``classification``, ``lifecycle``,
+    ``vera``, ``preview_attempt``, and ``show_action_guidance`` from
+    the bespoke workbench pipeline.  Those are intentionally removed:
+    the canonical chat helper is now the single source of truth, so
+    the enhancer reads ``status`` + ``assistant_text`` + ``preview``
+    directly instead of reconstructing state from sub-results.
     """
     content_type_header = request.headers.get("content-type")
     if not _is_audio_content_type(content_type_header):
@@ -1930,6 +1964,16 @@ async def chat_voice(request: Request) -> JSONResponse:
                 token = _register_tts_audio(tts_response.audio_path)
                 tts_url = f"/vera/voice/audio/{token}"
         except ValueError as exc:
+            # ``synthesize_text_async`` (via ``tts_protocol``) raises
+            # ``ValueError`` for input-shape violations — empty text
+            # after stripping, invalid ``output_format``, etc.  Surface
+            # the validation message verbatim since it is operator-
+            # readable; broader runtime failures fall through to the
+            # generic ``Exception`` branch below with a class-tagged
+            # message.  The STT block above has no equivalent split
+            # because the audio bytes are already validated on the
+            # route (content-type, size, non-empty body) before the
+            # async call runs.
             tts_dict = {
                 "success": False,
                 "status": "failed",
