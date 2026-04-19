@@ -81,20 +81,28 @@ class TestAppStillVisiblyOrchestratesLanes:
         assert vera_app_module.apply_early_exit_state_writes is (apply_early_exit_state_writes)
 
     def test_chat_handler_calls_each_extracted_lane(self) -> None:
-        """Sanity guard: chat() must literally reference each lane entry.
+        """Sanity guard: the canonical chat helper must literally reference each lane entry.
 
-        This assertion reads the chat() source once and checks for the
-        extracted lane symbols. It is not a behavioral test — it is a
-        cheap visibility anchor so that if a future refactor drops a
-        lane call, the extraction contract is re-examined.
+        This assertion reads the canonical ``run_vera_chat_turn`` source
+        (shared by typed ``/chat`` and dictated ``/chat/voice``) and
+        checks for the extracted lane symbols. It is not a behavioral
+        test — it is a cheap visibility anchor so that if a future
+        refactor drops a lane call, the extraction contract is
+        re-examined.  The ``chat`` endpoint itself is now a thin
+        Request→HTML wrapper and must also call the canonical helper.
         """
-        source = inspect.getsource(vera_app_module.chat)
-        assert "try_submit_automation_preview_lane(" in source
-        assert "try_automation_draft_or_revision_lane(" in source
-        assert "try_automation_lifecycle_lane(" in source
-        assert "try_materialize_automation_shell(" in source
-        assert "apply_early_exit_state_writes(" in source
-        assert "compute_active_preview_revision_in_flight(" in source
+        canonical_source = inspect.getsource(vera_app_module.run_vera_chat_turn)
+        assert "try_submit_automation_preview_lane(" in canonical_source
+        assert "try_automation_draft_or_revision_lane(" in canonical_source
+        assert "try_automation_lifecycle_lane(" in canonical_source
+        assert "try_materialize_automation_shell(" in canonical_source
+        assert "apply_early_exit_state_writes(" in canonical_source
+        assert "compute_active_preview_revision_in_flight(" in canonical_source
+        # The typed endpoint must remain a wrapper that dispatches into
+        # the canonical helper so dictation parity is enforced at the
+        # single shared path.
+        chat_source = inspect.getsource(vera_app_module.chat)
+        assert "run_vera_chat_turn(" in chat_source
 
     def test_lane_order_is_still_seven(self) -> None:
         """Lane precedence unchanged after extraction."""

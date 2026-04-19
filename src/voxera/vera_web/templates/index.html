@@ -491,14 +491,39 @@
         const isAssistant = role === 'assistant';
         const textCls = isAssistant ? 'text md-rendered' : 'text';
         const textHtml = isAssistant ? renderAssistantMarkdown(text) : escapeHtml(text);
+        const origin = String(turn.input_origin || '');
+        let label = roleLabel(role);
+        if (role === 'user' && origin === 'voice_transcript') {
+          label = 'You (voice transcript)';
+        }
         return `
           <article class="bubble ${escapeHtml(role)}">
-            <div class="role">${escapeHtml(roleLabel(role))}</div>
+            <div class="role">${escapeHtml(label)}</div>
             <div class="${textCls}">${textHtml}</div>
           </article>
         `;
       }).join('');
       thread.innerHTML = html;
+    };
+
+    // Expose the canonical thread renderer so the dictation enhancer
+    // (a separate IIFE loaded from /static/vera_dictation.js) can
+    // push a fresh turns array into the thread after /chat/voice
+    // completes and have assistant text rendered through the same
+    // bounded markdown subset that typed replies use.  Keeping one
+    // renderer for both surfaces is how we prevent rendering drift
+    // (raw **bold** or ## markers in dictation replies).
+    window.__veraApplyServerTurns = (turns, turnCount) => {
+      const list = Array.isArray(turns) ? turns : [];
+      renderTurns(list);
+      const n = Number.isFinite(Number(turnCount)) ? Number(turnCount) : list.length;
+      knownTurnCount = n;
+      thread.dataset.turnCount = String(n);
+      const shouldStickToBottom = isNearBottom() || sessionStorage.getItem(manualScrollKey) !== '1';
+      if (shouldStickToBottom) {
+        thread.scrollTop = thread.scrollHeight;
+        sessionStorage.removeItem(manualScrollKey);
+      }
     };
 
     bindGuidanceChips();
