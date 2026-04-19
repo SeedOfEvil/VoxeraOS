@@ -1946,6 +1946,15 @@ async def chat_voice(request: Request) -> JSONResponse:
 
     # Resolve final payload fields from the canonical result (or fall
     # back to a turn-less session when STT failed before it could run).
+    #
+    # ``result_preview`` is always the CURRENT canonical preview on disk
+    # for the active session — never a fabrication, never inferred from
+    # the reply text.  When the chat helper ran, ``chat_result.preview``
+    # already holds ``read_session_preview(...)`` captured right after
+    # the lane writes completed.  When STT failed before chat ran, we
+    # re-read the session so the dictation UI reflects whatever preview
+    # state the session still truly holds (clobbering it to None would
+    # misrepresent canonical truth).
     if chat_result is not None:
         result_session_id = chat_result.session_id
         result_turns = chat_result.turns
@@ -1960,7 +1969,7 @@ async def chat_voice(request: Request) -> JSONResponse:
         result_status = "stt_failed"
         result_error = str(stt_dict.get("error") or "")
         result_assistant_text = ""
-        result_preview = None
+        result_preview = read_session_preview(root, active_session)
 
     # ``ok`` stays truthful: STT must have succeeded AND the canonical
     # Vera helper must have produced a non-error result.  TTS failures
@@ -1968,6 +1977,14 @@ async def chat_voice(request: Request) -> JSONResponse:
     # trust model.
     ok = bool(stt_ok and chat_result is not None and not chat_result.error)
 
+    # ``has_preview_truth`` is a small, explicit handshake with the
+    # dictation enhancer's preview-pane hook: it is ``True`` whenever
+    # ``preview`` in this payload faithfully reflects the current
+    # canonical session preview (read fresh above in both branches),
+    # which means the browser can safely replace the visible pane with
+    # what the server just reported.  The flag exists so the UI never
+    # has to infer "is this preview value authoritative?" from other
+    # fields — truth is stated directly at the boundary.
     payload: dict[str, object] = {
         "ok": ok,
         "session_id": result_session_id,
@@ -1977,6 +1994,7 @@ async def chat_voice(request: Request) -> JSONResponse:
         "turn_count": len(result_turns),
         "assistant_text": result_assistant_text,
         "preview": result_preview,
+        "has_preview_truth": True,
         "stt": stt_dict,
         "tts": tts_dict,
         "tts_url": tts_url,

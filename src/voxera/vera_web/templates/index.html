@@ -33,8 +33,16 @@
     </section>
 
     <!-- Active preview pane -->
+    <!-- The host div always exists so the dictation enhancer has a stable
+         insertion point.  The inner <section class="preview"> is rendered
+         here by Jinja on full-page navigation (typed /chat) and is
+         populated / cleared in place by window.__veraApplyServerPreview
+         after /chat/voice or /chat/updates so dictated turns update the
+         preview pane identically to typed turns. Never a fabricated pane:
+         the hook writes only what canonical session state already holds. -->
+    <div id="vera-preview-host" data-testid="vera-preview-host">
     {% if pending_preview %}
-    <section class="preview" aria-live="polite">
+    <section class="preview" id="vera-preview-pane" aria-live="polite" data-testid="vera-preview-pane">
       <div class="preview-label">Preview panel · Active VoxeraOS draft (authoritative, not submitted)</div>
       <pre class="prompt-box">{{pending_preview | tojson(indent=2)}}</pre>
       <div class="preview-actions">
@@ -45,6 +53,7 @@
       </div>
     </section>
     {% endif %}
+    </div>
 
     {% if error %}<div class="error" role="alert">{{error}}</div>{% endif %}
 
@@ -524,6 +533,68 @@
         thread.scrollTop = thread.scrollHeight;
         sessionStorage.removeItem(manualScrollKey);
       }
+    };
+
+    // Expose the canonical preview-pane renderer so the dictation
+    // enhancer can refresh the active preview section after /chat/voice
+    // completes.  The hook only ever reflects canonical preview state
+    // handed in by the server (preview is ``read_session_preview``'d at
+    // the API layer) — it never fabricates, synthesises, or infers from
+    // assistant text.  When ``preview`` is null/falsy the pane is
+    // removed; when it is a dict the pane is rendered with the same
+    // shape the server-side Jinja template uses (label, indented JSON
+    // body, handoff form), so typed and dictated turns produce a
+    // byte-equivalent preview pane for equivalent canonical state.
+    window.__veraApplyServerPreview = (preview, targetSessionId) => {
+      const host = document.getElementById('vera-preview-host');
+      if (!host) return;
+      if (!preview || typeof preview !== 'object') {
+        host.innerHTML = '';
+        return;
+      }
+      let body;
+      try {
+        body = JSON.stringify(preview, null, 2);
+      } catch (_e) {
+        host.innerHTML = '';
+        return;
+      }
+      const sid = String(targetSessionId || sessionId || '');
+      // Build with createElement + textContent so the preview body is
+      // never interpreted as HTML; this mirrors Jinja's autoescape and
+      // the server-side ``tojson(indent=2)`` filter's safety posture.
+      const section = document.createElement('section');
+      section.className = 'preview';
+      section.id = 'vera-preview-pane';
+      section.setAttribute('aria-live', 'polite');
+      section.dataset.testid = 'vera-preview-pane';
+      const label = document.createElement('div');
+      label.className = 'preview-label';
+      label.textContent = 'Preview panel \u00b7 Active VoxeraOS draft (authoritative, not submitted)';
+      section.appendChild(label);
+      const pre = document.createElement('pre');
+      pre.className = 'prompt-box';
+      pre.textContent = body;
+      section.appendChild(pre);
+      const actions = document.createElement('div');
+      actions.className = 'preview-actions';
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = '/handoff';
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'session_id';
+      hidden.value = sid;
+      form.appendChild(hidden);
+      const btn = document.createElement('button');
+      btn.className = 'btn-handoff';
+      btn.type = 'submit';
+      btn.textContent = 'Submit current preview to VoxeraOS';
+      form.appendChild(btn);
+      actions.appendChild(form);
+      section.appendChild(actions);
+      host.innerHTML = '';
+      host.appendChild(section);
     };
 
     bindGuidanceChips();

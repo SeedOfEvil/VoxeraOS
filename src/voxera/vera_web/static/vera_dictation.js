@@ -245,6 +245,14 @@
           if (payload && Array.isArray(payload.turns)) {
             applyTurnsUpdate(payload.turns, payload.turn_count);
           }
+          // When the payload carried canonical preview truth, reflect it
+          // in the pane too.  ``preview`` is authoritative only when
+          // ``has_preview_truth`` is set — otherwise it's an STT-only
+          // failure where the pre-existing preview on disk is the real
+          // answer and we must not clobber the visible pane.
+          if (payload && payload.has_preview_truth === true) {
+            applyPreviewUpdate(payload.preview, payload.session_id);
+          }
           return;
         }
         applyDictationResult(payload);
@@ -260,6 +268,13 @@
   function applyDictationResult(payload) {
     if (payload && Array.isArray(payload.turns)) {
       applyTurnsUpdate(payload.turns, payload.turn_count);
+    }
+    // Refresh the active-preview pane from canonical session truth.
+    // ``payload.preview`` is ``read_session_preview``'d at the API
+    // layer so the pane stays at parity with typed /chat (full-page
+    // reload) without inferring state from the reply.
+    if (payload && payload.has_preview_truth === true) {
+      applyPreviewUpdate(payload.preview, payload.session_id);
     }
     var sttOk = payload && payload.stt && payload.stt.success;
     if (!sttOk) {
@@ -312,6 +327,22 @@
       return "Preview drafted \u2014 review below.";
     }
     return "Idle";
+  }
+
+  // Hand the canonical preview payload to the main page IIFE's
+  // preview-pane renderer (window.__veraApplyServerPreview) so dictated
+  // turns refresh the active-preview pane identically to a full-page
+  // typed reload.  The hook is exposed from the main IIFE; if it is
+  // unavailable (degraded page / older template), we skip silently so
+  // the fallback is "show what the server rendered on the last full
+  // navigation" — never a fabricated or inferred pane.
+  function applyPreviewUpdate(preview, targetSessionId) {
+    if (typeof window.__veraApplyServerPreview !== "function") return;
+    try {
+      window.__veraApplyServerPreview(preview, targetSessionId);
+    } catch (_e) {
+      // best-effort preview refresh only
+    }
   }
 
   // Hand the canonical turns array to the main page IIFE's renderer

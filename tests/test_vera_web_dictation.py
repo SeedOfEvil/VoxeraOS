@@ -346,6 +346,200 @@ def test_typed_and_dictated_rendering_parity(
     assert assistant_voice_turns[-1]["text"] == markdown_reply
 
 
+def test_index_preview_pane_has_stable_anchor_for_js_updates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The preview pane has a stable host + hook so dictation can refresh it.
+
+    Typed ``/chat`` refreshes the preview pane via a full-page reload —
+    Jinja renders ``<section class="preview">`` when ``pending_preview``
+    is set.  Dictated ``/chat/voice`` is JSON-only, so the main IIFE
+    exposes ``window.__veraApplyServerPreview`` which the dictation
+    enhancer calls to rewrite the pane in place.  Both the host
+    container and the hook name must be present on the page, and the
+    hook name must never be silently renamed.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    monkeypatch.setattr(vera_app_module, "load_voice_foundation_flags", _enabled_voice_flags)
+    client = TestClient(vera_app_module.app)
+    res = client.get("/")
+    assert res.status_code == 200
+    assert 'data-testid="vera-preview-host"' in res.text
+    assert 'id="vera-preview-host"' in res.text
+    assert "window.__veraApplyServerPreview" in res.text
+    # Dictation enhancer must consume the same hook.
+    res_js = client.get("/static/vera_dictation.js")
+    assert res_js.status_code == 200
+    assert "window.__veraApplyServerPreview" in res_js.text
+
+
+def test_chat_voice_payload_carries_canonical_preview_truth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``/chat/voice`` payload includes ``preview`` + ``has_preview_truth``.
+
+    The JS hook refuses to touch the visible preview pane unless the
+    payload explicitly marks the ``preview`` field as authoritative —
+    ``has_preview_truth=True``.  Every ``/chat/voice`` response must
+    carry that flag, since the route reads ``read_session_preview``
+    fresh in both the chat-ran and STT-failed branches.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
+    stt = _make_stt(transcript="hello vera")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(client, body=b"\x00" * 32, params={"session_id": "vera-pv-truth"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert "preview" in payload
+    assert payload["has_preview_truth"] is True
+
+
+def test_chat_voice_preview_pane_visibility_matches_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When typed renders the preview section, dictated payload carries the same dict.
+
+    Seeds a session with a canonical preview.  GET ``/`` on that session
+    renders the ``<section class="preview">`` block.  A ``/chat/voice``
+    turn against the same session must return the exact same preview
+    dict under ``payload["preview"]``.  This is the preview-visibility
+    parity the JS hook consumes.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
+    session_id = "vera-pv-match"
+    preview: dict[str, object] = {"write_file": {"path": "notes/demo.md", "content": "hello"}}
+    from voxera.vera.preview_ownership import reset_active_preview
+
+    reset_active_preview(queue, session_id, preview)
+    # Typed surface: the Jinja template renders the preview section.
+    client = TestClient(vera_app_module.app)
+    typed_res = client.get(f"/?session_id={session_id}")
+    assert typed_res.status_code == 200
+    assert 'id="vera-preview-pane"' in typed_res.text
+    assert "notes/demo.md" in typed_res.text
+
+    # Dictated surface: the JSON payload's preview must equal the
+    # canonical session preview.  An informational follow-up does not
+    # mutate the preview, so the dict stays intact across the turn.
+    stt = _make_stt(transcript="what is in that note")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        voice_res = _post_voice(client, body=b"\x00" * 32, params={"session_id": session_id})
+    assert voice_res.status_code == 200
+    payload = voice_res.json()
+    assert payload["has_preview_truth"] is True
+    assert payload["preview"] == preview
+
+
+def test_chat_voice_preview_cleared_after_submit_reflects_in_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a dictated submit, the payload's preview is None (truthful).
+
+    When ``_submit_handoff`` runs, the active preview is cleared from
+    the session.  The ``/chat/voice`` payload re-reads canonical state
+    and therefore reports ``preview=None`` — the JS hook then removes
+    the visible pane, matching typed-submit behavior.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    session_id = "vera-pv-submit"
+    preview: dict[str, object] = {"write_file": {"path": "notes/demo.md", "content": "hi"}}
+    from voxera.vera.preview_ownership import clear_active_preview, reset_active_preview
+
+    reset_active_preview(queue, session_id, preview)
+
+    def _fake_submit(
+        *, root: Path, session_id: str, preview: dict[str, object] | None
+    ) -> tuple[str, str]:
+        # Simulate the canonical submit's preview-clear side effect.
+        clear_active_preview(root, session_id)
+        return ("Submitted demo.md.", "handoff_submitted")
+
+    monkeypatch.setattr(vera_app_module, "_submit_handoff", _fake_submit)
+    stt = _make_stt(transcript="submit it")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(client, body=b"\x00" * 32, params={"session_id": session_id})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["status"] == "handoff_submitted"
+    assert payload["preview"] is None
+    assert payload["has_preview_truth"] is True
+
+
+def test_chat_voice_stt_failure_preserves_preview_truth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """STT-only failure must NOT clobber an existing preview in the payload.
+
+    The dictation UI removes the pane whenever it receives an
+    authoritative ``preview=None``.  When STT fails before the chat
+    helper runs, the session's preview is unchanged — reporting
+    ``None`` would misrepresent canonical truth and cause the UI to
+    hide a real, still-active preview.  The route therefore re-reads
+    session state and returns the actual on-disk preview.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    session_id = "vera-pv-stt-fail"
+    preview: dict[str, object] = {"write_file": {"path": "notes/demo.md", "content": "hi"}}
+    from voxera.vera.preview_ownership import reset_active_preview
+
+    reset_active_preview(queue, session_id, preview)
+
+    failing_stt = STTResponse(
+        request_id="fail",
+        status="failed",
+        transcript=None,
+        language=None,
+        audio_duration_ms=0,
+        error="backend unavailable",
+        error_class="RuntimeError",
+        backend="whisper_local",
+        started_at_ms=0,
+        finished_at_ms=50,
+        schema_version=1,
+        inference_ms=50,
+    )
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(failing_stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(client, body=b"\x00" * 32, params={"session_id": session_id})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["ok"] is False
+    assert payload["status"] == "stt_failed"
+    # Preview on disk is intact; the payload must reflect that intact
+    # state so the UI does not wrongly hide a real preview.
+    assert payload["has_preview_truth"] is True
+    assert payload["preview"] == preview
+
+
 def test_chat_voice_submit_routes_through_canonical_handoff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
