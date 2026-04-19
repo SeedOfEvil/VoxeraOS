@@ -720,6 +720,7 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
                     "voice_stt_backend": None,
                     "voice_tts_backend": None,
                     "voice_tts_piper_model": None,
+                    "voice_stt_whisper_model": None,
                 }
             if isinstance(loaded, dict):
                 existing_runtime = loaded
@@ -735,6 +736,11 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
         "voice_stt_backend": None,
         "voice_tts_backend": None,
         "voice_tts_piper_model": None,
+        # Preserve any previously-saved whisper model selection by default;
+        # the wizard does not prompt for it (that's a panel-only surface),
+        # but declining the foundation below must clear it so state never
+        # goes stale against the most recent answer.
+        "voice_stt_whisper_model": existing_runtime.get("voice_stt_whisper_model") or None,
     }
 
     enable_foundation = Confirm.ask("Enable voice foundation?", default=False)
@@ -791,7 +797,15 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
 
     # Persist answers.  When the foundation is disabled we explicitly null
     # every voice key so the runtime config reflects the wizard's answer
-    # (no silently-stale backend choices from a prior run).
+    # (no silently-stale backend choices or model selections from a prior
+    # run).  When the foundation is enabled, the existing whisper model
+    # selection is preserved untouched -- it's a panel-managed knob that
+    # the wizard never prompts for.
+    stt_whisper_model_update: object | None
+    if answers["enable_voice_foundation"]:
+        stt_whisper_model_update = answers["voice_stt_whisper_model"] or None
+    else:
+        stt_whisper_model_update = None
     updates: dict[str, object | None] = {
         "enable_voice_foundation": bool(answers["enable_voice_foundation"]),
         "enable_voice_input": bool(answers["enable_voice_input"]),
@@ -799,6 +813,7 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
         "voice_stt_backend": answers["voice_stt_backend"],
         "voice_tts_backend": answers["voice_tts_backend"],
         "voice_tts_piper_model": answers["voice_tts_piper_model"],
+        "voice_stt_whisper_model": stt_whisper_model_update,
     }
     path = update_runtime_config(updates, config_path=runtime_config_path)
     console.print(f"Voice settings written to {path}.")

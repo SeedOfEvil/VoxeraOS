@@ -107,6 +107,7 @@ class TestConfigureVoiceDeclined:
                     "voice_stt_backend": "whisper_local",
                     "voice_tts_backend": "piper_local",
                     "voice_tts_piper_model": "/tmp/model.onnx",
+                    "voice_stt_whisper_model": "distil-whisper/distil-large-v3",
                     "panel_port": 8844,
                 }
             ),
@@ -123,8 +124,43 @@ class TestConfigureVoiceDeclined:
         assert "voice_stt_backend" not in data
         assert "voice_tts_backend" not in data
         assert "voice_tts_piper_model" not in data
+        # The whisper model selection must be cleared too so declining the
+        # foundation never leaves orphan STT state behind.
+        assert "voice_stt_whisper_model" not in data
         # Unrelated runtime keys must be preserved.
         assert data["panel_port"] == 8844
+
+    def test_enabling_foundation_preserves_existing_whisper_model(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Re-running setup with STT enabled must not wipe a panel-saved model."""
+        cfg_path = tmp_path / "config.json"
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "enable_voice_foundation": True,
+                    "enable_voice_input": True,
+                    "voice_stt_backend": "whisper_local",
+                    "voice_stt_whisper_model": "distil-whisper/distil-large-v3",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        _monkey_confirm(
+            monkeypatch,
+            [
+                True,  # Enable voice foundation?
+                True,  # Enable STT?
+                False,  # Enable TTS?
+            ],
+        )
+        _monkey_prompt(monkeypatch, ["whisper_local"])
+
+        setup_wizard._configure_voice(runtime_config_path=cfg_path)
+
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert data["voice_stt_whisper_model"] == "distil-whisper/distil-large-v3"
 
 
 class TestConfigureVoiceEnabled:

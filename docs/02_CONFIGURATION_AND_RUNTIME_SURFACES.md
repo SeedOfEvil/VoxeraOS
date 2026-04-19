@@ -236,7 +236,9 @@ The recommended entry point for audio-file transcription is `transcribe_audio_fi
 
 See `09_CORE_OBJECTS_AND_SCHEMA_REFERENCE.md` for the full schema shapes.
 
-The recommended configuration path for voice is the setup wizard: `voxera setup` now includes a short voice step that asks whether to enable the foundation, STT, TTS, picks backends (`whisper_local`, `piper_local`), and — when Piper TTS is selected — optionally accepts a Piper model name or path. The wizard's answers are persisted to the runtime config JSON (`~/.config/voxera/config.json`) via `config.update_runtime_config(...)` under keys: `enable_voice_foundation`, `enable_voice_input`, `enable_voice_output`, `voice_stt_backend`, `voice_tts_backend`, `voice_tts_piper_model`. Declining the foundation clears every voice key from the file so state cannot go stale against the most recent answer. Unrelated runtime keys (panel host/port, queue settings, etc.) are preserved.
+The recommended configuration path for voice is the setup wizard: `voxera setup` now includes a short voice step that asks whether to enable the foundation, STT, TTS, picks backends (`whisper_local`, `piper_local`), and — when Piper TTS is selected — optionally accepts a Piper model name or path. The wizard's answers are persisted to the runtime config JSON (`~/.config/voxera/config.json`) via `config.update_runtime_config(...)` under keys: `enable_voice_foundation`, `enable_voice_input`, `enable_voice_output`, `voice_stt_backend`, `voice_tts_backend`, `voice_tts_piper_model`, `voice_stt_whisper_model`. Declining the foundation clears every voice key from the file so state cannot go stale against the most recent answer. Unrelated runtime keys (panel host/port, queue settings, etc.) are preserved.
+
+The operator-selected local Whisper STT model id lives under `voice_stt_whisper_model`. The wizard does not prompt for it (the panel Voice Options form at `/voice/status` is the preferred surface); `None` / missing means the backend's own default (`base`) applies. The panel allow-list includes `base`, `small`, `medium`, `large-v3`, and `distil-whisper/distil-large-v3`; the factory accepts any truthy string so env-only deployments can pin models outside the curated list.
 
 Environment variables remain supported as overrides for operators who prefer to manage voice via env. When both a runtime-config value and an environment variable are present, the environment variable wins:
 - `VOXERA_ENABLE_VOICE_FOUNDATION` — master toggle for the voice subsystem.
@@ -247,7 +249,7 @@ Environment variables remain supported as overrides for operators who prefer to 
 - `VOXERA_VOICE_TTS_PIPER_MODEL` — Piper model name or path. Overrides the runtime config value.
 
 Environment variables for Whisper backend configuration (loaded by `voice/whisper_backend.py`):
-- `VOXERA_VOICE_STT_WHISPER_MODEL` — Whisper model size (default: `base`).
+- `VOXERA_VOICE_STT_WHISPER_MODEL` — Whisper model size or HF repo id (default: `base`; also read by `load_voice_foundation_flags` as an override of the runtime-config `voice_stt_whisper_model` key).
 - `VOXERA_VOICE_STT_WHISPER_DEVICE` — compute device (default: `auto`).
 - `VOXERA_VOICE_STT_WHISPER_COMPUTE_TYPE` — quantization type (default: `int8`).
 
