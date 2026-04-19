@@ -9,6 +9,7 @@ from .input import (
 from .models import InputOrigin, normalize_input_origin
 from .output import synthesize_text, synthesize_text_async, voice_output_status
 from .piper_backend import PiperLocalBackend
+from .speech_normalize import normalize_text_for_tts
 from .stt_adapter import (
     NullSTTBackend,
     STTAdapterResult,
@@ -82,6 +83,7 @@ __all__ = [
     "ingest_voice_transcript",
     "load_voice_foundation_flags",
     "normalize_input_origin",
+    "normalize_text_for_tts",
     "normalize_transcript_text",
     "stt_request_as_dict",
     "stt_response_as_dict",

@@ -827,3 +827,101 @@ class TestNoFakeSynthesis:
         resp = synthesize_text(text="hello", flags=flags, backend=WhitespaceBackend())
         assert resp.status == TTS_STATUS_FAILED
         assert resp.audio_path is None
+
+
+# =============================================================================
+# Section 11: speech-only normalization at the canonical TTS entry point
+# =============================================================================
+
+
+class TestSpeechNormalizationAtEntryPoint:
+    """The canonical TTS path hands the adapter speech-normalized text.
+
+    Canonical display / storage text lives upstream of this function;
+    these tests pin that the request text the backend sees is the
+    speech-only copy, while the caller's own string reference is
+    never mutated.
+    """
+
+    def test_request_text_is_normalized(self, tmp_path) -> None:
+        audio_file = tmp_path / "output.wav"
+        audio_file.write_bytes(b"fake-audio")
+        stub = _CapturingBackend(str(audio_file))
+        flags = _make_flags(tts_backend=None)
+
+        source = "## Run summary\n- first\n- second\nRun `make test` now."
+        resp = synthesize_text(text=source, flags=flags, backend=stub)
+        assert resp.status == TTS_STATUS_SUCCEEDED
+        assert stub.last_request is not None
+        req_text = stub.last_request.text
+        # Formatting syntax is gone from what the backend sees.
+        assert "##" not in req_text
+        assert "`" not in req_text
+        assert "- first" not in req_text
+        # Content words survive.
+        assert "Run summary" in req_text
+        assert "first" in req_text
+        assert "second" in req_text
+        assert "make test" in req_text
+
+    def test_caller_text_is_not_mutated(self, tmp_path) -> None:
+        """The caller's canonical text reference is unchanged after TTS."""
+        audio_file = tmp_path / "output.wav"
+        audio_file.write_bytes(b"fake-audio")
+        stub = _CapturingBackend(str(audio_file))
+        flags = _make_flags(tts_backend=None)
+
+        source = "## Heading\n- bullet with **bold**"
+        before = source
+        synthesize_text(text=source, flags=flags, backend=stub)
+        # Python strings are immutable, but we pin the boundary: the
+        # caller's local reference still equals the original -- the
+        # normalization never reassigned it, nor did the helper reach
+        # back and rewrite it.
+        assert source == before
+
+    def test_plain_text_passes_through_unchanged(self, tmp_path) -> None:
+        """Plain text with no formatting flows through byte-identical."""
+        audio_file = tmp_path / "output.wav"
+        audio_file.write_bytes(b"fake-audio")
+        stub = _CapturingBackend(str(audio_file))
+        flags = _make_flags(tts_backend=None)
+
+        source = "Hello world, this is a plain reply."
+        synthesize_text(text=source, flags=flags, backend=stub)
+        assert stub.last_request is not None
+        assert stub.last_request.text == source
+
+    def test_tts_failure_does_not_affect_caller_text(self, tmp_path) -> None:
+        """TTS crash is fail-soft and leaves canonical text authoritative.
+
+        The canonical text lives in the caller's scope; this test
+        confirms that a synthesis failure path does not raise out of
+        ``synthesize_text`` and does not touch the caller's string.
+        """
+        flags = _make_flags(tts_backend=None)
+
+        class CrashBackend:
+            @property
+            def backend_name(self) -> str:
+                return "crash"
+
+            def supports_voice(self, voice_id: str) -> bool:
+                return True
+
+            def synthesize(self, request):
+                raise RuntimeError("boom")
+
+        source = "## Heading\nbody text"
+        before = source
+        resp = synthesize_text(text=source, flags=flags, backend=CrashBackend())
+        assert resp.status == TTS_STATUS_FAILED
+        assert resp.audio_path is None
+        # Caller's canonical text remains authoritative / unchanged.
+        assert source == before
+
+    def test_normalized_empty_still_raises_value_error(self) -> None:
+        """Empty-after-strip input still raises -- honour the contract."""
+        flags = _make_flags(tts_backend="piper_local")
+        with pytest.raises(ValueError, match="non-empty"):
+            synthesize_text(text="   \n\t  ", flags=flags)
