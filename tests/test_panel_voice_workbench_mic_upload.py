@@ -75,6 +75,16 @@ def _panel_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("VOXERA_ENABLE_VOICE_OUTPUT", "1")
     monkeypatch.setenv("VOXERA_VOICE_STT_BACKEND", "whisper_local")
     monkeypatch.setenv("VOXERA_VOICE_TTS_BACKEND", "piper_local")
+    # Isolate the mic-upload route's tempdir per test so the leak-check in
+    # ``_iter_tmp_mic_files`` can never be fooled by stale files from a
+    # previous run, a parallel pytest-xdist worker, or by any other
+    # process writing to ``/tmp``.  ``tempfile.mkstemp`` (called by the
+    # route) resolves against ``tempfile.tempdir`` when it is set, so
+    # the route and the scanner end up agreeing on the same isolated
+    # directory.
+    isolated_tmp = tmp_path / "mic-tmpdir"
+    isolated_tmp.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tempfile, "tempdir", str(isolated_tmp))
     return queue_dir
 
 
@@ -125,11 +135,13 @@ def _iter_tmp_mic_files() -> Iterator[Path]:
     """Yield any mic-upload temp files that may have been left on disk.
 
     Used to assert that the route cleans up after itself even on the
-    error paths.  The prefix is the canonical one defined by the route.
-    The root is resolved through :func:`tempfile.gettempdir` — the same
-    function ``tempfile.mkstemp`` resolves against — so this stays
-    correct on macOS / CI setups that override ``TMPDIR`` / ``TMP`` /
-    ``TEMP`` instead of using ``/tmp``.
+    error paths.  The ``_panel_env`` fixture points
+    ``tempfile.tempdir`` at a per-test isolated directory and
+    ``tempfile.mkstemp`` (called by the route) resolves against that,
+    so this scanner sees only what the current test created — never a
+    stale file from a previous run or a file from a parallel
+    pytest-xdist worker.  The prefix is the canonical one defined by
+    the route.
     """
     yield from Path(tempfile.gettempdir()).glob(f"{routes_voice._MIC_UPLOAD_PREFIX}*")
 
