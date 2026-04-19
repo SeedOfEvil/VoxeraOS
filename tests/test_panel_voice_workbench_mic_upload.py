@@ -290,6 +290,65 @@ class TestMicUploadFailClosed:
         assert res.status_code == 403
         assert list(_iter_tmp_mic_files()) == []
 
+    def test_temp_file_cleaned_up_when_stt_raises(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression guard: the mic route must unlink the temp file even
+        when the STT backend itself raises a surprise exception — the
+        ``finally`` block is the only thing standing between a crashed
+        STT backend and a disk full of leaked recordings.
+        """
+
+        async def _must_not_call_vera(**_kwargs: Any) -> dict[str, Any]:  # pragma: no cover
+            raise AssertionError("Vera must not be called on STT exception")
+
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _must_not_call_vera)
+
+        def _blow_up(**_kwargs: Any) -> STTResponse:
+            raise RuntimeError("simulated STT backend crash")
+
+        client = TestClient(panel_module.app)
+        csrf = _prime_csrf(client)
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", side_effect=_blow_up):
+            res = _mic_post(
+                client,
+                body=b"\x00" * 32,
+                csrf=csrf,
+                query={"workbench_send_to_vera": "1"},
+            )
+        # Route surfaces the failure truthfully (200 + failure card), not 500.
+        assert res.status_code == 200
+        assert "simulated STT backend crash" in res.text
+        # And the temp file is gone — privacy invariant.
+        assert list(_iter_tmp_mic_files()) == []
+
+    def test_informational_mic_run_does_not_call_vera(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When the operator records from the mic but leaves "Send to Vera"
+        off, STT still runs (they can see what was heard) but the Vera
+        lane stays dark.  The mic route must obey the same opt-in gate as
+        the file-path lane.
+        """
+        called = {"vera": False}
+
+        async def _must_not_call_vera(**_kwargs: Any) -> dict[str, Any]:  # pragma: no cover
+            called["vera"] = True
+            return {"answer": "should not happen", "status": "ok:test"}
+
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _must_not_call_vera)
+        stt = _make_stt_response(transcript="quiet informational run")
+        client = TestClient(panel_module.app)
+        csrf = _prime_csrf(client)
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            res = _mic_post(client, body=b"\x00" * 32, csrf=csrf)  # no send_to_vera
+        assert res.status_code == 200
+        assert "quiet informational run" in res.text
+        assert called["vera"] is False
+        # UI truthfully explains why Vera was not called.
+        assert "Send to Vera" in res.text
+        assert list(_iter_tmp_mic_files()) == []
+
     def test_stt_failure_does_not_call_vera(
         self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -464,6 +523,26 @@ class TestMicUIRendering:
         # Noscript fallback so the file-path lane still works.
         assert 'data-testid="voice-workbench-mic-noscript"' in res.text
 
+    def test_mic_capture_block_hidden_by_default(self, _panel_env: Path) -> None:
+        """The mic block must ship hidden so browsers without MediaRecorder never
+        see a dead UI, and browsers with JS disabled fall back to the file-path
+        form.  Only the enhancer script reveals the block after feature-detect.
+        """
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        # Find the block tag and assert it has the ``hidden`` attribute.
+        marker = 'data-testid="voice-workbench-mic-capture"'
+        idx = res.text.find(marker)
+        assert idx != -1
+        # Look at the opening tag slice — conservative window that cannot
+        # accidentally match a later element's attribute.
+        tag_start = res.text.rfind("<", 0, idx)
+        tag_end = res.text.find(">", idx)
+        assert tag_start != -1 and tag_end != -1
+        tag = res.text[tag_start : tag_end + 1]
+        assert " hidden" in tag or tag.endswith("hidden>") or tag.rstrip(">").endswith(" hidden")
+
     def test_mic_capture_script_asset_served(self, _panel_env: Path) -> None:
         client = TestClient(panel_module.app)
         res = client.get("/static/voice_mic_capture.js", headers=_operator_headers())
@@ -474,3 +553,70 @@ class TestMicUIRendering:
         assert "MediaRecorder" in body
         assert "/voice/workbench/mic-upload" in body
         assert "getUserMedia" in body
+
+    def test_mic_script_never_auto_starts_capture(self, _panel_env: Path) -> None:
+        """Privacy red-line: the enhancer must only request the mic inside the
+        explicit Start-click handler.  A simple structural assertion catches
+        the regression where ``getUserMedia`` migrates to module top-level or
+        runs on load / visibilitychange / any non-click signal.
+        """
+        client = TestClient(panel_module.app)
+        res = client.get("/static/voice_mic_capture.js", headers=_operator_headers())
+        assert res.status_code == 200
+        body = res.text
+        # The only actual *call* to getUserMedia(...) must live inside the
+        # Start-click handler.  Other mentions (the comment header, the
+        # feature-detect ``typeof`` check, the unsupported-browser error
+        # string) are fine; what is never OK is a second invocation site.
+        assert body.count(".getUserMedia(") == 1
+        start_handler_idx = body.find('startBtn.addEventListener("click"')
+        assert start_handler_idx != -1
+        mic_call_idx = body.find(".getUserMedia(")
+        assert mic_call_idx > start_handler_idx, (
+            "getUserMedia must be called only from the Start-click handler — "
+            "never on load, visibility, or any auto-start signal."
+        )
+        # Explicit red-line: no streaming, no always-on listening, no
+        # auto-start signals of any kind.  Checks the *code* the script
+        # runs, not its comment header — the header is allowed (and in
+        # fact required) to say "no autoplay", "no always-on listening".
+        for forbidden in (
+            "setInterval(",
+            "requestAnimationFrame(",
+            "new WebSocket(",
+            "new EventSource(",
+            'addEventListener("visibilitychange"',
+            'addEventListener("DOMContentLoaded"',
+            "window.onload",
+            'autoplay"',
+        ):
+            assert forbidden not in body, f"mic enhancer must not use {forbidden}"
+
+    def test_mic_framing_blurb_does_not_over_promise_locality(
+        self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The result-page framing for a mic-origin run must not claim the
+        audio stays on this machine.  The STT backend can be local or remote
+        (whisper-local, a cloud whisper endpoint, etc.); any phrasing that
+        implies otherwise is a privacy overclaim.
+        """
+        monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt_response(transcript="hello")
+        client = TestClient(panel_module.app)
+        csrf = _prime_csrf(client)
+        with patch("voxera.panel.routes_voice.transcribe_audio_file", return_value=stt):
+            res = _mic_post(
+                client,
+                body=b"\x00" * 32,
+                csrf=csrf,
+                query={"workbench_send_to_vera": "1"},
+            )
+        assert res.status_code == 200
+        # The blurb explicitly frames the pipeline as the same as the
+        # file-path lane — no "local-only" claim, no "stays on this
+        # machine" claim.
+        lowered = res.text.lower()
+        assert "same voice pipeline" in lowered
+        assert "local voice pipeline" not in lowered
+        assert "stays on this machine" not in lowered
+        assert "never leaves" not in lowered

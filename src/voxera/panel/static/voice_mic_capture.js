@@ -73,6 +73,16 @@
         });
         recorder.addEventListener("stop", handleRecorderStop);
         recorder.addEventListener("error", function (ev) {
+          // Defensive: the spec says the recorder transitions to
+          // inactive on error and a "stop" event should follow, but
+          // across browsers this is not guaranteed. Release the mic,
+          // reset the UI, and surface a truthful error so we can never
+          // leave the operator in a hidden "still recording" state.
+          recording = false;
+          stopStream();
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          setState("Idle");
           setError(
             "Recorder error: " +
               (ev && ev.error && ev.error.name ? ev.error.name : "unknown")
