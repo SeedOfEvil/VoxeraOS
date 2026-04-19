@@ -925,3 +925,18 @@ class TestSpeechNormalizationAtEntryPoint:
         flags = _make_flags(tts_backend="piper_local")
         with pytest.raises(ValueError, match="non-empty"):
             synthesize_text(text="   \n\t  ", flags=flags)
+
+    def test_formatting_only_input_raises_value_error(self) -> None:
+        """Bare formatting ("###", "---") normalizes to empty and fails fast.
+
+        The contract change this pins: the synthesizer is never
+        asked to read "hash hash hash" or "dash dash dash" aloud.
+        ``build_tts_request`` raises ValueError for the empty
+        normalized text; every canonical caller (vera_web,
+        routes_voice) already catches this fail-soft so the reply
+        stays text-authoritative.
+        """
+        flags = _make_flags(tts_backend="piper_local")
+        for formatting_only in ("###", "---", "***", "# #", "--- ***"):
+            with pytest.raises(ValueError, match="non-empty"):
+                synthesize_text(text=formatting_only, flags=flags)

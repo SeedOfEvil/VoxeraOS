@@ -241,17 +241,30 @@ class TestDegenerateInputs:
     def test_whitespace_only_returns_empty(self) -> None:
         assert normalize_text_for_tts("   \n  \t") == ""
 
-    def test_formatting_only_returns_truthful_fallback(self) -> None:
-        # If the entire input was formatting characters that got
-        # stripped, we must return *something* non-empty so the
-        # downstream build_tts_request non-empty check does not then
-        # fail.  The fallback is the original text stripped.
-        result = normalize_text_for_tts("###")
-        assert result != ""
-        # Either "###" (if nothing else matched) or an empty-after-strip
-        # fallback is acceptable.  The key property is: the caller
-        # still has something to synthesize or a clean empty signal.
-        assert result.strip() != "" or result == ""
+    def test_bare_hash_run_returns_empty(self) -> None:
+        # ``"###"`` alone (no trailing space) slips past the heading
+        # regex.  The contract is: inputs that are entirely
+        # formatting characters produce an empty speech copy so the
+        # synthesizer is never asked to say "hash hash hash".  The
+        # downstream build_tts_request then raises ValueError for
+        # empty text, which every canonical caller already catches
+        # fail-soft -- text stays authoritative, no audio is played.
+        assert normalize_text_for_tts("###") == ""
+
+    def test_bare_dash_run_returns_empty(self) -> None:
+        # Same contract for a bare horizontal-rule line.
+        assert normalize_text_for_tts("---") == ""
+
+    def test_bare_star_and_underscore_runs_return_empty(self) -> None:
+        assert normalize_text_for_tts("***") == ""
+        assert normalize_text_for_tts("___") == ""
+        assert normalize_text_for_tts("**") == ""
+
+    def test_mixed_bare_formatting_returns_empty(self) -> None:
+        # A line made entirely of formatting chars (mixed families)
+        # still collapses -- the speech copy has nothing to say.
+        assert normalize_text_for_tts("# #") == ""
+        assert normalize_text_for_tts("--- ***") == ""
 
 
 # ---------------------------------------------------------------------------
@@ -387,4 +400,57 @@ class TestSemanticDriftGuards:
 
     def test_spaced_italic_delimiters_left_alone(self) -> None:
         source = "Put * here * exactly as written."
+        assert normalize_text_for_tts(source) == source
+
+
+# ---------------------------------------------------------------------------
+# 11. Nested blockquote handling.
+#
+# A single same-line ``> > nested`` must have both markers stripped
+# so the synthesizer never reads "greater than" aloud.  Multi-line
+# nested quotes still strip one level per line, which is the
+# expected behavior for a conservative wrapper-stripping pass.
+# ---------------------------------------------------------------------------
+
+
+class TestNestedBlockquote:
+    def test_single_line_nested_blockquote_fully_stripped(self) -> None:
+        result = normalize_text_for_tts("> > nested content")
+        assert ">" not in result
+        assert "nested content" in result
+
+    def test_single_line_triple_nested_blockquote_fully_stripped(self) -> None:
+        result = normalize_text_for_tts("> > > deeply nested")
+        assert ">" not in result
+        assert "deeply nested" in result
+
+    def test_no_space_between_nested_markers_handled(self) -> None:
+        # ``>>`` with no internal space is also a valid nested form;
+        # ``>+`` in the regex handles the run as a single match.
+        result = normalize_text_for_tts(">>still nested")
+        assert ">" not in result
+        assert "still nested" in result
+
+
+# ---------------------------------------------------------------------------
+# 12. Triple-star emphasis (nested bold+italic).
+#
+# ``***text***`` works by construction: the bold pass strips the
+# outer ``**...**``, leaving ``*text*`` which the italic pass then
+# strips.  These tests pin that behavior so a future regex change
+# does not silently break it.
+# ---------------------------------------------------------------------------
+
+
+class TestTripleStarEmphasis:
+    def test_triple_star_standalone(self) -> None:
+        assert normalize_text_for_tts("***bold italic***") == "bold italic"
+
+    def test_triple_star_inline(self) -> None:
+        result = normalize_text_for_tts("Text ***bold italic*** here.")
+        assert result == "Text bold italic here."
+
+    def test_orphan_triple_star_preserved(self) -> None:
+        # No matching closer -> no valid span -> stars left alone.
+        source = "Orphan *** alone on a line inside prose."
         assert normalize_text_for_tts(source) == source

@@ -22,10 +22,13 @@ Non-negotiables enforced by this module:
 * The returned string is the TTS-only speech copy; callers must
   continue to store / render / log the canonical assistant text
   elsewhere.
-* If normalization yields an empty string (e.g. input was purely
-  formatting), the original cleaned text is returned so the TTS
-  request still has content -- speech quality degrades gracefully
-  rather than the reply being silently dropped.
+* If the input was entirely formatting characters (e.g. ``"###"`` or
+  ``"---"`` on their own), the helper returns an empty string rather
+  than the raw punctuation.  The downstream ``build_tts_request``
+  then raises ``ValueError`` for empty text, which every canonical
+  caller already catches fail-soft -- the reply stays text-
+  authoritative and the synthesizer never gets asked to speak
+  "hash hash hash" or "dash dash dash" literally.
 
 Scope (what *is* normalized):
 
@@ -38,7 +41,10 @@ Scope (what *is* normalized):
 * Unordered-list bullets (``-``, ``*``, ``+``) at line start.
 * Ordered-list prefixes (``1.``, ``2)`` ...) at line start.
 * Horizontal rules (``---``, ``***``, ``___``) collapsed out.
-* Blockquote markers (``>``) at line start.
+* Blockquote markers (``>``) at line start, including nested
+  ``> > quote`` on the same line.
+* Bare runs of formatting characters on their own line
+  (``###``, ``---``, ``**`` ...) collapsed to silence.
 * Runs of blank lines collapsed to a single sentence break.
 
 Out of scope (what is *not* changed):
@@ -46,6 +52,11 @@ Out of scope (what is *not* changed):
 * Sentence wording, order, or semantics.
 * URLs, numbers, technical tokens inside normal prose.
 * Punctuation beyond formatting-only separators.
+* Unmatched asterisk runs (``"Orphan *** alone"``) are left as-is
+  because there is no valid bold/italic span to unwrap; the helper
+  never invents structure.  Fully-nested ``***bold italic***``
+  *does* normalize cleanly by construction (bold strips first,
+  italic then strips the residual single wrapper).
 """
 
 from __future__ import annotations
@@ -83,8 +94,10 @@ _BULLET_RE = re.compile(r"^([ \t]*)[-*+][ \t]+", re.MULTILINE)
 # We intentionally keep the leading indentation to preserve cadence.
 _ORDERED_RE = re.compile(r"^([ \t]*)\d+[.)][ \t]+", re.MULTILINE)
 
-# Blockquote marker: one or more '>' at line start.
-_BLOCKQUOTE_RE = re.compile(r"^[ \t]*>+[ \t]?", re.MULTILINE)
+# Blockquote marker: one or more '>' at line start, including nested
+# same-line quotes like ``> > nested`` which we want to strip in a
+# single pass so the inner '>' never reaches the synthesizer.
+_BLOCKQUOTE_RE = re.compile(r"^[ \t]*(?:>+[ \t]*)+", re.MULTILINE)
 
 # Fenced code block markers (``` or ~~~) on their own line.
 _FENCE_RE = re.compile(r"^[ \t]{0,3}(?:`{3,}|~{3,})[^\n]*$", re.MULTILINE)
@@ -112,6 +125,21 @@ _MULTI_BLANK_RE = re.compile(r"\n{3,}")
 
 # Trailing whitespace per line (cosmetic, but keeps output tidy).
 _TRAILING_WS_RE = re.compile(r"[ \t]+$", re.MULTILINE)
+
+# A line consisting entirely of bare formatting characters, possibly
+# separated by whitespace.  Matches inputs like ``"###"``, ``"---"``,
+# ``"# # #"``, and ``"--- ***"`` that slip past the heading/HR
+# patterns because no trailing space follows them or because they
+# mix marker families on one line.  Without this scrub the fallback
+# path would hand those strings straight to the synthesizer, which
+# would dutifully read "hash hash hash" or "dash dash dash" literally.
+# We prefer silence (empty text raises ``ValueError`` downstream,
+# which every canonical TTS caller already handles fail-soft) over
+# the synthesizer voicing bare punctuation.
+_BARE_FORMAT_LINE_RE = re.compile(
+    r"^[ \t]*(?:[#\-*_>`~]+[ \t]*)+$",
+    re.MULTILINE,
+)
 
 
 def _strip_emphasis(text: str) -> str:
@@ -148,6 +176,11 @@ def _strip_block_markers(text: str) -> str:
     return text
 
 
+def _strip_bare_format_lines(text: str) -> str:
+    """Remove lines whose entire content is bare formatting chars."""
+    return _BARE_FORMAT_LINE_RE.sub("", text)
+
+
 def _tidy_whitespace(text: str) -> str:
     """Collapse excessive blank runs and trim trailing whitespace."""
     text = _TRAILING_WS_RE.sub("", text)
@@ -167,9 +200,12 @@ def normalize_text_for_tts(text: str) -> str:
     * ``None`` or empty input -> empty string.
     * Input without any markdown-ish syntax is returned unchanged
       (modulo trimming of surrounding whitespace).
-    * If stripping formatting would yield an empty string, the
-      original ``text.strip()`` is returned so the TTS pipeline still
-      has non-empty content to speak.
+    * Inputs that are *entirely* formatting characters (e.g.
+      ``"###"``, ``"---"``, ``"**"``) return an empty string.  The
+      canonical TTS path turns empty text into a ``ValueError`` at
+      ``build_tts_request`` which every caller already catches fail-
+      soft, so the reply stays text-authoritative and the
+      synthesizer is never asked to speak bare punctuation.
 
     The returned string is **only** suitable for TTS input -- callers
     must not substitute it for canonical assistant text displayed in
@@ -178,19 +214,20 @@ def normalize_text_for_tts(text: str) -> str:
     if not text:
         return ""
 
-    original = str(text)
-    working = original
+    working = str(text)
 
     working = _strip_block_markers(working)
     working = _strip_inline_code(working)
     working = _strip_emphasis(working)
+    # Second pass: inputs like ``"###"`` (no content after the
+    # hashes) slip past ``_HEADING_RE`` which requires a trailing
+    # space.  Strip whole lines that are bare formatting runs now so
+    # the fallback below chooses silence over literal punctuation.
+    working = _strip_bare_format_lines(working)
     working = _tidy_whitespace(working)
 
-    if not working:
-        # The input was entirely formatting control characters.
-        # Returning the stripped original keeps TTS non-empty and
-        # truthful rather than silently dropping the reply; the
-        # caller still gets something to synthesize.
-        return original.strip()
-
+    # ``working`` is empty when the input contained nothing but
+    # formatting characters.  Return empty so the downstream request
+    # validator refuses the synthesis cleanly; speaking raw
+    # punctuation would be louder and less truthful than silence.
     return working
