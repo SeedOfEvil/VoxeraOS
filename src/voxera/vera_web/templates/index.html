@@ -200,6 +200,21 @@
         placeholder="Message Vera&hellip;"
         aria-label="Message input"
       ></textarea>
+      <button
+        type="button"
+        class="btn-mic"
+        id="vera-mic-btn"
+        aria-label="Start dictation"
+        aria-pressed="false"
+        hidden
+        data-testid="vera-mic-btn"
+      >
+        <svg class="mic-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10 2a3 3 0 00-3 3v5a3 3 0 006 0V5a3 3 0 00-3-3z"/>
+          <path d="M5 9a1 1 0 012 0 3 3 0 006 0 1 1 0 112 0 5 5 0 01-4 4.9V16a1 1 0 11-2 0v-2.1A5 5 0 015 9z"/>
+        </svg>
+        <div class="mic-pulse" aria-hidden="true"></div>
+      </button>
       <button class="btn-send" type="submit" id="send-btn" aria-label="Send message">
         <div class="spinner"></div>
         <svg class="send-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -207,6 +222,30 @@
         </svg>
       </button>
     </form>
+    <div
+      class="voice-bar"
+      id="vera-voice-bar"
+      data-voice-foundation-enabled="{{ 'true' if _voice_runtime.get('voice_foundation_enabled') else 'false' }}"
+      data-voice-input-enabled="{{ 'true' if _voice_runtime.get('voice_input_enabled') else 'false' }}"
+      data-voice-output-enabled="{{ 'true' if _voice_runtime.get('voice_output_enabled') else 'false' }}"
+      data-voice-output-reason="{{ _voice_runtime.get('voice_output_reason', 'voice_runtime_unavailable') }}"
+      hidden
+      data-testid="vera-voice-bar"
+    >
+      <span class="voice-state" id="vera-voice-state" role="status" aria-live="polite">Idle</span>
+      <label class="voice-toggle" id="vera-voice-toggle-label">
+        <input type="checkbox" id="vera-voice-speak" data-testid="vera-voice-speak" />
+        <span>Speak replies</span>
+      </label>
+      <audio
+        id="vera-voice-audio"
+        preload="none"
+        controls
+        hidden
+        data-testid="vera-voice-audio"
+      ></audio>
+      <div class="voice-error" id="vera-voice-error" role="alert" hidden></div>
+    </div>
 
   </main>
 
@@ -506,5 +545,6 @@
     window.setInterval(pollForTurnUpdates, 2000);
   })();
   </script>
+  <script src="/static/vera_dictation.js" defer></script>
 </body>
 </html>

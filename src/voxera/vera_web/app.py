@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import contextlib
+import os
 import re
+import secrets
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -21,6 +26,7 @@ from ..core.writing_draft_intent import (
     is_writing_draft_request,
     is_writing_refinement_request,
 )
+from ..panel.voice_session_pipeline import run_voice_session_turn
 from ..paths import queue_root as default_queue_root
 from ..vera.automation_preview import (
     is_automation_preview,
@@ -1512,6 +1518,300 @@ async def clear_chat(request: Request):
         status="conversation",
         voice_flags=load_voice_foundation_flags(),
     )
+
+
+# ── Vera dictation (canonical /chat/voice) ─────────────────────────
+# Browser-initiated, operator-only microphone capture that funnels
+# through the exact same STT -> (lifecycle | Vera + preview) ->
+# optional TTS pipeline as the panel Voice Workbench. The browser
+# posts a raw audio blob; the server transcribes, runs the shared
+# pipeline, and returns a small JSON payload the dictation enhancer
+# uses to refresh the thread inline (no full-page reload).
+#
+# Trust model:
+# - Turns land on the canonical Vera session (``voice_transcript``
+#   input origin) — identical to what typed chat writes.
+# - Preview/approve/submit still flow through canonical preview and
+#   queue seams. This route never bypasses them.
+# - Audio bodies are capped; non-audio / empty / oversized bodies
+#   fail closed without creating a temp file.
+# - TTS artifacts are served via a short-lived tokenized endpoint
+#   (``/vera/voice/audio/<token>``) so the browser can play the audio
+#   without learning the real temp-file path.
+
+_VERA_DICTATION_MAX_BYTES = 25 * 1024 * 1024
+_VERA_DICTATION_TEMP_PREFIX = "voxera_vera_mic_"
+_VERA_DICTATION_SUFFIX_BY_CONTENT_TYPE: dict[str, str] = {
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/wave": ".wav",
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".mp4",
+    "audio/aac": ".aac",
+    "audio/flac": ".flac",
+}
+
+# Token -> (absolute_audio_path, expires_at_ms). A short-lived registry
+# that lets the browser fetch TTS output without the path ever being
+# exposed. Tokens are single-use-friendly but not strictly single-use:
+# the browser may re-fetch for <audio> buffering. Expiry keeps the
+# registry bounded; leaked tokens expire within ``_TTS_TOKEN_TTL_MS``.
+# The registry is also capped at ``_MAX_TTS_REGISTRY_ENTRIES`` so a
+# flood of voice-reply syntheses cannot grow the registry (or keep
+# backing audio files on disk) without bound.
+_TTS_TOKEN_TTL_MS = 10 * 60 * 1000
+_MAX_TTS_REGISTRY_ENTRIES = 32
+_TTS_TOKEN_ALPHABET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_TTS_AUDIO_REGISTRY: dict[str, tuple[str, int]] = {}
+
+
+def _audio_suffix_for(content_type: str | None) -> str:
+    if not content_type:
+        return ".webm"
+    base = content_type.split(";", 1)[0].strip().lower()
+    return _VERA_DICTATION_SUFFIX_BY_CONTENT_TYPE.get(base, ".webm")
+
+
+def _is_audio_content_type(content_type: str | None) -> bool:
+    if not content_type:
+        return False
+    base = content_type.split(";", 1)[0].strip().lower()
+    return base.startswith("audio/")
+
+
+def _remove_tts_audio_file(path: str) -> None:
+    """Best-effort unlink of a TTS artifact referenced by the registry.
+
+    The registry only owns the reference once ``_register_tts_audio`` is
+    called; pruning removes both the registry entry AND the on-disk
+    artifact so successful-but-unfetched TTS output cannot accumulate
+    across many dictation turns.  Unlink failures are swallowed because
+    the artifact lives under a temp dir the operating system eventually
+    recycles.
+    """
+    if not path:
+        return
+    with contextlib.suppress(OSError):
+        os.unlink(path)
+
+
+def _prune_expired_tts_tokens(now_ms: int) -> None:
+    expired = [tok for tok, (_path, expiry) in _TTS_AUDIO_REGISTRY.items() if expiry <= now_ms]
+    for tok in expired:
+        entry = _TTS_AUDIO_REGISTRY.pop(tok, None)
+        if entry is not None:
+            _remove_tts_audio_file(entry[0])
+
+
+def _register_tts_audio(audio_path: str) -> str:
+    now_ms = int(time.time() * 1000)
+    _prune_expired_tts_tokens(now_ms)
+    # Cap the registry: if we're still at or over the hard limit after
+    # pruning expired entries, evict the oldest (lowest expiry) ones so
+    # a chatty session cannot grow the registry without bound. The on-
+    # disk artifact for the evicted entry is unlinked as well so the
+    # registry's size cap doubles as a disk-cleanup cap.
+    while len(_TTS_AUDIO_REGISTRY) >= _MAX_TTS_REGISTRY_ENTRIES:
+        oldest_token = min(
+            _TTS_AUDIO_REGISTRY,
+            key=lambda tok: _TTS_AUDIO_REGISTRY[tok][1],
+        )
+        entry = _TTS_AUDIO_REGISTRY.pop(oldest_token, None)
+        if entry is not None:
+            _remove_tts_audio_file(entry[0])
+    token = secrets.token_urlsafe(24)
+    _TTS_AUDIO_REGISTRY[token] = (audio_path, now_ms + _TTS_TOKEN_TTL_MS)
+    return token
+
+
+def _resolve_tts_token(token: str) -> str | None:
+    entry = _TTS_AUDIO_REGISTRY.get(token)
+    if entry is None:
+        return None
+    path, expiry = entry
+    if expiry <= int(time.time() * 1000):
+        _TTS_AUDIO_REGISTRY.pop(token, None)
+        _remove_tts_audio_file(path)
+        return None
+    return path
+
+
+@app.post("/chat/voice")
+async def chat_voice(request: Request):
+    """Dictation endpoint — bounded browser-mic capture for canonical Vera.
+
+    Operator-initiated capture only (no always-on listening; the
+    browser posts a discrete utterance). Routes the resulting
+    transcript through the shared voice-session pipeline so preview,
+    Vera, and lifecycle behaviors are identical to the panel Voice
+    Workbench.  Returns a small JSON payload so the dictation enhancer
+    can update the thread inline without a full-page reload.
+    """
+    content_type_header = request.headers.get("content-type")
+    if not _is_audio_content_type(content_type_header):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Dictation upload requires an audio/* Content-Type.",
+        )
+
+    # Early Content-Length gate — refuses giant bodies BEFORE they are
+    # materialized by ``await request.body()``.  The gate is best-
+    # effort: clients can omit or lie about Content-Length, so the
+    # post-body length check below remains the authoritative cap.
+    content_length_raw = request.headers.get("content-length")
+    if content_length_raw:
+        try:
+            advertised_length = int(content_length_raw)
+        except ValueError:
+            advertised_length = -1
+        if advertised_length > _VERA_DICTATION_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"Dictation upload exceeds {_VERA_DICTATION_MAX_BYTES} byte cap.",
+            )
+
+    qp = request.query_params
+    session_id_raw = str(qp.get("session_id") or "").strip()
+    language = str(qp.get("language") or "").strip() or None
+    speak_response_raw = str(qp.get("speak_response") or "").strip().lower()
+    speak_response = speak_response_raw in {"1", "true", "on", "yes"}
+
+    active_session = (
+        session_id_raw or (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+    )
+
+    try:
+        voice_flags = load_voice_foundation_flags()
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "status": "voice_flags_failed",
+                "error": f"{type(exc).__name__}: {exc}",
+                "session_id": active_session,
+            },
+            status_code=500,
+        )
+
+    # Voice-input gate — fail closed BEFORE writing a single byte to
+    # disk when the runtime has voice input disabled.  The dictation
+    # enhancer already hides the mic button in this case; a direct
+    # client that bypasses the UI must get the same fail-closed
+    # result without the audio ever landing on temp storage.
+    if not voice_flags.voice_input_enabled:
+        return JSONResponse(
+            {
+                "ok": False,
+                "status": "voice_input_disabled",
+                "error": "Voice input is disabled by runtime flags.",
+                "session_id": active_session,
+            },
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    raw_body = await request.body()
+    if not raw_body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty dictation upload body.",
+        )
+    if len(raw_body) > _VERA_DICTATION_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Dictation upload exceeds {_VERA_DICTATION_MAX_BYTES} byte cap.",
+        )
+
+    suffix = _audio_suffix_for(content_type_header)
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix=_VERA_DICTATION_TEMP_PREFIX, suffix=suffix)
+    try:
+        try:
+            with os.fdopen(tmp_fd, "wb") as handle:
+                handle.write(raw_body)
+        except Exception:
+            with contextlib.suppress(OSError):
+                os.close(tmp_fd)
+            raise
+        root = _active_queue_root()
+        result = await run_voice_session_turn(
+            audio_path=tmp_path,
+            language=language,
+            session_id=active_session,
+            flags=voice_flags,
+            queue_root=root,
+            send_to_vera=True,
+            speak_response=speak_response,
+        )
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+
+    tts_url: str | None = None
+    if result.tts and result.tts.get("success") and result.tts.get("audio_path"):
+        token = _register_tts_audio(str(result.tts["audio_path"]))
+        tts_url = f"/vera/voice/audio/{token}"
+
+    turns = read_session_turns(root, active_session)
+    # ``ok`` reflects whether the pipeline produced a usable outcome:
+    # STT succeeded AND at least one of lifecycle/Vera/preview drafting
+    # committed a truthful result.  TTS failures never flip ``ok`` off
+    # because text remains authoritative per the trust model.
+    lifecycle_ok = bool(
+        result.lifecycle_handled
+        and result.lifecycle is not None
+        and bool(result.lifecycle.get("ok"))
+    )
+    preview_ok = bool(result.preview)
+    ok = bool(result.stt_ok and (result.vera_ok or lifecycle_ok or preview_ok))
+    payload: dict[str, object] = {
+        "ok": ok,
+        "session_id": active_session,
+        "turns": turns,
+        "turn_count": len(turns),
+        "stt": result.stt,
+        "classification": result.classification,
+        "lifecycle": result.lifecycle,
+        "vera": result.vera,
+        "preview": result.preview,
+        "preview_attempt": result.preview_attempt,
+        "tts": result.tts,
+        "tts_url": tts_url,
+        "show_action_guidance": result.show_action_guidance,
+        "speak_response_requested": speak_response,
+    }
+    response = JSONResponse(payload)
+    response.set_cookie("vera_session_id", active_session, httponly=False, samesite="lax")
+    return response
+
+
+@app.get("/vera/voice/audio/{token}")
+async def vera_voice_audio(token: str) -> FileResponse:
+    """Serve a previously-registered TTS audio artifact.
+
+    The dictation pipeline registers successful TTS outputs under a
+    short-lived random token; the browser fetches the audio through
+    this route so the real temp-file path stays server-side.  An
+    unknown or expired token 404s; anything else is served as
+    ``audio/wav``.
+
+    Kept ``async`` so registry reads and the POST-side writes both
+    run on the event loop, avoiding get→check→pop→unlink interleaves
+    between threadpool and coroutine under concurrent access.
+    """
+    clean = (token or "").strip()
+    if not clean or not _TTS_TOKEN_ALPHABET_RE.match(clean):
+        raise HTTPException(status_code=404, detail="Audio token not found.")
+    path = _resolve_tts_token(clean)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Audio token not found.")
+    if not os.path.isfile(path):
+        # The backing artifact vanished (disk cleanup, operator pruned,
+        # process restart between registration and fetch). Drop the stale
+        # registry entry so it cannot be re-resolved, then fail closed.
+        _TTS_AUDIO_REGISTRY.pop(clean, None)
+        raise HTTPException(status_code=404, detail="Audio artifact missing.")
+    return FileResponse(path, media_type="audio/wav")
 
 
 @app.get("/vera/debug/session.json")
