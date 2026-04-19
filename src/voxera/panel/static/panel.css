@@ -1158,3 +1158,60 @@ a:focus-visible {
   border-left-color: var(--warn);
   background: var(--warn-soft);
 }
+
+/* Browser microphone capture — bounded, operator-initiated recording
+   that feeds the same canonical STT -> Vera pipeline as the file-path
+   form above.  The block is hidden by default via the `hidden`
+   attribute; the enhancer script only reveals it after confirming the
+   browser actually supports MediaRecorder + getUserMedia.  The
+   `voice-mic-capture-active` modifier tints the card red while
+   recording is in progress so the operator has an unmistakable visual
+   signal. */
+.voice-mic-capture {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.voice-mic-capture-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+.voice-mic-capture-title {
+  font-weight: 600;
+}
+.voice-mic-capture-hint {
+  display: block;
+}
+.voice-mic-capture-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.voice-mic-capture-state {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.voice-mic-capture-error {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.875rem;
+}
+.voice-mic-capture-active {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.voice-mic-capture-active .voice-mic-capture-state {
+  color: var(--danger);
+  font-weight: 600;
+}
+.voice-mic-capture-noscript {
+  margin-top: var(--space-3);
+}

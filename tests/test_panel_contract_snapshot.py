@@ -63,6 +63,7 @@ def test_panel_public_route_surface_snapshot():
             ("/voice/status.json", ("GET",)),
             ("/voice/tts/generate", ("POST",)),
             ("/voice/tts/generate.json", ("POST",)),
+            ("/voice/workbench/mic-upload", ("POST",)),
             ("/voice/workbench/run", ("POST",)),
         ]
     )
