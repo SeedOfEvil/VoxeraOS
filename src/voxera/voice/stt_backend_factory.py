@@ -32,7 +32,11 @@ def build_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
     - the configured backend identifier is not recognized
 
     Returns ``WhisperLocalBackend`` when ``voice_stt_backend`` is
-    ``"whisper_local"``.
+    ``"whisper_local"``.  The operator-selected whisper model id
+    (``voice_stt_whisper_model``) is threaded through to the backend
+    so the factory is the only place that maps config → backend
+    construction.  ``None`` preserves the backend's existing default
+    (``base``, or a ``VOXERA_VOICE_STT_WHISPER_MODEL`` env override).
 
     The returned backend is always a valid ``STTBackend`` — callers
     never need to handle ``None``.
@@ -46,7 +50,8 @@ def build_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
         return NullSTTBackend()
 
     if backend_id == STT_BACKEND_WHISPER_LOCAL:
-        return WhisperLocalBackend()
+        model = (flags.voice_stt_whisper_model or "").strip() or None
+        return WhisperLocalBackend(model_size=model)
 
     # Unrecognized backend — return NullSTTBackend with a specific reason
     # so operators can see which identifier was rejected.

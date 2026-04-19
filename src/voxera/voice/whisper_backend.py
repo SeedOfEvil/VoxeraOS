@@ -52,6 +52,37 @@ _DEFAULT_MODEL = "base"
 _DEFAULT_DEVICE = "auto"
 _DEFAULT_COMPUTE_TYPE = "int8"
 
+# -- canonical model identifiers ---------------------------------------------
+#
+# These are the operator-selectable model identifiers for the local
+# faster-whisper STT path.  They are intentionally narrow: this is a
+# model-selection choice inside the existing backend, not a separate
+# engine.  Every identifier here is a canonical faster-whisper name —
+# faster-whisper resolves each to a CTranslate2-compatible model repo
+# internally (e.g. ``distil-large-v3`` -> ``Systran/faster-distil-whisper-large-v3``).
+# We deliberately do NOT expose raw Hugging Face PyTorch repo ids like
+# ``distil-whisper/distil-large-v3`` — those download PyTorch weights
+# that lack the CT2 ``model.bin`` faster-whisper needs, and the load
+# fails at runtime.
+WHISPER_MODEL_BASE = "base"
+WHISPER_MODEL_SMALL = "small"
+WHISPER_MODEL_MEDIUM = "medium"
+WHISPER_MODEL_LARGE_V3 = "large-v3"
+WHISPER_MODEL_DISTIL_LARGE_V3 = "distil-large-v3"
+
+# Bounded allow-list surfaced in operator UIs (panel voice options,
+# setup wizard).  Keeps the panel form a small dropdown rather than a
+# free-text field the operator can typo into.  The factory still
+# accepts any truthy string so env-only deployments can pin a model
+# outside this list, but the panel UX stays curated.
+STT_WHISPER_MODEL_CHOICES: tuple[str, ...] = (
+    WHISPER_MODEL_BASE,
+    WHISPER_MODEL_SMALL,
+    WHISPER_MODEL_MEDIUM,
+    WHISPER_MODEL_LARGE_V3,
+    WHISPER_MODEL_DISTIL_LARGE_V3,
+)
+
 
 def _env_str(name: str, default: str) -> str:
     return str(os.environ.get(name) or "").strip() or default

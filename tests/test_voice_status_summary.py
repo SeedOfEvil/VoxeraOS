@@ -24,6 +24,7 @@ def _flags(
     stt_backend: str | None = None,
     tts_backend: str | None = None,
     tts_piper_model: str | None = None,
+    stt_whisper_model: str | None = None,
 ) -> VoiceFoundationFlags:
     return VoiceFoundationFlags(
         enable_voice_foundation=foundation,
@@ -32,6 +33,7 @@ def _flags(
         voice_stt_backend=stt_backend,
         voice_tts_backend=tts_backend,
         voice_tts_piper_model=tts_piper_model,
+        voice_stt_whisper_model=stt_whisper_model,
     )
 
 
@@ -324,6 +326,42 @@ class TestNextStepHints:
                 assert summary["tts"]["next_step"] is None
         else:
             assert "pip install" in (summary["tts"]["next_step"] or "")
+
+
+# -- Whisper model selection -----------------------------------------------
+
+
+class TestWhisperModelSelection:
+    def test_whisper_model_block_present_for_whisper_backend(self) -> None:
+        summary = build_voice_status_summary(
+            _flags(foundation=True, input=True, stt_backend="whisper_local")
+        )
+        dep = summary["stt_dependency"]
+        assert "whisper_model" in dep
+        wm = dep["whisper_model"]
+        assert wm["selected"] is None
+        assert wm["effective"] == "base"
+
+    def test_whisper_model_reports_selected_value(self) -> None:
+        summary = build_voice_status_summary(
+            _flags(
+                foundation=True,
+                input=True,
+                stt_backend="whisper_local",
+                stt_whisper_model="distil-large-v3",
+            )
+        )
+        wm = summary["stt_dependency"]["whisper_model"]
+        assert wm["selected"] == "distil-large-v3"
+        assert wm["effective"] == "distil-large-v3"
+
+    def test_whisper_model_absent_for_non_whisper_backend(self) -> None:
+        """Only the whisper_local backend exposes the whisper_model sub-dict."""
+        summary = build_voice_status_summary(
+            _flags(foundation=True, input=True, stt_backend="unknown_engine")
+        )
+        dep = summary["stt_dependency"]
+        assert "whisper_model" not in dep
 
 
 # -- Piper model path validation -------------------------------------------

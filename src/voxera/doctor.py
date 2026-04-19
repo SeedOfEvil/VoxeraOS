@@ -447,6 +447,9 @@ def run_quick_doctor(
             f"enabled={stt_block['enabled']} configured={stt_block['configured']} "
             f"backend={stt_block['backend'] or '-'}"
         )
+        whisper_model = stt_dep.get("whisper_model") if isinstance(stt_dep, dict) else None
+        if isinstance(whisper_model, dict) and whisper_model.get("effective"):
+            stt_detail += f" model={whisper_model['effective']}"
         if stt_block.get("reason"):
             stt_detail += f" reason={stt_block['reason']}"
         if stt_dep.get("checked") and stt_dep.get("available") is False:

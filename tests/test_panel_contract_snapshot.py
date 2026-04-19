@@ -57,6 +57,7 @@ def test_panel_public_route_surface_snapshot():
             ("/recovery/download/{bucket}/{name}", ("GET",)),
             ("/redoc", ("GET", "HEAD")),
             ("/static", None),
+            ("/voice/options/save", ("POST",)),
             ("/voice/stt/transcribe", ("POST",)),
             ("/voice/stt/transcribe.json", ("POST",)),
             ("/voice/status", ("GET",)),

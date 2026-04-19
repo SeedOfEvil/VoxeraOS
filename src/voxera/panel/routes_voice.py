@@ -37,7 +37,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from ..config import DEFAULT_VERA_WEB_BASE_URL
+from ..config import DEFAULT_VERA_WEB_BASE_URL, update_runtime_config
 from ..vera import session_store
 from ..vera.session_store import append_session_turn, new_session_id, read_session_turns
 from ..voice.flags import load_voice_foundation_flags
@@ -51,6 +51,7 @@ from ..voice.output import synthesize_text, synthesize_text_async
 from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse, stt_response_as_dict
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response_as_dict
 from ..voice.voice_status_summary import build_voice_status_summary
+from ..voice.whisper_backend import STT_WHISPER_MODEL_CHOICES
 from . import voice_workbench
 from .voice_workbench_classifier import (
     CLASSIFICATION_ACTION_ORIENTED,
@@ -246,9 +247,20 @@ def register_voice_routes(
         session_id = (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
         return session_id, _safe_prior_turn_count(queue_root(), session_id)
 
-    @app.get("/voice/status", response_class=HTMLResponse)
-    def voice_status_page(request: Request) -> HTMLResponse:
-        require_operator_auth_from_request(request)
+    def _render_voice_page(
+        request: Request,
+        *,
+        voice_options_result: dict[str, Any] | None = None,
+    ) -> HTMLResponse:
+        """Render the main ``/voice/status`` surface with optional banners.
+
+        Shared by the GET status page and the voice-options save POST so
+        both lanes render the same template with the same context shape.
+        ``voice_options_result`` carries the outcome of a just-completed
+        save (success banner + persisted values) or a validation error
+        (fail banner + the rejected input) so the operator gets truthful
+        feedback inline.
+        """
         try:
             flags = load_voice_foundation_flags()
             summary = build_voice_status_summary(flags)
@@ -270,11 +282,66 @@ def register_voice_routes(
             workbench_session_id=session_id,
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
+            stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            voice_options_result=voice_options_result,
         )
         response = HTMLResponse(content=html)
         response.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
         _persist_vera_session_cookie(response, session_id)
         return response
+
+    @app.get("/voice/status", response_class=HTMLResponse)
+    def voice_status_page(request: Request) -> HTMLResponse:
+        require_operator_auth_from_request(request)
+        return _render_voice_page(request)
+
+    @app.post("/voice/options/save", response_class=HTMLResponse)
+    async def voice_options_save(request: Request) -> HTMLResponse:
+        """Persist operator-selected voice options into the runtime config.
+
+        Only the STT whisper model is configurable here today.  Empty
+        string (or the sentinel ``default``) clears the runtime config
+        value so the backend falls back to its default selection.  The
+        save lane uses the canonical ``update_runtime_config`` writer
+        so it shares atomic-write semantics with every other operator
+        config update surface.
+        """
+        await require_mutation_guard(request)
+
+        raw_model = (await request_value(request, "stt_whisper_model", "")).strip()
+        voice_options_result: dict[str, Any]
+
+        if not raw_model or raw_model.lower() == "default":
+            persisted: str | None = None
+        elif raw_model in STT_WHISPER_MODEL_CHOICES:
+            persisted = raw_model
+        else:
+            voice_options_result = {
+                "ok": False,
+                "error": (
+                    f"Unrecognized STT whisper model {raw_model!r}. "
+                    "Pick one of the listed options or clear the selection."
+                ),
+                "submitted_model": raw_model,
+            }
+            return _render_voice_page(request, voice_options_result=voice_options_result)
+
+        try:
+            update_runtime_config({"voice_stt_whisper_model": persisted})
+        except Exception as exc:
+            voice_options_result = {
+                "ok": False,
+                "error": f"Failed to save voice options: {type(exc).__name__}: {exc}",
+                "submitted_model": raw_model,
+            }
+            return _render_voice_page(request, voice_options_result=voice_options_result)
+
+        voice_options_result = {
+            "ok": True,
+            "saved_model": persisted,
+            "submitted_model": raw_model,
+        }
+        return _render_voice_page(request, voice_options_result=voice_options_result)
 
     @app.get("/voice/status.json")
     def voice_status_json(request: Request) -> JSONResponse:
@@ -376,6 +443,8 @@ def register_voice_routes(
             workbench_session_id=session_id,
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
+            stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            voice_options_result=None,
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -501,6 +570,8 @@ def register_voice_routes(
             workbench_session_id=session_id,
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
+            stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            voice_options_result=None,
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
@@ -945,6 +1016,8 @@ def register_voice_routes(
             workbench_session_id=session_id,
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
+            stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            voice_options_result=None,
         )
         resp = HTMLResponse(content=html)
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")

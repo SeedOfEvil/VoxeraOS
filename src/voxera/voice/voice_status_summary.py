@@ -24,11 +24,13 @@ from .stt_backend_factory import STT_BACKEND_WHISPER_LOCAL
 from .stt_status import build_stt_status, stt_status_as_dict
 from .tts_backend_factory import TTS_BACKEND_PIPER_LOCAL
 from .tts_status import build_tts_status, tts_status_as_dict
+from .whisper_backend import WHISPER_MODEL_BASE
 
 # -- schema version for the combined summary --------------------------------
-# Bumped to 2 in this release: adds ``next_step`` hints per subsystem and
-# ``piper_model`` metadata to ``tts_dependency``.
-VOICE_STATUS_SUMMARY_SCHEMA_VERSION = 2
+# Bumped to 3 in this release: adds operator-selected ``whisper_model``
+# metadata to ``stt_dependency`` alongside the existing ``next_step``
+# hints and ``piper_model`` metadata.
+VOICE_STATUS_SUMMARY_SCHEMA_VERSION = 3
 
 
 # -- next_step hint constants ------------------------------------------------
@@ -103,23 +105,59 @@ def _check_piper_model(model: str | None) -> dict[str, Any]:
 # -- dependency checks ------------------------------------------------------
 
 
-def _check_stt_dependency(backend: str | None) -> dict[str, Any]:
-    """Check whether the configured STT backend's dependency is available."""
+def _describe_whisper_model(model: str | None) -> dict[str, Any]:
+    """Describe the operator-selected whisper model for status surfaces.
+
+    Returns a small dict that truthfully reports whether the operator
+    pinned a specific whisper model via runtime config / env (``selected``)
+    and the effective model id the backend will use (``effective``).
+    When no explicit selection is made, the default backend model id
+    (:data:`voxera.voice.whisper_backend.WHISPER_MODEL_BASE`) is
+    reported as the effective value and ``selected`` is ``None`` so
+    operators can see at a glance that the default is in play.
+    """
+    value = (model or "").strip() or None
+    return {
+        "selected": value,
+        "effective": value or WHISPER_MODEL_BASE,
+    }
+
+
+def _check_stt_dependency(
+    backend: str | None,
+    *,
+    whisper_model: str | None = None,
+) -> dict[str, Any]:
+    """Check whether the configured STT backend's dependency is available.
+
+    For ``whisper_local`` the result also carries a ``whisper_model``
+    sub-dict describing the operator-selected model id (if any) and
+    the effective model id the backend will load.  This lets operator
+    UIs and doctor output show the chosen model alongside the dependency
+    state without reaching past the flags.
+    """
     if not backend:
         return {"checked": False, "reason": "no_backend_configured"}
 
     backend_lower = backend.strip().lower()
     if backend_lower == STT_BACKEND_WHISPER_LOCAL:
+        whisper_model_info = _describe_whisper_model(whisper_model)
         try:
             import faster_whisper  # noqa: F401
 
-            return {"checked": True, "available": True, "package": "faster-whisper"}
+            return {
+                "checked": True,
+                "available": True,
+                "package": "faster-whisper",
+                "whisper_model": whisper_model_info,
+            }
         except (ImportError, OSError):
             return {
                 "checked": True,
                 "available": False,
                 "package": "faster-whisper",
                 "hint": HINT_INSTALL_WHISPER,
+                "whisper_model": whisper_model_info,
             }
 
     return {"checked": False, "reason": f"unknown_backend:{backend}"}
@@ -226,7 +264,9 @@ def build_voice_status_summary(
     stt = build_stt_status(flags)
     tts = build_tts_status(flags, last_error=last_tts_error)
 
-    stt_dep = _check_stt_dependency(flags.voice_stt_backend)
+    stt_dep = _check_stt_dependency(
+        flags.voice_stt_backend, whisper_model=flags.voice_stt_whisper_model
+    )
     tts_dep = _check_tts_dependency(
         flags.voice_tts_backend, piper_model=flags.voice_tts_piper_model
     )
