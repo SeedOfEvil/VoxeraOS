@@ -264,7 +264,8 @@
     } else if (payload.preview) {
       stateText = "Preview drafted \u2014 review below.";
     } else if (payload.show_action_guidance) {
-      stateText = "Action-oriented request \u2014 continue in canonical Vera.";
+      stateText =
+        "Action-oriented request \u2014 review the response and draft a preview if needed.";
     } else if (payload.vera && payload.vera.success) {
       stateText = "Idle";
     }

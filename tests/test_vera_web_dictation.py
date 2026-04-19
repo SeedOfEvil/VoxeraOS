@@ -450,3 +450,168 @@ def test_vera_voice_audio_unknown_token_returns_404(
     client = TestClient(vera_app_module.app)
     res = client.get("/vera/voice/audio/doesnotexist")
     assert res.status_code == 404
+
+
+def _disabled_voice_flags() -> VoiceFoundationFlags:
+    return VoiceFoundationFlags(
+        enable_voice_foundation=True,
+        enable_voice_input=False,
+        enable_voice_output=False,
+        voice_stt_backend="whisper_local",
+        voice_tts_backend="piper_local",
+    )
+
+
+def test_chat_voice_fails_closed_when_voice_input_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Voice-input-disabled runtime MUST fail-closed BEFORE audio hits disk.
+
+    The UI hides the mic button in this case; a direct client that
+    skips the UI must still be refused without the audio ever being
+    written to temp storage or fed to STT.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    monkeypatch.setattr(vera_app_module, "load_voice_foundation_flags", _disabled_voice_flags)
+    stt_called = {"count": 0}
+    mkstemp_called = {"count": 0}
+
+    async def _must_not_call_stt(**_kwargs: Any) -> STTResponse:  # pragma: no cover
+        stt_called["count"] += 1
+        return _make_stt()
+
+    original_mkstemp = vera_app_module.tempfile.mkstemp
+
+    def _counting_mkstemp(*args: Any, **kwargs: Any) -> Any:
+        mkstemp_called["count"] += 1
+        return original_mkstemp(*args, **kwargs)
+
+    monkeypatch.setattr(vera_app_module.tempfile, "mkstemp", _counting_mkstemp)
+    with patch(
+        "voxera.panel.voice_session_pipeline.transcribe_audio_file_async",
+        side_effect=_must_not_call_stt,
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(client, body=b"\x00" * 32, params={"session_id": "vera-disabled"})
+    assert res.status_code == 403
+    payload = res.json()
+    assert payload["ok"] is False
+    assert payload["status"] == "voice_input_disabled"
+    assert stt_called["count"] == 0, "STT must NOT run when voice_input is disabled"
+    assert mkstemp_called["count"] == 0, "No temp file must be created when voice_input is disabled"
+
+
+def test_chat_voice_oversized_rejects_before_tempfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Oversized uploads 413 BEFORE a temp file is created.
+
+    Protects against a giant body being materialized to disk just to
+    be rejected. Combined with the early Content-Length gate on the
+    route, this is the operator-facing guarantee that the cap is not
+    paid in temp storage.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "_VERA_DICTATION_MAX_BYTES", 16)
+    mkstemp_called = {"count": 0}
+    original_mkstemp = vera_app_module.tempfile.mkstemp
+
+    def _counting_mkstemp(*args: Any, **kwargs: Any) -> Any:
+        mkstemp_called["count"] += 1
+        return original_mkstemp(*args, **kwargs)
+
+    monkeypatch.setattr(vera_app_module.tempfile, "mkstemp", _counting_mkstemp)
+    client = TestClient(vera_app_module.app)
+    res = _post_voice(client, body=b"X" * 64)
+    assert res.status_code == 413
+    assert mkstemp_called["count"] == 0
+
+
+def test_chat_voice_ok_reflects_stt_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Top-level ``ok`` is False when STT did not succeed, even at HTTP 200.
+
+    Telemetry / operator dashboards rely on ``ok`` being truthful so
+    an operator can tell "the mic worked but STT failed" from "this
+    was a clean success" at a glance.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+
+    failing_stt = STTResponse(
+        request_id="test-stt-fail",
+        status="failed",
+        transcript=None,
+        language=None,
+        audio_duration_ms=0,
+        error="backend unavailable",
+        error_class="RuntimeError",
+        backend="whisper_local",
+        started_at_ms=1000,
+        finished_at_ms=1050,
+        schema_version=1,
+        inference_ms=50,
+    )
+    with patch(
+        "voxera.panel.voice_session_pipeline.transcribe_audio_file_async",
+        side_effect=_async_stt(failing_stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(client, body=b"\x00" * 32, params={"session_id": "vera-stt-fail"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["ok"] is False
+    assert payload["stt"]["success"] is False
+    assert payload["vera"] is None
+
+
+def test_chat_voice_tts_registry_cap_evicts_oldest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TTS registry never exceeds its cap; oldest entries are evicted with disk cleanup.
+
+    Prevents unbounded growth of the in-process token registry and of
+    the on-disk temp files that back each token.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "_MAX_TTS_REGISTRY_ENTRIES", 3)
+    # Start from a clean registry so the test is order-independent.
+    for tok in list(vera_app_module._TTS_AUDIO_REGISTRY.keys()):
+        vera_app_module._TTS_AUDIO_REGISTRY.pop(tok, None)
+    created_paths: list[Path] = []
+    for i in range(5):
+        audio_file = tmp_path / f"tts_{i}.wav"
+        audio_file.write_bytes(b"RIFF" + i.to_bytes(1, "little") * 16)
+        created_paths.append(audio_file)
+        vera_app_module._register_tts_audio(str(audio_file))
+    # Registry is capped.
+    assert len(vera_app_module._TTS_AUDIO_REGISTRY) == 3
+    # The first two entries' on-disk artifacts were unlinked by
+    # eviction; the last three remain.
+    assert not created_paths[0].exists()
+    assert not created_paths[1].exists()
+    assert created_paths[2].exists()
+    assert created_paths[3].exists()
+    assert created_paths[4].exists()
+
+
+def test_chat_voice_tts_token_rejects_bad_alphabet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Malformed tokens 404 without touching the registry."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    # Registry-shape tokens use URL-safe base64 (A-Z a-z 0-9 - _); a
+    # token containing other characters must be rejected up front.
+    res = client.get("/vera/voice/audio/bad%20token")
+    assert res.status_code == 404
+    res = client.get("/vera/voice/audio/has.period")
+    assert res.status_code == 404

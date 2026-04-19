@@ -1558,7 +1558,12 @@ _VERA_DICTATION_SUFFIX_BY_CONTENT_TYPE: dict[str, str] = {
 # exposed. Tokens are single-use-friendly but not strictly single-use:
 # the browser may re-fetch for <audio> buffering. Expiry keeps the
 # registry bounded; leaked tokens expire within ``_TTS_TOKEN_TTL_MS``.
+# The registry is also capped at ``_MAX_TTS_REGISTRY_ENTRIES`` so a
+# flood of voice-reply syntheses cannot grow the registry (or keep
+# backing audio files on disk) without bound.
 _TTS_TOKEN_TTL_MS = 10 * 60 * 1000
+_MAX_TTS_REGISTRY_ENTRIES = 32
+_TTS_TOKEN_ALPHABET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _TTS_AUDIO_REGISTRY: dict[str, tuple[str, int]] = {}
 
 
@@ -1576,15 +1581,46 @@ def _is_audio_content_type(content_type: str | None) -> bool:
     return base.startswith("audio/")
 
 
+def _remove_tts_audio_file(path: str) -> None:
+    """Best-effort unlink of a TTS artifact referenced by the registry.
+
+    The registry only owns the reference once ``_register_tts_audio`` is
+    called; pruning removes both the registry entry AND the on-disk
+    artifact so successful-but-unfetched TTS output cannot accumulate
+    across many dictation turns.  Unlink failures are swallowed because
+    the artifact lives under a temp dir the operating system eventually
+    recycles.
+    """
+    if not path:
+        return
+    with contextlib.suppress(OSError):
+        os.unlink(path)
+
+
 def _prune_expired_tts_tokens(now_ms: int) -> None:
     expired = [tok for tok, (_path, expiry) in _TTS_AUDIO_REGISTRY.items() if expiry <= now_ms]
     for tok in expired:
-        _TTS_AUDIO_REGISTRY.pop(tok, None)
+        entry = _TTS_AUDIO_REGISTRY.pop(tok, None)
+        if entry is not None:
+            _remove_tts_audio_file(entry[0])
 
 
 def _register_tts_audio(audio_path: str) -> str:
     now_ms = int(time.time() * 1000)
     _prune_expired_tts_tokens(now_ms)
+    # Cap the registry: if we're still at or over the hard limit after
+    # pruning expired entries, evict the oldest (lowest expiry) ones so
+    # a chatty session cannot grow the registry without bound. The on-
+    # disk artifact for the evicted entry is unlinked as well so the
+    # registry's size cap doubles as a disk-cleanup cap.
+    while len(_TTS_AUDIO_REGISTRY) >= _MAX_TTS_REGISTRY_ENTRIES:
+        oldest_token = min(
+            _TTS_AUDIO_REGISTRY,
+            key=lambda tok: _TTS_AUDIO_REGISTRY[tok][1],
+        )
+        entry = _TTS_AUDIO_REGISTRY.pop(oldest_token, None)
+        if entry is not None:
+            _remove_tts_audio_file(entry[0])
     token = secrets.token_urlsafe(24)
     _TTS_AUDIO_REGISTRY[token] = (audio_path, now_ms + _TTS_TOKEN_TTL_MS)
     return token
@@ -1597,6 +1633,7 @@ def _resolve_tts_token(token: str) -> str | None:
     path, expiry = entry
     if expiry <= int(time.time() * 1000):
         _TTS_AUDIO_REGISTRY.pop(token, None)
+        _remove_tts_audio_file(path)
         return None
     return path
 
@@ -1619,17 +1656,21 @@ async def chat_voice(request: Request):
             detail="Dictation upload requires an audio/* Content-Type.",
         )
 
-    raw_body = await request.body()
-    if not raw_body:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Empty dictation upload body.",
-        )
-    if len(raw_body) > _VERA_DICTATION_MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail=f"Dictation upload exceeds {_VERA_DICTATION_MAX_BYTES} byte cap.",
-        )
+    # Early Content-Length gate — refuses giant bodies BEFORE they are
+    # materialized by ``await request.body()``.  The gate is best-
+    # effort: clients can omit or lie about Content-Length, so the
+    # post-body length check below remains the authoritative cap.
+    content_length_raw = request.headers.get("content-length")
+    if content_length_raw:
+        try:
+            advertised_length = int(content_length_raw)
+        except ValueError:
+            advertised_length = -1
+        if advertised_length > _VERA_DICTATION_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"Dictation upload exceeds {_VERA_DICTATION_MAX_BYTES} byte cap.",
+            )
 
     qp = request.query_params
     session_id_raw = str(qp.get("session_id") or "").strip()
@@ -1652,6 +1693,34 @@ async def chat_voice(request: Request):
                 "session_id": active_session,
             },
             status_code=500,
+        )
+
+    # Voice-input gate — fail closed BEFORE writing a single byte to
+    # disk when the runtime has voice input disabled.  The dictation
+    # enhancer already hides the mic button in this case; a direct
+    # client that bypasses the UI must get the same fail-closed
+    # result without the audio ever landing on temp storage.
+    if not voice_flags.voice_input_enabled:
+        return JSONResponse(
+            {
+                "ok": False,
+                "status": "voice_input_disabled",
+                "error": "Voice input is disabled by runtime flags.",
+                "session_id": active_session,
+            },
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    raw_body = await request.body()
+    if not raw_body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty dictation upload body.",
+        )
+    if len(raw_body) > _VERA_DICTATION_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Dictation upload exceeds {_VERA_DICTATION_MAX_BYTES} byte cap.",
         )
 
     suffix = _audio_suffix_for(content_type_header)
@@ -1684,8 +1753,19 @@ async def chat_voice(request: Request):
         tts_url = f"/vera/voice/audio/{token}"
 
     turns = read_session_turns(root, active_session)
+    # ``ok`` reflects whether the pipeline produced a usable outcome:
+    # STT succeeded AND at least one of lifecycle/Vera/preview drafting
+    # committed a truthful result.  TTS failures never flip ``ok`` off
+    # because text remains authoritative per the trust model.
+    lifecycle_ok = bool(
+        result.lifecycle_handled
+        and result.lifecycle is not None
+        and bool(result.lifecycle.get("ok"))
+    )
+    preview_ok = bool(result.preview)
+    ok = bool(result.stt_ok and (result.vera_ok or lifecycle_ok or preview_ok))
     payload: dict[str, object] = {
-        "ok": True,
+        "ok": ok,
         "session_id": active_session,
         "turns": turns,
         "turn_count": len(turns),
@@ -1716,12 +1796,16 @@ def vera_voice_audio(token: str) -> FileResponse:
     ``audio/wav``.
     """
     clean = (token or "").strip()
-    if not clean or "/" in clean or ".." in clean:
+    if not clean or not _TTS_TOKEN_ALPHABET_RE.match(clean):
         raise HTTPException(status_code=404, detail="Audio token not found.")
     path = _resolve_tts_token(clean)
     if path is None:
         raise HTTPException(status_code=404, detail="Audio token not found.")
     if not os.path.isfile(path):
+        # The backing artifact vanished (disk cleanup, operator pruned,
+        # process restart between registration and fetch). Drop the stale
+        # registry entry so it cannot be re-resolved, then fail closed.
+        _TTS_AUDIO_REGISTRY.pop(clean, None)
         raise HTTPException(status_code=404, detail="Audio artifact missing.")
     return FileResponse(path, media_type="audio/wav")
 
