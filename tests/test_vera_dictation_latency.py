@@ -756,7 +756,7 @@ class TestBackendModelLoadLockHardening:
 
 
 # =============================================================================
-# Section 8: /chat/voice route resolves the shared backend (end-to-end wiring)
+# Section 8: /chat/voice route actually threads through the shared factory
 # =============================================================================
 
 
@@ -765,25 +765,40 @@ def test_chat_voice_resolves_shared_stt_backend_end_to_end(
 ) -> None:
     """End-to-end: ``/chat/voice`` pulls its STT backend via the shared factory.
 
-    The route-level test in this module exercises the full wiring —
-    from the FastAPI request handler down through
-    ``transcribe_audio_file_async`` to
-    ``get_shared_stt_backend``.  Without the wiring, the backend would
-    be rebuilt on every request and the Whisper model would reload
-    every turn.  Two back-to-back dictation requests must resolve to
-    the same shared instance.
+    This test exercises the full wiring from the FastAPI request
+    handler down through ``transcribe_audio_file_async`` →
+    ``_transcribe_audio_file_sync`` → ``transcribe_audio_file`` →
+    ``get_shared_stt_backend``.  We deliberately do NOT patch
+    ``transcribe_audio_file_async`` — instead we run the real async
+    path with a flags configuration that makes
+    ``get_shared_stt_backend`` return a ``NullSTTBackend`` (no backend
+    configured).  Both back-to-back requests must pass through the
+    shared resolver and receive the SAME instance; a silent regression
+    that bypassed the cache would either call the resolver more than
+    twice, or return two distinct instances.
     """
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
-    _force_enabled_voice(monkeypatch)
-    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
 
-    # Patch the async transcribe to observe what backend the canonical
-    # code path selected.  The real backend is never invoked — we only
-    # look at ``get_shared_stt_backend`` being called with the effective
-    # flags so the cache key is what ``voice.input`` actually uses.
+    # Voice enabled but NO backend configured: the real
+    # transcribe_audio_file path runs, resolves the shared
+    # NullSTTBackend, and returns an unavailable STT response.  That
+    # is all we need to confirm the route really went through the
+    # shared helper.
+    def _null_backend_flags() -> VoiceFoundationFlags:
+        return VoiceFoundationFlags(
+            enable_voice_foundation=True,
+            enable_voice_input=True,
+            enable_voice_output=False,
+            voice_stt_backend=None,
+            voice_tts_backend=None,
+        )
+
+    monkeypatch.setattr(vera_app_module, "load_voice_foundation_flags", _null_backend_flags)
+
+    # Watch the shared resolver so we can assert it was actually
+    # called by the route's real STT path.
     observed_backends: list[Any] = []
-
     real_shared = stt_backend_factory.get_shared_stt_backend
 
     def _watching_shared(flags: VoiceFoundationFlags) -> Any:
@@ -793,30 +808,28 @@ def test_chat_voice_resolves_shared_stt_backend_end_to_end(
 
     monkeypatch.setattr(stt_backend_factory, "get_shared_stt_backend", _watching_shared)
 
-    # Run two distinct dictation requests against the same enabled-voice
-    # flags.  Both must observe the SAME shared-backend instance.
-    stt = _make_stt(transcript="hello vera")
-    with patch.object(
-        vera_app_module,
-        "transcribe_audio_file_async",
-        side_effect=_async_stt(stt),
-    ):
-        client = TestClient(vera_app_module.app)
-        res1 = _post_voice(client, body=b"\x00" * 32, params={"session_id": "wired-1"})
-        res2 = _post_voice(client, body=b"\x00" * 32, params={"session_id": "wired-2"})
-    # Both responses succeeded.
-    assert res1.status_code == 200 and res2.status_code == 200
-    # The patched ``transcribe_audio_file_async`` short-circuits before
-    # touching the real STT path, so the watcher is exercised via a
-    # direct call to confirm the wiring is still live in this module.
-    # (The route-level invocation of the real ``transcribe_audio_file``
-    # would go through the shared helper in production.)
-    from voxera.voice import input as voice_input_module
+    client = TestClient(vera_app_module.app)
+    res1 = _post_voice(client, body=b"\x00" * 32, params={"session_id": "wired-1"})
+    res2 = _post_voice(client, body=b"\x00" * 32, params={"session_id": "wired-2"})
 
-    flags = _enabled_voice_flags()
-    audio = tmp_path / "a.wav"
-    audio.write_bytes(b"\x00" * 16)
-    voice_input_module.transcribe_audio_file(audio_path=str(audio), flags=flags)
-    voice_input_module.transcribe_audio_file(audio_path=str(audio), flags=flags)
-    assert len(observed_backends) >= 2
+    # Both responses completed the route; STT reports unavailable
+    # because no backend is configured (the expected outcome for a
+    # NullSTTBackend path).
+    assert res1.status_code == 200 and res2.status_code == 200
+    payload1 = res1.json()
+    payload2 = res2.json()
+    assert payload1["ok"] is False and payload2["ok"] is False
+    assert payload1["stt"]["backend"] == "null"
+    assert payload2["stt"]["backend"] == "null"
+
+    # The real STT path actually went through the shared resolver —
+    # twice, once per request — and the SAME cached instance came
+    # back both times.  This is the invariant that prevents the
+    # Whisper model from being rebuilt on every dictation turn.
+    assert len(observed_backends) == 2
     assert observed_backends[0] is observed_backends[1]
+    assert isinstance(observed_backends[0], NullSTTBackend)
+    # Stage timings are still populated on this route even with a
+    # Null backend — the instrumentation is wiring-agnostic.
+    assert isinstance(payload1["stage_timings"]["stt_ms"], int)
+    assert isinstance(payload2["stage_timings"]["stt_ms"], int)

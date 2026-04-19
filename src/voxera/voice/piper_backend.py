@@ -213,6 +213,13 @@ class PiperLocalBackend:
         first-turn load so concurrent synthesize calls on a freshly-
         shared backend do not each pay a duplicate
         ``PiperVoice.load(...)`` cost.
+
+        Retry-on-failure: if ``PiperVoice.load(...)`` raises (missing
+        voice file, disk full, transient I/O) the exception propagates
+        and ``self._voice`` stays ``None``.  The next ``_ensure_voice``
+        call will retry the load — deliberately, so a transient
+        failure does not poison the cached backend for the lifetime
+        of the process.
         """
         if self._voice is not None:
             return self._voice

@@ -235,6 +235,13 @@ class WhisperLocalBackend:
         first-turn load so concurrent transcribe calls on a freshly-
         shared backend do not each pay a duplicate ``WhisperModel(...)``
         construction cost.
+
+        Retry-on-failure: if ``WhisperModel(...)`` raises (bad model
+        name, disk full, transient I/O) the exception propagates and
+        ``self._model`` stays ``None``.  The next ``_ensure_model``
+        call will retry the load — deliberately, so a transient
+        failure does not poison the cached backend for the lifetime
+        of the process.
         """
         if self._model is not None:
             return self._model

@@ -77,6 +77,15 @@ _shared_key: _SharedKey | None = None
 
 
 def _shared_key_for(flags: VoiceFoundationFlags) -> _SharedKey:
+    # Scope note: the key covers everything that flows through
+    # ``VoiceFoundationFlags`` into backend construction.  It does NOT
+    # cover env-only knobs that ``PiperLocalBackend.__init__`` reads
+    # directly (``VOXERA_VOICE_TTS_PIPER_SPEAKER``).  Those are
+    # process-start config in practice; changing them at runtime
+    # without an explicit ``reset_shared_tts_backend()`` call will
+    # keep the stale instance alive.  If runtime env-var
+    # reconfiguration ever becomes a supported flow, either extend
+    # this key or reset on the reconfig boundary.
     return (
         flags.voice_output_enabled,
         (flags.voice_tts_backend or "").strip().lower() or None,
