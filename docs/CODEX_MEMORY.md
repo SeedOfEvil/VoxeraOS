@@ -29,7 +29,12 @@
   - Voice-input-disabled still fails closed before any bytes touch disk.
   - Size / content-type gates unchanged.
   - No backend behaviour fabricated, no fake progress, no silent error suppression.
-- **Files touched**: `src/voxera/vera_web/app.py`, `src/voxera/vera_web/static/vera_dictation.js`, `src/voxera/voice/input.py`, `src/voxera/voice/output.py`, `src/voxera/voice/stt_backend_factory.py`, `src/voxera/voice/tts_backend_factory.py`, `tests/conftest.py`, `tests/test_vera_dictation_latency.py` (new), `docs/CODEX_MEMORY.md`.
+- **Review-pass hardening** (same PR):
+  - `WhisperLocalBackend._ensure_model` / `PiperLocalBackend._ensure_voice` now use a per-instance `threading.Lock` and a double-checked load pattern.  The factory-level cache lock only covered instance lookup; without the per-instance lock, two concurrent first-turn requests could still each call `WhisperModel(...)` / `PiperVoice.load(...)` in parallel and defeat part of the sharing benefit.  Fast path (model already loaded) stays lock-free.
+  - Docstrings on `transcribe_audio_file` / `synthesize_text` updated to state that the default path now resolves the process-wide shared instance (not a fresh instance per call).
+  - Two new concurrency-hardening tests simulate two threads racing into the lazy-load path and assert the real constructor runs exactly once.
+  - One new end-to-end wiring test confirms `get_shared_stt_backend` is the resolver `voice.input.transcribe_audio_file` actually uses, so a future refactor that silently bypassed the cache would fail this pin.
+- **Files touched**: `src/voxera/vera_web/app.py`, `src/voxera/vera_web/static/vera_dictation.js`, `src/voxera/voice/input.py`, `src/voxera/voice/output.py`, `src/voxera/voice/stt_backend_factory.py`, `src/voxera/voice/tts_backend_factory.py`, `src/voxera/voice/whisper_backend.py`, `src/voxera/voice/piper_backend.py`, `tests/conftest.py`, `tests/test_vera_dictation_latency.py` (new), `docs/CODEX_MEMORY.md`.
 
 ## 2026-04-16 — feat(voice): polish operator voice surface and result ergonomics
 

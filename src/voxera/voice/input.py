@@ -55,11 +55,15 @@ def transcribe_audio_file(
     Always returns a truthful ``STTResponse`` — never raises on
     transcription failure.
 
-    Pass a pre-built *backend* to reuse an existing ``STTBackend``
-    instance across calls.  This avoids re-constructing the backend
-    (and potentially re-loading heavy models like Whisper) on every
-    invocation.  When *backend* is ``None`` (the default), the factory
-    builds a fresh instance from *flags*.
+    Pass a pre-built *backend* to override the default instance
+    entirely — useful for tests and specialised callers.  When
+    *backend* is ``None`` (the default), the call resolves the
+    process-wide shared instance via
+    :func:`voxera.voice.stt_backend_factory.get_shared_stt_backend`,
+    so heavy per-backend state (e.g. a loaded faster-whisper model)
+    is paid once per process rather than once per call.  The shared
+    instance is invalidated automatically when any *flags* value that
+    affects backend construction changes.
 
     This is the recommended entry point for audio-file transcription.
     Only ``audio_file`` is supported as an input source.  Microphone

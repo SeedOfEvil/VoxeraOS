@@ -45,11 +45,15 @@ def synthesize_text(
     Always returns a truthful ``TTSResponse`` — never raises on
     synthesis failure.
 
-    Pass a pre-built *backend* to reuse an existing ``TTSBackend``
-    instance across calls.  This avoids re-constructing the backend
-    (and potentially re-loading heavy models like Piper) on every
-    invocation.  When *backend* is ``None`` (the default), the factory
-    builds a fresh instance from *flags*.
+    Pass a pre-built *backend* to override the default instance
+    entirely — useful for tests and specialised callers.  When
+    *backend* is ``None`` (the default), the call resolves the
+    process-wide shared instance via
+    :func:`voxera.voice.tts_backend_factory.get_shared_tts_backend`,
+    so heavy per-backend state (e.g. a loaded Piper voice) is paid
+    once per process rather than once per call.  The shared instance
+    is invalidated automatically when any *flags* value that affects
+    backend construction changes.
 
     This is the recommended entry point for text-to-speech synthesis.
     Output is artifact-oriented (``audio_path``), not playback-oriented.

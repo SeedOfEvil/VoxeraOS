@@ -24,6 +24,7 @@ Model loading is lazy: the Whisper model is loaded on the first
 from __future__ import annotations
 
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -118,6 +119,15 @@ class WhisperLocalBackend:
             "VOXERA_VOICE_STT_WHISPER_COMPUTE_TYPE", _DEFAULT_COMPUTE_TYPE
         )
         self._model: Any = None
+        # Guards ``_ensure_model`` so two concurrent first-turn
+        # transcribe calls on a freshly-shared backend cannot each kick
+        # off a duplicate Whisper model load in parallel.  Without this
+        # lock the process-wide shared-instance cache would still save
+        # every subsequent turn but the very first concurrent pair
+        # would pay the load cost twice — defeating part of the point
+        # of the cache.  Acquired only on the slow path (model not yet
+        # loaded), so steady-state transcription is not serialised.
+        self._model_lock = threading.Lock()
 
     # -- STTBackend protocol ---------------------------------------------------
 
@@ -218,16 +228,26 @@ class WhisperLocalBackend:
     # -- internals -------------------------------------------------------------
 
     def _ensure_model(self) -> Any:
-        """Lazy-load the Whisper model on first use."""
-        if self._model is None:
-            from faster_whisper import WhisperModel
+        """Lazy-load the Whisper model on first use.
 
-            self._model = WhisperModel(
-                self._model_size,
-                device=self._device,
-                compute_type=self._compute_type,
-            )
-        return self._model
+        The double-checked pattern below keeps the fast path (model
+        already loaded) lock-free, while still serialising the slow
+        first-turn load so concurrent transcribe calls on a freshly-
+        shared backend do not each pay a duplicate ``WhisperModel(...)``
+        construction cost.
+        """
+        if self._model is not None:
+            return self._model
+        with self._model_lock:
+            if self._model is None:
+                from faster_whisper import WhisperModel
+
+                self._model = WhisperModel(
+                    self._model_size,
+                    device=self._device,
+                    compute_type=self._compute_type,
+                )
+            return self._model
 
     @property
     def model_loaded(self) -> bool:
