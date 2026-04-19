@@ -4,7 +4,14 @@
 // supports MediaRecorder + getUserMedia.  There is no always-on
 // listening: recording starts only on an explicit click of the mic
 // button, stops on a second click, and the captured blob is POSTed
-// to /chat/voice (the canonical STT -> Vera -> optional TTS path).
+// to /chat/voice (the canonical STT -> run_vera_chat_turn -> optional
+// TTS path).
+//
+// Rendering parity: the /chat/voice response carries the canonical
+// turns array produced by the shared chat helper.  We hand that array
+// to the main page IIFE's ``window.__veraApplyServerTurns`` hook so
+// assistant replies render through the SAME bounded markdown subset
+// that typed replies use.  There is no second renderer to drift.
 //
 // Typed Vera still works even if JS or the mic is unavailable —
 // progressive enhancement only.
@@ -19,7 +26,6 @@
   var errorEl = document.getElementById("vera-voice-error");
   var audioEl = document.getElementById("vera-voice-audio");
   var speakCheckbox = document.getElementById("vera-voice-speak");
-  var thread = document.getElementById("thread");
   var sessionInput = document.querySelector('input[name="session_id"]');
   var sessionId = sessionInput ? sessionInput.value : "";
 
@@ -233,6 +239,20 @@
             ("Dictation failed (" + result.status + ")");
           setState("Idle");
           setError(msg);
+          // Even on failure, if the payload carries fresh turns (e.g.
+          // STT succeeded but Vera errored), render them so the
+          // operator sees the voice-transcript turn land in the thread.
+          if (payload && Array.isArray(payload.turns)) {
+            applyTurnsUpdate(payload.turns, payload.turn_count);
+          }
+          // When the payload carried canonical preview truth, reflect it
+          // in the pane too.  ``preview`` is authoritative only when
+          // ``has_preview_truth`` is set — otherwise it's an STT-only
+          // failure where the pre-existing preview on disk is the real
+          // answer and we must not clobber the visible pane.
+          if (payload && payload.has_preview_truth === true) {
+            applyPreviewUpdate(payload.preview, payload.session_id);
+          }
           return;
         }
         applyDictationResult(payload);
@@ -247,7 +267,14 @@
 
   function applyDictationResult(payload) {
     if (payload && Array.isArray(payload.turns)) {
-      renderTurns(payload.turns);
+      applyTurnsUpdate(payload.turns, payload.turn_count);
+    }
+    // Refresh the active-preview pane from canonical session truth.
+    // ``payload.preview`` is ``read_session_preview``'d at the API
+    // layer so the pane stays at parity with typed /chat (full-page
+    // reload) without inferring state from the reply.
+    if (payload && payload.has_preview_truth === true) {
+      applyPreviewUpdate(payload.preview, payload.session_id);
     }
     var sttOk = payload && payload.stt && payload.stt.success;
     if (!sttOk) {
@@ -259,20 +286,7 @@
       return;
     }
     clearError();
-    var stateText = "Idle";
-    if (payload.lifecycle && payload.lifecycle.ack) {
-      stateText = payload.lifecycle.ok
-        ? "Lifecycle action dispatched."
-        : "Lifecycle action declined (canonical state unchanged).";
-    } else if (payload.preview) {
-      stateText = "Preview drafted \u2014 review below.";
-    } else if (payload.show_action_guidance) {
-      stateText =
-        "Action-oriented request \u2014 review the response and draft a preview if needed.";
-    } else if (payload.vera && payload.vera.success) {
-      stateText = "Idle";
-    }
-    setState(stateText);
+    setState(deriveStateFromCanonicalStatus(payload));
     if (payload.tts_url && audioEl) {
       audioEl.hidden = false;
       audioEl.src = payload.tts_url;
@@ -289,12 +303,85 @@
     }
   }
 
-  function renderTurns(turns) {
+  // Derive an operator-facing state line from the canonical chat
+  // status returned by /chat/voice.  The strings intentionally match
+  // the dictation UX (concise, fits on the voice bar) rather than the
+  // typed /chat status chip.
+  function deriveStateFromCanonicalStatus(payload) {
+    var status = String((payload && payload.status) || "").toLowerCase();
+    if (!status) return "Idle";
+    if (
+      status === "handoff_submitted" ||
+      status === "automation_definition_saved" ||
+      status.indexOf("submitted") !== -1
+    ) {
+      return "Preview submitted to VoxeraOS.";
+    }
+    if (status === "blocked_path") {
+      return "Request blocked (outside bounded paths).";
+    }
+    if (status === "voice_input_disabled" || status === "voice_input_invalid") {
+      return "Voice input rejected by runtime.";
+    }
+    if (payload && payload.preview) {
+      return "Preview drafted \u2014 review below.";
+    }
+    return "Idle";
+  }
+
+  // Hand the canonical preview payload to the main page IIFE's
+  // preview-pane renderer (window.__veraApplyServerPreview) so dictated
+  // turns refresh the active-preview pane identically to a full-page
+  // typed reload.  The hook is exposed from the main IIFE; if it is
+  // unavailable (degraded page / older template), we skip silently so
+  // the fallback is "show what the server rendered on the last full
+  // navigation" — never a fabricated or inferred pane.
+  function applyPreviewUpdate(preview, targetSessionId) {
+    if (typeof window.__veraApplyServerPreview !== "function") return;
+    try {
+      window.__veraApplyServerPreview(preview, targetSessionId);
+    } catch (_e) {
+      // best-effort preview refresh only
+    }
+  }
+
+  // Hand the canonical turns array to the main page IIFE's renderer
+  // (window.__veraApplyServerTurns) so assistant replies render with
+  // the SAME bounded markdown subset that typed replies use.  If the
+  // hook is missing (older page / no JS context), fall back to a
+  // plain escape-only render so the thread still updates truthfully.
+  function applyTurnsUpdate(turns, turnCount) {
+    if (typeof window.__veraApplyServerTurns === "function") {
+      try {
+        window.__veraApplyServerTurns(turns, turnCount);
+        return;
+      } catch (e) {
+        // Hook present but threw — surface the divergence so the
+        // escape-only fallback below isn't a silent drift from the
+        // main IIFE's bounded-markdown renderer.
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn(
+            "vera_dictation: __veraApplyServerTurns threw, " +
+              "falling back to escape-only renderer",
+            e,
+          );
+        }
+      }
+    } else if (typeof console !== "undefined" && console.warn) {
+      // Hook missing entirely — same divergence, different cause
+      // (older page, load-order race, etc.).
+      console.warn(
+        "vera_dictation: __veraApplyServerTurns missing, " +
+          "falling back to escape-only renderer",
+      );
+    }
+    var thread = document.getElementById("thread");
     if (!thread) return;
     var html = turns
       .map(function (turn) {
         var role = String(turn.role || "assistant");
-        var roleLabel = role === "user" ? "You" : role === "assistant" ? "Vera" : role;
+        var roleLabel =
+          role === "user" ? "You" : role === "assistant" ? "Vera" : role;
         var origin = String(turn.input_origin || "");
         if (role === "user" && origin === "voice_transcript") {
           roleLabel = "You (voice transcript)";
@@ -312,7 +399,9 @@
       })
       .join("");
     thread.innerHTML = html;
-    thread.dataset.turnCount = String(turns.length);
+    thread.dataset.turnCount = String(
+      Number.isFinite(Number(turnCount)) ? Number(turnCount) : turns.length,
+    );
     thread.scrollTop = thread.scrollHeight;
   }
 

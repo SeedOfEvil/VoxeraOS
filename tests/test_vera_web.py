@@ -1923,7 +1923,11 @@ def test_clear_resets_preview_and_new_preview_reinitializes_authoritative_state(
     }
 
     cleared = client.post("/clear", data={"session_id": sid})
-    assert "Submit current preview to VoxeraOS" not in cleared.text
+    # The preview pane is the ``<section class="preview" id="vera-preview-pane">``
+    # block; check for its stable id rather than a button label, since
+    # the label also appears inside the JS hook that renders the pane
+    # from dictation responses (the hook is always present in the page).
+    assert 'id="vera-preview-pane"' not in cleared.text
     assert vera_session_store.read_session_preview(queue, sid) is None
 
     second = client.post("/chat", data={"session_id": sid, "message": "open openai.com"})
@@ -2634,7 +2638,10 @@ def test_handoff_submit_clears_authoritative_preview_pane(tmp_path, monkeypatch)
     res = client.post("/handoff", data={"session_id": sid})
 
     assert "I submitted the job to VoxeraOS" in res.text
-    assert "Submit current preview to VoxeraOS" not in res.text
+    # The preview pane is the ``<section class="preview" id="vera-preview-pane">``
+    # block; check for its stable id rather than the button label,
+    # which also appears inside the dictation preview-pane hook source.
+    assert 'id="vera-preview-pane"' not in res.text
     assert "preview_available</b>: False" in res.text
 
 

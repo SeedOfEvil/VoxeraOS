@@ -6,6 +6,7 @@ import re
 import secrets
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -26,7 +27,6 @@ from ..core.writing_draft_intent import (
     is_writing_draft_request,
     is_writing_refinement_request,
 )
-from ..panel.voice_session_pipeline import run_voice_session_turn
 from ..paths import queue_root as default_queue_root
 from ..vera.automation_preview import (
     is_automation_preview,
@@ -123,9 +123,15 @@ from ..vera.weather_flow import (
     weather_context_has_pending_lookup,
 )
 from ..voice.flags import VoiceFoundationFlags, load_voice_foundation_flags
-from ..voice.input import VoiceInputDisabledError, ingest_voice_transcript
+from ..voice.input import (
+    VoiceInputDisabledError,
+    ingest_voice_transcript,
+    transcribe_audio_file_async,
+)
 from ..voice.models import InputOrigin, normalize_input_origin
-from ..voice.output import voice_output_status
+from ..voice.output import synthesize_text_async, voice_output_status
+from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, stt_response_as_dict
+from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, tts_response_as_dict
 from .chat_early_exit_dispatch import dispatch_early_exit_intent
 from .conversational_checklist import (
     enforce_conversational_checklist_output,
@@ -595,9 +601,61 @@ def index(request: Request):
     )
 
 
-@app.post("/chat", response_class=HTMLResponse)
-async def chat(request: Request):
+@dataclass(frozen=True)
+class ChatTurnResult:
+    """Canonical outcome of one Vera chat turn.
+
+    Shared by both the typed ``/chat`` endpoint and the dictation
+    ``/chat/voice`` endpoint so the 7-lane preview routing, LLM
+    orchestration, post-LLM draft binding, conversational artifact
+    enforcement, and guardrails produce identical results regardless
+    of whether the input was typed or dictated.  Surface-specific
+    rendering (HTML for typed, JSON for dictation) is a thin wrapper
+    around this result.
+
+    ``preview`` reflects the active preview as persisted in the session
+    store after the turn finishes; ``assistant_text`` is the final
+    assistant reply appended this turn (or ``""`` when only an error
+    was surfaced without running the lanes).
+    """
+
+    session_id: str
+    turns: list[dict[str, str]]
+    status: str
+    error: str = ""
+    assistant_text: str = ""
+    preview: dict[str, object] | None = None
+
+
+async def run_vera_chat_turn(
+    *,
+    message: str,
+    input_origin: InputOrigin,
+    session_id: str,
+    voice_flags: VoiceFoundationFlags,
+) -> ChatTurnResult:
     """Vera chat turn — canonical preview-routing lane precedence.
+
+    Both the typed ``/chat`` endpoint and the dictation ``/chat/voice``
+    endpoint call this helper with the same canonical semantics.  The
+    only surface-level difference is the input boundary:
+
+    * Typed: ``input_origin=InputOrigin.TYPED`` from the form.
+    * Any ``VOICE_TRANSCRIPT`` input (today only dictation, but the
+      helper treats the origin generically): after the caller has
+      already run STT and is ready to hand a transcript in, this
+      function re-runs :func:`ingest_voice_transcript` for normalization
+      + fail-closed voice-input-disabled enforcement.
+
+    The caller is responsible for resolving the active ``session_id``
+    (form field, cookie fallback, or :func:`new_session_id`) BEFORE
+    calling this helper — the helper trusts the value it is handed
+    and does not touch cookies or request state.
+
+    Everything downstream — the 7-lane routing, LLM orchestration,
+    post-LLM draft binding, conversational artifact mode, guardrails,
+    session writes — is identical.  Dictation parity with typed Vera
+    is therefore enforced by construction.
 
     Lanes run in strict order below; the same order is recorded in
     :func:`voxera.vera_web.preview_routing.canonical_preview_lane_order`
@@ -625,18 +683,12 @@ async def chat(request: Request):
     ``voxera.vera.preview_ownership`` so the set of writers is narrow
     and auditable.
     """
-
-    raw = (await request.body()).decode("utf-8", errors="replace")
-    parsed = parse_qs(raw, keep_blank_values=True)
-    message = str((parsed.get("message") or [""])[0])
-    input_origin_raw = str((parsed.get("input_origin") or ["typed"])[0])
-    session_id = str((parsed.get("session_id") or [""])[0])
-    voice_flags = load_voice_foundation_flags()
-    input_origin = normalize_input_origin(input_origin_raw)
     # Sanity gate: keep the chat dispatcher aligned with the lane enum.
     # This assertion is cheap and fires immediately if someone reorders
     # lanes without updating the enum.
     assert len(canonical_preview_lane_order()) == 7  # noqa: S101
+
+    active_session = session_id
 
     if input_origin is InputOrigin.VOICE_TRANSCRIPT:
         try:
@@ -646,36 +698,30 @@ async def chat(request: Request):
             )
         except VoiceInputDisabledError as exc:
             root = _active_queue_root()
-            return _render_page(
-                session_id=session_id.strip() or new_session_id(),
-                turns=read_session_turns(root, session_id.strip()),
+            return ChatTurnResult(
+                session_id=active_session,
+                turns=read_session_turns(root, active_session),
                 status="voice_input_disabled",
                 error=str(exc),
-                voice_flags=voice_flags,
             )
         except ValueError as exc:
             root = _active_queue_root()
-            return _render_page(
-                session_id=session_id.strip() or new_session_id(),
-                turns=read_session_turns(root, session_id.strip()),
+            return ChatTurnResult(
+                session_id=active_session,
+                turns=read_session_turns(root, active_session),
                 status="voice_input_invalid",
                 error=str(exc),
-                voice_flags=voice_flags,
             )
         message = ingested.transcript_text
         input_origin = InputOrigin(ingested.input_origin)
 
-    active_session = session_id.strip() or (request.cookies.get("vera_session_id") or "").strip()
-    active_session = active_session or new_session_id()
-
     if not message.strip():
         root = _active_queue_root()
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=read_session_turns(root, active_session),
             status="conversation",
             error="Message is required.",
-            voice_flags=voice_flags,
         )
 
     root = _active_queue_root()
@@ -784,11 +830,12 @@ async def chat(request: Request):
             matched_early_exit=True,
             turn_index=len(_early_turns),
         )
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=_early_turns,
             status=_early.status,
-            voice_flags=voice_flags,
+            assistant_text=_early.assistant_text,
+            preview=read_session_preview(root, active_session),
         )
 
     if (
@@ -817,11 +864,12 @@ async def chat(request: Request):
             dispatch_source="weather_pending_lookup",
             turn_index=len(_weather_turns),
         )
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=_weather_turns,
             status=_weather_status,
-            voice_flags=voice_flags,
+            assistant_text=reply_answer,
+            preview=read_session_preview(root, active_session),
         )
 
     if (
@@ -843,10 +891,12 @@ async def chat(request: Request):
             dispatch_source="submit_no_preview",
             turn_index=len(_submit_turns),
         )
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=_submit_turns,
             status=status,
+            assistant_text=assistant_text,
+            preview=read_session_preview(root, active_session),
         )
 
     # ── Automation preview submit ──────────────────────────────────────────
@@ -872,11 +922,12 @@ async def chat(request: Request):
             dispatch_source=_auto_submit_result.dispatch_source,
             turn_index=len(_auto_turns),
         )
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=_auto_turns,
             status=_auto_submit_result.status,
-            voice_flags=voice_flags,
+            assistant_text=_auto_submit_result.assistant_text,
+            preview=read_session_preview(root, active_session),
         )
 
     if should_submit_active_preview(message, preview_available=pending_preview is not None):
@@ -894,10 +945,12 @@ async def chat(request: Request):
             dispatch_source="submit_active_preview",
             turn_index=len(_submit_turns),
         )
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=_submit_turns,
             status=status,
+            assistant_text=assistant_text,
+            preview=read_session_preview(root, active_session),
         )
 
     # Blocked bounded file intent: fail closed with a clear refusal before
@@ -914,10 +967,12 @@ async def chat(request: Request):
             dispatch_source="blocked_file_intent",
             turn_index=len(_blocked_turns),
         )
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=_blocked_turns,
             status="blocked_path",
+            assistant_text=blocked_refusal,
+            preview=read_session_preview(root, active_session),
         )
 
     # ── Automation preview drafting / revision ─────────────────────────────
@@ -947,11 +1002,12 @@ async def chat(request: Request):
             dispatch_source=_auto_draft_result.dispatch_source,
             turn_index=len(_auto_turns),
         )
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=_auto_turns,
             status=_auto_draft_result.status,
-            voice_flags=voice_flags,
+            assistant_text=_auto_draft_result.assistant_text,
+            preview=read_session_preview(root, active_session),
         )
 
     # ── Automation lifecycle management ───────────────────────────────────
@@ -991,11 +1047,12 @@ async def chat(request: Request):
             matched_early_exit=_lifecycle_result.matched_early_exit,
             turn_index=len(_lc_turns),
         )
-        return _render_page(
+        return ChatTurnResult(
             session_id=active_session,
             turns=_lc_turns,
             status=_lifecycle_result.status,
-            voice_flags=voice_flags,
+            assistant_text=_lifecycle_result.assistant_text,
+            preview=read_session_preview(root, active_session),
         )
 
     is_info_query = is_informational_web_query(message)
@@ -1407,10 +1464,47 @@ async def chat(request: Request):
         turn_index=len(_final_turns),
     )
 
-    return _render_page(
+    return ChatTurnResult(
         session_id=active_session,
         turns=_final_turns,
         status=status,
+        assistant_text=assistant_text,
+        preview=read_session_preview(root, active_session),
+    )
+
+
+@app.post("/chat", response_class=HTMLResponse)
+async def chat(request: Request) -> HTMLResponse:
+    """Typed Vera chat turn — thin Request→HTML wrapper over the canonical helper.
+
+    All semantic behavior lives in :func:`run_vera_chat_turn`; this
+    endpoint only parses the typed form submission, resolves the active
+    session, and renders the result as HTML.  Dictation (``/chat/voice``)
+    shares the same helper so typed and dictated turns produce identical
+    Vera behavior for equivalent input.
+    """
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    parsed = parse_qs(raw, keep_blank_values=True)
+    message = str((parsed.get("message") or [""])[0])
+    input_origin_raw = str((parsed.get("input_origin") or ["typed"])[0])
+    session_id = str((parsed.get("session_id") or [""])[0])
+    voice_flags = load_voice_foundation_flags()
+    input_origin = normalize_input_origin(input_origin_raw)
+
+    active_session = session_id.strip() or (request.cookies.get("vera_session_id") or "").strip()
+    active_session = active_session or new_session_id()
+
+    result = await run_vera_chat_turn(
+        message=message,
+        input_origin=input_origin,
+        session_id=active_session,
+        voice_flags=voice_flags,
+    )
+    return _render_page(
+        session_id=result.session_id,
+        turns=result.turns,
+        status=result.status,
+        error=result.error,
         voice_flags=voice_flags,
     )
 
@@ -1638,16 +1732,65 @@ def _resolve_tts_token(token: str) -> str | None:
     return path
 
 
+def _display_status_for_stt(stt_status: str, *, ok: bool) -> str:
+    if ok:
+        return stt_status
+    if stt_status == STT_STATUS_SUCCEEDED:
+        return "no_transcript"
+    return stt_status or "failed"
+
+
+def _display_status_for_tts(tts_status: str, *, ok: bool) -> str:
+    if ok:
+        return tts_status
+    if tts_status == TTS_STATUS_SUCCEEDED:
+        return "no_audio_artifact"
+    return tts_status or "failed"
+
+
 @app.post("/chat/voice")
-async def chat_voice(request: Request):
+async def chat_voice(request: Request) -> JSONResponse:
     """Dictation endpoint — bounded browser-mic capture for canonical Vera.
 
     Operator-initiated capture only (no always-on listening; the
-    browser posts a discrete utterance). Routes the resulting
-    transcript through the shared voice-session pipeline so preview,
-    Vera, and lifecycle behaviors are identical to the panel Voice
-    Workbench.  Returns a small JSON payload so the dictation enhancer
-    can update the thread inline without a full-page reload.
+    browser posts a discrete utterance).  The audio is transcribed by
+    the canonical STT backend, then the transcript is routed through
+    :func:`run_vera_chat_turn` — the exact same canonical helper that
+    typed ``/chat`` uses.  This is how dictation stays at parity with
+    typed Vera: both surfaces share one message-processing path, and
+    dictation differs only at the audio/STT input boundary.
+
+    Returns a small JSON payload so the dictation enhancer can update
+    the thread inline without a full-page reload.  TTS synthesis (when
+    ``speak_response=1``) runs over the final assistant text produced
+    by the canonical path — whether that text came from an early-exit
+    lane, an automation lifecycle action, a preview draft, or the LLM.
+
+    JSON response shape (stable contract for the enhancer):
+
+    * ``ok`` — ``stt_ok AND chat_ran AND chat_error_empty``.  A clean
+      refusal lane (e.g. ``blocked_path``) reports ``ok=True`` because
+      the canonical path ran to completion and produced a truthful
+      reply; ``ok`` being ``False`` means the turn genuinely could not
+      complete (STT failure, voice-input-disabled, empty transcript).
+    * ``session_id``, ``status``, ``error``, ``turns``, ``turn_count``,
+      ``assistant_text`` — canonical turn result (truthful even when
+      ``ok`` is ``False``).
+    * ``preview`` + ``has_preview_truth`` — canonical preview state
+      read fresh from the session store on both branches (chat-ran and
+      STT-failed).  The enhancer refreshes the preview pane only when
+      ``has_preview_truth=True`` so it never clobbers a still-active
+      preview on a pre-chat failure.
+    * ``stt``, ``tts``, ``tts_url``, ``speak_response_requested`` —
+      per-subsystem status dicts; ``tts_url`` is ``None`` when TTS is
+      not requested or synthesis failed (text stays authoritative).
+
+    Earlier iterations carried ``classification``, ``lifecycle``,
+    ``vera``, ``preview_attempt``, and ``show_action_guidance`` from
+    the bespoke workbench pipeline.  Those are intentionally removed:
+    the canonical chat helper is now the single source of truth, so
+    the enhancer reads ``status`` + ``assistant_text`` + ``preview``
+    directly instead of reconstructing state from sub-results.
     """
     content_type_header = request.headers.get("content-type")
     if not _is_audio_content_type(content_type_header):
@@ -1725,6 +1868,11 @@ async def chat_voice(request: Request):
 
     suffix = _audio_suffix_for(content_type_header)
     tmp_fd, tmp_path = tempfile.mkstemp(prefix=_VERA_DICTATION_TEMP_PREFIX, suffix=suffix)
+
+    # ── Step 1: STT ────────────────────────────────────────────────
+    stt_ok = False
+    transcript_text: str | None = None
+    stt_dict: dict[str, object]
     try:
         try:
             with os.fdopen(tmp_fd, "wb") as handle:
@@ -1733,55 +1881,171 @@ async def chat_voice(request: Request):
             with contextlib.suppress(OSError):
                 os.close(tmp_fd)
             raise
-        root = _active_queue_root()
-        result = await run_voice_session_turn(
-            audio_path=tmp_path,
-            language=language,
-            session_id=active_session,
-            flags=voice_flags,
-            queue_root=root,
-            send_to_vera=True,
-            speak_response=speak_response,
-        )
+        try:
+            start_ms = int(time.time() * 1000)
+            stt_response = await transcribe_audio_file_async(
+                audio_path=tmp_path,
+                flags=voice_flags,
+                language=language,
+                session_id=active_session,
+            )
+            elapsed_ms = int(time.time() * 1000) - start_ms
+            stt_ok = bool(stt_response.status == STT_STATUS_SUCCEEDED and stt_response.transcript)
+            transcript_text = stt_response.transcript if stt_ok else None
+            stt_dict = {
+                "success": stt_ok,
+                "status": stt_response.status,
+                "display_status": _display_status_for_stt(stt_response.status, ok=stt_ok),
+                "transcript": transcript_text,
+                "language": stt_response.language if stt_ok else None,
+                "backend": stt_response.backend,
+                "error": stt_response.error if not stt_ok else None,
+                "error_class": stt_response.error_class if not stt_ok else None,
+                "audio_duration_ms": stt_response.audio_duration_ms,
+                "inference_ms": stt_response.inference_ms,
+                "elapsed_ms": elapsed_ms,
+                "request_id": stt_response.request_id,
+                "response_dict": stt_response_as_dict(stt_response),
+            }
+        except Exception as exc:
+            stt_dict = {
+                "success": False,
+                "status": "failed",
+                "display_status": "failed",
+                "error": f"Unexpected error: {type(exc).__name__}: {exc}",
+            }
     finally:
         with contextlib.suppress(OSError):
             os.unlink(tmp_path)
 
-    tts_url: str | None = None
-    if result.tts and result.tts.get("success") and result.tts.get("audio_path"):
-        token = _register_tts_audio(str(result.tts["audio_path"]))
-        tts_url = f"/vera/voice/audio/{token}"
+    # ── Step 2: canonical Vera chat turn (same helper as typed /chat) ──
+    chat_result: ChatTurnResult | None = None
+    if stt_ok and transcript_text:
+        chat_result = await run_vera_chat_turn(
+            message=transcript_text,
+            input_origin=InputOrigin.VOICE_TRANSCRIPT,
+            session_id=active_session,
+            voice_flags=voice_flags,
+        )
 
-    turns = read_session_turns(root, active_session)
-    # ``ok`` reflects whether the pipeline produced a usable outcome:
-    # STT succeeded AND at least one of lifecycle/Vera/preview drafting
-    # committed a truthful result.  TTS failures never flip ``ok`` off
-    # because text remains authoritative per the trust model.
-    lifecycle_ok = bool(
-        result.lifecycle_handled
-        and result.lifecycle is not None
-        and bool(result.lifecycle.get("ok"))
+    # ── Step 3: optional TTS over the assistant text the canonical path produced ──
+    tts_dict: dict[str, object] | None = None
+    tts_url: str | None = None
+    tts_source_text = (
+        chat_result.assistant_text.strip()
+        if chat_result is not None and chat_result.assistant_text
+        else ""
     )
-    preview_ok = bool(result.preview)
-    ok = bool(result.stt_ok and (result.vera_ok or lifecycle_ok or preview_ok))
+    if speak_response and tts_source_text:
+        try:
+            start_ms = int(time.time() * 1000)
+            tts_response = await synthesize_text_async(
+                text=tts_source_text,
+                flags=voice_flags,
+                session_id=active_session,
+            )
+            elapsed_ms = int(time.time() * 1000) - start_ms
+            tts_ok = bool(tts_response.status == TTS_STATUS_SUCCEEDED and tts_response.audio_path)
+            tts_dict = {
+                "success": tts_ok,
+                "status": tts_response.status,
+                "display_status": _display_status_for_tts(tts_response.status, ok=tts_ok),
+                "audio_path": tts_response.audio_path if tts_ok else None,
+                "backend": tts_response.backend,
+                "error": tts_response.error if not tts_ok else None,
+                "error_class": tts_response.error_class if not tts_ok else None,
+                "audio_duration_ms": tts_response.audio_duration_ms,
+                "inference_ms": tts_response.inference_ms,
+                "elapsed_ms": elapsed_ms,
+                "request_id": tts_response.request_id,
+                "response_dict": tts_response_as_dict(tts_response),
+            }
+            if tts_ok and tts_response.audio_path:
+                token = _register_tts_audio(tts_response.audio_path)
+                tts_url = f"/vera/voice/audio/{token}"
+        except ValueError as exc:
+            # ``synthesize_text_async`` (via ``tts_protocol``) raises
+            # ``ValueError`` for input-shape violations — empty text
+            # after stripping, invalid ``output_format``, etc.  Surface
+            # the validation message verbatim since it is operator-
+            # readable; broader runtime failures fall through to the
+            # generic ``Exception`` branch below with a class-tagged
+            # message.  The STT block above has no equivalent split
+            # because the audio bytes are already validated on the
+            # route (content-type, size, non-empty body) before the
+            # async call runs.
+            tts_dict = {
+                "success": False,
+                "status": "failed",
+                "display_status": "failed",
+                "error": str(exc),
+            }
+        except Exception as exc:
+            tts_dict = {
+                "success": False,
+                "status": "failed",
+                "display_status": "failed",
+                "error": f"Unexpected error: {type(exc).__name__}: {exc}",
+            }
+
+    # Resolve final payload fields from the canonical result (or fall
+    # back to a turn-less session when STT failed before it could run).
+    #
+    # ``result_preview`` is always the CURRENT canonical preview on disk
+    # for the active session — never a fabrication, never inferred from
+    # the reply text.  When the chat helper ran, ``chat_result.preview``
+    # already holds ``read_session_preview(...)`` captured right after
+    # the lane writes completed.  When STT failed before chat ran, we
+    # re-read the session so the dictation UI reflects whatever preview
+    # state the session still truly holds (clobbering it to None would
+    # misrepresent canonical truth).
+    if chat_result is not None:
+        result_session_id = chat_result.session_id
+        result_turns = chat_result.turns
+        result_status = chat_result.status
+        result_error = chat_result.error
+        result_assistant_text = chat_result.assistant_text
+        result_preview = chat_result.preview
+    else:
+        root = _active_queue_root()
+        result_session_id = active_session
+        result_turns = read_session_turns(root, active_session)
+        result_status = "stt_failed"
+        result_error = str(stt_dict.get("error") or "")
+        result_assistant_text = ""
+        result_preview = read_session_preview(root, active_session)
+
+    # ``ok`` stays truthful: STT must have succeeded AND the canonical
+    # Vera helper must have produced a non-error result.  TTS failures
+    # never flip ``ok`` off because text remains authoritative per the
+    # trust model.
+    ok = bool(stt_ok and chat_result is not None and not chat_result.error)
+
+    # ``has_preview_truth`` is a small, explicit handshake with the
+    # dictation enhancer's preview-pane hook: it is ``True`` whenever
+    # ``preview`` in this payload faithfully reflects the current
+    # canonical session preview (read fresh above in both branches),
+    # which means the browser can safely replace the visible pane with
+    # what the server just reported.  The flag exists so the UI never
+    # has to infer "is this preview value authoritative?" from other
+    # fields — truth is stated directly at the boundary.
     payload: dict[str, object] = {
         "ok": ok,
-        "session_id": active_session,
-        "turns": turns,
-        "turn_count": len(turns),
-        "stt": result.stt,
-        "classification": result.classification,
-        "lifecycle": result.lifecycle,
-        "vera": result.vera,
-        "preview": result.preview,
-        "preview_attempt": result.preview_attempt,
-        "tts": result.tts,
+        "session_id": result_session_id,
+        "status": result_status,
+        "error": result_error,
+        "turns": result_turns,
+        "turn_count": len(result_turns),
+        "assistant_text": result_assistant_text,
+        "preview": result_preview,
+        "has_preview_truth": True,
+        "stt": stt_dict,
+        "tts": tts_dict,
         "tts_url": tts_url,
-        "show_action_guidance": result.show_action_guidance,
         "speak_response_requested": speak_response,
     }
     response = JSONResponse(payload)
-    response.set_cookie("vera_session_id", active_session, httponly=False, samesite="lax")
+    response.set_cookie("vera_session_id", result_session_id, httponly=False, samesite="lax")
     return response
 
 
