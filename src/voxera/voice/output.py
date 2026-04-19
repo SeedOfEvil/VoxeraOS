@@ -72,6 +72,7 @@ def synthesize_text(
     - Empty text -> raises ValueError (request validation)
     - Success -> succeeded with real audio_path
     """
+    from .speech_normalize import normalize_text_for_tts
     from .tts_adapter import synthesize_tts_request
     from .tts_backend_factory import get_shared_tts_backend
     from .tts_protocol import build_tts_request
@@ -81,8 +82,19 @@ def synthesize_text(
     # reply synthesis.  A caller-supplied *backend* still wins so
     # tests and specialised callers can inject bespoke adapters.
     selected_backend = backend if backend is not None else get_shared_tts_backend(flags)
+
+    # Speech-only normalization: strip markdown/control syntax so the
+    # synthesizer does not read formatting characters literally.  This
+    # never mutates the assistant text stored in the session or shown
+    # in the UI -- only the TTS request text is normalized.  The
+    # helper is conservative and returns empty only when input was
+    # empty (it falls back to the stripped original if normalization
+    # would remove every character), so ``build_tts_request`` still
+    # enforces the non-empty invariant downstream.
+    speech_text = normalize_text_for_tts(text)
+
     request = build_tts_request(
-        text=text,
+        text=speech_text,
         voice_id=voice_id,
         language=language,
         speed=speed,
