@@ -107,7 +107,7 @@ class TestConfigureVoiceDeclined:
                     "voice_stt_backend": "whisper_local",
                     "voice_tts_backend": "piper_local",
                     "voice_tts_piper_model": "/tmp/model.onnx",
-                    "voice_stt_whisper_model": "distil-whisper/distil-large-v3",
+                    "voice_stt_whisper_model": "distil-large-v3",
                     "panel_port": 8844,
                 }
             ),
@@ -141,7 +141,7 @@ class TestConfigureVoiceDeclined:
                     "enable_voice_foundation": True,
                     "enable_voice_input": True,
                     "voice_stt_backend": "whisper_local",
-                    "voice_stt_whisper_model": "distil-whisper/distil-large-v3",
+                    "voice_stt_whisper_model": "distil-large-v3",
                 }
             ),
             encoding="utf-8",
@@ -160,7 +160,7 @@ class TestConfigureVoiceDeclined:
         setup_wizard._configure_voice(runtime_config_path=cfg_path)
 
         data = json.loads(cfg_path.read_text(encoding="utf-8"))
-        assert data["voice_stt_whisper_model"] == "distil-whisper/distil-large-v3"
+        assert data["voice_stt_whisper_model"] == "distil-large-v3"
 
 
 class TestConfigureVoiceEnabled:

@@ -57,16 +57,18 @@ _DEFAULT_COMPUTE_TYPE = "int8"
 # These are the operator-selectable model identifiers for the local
 # faster-whisper STT path.  They are intentionally narrow: this is a
 # model-selection choice inside the existing backend, not a separate
-# engine.  ``faster-whisper`` accepts both short size names (``base``,
-# ``small``, ``large-v3``) and Hugging Face repo ids (e.g.
-# ``distil-whisper/distil-large-v3``), so we can expose both through the
-# same ``WhisperModel(model_size=...)`` constructor without branching
-# logic.
+# engine.  Every identifier here is a canonical faster-whisper name —
+# faster-whisper resolves each to a CTranslate2-compatible model repo
+# internally (e.g. ``distil-large-v3`` -> ``Systran/faster-distil-whisper-large-v3``).
+# We deliberately do NOT expose raw Hugging Face PyTorch repo ids like
+# ``distil-whisper/distil-large-v3`` — those download PyTorch weights
+# that lack the CT2 ``model.bin`` faster-whisper needs, and the load
+# fails at runtime.
 WHISPER_MODEL_BASE = "base"
 WHISPER_MODEL_SMALL = "small"
 WHISPER_MODEL_MEDIUM = "medium"
 WHISPER_MODEL_LARGE_V3 = "large-v3"
-WHISPER_MODEL_DISTIL_LARGE_V3 = "distil-whisper/distil-large-v3"
+WHISPER_MODEL_DISTIL_LARGE_V3 = "distil-large-v3"
 
 # Bounded allow-list surfaced in operator UIs (panel voice options,
 # setup wizard).  Keeps the panel form a small dropdown rather than a

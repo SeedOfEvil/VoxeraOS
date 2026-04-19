@@ -348,12 +348,12 @@ class TestWhisperModelSelection:
                 foundation=True,
                 input=True,
                 stt_backend="whisper_local",
-                stt_whisper_model="distil-whisper/distil-large-v3",
+                stt_whisper_model="distil-large-v3",
             )
         )
         wm = summary["stt_dependency"]["whisper_model"]
-        assert wm["selected"] == "distil-whisper/distil-large-v3"
-        assert wm["effective"] == "distil-whisper/distil-large-v3"
+        assert wm["selected"] == "distil-large-v3"
+        assert wm["effective"] == "distil-large-v3"
 
     def test_whisper_model_absent_for_non_whisper_backend(self) -> None:
         """Only the whisper_local backend exposes the whisper_model sub-dict."""

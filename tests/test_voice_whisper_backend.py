@@ -488,6 +488,86 @@ class TestWhisperConfiguration:
         assert backend._compute_type == "float32"
 
 
+# -- canonical model identifier pinning ---------------------------------------
+
+
+class TestWhisperCanonicalIdentifiers:
+    """Pin the exact identifier passed into faster-whisper's WhisperModel.
+
+    Regression guard for the bug where WHISPER_MODEL_DISTIL_LARGE_V3 was
+    set to the Hugging Face PyTorch repo id `distil-whisper/distil-large-v3`.
+    That identifier caused faster-whisper to download PyTorch weights that
+    lack the CT2 `model.bin`, and the load failed at runtime with
+    `Unable to open file 'model.bin' in model '...'`.  The canonical
+    faster-whisper identifier is `distil-large-v3`, which resolves to
+    `Systran/faster-distil-whisper-large-v3` internally.
+    """
+
+    def test_distil_large_v3_constant_is_canonical(self) -> None:
+        from voxera.voice.whisper_backend import WHISPER_MODEL_DISTIL_LARGE_V3
+
+        assert WHISPER_MODEL_DISTIL_LARGE_V3 == "distil-large-v3"
+
+    def test_ensure_model_passes_distil_large_v3_to_whisper_model(self) -> None:
+        """When operator selects Distil-Whisper, WhisperModel(...) gets
+        `distil-large-v3` as its first positional arg — not the raw HF
+        PyTorch repo id."""
+        from voxera.voice.whisper_backend import WHISPER_MODEL_DISTIL_LARGE_V3
+
+        backend = WhisperLocalBackend(model_size=WHISPER_MODEL_DISTIL_LARGE_V3)
+
+        import sys
+        import types
+
+        fake_module = types.ModuleType("faster_whisper")
+        captured: dict[str, object] = {}
+
+        def _fake_whisper_model(model_size, *args, **kwargs):
+            captured["model_size"] = model_size
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return MagicMock()
+
+        fake_module.WhisperModel = _fake_whisper_model  # type: ignore[attr-defined]
+
+        with patch.dict(sys.modules, {"faster_whisper": fake_module}):
+            backend._ensure_model()
+
+        assert captured["model_size"] == "distil-large-v3"
+        # Critical regression pin: the broken HF repo id must NEVER be
+        # what reaches faster-whisper.
+        assert captured["model_size"] != "distil-whisper/distil-large-v3"
+
+    def test_all_panel_choices_pass_through_unchanged(self) -> None:
+        """The factory → backend → WhisperModel chain must not mutate the
+        operator's selection.  Every panel-exposed choice reaches
+        faster-whisper verbatim."""
+        import sys
+        import types
+
+        from voxera.voice.whisper_backend import STT_WHISPER_MODEL_CHOICES
+
+        def _make_fake_whisper_model(sink: dict[str, object]):
+            def _fake_whisper_model(model_size, *args, **kwargs):
+                sink["model_size"] = model_size
+                return MagicMock()
+
+            return _fake_whisper_model
+
+        for choice in STT_WHISPER_MODEL_CHOICES:
+            backend = WhisperLocalBackend(model_size=choice)
+            fake_module = types.ModuleType("faster_whisper")
+            captured: dict[str, object] = {}
+            fake_module.WhisperModel = _make_fake_whisper_model(captured)  # type: ignore[attr-defined]
+
+            with patch.dict(sys.modules, {"faster_whisper": fake_module}):
+                backend._ensure_model()
+
+            assert captured["model_size"] == choice, (
+                f"Panel choice {choice!r} was mutated before reaching WhisperModel"
+            )
+
+
 # -- async entry point ---------------------------------------------------------
 
 
