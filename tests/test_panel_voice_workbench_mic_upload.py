@@ -31,6 +31,7 @@ Pins the browser-capture lane for the Voice Workbench:
 from __future__ import annotations
 
 import base64
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -125,8 +126,12 @@ def _iter_tmp_mic_files() -> Iterator[Path]:
 
     Used to assert that the route cleans up after itself even on the
     error paths.  The prefix is the canonical one defined by the route.
+    The root is resolved through :func:`tempfile.gettempdir` — the same
+    function ``tempfile.mkstemp`` resolves against — so this stays
+    correct on macOS / CI setups that override ``TMPDIR`` / ``TMP`` /
+    ``TEMP`` instead of using ``/tmp``.
     """
-    yield from Path("/tmp").glob(f"{routes_voice._MIC_UPLOAD_PREFIX}*")
+    yield from Path(tempfile.gettempdir()).glob(f"{routes_voice._MIC_UPLOAD_PREFIX}*")
 
 
 class TestMicUploadHappyPath:
@@ -216,9 +221,15 @@ class TestMicUploadHappyPath:
         assert res.status_code == 200
         assert observed["audio_path"].endswith(".ogg")
 
-    def test_unknown_content_type_falls_back_to_webm(
+    def test_unknown_audio_subtype_falls_back_to_webm(
         self, _panel_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """An ``audio/*`` subtype the suffix map doesn't recognize still runs —
+        it just falls back to the default ``.webm`` temp suffix.  Non-audio
+        content types are rejected by the allowlist (see
+        ``test_non_audio_content_type_rejected``); this only exercises the
+        soft-unknown case inside the allowed ``audio/*`` space.
+        """
         monkeypatch.setattr("voxera.panel.voice_workbench.generate_vera_reply", _fake_vera_reply)
         stt = _make_stt_response(transcript="hello")
         observed: dict[str, str] = {}
@@ -235,7 +246,7 @@ class TestMicUploadHappyPath:
                 body=b"\x00" * 64,
                 csrf=csrf,
                 query={"workbench_send_to_vera": "1"},
-                content_type="application/octet-stream",
+                content_type="audio/x-future-codec",
             )
         assert res.status_code == 200
         assert observed["audio_path"].endswith(".webm")
@@ -288,6 +299,59 @@ class TestMicUploadFailClosed:
             headers={**_operator_headers(), "content-type": "audio/webm"},
         )
         assert res.status_code == 403
+        assert list(_iter_tmp_mic_files()) == []
+
+    def test_non_audio_content_type_rejected(self, _panel_env: Path) -> None:
+        """Mic uploads with a non-``audio/*`` Content-Type fail closed with 415.
+
+        Only audio bytes make sense on this route — non-audio bodies would
+        be written to a temp file and then error deep inside STT with a
+        misleading diagnostic.  Reject them up front and never create a
+        temp file or invoke STT/Vera.
+        """
+        called = {"stt": False}
+
+        def _must_not_call_stt(**_kwargs: Any) -> STTResponse:  # pragma: no cover
+            called["stt"] = True
+            return _make_stt_response()
+
+        client = TestClient(panel_module.app)
+        csrf = _prime_csrf(client)
+        with patch(
+            "voxera.panel.routes_voice.transcribe_audio_file", side_effect=_must_not_call_stt
+        ):
+            res = _mic_post(
+                client,
+                body=b"hello world",
+                csrf=csrf,
+                content_type="text/plain",
+            )
+        assert res.status_code == 415
+        assert called["stt"] is False
+        assert list(_iter_tmp_mic_files()) == []
+
+    def test_missing_content_type_rejected(self, _panel_env: Path) -> None:
+        """A mic upload without any Content-Type header also fails closed."""
+        called = {"stt": False}
+
+        def _must_not_call_stt(**_kwargs: Any) -> STTResponse:  # pragma: no cover
+            called["stt"] = True
+            return _make_stt_response()
+
+        client = TestClient(panel_module.app)
+        csrf = _prime_csrf(client)
+        with patch(
+            "voxera.panel.routes_voice.transcribe_audio_file", side_effect=_must_not_call_stt
+        ):
+            res = client.post(
+                "/voice/workbench/mic-upload",
+                content=b"\x00" * 32,
+                headers={**_operator_headers(), "x-csrf-token": csrf},
+            )
+        # TestClient may default to application/octet-stream when content is
+        # supplied without content-type; either way, both are non-audio.
+        assert res.status_code == 415
+        assert called["stt"] is False
         assert list(_iter_tmp_mic_files()) == []
 
     def test_temp_file_cleaned_up_when_stt_raises(

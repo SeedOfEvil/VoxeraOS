@@ -118,6 +118,21 @@ def _mic_upload_suffix_for(content_type: str | None) -> str:
     return _MIC_UPLOAD_SUFFIX_BY_CONTENT_TYPE.get(base, ".webm")
 
 
+def _is_audio_content_type(content_type: str | None) -> bool:
+    """Return True if the request claims an ``audio/*`` body.
+
+    The mic-upload route routes bytes to the canonical STT pipeline, so
+    anything that is not audio is a misrouted request. Rejecting it with
+    ``415`` up front keeps operator diagnostics honest — non-audio bodies
+    would otherwise be written to a ``.webm`` temp file and only fail
+    deep inside the STT backend with a misleading error.
+    """
+    if not content_type:
+        return False
+    base = content_type.split(";", 1)[0].strip().lower()
+    return base.startswith("audio/")
+
+
 def _continue_in_vera_url(session_id: str, base_url: str) -> str:
     """Build a continuation link into the canonical Vera web surface.
 
@@ -1000,6 +1015,13 @@ def register_voice_routes(
         """
         await require_mutation_guard(request)
 
+        content_type_header = request.headers.get("content-type")
+        if not _is_audio_content_type(content_type_header):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Microphone upload requires an audio/* Content-Type.",
+            )
+
         raw_body = await request.body()
         if not raw_body:
             raise HTTPException(
@@ -1020,7 +1042,7 @@ def register_voice_routes(
         send_to_vera = send_to_vera_raw.lower() in {"1", "true", "on", "yes"}
         speak_response = speak_response_raw.lower() in {"1", "true", "on", "yes"}
 
-        suffix = _mic_upload_suffix_for(request.headers.get("content-type"))
+        suffix = _mic_upload_suffix_for(content_type_header)
         tmp_fd, tmp_path = tempfile.mkstemp(prefix=_MIC_UPLOAD_PREFIX, suffix=suffix)
         try:
             try:

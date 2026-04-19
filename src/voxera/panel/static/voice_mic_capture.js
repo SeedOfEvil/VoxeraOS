@@ -44,6 +44,7 @@
   var activeStream = null;
   var chunks = [];
   var recording = false;
+  var recorderErrored = false;
 
   startBtn.addEventListener("click", function () {
     clearError();
@@ -57,6 +58,7 @@
       .then(function (stream) {
         activeStream = stream;
         chunks = [];
+        recorderErrored = false;
         try {
           recorder = new MediaRecorder(stream);
         } catch (err) {
@@ -78,7 +80,15 @@
           // across browsers this is not guaranteed. Release the mic,
           // reset the UI, and surface a truthful error so we can never
           // leave the operator in a hidden "still recording" state.
+          //
+          // ``recorderErrored`` also tells ``handleRecorderStop`` to
+          // drop any partial chunks captured before the failure: the
+          // operator has seen an explicit error, so silently uploading
+          // whatever audio happened to be in the buffer would be a
+          // privacy nit we do not want.
+          recorderErrored = true;
           recording = false;
+          chunks = [];
           stopStream();
           startBtn.disabled = false;
           stopBtn.disabled = true;
@@ -137,6 +147,15 @@
   function handleRecorderStop() {
     recording = false;
     stopStream();
+    // If the recorder raised an ``error`` event before ``stop`` fired,
+    // the error handler has already reset the UI and dropped any
+    // partial chunks. Do not resurrect a half-captured recording and
+    // ship it to the server after the operator has seen an error.
+    if (recorderErrored) {
+      recorderErrored = false;
+      chunks = [];
+      return;
+    }
     if (!chunks.length) {
       startBtn.disabled = false;
       stopBtn.disabled = true;
