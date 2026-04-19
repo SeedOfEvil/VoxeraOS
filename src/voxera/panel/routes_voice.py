@@ -9,22 +9,32 @@ The TTS generation surface is artifact-oriented: it produces a real audio
 file on success and reports the output path and key response fields.
 The STT transcription surface is file-oriented: it accepts an audio file
 path, runs transcription, and renders the truthful result inline.
-No browser playback, no audio player, no live microphone UX.
 
 The Voice Workbench surface chains STT -> Vera -> optional TTS into a
 single bounded operator flow. It is conversational only: it never
-creates previews, submits jobs, or mutates real-world state.
+creates previews, submits jobs, or mutates real-world state. It accepts
+two input sources:
+
+* a typed audio file path (the original, unchanged lane), and
+* a bounded browser microphone recording delivered as a raw binary POST
+  to ``/voice/workbench/mic-upload``. The route writes the captured
+  bytes to a short-lived temp file and feeds it into the exact same
+  STT -> Vera -> optional TTS pipeline as the file-path lane. No
+  parallel pipeline, no hidden mic use, no always-on listening.
 """
 
 from __future__ import annotations
 
+import contextlib
+import os
 import secrets
+import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import DEFAULT_VERA_WEB_BASE_URL
@@ -55,6 +65,72 @@ from .voice_workbench_preview import (
     maybe_draft_canonical_preview_for_workbench,
     summarize_canonical_preview,
 )
+
+# Source labels for Voice Workbench runs. Operator-facing surfaces read
+# these to render truthful origin framing without inventing anything
+# about how the audio was captured. The typed-path lane has always been
+# "file_path"; the new browser-capture lane is "microphone".
+WORKBENCH_SOURCE_FILE_PATH = "file_path"
+WORKBENCH_SOURCE_MICROPHONE = "microphone"
+
+# Bounded cap on the size of a single microphone upload. 25 MiB comfortably
+# covers short operator utterances (a minute of uncompressed 16 kHz PCM is
+# under 2 MiB; compressed WebM/Opus is far smaller) while still preventing
+# arbitrary large uploads from parking bytes on disk or in memory.
+_MIC_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+
+# Prefix for mic-upload temp files.  Used so operator telemetry,
+# housekeeping, and disk audits can recognize workbench mic captures at a
+# glance.
+_MIC_UPLOAD_PREFIX = "voxera_workbench_mic_"
+
+# Narrow content-type -> suffix map.  We do NOT trust the client to pick
+# the extension, but we surface a hint in the suffix so STT backend logs
+# and operator diagnostics reflect what the browser sent. Anything
+# unrecognized falls back to ``.webm`` — the default MediaRecorder
+# container on Chromium/Firefox — rather than an extensionless temp
+# file.
+_MIC_UPLOAD_SUFFIX_BY_CONTENT_TYPE: dict[str, str] = {
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/wave": ".wav",
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".mp4",
+    "audio/aac": ".aac",
+    "audio/flac": ".flac",
+}
+
+
+def _mic_upload_suffix_for(content_type: str | None) -> str:
+    """Return the temp-file suffix for a mic-upload ``Content-Type`` header.
+
+    The browser's ``MediaRecorder`` container hint is advisory only — it
+    never changes pipeline behaviour — but it keeps diagnostic surfaces
+    honest about what was actually captured.  Parameter segments (e.g.
+    ``audio/webm;codecs=opus``) are stripped before lookup so the
+    mapping is robust to real browser output.
+    """
+    if not content_type:
+        return ".webm"
+    base = content_type.split(";", 1)[0].strip().lower()
+    return _MIC_UPLOAD_SUFFIX_BY_CONTENT_TYPE.get(base, ".webm")
+
+
+def _is_audio_content_type(content_type: str | None) -> bool:
+    """Return True if the request claims an ``audio/*`` body.
+
+    The mic-upload route routes bytes to the canonical STT pipeline, so
+    anything that is not audio is a misrouted request. Rejecting it with
+    ``415`` up front keeps operator diagnostics honest — non-audio bodies
+    would otherwise be written to a ``.webm`` temp file and only fail
+    deep inside the STT backend with a misleading error.
+    """
+    if not content_type:
+        return False
+    base = content_type.split(";", 1)[0].strip().lower()
+    return base.startswith("audio/")
 
 
 def _continue_in_vera_url(session_id: str, base_url: str) -> str:
@@ -464,33 +540,36 @@ def register_voice_routes(
                 status_code=500,
             )
 
-    @app.post("/voice/workbench/run", response_class=HTMLResponse)
-    async def voice_workbench_run(request: Request) -> HTMLResponse:
-        """Run the bounded Voice Workbench: STT -> Vera -> optional TTS.
+    async def _execute_workbench_pipeline(
+        *,
+        audio_path: str,
+        language: str | None,
+        session_id: str,
+        send_to_vera: bool,
+        speak_response: bool,
+        input_source: str,
+    ) -> tuple[dict[str, Any], Any, str | None, int]:
+        """Run the full Voice Workbench STT -> Vera -> optional TTS pipeline.
 
-        Conversational only: this lane never creates previews, submits
-        queue jobs, or implies real-world side effects.  The transcript
-        is persisted as a ``voice_transcript``-origin turn using the
-        canonical Vera session store, and Vera's textual reply is
-        rendered inline.  The "Speak response" toggle runs canonical
-        TTS; text stays authoritative even if TTS fails.
+        Shared by the file-path-input route (``/voice/workbench/run``)
+        and the browser-microphone-input route
+        (``/voice/workbench/mic-upload``).  Both input sources funnel
+        into this one helper so the canonical STT path, lifecycle
+        classification, preview drafting, and trust framing stay
+        identical — there is no parallel voice pipeline.
+
+        Returns ``(workbench_result, summary, page_error, prior_turn_count)``
+        so the caller can render the same ``voice.html`` template with
+        the same context shape regardless of input source.  ``input_source``
+        is carried through into the result ("file_path" or "microphone")
+        so the UI can render truthful origin labels without fabricating
+        anything about the capture.
         """
-        await require_mutation_guard(request)
-
-        audio_path = (await request_value(request, "workbench_audio_path", "")).strip()
-        language = (await request_value(request, "workbench_language", "")).strip() or None
-        session_id_raw = (await request_value(request, "workbench_session_id", "")).strip()
-        session_id = session_id_raw or new_session_id()
-        send_to_vera_raw = (await request_value(request, "workbench_send_to_vera", "")).strip()
-        speak_response_raw = (await request_value(request, "workbench_speak_response", "")).strip()
-        send_to_vera = send_to_vera_raw.lower() in {"1", "true", "on", "yes"}
-        speak_response = speak_response_raw.lower() in {"1", "true", "on", "yes"}
-
         flags = None
         try:
             flags = load_voice_foundation_flags()
             summary = build_voice_status_summary(flags)
-            page_error = None
+            page_error: str | None = None
         except Exception as exc:
             summary = None
             page_error = f"Failed to load voice status: {type(exc).__name__}: {exc}"
@@ -507,6 +586,7 @@ def register_voice_routes(
             "session_id": session_id,
             "input_audio_path": audio_path,
             "input_language": language,
+            "input_source": input_source,
             "send_to_vera_requested": send_to_vera,
             "speak_response_requested": speak_response,
             "stt": None,
@@ -842,6 +922,17 @@ def register_voice_routes(
             and not workbench_result.get("preview")
         )
 
+        return workbench_result, summary, page_error, prior_turn_count
+
+    def _render_workbench_response(
+        request: Request,
+        *,
+        workbench_result: dict[str, Any],
+        summary: Any,
+        page_error: str | None,
+        session_id: str,
+        prior_turn_count: int,
+    ) -> HTMLResponse:
         csrf_token = request.cookies.get(csrf_cookie) or secrets.token_urlsafe(24)
         tmpl = templates.get_template("voice.html")
         html = tmpl.render(
@@ -859,3 +950,130 @@ def register_voice_routes(
         resp.set_cookie(csrf_cookie, csrf_token, httponly=False, samesite="strict")
         _persist_vera_session_cookie(resp, session_id)
         return resp
+
+    @app.post("/voice/workbench/run", response_class=HTMLResponse)
+    async def voice_workbench_run(request: Request) -> HTMLResponse:
+        """Run the bounded Voice Workbench: STT -> Vera -> optional TTS.
+
+        Conversational only: this lane never creates previews, submits
+        queue jobs, or implies real-world side effects.  The transcript
+        is persisted as a ``voice_transcript``-origin turn using the
+        canonical Vera session store, and Vera's textual reply is
+        rendered inline.  The "Speak response" toggle runs canonical
+        TTS; text stays authoritative even if TTS fails.
+        """
+        await require_mutation_guard(request)
+
+        audio_path = (await request_value(request, "workbench_audio_path", "")).strip()
+        language = (await request_value(request, "workbench_language", "")).strip() or None
+        session_id_raw = (await request_value(request, "workbench_session_id", "")).strip()
+        session_id = session_id_raw or new_session_id()
+        send_to_vera_raw = (await request_value(request, "workbench_send_to_vera", "")).strip()
+        speak_response_raw = (await request_value(request, "workbench_speak_response", "")).strip()
+        send_to_vera = send_to_vera_raw.lower() in {"1", "true", "on", "yes"}
+        speak_response = speak_response_raw.lower() in {"1", "true", "on", "yes"}
+
+        workbench_result, summary, page_error, prior_turn_count = await _execute_workbench_pipeline(
+            audio_path=audio_path,
+            language=language,
+            session_id=session_id,
+            send_to_vera=send_to_vera,
+            speak_response=speak_response,
+            input_source=WORKBENCH_SOURCE_FILE_PATH,
+        )
+        return _render_workbench_response(
+            request,
+            workbench_result=workbench_result,
+            summary=summary,
+            page_error=page_error,
+            session_id=session_id,
+            prior_turn_count=prior_turn_count,
+        )
+
+    @app.post("/voice/workbench/mic-upload", response_class=HTMLResponse)
+    async def voice_workbench_mic_upload(request: Request) -> HTMLResponse:
+        """Accept a bounded browser-microphone recording and run the workbench.
+
+        Operator-initiated browser capture only. The browser records a
+        short utterance via the standard ``MediaRecorder`` API and POSTs
+        the resulting audio blob as the raw request body. Additional
+        pipeline options (``workbench_session_id``, ``workbench_language``,
+        ``workbench_send_to_vera``, ``workbench_speak_response``) ride on
+        the query string so the request stays a single binary body.
+
+        The route writes the uploaded bytes to a temp file, feeds that
+        file into the canonical Voice Workbench pipeline, and then
+        removes the temp file in a ``finally`` block. There is no
+        parallel voice pipeline: the same STT -> Vera -> optional TTS
+        helper runs for mic-origin audio as for file-path-origin audio,
+        and ``voice_transcript`` is still the canonical turn origin.
+
+        Fail-closed: an empty or oversized body returns a truthful
+        ``400`` with a short operator-facing error and never creates a
+        temp file. CSRF is still enforced via ``x-csrf-token`` on the
+        request headers, the same way the form lane enforces it.
+        """
+        await require_mutation_guard(request)
+
+        content_type_header = request.headers.get("content-type")
+        if not _is_audio_content_type(content_type_header):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Microphone upload requires an audio/* Content-Type.",
+            )
+
+        raw_body = await request.body()
+        if not raw_body:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Empty microphone upload body.",
+            )
+        if len(raw_body) > _MIC_UPLOAD_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=(f"Microphone upload exceeds {_MIC_UPLOAD_MAX_BYTES} byte cap."),
+            )
+
+        language = (await request_value(request, "workbench_language", "")).strip() or None
+        session_id_raw = (await request_value(request, "workbench_session_id", "")).strip()
+        session_id = session_id_raw or new_session_id()
+        send_to_vera_raw = (await request_value(request, "workbench_send_to_vera", "")).strip()
+        speak_response_raw = (await request_value(request, "workbench_speak_response", "")).strip()
+        send_to_vera = send_to_vera_raw.lower() in {"1", "true", "on", "yes"}
+        speak_response = speak_response_raw.lower() in {"1", "true", "on", "yes"}
+
+        suffix = _mic_upload_suffix_for(content_type_header)
+        tmp_fd, tmp_path = tempfile.mkstemp(prefix=_MIC_UPLOAD_PREFIX, suffix=suffix)
+        try:
+            try:
+                with os.fdopen(tmp_fd, "wb") as handle:
+                    handle.write(raw_body)
+            except Exception:
+                with contextlib.suppress(OSError):
+                    os.close(tmp_fd)
+                raise
+            (
+                workbench_result,
+                summary,
+                page_error,
+                prior_turn_count,
+            ) = await _execute_workbench_pipeline(
+                audio_path=tmp_path,
+                language=language,
+                session_id=session_id,
+                send_to_vera=send_to_vera,
+                speak_response=speak_response,
+                input_source=WORKBENCH_SOURCE_MICROPHONE,
+            )
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_path)
+
+        return _render_workbench_response(
+            request,
+            workbench_result=workbench_result,
+            summary=summary,
+            page_error=page_error,
+            session_id=session_id,
+            prior_turn_count=prior_turn_count,
+        )

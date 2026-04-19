@@ -244,9 +244,16 @@
             <div class="voice-result voice-workbench-lane">
               <div class="voice-result-header">
                 <span class="voice-result-title">Source Audio</span>
+                {% if workbench_result.input_source == "microphone" %}
+                  <span class="badge badge-paused" data-testid="voice-workbench-source-mic">browser microphone</span>
+                {% elif workbench_result.input_source == "file_path" %}
+                  <span class="badge badge-paused" data-testid="voice-workbench-source-file">file path</span>
+                {% endif %}
               </div>
               <div class="queue-detail-row">
-                <span class="queue-detail-label">Audio Path</span>
+                <span class="queue-detail-label">
+                  {% if workbench_result.input_source == "microphone" %}Temp Audio File{% else %}Audio Path{% endif %}
+                </span>
                 <span class="queue-detail-value">
                   {% if workbench_result.input_audio_path %}
                     <code class="voice-path-block">{{workbench_result.input_audio_path}}</code>
@@ -255,6 +262,13 @@
                   {% endif %}
                 </span>
               </div>
+              {% if workbench_result.input_source == "microphone" %}
+              <div class="queue-detail-row">
+                <span class="queue-detail-value muted">
+                  Captured in this browser on explicit operator action and processed through the same voice pipeline as the file-path input. The temp file is removed after the run.
+                </span>
+              </div>
+              {% endif %}
               {% if workbench_result.input_language %}
               <div class="queue-detail-row">
                 <span class="queue-detail-label">Language Hint</span>
@@ -540,25 +554,58 @@
           </div>
         {% endif %}
 
-        <form class="form-stack voice-action-form" method="post" action="/voice/workbench/run">
+        <form class="form-stack voice-action-form" method="post" action="/voice/workbench/run" data-testid="voice-workbench-form">
           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
           <input type="hidden" name="workbench_session_id" value="{{_wb_session_id}}" />
           <label>Audio File Path
-            <input class="input" type="text" name="workbench_audio_path" placeholder="/path/to/audio.wav" value="{% if workbench_result and workbench_result.input_audio_path %}{{workbench_result.input_audio_path}}{% endif %}" required />
+            <input class="input" type="text" name="workbench_audio_path" id="workbench_audio_path" placeholder="/path/to/audio.wav" value="{% if workbench_result and workbench_result.input_audio_path %}{{workbench_result.input_audio_path}}{% endif %}" required />
           </label>
           <label>Language <span class="muted text-sm">(optional)</span>
-            <input class="input" type="text" name="workbench_language" placeholder="en" value="{% if workbench_result and workbench_result.input_language %}{{workbench_result.input_language}}{% endif %}" />
+            <input class="input" type="text" name="workbench_language" id="workbench_language" placeholder="en" value="{% if workbench_result and workbench_result.input_language %}{{workbench_result.input_language}}{% endif %}" />
           </label>
           <label class="voice-checkbox-row">
-            <input type="checkbox" name="workbench_send_to_vera" value="1" {% if not workbench_result or workbench_result.send_to_vera_requested %}checked{% endif %} />
+            <input type="checkbox" name="workbench_send_to_vera" id="workbench_send_to_vera" value="1" {% if not workbench_result or workbench_result.send_to_vera_requested %}checked{% endif %} />
             Send transcript to Vera as a voice-origin turn
           </label>
           <label class="voice-checkbox-row">
-            <input type="checkbox" name="workbench_speak_response" value="1" {% if workbench_result and workbench_result.speak_response_requested %}checked{% endif %} />
+            <input type="checkbox" name="workbench_speak_response" id="workbench_speak_response" value="1" {% if workbench_result and workbench_result.speak_response_requested %}checked{% endif %} />
             Speak Vera&rsquo;s response (run canonical TTS on the text reply)
           </label>
           <button class="btn btn-primary" type="submit">Run Voice Workbench</button>
         </form>
+
+        {# ── Browser microphone capture (optional, additive) ──
+           Bounded operator-initiated capture. Recording only starts on
+           an explicit button press; no always-on listening, no hidden
+           capture, no streaming. The captured blob is POSTed to the
+           bounded ``/voice/workbench/mic-upload`` route and feeds into
+           the exact same STT -> Vera -> optional TTS pipeline as the
+           file-path form above. Progressive enhancement: the mic UI is
+           hidden by default and only revealed by the enhancer script
+           after verifying ``MediaRecorder`` + ``getUserMedia`` are
+           actually available in this browser. The file-path form stays
+           fully functional when JS is disabled or the browser lacks
+           microphone APIs. #}
+        <div class="voice-mic-capture" data-testid="voice-workbench-mic-capture" hidden>
+          <div class="voice-mic-capture-header">
+            <span class="voice-mic-capture-title">Or record from microphone</span>
+            <span class="voice-mic-capture-hint muted text-sm">
+              Captures a short utterance in this browser and feeds it into the same pipeline as the file-path form above. Recording only happens after you press &ldquo;Start recording&rdquo;.
+            </span>
+          </div>
+          <div class="voice-mic-capture-controls">
+            <button type="button" class="btn" data-testid="voice-workbench-mic-start" id="voice-mic-start">Start recording</button>
+            <button type="button" class="btn" data-testid="voice-workbench-mic-stop" id="voice-mic-stop" disabled>Stop &amp; upload</button>
+            <span class="voice-mic-capture-state" data-testid="voice-workbench-mic-state" id="voice-mic-state" role="status" aria-live="polite">Idle</span>
+          </div>
+          <div class="voice-mic-capture-error" data-testid="voice-workbench-mic-error" id="voice-mic-error" role="alert" hidden></div>
+        </div>
+        <noscript>
+          <div class="voice-empty-result voice-mic-capture-noscript" data-testid="voice-workbench-mic-noscript">
+            Browser microphone capture requires JavaScript. The file-path form above still works.
+          </div>
+        </noscript>
+        <script src="/static/voice_mic_capture.js" defer></script>
       </section>
 
       {# ── Zone 3: TTS Generation ────────────────────────────────────────── #}
