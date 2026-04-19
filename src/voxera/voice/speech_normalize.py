@@ -89,13 +89,20 @@ _BLOCKQUOTE_RE = re.compile(r"^[ \t]*>+[ \t]?", re.MULTILINE)
 # Fenced code block markers (``` or ~~~) on their own line.
 _FENCE_RE = re.compile(r"^[ \t]{0,3}(?:`{3,}|~{3,})[^\n]*$", re.MULTILINE)
 
-# Bold/strong: **text** or __text__ (non-greedy, no newline inside).
-_BOLD_RE = re.compile(r"(?<!\\)\*\*([^*\n]+?)\*\*|(?<!\\)__([^_\n]+?)__")
+# Bold/strong: **text** or __text__ (non-greedy, no newline inside,
+# no whitespace adjacent to the delimiters).  The ``(?!\s)`` / ``(?<!\s)``
+# guards match the CommonMark rule that emphasis delimiters cannot sit
+# next to whitespace -- this protects arithmetic expressions like
+# ``2 ** 3`` from being misread as bold wrappers.
+_BOLD_RE = re.compile(r"(?<!\\)\*\*(?!\s)([^*\n]+?)(?<!\s)\*\*|(?<!\\)__(?!\s)([^_\n]+?)(?<!\s)__")
 
-# Italic/emphasis: *text* or _text_ (non-greedy, no newline inside).
+# Italic/emphasis: *text* or _text_ (non-greedy, no newline inside,
+# no whitespace adjacent to the delimiters).  Matches CommonMark rules
+# so expressions like ``2 * 3 * 4`` and ``glob * pattern`` are left
+# untouched instead of being stripped as italic wrappers.
 # Intentionally runs after bold so the stronger pattern wins first.
-_ITALIC_STAR_RE = re.compile(r"(?<![\\*])\*([^*\n]+?)\*(?!\*)")
-_ITALIC_UNDER_RE = re.compile(r"(?<![\\_\w])_([^_\n]+?)_(?![_\w])")
+_ITALIC_STAR_RE = re.compile(r"(?<![\\*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\*)")
+_ITALIC_UNDER_RE = re.compile(r"(?<![\\_\w])_(?!\s)([^_\n]+?)(?<!\s)_(?![_\w])")
 
 # Inline code: `code`.  We strip the backticks but keep the content.
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+?)`")

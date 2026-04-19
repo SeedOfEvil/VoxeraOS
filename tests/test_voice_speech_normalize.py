@@ -324,3 +324,67 @@ class TestDeterminism:
         second = normalize_text_for_tts(source)
         third = normalize_text_for_tts(source)
         assert first == second == third
+
+
+# ---------------------------------------------------------------------------
+# 10. Semantic-drift regression guards.
+#
+# Real-world assistant replies contain arithmetic, glob patterns, URLs,
+# file paths, and code-like tokens that use '*' and '_' in ways that
+# *look* like markdown emphasis but are not.  These tests pin that
+# the conservative wrapper requires no whitespace inside the
+# delimiters (CommonMark rule), so these expressions pass through
+# untouched.  If a future change re-introduces spaced-asterisk
+# stripping, these tests will catch it.
+# ---------------------------------------------------------------------------
+
+
+class TestSemanticDriftGuards:
+    def test_multiplication_with_spaced_asterisk_preserved(self) -> None:
+        source = "The answer is 2 * 3 = 6 exactly."
+        assert normalize_text_for_tts(source) == source
+
+    def test_multi_factor_multiplication_preserved(self) -> None:
+        source = "Compute 2 * 3 * 4 = 24 quickly."
+        assert normalize_text_for_tts(source) == source
+
+    def test_python_exponent_operator_preserved(self) -> None:
+        source = "Use 2 ** 10 = 1024 as the shift factor."
+        assert normalize_text_for_tts(source) == source
+
+    def test_glob_pattern_preserved(self) -> None:
+        source = "Match files with * and ? in the pattern."
+        assert normalize_text_for_tts(source) == source
+
+    def test_url_with_underscores_preserved(self) -> None:
+        source = "See https://example.com/my_file_name.html for the spec."
+        assert normalize_text_for_tts(source) == source
+
+    def test_snake_case_identifier_preserved(self) -> None:
+        source = "Call helper_function_name inside some_module_name."
+        assert normalize_text_for_tts(source) == source
+
+    def test_file_path_preserved(self) -> None:
+        source = "Edit /var/log/syslog on the host."
+        assert normalize_text_for_tts(source) == source
+
+    def test_angle_bracket_html_like_preserved(self) -> None:
+        # Angle brackets mid-line are not blockquotes and must pass through.
+        source = "Use <div> and </div> to wrap content."
+        assert normalize_text_for_tts(source) == source
+
+    def test_unicode_bullet_preserved(self) -> None:
+        # A real unicode bullet ("•") is not a markdown bullet and
+        # must not be mistaken for one.
+        source = "The • symbol is not a markdown bullet."
+        assert normalize_text_for_tts(source) == source
+
+    def test_spaced_bold_delimiters_left_alone(self) -> None:
+        # Not valid CommonMark bold -- the delimiters sit next to
+        # whitespace -- so they must not be treated as bold wrappers.
+        source = "Run ** foo ** as literal text."
+        assert normalize_text_for_tts(source) == source
+
+    def test_spaced_italic_delimiters_left_alone(self) -> None:
+        source = "Put * here * exactly as written."
+        assert normalize_text_for_tts(source) == source
