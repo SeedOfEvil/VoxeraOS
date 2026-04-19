@@ -227,7 +227,10 @@
         micBtn.disabled = false;
         var payload = result.payload || {};
         if (!result.status || result.status >= 400 || payload.ok === false) {
-          var msg = payload.error || ("Dictation failed (" + result.status + ")");
+          var msg =
+            payload.error ||
+            payload.detail ||
+            ("Dictation failed (" + result.status + ")");
           setState("Idle");
           setError(msg);
           return;

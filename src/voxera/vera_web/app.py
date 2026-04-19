@@ -1786,7 +1786,7 @@ async def chat_voice(request: Request):
 
 
 @app.get("/vera/voice/audio/{token}")
-def vera_voice_audio(token: str) -> FileResponse:
+async def vera_voice_audio(token: str) -> FileResponse:
     """Serve a previously-registered TTS audio artifact.
 
     The dictation pipeline registers successful TTS outputs under a
@@ -1794,6 +1794,10 @@ def vera_voice_audio(token: str) -> FileResponse:
     this route so the real temp-file path stays server-side.  An
     unknown or expired token 404s; anything else is served as
     ``audio/wav``.
+
+    Kept ``async`` so registry reads and the POST-side writes both
+    run on the event loop, avoiding get→check→pop→unlink interleaves
+    between threadpool and coroutine under concurrent access.
     """
     clean = (token or "").strip()
     if not clean or not _TTS_TOKEN_ALPHABET_RE.match(clean):
