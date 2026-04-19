@@ -24,6 +24,7 @@ from __future__ import annotations
 import contextlib
 import os
 import tempfile
+import threading
 import time
 import wave
 from typing import Any
@@ -89,6 +90,15 @@ class PiperLocalBackend:
             speaker if speaker is not None else _env_str_optional("VOXERA_VOICE_TTS_PIPER_SPEAKER")
         )
         self._voice: Any = None
+        # Guards ``_ensure_voice`` so two concurrent first-turn
+        # synthesize calls on a freshly-shared backend cannot each
+        # kick off a duplicate Piper voice load in parallel.  Without
+        # this lock the process-wide shared-instance cache would
+        # still save every subsequent turn but the very first
+        # concurrent pair would pay the load cost twice.  Acquired
+        # only on the slow path (voice not yet loaded), so steady-
+        # state synthesis is not serialised.
+        self._voice_lock = threading.Lock()
 
     # -- TTSBackend protocol ---------------------------------------------------
 
@@ -196,12 +206,29 @@ class PiperLocalBackend:
     # -- internals -------------------------------------------------------------
 
     def _ensure_voice(self) -> Any:
-        """Lazy-load the Piper voice on first use."""
-        if self._voice is None:
-            from piper import PiperVoice
+        """Lazy-load the Piper voice on first use.
 
-            self._voice = PiperVoice.load(self._model_name)
-        return self._voice
+        The double-checked pattern below keeps the fast path (voice
+        already loaded) lock-free, while still serialising the slow
+        first-turn load so concurrent synthesize calls on a freshly-
+        shared backend do not each pay a duplicate
+        ``PiperVoice.load(...)`` cost.
+
+        Retry-on-failure: if ``PiperVoice.load(...)`` raises (missing
+        voice file, disk full, transient I/O) the exception propagates
+        and ``self._voice`` stays ``None``.  The next ``_ensure_voice``
+        call will retry the load — deliberately, so a transient
+        failure does not poison the cached backend for the lifetime
+        of the process.
+        """
+        if self._voice is not None:
+            return self._voice
+        with self._voice_lock:
+            if self._voice is None:
+                from piper import PiperVoice
+
+                self._voice = PiperVoice.load(self._model_name)
+            return self._voice
 
     @property
     def model_loaded(self) -> bool:

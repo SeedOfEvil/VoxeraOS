@@ -1,3 +1,41 @@
+## 2026-04-19 — perf(voice): reduce canonical Vera dictation latency and surface stage timings
+
+- **Motivation**: end-to-end voice round trip on canonical Vera (`POST /chat/voice`) felt too slow in practice even though STT model selection, previews, lifecycle flows, and trust boundaries were all working.  Operators needed (a) visibility into where time is going and (b) a first bounded latency reduction without weakening the trust model.
+- **Scope (deliberately bounded)**: profile-and-reduce on the canonical dictation path only.  No streaming, no duplex, no partial-transcript work.  No change to typed `/chat`, preview/lifecycle truth, queue submission semantics, or preview/queue governance boundaries.
+- **Backend caching** (`src/voxera/voice/stt_backend_factory.py`, `src/voxera/voice/tts_backend_factory.py`):
+  - Added `get_shared_stt_backend(flags)` and `get_shared_tts_backend(flags)` with process-wide instance reuse.
+  - Cache key is the small, immutable subset of `VoiceFoundationFlags` that changes backend construction (`voice_input_enabled`/`voice_output_enabled`, backend id, whisper/piper model).  Flag change rebuilds instance on next call so operator reconfig still takes effect immediately.
+  - Module-level `threading.Lock` guards construction so concurrent first-turn requests cannot race into duplicate model loads.
+  - `reset_shared_stt_backend()` / `reset_shared_tts_backend()` exposed for tests.
+- **Voice path delegation** (`src/voxera/voice/input.py`, `src/voxera/voice/output.py`):
+  - `transcribe_audio_file(...)` and `synthesize_text(...)` now resolve the adapter via the shared helpers when no explicit `backend` is passed.  Caller-supplied backends still win (tests and specialised callers).  This eliminates the per-turn faster-whisper / piper model reload that dominated cold-path latency.
+- **Stage timing instrumentation** (`src/voxera/vera_web/app.py` — `/chat/voice` handler):
+  - Every response now carries `payload["stage_timings"]`: `upload_ms`, `temp_write_ms`, `stt_ms`, `vera_ms`, `tts_ms`, `total_ms`.
+  - Stages that did not run this turn report `None` truthfully; never fabricated.
+  - Surfaced via the existing JSON payload so operator diagnostics can see where time went without adding new endpoints.
+- **Text-first, TTS-later** (`src/voxera/vera_web/static/vera_dictation.js` — `applyDictationResult`):
+  - Thread and preview-pane refresh happen BEFORE any TTS playback code, so the operator sees Vera's answer text as soon as the server returns; audio playback is strictly additive.  Text stays authoritative when TTS fails (already enforced server-side; now mirrored client-side too).
+- **UI state transitions** (`src/voxera/vera_web/static/vera_dictation.js`):
+  - Progressive bounded state transitions during a voice turn: `Uploading …` → `Transcribing…` (350 ms) → `Vera thinking…` (1400 ms) → `Speaking reply…` (when audio begins) → canonical post-turn state.
+  - Staged timers are tracked and cleared the moment the response arrives so a fast response can never leave a stale stage label on screen.  No spinner ambiguity; no "nothing is happening" gap.
+- **Tests** (`tests/test_vera_dictation_latency.py`, `tests/conftest.py`):
+  - New test module (15 tests): shared STT/TTS backend reuse and cache-key invalidation, `stage_timings` presence and truthfulness across success / STT failure / TTS-enabled runs, text authoritative when TTS is slow / failing, shared-backend wired into `transcribe_audio_file`, enhancer JS carries bounded state labels, dictated submit still routes through canonical `_submit_handoff` after timings were added.
+  - `conftest.py`: autouse fixture resets shared backends between tests so one test's patched adapter cannot leak into the next.
+  - All existing voice / dictation / workbench / preview / lifecycle suites pass unchanged (~540 tests).
+- **Invariants preserved**:
+  - Typed `/chat` behaviour unchanged.
+  - Dictated `/chat/voice` still goes through the canonical `run_vera_chat_turn` helper — same message-processing path as typed.
+  - Preview/lifecycle truth unchanged.  Explicit-submit still flows through `_submit_handoff`; queue submission remains explicit.
+  - Voice-input-disabled still fails closed before any bytes touch disk.
+  - Size / content-type gates unchanged.
+  - No backend behaviour fabricated, no fake progress, no silent error suppression.
+- **Review-pass hardening** (same PR):
+  - `WhisperLocalBackend._ensure_model` / `PiperLocalBackend._ensure_voice` now use a per-instance `threading.Lock` and a double-checked load pattern.  The factory-level cache lock only covered instance lookup; without the per-instance lock, two concurrent first-turn requests could still each call `WhisperModel(...)` / `PiperVoice.load(...)` in parallel and defeat part of the sharing benefit.  Fast path (model already loaded) stays lock-free.
+  - Docstrings on `transcribe_audio_file` / `synthesize_text` updated to state that the default path now resolves the process-wide shared instance (not a fresh instance per call).
+  - Two new concurrency-hardening tests simulate two threads racing into the lazy-load path and assert the real constructor runs exactly once.
+  - One new end-to-end wiring test confirms `get_shared_stt_backend` is the resolver `voice.input.transcribe_audio_file` actually uses, so a future refactor that silently bypassed the cache would fail this pin.
+- **Files touched**: `src/voxera/vera_web/app.py`, `src/voxera/vera_web/static/vera_dictation.js`, `src/voxera/voice/input.py`, `src/voxera/voice/output.py`, `src/voxera/voice/stt_backend_factory.py`, `src/voxera/voice/tts_backend_factory.py`, `src/voxera/voice/whisper_backend.py`, `src/voxera/voice/piper_backend.py`, `tests/conftest.py`, `tests/test_vera_dictation_latency.py` (new), `docs/CODEX_MEMORY.md`.
+
 ## 2026-04-16 — feat(voice): polish operator voice surface and result ergonomics
 
 - **Motivation**: make the `/voice/status` page feel more polished, legible, and demo-ready. The existing voice surface (status/config, TTS generation, STT transcription) has the right capability set but presentation and ergonomics needed refinement to match other polished panel pages (home, job detail).

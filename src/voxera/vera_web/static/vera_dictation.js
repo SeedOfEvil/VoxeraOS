@@ -195,10 +195,27 @@
       "audio/webm";
     var blob = new Blob(chunks, { type: mime });
     chunks = [];
-    setState(
-      "Transcribing \u2014 " + Math.round(blob.size / 1024) + " KB\u2026",
-    );
+    setState("Uploading \u2014 " + Math.round(blob.size / 1024) + " KB\u2026");
     uploadBlob(blob, mime);
+  }
+
+  // Track and cancel the staged "Transcribing…" / "Vera thinking…"
+  // timers between states so a slow or fast response does not leave
+  // the voice bar showing a stale stage.  A bounded two-timer model is
+  // deliberate: we never fabricate progress beyond what we know is
+  // true (upload done -> STT -> Vera).
+  var _stagingTimer1 = null;
+  var _stagingTimer2 = null;
+
+  function clearStagingTimers() {
+    if (_stagingTimer1) {
+      clearTimeout(_stagingTimer1);
+      _stagingTimer1 = null;
+    }
+    if (_stagingTimer2) {
+      clearTimeout(_stagingTimer2);
+      _stagingTimer2 = null;
+    }
   }
 
   function uploadBlob(blob, mime) {
@@ -212,6 +229,24 @@
     var url = "/chat/voice";
     var qs = params.toString();
     if (qs) url += "?" + qs;
+
+    // Progressive state transitions while the request is in flight.
+    // The server does STT -> Vera -> optional TTS in one round trip,
+    // so we cannot observe per-stage progress from the client, but we
+    // can still reflect the bounded stages the operator would expect
+    // to see: "Transcribing…" after a short delay, then
+    // "Vera thinking…" once STT would typically be done.  Both timers
+    // are cleared the moment the response arrives so the final state
+    // always reflects truthful server-reported progress, never a
+    // fabricated or lingering in-flight label.
+    clearStagingTimers();
+    _stagingTimer1 = setTimeout(function () {
+      if (uploading) setState("Transcribing\u2026");
+    }, 350);
+    _stagingTimer2 = setTimeout(function () {
+      if (uploading) setState("Vera thinking\u2026");
+    }, 1400);
+
     fetch(url, {
       method: "POST",
       body: blob,
@@ -230,6 +265,7 @@
       })
       .then(function (result) {
         uploading = false;
+        clearStagingTimers();
         micBtn.disabled = false;
         var payload = result.payload || {};
         if (!result.status || result.status >= 400 || payload.ok === false) {
@@ -259,6 +295,7 @@
       })
       .catch(function (err) {
         uploading = false;
+        clearStagingTimers();
         micBtn.disabled = false;
         setState("Idle");
         setError(errMessage(err));
@@ -266,6 +303,10 @@
   }
 
   function applyDictationResult(payload) {
+    // Render the thread and preview pane BEFORE touching state / TTS
+    // so the text reply lands on the screen as soon as the server
+    // returns.  TTS playback is strictly additive: if it fails or is
+    // slow, the operator has already seen Vera's answer.
     if (payload && Array.isArray(payload.turns)) {
       applyTurnsUpdate(payload.turns, payload.turn_count);
     }
@@ -290,11 +331,24 @@
     if (payload.tts_url && audioEl) {
       audioEl.hidden = false;
       audioEl.src = payload.tts_url;
+      // Show the "Speaking reply…" state only while audio is
+      // actually loading / playing; once it ends or errors, fall
+      // back to the canonical status-derived state so the voice bar
+      // never gets stuck on a stale speaking label.
+      setState("Speaking reply\u2026");
+      var resetState = function () {
+        setState(deriveStateFromCanonicalStatus(payload));
+      };
+      audioEl.onended = resetState;
+      audioEl.onerror = resetState;
       var playPromise = audioEl.play();
       if (playPromise && typeof playPromise.catch === "function") {
         playPromise.catch(function () {
           // Autoplay may be blocked by the browser; the <audio>
           // element has controls, so the operator can press play.
+          // Fall back to the canonical status line so the bar does
+          // not stay on "Speaking reply…" when nothing is playing.
+          resetState();
         });
       }
     } else if (audioEl) {

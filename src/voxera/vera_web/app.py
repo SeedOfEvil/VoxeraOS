@@ -1784,6 +1784,12 @@ async def chat_voice(request: Request) -> JSONResponse:
     * ``stt``, ``tts``, ``tts_url``, ``speak_response_requested`` —
       per-subsystem status dicts; ``tts_url`` is ``None`` when TTS is
       not requested or synthesis failed (text stays authoritative).
+    * ``stage_timings`` — bounded, truthful dict of per-stage wall-
+      clock milliseconds (``upload_ms``, ``temp_write_ms``, ``stt_ms``,
+      ``vera_ms``, ``tts_ms``, ``total_ms``).  ``None`` for a stage
+      that did not run this turn (e.g. ``tts_ms`` without
+      ``speak_response``).  Used by operator diagnostics to see where
+      time is going; never used to gate behaviour.
 
     Earlier iterations carried ``classification``, ``lifecycle``,
     ``vera``, ``preview_attempt``, and ``show_action_guidance`` from
@@ -1792,6 +1798,21 @@ async def chat_voice(request: Request) -> JSONResponse:
     the enhancer reads ``status`` + ``assistant_text`` + ``preview``
     directly instead of reconstructing state from sub-results.
     """
+    # Stage timings are collected throughout this handler and surfaced
+    # under ``payload["stage_timings"]`` so operators can see exactly
+    # where time is going in a dictation round trip.  Every entry is a
+    # wall-clock millisecond count; ``None`` means the stage did not
+    # run this turn (e.g. ``tts_ms`` without ``speak_response``).
+    request_started_at_ms = int(time.time() * 1000)
+    stage_timings: dict[str, int | None] = {
+        "upload_ms": None,
+        "temp_write_ms": None,
+        "stt_ms": None,
+        "vera_ms": None,
+        "tts_ms": None,
+        "total_ms": None,
+    }
+
     content_type_header = request.headers.get("content-type")
     if not _is_audio_content_type(content_type_header):
         raise HTTPException(
@@ -1854,7 +1875,9 @@ async def chat_voice(request: Request) -> JSONResponse:
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
+    upload_started_at_ms = int(time.time() * 1000)
     raw_body = await request.body()
+    stage_timings["upload_ms"] = max(0, int(time.time() * 1000) - upload_started_at_ms)
     if not raw_body:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1875,8 +1898,12 @@ async def chat_voice(request: Request) -> JSONResponse:
     stt_dict: dict[str, object]
     try:
         try:
+            temp_write_started_at_ms = int(time.time() * 1000)
             with os.fdopen(tmp_fd, "wb") as handle:
                 handle.write(raw_body)
+            stage_timings["temp_write_ms"] = max(
+                0, int(time.time() * 1000) - temp_write_started_at_ms
+            )
         except Exception:
             with contextlib.suppress(OSError):
                 os.close(tmp_fd)
@@ -1890,6 +1917,7 @@ async def chat_voice(request: Request) -> JSONResponse:
                 session_id=active_session,
             )
             elapsed_ms = int(time.time() * 1000) - start_ms
+            stage_timings["stt_ms"] = max(0, elapsed_ms)
             stt_ok = bool(stt_response.status == STT_STATUS_SUCCEEDED and stt_response.transcript)
             transcript_text = stt_response.transcript if stt_ok else None
             stt_dict = {
@@ -1921,14 +1949,23 @@ async def chat_voice(request: Request) -> JSONResponse:
     # ── Step 2: canonical Vera chat turn (same helper as typed /chat) ──
     chat_result: ChatTurnResult | None = None
     if stt_ok and transcript_text:
+        vera_started_at_ms = int(time.time() * 1000)
         chat_result = await run_vera_chat_turn(
             message=transcript_text,
             input_origin=InputOrigin.VOICE_TRANSCRIPT,
             session_id=active_session,
             voice_flags=voice_flags,
         )
+        stage_timings["vera_ms"] = max(0, int(time.time() * 1000) - vera_started_at_ms)
 
     # ── Step 3: optional TTS over the assistant text the canonical path produced ──
+    # Text is already authoritative at this point: ``chat_result.assistant_text``
+    # and the per-turn session writes happened inside ``run_vera_chat_turn``.
+    # TTS is strictly additive — if it fails or is slow, the JSON payload
+    # still carries the assistant text, the fresh turns list, and the
+    # canonical preview truth, so the enhancer can render the text reply
+    # without waiting on audio.  Text stays authoritative even when TTS
+    # fails.
     tts_dict: dict[str, object] | None = None
     tts_url: str | None = None
     tts_source_text = (
@@ -1945,6 +1982,7 @@ async def chat_voice(request: Request) -> JSONResponse:
                 session_id=active_session,
             )
             elapsed_ms = int(time.time() * 1000) - start_ms
+            stage_timings["tts_ms"] = max(0, elapsed_ms)
             tts_ok = bool(tts_response.status == TTS_STATUS_SUCCEEDED and tts_response.audio_path)
             tts_dict = {
                 "success": tts_ok,
@@ -2029,6 +2067,8 @@ async def chat_voice(request: Request) -> JSONResponse:
     # what the server just reported.  The flag exists so the UI never
     # has to infer "is this preview value authoritative?" from other
     # fields — truth is stated directly at the boundary.
+    stage_timings["total_ms"] = max(0, int(time.time() * 1000) - request_started_at_ms)
+
     payload: dict[str, object] = {
         "ok": ok,
         "session_id": result_session_id,
@@ -2043,6 +2083,7 @@ async def chat_voice(request: Request) -> JSONResponse:
         "tts": tts_dict,
         "tts_url": tts_url,
         "speak_response_requested": speak_response,
+        "stage_timings": stage_timings,
     }
     response = JSONResponse(payload)
     response.set_cookie("vera_session_id", result_session_id, httponly=False, samesite="lax")
