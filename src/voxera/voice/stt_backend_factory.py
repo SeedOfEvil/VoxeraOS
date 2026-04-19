@@ -10,9 +10,19 @@ Supported backends:
 
 The factory is intentionally boring: no plugin registry, no dynamic
 imports, no class scanning.  If more backends arrive, add an ``elif``.
+
+A process-wide shared instance helper (:func:`get_shared_stt_backend`)
+is also provided.  It reuses the same ``STTBackend`` across calls so
+heavy per-backend state (e.g. a loaded faster-whisper model) is not
+re-paid on every dictation turn.  The cache key is the tuple of
+voice-flag values that affect backend construction; a change to any
+of those values rebuilds the instance on the next call so operator
+config changes still take effect immediately.
 """
 
 from __future__ import annotations
+
+import threading
 
 from .flags import VoiceFoundationFlags
 from .stt_adapter import NullSTTBackend, STTBackend
@@ -56,3 +66,73 @@ def build_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
     # Unrecognized backend — return NullSTTBackend with a specific reason
     # so operators can see which identifier was rejected.
     return NullSTTBackend(reason=f"STT backend {flags.voice_stt_backend!r} is not recognized")
+
+
+# -- process-wide shared backend ----------------------------------------------
+#
+# Dictation latency is dominated by first-call Whisper model load.  The
+# backend instance itself is cheap to construct, but the CTranslate2
+# model on ``_ensure_model()`` can take multiple seconds on a cold
+# start.  Reusing the instance across turns pays that cost once per
+# process, not per request.
+#
+# Cache key: the small, immutable subset of flag values that actually
+# change backend construction (voice_input_enabled plus the explicit
+# backend identifier and model selection).  When any of those values
+# changes, ``get_shared_stt_backend`` rebuilds the instance on the next
+# call so operator reconfiguration takes effect immediately.
+#
+# Thread safety: accesses are guarded by a module-level lock so two
+# concurrent first-turn requests cannot race each other into building
+# two Whisper models in parallel.
+
+_SharedKey = tuple[bool, str | None, str | None]
+_shared_lock = threading.Lock()
+_shared_backend: STTBackend | None = None
+_shared_key: _SharedKey | None = None
+
+
+def _shared_key_for(flags: VoiceFoundationFlags) -> _SharedKey:
+    return (
+        flags.voice_input_enabled,
+        (flags.voice_stt_backend or "").strip().lower() or None,
+        (flags.voice_stt_whisper_model or "").strip() or None,
+    )
+
+
+def get_shared_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
+    """Return a process-wide shared STT backend for *flags*.
+
+    The instance is reused across calls so the Whisper model loads
+    once per process instead of once per dictation turn.  Construction
+    is guarded by a module-level lock so concurrent first-turn
+    requests cannot race each other into duplicate model loads.
+
+    The instance is rebuilt when any flag value that affects backend
+    construction changes; otherwise the previous instance is returned
+    as-is.
+
+    Fail-soft behaviour exactly matches :func:`build_stt_backend` —
+    the returned backend is always a valid ``STTBackend``.
+    """
+    global _shared_backend, _shared_key
+    key = _shared_key_for(flags)
+    with _shared_lock:
+        if _shared_backend is not None and _shared_key == key:
+            return _shared_backend
+        _shared_backend = build_stt_backend(flags)
+        _shared_key = key
+        return _shared_backend
+
+
+def reset_shared_stt_backend() -> None:
+    """Drop the process-wide shared STT backend.
+
+    Exists for tests that want a clean slate between cases so one
+    test's cached instance does not leak into the next.  Production
+    callers should rely on the cache-key invalidation instead.
+    """
+    global _shared_backend, _shared_key
+    with _shared_lock:
+        _shared_backend = None
+        _shared_key = None

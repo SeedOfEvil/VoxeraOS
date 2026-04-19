@@ -40,6 +40,28 @@ def _provide_default_config(
 
 
 @pytest.fixture(autouse=True)
+def _reset_shared_voice_backends() -> None:
+    """Drop any process-wide shared STT/TTS backend between tests.
+
+    The shared-backend caches (``voxera.voice.stt_backend_factory``
+    and ``voxera.voice.tts_backend_factory``) keep a single adapter
+    instance alive per process so the Whisper / Piper model load cost
+    is paid once per dictation session rather than once per turn.
+    Between tests this caching must be reset — otherwise a patched
+    backend from one test would leak into the next as a cached
+    instance.
+    """
+    from voxera.voice.stt_backend_factory import reset_shared_stt_backend
+    from voxera.voice.tts_backend_factory import reset_shared_tts_backend
+
+    reset_shared_stt_backend()
+    reset_shared_tts_backend()
+    yield
+    reset_shared_stt_backend()
+    reset_shared_tts_backend()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_health_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

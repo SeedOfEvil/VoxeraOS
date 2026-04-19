@@ -81,10 +81,14 @@ def transcribe_audio_file(
     - Success -> succeeded with normalized transcript
     """
     from .stt_adapter import transcribe_stt_request
-    from .stt_backend_factory import build_stt_backend
+    from .stt_backend_factory import get_shared_stt_backend
     from .stt_protocol import STT_SOURCE_AUDIO_FILE, build_stt_request
 
-    selected_backend = backend if backend is not None else build_stt_backend(flags)
+    # Prefer the process-wide shared backend so heavy state (e.g. the
+    # faster-whisper model) is loaded once per process rather than once
+    # per dictation turn.  A caller-supplied *backend* still wins so
+    # tests and specialised callers can inject bespoke adapters.
+    selected_backend = backend if backend is not None else get_shared_stt_backend(flags)
     request = build_stt_request(
         input_source=STT_SOURCE_AUDIO_FILE,
         audio_path=audio_path,

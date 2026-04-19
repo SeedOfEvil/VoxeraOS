@@ -69,10 +69,14 @@ def synthesize_text(
     - Success -> succeeded with real audio_path
     """
     from .tts_adapter import synthesize_tts_request
-    from .tts_backend_factory import build_tts_backend
+    from .tts_backend_factory import get_shared_tts_backend
     from .tts_protocol import build_tts_request
 
-    selected_backend = backend if backend is not None else build_tts_backend(flags)
+    # Prefer the process-wide shared backend so heavy state (e.g. the
+    # Piper voice) is loaded once per process rather than once per
+    # reply synthesis.  A caller-supplied *backend* still wins so
+    # tests and specialised callers can inject bespoke adapters.
+    selected_backend = backend if backend is not None else get_shared_tts_backend(flags)
     request = build_tts_request(
         text=text,
         voice_id=voice_id,
