@@ -36,7 +36,11 @@ from .openrouter_catalog import (
 from .paths import ensure_dirs
 from .secrets import get_secret, set_secret
 from .voice.stt_backend_factory import STT_BACKEND_WHISPER_LOCAL
-from .voice.tts_backend_factory import TTS_BACKEND_KOKORO_LOCAL, TTS_BACKEND_PIPER_LOCAL
+from .voice.tts_backend_factory import (
+    TTS_BACKEND_CHOICES,
+    TTS_BACKEND_KOKORO_LOCAL,
+    TTS_BACKEND_PIPER_LOCAL,
+)
 
 console = Console()
 
@@ -657,8 +661,12 @@ def _post_setup_validation(cfg: AppConfig) -> None:
     _render_validation_summary(checks)
 
 
+# STT choices stay local to the wizard today -- the STT factory does
+# not yet export a curated allow-list.  TTS choices are imported from
+# the factory so the wizard and panel share the exact same source of
+# truth; adding a new TTS backend flows through both surfaces
+# automatically.
 STT_BACKEND_CHOICES = (STT_BACKEND_WHISPER_LOCAL,)
-TTS_BACKEND_CHOICES = (TTS_BACKEND_PIPER_LOCAL, TTS_BACKEND_KOKORO_LOCAL)
 
 
 def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, object]:

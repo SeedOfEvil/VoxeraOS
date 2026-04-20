@@ -265,15 +265,19 @@
           {% if voice_options_result.ok %}
           <div class="alert alert-success" data-testid="voice-options-save-ok">
             Voice options saved.
-            {% if voice_options_result.saved_model %}
-              STT whisper model is now <span class="mono">{{voice_options_result.saved_model}}</span>.
-            {% else %}
-              STT whisper model selection cleared &mdash; backend will use its default.
+            {% if voice_options_result.stt_touched %}
+              {% if voice_options_result.saved_model %}
+                STT whisper model is now <span class="mono">{{voice_options_result.saved_model}}</span>.
+              {% else %}
+                STT whisper model selection cleared &mdash; backend will use its default.
+              {% endif %}
             {% endif %}
-            {% if voice_options_result.saved_tts_backend %}
-              TTS backend is now <span class="mono" data-testid="voice-options-saved-tts-backend">{{voice_options_result.saved_tts_backend}}</span>.
-            {% else %}
-              TTS backend selection cleared &mdash; backend will use its default.
+            {% if voice_options_result.tts_touched %}
+              {% if voice_options_result.saved_tts_backend %}
+                TTS backend is now <span class="mono" data-testid="voice-options-saved-tts-backend">{{voice_options_result.saved_tts_backend}}</span>.
+              {% else %}
+                TTS backend selection cleared &mdash; backend will use its default.
+              {% endif %}
             {% endif %}
           </div>
           {% else %}

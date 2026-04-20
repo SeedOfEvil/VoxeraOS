@@ -605,6 +605,76 @@ class TestKokoroFactoryIntegration:
         finally:
             reset_shared_tts_backend()
 
+    def test_shared_backend_rebuilds_when_kokoro_paths_change(self, tmp_path: Path) -> None:
+        """The shared-instance cache key covers Kokoro paths / voice.
+
+        If the operator updates the configured model/voices/voice via
+        runtime config or env, the cached backend must be rebuilt so
+        the next ``synthesize_text`` call picks up the new paths.
+        """
+        from voxera.voice.flags import VoiceFoundationFlags
+        from voxera.voice.tts_backend_factory import (
+            get_shared_tts_backend,
+            reset_shared_tts_backend,
+        )
+
+        reset_shared_tts_backend()
+        try:
+            model_a = tmp_path / "a.onnx"
+            voices_a = tmp_path / "va.bin"
+            model_b = tmp_path / "b.onnx"
+            voices_b = tmp_path / "vb.bin"
+            for p in (model_a, voices_a, model_b, voices_b):
+                p.write_bytes(b"")
+
+            flags_a = VoiceFoundationFlags(
+                enable_voice_foundation=True,
+                enable_voice_input=False,
+                enable_voice_output=True,
+                voice_stt_backend=None,
+                voice_tts_backend="kokoro_local",
+                voice_tts_kokoro_model=str(model_a),
+                voice_tts_kokoro_voices=str(voices_a),
+                voice_tts_kokoro_voice="af_sarah",
+            )
+            backend_a = get_shared_tts_backend(flags_a)
+            # Idempotent call -- same flags -> same instance.
+            assert get_shared_tts_backend(flags_a) is backend_a
+
+            # Flip the model path.
+            flags_b_model = VoiceFoundationFlags(
+                enable_voice_foundation=True,
+                enable_voice_input=False,
+                enable_voice_output=True,
+                voice_stt_backend=None,
+                voice_tts_backend="kokoro_local",
+                voice_tts_kokoro_model=str(model_b),
+                voice_tts_kokoro_voices=str(voices_a),
+                voice_tts_kokoro_voice="af_sarah",
+            )
+            backend_b = get_shared_tts_backend(flags_b_model)
+            assert backend_b is not backend_a
+            assert isinstance(backend_b, KokoroLocalBackend)
+            assert backend_b.model_path == str(model_b)
+
+            # Flip only the voice.
+            flags_c_voice = VoiceFoundationFlags(
+                enable_voice_foundation=True,
+                enable_voice_input=False,
+                enable_voice_output=True,
+                voice_stt_backend=None,
+                voice_tts_backend="kokoro_local",
+                voice_tts_kokoro_model=str(model_b),
+                voice_tts_kokoro_voices=str(voices_a),
+                voice_tts_kokoro_voice="am_michael",
+            )
+            backend_c = get_shared_tts_backend(flags_c_voice)
+            assert backend_c is not backend_b
+            assert isinstance(backend_c, KokoroLocalBackend)
+            assert backend_c.voice == "am_michael"
+        finally:
+            reset_shared_tts_backend()
+
 
 # -- text-first preservation ---------------------------------------------------
 

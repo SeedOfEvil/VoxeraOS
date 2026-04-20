@@ -33,6 +33,7 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -222,6 +223,27 @@ def _display_status_for_tts(response: TTSResponse, *, ok: bool) -> str:
     return response.status or "failed"
 
 
+async def _parse_form_fields(request: Request) -> dict[str, str]:
+    """Parse a URL-encoded form body into ``{field_name: value}``.
+
+    Returns a dict of the fields that were *actually present* in the
+    submission (including those submitted with an empty value).  The
+    caller can then distinguish "field not submitted" from "field
+    submitted empty" — which matters when a save lane needs to leave
+    unchanged fields alone while still honoring an explicit empty
+    selection as "clear this key".
+
+    Non-form bodies yield an empty dict so callers fail closed:
+    they update nothing rather than misread JSON as form fields.
+    """
+    content_type = request.headers.get("content-type", "")
+    if not content_type.startswith("application/x-www-form-urlencoded"):
+        return {}
+    body = (await request.body()).decode("utf-8", errors="ignore")
+    parsed = parse_qs(body, keep_blank_values=True)
+    return {key: values[0] if values else "" for key, values in parsed.items()}
+
+
 def register_voice_routes(
     app: FastAPI,
     *,
@@ -312,6 +334,14 @@ def register_voice_routes(
           runtime config value so the backend selection falls back to
           env / setup wizard config.
 
+        Only fields that the client actually submitted are touched.  A
+        stale client that predates the TTS-backend selector (and POSTs
+        only ``stt_whisper_model``) will NOT silently clear the TTS
+        backend — the runtime config keeps whatever the operator most
+        recently saved.  This keeps the Piper-era contract stable and
+        treats the form as the authoritative source only for the
+        fields it submits.
+
         The save lane uses the canonical ``update_runtime_config``
         writer so it shares atomic-write semantics with every other
         operator config update surface.  A submitted value that does
@@ -320,52 +350,58 @@ def register_voice_routes(
         """
         await require_mutation_guard(request)
 
-        raw_model = (await request_value(request, "stt_whisper_model", "")).strip()
-        raw_tts_backend = (await request_value(request, "tts_backend", "")).strip()
+        form_fields = await _parse_form_fields(request)
+        raw_model = form_fields.get("stt_whisper_model", "").strip()
+        raw_tts_backend = form_fields.get("tts_backend", "").strip()
         voice_options_result: dict[str, Any]
+        updates: dict[str, Any] = {}
 
-        if not raw_model or raw_model.lower() == "default":
-            persisted: str | None = None
-        elif raw_model in STT_WHISPER_MODEL_CHOICES:
-            persisted = raw_model
-        else:
-            voice_options_result = {
-                "ok": False,
-                "error": (
-                    f"Unrecognized STT whisper model {raw_model!r}. "
-                    "Pick one of the listed options or clear the selection."
-                ),
-                "submitted_model": raw_model,
-                "submitted_tts_backend": raw_tts_backend,
-            }
-            return _render_voice_page(request, voice_options_result=voice_options_result)
+        persisted: str | None = None
+        if "stt_whisper_model" in form_fields:
+            if not raw_model or raw_model.lower() == "default":
+                persisted = None
+            elif raw_model in STT_WHISPER_MODEL_CHOICES:
+                persisted = raw_model
+            else:
+                voice_options_result = {
+                    "ok": False,
+                    "error": (
+                        f"Unrecognized STT whisper model {raw_model!r}. "
+                        "Pick one of the listed options or clear the selection."
+                    ),
+                    "submitted_model": raw_model,
+                    "submitted_tts_backend": raw_tts_backend,
+                }
+                return _render_voice_page(request, voice_options_result=voice_options_result)
+            updates["voice_stt_whisper_model"] = persisted
 
         # TTS backend: empty clears; otherwise must be in the curated
         # allow-list so stale/invalid selections fail truthfully rather
-        # than landing silently in the runtime config.
-        if not raw_tts_backend or raw_tts_backend.lower() == "default":
-            persisted_tts: str | None = None
-        elif raw_tts_backend in TTS_BACKEND_CHOICES:
-            persisted_tts = raw_tts_backend
-        else:
-            voice_options_result = {
-                "ok": False,
-                "error": (
-                    f"Unrecognized TTS backend {raw_tts_backend!r}. "
-                    "Pick one of the listed options or clear the selection."
-                ),
-                "submitted_model": raw_model,
-                "submitted_tts_backend": raw_tts_backend,
-            }
-            return _render_voice_page(request, voice_options_result=voice_options_result)
+        # than landing silently in the runtime config.  An absent field
+        # (stale client, non-browser caller) is explicitly left alone
+        # so switching backends stays an operator-intentional action.
+        persisted_tts: str | None = None
+        if "tts_backend" in form_fields:
+            if not raw_tts_backend or raw_tts_backend.lower() == "default":
+                persisted_tts = None
+            elif raw_tts_backend in TTS_BACKEND_CHOICES:
+                persisted_tts = raw_tts_backend
+            else:
+                voice_options_result = {
+                    "ok": False,
+                    "error": (
+                        f"Unrecognized TTS backend {raw_tts_backend!r}. "
+                        "Pick one of the listed options or clear the selection."
+                    ),
+                    "submitted_model": raw_model,
+                    "submitted_tts_backend": raw_tts_backend,
+                }
+                return _render_voice_page(request, voice_options_result=voice_options_result)
+            updates["voice_tts_backend"] = persisted_tts
 
         try:
-            update_runtime_config(
-                {
-                    "voice_stt_whisper_model": persisted,
-                    "voice_tts_backend": persisted_tts,
-                }
-            )
+            if updates:
+                update_runtime_config(updates)
         except Exception as exc:
             voice_options_result = {
                 "ok": False,
@@ -379,6 +415,8 @@ def register_voice_routes(
             "ok": True,
             "saved_model": persisted,
             "saved_tts_backend": persisted_tts,
+            "stt_touched": "stt_whisper_model" in form_fields,
+            "tts_touched": "tts_backend" in form_fields,
             "submitted_model": raw_model,
             "submitted_tts_backend": raw_tts_backend,
         }

@@ -161,3 +161,106 @@ class TestVoiceOptionsSavePersistsTTSBackend:
         monkeypatch.delenv("VOXERA_VOICE_TTS_BACKEND", raising=False)
         flags = load_voice_foundation_flags(config_path=cfg_path, environ={})
         assert flags.voice_tts_backend == "kokoro_local"
+
+
+class TestVoiceOptionsSaveDoesNotCascadeClear:
+    """Regression: a stale client must not silently clear unrelated fields.
+
+    Pre-Kokoro the form only carried ``stt_whisper_model``.  A cached
+    browser page (or an automation script) that predates the TTS
+    selector and POSTs only the STT field must NOT wipe an existing
+    TTS backend selection.  The hardened save lane only touches the
+    fields actually submitted.
+    """
+
+    def test_stt_only_submission_preserves_existing_tts_backend(self, _panel_env: Path) -> None:
+        cfg_path = _panel_env
+        cfg_path.write_text(
+            json.dumps({"voice_tts_backend": "kokoro_local"}),
+            encoding="utf-8",
+        )
+        client = TestClient(panel_module.app)
+        headers = _csrf_headers(client)
+        # Simulate a pre-TTS-selector client: submit ONLY stt_whisper_model.
+        res = client.post(
+            "/voice/options/save",
+            headers=headers,
+            data={"stt_whisper_model": ""},
+        )
+        assert res.status_code == 200
+        saved = json.loads(cfg_path.read_text(encoding="utf-8"))
+        # Existing Kokoro selection must survive an STT-only save.
+        assert saved["voice_tts_backend"] == "kokoro_local"
+
+    def test_tts_only_submission_preserves_existing_stt_model(self, _panel_env: Path) -> None:
+        cfg_path = _panel_env
+        cfg_path.write_text(
+            json.dumps({"voice_stt_whisper_model": "distil-large-v3"}),
+            encoding="utf-8",
+        )
+        client = TestClient(panel_module.app)
+        headers = _csrf_headers(client)
+        # Submit only the TTS field.
+        res = client.post(
+            "/voice/options/save",
+            headers=headers,
+            data={"tts_backend": "kokoro_local"},
+        )
+        assert res.status_code == 200
+        saved = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert saved["voice_tts_backend"] == "kokoro_local"
+        # Existing STT model selection must survive a TTS-only save.
+        assert saved["voice_stt_whisper_model"] == "distil-large-v3"
+
+    def test_empty_submission_leaves_both_keys_untouched(self, _panel_env: Path) -> None:
+        cfg_path = _panel_env
+        cfg_path.write_text(
+            json.dumps(
+                {
+                    "voice_tts_backend": "piper_local",
+                    "voice_stt_whisper_model": "distil-large-v3",
+                }
+            ),
+            encoding="utf-8",
+        )
+        client = TestClient(panel_module.app)
+        headers = _csrf_headers(client)
+        # No fields at all — treat as a no-op save, not a clear-everything.
+        res = client.post("/voice/options/save", headers=headers, data={})
+        assert res.status_code == 200
+        saved = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert saved["voice_tts_backend"] == "piper_local"
+        assert saved["voice_stt_whisper_model"] == "distil-large-v3"
+
+
+class TestVoiceOptionsKokoroPathsSurfaceInStatus:
+    """Regression: saving Kokoro backend should make Kokoro paths surface
+    in ``/voice/status`` when the operator also provides them via env."""
+
+    def test_kokoro_paths_from_env_flow_into_status(
+        self,
+        _panel_env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        model_path = tmp_path / "kokoro.onnx"
+        voices_path = tmp_path / "voices.bin"
+        model_path.write_bytes(b"")
+        voices_path.write_bytes(b"")
+        monkeypatch.setenv("VOXERA_ENABLE_VOICE_FOUNDATION", "1")
+        monkeypatch.setenv("VOXERA_ENABLE_VOICE_OUTPUT", "1")
+        monkeypatch.setenv("VOXERA_VOICE_TTS_BACKEND", "kokoro_local")
+        monkeypatch.setenv("VOXERA_VOICE_TTS_KOKORO_MODEL", str(model_path))
+        monkeypatch.setenv("VOXERA_VOICE_TTS_KOKORO_VOICES", str(voices_path))
+        monkeypatch.setenv("VOXERA_VOICE_TTS_KOKORO_VOICE", "am_michael")
+
+        client = TestClient(panel_module.app)
+        res = client.get("/voice/status.json", headers=_operator_headers())
+        assert res.status_code == 200
+        voice = res.json()["voice"]
+        assert voice["tts"]["backend"] == "kokoro_local"
+        km = voice["tts_dependency"]["kokoro_model"]
+        assert km["configured"] is True
+        assert km["model_exists"] is True
+        assert km["voices_exists"] is True
+        assert km["effective_voice"] == "am_michael"
