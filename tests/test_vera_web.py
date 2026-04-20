@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -6167,11 +6168,11 @@ def test_index_includes_active_chat_polling_hook(tmp_path, monkeypatch):
 def test_index_pulse_dot_animation_is_composite_only(tmp_path, monkeypatch):
     """The Vera pulse-dot must only animate opacity.
 
-    Animating box-shadow inside the .shell (which has backdrop-filter:
-    blur) forces the compositor to re-blur the backdrop region on
-    every animation frame — the classic high-GPU pattern that showed
-    up on idle Vera tabs.  Keep this locked down so the regression
-    can't come back accidentally.
+    Even now that the shell no longer has backdrop-filter, animating
+    box-shadow on the dot would force a per-frame paint inside the
+    shell's painted layer.  Keep the animation composite-only so it
+    runs entirely on the compositor thread and never wakes the
+    renderer on an idle tab.
     """
     # Read the canonical stylesheet via the app so we are reading what
     # the browser would receive, not a stale on-disk copy.
@@ -6188,12 +6189,66 @@ def test_index_pulse_dot_animation_is_composite_only(tmp_path, monkeypatch):
     pulse_block = css[start:end]
     assert "box-shadow" not in pulse_block, (
         "pulse-dot keyframes must not animate box-shadow — that forces "
-        "a per-frame paint that invalidates the parent backdrop-filter "
-        "cache and is the primary idle-GPU regression we fixed."
+        "a per-frame paint inside the shell's painted layer and is the "
+        "kind of looping renderer wake-up we explicitly want to avoid."
     )
     assert "opacity" in pulse_block
     # Reduced-motion users get no looping animation at all.
     assert "prefers-reduced-motion" in css
+
+
+def test_index_shell_has_no_backdrop_filter(tmp_path, monkeypatch):
+    """The .shell must not use backdrop-filter.
+
+    backdrop-filter on a 960 px × 100 vh container is the dominant
+    remaining idle-GPU cost on the canonical Vera page: the compositor
+    has to keep a re-blurrable snapshot of the body underneath the
+    shell and re-blur on every paint that touches the shell (caret
+    blink, focus ring, hover, status text changes, scroll, polling
+    DOM tweaks, …).  Removing it drops the renderer / GPU process
+    baseline materially.  Lock the regression so a future glassmorphism
+    pass doesn't quietly bring it back.
+    """
+    client = TestClient(vera_app_module.app)
+    res = client.get("/static/vera.css")
+    assert res.status_code == 200
+    css = res.text
+    # Strip CSS block comments so the check looks at active property
+    # declarations only — the file deliberately retains a rationale
+    # comment that mentions backdrop-filter by name.
+    stripped_css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    assert "backdrop-filter:" not in stripped_css, (
+        "backdrop-filter was the dominant idle-GPU offender on canonical "
+        "Vera tabs; the shell must stay flat-painted."
+    )
+    assert "-webkit-backdrop-filter:" not in stripped_css
+
+
+def test_index_panel_tokens_are_opaque(tmp_path, monkeypatch):
+    """--panel / --panel-2 must be opaque colors, not rgba().
+
+    The shell relies on an opaque panel color so it can live in a flat
+    painted layer with no compositor backdrop snapshot.  An rgba()
+    panel would re-introduce the need for a backdrop snapshot the
+    moment any blur / filter / mix-blend-mode is added underneath, and
+    is also a strong hint that someone is about to put backdrop-filter
+    back.  Pin the design intent.
+    """
+    client = TestClient(vera_app_module.app)
+    res = client.get("/static/vera.css")
+    assert res.status_code == 200
+    css = res.text
+    # Find the :root block and assert the panel tokens are flat hex.
+    root_start = css.index(":root")
+    root_end = css.index("}", root_start)
+    root_block = css[root_start:root_end]
+    panel_line = next(ln for ln in root_block.splitlines() if ln.strip().startswith("--panel:"))
+    panel2_line = next(ln for ln in root_block.splitlines() if ln.strip().startswith("--panel-2:"))
+    for line in (panel_line, panel2_line):
+        assert "rgba" not in line, (
+            f"panel token must be opaque to avoid forcing a compositor "
+            f"backdrop snapshot on the .shell: got {line!r}"
+        )
 
 
 def test_index_polling_backs_off_when_idle_and_wakes_on_activity(tmp_path, monkeypatch):
