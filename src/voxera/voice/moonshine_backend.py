@@ -47,20 +47,16 @@ from .stt_protocol import (
 # "installed" signal in status surfaces.
 
 _MOONSHINE_AVAILABLE: bool
-_MOONSHINE_IMPORT_ERROR: str | None = None
 try:
     import moonshine_onnx  # noqa: F401
 
     _MOONSHINE_AVAILABLE = True
-except ModuleNotFoundError as exc:
-    _MOONSHINE_IMPORT_ERROR = str(exc)
+except ModuleNotFoundError:
     try:
         import moonshine  # noqa: F401
 
         _MOONSHINE_AVAILABLE = True
-        _MOONSHINE_IMPORT_ERROR = None
-    except ModuleNotFoundError as exc2:
-        _MOONSHINE_IMPORT_ERROR = str(exc2)
+    except ModuleNotFoundError:
         _MOONSHINE_AVAILABLE = False
 
 # -- environment defaults -----------------------------------------------------

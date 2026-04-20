@@ -448,10 +448,10 @@ def run_quick_doctor(
             f"backend={stt_block['backend'] or '-'}"
         )
         whisper_model = stt_dep.get("whisper_model") if isinstance(stt_dep, dict) else None
+        moonshine_model = stt_dep.get("moonshine_model") if isinstance(stt_dep, dict) else None
         if isinstance(whisper_model, dict) and whisper_model.get("effective"):
             stt_detail += f" model={whisper_model['effective']}"
-        moonshine_model = stt_dep.get("moonshine_model") if isinstance(stt_dep, dict) else None
-        if isinstance(moonshine_model, dict) and moonshine_model.get("effective"):
+        elif isinstance(moonshine_model, dict) and moonshine_model.get("effective"):
             stt_detail += f" model={moonshine_model['effective']}"
         if stt_block.get("reason"):
             stt_detail += f" reason={stt_block['reason']}"
