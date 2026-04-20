@@ -473,9 +473,9 @@ class TestMoonshineTranscriptionSuccess:
         assert resp.inference_ms is not None
 
     def test_empty_lines_maps_to_empty_audio(self, tmp_path, monkeypatch) -> None:
-        """A Transcript with no lines — or lines carrying whitespace
-        only — collapses to the canonical empty_audio failure via the
-        STT entry point."""
+        """Zero-line Moonshine return → ``empty_audio`` failure with a
+        truthful diagnostic error that distinguishes it from the
+        whitespace-only case."""
         audio_file = tmp_path / "silence.wav"
         audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
@@ -496,8 +496,44 @@ class TestMoonshineTranscriptionSuccess:
             resp = transcribe_stt_request(req, adapter=backend)
         assert resp.status == STT_STATUS_FAILED
         assert resp.error_class == STT_ERROR_EMPTY_AUDIO
+        # Diagnostic must name the zero-line path, the audio duration
+        # and the sample rate so operators can triage without guessing.
+        assert "no transcript lines" in (resp.error or "")
+        assert "1000 ms" in (resp.error or "")
+        assert "16000 Hz" in (resp.error or "")
+
+    def test_short_audio_hint_appears_under_800ms(self, tmp_path, monkeypatch) -> None:
+        """When the decoded audio is under ~800 ms the empty-line
+        diagnostic must include the 'too short' hint so the operator
+        can see their clip was below Moonshine's reliable floor."""
+        audio_file = tmp_path / "short.wav"
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
+
+        backend = MoonshineLocalBackend()
+        _prime_backend(backend, _fake_transcript())
+        # 4000 samples @ 16 kHz = 250 ms
+        monkeypatch.setattr(
+            "voxera.voice.moonshine_backend.load_wav_file",
+            MagicMock(return_value=([0.0] * 4000, 16000)),
+            raising=False,
+        )
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="tiny",
+            audio_path=str(audio_file),
+        )
+        with patch("voxera.voice.moonshine_backend._MOONSHINE_AVAILABLE", True):
+            resp = transcribe_stt_request(req, adapter=backend)
+        assert resp.error_class == STT_ERROR_EMPTY_AUDIO
+        assert "under 800 ms" in (resp.error or "")
+        assert "hold" in (resp.error or "").lower() or "longer" in (resp.error or "").lower()
 
     def test_whitespace_only_lines_map_to_empty_audio(self, tmp_path, monkeypatch) -> None:
+        """Moonshine emitting line objects with only-whitespace text
+        → ``empty_audio`` with a diagnostic that calls out the line
+        count so operators can see Moonshine *did* emit lines but all
+        were blank."""
         audio_file = tmp_path / "ws.wav"
         audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
@@ -518,6 +554,76 @@ class TestMoonshineTranscriptionSuccess:
             resp = transcribe_stt_request(req, adapter=backend)
         assert resp.status == STT_STATUS_FAILED
         assert resp.error_class == STT_ERROR_EMPTY_AUDIO
+        assert "2 transcript line(s) with no text" in (resp.error or "")
+        # Whitespace-only branch must NOT mention "no transcript lines"
+        # (that is the zero-line branch).
+        assert "no transcript lines" not in (resp.error or "")
+
+    def test_valid_transcript_bypasses_diagnostic_path(self, tmp_path, monkeypatch) -> None:
+        """Regression pin: a non-empty transcript must not accidentally
+        reach the empty-line diagnostic branch.  Joined text comes
+        through unchanged and protocol-layer normalization folds
+        whitespace."""
+        audio_file = tmp_path / "ok.wav"
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
+
+        backend = MoonshineLocalBackend()
+        _prime_backend(backend, _fake_transcript("hello there"))
+        monkeypatch.setattr(
+            "voxera.voice.moonshine_backend.load_wav_file",
+            self._fake_load(),
+            raising=False,
+        )
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="ok",
+            audio_path=str(audio_file),
+        )
+        with patch("voxera.voice.moonshine_backend._MOONSHINE_AVAILABLE", True):
+            resp = transcribe_stt_request(req, adapter=backend)
+        assert resp.status == STT_STATUS_SUCCEEDED
+        assert resp.transcript == "hello there"
+        assert resp.error is None
+        assert resp.error_class is None
+
+    def test_keep_failed_audio_env_var_preserves_temp_wav(self, tmp_path, monkeypatch) -> None:
+        """With ``VOXERA_VOICE_STT_MOONSHINE_KEEP_FAILED_AUDIO=1`` set,
+        an empty-transcript failure must leave the transcoded temp WAV
+        on disk and include its path in the error so operators can
+        inspect the audio Moonshine actually saw.  Without the env
+        var, the temp is cleaned up (previous behaviour)."""
+        not_a_wav = tmp_path / "clip.webm"
+        not_a_wav.write_bytes(b"\x1a\x45\xdf\xa3")
+
+        tmp_wav = tmp_path / "preserved.wav"
+        tmp_wav.write_bytes(b"RIFF\x00\x00\x00\x00WAVEpres")
+
+        monkeypatch.setattr(
+            "voxera.voice.moonshine_backend.ensure_pcm_wav",
+            lambda source: (tmp_wav, tmp_wav),
+        )
+        monkeypatch.setattr(
+            "voxera.voice.moonshine_backend.load_wav_file",
+            MagicMock(return_value=([0.0] * 16000, 16000)),
+            raising=False,
+        )
+        monkeypatch.setenv("VOXERA_VOICE_STT_MOONSHINE_KEEP_FAILED_AUDIO", "1")
+
+        backend = MoonshineLocalBackend()
+        _prime_backend(backend, _fake_transcript())  # zero lines
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="preserve",
+            audio_path=str(not_a_wav),
+        )
+        with patch("voxera.voice.moonshine_backend._MOONSHINE_AVAILABLE", True):
+            resp = transcribe_stt_request(req, adapter=backend)
+        assert resp.error_class == STT_ERROR_EMPTY_AUDIO
+        assert str(tmp_wav) in (resp.error or "")
+        # Preserved: the temp WAV must still exist after the call.
+        assert tmp_wav.exists()
 
 
 # -- transcription failure (mocked) -------------------------------------------

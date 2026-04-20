@@ -37,6 +37,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ from .stt_adapter import STTAdapterResult, STTBackendUnsupportedError
 from .stt_protocol import (
     STT_ERROR_BACKEND_ERROR,
     STT_ERROR_BACKEND_MISSING,
+    STT_ERROR_EMPTY_AUDIO,
     STT_SOURCE_AUDIO_FILE,
     STTRequest,
 )
@@ -256,7 +258,7 @@ class MoonshineLocalBackend:
             inference_start_ms = int(time.time() * 1000)
             try:
                 transcript_obj = transcriber.transcribe_without_streaming(audio_data, sample_rate)
-                transcript_text = _extract_transcript_text(transcript_obj)
+                line_summary = _describe_transcript(transcript_obj)
             except Exception as exc:
                 return STTAdapterResult(
                     transcript=None,
@@ -264,6 +266,7 @@ class MoonshineLocalBackend:
                     error_class=STT_ERROR_BACKEND_ERROR,
                 )
             inference_end_ms = int(time.time() * 1000)
+            inference_ms = inference_end_ms - inference_start_ms
 
             # Audio duration is derivable from the decoded sample count
             # and rate.  Moonshine's transcriber does not report
@@ -273,10 +276,45 @@ class MoonshineLocalBackend:
             if sample_rate:
                 audio_duration_ms = int(len(audio_data) / sample_rate * 1000)
 
+            joined = line_summary.joined_text
+            if not joined.strip():
+                # Moonshine returned nothing usable.  Don't hand back
+                # transcript=None and let the protocol layer build a
+                # generic "empty after normalization" error — operators
+                # have no way to tell whether the problem was the audio,
+                # the model, or our normalization.  Build the truthful
+                # diagnostic here instead, so panel/dictation/workbench
+                # surfaces carry specifics they can act on.
+                #
+                # When the operator opts in via
+                # ``VOXERA_VOICE_STT_MOONSHINE_KEEP_FAILED_AUDIO=1`` we
+                # *keep* the transcoded temp WAV and append its path to
+                # the error so the audio can be inspected.  Default is
+                # to clean up (the existing behaviour).
+                keep_audio = _env_truthy("VOXERA_VOICE_STT_MOONSHINE_KEEP_FAILED_AUDIO")
+                preserved_path: str | None = None
+                if keep_audio and cleanup_path is not None:
+                    preserved_path = str(cleanup_path)
+                    cleanup_path = None  # suppress the finally-block unlink
+                msg = _format_empty_transcript_error(
+                    line_summary=line_summary,
+                    audio_duration_ms=audio_duration_ms,
+                    sample_rate=sample_rate,
+                    decode_path=str(decode_path),
+                    preserved_path=preserved_path,
+                )
+                return STTAdapterResult(
+                    transcript=None,
+                    error=msg,
+                    error_class=STT_ERROR_EMPTY_AUDIO,
+                    inference_ms=inference_ms,
+                    audio_duration_ms=audio_duration_ms,
+                )
+
             return STTAdapterResult(
-                transcript=transcript_text or None,
+                transcript=joined,
                 language=None,
-                inference_ms=inference_end_ms - inference_start_ms,
+                inference_ms=inference_ms,
                 audio_duration_ms=audio_duration_ms,
             )
         finally:
@@ -323,26 +361,109 @@ class MoonshineLocalBackend:
         return self._transcriber is not None
 
 
-def _extract_transcript_text(transcript_obj: Any) -> str:
-    """Normalize a ``moonshine_voice.Transcript`` to a plain string.
+@dataclass(frozen=True)
+class _TranscriptSummary:
+    """Debug-friendly view of a Moonshine ``Transcript``.
 
-    ``transcribe_without_streaming`` returns a ``Transcript`` dataclass
-    holding a list of ``TranscriptLine`` entries, each with a ``text``
-    field.  We join them on spaces to produce a single transcript
-    string; downstream ``normalize_transcript_text`` folds the
-    whitespace.  Fail-closed: anything unexpected stringifies rather
-    than raising, so the canonical STT seam stays in charge of
-    empty-transcript semantics.
+    Carries enough information to distinguish the three empty-result
+    shapes that operators hit in practice:
+
+    - ``line_count == 0`` — Moonshine returned no lines (audio too
+      short / too quiet for the model to emit anything).
+    - ``line_count > 0`` but ``joined_text`` is empty/whitespace —
+      Moonshine emitted line objects that carry no text (rare but
+      possible with some edge inputs).
+    - ``joined_text`` is non-empty — normal success; empty is never
+      reached.
+
+    ``raw_texts`` preserves the per-line strings so the diagnostic
+    error can show the operator what Moonshine actually saw.
+    """
+
+    line_count: int
+    raw_texts: tuple[str, ...]
+    joined_text: str
+
+
+def _describe_transcript(transcript_obj: Any) -> _TranscriptSummary:
+    """Normalize a ``moonshine_voice.Transcript`` into a
+    diagnostic-friendly summary.
+
+    Fail-closed: anything unexpected stringifies rather than raising,
+    so the canonical STT seam stays in charge of empty-transcript
+    semantics.
     """
     lines = getattr(transcript_obj, "lines", None)
     if lines is None:
-        return ""
-    parts: list[str] = []
+        return _TranscriptSummary(line_count=0, raw_texts=(), joined_text="")
+    raw_texts: list[str] = []
     for line in lines:
         text = getattr(line, "text", None)
-        if text:
-            parts.append(str(text))
-    return " ".join(parts)
+        raw_texts.append(str(text) if text is not None else "")
+    joined = " ".join(t for t in raw_texts if t).strip()
+    return _TranscriptSummary(
+        line_count=len(raw_texts),
+        raw_texts=tuple(raw_texts),
+        joined_text=joined,
+    )
+
+
+# Heuristic floors for the diagnostic hint.  Moonshine's tiny/base
+# models reliably emit zero lines on audio shorter than ~0.8 s or with
+# very low amplitude — both legitimate "no speech" returns, not bugs.
+# Surfacing these in the error text lets operators see the likely cause
+# without having to inspect the clip themselves.
+_SHORT_AUDIO_MS_FLOOR = 800
+
+
+def _format_empty_transcript_error(
+    *,
+    line_summary: _TranscriptSummary,
+    audio_duration_ms: int | None,
+    sample_rate: int | None,
+    decode_path: str,
+    preserved_path: str | None,
+) -> str:
+    """Compose a truthful, actionable error for the empty-transcript path.
+
+    Distinguishes zero-line vs whitespace-only returns, reports the
+    decoded audio duration and sample rate so operators can see what
+    Moonshine was given, and appends a file path when the operator
+    opted in to keep the failed audio for inspection.
+    """
+    dur_hint = f"{audio_duration_ms} ms" if audio_duration_ms is not None else "unknown duration"
+    if sample_rate:
+        dur_hint += f" at {sample_rate} Hz"
+
+    if line_summary.line_count == 0:
+        head = f"Moonshine returned no transcript lines for {dur_hint} of audio"
+    else:
+        head = (
+            f"Moonshine returned {line_summary.line_count} transcript "
+            f"line(s) with no text for {dur_hint} of audio"
+        )
+
+    hint_parts: list[str] = []
+    if audio_duration_ms is not None and audio_duration_ms < _SHORT_AUDIO_MS_FLOOR:
+        hint_parts.append(
+            f"the clip is under {_SHORT_AUDIO_MS_FLOOR} ms, which is below Moonshine's "
+            "reliable speech-detection floor — try holding the mic longer or speaking "
+            "a full phrase"
+        )
+    elif line_summary.line_count == 0:
+        hint_parts.append(
+            "the audio may be too quiet or not contain speech the model recognizes; "
+            "try speaking louder or closer to the mic"
+        )
+    if preserved_path:
+        hint_parts.append(f"transcoded audio preserved at {preserved_path} for inspection")
+
+    return head + ("; " + "; ".join(hint_parts) if hint_parts else ".")
+
+
+def _env_truthy(name: str) -> bool:
+    raw = str(os.environ.get(name) or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _build_transcriber(model_name: str) -> Any:
