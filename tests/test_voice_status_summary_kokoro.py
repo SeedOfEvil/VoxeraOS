@@ -39,7 +39,11 @@ def _flags(
 
 class TestKokoroStatusSummary:
     def test_schema_version_bumped(self) -> None:
-        assert VOICE_STATUS_SUMMARY_SCHEMA_VERSION == 4
+        # The Kokoro block was introduced at v4; later releases may bump the
+        # schema further (e.g. Moonshine STT block at v5).  Assert the lower
+        # bound rather than an exact pin so new additive blocks do not
+        # retroactively break the Kokoro contract.
+        assert VOICE_STATUS_SUMMARY_SCHEMA_VERSION >= 4
 
     def test_kokoro_model_sub_block_present(self) -> None:
         payload = build_voice_status_summary(_flags())

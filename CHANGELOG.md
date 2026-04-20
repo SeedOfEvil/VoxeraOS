@@ -4,6 +4,22 @@ All notable changes to VoxeraOS will be documented in this file.
 
 VoxeraOS is an open-source alpha project. APIs, CLI surfaces, and internal contracts may change between releases.
 
+## [Unreleased]
+
+### Added
+- `MoonshineLocalBackend` — optional local speech-to-text backend via the official `moonshine-voice` PyPI package, satisfying the existing canonical STT seam (file-oriented, lazy model load, truthful failure paths). Gated behind a new `[moonshine]` install extra.
+  - Uses `moonshine_voice.Transcriber` (non-streaming) + the bundled pure-Python PCM WAV loader. Non-WAV inputs (browser `audio/webm`, etc.) are transparently transcoded to 16 kHz mono 16-bit PCM WAV via a narrow PyAV seam (`voice/audio_normalize.py`) before hitting Moonshine's loader; already-WAV files skip transcoding entirely.
+  - Panel mic-capture JS prefers `audio/wav` directly via `MediaRecorder.isTypeSupported` when `moonshine_local` is the active backend; on browsers that decline the hint (currently most desktop Chrome/Edge/Firefox) the server-side transcode fallback handles it transparently.
+
+### Fixed
+- `[moonshine]` install extra now pulls `moonshine-voice>=0.0.5` (clean semver) instead of the broken `useful-moonshine-onnx>=0.2,<1.0` pin against a PyPI project that publishes only date-style versions (e.g. `20251121`). `pip install -e '.[dev,piper,whisper,kokoro,moonshine]'` now resolves cleanly.
+- Operator-selectable STT backend: panel Voice Options now offers a bounded `whisper_local` / `moonshine_local` dropdown alongside the existing model selectors. Selection is persisted in runtime config (`voice_stt_backend`), invalid values fail truthfully, and an operator-selected Moonshine model id (`voice_stt_moonshine_model`) threads through the factory into the backend.
+- Voice status summary now surfaces the effective STT backend and a `moonshine_model` sub-block (selected / effective) when Moonshine is configured; `voxera doctor --quick` reflects the effective backend and model.
+
+### Changed
+- `VOICE_STATUS_SUMMARY_SCHEMA_VERSION` bumped to 5 for the additive `moonshine_model` block.
+- STT backend factory now exports a canonical `STT_BACKEND_CHOICES` tuple so the panel and other operator-facing surfaces share one source of truth.
+
 ## [0.1.9] — 2026-04-02
 
 ### Added

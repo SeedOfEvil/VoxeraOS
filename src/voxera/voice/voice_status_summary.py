@@ -20,18 +20,20 @@ from pathlib import Path
 from typing import Any
 
 from .flags import VoiceFoundationFlags
-from .stt_backend_factory import STT_BACKEND_WHISPER_LOCAL
+from .moonshine_backend import MOONSHINE_MODEL_BASE
+from .stt_backend_factory import STT_BACKEND_MOONSHINE_LOCAL, STT_BACKEND_WHISPER_LOCAL
 from .stt_status import build_stt_status, stt_status_as_dict
 from .tts_backend_factory import TTS_BACKEND_KOKORO_LOCAL, TTS_BACKEND_PIPER_LOCAL
 from .tts_status import build_tts_status, tts_status_as_dict
 from .whisper_backend import WHISPER_MODEL_BASE
 
 # -- schema version for the combined summary --------------------------------
-# Bumped to 4 in this release: adds ``kokoro_model`` metadata to
-# ``tts_dependency`` when the operator selects the Kokoro backend,
-# so panel + doctor can show the configured paths and file-presence
-# state truthfully alongside the existing Piper model block.
-VOICE_STATUS_SUMMARY_SCHEMA_VERSION = 4
+# Bumped to 5 in this release: adds ``moonshine_model`` metadata to
+# ``stt_dependency`` when the operator selects the Moonshine backend,
+# mirroring the existing ``whisper_model`` block so panel + doctor
+# can report the operator-selected and effective Moonshine model id
+# truthfully alongside the dependency state.
+VOICE_STATUS_SUMMARY_SCHEMA_VERSION = 5
 
 
 # -- next_step hint constants ------------------------------------------------
@@ -43,6 +45,7 @@ HINT_ENABLE_TTS = "Run `voxera setup` and answer yes to 'enable text-to-speech'.
 HINT_PICK_STT_BACKEND = "Run `voxera setup` and pick an STT backend (e.g. whisper_local)."
 HINT_PICK_TTS_BACKEND = "Run `voxera setup` and pick a TTS backend (e.g. piper_local)."
 HINT_INSTALL_WHISPER = "Install the Whisper extra: pip install voxera-os[whisper]"
+HINT_INSTALL_MOONSHINE = "Install the Moonshine extra: pip install voxera-os[moonshine]"
 HINT_INSTALL_PIPER = "Install the Piper extra: pip install voxera-os[piper]"
 HINT_SET_PIPER_MODEL = (
     "Set a Piper model path or name via `voxera setup` "
@@ -141,10 +144,27 @@ def _describe_whisper_model(model: str | None) -> dict[str, Any]:
     }
 
 
+def _describe_moonshine_model(model: str | None) -> dict[str, Any]:
+    """Describe the operator-selected Moonshine model for status surfaces.
+
+    Mirrors :func:`_describe_whisper_model` in shape so operator UIs
+    can render the block the same way: ``selected`` reports whether
+    the operator pinned a specific id and ``effective`` reports what
+    the backend will actually load (defaulting to
+    ``moonshine/base``).
+    """
+    value = (model or "").strip() or None
+    return {
+        "selected": value,
+        "effective": value or MOONSHINE_MODEL_BASE,
+    }
+
+
 def _check_stt_dependency(
     backend: str | None,
     *,
     whisper_model: str | None = None,
+    moonshine_model: str | None = None,
 ) -> dict[str, Any]:
     """Check whether the configured STT backend's dependency is available.
 
@@ -153,6 +173,11 @@ def _check_stt_dependency(
     the effective model id the backend will load.  This lets operator
     UIs and doctor output show the chosen model alongside the dependency
     state without reaching past the flags.
+
+    For ``moonshine_local`` the result similarly carries a
+    ``moonshine_model`` sub-dict and reports the ``moonshine-voice``
+    PyPI package as the dependency probe — matching what the
+    ``[moonshine]`` install extra actually pulls.
     """
     if not backend:
         return {"checked": False, "reason": "no_backend_configured"}
@@ -178,7 +203,45 @@ def _check_stt_dependency(
                 "whisper_model": whisper_model_info,
             }
 
+    if backend_lower == STT_BACKEND_MOONSHINE_LOCAL:
+        moonshine_model_info = _describe_moonshine_model(moonshine_model)
+        available, package = _probe_moonshine_package()
+        if available:
+            return {
+                "checked": True,
+                "available": True,
+                "package": package,
+                "moonshine_model": moonshine_model_info,
+            }
+        return {
+            "checked": True,
+            "available": False,
+            "package": package,
+            "hint": HINT_INSTALL_MOONSHINE,
+            "moonshine_model": moonshine_model_info,
+        }
+
     return {"checked": False, "reason": f"unknown_backend:{backend}"}
+
+
+def _probe_moonshine_package() -> tuple[bool, str]:
+    """Return (available, package_label) for the Moonshine dependency.
+
+    The canonical upstream package is ``moonshine-voice`` (PyPI
+    name), which installs the ``moonshine_voice`` Python module.
+    VoxeraOS's ``[moonshine]`` extra pulls this package explicitly.
+    Older community packages (``useful-moonshine-onnx``,
+    ``useful-moonshine``) published date-style versions that cannot
+    be pinned cleanly and use a different API surface; we do not
+    probe for them here so the operator-facing dependency report
+    stays aligned with the install path we actually ship.
+    """
+    try:
+        import moonshine_voice  # noqa: F401
+
+        return True, "moonshine-voice"
+    except (ImportError, OSError):
+        return False, "moonshine-voice"
 
 
 def _check_kokoro_model(
@@ -301,7 +364,16 @@ def _stt_next_step(
         return HINT_PICK_STT_BACKEND
     if stt_dep.get("checked") and stt_dep.get("available") is False:
         hint = stt_dep.get("hint")
-        return str(hint) if hint else HINT_INSTALL_WHISPER
+        if hint:
+            return str(hint)
+        # Fallback default — pick the hint that matches the selected
+        # backend rather than always pointing at the Whisper extra,
+        # so operators who chose Moonshine see the right install
+        # command.
+        backend_lower = (flags.voice_stt_backend or "").strip().lower()
+        if backend_lower == STT_BACKEND_MOONSHINE_LOCAL:
+            return HINT_INSTALL_MOONSHINE
+        return HINT_INSTALL_WHISPER
     return None
 
 
@@ -357,7 +429,9 @@ def build_voice_status_summary(
     tts = build_tts_status(flags, last_error=last_tts_error)
 
     stt_dep = _check_stt_dependency(
-        flags.voice_stt_backend, whisper_model=flags.voice_stt_whisper_model
+        flags.voice_stt_backend,
+        whisper_model=flags.voice_stt_whisper_model,
+        moonshine_model=flags.voice_stt_moonshine_model,
     )
     tts_dep = _check_tts_dependency(
         flags.voice_tts_backend,

@@ -119,6 +119,17 @@
             </span>
           </div>
           {% endif %}
+          {% if summary.stt_dependency.moonshine_model %}
+          <div class="queue-detail-row" data-testid="stt-moonshine-model-block">
+            <span class="queue-detail-label">Moonshine Model</span>
+            <span class="queue-detail-value">
+              <span class="mono">{{summary.stt_dependency.moonshine_model.effective}}</span>
+              {% if not summary.stt_dependency.moonshine_model.selected %}
+                <span class="muted text-sm">(default)</span>
+              {% endif %}
+            </span>
+          </div>
+          {% endif %}
           {% if summary.stt.next_step %}
           <div class="queue-detail-row">
             <span class="queue-detail-label">Next Step</span>
@@ -253,6 +264,9 @@
       {# ── Zone 1b: Voice Options (operator-editable config) ──────────── #}
       {%- set _current_whisper_model = summary.stt_dependency.whisper_model.selected if summary.stt_dependency and summary.stt_dependency.whisper_model else None -%}
       {%- set _effective_whisper_model = summary.stt_dependency.whisper_model.effective if summary.stt_dependency and summary.stt_dependency.whisper_model else None -%}
+      {%- set _current_moonshine_model = summary.stt_dependency.moonshine_model.selected if summary.stt_dependency and summary.stt_dependency.moonshine_model else None -%}
+      {%- set _effective_moonshine_model = summary.stt_dependency.moonshine_model.effective if summary.stt_dependency and summary.stt_dependency.moonshine_model else None -%}
+      {%- set _current_stt_backend = summary.stt.backend -%}
       {%- set _current_tts_backend = summary.tts.backend -%}
       <div class="section-label" id="voice-options">Voice Options</div>
       <section class="card mb" data-testid="voice-options">
@@ -265,11 +279,25 @@
           {% if voice_options_result.ok %}
           <div class="alert alert-success" data-testid="voice-options-save-ok">
             Voice options saved.
+            {% if voice_options_result.stt_backend_touched %}
+              {% if voice_options_result.saved_stt_backend %}
+                STT backend is now <span class="mono" data-testid="voice-options-saved-stt-backend">{{voice_options_result.saved_stt_backend}}</span>.
+              {% else %}
+                STT backend selection cleared &mdash; backend will use its default.
+              {% endif %}
+            {% endif %}
             {% if voice_options_result.stt_touched %}
               {% if voice_options_result.saved_model %}
                 STT whisper model is now <span class="mono">{{voice_options_result.saved_model}}</span>.
               {% else %}
                 STT whisper model selection cleared &mdash; backend will use its default.
+              {% endif %}
+            {% endif %}
+            {% if voice_options_result.stt_moonshine_touched %}
+              {% if voice_options_result.saved_moonshine_model %}
+                STT moonshine model is now <span class="mono" data-testid="voice-options-saved-moonshine-model">{{voice_options_result.saved_moonshine_model}}</span>.
+              {% else %}
+                STT moonshine model selection cleared &mdash; backend will use its default.
               {% endif %}
             {% endif %}
             {% if voice_options_result.tts_touched %}
@@ -288,6 +316,18 @@
         {% endif %}
 
         <div class="queue-detail-row">
+          <span class="queue-detail-label">Current STT Backend</span>
+          <span class="queue-detail-value">
+            {% if _current_stt_backend %}
+              <span class="mono" data-testid="voice-options-current-stt-backend">{{_current_stt_backend}}</span>
+              <span class="muted text-sm">(effective)</span>
+            {% else %}
+              <span class="muted" data-testid="voice-options-current-stt-backend">&mdash;</span>
+            {% endif %}
+          </span>
+        </div>
+
+        <div class="queue-detail-row">
           <span class="queue-detail-label">Current STT Whisper Model</span>
           <span class="queue-detail-value">
             {% if _effective_whisper_model %}
@@ -299,6 +339,22 @@
               {% endif %}
             {% else %}
               <span class="muted" data-testid="voice-options-current-model">&mdash;</span>
+            {% endif %}
+          </span>
+        </div>
+
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Current STT Moonshine Model</span>
+          <span class="queue-detail-value">
+            {% if _effective_moonshine_model %}
+              <span class="mono" data-testid="voice-options-current-moonshine-model">{{_effective_moonshine_model}}</span>
+              {% if not _current_moonshine_model %}
+                <span class="muted text-sm">(default &mdash; no explicit selection saved)</span>
+              {% else %}
+                <span class="muted text-sm">(saved in runtime config)</span>
+              {% endif %}
+            {% else %}
+              <span class="muted" data-testid="voice-options-current-moonshine-model">&mdash;</span>
             {% endif %}
           </span>
         </div>
@@ -317,6 +373,18 @@
 
         <form class="form-stack voice-action-form" method="post" action="/voice/options/save" data-testid="voice-options-form">
           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <label>STT Backend
+            <select class="input" name="stt_backend" id="stt_backend" data-testid="voice-options-stt-backend-select">
+              <option value="">(default &mdash; no explicit selection)</option>
+              {% for choice in stt_backend_choices %}
+                <option value="{{choice}}" {% if choice == _current_stt_backend %}selected{% endif %}>{{choice}}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="muted text-sm">
+            Selects the local speech-to-text backend.  <span class="mono">whisper_local</span> uses faster-whisper (CPU/GPU, int8 by default); <span class="mono">moonshine_local</span> uses moonshine-onnx (CPU-first, low-latency) and requires the <span class="mono">[moonshine]</span> extra.  File/mic-to-file transcription only &mdash; streaming and partial transcripts remain out of scope.
+          </p>
+
           <label>STT Whisper Model
             <select class="input" name="stt_whisper_model" id="stt_whisper_model" data-testid="voice-options-model-select">
               <option value="">(default &mdash; no explicit selection)</option>
@@ -326,7 +394,19 @@
             </select>
           </label>
           <p class="muted text-sm">
-            Selects the model id passed to the local faster-whisper loader.  Use <span class="mono">distil-large-v3</span> for the Distil-Whisper option (faster-whisper resolves it to the CT2 repo internally).  Large models download on first use and may take a while.
+            Selects the model id passed to the local faster-whisper loader.  Use <span class="mono">distil-large-v3</span> for the Distil-Whisper option (faster-whisper resolves it to the CT2 repo internally).  Large models download on first use and may take a while.  Only meaningful when STT backend is <span class="mono">whisper_local</span>.
+          </p>
+
+          <label>STT Moonshine Model
+            <select class="input" name="stt_moonshine_model" id="stt_moonshine_model" data-testid="voice-options-moonshine-model-select">
+              <option value="">(default &mdash; no explicit selection)</option>
+              {% for choice in stt_moonshine_model_choices %}
+                <option value="{{choice}}" {% if choice == _current_moonshine_model %}selected{% endif %}>{{choice}}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="muted text-sm">
+            Selects the Moonshine model id.  <span class="mono">moonshine/tiny</span> is lowest-latency; <span class="mono">moonshine/base</span> is higher accuracy.  Only meaningful when STT backend is <span class="mono">moonshine_local</span>.
           </p>
 
           <label>TTS Backend
@@ -735,7 +815,7 @@
            actually available in this browser. The file-path form stays
            fully functional when JS is disabled or the browser lacks
            microphone APIs. #}
-        <div class="voice-mic-capture" data-testid="voice-workbench-mic-capture" hidden>
+        <div class="voice-mic-capture" data-testid="voice-workbench-mic-capture" data-stt-backend="{{ summary.stt.backend or '' }}" hidden>
           <div class="voice-mic-capture-header">
             <span class="voice-mic-capture-title">Or record from microphone</span>
             <span class="voice-mic-capture-hint muted text-sm">

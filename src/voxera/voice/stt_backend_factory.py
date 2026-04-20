@@ -7,6 +7,7 @@ point where backend selection logic lives.
 Supported backends:
 - ``None`` / unrecognized  -> ``NullSTTBackend`` (truthful unavailable)
 - ``"whisper_local"``      -> ``WhisperLocalBackend``
+- ``"moonshine_local"``    -> ``MoonshineLocalBackend``
 
 The factory is intentionally boring: no plugin registry, no dynamic
 imports, no class scanning.  If more backends arrive, add an ``elif``.
@@ -25,12 +26,25 @@ from __future__ import annotations
 import threading
 
 from .flags import VoiceFoundationFlags
+from .moonshine_backend import MoonshineLocalBackend
 from .stt_adapter import NullSTTBackend, STTBackend
 from .whisper_backend import WhisperLocalBackend
 
 # -- canonical backend identifiers -------------------------------------------
 
 STT_BACKEND_WHISPER_LOCAL = "whisper_local"
+STT_BACKEND_MOONSHINE_LOCAL = "moonshine_local"
+
+# Bounded allow-list surfaced in operator UIs (panel voice options,
+# setup wizard).  Keeps the panel form a small dropdown rather than a
+# free-text field the operator can typo into.  The factory still
+# accepts any truthy string for backwards-compat with env-only
+# deployments that pin a backend outside this list, but the panel
+# UX stays curated.
+STT_BACKEND_CHOICES: tuple[str, ...] = (
+    STT_BACKEND_WHISPER_LOCAL,
+    STT_BACKEND_MOONSHINE_LOCAL,
+)
 
 
 def build_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
@@ -48,6 +62,14 @@ def build_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
     construction.  ``None`` preserves the backend's existing default
     (``base``, or a ``VOXERA_VOICE_STT_WHISPER_MODEL`` env override).
 
+    Returns ``MoonshineLocalBackend`` when ``voice_stt_backend`` is
+    ``"moonshine_local"``.  The operator-selected moonshine model id
+    (``voice_stt_moonshine_model``) is threaded through so the
+    factory remains the only place that maps config → backend
+    construction.  ``None`` preserves the backend default
+    (``moonshine/base``, or a ``VOXERA_VOICE_STT_MOONSHINE_MODEL``
+    env override).
+
     The returned backend is always a valid ``STTBackend`` — callers
     never need to handle ``None``.
     """
@@ -63,6 +85,10 @@ def build_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
         model = (flags.voice_stt_whisper_model or "").strip() or None
         return WhisperLocalBackend(model_size=model)
 
+    if backend_id == STT_BACKEND_MOONSHINE_LOCAL:
+        moonshine_model = (flags.voice_stt_moonshine_model or "").strip() or None
+        return MoonshineLocalBackend(model_name=moonshine_model)
+
     # Unrecognized backend — return NullSTTBackend with a specific reason
     # so operators can see which identifier was rejected.
     return NullSTTBackend(reason=f"STT backend {flags.voice_stt_backend!r} is not recognized")
@@ -70,23 +96,23 @@ def build_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
 
 # -- process-wide shared backend ----------------------------------------------
 #
-# Dictation latency is dominated by first-call Whisper model load.  The
-# backend instance itself is cheap to construct, but the CTranslate2
-# model on ``_ensure_model()`` can take multiple seconds on a cold
-# start.  Reusing the instance across turns pays that cost once per
-# process, not per request.
+# Dictation latency is dominated by first-call model load.  The
+# backend instance itself is cheap to construct, but the
+# CTranslate2 / ONNX model on ``_ensure_model()`` can take multiple
+# seconds on a cold start.  Reusing the instance across turns pays
+# that cost once per process, not per request.
 #
 # Cache key: the small, immutable subset of flag values that actually
 # change backend construction (voice_input_enabled plus the explicit
-# backend identifier and model selection).  When any of those values
-# changes, ``get_shared_stt_backend`` rebuilds the instance on the next
-# call so operator reconfiguration takes effect immediately.
+# backend identifier and model selections).  When any of those values
+# changes, ``get_shared_stt_backend`` rebuilds the instance on the
+# next call so operator reconfiguration takes effect immediately.
 #
 # Thread safety: accesses are guarded by a module-level lock so two
 # concurrent first-turn requests cannot race each other into building
-# two Whisper models in parallel.
+# two models in parallel.
 
-_SharedKey = tuple[bool, str | None, str | None]
+_SharedKey = tuple[bool, str | None, str | None, str | None]
 _shared_lock = threading.Lock()
 _shared_backend: STTBackend | None = None
 _shared_key: _SharedKey | None = None
@@ -95,8 +121,8 @@ _shared_key: _SharedKey | None = None
 def _shared_key_for(flags: VoiceFoundationFlags) -> _SharedKey:
     # Scope note: the key covers everything that flows through
     # ``VoiceFoundationFlags`` into backend construction.  It does NOT
-    # cover env-only knobs that ``WhisperLocalBackend.__init__`` reads
-    # directly (``VOXERA_VOICE_STT_WHISPER_DEVICE``,
+    # cover env-only knobs that backends read directly
+    # (``VOXERA_VOICE_STT_WHISPER_DEVICE``,
     # ``VOXERA_VOICE_STT_WHISPER_COMPUTE_TYPE``).  Those are
     # process-start config in practice; changing them at runtime
     # without an explicit ``reset_shared_stt_backend()`` call will
@@ -107,16 +133,17 @@ def _shared_key_for(flags: VoiceFoundationFlags) -> _SharedKey:
         flags.voice_input_enabled,
         (flags.voice_stt_backend or "").strip().lower() or None,
         (flags.voice_stt_whisper_model or "").strip() or None,
+        (flags.voice_stt_moonshine_model or "").strip() or None,
     )
 
 
 def get_shared_stt_backend(flags: VoiceFoundationFlags) -> STTBackend:
     """Return a process-wide shared STT backend for *flags*.
 
-    The instance is reused across calls so the Whisper model loads
-    once per process instead of once per dictation turn.  Construction
-    is guarded by a module-level lock so concurrent first-turn
-    requests cannot race each other into duplicate model loads.
+    The instance is reused across calls so the model loads once per
+    process instead of once per dictation turn.  Construction is
+    guarded by a module-level lock so concurrent first-turn requests
+    cannot race each other into duplicate model loads.
 
     The instance is rebuilt when any flag value that affects backend
     construction changes; otherwise the previous instance is returned

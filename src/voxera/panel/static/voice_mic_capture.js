@@ -40,6 +40,20 @@
   }
   block.hidden = false;
 
+  // Resolve the preferred capture MIME type once up front.  When the
+  // operator has selected the Moonshine STT backend, the server-side
+  // load path is PCM-WAV-only — avoiding the webm→wav transcode
+  // round-trip by capturing directly as WAV is a measurable latency
+  // win.  On browsers that do not expose ``audio/wav`` to
+  // ``MediaRecorder`` (currently most of them — Chrome/Edge/Firefox
+  // default to webm/opus), the server-side audio_normalize.py fallback
+  // transcodes the upload transparently, so the file-path UX stays
+  // identical.  For the Whisper path we leave the default alone
+  // because faster-whisper decodes webm natively via its FFmpeg
+  // backend; forcing a client-side format switch there would just
+  // shift work, not save it.
+  var preferredMime = pickPreferredMime(block.getAttribute("data-stt-backend"));
+
   var recorder = null;
   var activeStream = null;
   var chunks = [];
@@ -60,7 +74,21 @@
         chunks = [];
         recorderErrored = false;
         try {
-          recorder = new MediaRecorder(stream);
+          // Try the operator's preferred MIME first (e.g. audio/wav
+          // when Moonshine is the active backend).  If MediaRecorder
+          // rejects the hint — the standard path on Chrome/Edge/
+          // Firefox for WAV — fall back to the browser default so the
+          // webm capture still works and the server transcodes on
+          // upload.
+          if (preferredMime) {
+            try {
+              recorder = new MediaRecorder(stream, { mimeType: preferredMime });
+            } catch (_ignored) {
+              recorder = new MediaRecorder(stream);
+            }
+          } else {
+            recorder = new MediaRecorder(stream);
+          }
         } catch (err) {
           stopStream();
           startBtn.disabled = false;
@@ -275,5 +303,42 @@
     var el = form.querySelector(selector);
     if (!el) return false;
     return !!el.checked;
+  }
+
+  function pickPreferredMime(backendHint) {
+    // Only special-case the Moonshine path: its server-side decode
+    // layer is PCM-WAV-only, so capturing directly as WAV avoids the
+    // webm→wav transcode round-trip if the browser supports it.  For
+    // every other backend (today: whisper_local, or unset) we return
+    // an empty string so the caller uses the browser's native
+    // default — typically webm/opus on Chromium/Firefox, which
+    // faster-whisper handles natively.
+    //
+    // ``MediaRecorder.isTypeSupported`` is the canonical capability
+    // probe.  We try a small bounded set of WAV MIME strings because
+    // different browsers spell them differently; on every desktop
+    // Chrome/Edge/Firefox today all of these return false, which
+    // triggers the server-side transcode fallback.
+    if (backendHint !== "moonshine_local") {
+      return "";
+    }
+    if (
+      typeof window.MediaRecorder !== "function" ||
+      typeof window.MediaRecorder.isTypeSupported !== "function"
+    ) {
+      return "";
+    }
+    var candidates = ["audio/wav", "audio/wave", "audio/x-wav"];
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        if (window.MediaRecorder.isTypeSupported(candidates[i])) {
+          return candidates[i];
+        }
+      } catch (_ignored) {
+        // isTypeSupported can throw on some browsers for non-standard
+        // MIME strings; silently advance to the next candidate.
+      }
+    }
+    return "";
   }
 })();
