@@ -175,11 +175,9 @@ def _check_stt_dependency(
     state without reaching past the flags.
 
     For ``moonshine_local`` the result similarly carries a
-    ``moonshine_model`` sub-dict and reports the ``moonshine-onnx``
-    package as the dependency probe.  The fallback ``moonshine``
-    (PyTorch) package is considered equivalent for "installed"
-    reporting so an operator who picked one variant sees a truthful
-    "installed" signal.
+    ``moonshine_model`` sub-dict and reports the ``moonshine-voice``
+    PyPI package as the dependency probe — matching what the
+    ``[moonshine]`` install extra actually pulls.
     """
     if not backend:
         return {"checked": False, "reason": "no_backend_configured"}
@@ -229,25 +227,21 @@ def _check_stt_dependency(
 def _probe_moonshine_package() -> tuple[bool, str]:
     """Return (available, package_label) for the Moonshine dependency.
 
-    Prefers the ONNX variant (``moonshine_onnx``) because it is the
-    CPU-first option VoxeraOS recommends.  Falls back to the PyTorch
-    variant (``moonshine``) purely for availability reporting so an
-    operator who already installed that variant does not see a
-    misleading "missing" signal.  The dependency-missing hint always
-    points at the ``[moonshine]`` extra, which pulls ``moonshine-onnx``.
+    The canonical upstream package is ``moonshine-voice`` (PyPI
+    name), which installs the ``moonshine_voice`` Python module.
+    VoxeraOS's ``[moonshine]`` extra pulls this package explicitly.
+    Older community packages (``useful-moonshine-onnx``,
+    ``useful-moonshine``) published date-style versions that cannot
+    be pinned cleanly and use a different API surface; we do not
+    probe for them here so the operator-facing dependency report
+    stays aligned with the install path we actually ship.
     """
     try:
-        import moonshine_onnx  # noqa: F401
+        import moonshine_voice  # noqa: F401
 
-        return True, "moonshine-onnx"
+        return True, "moonshine-voice"
     except (ImportError, OSError):
-        pass
-    try:
-        import moonshine  # noqa: F401
-
-        return True, "moonshine"
-    except (ImportError, OSError):
-        return False, "moonshine-onnx"
+        return False, "moonshine-voice"
 
 
 def _check_kokoro_model(

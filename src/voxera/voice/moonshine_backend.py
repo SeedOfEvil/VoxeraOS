@@ -1,24 +1,35 @@
-"""Moonshine local STT backend using moonshine-onnx.
+"""Moonshine local STT backend using moonshine-voice.
 
-Provides a local speech-to-text backend backed by ``moonshine-onnx``
-(ONNX-runtime-based Moonshine implementation from Useful Sensors).
-Mirrors :class:`WhisperLocalBackend` in shape so the STT seam stays
-uniform: ``audio_file`` input only, lazy model load, truthful
-failure paths for missing dependency / bad model / bad audio.
+Provides a local speech-to-text backend backed by the official
+``moonshine-voice`` package (Useful Sensors Moonshine, ONNX-runtime-
+based).  Mirrors :class:`WhisperLocalBackend` in shape so the STT
+seam stays uniform: ``audio_file`` input only, lazy model load,
+truthful failure paths for missing dependency / bad model / bad
+audio.
+
+Install: ``pip install voxera-os[moonshine]`` (pulls
+``moonshine-voice`` from PyPI).  The dependency is optional — if
+the package is not installed, the backend honestly reports
+``backend_missing`` rather than pretending.
 
 Configuration is environment-driven (backend-specific knobs,
 intentionally separate from ``VoiceFoundationFlags``):
 
-- ``VOXERA_VOICE_STT_MOONSHINE_MODEL`` — model id (default: ``moonshine/base``)
+- ``VOXERA_VOICE_STT_MOONSHINE_MODEL`` — operator-selectable model
+  id.  Canonical values: ``moonshine/tiny`` (lowest latency),
+  ``moonshine/base`` (higher accuracy, default).
 
-The ``moonshine-onnx`` dependency is optional.  If not installed, the
-backend reports a truthful ``backend_missing`` error — it never
-crashes or pretends transcription is available.
+Model loading is lazy: the Moonshine transcriber is constructed
+(and model assets are downloaded via the official CDN) on the
+first ``transcribe()`` call, not at construction time.  This
+matches the Whisper backend and lets the STT seam be instantiated
+cheaply even if it is never used.
 
-Model loading is lazy: the Moonshine model is loaded on the first
-``transcribe()`` call, not at construction time.  This matches the
-Whisper path so the backend can be instantiated cheaply even if it
-is never used.
+Format: ``moonshine-voice`` loads PCM WAV files directly (16-bit /
+24-bit / 32-bit PCM).  Non-WAV inputs surface a truthful
+``backend_error`` so operators can see what went wrong; for
+broader codec support (webm, ogg, mp3, etc.) pick ``whisper_local``
+which runs through faster-whisper's FFmpeg decoding path.
 """
 
 from __future__ import annotations
@@ -39,39 +50,36 @@ from .stt_protocol import (
 
 # -- optional dependency guard ------------------------------------------------
 #
-# Two public moonshine Python packages exist: ``moonshine-onnx`` (ONNX
-# runtime, CPU-friendly, small) and ``useful-moonshine`` (PyTorch).  We
-# prefer ``moonshine_onnx`` because it is CPU-first and carries a
-# narrower dependency footprint; if only the torch variant is present
-# we still detect availability so the operator gets a truthful
-# "installed" signal in status surfaces.
+# ``moonshine-voice`` is the canonical upstream PyPI package (semver,
+# e.g. ``0.0.56``).  It installs as the Python module ``moonshine_voice``
+# and exposes the ``Transcriber`` class plus a pure-Python WAV loader.
+# Older community packages (``useful-moonshine-onnx``, ``useful-moonshine``)
+# existed with date-style versioning but used a different top-level
+# ``transcribe()`` API that has diverged; we do not fall back to them
+# because their semver-incompatible versions also cannot be pinned
+# cleanly in ``pyproject.toml``.
 
 _MOONSHINE_AVAILABLE: bool
 try:
-    import moonshine_onnx  # noqa: F401
+    import moonshine_voice  # noqa: F401
 
     _MOONSHINE_AVAILABLE = True
 except ModuleNotFoundError:
-    try:
-        import moonshine  # noqa: F401
-
-        _MOONSHINE_AVAILABLE = True
-    except ModuleNotFoundError:
-        _MOONSHINE_AVAILABLE = False
+    _MOONSHINE_AVAILABLE = False
 
 # -- environment defaults -----------------------------------------------------
 
 _DEFAULT_MODEL = "moonshine/base"
+_DEFAULT_LANGUAGE = "en"
 
 # -- canonical model identifiers ---------------------------------------------
 #
 # These are the operator-selectable model identifiers for the local
-# Moonshine STT path.  Moonshine ships two public model sizes: a small
-# ``moonshine/tiny`` variant (lowest latency) and ``moonshine/base``
-# (higher accuracy).  Both are resolved internally by moonshine-onnx.
-# The panel UI surfaces these as a bounded dropdown; the factory will
-# accept any truthy string so env-only deployments can still pin a
-# model outside this list.
+# Moonshine STT path.  Moonshine ships two public non-streaming model
+# sizes: ``tiny`` (lowest latency) and ``base`` (higher accuracy).
+# The panel UI surfaces these as a bounded dropdown; the factory
+# accepts any string in ``_SUPPORTED_MODELS`` so env-only deployments
+# can pin either variant.
 MOONSHINE_MODEL_TINY = "moonshine/tiny"
 MOONSHINE_MODEL_BASE = "moonshine/base"
 
@@ -85,21 +93,42 @@ def _env_str(name: str, default: str) -> str:
     return str(os.environ.get(name) or "").strip() or default
 
 
+def _resolve_model_arch(model_name: str) -> Any:
+    """Map a VoxeraOS model id (``moonshine/tiny``, ``moonshine/base``)
+    to a ``moonshine_voice.ModelArch`` enum.
+
+    Called inside ``_ensure_transcriber`` on the slow path — never at
+    import time — so the ``moonshine_voice`` import stays optional.
+    Unknown names raise ``ValueError`` so the backend's load-failure
+    branch surfaces the rejected id truthfully.
+    """
+    from moonshine_voice.transcriber import ModelArch
+
+    norm = (model_name or "").strip().lower()
+    if norm in (MOONSHINE_MODEL_TINY, "tiny", "tiny-en"):
+        return ModelArch.TINY
+    if norm in (MOONSHINE_MODEL_BASE, "base", "base-en"):
+        return ModelArch.BASE
+    raise ValueError(
+        f"Unsupported Moonshine model {model_name!r}; expected one of {STT_MOONSHINE_MODEL_CHOICES}"
+    )
+
+
 # -- backend ------------------------------------------------------------------
 
 
 class MoonshineLocalBackend:
-    """Local Moonshine STT backend via ``moonshine-onnx``.
+    """Local Moonshine STT backend via ``moonshine-voice``.
 
     Satisfies the ``STTBackend`` structural protocol.
 
     Supports ``audio_file`` only.  ``microphone`` and ``stream`` are
     explicitly rejected as unsupported.
 
-    Model loading is lazy — the model is not loaded until the first
-    ``transcribe()`` call.  This avoids heavy initialization at
-    construction time and allows the backend to be instantiated
-    cheaply even if it is never used.
+    Model loading is lazy — the transcriber and underlying ONNX
+    models are not loaded until the first ``transcribe()`` call.
+    This avoids heavy initialization at construction time and allows
+    the backend to be instantiated cheaply even if it is never used.
     """
 
     def __init__(
@@ -110,11 +139,11 @@ class MoonshineLocalBackend:
         self._model_name = model_name or _env_str(
             "VOXERA_VOICE_STT_MOONSHINE_MODEL", _DEFAULT_MODEL
         )
-        self._model: Any = None
-        # Guards ``_ensure_model`` so two concurrent first-turn
-        # transcribe calls on a freshly-shared backend cannot each
-        # kick off a duplicate model load in parallel.  Acquired only
-        # on the slow path (model not yet loaded), so steady-state
+        self._transcriber: Any = None
+        # Guards ``_ensure_transcriber`` so two concurrent first-turn
+        # transcribe calls on a freshly-shared backend cannot each kick
+        # off a duplicate model download / ONNX-session build in
+        # parallel.  Acquired only on the slow path; steady-state
         # transcription is not serialised.
         self._model_lock = threading.Lock()
 
@@ -128,7 +157,7 @@ class MoonshineLocalBackend:
         return input_source == STT_SOURCE_AUDIO_FILE
 
     def transcribe(self, request: STTRequest) -> STTAdapterResult:
-        """Transcribe an audio file using local Moonshine.
+        """Transcribe a WAV file using local Moonshine.
 
         Returns an ``STTAdapterResult``.  Raises
         ``STTBackendUnsupportedError`` for non-audio_file sources.
@@ -138,7 +167,7 @@ class MoonshineLocalBackend:
             return STTAdapterResult(
                 transcript=None,
                 error=(
-                    "moonshine-onnx is not installed. "
+                    "moonshine-voice is not installed. "
                     "Install with: pip install voxera-os[moonshine]"
                 ),
                 error_class=STT_ERROR_BACKEND_MISSING,
@@ -172,7 +201,7 @@ class MoonshineLocalBackend:
 
         # -- lazy model load ---------------------------------------------------
         try:
-            model = self._ensure_model()
+            transcriber = self._ensure_transcriber()
         except Exception as exc:
             return STTAdapterResult(
                 transcript=None,
@@ -180,11 +209,28 @@ class MoonshineLocalBackend:
                 error_class=STT_ERROR_BACKEND_ERROR,
             )
 
+        # -- load WAV ----------------------------------------------------------
+        # ``moonshine_voice.load_wav_file`` ships a pure-Python PCM WAV
+        # loader (16 / 24 / 32-bit) — no FFmpeg or librosa dep.  Non-WAV
+        # inputs raise and we surface the truthful error so operators
+        # can see why.  For broader codec support they can pick
+        # whisper_local instead.
+        from moonshine_voice.transcriber import load_wav_file
+
+        try:
+            audio_data, sample_rate = load_wav_file(str(path))
+        except Exception as exc:
+            return STTAdapterResult(
+                transcript=None,
+                error=(f"Moonshine could not read audio file (PCM WAV required): {exc}"),
+                error_class=STT_ERROR_BACKEND_ERROR,
+            )
+
         # -- transcribe --------------------------------------------------------
         inference_start_ms = int(time.time() * 1000)
         try:
-            raw = model(str(path))
-            transcript = _coerce_transcript(raw)
+            transcript_obj = transcriber.transcribe_without_streaming(audio_data, sample_rate)
+            transcript_text = _extract_transcript_text(transcript_obj)
         except Exception as exc:
             return STTAdapterResult(
                 transcript=None,
@@ -193,93 +239,92 @@ class MoonshineLocalBackend:
             )
         inference_end_ms = int(time.time() * 1000)
 
-        # Moonshine does not expose audio duration / language detection
-        # on the ONNX path, so those fields remain ``None`` rather than
-        # fabricated.  The canonical STT seam treats missing timing
-        # fields as "unknown", so downstream surfaces stay truthful.
+        # Audio duration is derivable from the decoded sample count and
+        # rate.  Moonshine's transcriber does not report per-call
+        # language detection on the non-streaming path; leave
+        # ``language`` as None rather than fabricate one.
+        audio_duration_ms: int | None = None
+        if sample_rate:
+            audio_duration_ms = int(len(audio_data) / sample_rate * 1000)
+
         return STTAdapterResult(
-            transcript=transcript or None,
+            transcript=transcript_text or None,
             language=None,
             inference_ms=inference_end_ms - inference_start_ms,
-            audio_duration_ms=None,
+            audio_duration_ms=audio_duration_ms,
         )
 
     # -- internals -------------------------------------------------------------
 
-    def _ensure_model(self) -> Any:
-        """Lazy-load the Moonshine model on first use.
+    def _ensure_transcriber(self) -> Any:
+        """Lazy-load the Moonshine transcriber on first use.
 
-        The double-checked pattern below keeps the fast path (model
-        already loaded) lock-free, while still serialising the slow
-        first-turn load so concurrent transcribe calls on a freshly-
-        shared backend do not each pay a duplicate model load cost.
+        Resolves the operator-selected model name to a
+        ``ModelArch`` enum, downloads the ONNX model assets via
+        the official ``moonshine_voice.download`` helpers (cached
+        under ``~/.cache/moonshine_voice``), and constructs a
+        ``Transcriber`` ready for non-streaming file transcription.
 
-        Returns a callable ``model(audio_path) -> transcript``.  The
-        ``moonshine_onnx.transcribe(audio_path, model=...)`` top-level
-        function is the canonical public API; we wrap it in a small
-        closure so the ``transcribe()`` call site stays uniform
-        regardless of which variant of the package is installed.
+        The double-checked pattern keeps the fast path lock-free
+        while still serialising the slow first-turn download /
+        construction so concurrent requests do not pay duplicate
+        cost.
 
-        Retry-on-failure: if the load raises, the exception propagates
-        and ``self._model`` stays ``None``.  The next ``_ensure_model``
-        call will retry the load — deliberately, so a transient
-        failure does not poison the cached backend for the lifetime
-        of the process.
+        Retry-on-failure: if construction raises (bad model id,
+        network failure, disk full), ``self._transcriber`` stays
+        ``None`` so the next ``_ensure_transcriber`` call retries —
+        deliberately, so a transient failure does not poison the
+        cached backend for the lifetime of the process.
         """
-        if self._model is not None:
-            return self._model
+        if self._transcriber is not None:
+            return self._transcriber
         with self._model_lock:
-            if self._model is None:
-                self._model = _load_moonshine_model(self._model_name)
-            return self._model
+            if self._transcriber is None:
+                self._transcriber = _build_transcriber(self._model_name)
+            return self._transcriber
 
     @property
     def model_loaded(self) -> bool:
-        """Whether the model has been loaded (for testing/observability)."""
-        return self._model is not None
+        """Whether the transcriber has been loaded (for testing /
+        observability).  Matches the Whisper backend's property name
+        so status / doctor code paths can probe both uniformly."""
+        return self._transcriber is not None
 
 
-def _coerce_transcript(raw: Any) -> str:
-    """Normalize the moonshine transcribe return value to a plain string.
+def _extract_transcript_text(transcript_obj: Any) -> str:
+    """Normalize a ``moonshine_voice.Transcript`` to a plain string.
 
-    ``moonshine_onnx.transcribe`` returns either a string or a
-    single-element list of strings depending on package version.
-    Collapse both shapes here so the backend contract stays stable.
-    Anything unexpected stringifies fail-closed rather than raising.
+    ``transcribe_without_streaming`` returns a ``Transcript`` dataclass
+    holding a list of ``TranscriptLine`` entries, each with a ``text``
+    field.  We join them on spaces to produce a single transcript
+    string; downstream ``normalize_transcript_text`` folds the
+    whitespace.  Fail-closed: anything unexpected stringifies rather
+    than raising, so the canonical STT seam stays in charge of
+    empty-transcript semantics.
     """
-    if raw is None:
+    lines = getattr(transcript_obj, "lines", None)
+    if lines is None:
         return ""
-    if isinstance(raw, str):
-        return raw
-    if isinstance(raw, (list, tuple)):
-        parts: list[str] = []
-        for item in raw:
-            if item is None:
-                continue
-            parts.append(str(item))
-        return " ".join(parts)
-    return str(raw)
+    parts: list[str] = []
+    for line in lines:
+        text = getattr(line, "text", None)
+        if text:
+            parts.append(str(text))
+    return " ".join(parts)
 
 
-def _load_moonshine_model(model_name: str) -> Any:
-    """Return a callable that maps ``audio_path -> transcript``.
+def _build_transcriber(model_name: str) -> Any:
+    """Build a configured ``Transcriber`` for *model_name*.
 
-    Uses ``moonshine_onnx.transcribe`` when available (CPU-friendly
-    ONNX runtime build) and falls back to ``moonshine.transcribe``
-    when only the PyTorch variant is installed.  The returned
-    callable takes a single ``audio_path`` arg so the backend's
-    transcribe() call site is uniform across variants.
+    Isolated at module scope so tests can patch the slow path
+    without stubbing out the backend's whole ``_ensure_transcriber``
+    method.  Imports are deferred so module import cost stays zero
+    when the operator has not enabled Moonshine.
     """
-    try:
-        import moonshine_onnx as _moonshine_mod
-    except ModuleNotFoundError:
-        import moonshine as _moonshine_mod
+    from moonshine_voice.download import download_model_from_info, find_model_info
+    from moonshine_voice.transcriber import Transcriber
 
-    transcribe_fn = getattr(_moonshine_mod, "transcribe", None)
-    if transcribe_fn is None:
-        raise RuntimeError("Installed moonshine package does not expose a top-level transcribe()")
-
-    def _call(audio_path: str) -> Any:
-        return transcribe_fn(audio_path, model=model_name)
-
-    return _call
+    arch = _resolve_model_arch(model_name)
+    info = find_model_info(language=_DEFAULT_LANGUAGE, model_arch=arch)
+    model_path, resolved_arch = download_model_from_info(info)
+    return Transcriber(model_path=str(model_path), model_arch=resolved_arch)

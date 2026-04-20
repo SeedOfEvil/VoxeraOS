@@ -200,12 +200,29 @@ class TestTranscribeAudioFileEntryPoint:
     def teardown_method(self) -> None:
         reset_shared_stt_backend()
 
-    def test_moonshine_success_through_transcribe_audio_file(self, tmp_path: Path) -> None:
+    def test_moonshine_success_through_transcribe_audio_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from types import SimpleNamespace
+
         audio = tmp_path / "a.wav"
-        audio.write_bytes(b"fake")
+        audio.write_bytes(b"RIFF....stub")
 
         backend = MoonshineLocalBackend()
-        backend._model = MagicMock(return_value="hello from entry point")
+        # Inject a fake ``Transcriber`` (non-streaming API) so we don't
+        # touch the real model.  ``load_wav_file`` is patched on the
+        # upstream module so the backend's deferred-import resolves to
+        # a deterministic (audio_data, sample_rate) tuple.
+        backend._transcriber = SimpleNamespace(
+            transcribe_without_streaming=MagicMock(
+                return_value=SimpleNamespace(lines=[SimpleNamespace(text="hello from entry point")])
+            )
+        )
+        monkeypatch.setattr(
+            "moonshine_voice.transcriber.load_wav_file",
+            MagicMock(return_value=([0.0] * 16000, 16000)),
+            raising=False,
+        )
 
         flags = _flags(stt_backend=STT_BACKEND_MOONSHINE_LOCAL)
 
@@ -239,8 +256,10 @@ class TestTranscribeAudioFileEntryPoint:
     ) -> None:
         """Without an explicit backend arg, the entry point must use the
         shared moonshine instance — not Whisper, not Null."""
+        from types import SimpleNamespace
+
         audio = tmp_path / "a.wav"
-        audio.write_bytes(b"fake")
+        audio.write_bytes(b"RIFF....stub")
 
         flags = _flags(stt_backend=STT_BACKEND_MOONSHINE_LOCAL)
 
@@ -248,9 +267,18 @@ class TestTranscribeAudioFileEntryPoint:
 
         def fake_ensure(self):
             captured["called_on"] = type(self).__name__
-            return MagicMock(return_value="wired up")
+            return SimpleNamespace(
+                transcribe_without_streaming=MagicMock(
+                    return_value=SimpleNamespace(lines=[SimpleNamespace(text="wired up")])
+                )
+            )
 
-        monkeypatch.setattr(MoonshineLocalBackend, "_ensure_model", fake_ensure)
+        monkeypatch.setattr(MoonshineLocalBackend, "_ensure_transcriber", fake_ensure)
+        monkeypatch.setattr(
+            "moonshine_voice.transcriber.load_wav_file",
+            MagicMock(return_value=([0.0] * 16000, 16000)),
+            raising=False,
+        )
         with patch("voxera.voice.moonshine_backend._MOONSHINE_AVAILABLE", True):
             resp = transcribe_audio_file(audio_path=str(audio), flags=flags)
 

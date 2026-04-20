@@ -16,7 +16,7 @@ runtime:
 7. Voice foundation flags accept the new kwargs without breaking
    existing callers
 
-The tests never install moonshine-onnx / faster-whisper at runtime —
+The tests never install moonshine-voice / faster-whisper at runtime —
 dependency probes are patched at the seam where necessary.
 """
 
@@ -475,13 +475,13 @@ class TestDependencyReporting:
         """Patch the probe so we get a deterministic 'missing' state."""
         monkeypatch.setattr(
             "voxera.voice.voice_status_summary._probe_moonshine_package",
-            lambda: (False, "moonshine-onnx"),
+            lambda: (False, "moonshine-voice"),
         )
         summary = build_voice_status_summary(_flags(stt_backend=STT_BACKEND_MOONSHINE_LOCAL))
         dep = summary["stt_dependency"]
         assert dep["checked"] is True
         assert dep["available"] is False
-        assert dep["package"] == "moonshine-onnx"
+        assert dep["package"] == "moonshine-voice"
         assert "moonshine" in (dep.get("hint") or "").lower()
         assert "pip install" in (summary["stt"]["next_step"] or "")
 
@@ -490,13 +490,13 @@ class TestDependencyReporting:
     ) -> None:
         monkeypatch.setattr(
             "voxera.voice.voice_status_summary._probe_moonshine_package",
-            lambda: (True, "moonshine-onnx"),
+            lambda: (True, "moonshine-voice"),
         )
         summary = build_voice_status_summary(_flags(stt_backend=STT_BACKEND_MOONSHINE_LOCAL))
         dep = summary["stt_dependency"]
         assert dep["checked"] is True
         assert dep["available"] is True
-        assert dep["package"] == "moonshine-onnx"
+        assert dep["package"] == "moonshine-voice"
         assert "hint" not in dep
         assert summary["stt"]["next_step"] is None
 

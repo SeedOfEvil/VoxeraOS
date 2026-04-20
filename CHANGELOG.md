@@ -7,7 +7,11 @@ VoxeraOS is an open-source alpha project. APIs, CLI surfaces, and internal contr
 ## [Unreleased]
 
 ### Added
-- `MoonshineLocalBackend` — optional local speech-to-text backend via `moonshine-onnx`, satisfying the existing canonical STT seam (file-oriented, lazy model load, truthful failure paths). Gated behind a new `[moonshine]` install extra.
+- `MoonshineLocalBackend` — optional local speech-to-text backend via the official `moonshine-voice` PyPI package, satisfying the existing canonical STT seam (file-oriented, lazy model load, truthful failure paths). Gated behind a new `[moonshine]` install extra.
+  - Uses `moonshine_voice.Transcriber` (non-streaming) + the bundled pure-Python PCM WAV loader — no FFmpeg required on the Moonshine path. Non-WAV inputs surface a truthful `PCM WAV required` error; operators needing broader codec support keep `whisper_local`.
+
+### Fixed
+- `[moonshine]` install extra now pulls `moonshine-voice>=0.0.5` (clean semver) instead of the broken `useful-moonshine-onnx>=0.2,<1.0` pin against a PyPI project that publishes only date-style versions (e.g. `20251121`). `pip install -e '.[dev,piper,whisper,kokoro,moonshine]'` now resolves cleanly.
 - Operator-selectable STT backend: panel Voice Options now offers a bounded `whisper_local` / `moonshine_local` dropdown alongside the existing model selectors. Selection is persisted in runtime config (`voice_stt_backend`), invalid values fail truthfully, and an operator-selected Moonshine model id (`voice_stt_moonshine_model`) threads through the factory into the backend.
 - Voice status summary now surfaces the effective STT backend and a `moonshine_model` sub-block (selected / effective) when Moonshine is configured; `voxera doctor --quick` reflects the effective backend and model.
 

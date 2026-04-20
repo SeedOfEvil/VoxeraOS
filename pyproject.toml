@@ -29,7 +29,11 @@ whisper = [
   "faster-whisper>=1.0,<2.0",
 ]
 moonshine = [
-  "useful-moonshine-onnx>=0.2,<1.0",
+  # Official Useful Sensors Moonshine PyPI package — clean semver (0.0.x).
+  # The older ``useful-moonshine-onnx`` PyPI publishes date-style versions
+  # (YYYYMMDD) so it cannot be pinned with a ``>=0.2,<1.0`` range and was
+  # replaced upstream by this canonical package.
+  "moonshine-voice>=0.0.5",
 ]
 piper = [
   "piper-tts>=1.2,<2.0",
