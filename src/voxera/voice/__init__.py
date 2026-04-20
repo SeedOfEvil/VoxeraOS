@@ -6,6 +6,7 @@ from .input import (
     transcribe_audio_file,
     transcribe_audio_file_async,
 )
+from .kokoro_backend import KokoroLocalBackend
 from .models import InputOrigin, normalize_input_origin
 from .output import synthesize_text, synthesize_text_async, voice_output_status
 from .piper_backend import PiperLocalBackend
@@ -52,6 +53,7 @@ from .whisper_backend import WhisperLocalBackend
 
 __all__ = [
     "InputOrigin",
+    "KokoroLocalBackend",
     "NullSTTBackend",
     "NullTTSBackend",
     "PiperLocalBackend",

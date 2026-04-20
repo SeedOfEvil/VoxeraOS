@@ -22,15 +22,16 @@ from typing import Any
 from .flags import VoiceFoundationFlags
 from .stt_backend_factory import STT_BACKEND_WHISPER_LOCAL
 from .stt_status import build_stt_status, stt_status_as_dict
-from .tts_backend_factory import TTS_BACKEND_PIPER_LOCAL
+from .tts_backend_factory import TTS_BACKEND_KOKORO_LOCAL, TTS_BACKEND_PIPER_LOCAL
 from .tts_status import build_tts_status, tts_status_as_dict
 from .whisper_backend import WHISPER_MODEL_BASE
 
 # -- schema version for the combined summary --------------------------------
-# Bumped to 3 in this release: adds operator-selected ``whisper_model``
-# metadata to ``stt_dependency`` alongside the existing ``next_step``
-# hints and ``piper_model`` metadata.
-VOICE_STATUS_SUMMARY_SCHEMA_VERSION = 3
+# Bumped to 4 in this release: adds ``kokoro_model`` metadata to
+# ``tts_dependency`` when the operator selects the Kokoro backend,
+# so panel + doctor can show the configured paths and file-presence
+# state truthfully alongside the existing Piper model block.
+VOICE_STATUS_SUMMARY_SCHEMA_VERSION = 4
 
 
 # -- next_step hint constants ------------------------------------------------
@@ -54,6 +55,23 @@ HINT_PIPER_MODEL_FILE_MISSING = (
 HINT_PIPER_MODEL_METADATA_MISSING = (
     "Piper model .onnx file exists but the matching .onnx.json metadata file is missing "
     "next to it.  Download the metadata sidecar or re-run `voxera setup`."
+)
+HINT_INSTALL_KOKORO = "Install the Kokoro extra: pip install voxera-os[kokoro]"
+HINT_SET_KOKORO_MODEL = (
+    "Set the Kokoro model path in panel Voice Options or via "
+    "VOXERA_VOICE_TTS_KOKORO_MODEL (absolute path to kokoro-*.onnx)."
+)
+HINT_SET_KOKORO_VOICES = (
+    "Set the Kokoro voices path in panel Voice Options or via "
+    "VOXERA_VOICE_TTS_KOKORO_VOICES (absolute path to voices-*.bin)."
+)
+HINT_KOKORO_MODEL_FILE_MISSING = (
+    "Configured Kokoro model path does not exist. "
+    "Point voice_tts_kokoro_model at a valid kokoro-*.onnx file."
+)
+HINT_KOKORO_VOICES_FILE_MISSING = (
+    "Configured Kokoro voices path does not exist. "
+    "Point voice_tts_kokoro_voices at a valid voices-*.bin file."
 )
 
 
@@ -163,10 +181,52 @@ def _check_stt_dependency(
     return {"checked": False, "reason": f"unknown_backend:{backend}"}
 
 
+def _check_kokoro_model(
+    model_path: str | None,
+    voices_path: str | None,
+    voice: str | None,
+) -> dict[str, Any]:
+    """Inspect the configured Kokoro model / voices / voice settings.
+
+    Returns a dict describing whether the operator configured paths,
+    whether each path exists on disk, and the effective voice id
+    (operator-selected or Kokoro's default ``af_sarah``).  Never
+    raises; never touches the network; never loads the model.
+
+    The shape mirrors ``_check_piper_model`` in spirit so operator
+    UIs can render the block the same way.
+    """
+    model_raw = (model_path or "").strip() or None
+    voices_raw = (voices_path or "").strip() or None
+    voice_raw = (voice or "").strip() or None
+
+    info: dict[str, Any] = {
+        "configured": bool(model_raw and voices_raw),
+        "model_path": str(Path(model_raw).expanduser()) if model_raw else None,
+        "voices_path": str(Path(voices_raw).expanduser()) if voices_raw else None,
+        "model_exists": (Path(model_raw).expanduser().exists() if model_raw else False),
+        "voices_exists": (Path(voices_raw).expanduser().exists() if voices_raw else False),
+        "voice": voice_raw,
+        "effective_voice": voice_raw or "af_sarah",
+    }
+    if not model_raw:
+        info["hint"] = HINT_SET_KOKORO_MODEL
+    elif not voices_raw:
+        info["hint"] = HINT_SET_KOKORO_VOICES
+    elif not info["model_exists"]:
+        info["hint"] = HINT_KOKORO_MODEL_FILE_MISSING
+    elif not info["voices_exists"]:
+        info["hint"] = HINT_KOKORO_VOICES_FILE_MISSING
+    return info
+
+
 def _check_tts_dependency(
     backend: str | None,
     *,
     piper_model: str | None = None,
+    kokoro_model: str | None = None,
+    kokoro_voices: str | None = None,
+    kokoro_voice: str | None = None,
 ) -> dict[str, Any]:
     """Check whether the configured TTS backend's dependency is available.
 
@@ -174,6 +234,10 @@ def _check_tts_dependency(
     describing the configured model path/name (if any) so operator UIs can
     show a specific next step when the dependency is installed but the
     model is missing.
+
+    For ``kokoro_local`` the result carries a ``kokoro_model`` sub-dict
+    describing the configured model / voices paths and the effective
+    voice id.  The dependency package is ``kokoro-onnx``.
     """
     if not backend:
         return {"checked": False, "reason": "no_backend_configured"}
@@ -197,6 +261,26 @@ def _check_tts_dependency(
                 "package": "piper-tts",
                 "hint": HINT_INSTALL_PIPER,
                 "piper_model": piper_model_info,
+            }
+
+    if backend_lower == TTS_BACKEND_KOKORO_LOCAL:
+        kokoro_model_info = _check_kokoro_model(kokoro_model, kokoro_voices, kokoro_voice)
+        try:
+            import kokoro_onnx  # noqa: F401
+
+            return {
+                "checked": True,
+                "available": True,
+                "package": "kokoro-onnx",
+                "kokoro_model": kokoro_model_info,
+            }
+        except (ImportError, OSError):
+            return {
+                "checked": True,
+                "available": False,
+                "package": "kokoro-onnx",
+                "hint": HINT_INSTALL_KOKORO,
+                "kokoro_model": kokoro_model_info,
             }
 
     return {"checked": False, "reason": f"unknown_backend:{backend}"}
@@ -241,6 +325,14 @@ def _tts_next_step(
             return HINT_PIPER_MODEL_FILE_MISSING
         if not piper_model.get("metadata_exists"):
             return HINT_PIPER_MODEL_METADATA_MISSING
+    # Kokoro dep installed but model / voices paths are missing or
+    # point at non-existent files -- the helper already composed the
+    # specific hint string, so just pass it through.
+    kokoro_model = tts_dep.get("kokoro_model")
+    if isinstance(kokoro_model, dict):
+        kokoro_hint = kokoro_model.get("hint")
+        if kokoro_hint:
+            return str(kokoro_hint)
     return None
 
 
@@ -268,7 +360,11 @@ def build_voice_status_summary(
         flags.voice_stt_backend, whisper_model=flags.voice_stt_whisper_model
     )
     tts_dep = _check_tts_dependency(
-        flags.voice_tts_backend, piper_model=flags.voice_tts_piper_model
+        flags.voice_tts_backend,
+        piper_model=flags.voice_tts_piper_model,
+        kokoro_model=flags.voice_tts_kokoro_model,
+        kokoro_voices=flags.voice_tts_kokoro_voices,
+        kokoro_voice=flags.voice_tts_kokoro_voice,
     )
 
     stt_payload = stt_status_as_dict(stt)

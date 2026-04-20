@@ -31,6 +31,9 @@ whisper = [
 piper = [
   "piper-tts>=1.2,<2.0",
 ]
+kokoro = [
+  "kokoro-onnx>=0.3,<1.0",
+]
 dev = [
   "ruff>=0.6",
   "pytest>=8.0",

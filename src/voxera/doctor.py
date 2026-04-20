@@ -497,18 +497,33 @@ def run_quick_doctor(
                 tts_detail += " piper_model=missing"
             elif not piper_model.get("metadata_exists"):
                 tts_detail += " piper_model_metadata=missing"
+        kokoro_model = tts_dep.get("kokoro_model") if isinstance(tts_dep, dict) else None
+        kokoro_path_problem = False
+        if isinstance(kokoro_model, dict):
+            if not kokoro_model.get("model_path"):
+                tts_detail += " kokoro_model=unset"
+                kokoro_path_problem = True
+            elif not kokoro_model.get("model_exists"):
+                tts_detail += " kokoro_model=missing"
+                kokoro_path_problem = True
+            if not kokoro_model.get("voices_path"):
+                tts_detail += " kokoro_voices=unset"
+                kokoro_path_problem = True
+            elif not kokoro_model.get("voices_exists"):
+                tts_detail += " kokoro_voices=missing"
+                kokoro_path_problem = True
         if tts_block["available"] and not (
             tts_dep.get("checked") and tts_dep.get("available") is False
         ):
-            # piper_model path exists-but-metadata-missing should still warn
-            if (
+            # Piper path-kind with missing file / metadata, or any
+            # Kokoro path problem (model / voices unset or missing), is
+            # a warn signal -- the backend is wired up but cannot load.
+            piper_path_problem = (
                 isinstance(piper_model, dict)
                 and piper_model.get("kind") == "path"
                 and (not piper_model.get("exists") or not piper_model.get("metadata_exists"))
-            ):
-                tts_check_status = "warn"
-            else:
-                tts_check_status = "ok"
+            )
+            tts_check_status = "warn" if piper_path_problem or kokoro_path_problem else "ok"
         elif tts_block["enabled"]:
             tts_check_status = "warn"
         else:

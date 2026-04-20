@@ -36,7 +36,11 @@ from .openrouter_catalog import (
 from .paths import ensure_dirs
 from .secrets import get_secret, set_secret
 from .voice.stt_backend_factory import STT_BACKEND_WHISPER_LOCAL
-from .voice.tts_backend_factory import TTS_BACKEND_PIPER_LOCAL
+from .voice.tts_backend_factory import (
+    TTS_BACKEND_CHOICES,
+    TTS_BACKEND_KOKORO_LOCAL,
+    TTS_BACKEND_PIPER_LOCAL,
+)
 
 console = Console()
 
@@ -657,8 +661,12 @@ def _post_setup_validation(cfg: AppConfig) -> None:
     _render_validation_summary(checks)
 
 
+# STT choices stay local to the wizard today -- the STT factory does
+# not yet export a curated allow-list.  TTS choices are imported from
+# the factory so the wizard and panel share the exact same source of
+# truth; adding a new TTS backend flows through both surfaces
+# automatically.
 STT_BACKEND_CHOICES = (STT_BACKEND_WHISPER_LOCAL,)
-TTS_BACKEND_CHOICES = (TTS_BACKEND_PIPER_LOCAL,)
 
 
 def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, object]:
@@ -721,12 +729,29 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
                     "voice_tts_backend": None,
                     "voice_tts_piper_model": None,
                     "voice_stt_whisper_model": None,
+                    "voice_tts_kokoro_model": None,
+                    "voice_tts_kokoro_voices": None,
+                    "voice_tts_kokoro_voice": None,
                 }
             if isinstance(loaded, dict):
                 existing_runtime = loaded
     existing_piper_model_raw = existing_runtime.get("voice_tts_piper_model")
     existing_piper_model = (
         str(existing_piper_model_raw).strip() if isinstance(existing_piper_model_raw, str) else ""
+    )
+    existing_kokoro_model_raw = existing_runtime.get("voice_tts_kokoro_model")
+    existing_kokoro_model = (
+        str(existing_kokoro_model_raw).strip() if isinstance(existing_kokoro_model_raw, str) else ""
+    )
+    existing_kokoro_voices_raw = existing_runtime.get("voice_tts_kokoro_voices")
+    existing_kokoro_voices = (
+        str(existing_kokoro_voices_raw).strip()
+        if isinstance(existing_kokoro_voices_raw, str)
+        else ""
+    )
+    existing_kokoro_voice_raw = existing_runtime.get("voice_tts_kokoro_voice")
+    existing_kokoro_voice = (
+        str(existing_kokoro_voice_raw).strip() if isinstance(existing_kokoro_voice_raw, str) else ""
     )
 
     answers: dict[str, object] = {
@@ -741,6 +766,13 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
         # but declining the foundation below must clear it so state never
         # goes stale against the most recent answer.
         "voice_stt_whisper_model": existing_runtime.get("voice_stt_whisper_model") or None,
+        # Preserve any previously-saved Kokoro paths / voice by default so
+        # re-running the wizard without touching Kokoro does not silently
+        # wipe them.  Cleared below when the operator declines the
+        # foundation or picks a different backend.
+        "voice_tts_kokoro_model": existing_kokoro_model or None,
+        "voice_tts_kokoro_voices": existing_kokoro_voices or None,
+        "voice_tts_kokoro_voice": existing_kokoro_voice or None,
     }
 
     enable_foundation = Confirm.ask("Enable voice foundation?", default=False)
@@ -770,10 +802,10 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
                 default=TTS_BACKEND_PIPER_LOCAL,
             )
             answers["voice_tts_backend"] = tts_backend
-            console.print(
-                "[dim]If piper-tts is not installed, run `pip install voxera-os[piper]`.[/dim]"
-            )
             if tts_backend == TTS_BACKEND_PIPER_LOCAL:
+                console.print(
+                    "[dim]If piper-tts is not installed, run `pip install voxera-os[piper]`.[/dim]"
+                )
                 # Pre-fill with the existing stored value so re-running the
                 # wizard does not silently wipe a configured model path.
                 if existing_piper_model:
@@ -794,18 +826,55 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
                 if model.lower() == "default":
                     model = ""
                 answers["voice_tts_piper_model"] = model or None
+            elif tts_backend == TTS_BACKEND_KOKORO_LOCAL:
+                console.print(
+                    "[dim]If kokoro-onnx is not installed, run "
+                    "`pip install voxera-os[kokoro]`.  Kokoro requires "
+                    "operator-provided model (.onnx) and voices (.bin) "
+                    "files; no default path is assumed.[/dim]"
+                )
+                # Kokoro: ask for the two required paths; pre-fill with
+                # existing values so re-running the wizard never silently
+                # wipes configured paths.  Empty means "leave unset" and
+                # the status/doctor surface will report it truthfully.
+                kokoro_model_path = Prompt.ask(
+                    "Kokoro model path (absolute path to kokoro-*.onnx)",
+                    default=existing_kokoro_model,
+                ).strip()
+                answers["voice_tts_kokoro_model"] = kokoro_model_path or None
+                kokoro_voices_path = Prompt.ask(
+                    "Kokoro voices path (absolute path to voices-*.bin)",
+                    default=existing_kokoro_voices,
+                ).strip()
+                answers["voice_tts_kokoro_voices"] = kokoro_voices_path or None
+                kokoro_voice_id = Prompt.ask(
+                    "Kokoro voice id (blank for default 'af_sarah')",
+                    default=existing_kokoro_voice,
+                ).strip()
+                answers["voice_tts_kokoro_voice"] = kokoro_voice_id or None
 
     # Persist answers.  When the foundation is disabled we explicitly null
     # every voice key so the runtime config reflects the wizard's answer
     # (no silently-stale backend choices or model selections from a prior
     # run).  When the foundation is enabled, the existing whisper model
     # selection is preserved untouched -- it's a panel-managed knob that
-    # the wizard never prompts for.
+    # the wizard never prompts for.  Kokoro paths are persisted only
+    # when Kokoro is the chosen backend; switching back to Piper clears
+    # them so a subsequent doctor run does not warn about stale Kokoro
+    # paths that are no longer in play.
     stt_whisper_model_update: object | None
     if answers["enable_voice_foundation"]:
         stt_whisper_model_update = answers["voice_stt_whisper_model"] or None
     else:
         stt_whisper_model_update = None
+    if answers["voice_tts_backend"] == TTS_BACKEND_KOKORO_LOCAL:
+        kokoro_model_update = answers["voice_tts_kokoro_model"] or None
+        kokoro_voices_update = answers["voice_tts_kokoro_voices"] or None
+        kokoro_voice_update = answers["voice_tts_kokoro_voice"] or None
+    else:
+        kokoro_model_update = None
+        kokoro_voices_update = None
+        kokoro_voice_update = None
     updates: dict[str, object | None] = {
         "enable_voice_foundation": bool(answers["enable_voice_foundation"]),
         "enable_voice_input": bool(answers["enable_voice_input"]),
@@ -814,6 +883,9 @@ def _configure_voice(*, runtime_config_path: Path | None = None) -> dict[str, ob
         "voice_tts_backend": answers["voice_tts_backend"],
         "voice_tts_piper_model": answers["voice_tts_piper_model"],
         "voice_stt_whisper_model": stt_whisper_model_update,
+        "voice_tts_kokoro_model": kokoro_model_update,
+        "voice_tts_kokoro_voices": kokoro_voices_update,
+        "voice_tts_kokoro_voice": kokoro_voice_update,
     }
     path = update_runtime_config(updates, config_path=runtime_config_path)
     console.print(f"Voice settings written to {path}.")
