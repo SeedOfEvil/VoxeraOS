@@ -76,11 +76,15 @@ body {
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
+  /* Animate only opacity so the browser can composite the dot on its
+     own GPU layer: no per-frame paint, no invalidation of the parent
+     .shell's backdrop-filter cache. The visual pulse is preserved. */
   animation: pulse-dot 3s ease-in-out infinite;
+  will-change: opacity;
 }
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--accent); }
-  50% { opacity: 0.6; box-shadow: 0 0 12px var(--accent); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 .topbar p { margin: 0; color: var(--muted); font-size: .82rem; }
 .topbar-meta {
@@ -744,4 +748,16 @@ body {
   .actions-row {
     flex-direction: column;
   }
+}
+
+/* Respect the operator's reduced-motion preference and drop the idle
+   looping animations when requested. One-shot entry animations (bubble
+   entry, preview fade-in) are neutralized so they finish immediately
+   instead of animating in. This has no effect on polling, preview,
+   dictation, or TTS behavior — it is purely visual. */
+@media (prefers-reduced-motion: reduce) {
+  .topbar-brand .vera-dot { animation: none; }
+  .bubble { animation: none; }
+  .preview { animation: none; }
+  .thread { scroll-behavior: auto; }
 }
