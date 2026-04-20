@@ -60,12 +60,22 @@ from .stt_protocol import (
 # because their semver-incompatible versions also cannot be pinned
 # cleanly in ``pyproject.toml``.
 
+# ``load_wav_file`` is exposed at module scope (not function-local)
+# so test monkey-patches can target
+# ``voxera.voice.moonshine_backend.load_wav_file`` without requiring
+# the real ``moonshine_voice`` package to be installed.  The runtime
+# dep guard above already ensures we never call it when
+# ``_MOONSHINE_AVAILABLE`` is False.
+load_wav_file: Any
 _MOONSHINE_AVAILABLE: bool
 try:
     import moonshine_voice  # noqa: F401
+    from moonshine_voice.transcriber import load_wav_file as _real_load_wav_file
 
+    load_wav_file = _real_load_wav_file
     _MOONSHINE_AVAILABLE = True
 except ModuleNotFoundError:
+    load_wav_file = None
     _MOONSHINE_AVAILABLE = False
 
 # -- environment defaults -----------------------------------------------------
@@ -232,8 +242,6 @@ class MoonshineLocalBackend:
             )
 
         # -- load WAV ----------------------------------------------------------
-        from moonshine_voice.transcriber import load_wav_file
-
         try:
             try:
                 audio_data, sample_rate = load_wav_file(str(decode_path))

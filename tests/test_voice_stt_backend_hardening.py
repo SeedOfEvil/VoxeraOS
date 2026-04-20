@@ -219,7 +219,7 @@ class TestTranscribeAudioFileEntryPoint:
             )
         )
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             MagicMock(return_value=([0.0] * 16000, 16000)),
             raising=False,
         )
@@ -275,7 +275,7 @@ class TestTranscribeAudioFileEntryPoint:
 
         monkeypatch.setattr(MoonshineLocalBackend, "_ensure_transcriber", fake_ensure)
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             MagicMock(return_value=([0.0] * 16000, 16000)),
             raising=False,
         )

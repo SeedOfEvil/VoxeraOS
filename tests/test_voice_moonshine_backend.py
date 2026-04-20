@@ -238,7 +238,7 @@ class TestMoonshineNormalization:
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("hello post normalize"))
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             MagicMock(return_value=([0.0] * 16000, 16000)),
             raising=False,
         )
@@ -281,7 +281,7 @@ class TestMoonshineNormalization:
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("no transcode"))
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             MagicMock(return_value=([0.0] * 16000, 16000)),
             raising=False,
         )
@@ -341,7 +341,7 @@ class TestMoonshineNormalization:
             lambda source: (tmp_wav, tmp_wav),
         )
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             MagicMock(side_effect=RuntimeError("boom")),
             raising=False,
         )
@@ -376,7 +376,7 @@ class TestMoonshineTranscriptionSuccess:
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("Hello from moonshine"))
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             self._fake_load(),
             raising=False,
         )
@@ -403,7 +403,7 @@ class TestMoonshineTranscriptionSuccess:
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("Hello", "beautiful", "world"))
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             self._fake_load(),
             raising=False,
         )
@@ -430,7 +430,7 @@ class TestMoonshineTranscriptionSuccess:
         _prime_backend(backend, _fake_transcript("one two three"))
         # 32000 samples @ 16 kHz = 2000 ms
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             self._fake_load(audio=(0.0,) * 32000, sr=16000),
             raising=False,
         )
@@ -453,7 +453,7 @@ class TestMoonshineTranscriptionSuccess:
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("Hello entry point"))
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             self._fake_load(),
             raising=False,
         )
@@ -482,7 +482,7 @@ class TestMoonshineTranscriptionSuccess:
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript())  # zero lines
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             self._fake_load(),
             raising=False,
         )
@@ -504,7 +504,7 @@ class TestMoonshineTranscriptionSuccess:
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("   ", "\t\n"))
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             self._fake_load(),
             raising=False,
         )
@@ -533,7 +533,7 @@ class TestMoonshineTranscriptionFailure:
             transcribe_without_streaming=MagicMock(side_effect=RuntimeError("native crash"))
         )
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             MagicMock(return_value=([0.0] * 16000, 16000)),
             raising=False,
         )
@@ -656,7 +656,7 @@ class TestMoonshineAsync:
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("Async hello"))
         monkeypatch.setattr(
-            "moonshine_voice.transcriber.load_wav_file",
+            "voxera.voice.moonshine_backend.load_wav_file",
             MagicMock(return_value=([0.0] * 16000, 16000)),
             raising=False,
         )
