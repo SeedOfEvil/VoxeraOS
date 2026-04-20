@@ -49,6 +49,7 @@ from ..voice.input import (
 from ..voice.models import InputOrigin
 from ..voice.output import synthesize_text, synthesize_text_async
 from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse, stt_response_as_dict
+from ..voice.tts_backend_factory import TTS_BACKEND_CHOICES
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response_as_dict
 from ..voice.voice_status_summary import build_voice_status_summary
 from ..voice.whisper_backend import STT_WHISPER_MODEL_CHOICES
@@ -283,6 +284,7 @@ def register_voice_routes(
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
             stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            tts_backend_choices=list(TTS_BACKEND_CHOICES),
             voice_options_result=voice_options_result,
         )
         response = HTMLResponse(content=html)
@@ -299,16 +301,27 @@ def register_voice_routes(
     async def voice_options_save(request: Request) -> HTMLResponse:
         """Persist operator-selected voice options into the runtime config.
 
-        Only the STT whisper model is configurable here today.  Empty
-        string (or the sentinel ``default``) clears the runtime config
-        value so the backend falls back to its default selection.  The
-        save lane uses the canonical ``update_runtime_config`` writer
-        so it shares atomic-write semantics with every other operator
-        config update surface.
+        Two knobs are configurable here today:
+
+        * **STT whisper model** — selects the faster-whisper model id.
+          Empty string (or the sentinel ``default``) clears the runtime
+          config value so the backend falls back to its default
+          selection.
+        * **TTS backend** — selects the local text-to-speech backend
+          (``piper_local`` / ``kokoro_local``).  Empty string clears the
+          runtime config value so the backend selection falls back to
+          env / setup wizard config.
+
+        The save lane uses the canonical ``update_runtime_config``
+        writer so it shares atomic-write semantics with every other
+        operator config update surface.  A submitted value that does
+        not match the curated choice list produces a truthful failure
+        alert — nothing unrecognized is silently persisted.
         """
         await require_mutation_guard(request)
 
         raw_model = (await request_value(request, "stt_whisper_model", "")).strip()
+        raw_tts_backend = (await request_value(request, "tts_backend", "")).strip()
         voice_options_result: dict[str, Any]
 
         if not raw_model or raw_model.lower() == "default":
@@ -323,23 +336,51 @@ def register_voice_routes(
                     "Pick one of the listed options or clear the selection."
                 ),
                 "submitted_model": raw_model,
+                "submitted_tts_backend": raw_tts_backend,
+            }
+            return _render_voice_page(request, voice_options_result=voice_options_result)
+
+        # TTS backend: empty clears; otherwise must be in the curated
+        # allow-list so stale/invalid selections fail truthfully rather
+        # than landing silently in the runtime config.
+        if not raw_tts_backend or raw_tts_backend.lower() == "default":
+            persisted_tts: str | None = None
+        elif raw_tts_backend in TTS_BACKEND_CHOICES:
+            persisted_tts = raw_tts_backend
+        else:
+            voice_options_result = {
+                "ok": False,
+                "error": (
+                    f"Unrecognized TTS backend {raw_tts_backend!r}. "
+                    "Pick one of the listed options or clear the selection."
+                ),
+                "submitted_model": raw_model,
+                "submitted_tts_backend": raw_tts_backend,
             }
             return _render_voice_page(request, voice_options_result=voice_options_result)
 
         try:
-            update_runtime_config({"voice_stt_whisper_model": persisted})
+            update_runtime_config(
+                {
+                    "voice_stt_whisper_model": persisted,
+                    "voice_tts_backend": persisted_tts,
+                }
+            )
         except Exception as exc:
             voice_options_result = {
                 "ok": False,
                 "error": f"Failed to save voice options: {type(exc).__name__}: {exc}",
                 "submitted_model": raw_model,
+                "submitted_tts_backend": raw_tts_backend,
             }
             return _render_voice_page(request, voice_options_result=voice_options_result)
 
         voice_options_result = {
             "ok": True,
             "saved_model": persisted,
+            "saved_tts_backend": persisted_tts,
             "submitted_model": raw_model,
+            "submitted_tts_backend": raw_tts_backend,
         }
         return _render_voice_page(request, voice_options_result=voice_options_result)
 
@@ -444,6 +485,7 @@ def register_voice_routes(
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
             stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            tts_backend_choices=list(TTS_BACKEND_CHOICES),
             voice_options_result=None,
         )
         resp = HTMLResponse(content=html)
@@ -571,6 +613,7 @@ def register_voice_routes(
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
             stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            tts_backend_choices=list(TTS_BACKEND_CHOICES),
             voice_options_result=None,
         )
         resp = HTMLResponse(content=html)
@@ -1017,6 +1060,7 @@ def register_voice_routes(
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
             stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            tts_backend_choices=list(TTS_BACKEND_CHOICES),
             voice_options_result=None,
         )
         resp = HTMLResponse(content=html)

@@ -24,6 +24,15 @@ class VoiceFoundationFlags:
     # this is passed through to ``WhisperLocalBackend(model_size=...)``
     # so the operator's choice overrides env defaults deterministically.
     voice_stt_whisper_model: str | None = None
+    # Optional operator-configured paths / voice id for the local
+    # Kokoro TTS path.  ``None`` preserves the env-only fallback
+    # (``VOXERA_VOICE_TTS_KOKORO_*``) so existing deployments do not
+    # change behaviour.  When set, these flow through
+    # ``KokoroLocalBackend(model_path=..., voices_path=..., voice=...)``
+    # so the operator's choice overrides env defaults deterministically.
+    voice_tts_kokoro_model: str | None = None
+    voice_tts_kokoro_voices: str | None = None
+    voice_tts_kokoro_voice: str | None = None
 
     @property
     def voice_input_enabled(self) -> bool:
@@ -80,6 +89,9 @@ def load_voice_foundation_flags(
     env_voice_tts_backend = env.get("VOXERA_VOICE_TTS_BACKEND")
     env_voice_tts_piper_model = env.get("VOXERA_VOICE_TTS_PIPER_MODEL")
     env_voice_stt_whisper_model = env.get("VOXERA_VOICE_STT_WHISPER_MODEL")
+    env_voice_tts_kokoro_model = env.get("VOXERA_VOICE_TTS_KOKORO_MODEL")
+    env_voice_tts_kokoro_voices = env.get("VOXERA_VOICE_TTS_KOKORO_VOICES")
+    env_voice_tts_kokoro_voice = env.get("VOXERA_VOICE_TTS_KOKORO_VOICE")
 
     enable_voice_foundation = _parse_bool(
         "VOXERA_ENABLE_VOICE_FOUNDATION",
@@ -101,6 +113,9 @@ def load_voice_foundation_flags(
     file_tts_backend = str(file_values.get("voice_tts_backend") or "").strip() or None
     file_tts_piper_model = str(file_values.get("voice_tts_piper_model") or "").strip() or None
     file_stt_whisper_model = str(file_values.get("voice_stt_whisper_model") or "").strip() or None
+    file_tts_kokoro_model = str(file_values.get("voice_tts_kokoro_model") or "").strip() or None
+    file_tts_kokoro_voices = str(file_values.get("voice_tts_kokoro_voices") or "").strip() or None
+    file_tts_kokoro_voice = str(file_values.get("voice_tts_kokoro_voice") or "").strip() or None
 
     voice_stt_backend = str(env_voice_stt_backend or "").strip() or file_stt_backend
     voice_tts_backend = str(env_voice_tts_backend or "").strip() or file_tts_backend
@@ -108,6 +123,11 @@ def load_voice_foundation_flags(
     voice_stt_whisper_model = (
         str(env_voice_stt_whisper_model or "").strip() or file_stt_whisper_model
     )
+    voice_tts_kokoro_model = str(env_voice_tts_kokoro_model or "").strip() or file_tts_kokoro_model
+    voice_tts_kokoro_voices = (
+        str(env_voice_tts_kokoro_voices or "").strip() or file_tts_kokoro_voices
+    )
+    voice_tts_kokoro_voice = str(env_voice_tts_kokoro_voice or "").strip() or file_tts_kokoro_voice
 
     return VoiceFoundationFlags(
         enable_voice_foundation=enable_voice_foundation,
@@ -117,4 +137,7 @@ def load_voice_foundation_flags(
         voice_tts_backend=voice_tts_backend,
         voice_tts_piper_model=voice_tts_piper_model,
         voice_stt_whisper_model=voice_stt_whisper_model,
+        voice_tts_kokoro_model=voice_tts_kokoro_model,
+        voice_tts_kokoro_voices=voice_tts_kokoro_voices,
+        voice_tts_kokoro_voice=voice_tts_kokoro_voice,
     )

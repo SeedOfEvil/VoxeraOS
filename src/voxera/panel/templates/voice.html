@@ -200,6 +200,47 @@
             </span>
           </div>
           {% endif %}
+          {% if summary.tts_dependency.kokoro_model %}
+          <div class="queue-detail-row" data-testid="tts-kokoro-model-block">
+            <span class="queue-detail-label">Kokoro Model</span>
+            <span class="queue-detail-value">
+              {% if summary.tts_dependency.kokoro_model.model_path %}
+                <code class="voice-path-block">{{summary.tts_dependency.kokoro_model.model_path}}</code>
+                {% if summary.tts_dependency.kokoro_model.model_exists %}
+                  <span class="badge badge-ok">present</span>
+                {% else %}
+                  <span class="badge badge-fail">file missing</span>
+                {% endif %}
+              {% else %}
+                <span class="muted">not configured</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Kokoro Voices</span>
+            <span class="queue-detail-value">
+              {% if summary.tts_dependency.kokoro_model.voices_path %}
+                <code class="voice-path-block">{{summary.tts_dependency.kokoro_model.voices_path}}</code>
+                {% if summary.tts_dependency.kokoro_model.voices_exists %}
+                  <span class="badge badge-ok">present</span>
+                {% else %}
+                  <span class="badge badge-fail">file missing</span>
+                {% endif %}
+              {% else %}
+                <span class="muted">not configured</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="queue-detail-row">
+            <span class="queue-detail-label">Kokoro Voice</span>
+            <span class="queue-detail-value">
+              <span class="mono">{{summary.tts_dependency.kokoro_model.effective_voice}}</span>
+              {% if not summary.tts_dependency.kokoro_model.voice %}
+                <span class="muted text-sm">(default)</span>
+              {% endif %}
+            </span>
+          </div>
+          {% endif %}
           {% if summary.tts.next_step %}
           <div class="queue-detail-row">
             <span class="queue-detail-label">Next Step</span>
@@ -212,11 +253,12 @@
       {# ── Zone 1b: Voice Options (operator-editable config) ──────────── #}
       {%- set _current_whisper_model = summary.stt_dependency.whisper_model.selected if summary.stt_dependency and summary.stt_dependency.whisper_model else None -%}
       {%- set _effective_whisper_model = summary.stt_dependency.whisper_model.effective if summary.stt_dependency and summary.stt_dependency.whisper_model else None -%}
+      {%- set _current_tts_backend = summary.tts.backend -%}
       <div class="section-label" id="voice-options">Voice Options</div>
       <section class="card mb" data-testid="voice-options">
         <h2 class="voice-card-heading">Voice Options</h2>
         <p class="voice-section-intro">
-          Operator-editable voice configuration.  Changes are persisted to the runtime config and affect the existing local STT path only &mdash; this never enables cloud STT, streaming, or a new engine.  Leave the model selection blank to preserve the current default.
+          Operator-editable voice configuration.  Changes are persisted to the runtime config and affect the existing local STT / TTS paths only &mdash; this never enables cloud STT, streaming, or a new engine.  Leave selections blank to preserve the current default.
         </p>
 
         {% if voice_options_result %}
@@ -227,6 +269,11 @@
               STT whisper model is now <span class="mono">{{voice_options_result.saved_model}}</span>.
             {% else %}
               STT whisper model selection cleared &mdash; backend will use its default.
+            {% endif %}
+            {% if voice_options_result.saved_tts_backend %}
+              TTS backend is now <span class="mono" data-testid="voice-options-saved-tts-backend">{{voice_options_result.saved_tts_backend}}</span>.
+            {% else %}
+              TTS backend selection cleared &mdash; backend will use its default.
             {% endif %}
           </div>
           {% else %}
@@ -252,6 +299,18 @@
           </span>
         </div>
 
+        <div class="queue-detail-row">
+          <span class="queue-detail-label">Current TTS Backend</span>
+          <span class="queue-detail-value">
+            {% if _current_tts_backend %}
+              <span class="mono" data-testid="voice-options-current-tts-backend">{{_current_tts_backend}}</span>
+              <span class="muted text-sm">(effective)</span>
+            {% else %}
+              <span class="muted" data-testid="voice-options-current-tts-backend">&mdash;</span>
+            {% endif %}
+          </span>
+        </div>
+
         <form class="form-stack voice-action-form" method="post" action="/voice/options/save" data-testid="voice-options-form">
           <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
           <label>STT Whisper Model
@@ -265,6 +324,19 @@
           <p class="muted text-sm">
             Selects the model id passed to the local faster-whisper loader.  Use <span class="mono">distil-large-v3</span> for the Distil-Whisper option (faster-whisper resolves it to the CT2 repo internally).  Large models download on first use and may take a while.
           </p>
+
+          <label>TTS Backend
+            <select class="input" name="tts_backend" id="tts_backend" data-testid="voice-options-tts-backend-select">
+              <option value="">(default &mdash; no explicit selection)</option>
+              {% for choice in tts_backend_choices %}
+                <option value="{{choice}}" {% if choice == _current_tts_backend %}selected{% endif %}>{{choice}}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="muted text-sm">
+            Selects the local text-to-speech backend.  <span class="mono">piper_local</span> is the default; <span class="mono">kokoro_local</span> requires the <span class="mono">kokoro-onnx</span> extra and operator-configured model / voices paths (see <span class="mono">VOXERA_VOICE_TTS_KOKORO_MODEL</span> and <span class="mono">VOXERA_VOICE_TTS_KOKORO_VOICES</span>).  Text stays authoritative regardless of TTS backend behavior.
+          </p>
+
           <button class="btn btn-primary" type="submit" data-testid="voice-options-save">Save Voice Options</button>
         </form>
       </section>
