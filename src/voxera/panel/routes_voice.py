@@ -48,7 +48,9 @@ from ..voice.input import (
     transcribe_audio_file,
 )
 from ..voice.models import InputOrigin
+from ..voice.moonshine_backend import STT_MOONSHINE_MODEL_CHOICES
 from ..voice.output import synthesize_text, synthesize_text_async
+from ..voice.stt_backend_factory import STT_BACKEND_CHOICES
 from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse, stt_response_as_dict
 from ..voice.tts_backend_factory import TTS_BACKEND_CHOICES
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse, tts_response_as_dict
@@ -318,6 +320,8 @@ def register_voice_routes(
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
             stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            stt_moonshine_model_choices=list(STT_MOONSHINE_MODEL_CHOICES),
+            stt_backend_choices=list(STT_BACKEND_CHOICES),
             tts_backend_choices=list(TTS_BACKEND_CHOICES),
             voice_options_result=voice_options_result,
         )
@@ -335,22 +339,30 @@ def register_voice_routes(
     async def voice_options_save(request: Request) -> HTMLResponse:
         """Persist operator-selected voice options into the runtime config.
 
-        Two knobs are configurable here today:
+        Four knobs are configurable here today:
 
-        * **STT whisper model** — selects the faster-whisper model id.
-          Empty string (or the sentinel ``default``) clears the runtime
-          config value so the backend falls back to its default
-          selection.
+        * **STT backend** — selects the local speech-to-text backend
+          (``whisper_local`` / ``moonshine_local``).  Empty string
+          clears the runtime config value so the backend selection
+          falls back to env / setup wizard config.
+        * **STT whisper model** — selects the faster-whisper model id
+          (only meaningful when the STT backend is ``whisper_local``).
+          Empty string clears the runtime config value so the backend
+          falls back to its default selection.
+        * **STT moonshine model** — selects the Moonshine model id
+          (only meaningful when the STT backend is ``moonshine_local``).
+          Empty string clears the runtime config value so the backend
+          falls back to its default selection.
         * **TTS backend** — selects the local text-to-speech backend
           (``piper_local`` / ``kokoro_local``).  Empty string clears the
           runtime config value so the backend selection falls back to
           env / setup wizard config.
 
         Only fields that the client actually submitted are touched.  A
-        stale client that predates the TTS-backend selector (and POSTs
-        only ``stt_whisper_model``) will NOT silently clear the TTS
+        stale client that predates the STT-backend selector (and POSTs
+        only ``stt_whisper_model``) will NOT silently clear the STT
         backend — the runtime config keeps whatever the operator most
-        recently saved.  This keeps the Piper-era contract stable and
+        recently saved.  This keeps the existing contract stable and
         treats the form as the authoritative source only for the
         fields it submits.
 
@@ -363,10 +375,39 @@ def register_voice_routes(
         await require_mutation_guard(request)
 
         form_fields = await _parse_form_fields(request)
+        raw_stt_backend = form_fields.get("stt_backend", "").strip()
         raw_model = form_fields.get("stt_whisper_model", "").strip()
+        raw_moonshine_model = form_fields.get("stt_moonshine_model", "").strip()
         raw_tts_backend = form_fields.get("tts_backend", "").strip()
         voice_options_result: dict[str, Any]
         updates: dict[str, Any] = {}
+
+        def _fail(reason: str) -> HTMLResponse:
+            result: dict[str, Any] = {
+                "ok": False,
+                "error": reason,
+                "submitted_stt_backend": raw_stt_backend,
+                "submitted_model": raw_model,
+                "submitted_moonshine_model": raw_moonshine_model,
+                "submitted_tts_backend": raw_tts_backend,
+            }
+            return _render_voice_page(request, voice_options_result=result)
+
+        # STT backend selector.  Empty clears so operators can revert to
+        # env / setup defaults.  Unknown identifiers fail truthfully
+        # rather than landing silently in the runtime config.
+        persisted_stt_backend: str | None = None
+        if "stt_backend" in form_fields:
+            if not raw_stt_backend or raw_stt_backend.lower() == "default":
+                persisted_stt_backend = None
+            elif raw_stt_backend in STT_BACKEND_CHOICES:
+                persisted_stt_backend = raw_stt_backend
+            else:
+                return _fail(
+                    f"Unrecognized STT backend {raw_stt_backend!r}. "
+                    "Pick one of the listed options or clear the selection."
+                )
+            updates["voice_stt_backend"] = persisted_stt_backend
 
         persisted: str | None = None
         if "stt_whisper_model" in form_fields:
@@ -375,17 +416,24 @@ def register_voice_routes(
             elif raw_model in STT_WHISPER_MODEL_CHOICES:
                 persisted = raw_model
             else:
-                voice_options_result = {
-                    "ok": False,
-                    "error": (
-                        f"Unrecognized STT whisper model {raw_model!r}. "
-                        "Pick one of the listed options or clear the selection."
-                    ),
-                    "submitted_model": raw_model,
-                    "submitted_tts_backend": raw_tts_backend,
-                }
-                return _render_voice_page(request, voice_options_result=voice_options_result)
+                return _fail(
+                    f"Unrecognized STT whisper model {raw_model!r}. "
+                    "Pick one of the listed options or clear the selection."
+                )
             updates["voice_stt_whisper_model"] = persisted
+
+        persisted_moonshine_model: str | None = None
+        if "stt_moonshine_model" in form_fields:
+            if not raw_moonshine_model or raw_moonshine_model.lower() == "default":
+                persisted_moonshine_model = None
+            elif raw_moonshine_model in STT_MOONSHINE_MODEL_CHOICES:
+                persisted_moonshine_model = raw_moonshine_model
+            else:
+                return _fail(
+                    f"Unrecognized STT moonshine model {raw_moonshine_model!r}. "
+                    "Pick one of the listed options or clear the selection."
+                )
+            updates["voice_stt_moonshine_model"] = persisted_moonshine_model
 
         # TTS backend: empty clears; otherwise must be in the curated
         # allow-list so stale/invalid selections fail truthfully rather
@@ -399,16 +447,10 @@ def register_voice_routes(
             elif raw_tts_backend in TTS_BACKEND_CHOICES:
                 persisted_tts = raw_tts_backend
             else:
-                voice_options_result = {
-                    "ok": False,
-                    "error": (
-                        f"Unrecognized TTS backend {raw_tts_backend!r}. "
-                        "Pick one of the listed options or clear the selection."
-                    ),
-                    "submitted_model": raw_model,
-                    "submitted_tts_backend": raw_tts_backend,
-                }
-                return _render_voice_page(request, voice_options_result=voice_options_result)
+                return _fail(
+                    f"Unrecognized TTS backend {raw_tts_backend!r}. "
+                    "Pick one of the listed options or clear the selection."
+                )
             updates["voice_tts_backend"] = persisted_tts
 
         try:
@@ -418,18 +460,26 @@ def register_voice_routes(
             voice_options_result = {
                 "ok": False,
                 "error": f"Failed to save voice options: {type(exc).__name__}: {exc}",
+                "submitted_stt_backend": raw_stt_backend,
                 "submitted_model": raw_model,
+                "submitted_moonshine_model": raw_moonshine_model,
                 "submitted_tts_backend": raw_tts_backend,
             }
             return _render_voice_page(request, voice_options_result=voice_options_result)
 
         voice_options_result = {
             "ok": True,
+            "saved_stt_backend": persisted_stt_backend,
             "saved_model": persisted,
+            "saved_moonshine_model": persisted_moonshine_model,
             "saved_tts_backend": persisted_tts,
+            "stt_backend_touched": "stt_backend" in form_fields,
             "stt_touched": "stt_whisper_model" in form_fields,
+            "stt_moonshine_touched": "stt_moonshine_model" in form_fields,
             "tts_touched": "tts_backend" in form_fields,
+            "submitted_stt_backend": raw_stt_backend,
             "submitted_model": raw_model,
+            "submitted_moonshine_model": raw_moonshine_model,
             "submitted_tts_backend": raw_tts_backend,
         }
         return _render_voice_page(request, voice_options_result=voice_options_result)
@@ -535,6 +585,8 @@ def register_voice_routes(
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
             stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            stt_moonshine_model_choices=list(STT_MOONSHINE_MODEL_CHOICES),
+            stt_backend_choices=list(STT_BACKEND_CHOICES),
             tts_backend_choices=list(TTS_BACKEND_CHOICES),
             voice_options_result=None,
         )
@@ -663,6 +715,8 @@ def register_voice_routes(
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
             stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            stt_moonshine_model_choices=list(STT_MOONSHINE_MODEL_CHOICES),
+            stt_backend_choices=list(STT_BACKEND_CHOICES),
             tts_backend_choices=list(TTS_BACKEND_CHOICES),
             voice_options_result=None,
         )
@@ -1110,6 +1164,8 @@ def register_voice_routes(
             workbench_session_prior_turn_count=prior_turn_count,
             workbench_continue_in_vera_url=_continue_url(session_id),
             stt_whisper_model_choices=list(STT_WHISPER_MODEL_CHOICES),
+            stt_moonshine_model_choices=list(STT_MOONSHINE_MODEL_CHOICES),
+            stt_backend_choices=list(STT_BACKEND_CHOICES),
             tts_backend_choices=list(TTS_BACKEND_CHOICES),
             voice_options_result=None,
         )

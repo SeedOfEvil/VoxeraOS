@@ -4,6 +4,17 @@ All notable changes to VoxeraOS will be documented in this file.
 
 VoxeraOS is an open-source alpha project. APIs, CLI surfaces, and internal contracts may change between releases.
 
+## [Unreleased]
+
+### Added
+- `MoonshineLocalBackend` — optional local speech-to-text backend via `moonshine-onnx`, satisfying the existing canonical STT seam (file-oriented, lazy model load, truthful failure paths). Gated behind a new `[moonshine]` install extra.
+- Operator-selectable STT backend: panel Voice Options now offers a bounded `whisper_local` / `moonshine_local` dropdown alongside the existing model selectors. Selection is persisted in runtime config (`voice_stt_backend`), invalid values fail truthfully, and an operator-selected Moonshine model id (`voice_stt_moonshine_model`) threads through the factory into the backend.
+- Voice status summary now surfaces the effective STT backend and a `moonshine_model` sub-block (selected / effective) when Moonshine is configured; `voxera doctor --quick` reflects the effective backend and model.
+
+### Changed
+- `VOICE_STATUS_SUMMARY_SCHEMA_VERSION` bumped to 5 for the additive `moonshine_model` block.
+- STT backend factory now exports a canonical `STT_BACKEND_CHOICES` tuple so the panel and other operator-facing surfaces share one source of truth.
+
 ## [0.1.9] — 2026-04-02
 
 ### Added
