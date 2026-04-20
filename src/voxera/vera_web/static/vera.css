@@ -1,8 +1,19 @@
 :root {
   color-scheme: dark;
   --bg: #0e0f12;
-  --panel: rgba(22, 23, 28, 0.92);
-  --panel-2: rgba(30, 31, 38, 0.94);
+  /* --panel / --panel-2 are intentionally fully opaque.  An earlier
+     iteration used rgba() with backdrop-filter: blur(20px) on .shell to
+     get a glass effect, but backdrop-filter on a 960px × 100vh container
+     is one of the most expensive idle-GPU patterns in modern browsers —
+     the compositor has to keep a re-blurrable snapshot of the body and
+     re-blur on every paint that touches the shell (caret blink, focus
+     ring, hover, status text, scroll, polling DOM tweaks, …).  Solid
+     panel colors let the shell live in a flat painted layer with no
+     backdrop snapshot, which materially drops the renderer / GPU
+     process baseline while idle.  Visual result is near-identical
+     because the panel was already 92 % opaque. */
+  --panel: #16171c;
+  --panel-2: #1e1f26;
   --surface-user: #1a4a8a;
   --surface-vera: #1e2028;
   --text: #f0f0f4;
@@ -18,7 +29,11 @@
   --radius: 18px;
   --radius-sm: 12px;
   --radius-xs: 8px;
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.3);
+  /* Single-layer shadow.  The earlier 1px/4px inner shadow added a tiny
+     amount of visual weight that is no longer needed once the shell is
+     opaque, and dropping it removes one extra raster pass on the shell
+     boundary. */
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
 }
 
 * { box-sizing: border-box; }
@@ -28,9 +43,14 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
   font-size: 0.9375rem;
   line-height: 1.5;
+  /* Solid background.  The previous design used two layered radial
+     gradients to bleed a subtle navy halo through the (then-blurred)
+     shell.  Now that the shell is opaque, those gradients only touch
+     the strip of body visible outside the 960 px shell — and even
+     there they were never the primary visual.  A flat color avoids a
+     compositor backdrop snapshot, simplifies the renderer paint tree,
+     and keeps the page identifiable as Vera. */
   background: #0b0c0f;
-  background-image: radial-gradient(ellipse at 30% 0%, rgba(29, 42, 78, 0.5) 0%, transparent 60%),
-                    radial-gradient(ellipse at 70% 100%, rgba(15, 30, 60, 0.4) 0%, transparent 60%);
   color: var(--text);
   min-height: 100vh;
 }
@@ -46,9 +66,12 @@ body {
   padding: 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
+  /* Opaque shell — see :root --panel comment.  No backdrop-filter:
+     it was the dominant remaining idle-GPU offender on canonical
+     Vera tabs (the previous PR only stopped one paint trigger that
+     invalidated its cache; the filter itself was still alive on
+     every paint inside the shell). */
   background: var(--panel);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   box-shadow: var(--shadow);
 }
 
@@ -76,9 +99,11 @@ body {
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
-  /* Animate only opacity so the browser can composite the dot on its
-     own GPU layer: no per-frame paint, no invalidation of the parent
-     .shell's backdrop-filter cache. The visual pulse is preserved. */
+  /* Animate only opacity so the browser keeps the dot on its own
+     compositor layer with no per-frame paint.  This also matters now
+     that the shell no longer has backdrop-filter: even on a flat
+     painted shell, an opacity-only loop runs entirely on the
+     compositor thread and never wakes the renderer. */
   animation: pulse-dot 3s ease-in-out infinite;
   will-change: opacity;
 }
