@@ -206,7 +206,7 @@ class TestTranscribeAudioFileEntryPoint:
         from types import SimpleNamespace
 
         audio = tmp_path / "a.wav"
-        audio.write_bytes(b"RIFF....stub")
+        audio.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         # Inject a fake ``Transcriber`` (non-streaming API) so we don't
@@ -259,7 +259,7 @@ class TestTranscribeAudioFileEntryPoint:
         from types import SimpleNamespace
 
         audio = tmp_path / "a.wav"
-        audio.write_bytes(b"RIFF....stub")
+        audio.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         flags = _flags(stt_backend=STT_BACKEND_MOONSHINE_LOCAL)
 

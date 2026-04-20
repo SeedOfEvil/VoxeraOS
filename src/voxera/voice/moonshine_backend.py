@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .audio_normalize import ensure_pcm_wav
 from .stt_adapter import STTAdapterResult, STTBackendUnsupportedError
 from .stt_protocol import (
     STT_ERROR_BACKEND_ERROR,
@@ -209,50 +210,73 @@ class MoonshineLocalBackend:
                 error_class=STT_ERROR_BACKEND_ERROR,
             )
 
+        # -- normalize to PCM WAV ---------------------------------------------
+        # ``moonshine_voice.load_wav_file`` is PCM-WAV-only.  Operators
+        # routinely feed us browser-captured ``audio/webm`` from the
+        # Voice Workbench mic-upload lane, so we transcode non-WAV
+        # inputs transparently via the audio_normalize helper (PyAV
+        # under the hood, pulled by the ``[moonshine]`` extra).  The
+        # helper is a no-op when the input is already PCM WAV, so
+        # already-normalized files pay zero conversion cost.  A temp
+        # file is cleaned up in a ``finally`` block below regardless of
+        # success / failure.
+        decode_path: Path
+        cleanup_path: Path | None = None
+        try:
+            decode_path, cleanup_path = ensure_pcm_wav(path)
+        except Exception as exc:
+            return STTAdapterResult(
+                transcript=None,
+                error=(f"Moonshine could not normalize audio to PCM WAV: {exc}"),
+                error_class=STT_ERROR_BACKEND_ERROR,
+            )
+
         # -- load WAV ----------------------------------------------------------
-        # ``moonshine_voice.load_wav_file`` ships a pure-Python PCM WAV
-        # loader (16 / 24 / 32-bit) — no FFmpeg or librosa dep.  Non-WAV
-        # inputs raise and we surface the truthful error so operators
-        # can see why.  For broader codec support they can pick
-        # whisper_local instead.
         from moonshine_voice.transcriber import load_wav_file
 
         try:
-            audio_data, sample_rate = load_wav_file(str(path))
-        except Exception as exc:
+            try:
+                audio_data, sample_rate = load_wav_file(str(decode_path))
+            except Exception as exc:
+                return STTAdapterResult(
+                    transcript=None,
+                    error=(f"Moonshine could not read audio file (PCM WAV required): {exc}"),
+                    error_class=STT_ERROR_BACKEND_ERROR,
+                )
+
+            # -- transcribe ----------------------------------------------------
+            inference_start_ms = int(time.time() * 1000)
+            try:
+                transcript_obj = transcriber.transcribe_without_streaming(audio_data, sample_rate)
+                transcript_text = _extract_transcript_text(transcript_obj)
+            except Exception as exc:
+                return STTAdapterResult(
+                    transcript=None,
+                    error=f"Moonshine transcription failed: {exc}",
+                    error_class=STT_ERROR_BACKEND_ERROR,
+                )
+            inference_end_ms = int(time.time() * 1000)
+
+            # Audio duration is derivable from the decoded sample count
+            # and rate.  Moonshine's transcriber does not report
+            # per-call language detection on the non-streaming path;
+            # leave ``language`` as None rather than fabricate one.
+            audio_duration_ms: int | None = None
+            if sample_rate:
+                audio_duration_ms = int(len(audio_data) / sample_rate * 1000)
+
             return STTAdapterResult(
-                transcript=None,
-                error=(f"Moonshine could not read audio file (PCM WAV required): {exc}"),
-                error_class=STT_ERROR_BACKEND_ERROR,
+                transcript=transcript_text or None,
+                language=None,
+                inference_ms=inference_end_ms - inference_start_ms,
+                audio_duration_ms=audio_duration_ms,
             )
+        finally:
+            if cleanup_path is not None:
+                import contextlib as _contextlib
 
-        # -- transcribe --------------------------------------------------------
-        inference_start_ms = int(time.time() * 1000)
-        try:
-            transcript_obj = transcriber.transcribe_without_streaming(audio_data, sample_rate)
-            transcript_text = _extract_transcript_text(transcript_obj)
-        except Exception as exc:
-            return STTAdapterResult(
-                transcript=None,
-                error=f"Moonshine transcription failed: {exc}",
-                error_class=STT_ERROR_BACKEND_ERROR,
-            )
-        inference_end_ms = int(time.time() * 1000)
-
-        # Audio duration is derivable from the decoded sample count and
-        # rate.  Moonshine's transcriber does not report per-call
-        # language detection on the non-streaming path; leave
-        # ``language`` as None rather than fabricate one.
-        audio_duration_ms: int | None = None
-        if sample_rate:
-            audio_duration_ms = int(len(audio_data) / sample_rate * 1000)
-
-        return STTAdapterResult(
-            transcript=transcript_text or None,
-            language=None,
-            inference_ms=inference_end_ms - inference_start_ms,
-            audio_duration_ms=audio_duration_ms,
-        )
+                with _contextlib.suppress(OSError):
+                    os.unlink(cleanup_path)
 
     # -- internals -------------------------------------------------------------
 

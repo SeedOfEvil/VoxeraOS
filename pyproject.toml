@@ -34,6 +34,13 @@ moonshine = [
   # (YYYYMMDD) so it cannot be pinned with a ``>=0.2,<1.0`` range and was
   # replaced upstream by this canonical package.
   "moonshine-voice>=0.0.5",
+  # PyAV is used by ``voice/audio_normalize.py`` to transcode browser-
+  # captured ``audio/webm`` (Opus) into the PCM WAV Moonshine requires.
+  # Without it, mic-upload audio would fail with a truthful but
+  # operator-unfriendly "PCM WAV required" error on every recording.
+  # faster-whisper also pulls ``av``, so operators running both
+  # backends do not double-install.
+  "av>=15,<18",
 ]
 piper = [
   "piper-tts>=1.2,<2.0",

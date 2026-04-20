@@ -815,7 +815,7 @@
            actually available in this browser. The file-path form stays
            fully functional when JS is disabled or the browser lacks
            microphone APIs. #}
-        <div class="voice-mic-capture" data-testid="voice-workbench-mic-capture" hidden>
+        <div class="voice-mic-capture" data-testid="voice-workbench-mic-capture" data-stt-backend="{{ summary.stt.backend or '' }}" hidden>
           <div class="voice-mic-capture-header">
             <span class="voice-mic-capture-title">Or record from microphone</span>
             <span class="voice-mic-capture-hint muted text-sm">

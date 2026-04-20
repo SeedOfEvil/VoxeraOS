@@ -16,6 +16,7 @@ installed in the host environment.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -208,39 +209,157 @@ class TestMoonshineAudioPath:
         assert "not found" in (result.error or "").lower()
 
 
-# -- WAV loader failure -------------------------------------------------------
+# -- normalization seam (non-WAV → PCM WAV transcode) -------------------------
 
 
-class TestMoonshineWavLoader:
-    def test_non_wav_file_reports_wav_required(self, tmp_path, monkeypatch) -> None:
-        """A non-WAV file surfaces a truthful ``PCM WAV required`` error.
+class TestMoonshineNormalization:
+    """The Moonshine backend runs audio through
+    :func:`voxera.voice.audio_normalize.ensure_pcm_wav` before handing
+    it to ``load_wav_file``.  Already-PCM-WAV inputs pay zero cost;
+    non-WAV inputs (e.g. browser-captured ``audio/webm``) are
+    transcoded to a temp PCM WAV file and cleaned up after use.
+    """
 
-        The real ``load_wav_file`` raises ``ValueError`` on a non-RIFF
-        body; we stub it here so the test does not depend on the
-        upstream implementation details, only on the contract: a
-        load-layer exception yields ``backend_error`` with the string
-        ``PCM WAV required`` so the operator can see why Moonshine
-        rejected the file.
-        """
+    def test_non_wav_input_triggers_normalization(self, tmp_path, monkeypatch) -> None:
         not_a_wav = tmp_path / "clip.webm"
         not_a_wav.write_bytes(b"\x1a\x45\xdf\xa3")  # EBML header, not RIFF
 
-        backend = MoonshineLocalBackend()
-        _prime_backend(backend, _fake_transcript("should not be called"))
+        fake_wav = tmp_path / "norm.wav"
+        fake_wav.write_bytes(b"RIFF\x00\x00\x00\x00WAVEnorm")
 
-        fake_load = MagicMock(side_effect=ValueError("Not a valid RIFF file"))
-        monkeypatch.setattr("moonshine_voice.transcriber.load_wav_file", fake_load, raising=False)
+        calls: list[str] = []
+
+        def fake_ensure(source):
+            calls.append(str(source))
+            return fake_wav, fake_wav  # caller must cleanup fake_wav
+
+        monkeypatch.setattr("voxera.voice.moonshine_backend.ensure_pcm_wav", fake_ensure)
+
+        backend = MoonshineLocalBackend()
+        _prime_backend(backend, _fake_transcript("hello post normalize"))
+        monkeypatch.setattr(
+            "moonshine_voice.transcriber.load_wav_file",
+            MagicMock(return_value=([0.0] * 16000, 16000)),
+            raising=False,
+        )
 
         req = build_stt_request(
             input_source="audio_file",
-            request_id="nonwav",
+            request_id="norm",
+            audio_path=str(not_a_wav),
+        )
+        with patch("voxera.voice.moonshine_backend._MOONSHINE_AVAILABLE", True):
+            result = backend.transcribe(req)
+
+        assert result.transcript == "hello post normalize"
+        assert calls == [str(not_a_wav)]
+        # Temp file cleanup must have run — the backend's ``finally``
+        # block unlinks any cleanup_path returned from ensure_pcm_wav.
+        assert not fake_wav.exists()
+
+    def test_already_wav_input_skips_normalization(self, tmp_path, monkeypatch) -> None:
+        """When the input already passes ``is_pcm_wav``, the backend
+        must hand it directly to ``load_wav_file`` without paying the
+        transcode cost.  Regression pin: a naive 'always transcode'
+        design would waste CPU on every turn for file-path WAV
+        uploads."""
+        wav_path = tmp_path / "real.wav"
+        wav_path.write_bytes(b"RIFF\x00\x00\x00\x00WAVEdata")
+
+        observed: list[tuple[Path, Path | None]] = []
+        real_ensure = __import__(
+            "voxera.voice.audio_normalize", fromlist=["ensure_pcm_wav"]
+        ).ensure_pcm_wav
+
+        def tracking_ensure(source):
+            result = real_ensure(source)
+            observed.append(result)
+            return result
+
+        monkeypatch.setattr("voxera.voice.moonshine_backend.ensure_pcm_wav", tracking_ensure)
+
+        backend = MoonshineLocalBackend()
+        _prime_backend(backend, _fake_transcript("no transcode"))
+        monkeypatch.setattr(
+            "moonshine_voice.transcriber.load_wav_file",
+            MagicMock(return_value=([0.0] * 16000, 16000)),
+            raising=False,
+        )
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="already-wav",
+            audio_path=str(wav_path),
+        )
+        with patch("voxera.voice.moonshine_backend._MOONSHINE_AVAILABLE", True):
+            result = backend.transcribe(req)
+
+        assert result.transcript == "no transcode"
+        assert len(observed) == 1
+        path_used, cleanup = observed[0]
+        assert path_used == wav_path
+        assert cleanup is None  # no temp file — no transcode happened
+
+    def test_normalize_failure_yields_truthful_backend_error(self, tmp_path, monkeypatch) -> None:
+        not_a_wav = tmp_path / "bogus.webm"
+        not_a_wav.write_bytes(b"\x1a\x45\xdf\xa3")
+
+        def fake_ensure(_source):
+            raise RuntimeError("PyAV failed to decode: no audio stream found in bogus.webm")
+
+        monkeypatch.setattr("voxera.voice.moonshine_backend.ensure_pcm_wav", fake_ensure)
+
+        backend = MoonshineLocalBackend()
+        # prime transcriber so the normalize error is the one that
+        # surfaces, not a model-load error.
+        _prime_backend(backend, _fake_transcript("unused"))
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="norm-fail",
             audio_path=str(not_a_wav),
         )
         with patch("voxera.voice.moonshine_backend._MOONSHINE_AVAILABLE", True):
             result = backend.transcribe(req)
         assert result.transcript is None
         assert result.error_class == STT_ERROR_BACKEND_ERROR
-        assert "PCM WAV required" in (result.error or "")
+        assert "normalize audio" in (result.error or "")
+        assert "no audio stream" in (result.error or "")
+
+    def test_temp_cleanup_runs_even_when_transcription_fails(self, tmp_path, monkeypatch) -> None:
+        """If transcription raises after a successful transcode, the
+        temp PCM WAV must still be unlinked so the mic-upload lane
+        does not leak temp files on persistent failures."""
+        not_a_wav = tmp_path / "clip.webm"
+        not_a_wav.write_bytes(b"\x1a\x45\xdf\xa3")
+
+        tmp_wav = tmp_path / "leaked.wav"
+        tmp_wav.write_bytes(b"RIFF\x00\x00\x00\x00WAVEtmp")
+
+        monkeypatch.setattr(
+            "voxera.voice.moonshine_backend.ensure_pcm_wav",
+            lambda source: (tmp_wav, tmp_wav),
+        )
+        monkeypatch.setattr(
+            "moonshine_voice.transcriber.load_wav_file",
+            MagicMock(side_effect=RuntimeError("boom")),
+            raising=False,
+        )
+
+        backend = MoonshineLocalBackend()
+        _prime_backend(backend, _fake_transcript("unused"))
+
+        req = build_stt_request(
+            input_source="audio_file",
+            request_id="leak-test",
+            audio_path=str(not_a_wav),
+        )
+        with patch("voxera.voice.moonshine_backend._MOONSHINE_AVAILABLE", True):
+            result = backend.transcribe(req)
+
+        assert result.transcript is None
+        assert result.error_class == STT_ERROR_BACKEND_ERROR
+        assert not tmp_wav.exists()
 
 
 # -- successful transcription (mocked) ----------------------------------------
@@ -252,7 +371,7 @@ class TestMoonshineTranscriptionSuccess:
 
     def test_single_line_transcript_passes_through(self, tmp_path, monkeypatch) -> None:
         audio_file = tmp_path / "clip.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("Hello from moonshine"))
@@ -279,7 +398,7 @@ class TestMoonshineTranscriptionSuccess:
         entries; the backend joins them into a single transcript
         string for the canonical seam."""
         audio_file = tmp_path / "multi.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("Hello", "beautiful", "world"))
@@ -305,7 +424,7 @@ class TestMoonshineTranscriptionSuccess:
         from decoded sample count / sample rate so operator surfaces
         have a truthful number."""
         audio_file = tmp_path / "dur.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("one two three"))
@@ -329,7 +448,7 @@ class TestMoonshineTranscriptionSuccess:
 
     def test_success_through_entry_point(self, tmp_path, monkeypatch) -> None:
         audio_file = tmp_path / "ep.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("Hello entry point"))
@@ -358,7 +477,7 @@ class TestMoonshineTranscriptionSuccess:
         only — collapses to the canonical empty_audio failure via the
         STT entry point."""
         audio_file = tmp_path / "silence.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript())  # zero lines
@@ -380,7 +499,7 @@ class TestMoonshineTranscriptionSuccess:
 
     def test_whitespace_only_lines_map_to_empty_audio(self, tmp_path, monkeypatch) -> None:
         audio_file = tmp_path / "ws.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("   ", "\t\n"))
@@ -407,7 +526,7 @@ class TestMoonshineTranscriptionSuccess:
 class TestMoonshineTranscriptionFailure:
     def test_transcriber_exception_returns_error(self, tmp_path, monkeypatch) -> None:
         audio_file = tmp_path / "bad.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         backend._transcriber = SimpleNamespace(
@@ -432,7 +551,7 @@ class TestMoonshineTranscriptionFailure:
 
     def test_model_load_failure_returns_error(self, tmp_path) -> None:
         audio_file = tmp_path / "clip.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend(model_name="totally-bogus-model")
         req = build_stt_request(
@@ -532,7 +651,7 @@ class TestMoonshineAsync:
         from voxera.voice.stt_adapter import transcribe_stt_request_async
 
         audio_file = tmp_path / "async.wav"
-        audio_file.write_bytes(b"RIFF....stub")
+        audio_file.write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub")
 
         backend = MoonshineLocalBackend()
         _prime_backend(backend, _fake_transcript("Async hello"))

@@ -8,7 +8,8 @@ VoxeraOS is an open-source alpha project. APIs, CLI surfaces, and internal contr
 
 ### Added
 - `MoonshineLocalBackend` — optional local speech-to-text backend via the official `moonshine-voice` PyPI package, satisfying the existing canonical STT seam (file-oriented, lazy model load, truthful failure paths). Gated behind a new `[moonshine]` install extra.
-  - Uses `moonshine_voice.Transcriber` (non-streaming) + the bundled pure-Python PCM WAV loader — no FFmpeg required on the Moonshine path. Non-WAV inputs surface a truthful `PCM WAV required` error; operators needing broader codec support keep `whisper_local`.
+  - Uses `moonshine_voice.Transcriber` (non-streaming) + the bundled pure-Python PCM WAV loader. Non-WAV inputs (browser `audio/webm`, etc.) are transparently transcoded to 16 kHz mono 16-bit PCM WAV via a narrow PyAV seam (`voice/audio_normalize.py`) before hitting Moonshine's loader; already-WAV files skip transcoding entirely.
+  - Panel mic-capture JS prefers `audio/wav` directly via `MediaRecorder.isTypeSupported` when `moonshine_local` is the active backend; on browsers that decline the hint (currently most desktop Chrome/Edge/Firefox) the server-side transcode fallback handles it transparently.
 
 ### Fixed
 - `[moonshine]` install extra now pulls `moonshine-voice>=0.0.5` (clean semver) instead of the broken `useful-moonshine-onnx>=0.2,<1.0` pin against a PyPI project that publishes only date-style versions (e.g. `20251121`). `pip install -e '.[dev,piper,whisper,kokoro,moonshine]'` now resolves cleanly.
