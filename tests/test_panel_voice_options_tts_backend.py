@@ -233,6 +233,45 @@ class TestVoiceOptionsSaveDoesNotCascadeClear:
         assert saved["voice_stt_whisper_model"] == "distil-large-v3"
 
 
+class TestVoiceOptionsSaveFormBodyCSRF:
+    """Regression: the save lane must work when CSRF lives in the form body.
+
+    The panel's voice options ``<form>`` places ``csrf_token`` as a
+    hidden input (not an ``x-csrf-token`` header), which means
+    ``require_mutation_guard`` reads ``request.body()`` before
+    ``voice_options_save`` does.  Starlette caches the body so the
+    second read returns the same bytes, but we pin that invariant
+    explicitly here — any regression that breaks body-cache reuse
+    would otherwise silently collapse the browser save path without
+    breaking any other test.
+    """
+
+    def test_save_with_csrf_in_form_body_persists(self, _panel_env: Path) -> None:
+        cfg_path = _panel_env
+        client = TestClient(panel_module.app)
+        # Prime a CSRF cookie by visiting the status page.
+        res = client.get("/voice/status", headers=_operator_headers())
+        assert res.status_code == 200
+        token = client.cookies.get("voxera_panel_csrf")
+        assert token
+
+        # Deliberately submit WITHOUT the x-csrf-token header so the
+        # guard falls through to read csrf_token from the form body.
+        res = client.post(
+            "/voice/options/save",
+            headers=_operator_headers(),
+            data={
+                "csrf_token": token,
+                "stt_whisper_model": "",
+                "tts_backend": "kokoro_local",
+            },
+        )
+        assert res.status_code == 200
+        assert "Voice options saved" in res.text
+        saved = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert saved["voice_tts_backend"] == "kokoro_local"
+
+
 class TestVoiceOptionsKokoroPathsSurfaceInStatus:
     """Regression: saving Kokoro backend should make Kokoro paths surface
     in ``/voice/status`` when the operator also provides them via env."""

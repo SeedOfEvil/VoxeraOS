@@ -224,7 +224,7 @@ def _display_status_for_tts(response: TTSResponse, *, ok: bool) -> str:
 
 
 async def _parse_form_fields(request: Request) -> dict[str, str]:
-    """Parse a URL-encoded form body into ``{field_name: value}``.
+    """Parse a URL-encoded form body + query string into ``{field: value}``.
 
     Returns a dict of the fields that were *actually present* in the
     submission (including those submitted with an empty value).  The
@@ -233,15 +233,27 @@ async def _parse_form_fields(request: Request) -> dict[str, str]:
     unchanged fields alone while still honoring an explicit empty
     selection as "clear this key".
 
-    Non-form bodies yield an empty dict so callers fail closed:
-    they update nothing rather than misread JSON as form fields.
+    Mirrors the shape of ``panel.helpers.request_value`` (query params
+    win over body) so the save lane preserves the original caller
+    contract — any script that POSTed fields via query string before
+    still works, just now its presence is detected explicitly.
+
+    Non-form-urlencoded bodies are ignored (JSON etc.) so callers fail
+    closed: they update nothing rather than misread JSON as form
+    fields.  Query params are always considered regardless of body
+    type because they are encoded identically in every request.
     """
+    fields: dict[str, str] = {}
     content_type = request.headers.get("content-type", "")
-    if not content_type.startswith("application/x-www-form-urlencoded"):
-        return {}
-    body = (await request.body()).decode("utf-8", errors="ignore")
-    parsed = parse_qs(body, keep_blank_values=True)
-    return {key: values[0] if values else "" for key, values in parsed.items()}
+    if content_type.startswith("application/x-www-form-urlencoded"):
+        body = (await request.body()).decode("utf-8", errors="ignore")
+        parsed = parse_qs(body, keep_blank_values=True)
+        for key, values in parsed.items():
+            fields[key] = values[0] if values else ""
+    # Query params override body values (matches request_value ordering).
+    for key, value in request.query_params.items():
+        fields[key] = value
+    return fields
 
 
 def register_voice_routes(
