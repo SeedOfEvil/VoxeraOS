@@ -599,10 +599,68 @@
 
     bindGuidanceChips();
 
-    const pollForTurnUpdates = async () => {
+    // Adaptive polling cadence.
+    //
+    // The old implementation used a fixed 2 s setInterval that fired
+    // forever regardless of whether anything was happening.  On an idle
+    // Vera tab that meant ~1800 no-op network round-trips per hour plus
+    // a persistent JS wake-up cycle — the single biggest idle-CPU
+    // contributor in the page.  We keep the same responsive 2 s cadence
+    // while the operator (or the server) is doing work, but back off
+    // exponentially up to a 15 s ceiling once nothing has changed for a
+    // while.  Any explicit signal of activity (tab becomes visible,
+    // window focus, the operator types in the composer, or the poll
+    // itself observes a change) snaps cadence back to the active rate
+    // so the thread still updates promptly during real conversations.
+    //
+    // The scheduler is also fully paused while the tab is hidden (the
+    // timer is cleared, not just no-op'd) so a backgrounded Vera page
+    // costs effectively nothing.
+    const POLL_ACTIVE_MS = 2000;
+    const POLL_IDLE_MAX_MS = 15000;
+    const POLL_IDLE_BACKOFF_AFTER = 5;
+
+    let pollIntervalMs = POLL_ACTIVE_MS;
+    let pollTimerId = null;
+    let unchangedPollCount = 0;
+    let pollInFlight = false;
+
+    const cancelScheduledPoll = () => {
+      if (pollTimerId !== null) {
+        window.clearTimeout(pollTimerId);
+        pollTimerId = null;
+      }
+    };
+
+    const schedulePoll = (delayMs) => {
+      cancelScheduledPoll();
       if (!sessionId) return;
-      if (isSubmitting) return;  // skip polling while form is submitting; page will reload
       if (document.visibilityState !== 'visible') return;
+      const delay = Number.isFinite(delayMs) ? delayMs : pollIntervalMs;
+      pollTimerId = window.setTimeout(runPoll, delay);
+    };
+
+    const resetPollCadence = () => {
+      pollIntervalMs = POLL_ACTIVE_MS;
+      unchangedPollCount = 0;
+      schedulePoll(POLL_ACTIVE_MS);
+    };
+
+    async function runPoll() {
+      pollTimerId = null;
+      if (!sessionId) return;
+      if (isSubmitting) {
+        // skip polling while form is submitting; page will reload.
+        return;
+      }
+      if (document.visibilityState !== 'visible') return;
+      if (pollInFlight) {
+        // Defensive: schedule a re-check rather than stacking fetches.
+        schedulePoll();
+        return;
+      }
+      pollInFlight = true;
+      let sawChange = false;
       try {
         const params = new URLSearchParams({
           session_id: sessionId,
@@ -614,31 +672,67 @@
           cache: 'no-store',
           headers: { 'Accept': 'application/json' },
         });
-        if (!response.ok) return;
-        const payload = await response.json();
-        const updatedAtMs = Number.parseInt(String(payload.updated_at_ms || 0), 10);
-        if (Number.isFinite(updatedAtMs) && updatedAtMs >= 0) {
-          knownUpdatedAtMs = updatedAtMs;
-        }
-        const count = Number.parseInt(String(payload.turn_count || 0), 10);
-        if (Number.isFinite(count) && count >= 0) {
-          knownTurnCount = count;
-          thread.dataset.turnCount = String(count);
-        }
-        if (payload.changed === true && Array.isArray(payload.turns)) {
-          const shouldStickToBottom = isNearBottom() || sessionStorage.getItem(manualScrollKey) !== '1';
-          renderTurns(payload.turns);
-          if (shouldStickToBottom) {
-            thread.scrollTop = thread.scrollHeight;
-            sessionStorage.removeItem(manualScrollKey);
+        if (response.ok) {
+          const payload = await response.json();
+          const updatedAtMs = Number.parseInt(String(payload.updated_at_ms || 0), 10);
+          if (Number.isFinite(updatedAtMs) && updatedAtMs >= 0) {
+            knownUpdatedAtMs = updatedAtMs;
+          }
+          const count = Number.parseInt(String(payload.turn_count || 0), 10);
+          if (Number.isFinite(count) && count >= 0) {
+            knownTurnCount = count;
+            thread.dataset.turnCount = String(count);
+          }
+          if (payload.changed === true && Array.isArray(payload.turns)) {
+            sawChange = true;
+            const shouldStickToBottom = isNearBottom() || sessionStorage.getItem(manualScrollKey) !== '1';
+            renderTurns(payload.turns);
+            if (shouldStickToBottom) {
+              thread.scrollTop = thread.scrollHeight;
+              sessionStorage.removeItem(manualScrollKey);
+            }
           }
         }
       } catch (_err) {
         // best-effort view refresh only; ignore transient polling issues
+      } finally {
+        pollInFlight = false;
       }
-    };
 
-    window.setInterval(pollForTurnUpdates, 2000);
+      if (sawChange) {
+        pollIntervalMs = POLL_ACTIVE_MS;
+        unchangedPollCount = 0;
+      } else {
+        unchangedPollCount += 1;
+        if (unchangedPollCount >= POLL_IDLE_BACKOFF_AFTER) {
+          pollIntervalMs = Math.min(pollIntervalMs * 2, POLL_IDLE_MAX_MS);
+        }
+      }
+      schedulePoll();
+    }
+
+    // Keep the poll alias exposed so dictation / tests / future hooks
+    // can trigger a single freshness check without recreating the
+    // scheduler state.  Behaves as a one-shot wake-up that also resets
+    // cadence to the active rate.
+    const pollForTurnUpdates = () => {
+      resetPollCadence();
+    };
+    window.__veraPollForTurnUpdates = pollForTurnUpdates;
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        resetPollCadence();
+      } else {
+        cancelScheduledPoll();
+      }
+    });
+    window.addEventListener('focus', resetPollCadence);
+    if (textarea) {
+      textarea.addEventListener('input', resetPollCadence);
+    }
+
+    schedulePoll(POLL_ACTIVE_MS);
   })();
   </script>
   <script src="/static/vera_dictation.js" defer></script>

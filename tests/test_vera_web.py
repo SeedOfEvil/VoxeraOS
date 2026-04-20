@@ -6151,7 +6151,90 @@ def test_index_includes_active_chat_polling_hook(tmp_path, monkeypatch):
     assert res.status_code == 200
     assert 'data-turn-count="0"' in res.text
     assert "/chat/updates?" in res.text
-    assert "window.setInterval(pollForTurnUpdates, 2000);" in res.text
+    # Adaptive polling replaces the old fixed setInterval.  The page
+    # still schedules a poll at the active cadence on load, but idle
+    # tabs back off and hidden tabs pause entirely so idle CPU usage
+    # stays low.  Assert the scheduler shape rather than a literal
+    # interval to keep the test robust to tuning.
+    assert "POLL_ACTIVE_MS" in res.text
+    assert "POLL_IDLE_MAX_MS" in res.text
+    assert "schedulePoll(POLL_ACTIVE_MS)" in res.text
+    assert "visibilitychange" in res.text
+    # The fixed 2 s interval that used to drive idle CPU is gone.
+    assert "setInterval(pollForTurnUpdates" not in res.text
+
+
+def test_index_pulse_dot_animation_is_composite_only(tmp_path, monkeypatch):
+    """The Vera pulse-dot must only animate opacity.
+
+    Animating box-shadow inside the .shell (which has backdrop-filter:
+    blur) forces the compositor to re-blur the backdrop region on
+    every animation frame — the classic high-GPU pattern that showed
+    up on idle Vera tabs.  Keep this locked down so the regression
+    can't come back accidentally.
+    """
+    # Read the canonical stylesheet via the app so we are reading what
+    # the browser would receive, not a stale on-disk copy.
+    client = TestClient(vera_app_module.app)
+    res = client.get("/static/vera.css")
+    assert res.status_code == 200
+    css = res.text
+    # The pulse-dot keyframes must exist and must not animate box-shadow.
+    assert "@keyframes pulse-dot" in css
+    assert "pulse-dot" in css
+    # Split out the pulse-dot keyframe block to assert only on it.
+    start = css.index("@keyframes pulse-dot")
+    end = css.index("}", css.index("}", start) + 1) + 1
+    pulse_block = css[start:end]
+    assert "box-shadow" not in pulse_block, (
+        "pulse-dot keyframes must not animate box-shadow — that forces "
+        "a per-frame paint that invalidates the parent backdrop-filter "
+        "cache and is the primary idle-GPU regression we fixed."
+    )
+    assert "opacity" in pulse_block
+    # Reduced-motion users get no looping animation at all.
+    assert "prefers-reduced-motion" in css
+
+
+def test_index_polling_backs_off_when_idle_and_wakes_on_activity(tmp_path, monkeypatch):
+    """Adaptive poll scheduler replaces the old fixed 2 s interval.
+
+    The idle-CPU fix relies on three behaviors we assert here:
+
+    1. The scheduler re-arms itself on a setTimeout after every poll
+       (instead of a setInterval) so that unchanged responses can back
+       off without dropping responsiveness when work actually arrives.
+    2. After enough consecutive unchanged polls the interval doubles
+       up to a hard ceiling — that is what removes the wasted work on
+       quiet sessions.
+    3. Real signals of operator activity (tab becomes visible, window
+       focus, keystrokes in the composer) reset the cadence and wake
+       the scheduler, so dictation, typed chat, and incoming completion
+       ingestion stay snappy.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    res = client.get("/")
+    assert res.status_code == 200
+    body = res.text
+
+    # Backoff machinery
+    assert "unchangedPollCount" in body
+    assert "POLL_IDLE_BACKOFF_AFTER" in body
+    assert "POLL_IDLE_MAX_MS" in body
+    assert "pollIntervalMs * 2" in body
+
+    # Reset-on-activity wake-ups
+    assert "window.addEventListener('focus', resetPollCadence)" in body
+    assert "visibilitychange" in body
+    assert "textarea.addEventListener('input', resetPollCadence)" in body
+
+    # Hidden tabs genuinely pause the scheduler (no idle JS wake-ups).
+    assert "cancelScheduledPoll()" in body
+
+    # A change observation snaps back to the active cadence.
+    assert "pollIntervalMs = POLL_ACTIVE_MS" in body
 
 
 def test_single_line_write_content_preserved_in_preview():
