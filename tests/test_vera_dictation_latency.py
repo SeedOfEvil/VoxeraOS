@@ -1098,3 +1098,59 @@ class TestChatTurnResultStageTimings:
         # Early-exit lanes do not populate LLM sub-stages.
         assert "vera_reply_ms" not in result.stage_timings
         assert "vera_preview_builder_ms" not in result.stage_timings
+
+    def test_weather_pending_lookup_branch_records_reply_timing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The weather-pending-lookup branch is a real main-reply LLM
+        call, not an early-exit deterministic path.  Its timing MUST
+        be recorded in ``stage_timings["vera_reply_ms"]`` — without
+        this, a slow weather follow-up would be invisible in the
+        sub-stage breakdown and appear as unaccounted time inside
+        ``vera_ms``.
+
+        Review-hardening regression fence: a previous iteration of
+        the PR left this branch untimed, producing an "absence means
+        the LLM did not run" lie.  This test pins the instrumentation
+        so that gap cannot silently re-open.
+        """
+        import asyncio as _asyncio
+
+        from voxera.vera.session_store import write_session_weather_context
+        from voxera.voice.models import InputOrigin
+
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        flags = _enabled_voice_flags()
+        session_id = "st-weather-timing"
+        # Prime a pending-lookup weather context so the branch condition
+        # at the top of run_vera_chat_turn evaluates True.
+        write_session_weather_context(
+            queue,
+            session_id,
+            {"pending_lookup": {"location_query": "Paris"}},
+        )
+
+        async def _slow_reply(**_kwargs: Any) -> dict[str, Any]:
+            await _asyncio.sleep(0.05)
+            return {"answer": "It is 12C and raining in Paris.", "status": "ok:weather_current"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _slow_reply)
+
+        result = _asyncio.run(
+            vera_app_module.run_vera_chat_turn(
+                message="yes",
+                input_origin=InputOrigin.TYPED,
+                session_id=session_id,
+                voice_flags=flags,
+            )
+        )
+        # The branch ran — status is weather-specific.
+        assert result.status.startswith("ok:weather")
+        # Reply timing is recorded — absence would be dishonest since
+        # a real LLM call did happen here.
+        assert "vera_reply_ms" in result.stage_timings
+        assert isinstance(result.stage_timings["vera_reply_ms"], int)
+        assert result.stage_timings["vera_reply_ms"] >= 40
+        # Builder stage never ran on this branch — truthful absence.
+        assert "vera_preview_builder_ms" not in result.stage_timings

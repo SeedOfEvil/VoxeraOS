@@ -889,12 +889,21 @@ async def run_vera_chat_turn(
         and pending_preview is None
         and weather_context_has_pending_lookup(session_weather_context)
     ):
-        reply = await generate_vera_reply(
-            turns=turns,
-            user_message=message,
-            code_draft=False,
-            writing_draft=False,
-            weather_context=session_weather_context,
+        # Weather-pending-lookup branch is a real main-reply LLM call,
+        # not an early-exit deterministic path.  Instrument it so the
+        # "absence of ``vera_reply_ms`` means no reply LLM ran this
+        # turn" invariant stays truthful — without this timing, a slow
+        # weather follow-up would be invisible in sub-stage breakdowns
+        # and appear as unaccounted time inside the ``vera_ms``
+        # umbrella on the dictation payload.
+        reply, reply_ms = await _timed_stage(
+            generate_vera_reply(
+                turns=turns,
+                user_message=message,
+                code_draft=False,
+                writing_draft=False,
+                weather_context=session_weather_context,
+            )
         )
         reply_answer = strip_internal_compiler_leakage(str(reply.get("answer") or ""))
         weather_payload = reply.get("weather_context") if isinstance(reply, dict) else None
@@ -916,6 +925,7 @@ async def run_vera_chat_turn(
             status=_weather_status,
             assistant_text=reply_answer,
             preview=read_session_preview(root, active_session),
+            stage_timings={"vera_reply_ms": reply_ms},
         )
 
     if (
