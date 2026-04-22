@@ -199,13 +199,20 @@
     uploadBlob(blob, mime);
   }
 
-  // Track and cancel the staged "Transcribing…" / "Vera thinking…"
-  // timers between states so a slow or fast response does not leave
-  // the voice bar showing a stale stage.  A bounded two-timer model is
-  // deliberate: we never fabricate progress beyond what we know is
-  // true (upload done -> STT -> Vera).
+  // Track and cancel the staged "Transcribing…" / "Vera thinking…" /
+  // "Synthesizing speech…" timers between states so a slow or fast
+  // response does not leave the voice bar showing a stale stage.  The
+  // bounded three-timer model is deliberate: we never fabricate
+  // progress beyond what we know is true (upload done -> STT -> Vera
+  // -> optional TTS).  "Synthesizing speech…" only fires when the
+  // operator has asked for a spoken reply AND enough wall time has
+  // elapsed that Vera has almost certainly produced text.  If any
+  // timer's guard condition (``uploading``) is no longer true when
+  // it fires, it becomes a no-op so the label never drifts past the
+  // real pipeline state.
   var _stagingTimer1 = null;
   var _stagingTimer2 = null;
+  var _stagingTimer3 = null;
 
   function clearStagingTimers() {
     if (_stagingTimer1) {
@@ -215,6 +222,10 @@
     if (_stagingTimer2) {
       clearTimeout(_stagingTimer2);
       _stagingTimer2 = null;
+    }
+    if (_stagingTimer3) {
+      clearTimeout(_stagingTimer3);
+      _stagingTimer3 = null;
     }
   }
 
@@ -246,6 +257,16 @@
     _stagingTimer2 = setTimeout(function () {
       if (uploading) setState("Vera thinking\u2026");
     }, 1400);
+    // Additional stage — only fires when the operator asked for a
+    // spoken reply.  Without it, a long TTS synthesis phase looks
+    // like Vera is stalled; the label tells the truth about where
+    // the remaining time is going.  The timer is canceled the moment
+    // the response arrives, so a fast turn never shows this label.
+    if (speakResponse) {
+      _stagingTimer3 = setTimeout(function () {
+        if (uploading) setState("Synthesizing speech\u2026");
+      }, 4500);
+    }
 
     fetch(url, {
       method: "POST",

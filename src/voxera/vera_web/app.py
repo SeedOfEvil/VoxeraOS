@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import re
 import secrets
 import tempfile
 import time
-from dataclasses import dataclass
+from collections.abc import Awaitable
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeVar
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -617,6 +620,15 @@ class ChatTurnResult:
     store after the turn finishes; ``assistant_text`` is the final
     assistant reply appended this turn (or ``""`` when only an error
     was surfaced without running the lanes).
+
+    ``stage_timings`` is a bounded, truthful mapping of per-sub-stage
+    wall-clock milliseconds for the Vera-internal stages that actually
+    ran this turn (preview builder LLM call, main reply LLM call, web
+    enrichment LLM call).  Stages that did not run on this turn stay
+    absent from the dict.  Surfaces like ``/chat/voice`` merge this
+    into their own top-level ``stage_timings`` so operators can see
+    where the ``vera_ms`` umbrella actually went.  Never used to gate
+    behaviour.
     """
 
     session_id: str
@@ -625,6 +637,40 @@ class ChatTurnResult:
     error: str = ""
     assistant_text: str = ""
     preview: dict[str, object] | None = None
+    stage_timings: dict[str, int] = field(default_factory=dict)
+
+
+# ── Sub-stage timing helpers ───────────────────────────────────────
+# Bounded wrappers that compute wall-clock milliseconds for individual
+# Vera-internal sub-stages (the two LLM calls, optional enrichment).
+# They are intentionally plain helpers, not framework: the goal is
+# truthful operator-visible timings for the stages operators care
+# about, not a full tracing system.  ``time.monotonic()`` is used so
+# the measurement is immune to wall-clock adjustments during a turn.
+T = TypeVar("T")
+
+
+def _now_ms() -> float:
+    """Monotonic wall-clock milliseconds for sub-stage measurement.
+
+    Returns a float because we subtract two samples and round once
+    at the end; using ``int(time.monotonic() * 1000)`` directly would
+    truncate sub-millisecond portions on each read and bias timings.
+    """
+    return time.monotonic() * 1000.0
+
+
+async def _timed_stage(coro: Awaitable[T]) -> tuple[T, int]:
+    """Await ``coro`` and return ``(result, elapsed_ms)`` as a pair.
+
+    Used to measure individual LLM stages inside ``run_vera_chat_turn``.
+    The elapsed value is a non-negative ``int`` of wall-clock ms rounded
+    once at the end, which is what operator diagnostics surface.
+    """
+    started = _now_ms()
+    result = await coro
+    elapsed_ms = max(0, int(_now_ms() - started))
+    return result, elapsed_ms
 
 
 async def run_vera_chat_turn(
@@ -843,12 +889,21 @@ async def run_vera_chat_turn(
         and pending_preview is None
         and weather_context_has_pending_lookup(session_weather_context)
     ):
-        reply = await generate_vera_reply(
-            turns=turns,
-            user_message=message,
-            code_draft=False,
-            writing_draft=False,
-            weather_context=session_weather_context,
+        # Weather-pending-lookup branch is a real main-reply LLM call,
+        # not an early-exit deterministic path.  Instrument it so the
+        # "absence of ``vera_reply_ms`` means no reply LLM ran this
+        # turn" invariant stays truthful — without this timing, a slow
+        # weather follow-up would be invisible in sub-stage breakdowns
+        # and appear as unaccounted time inside the ``vera_ms``
+        # umbrella on the dictation payload.
+        reply, reply_ms = await _timed_stage(
+            generate_vera_reply(
+                turns=turns,
+                user_message=message,
+                code_draft=False,
+                writing_draft=False,
+                weather_context=session_weather_context,
+            )
         )
         reply_answer = strip_internal_compiler_leakage(str(reply.get("answer") or ""))
         weather_payload = reply.get("weather_context") if isinstance(reply, dict) else None
@@ -870,6 +925,7 @@ async def run_vera_chat_turn(
             status=_weather_status,
             assistant_text=reply_answer,
             preview=read_session_preview(root, active_session),
+            stage_timings={"vera_reply_ms": reply_ms},
         )
 
     if (
@@ -1168,12 +1224,22 @@ async def run_vera_chat_turn(
         and not active_preview_blocks_relative_prose_refinement
     )
 
+    # Sub-stage timings captured during the LLM orchestration lane.
+    # These are returned on the ``ChatTurnResult`` so operator-visible
+    # surfaces (dictation payload, debug snapshot) can explain where
+    # the ``vera_ms`` umbrella actually went.  Only keys for stages
+    # that actually ran this turn are inserted — absence is truthful.
+    stage_timings: dict[str, int] = {}
+
     # When an active preview exists and the user makes an informational query,
     # run read-only enrichment and store it for follow-up pronoun resolution.
     is_enrichment_turn = is_info_query and pending_preview is not None
     session_enrichment = read_session_enrichment(root, active_session)
     if is_enrichment_turn:
-        fresh_enrichment = await run_web_enrichment(user_message=message)
+        fresh_enrichment, enrichment_ms = await _timed_stage(
+            run_web_enrichment(user_message=message)
+        )
+        stage_timings["vera_enrichment_ms"] = enrichment_ms
         if fresh_enrichment is not None:
             write_session_enrichment(root, active_session, fresh_enrichment)
             session_enrichment = fresh_enrichment
@@ -1187,16 +1253,55 @@ async def run_vera_chat_turn(
         root, active_session, conversational_answer_first_turn
     )
 
+    # ── Bounded LLM-call parallelism ──────────────────────────────────────
+    # The preview builder and the main Vera reply are functionally
+    # independent: the reply does not read the builder's output, and
+    # the builder does not read the reply's.  Running them concurrently
+    # when both are needed cuts the dominant ``vera_ms`` phase roughly
+    # in half for the common "conversational + preview refresh" turn
+    # shape — which is exactly the slow case that drove time-to-first-
+    # speech on voice turns.  Text remains authoritative: the reply
+    # still waits on its own completion, and preview writes still go
+    # through ``reset_active_preview`` after the gather resolves, so
+    # no semantics shift.
+    should_run_builder = not informational_web_turn and not conversational_answer_first_turn
     builder_preview: dict[str, object] | None = None
-    if not informational_web_turn and not conversational_answer_first_turn:
-        builder_preview = await generate_preview_builder_update(
-            turns=turns,
-            user_message=message,
-            active_preview=pending_preview,
-            enrichment_context=enrichment_context,
-            investigation_context=session_investigation,
-            recent_assistant_artifacts=recent_assistant_artifacts,
+    builder_ms: int | None = None
+    if should_run_builder:
+        (builder_preview, builder_ms), (reply, reply_ms) = await asyncio.gather(
+            _timed_stage(
+                generate_preview_builder_update(
+                    turns=turns,
+                    user_message=message,
+                    active_preview=pending_preview,
+                    enrichment_context=enrichment_context,
+                    investigation_context=session_investigation,
+                    recent_assistant_artifacts=recent_assistant_artifacts,
+                )
+            ),
+            _timed_stage(
+                generate_vera_reply(
+                    turns=turns,
+                    user_message=message,
+                    code_draft=is_code_draft_turn,
+                    writing_draft=is_writing_draft_turn,
+                    weather_context=session_weather_context,
+                )
+            ),
         )
+        stage_timings["vera_preview_builder_ms"] = builder_ms
+        stage_timings["vera_reply_ms"] = reply_ms
+    else:
+        reply, reply_ms = await _timed_stage(
+            generate_vera_reply(
+                turns=turns,
+                user_message=message,
+                code_draft=is_code_draft_turn,
+                writing_draft=is_writing_draft_turn,
+                weather_context=session_weather_context,
+            )
+        )
+        stage_timings["vera_reply_ms"] = reply_ms
     builder_payload: dict[str, object] | None = None
     preview_update_rejected = False
     if builder_preview is not None:
@@ -1300,13 +1405,11 @@ async def run_vera_chat_turn(
                 builder_payload = _rename_payload
                 reset_active_preview(root, active_session, builder_payload)
 
-    reply = await generate_vera_reply(
-        turns=turns,
-        user_message=message,
-        code_draft=is_code_draft_turn,
-        writing_draft=is_writing_draft_turn,
-        weather_context=session_weather_context,
-    )
+    # ``reply`` was already produced above via ``_timed_stage(...)`` —
+    # in the builder+reply parallel branch it awaited concurrently with
+    # the preview builder through ``asyncio.gather``; in the builder-
+    # skipped branch it awaited standalone.  Either way, ``reply`` and
+    # ``stage_timings["vera_reply_ms"]`` are already populated.
     reply_answer = str(reply.get("answer") or "")
     reply_status = str(reply.get("status") or "")
     investigation_payload = reply.get("investigation") if isinstance(reply, dict) else None
@@ -1470,6 +1573,7 @@ async def run_vera_chat_turn(
         status=status,
         assistant_text=assistant_text,
         preview=read_session_preview(root, active_session),
+        stage_timings=stage_timings,
     )
 
 
@@ -1803,12 +1907,23 @@ async def chat_voice(request: Request) -> JSONResponse:
     # where time is going in a dictation round trip.  Every entry is a
     # wall-clock millisecond count; ``None`` means the stage did not
     # run this turn (e.g. ``tts_ms`` without ``speak_response``).
+    #
+    # The ``vera_*`` keys break the ``vera_ms`` umbrella down into the
+    # two dominant LLM calls (preview builder + main reply) and the
+    # optional web-enrichment LLM call, so operators can tell which
+    # sub-stage actually owns a slow turn.  Sub-stage keys stay
+    # ``None`` when the corresponding branch did not run (e.g. the
+    # preview builder is skipped for informational/conversational
+    # turns) — absence stays truthful, never fabricated.
     request_started_at_ms = int(time.time() * 1000)
     stage_timings: dict[str, int | None] = {
         "upload_ms": None,
         "temp_write_ms": None,
         "stt_ms": None,
         "vera_ms": None,
+        "vera_preview_builder_ms": None,
+        "vera_reply_ms": None,
+        "vera_enrichment_ms": None,
         "tts_ms": None,
         "total_ms": None,
     }
@@ -1957,6 +2072,16 @@ async def chat_voice(request: Request) -> JSONResponse:
             voice_flags=voice_flags,
         )
         stage_timings["vera_ms"] = max(0, int(time.time() * 1000) - vera_started_at_ms)
+        # Merge the Vera-internal sub-stage timings produced inside
+        # ``run_vera_chat_turn`` (preview builder LLM call, main reply
+        # LLM call, optional web enrichment LLM call) into the outer
+        # dictation ``stage_timings`` so operator diagnostics can see
+        # where the ``vera_ms`` umbrella actually went.  Each key is
+        # inserted only when the corresponding sub-stage actually ran;
+        # absence stays truthful.
+        for sub_key, sub_ms in chat_result.stage_timings.items():
+            if isinstance(sub_ms, int):
+                stage_timings[sub_key] = sub_ms
 
     # ── Step 3: optional TTS over the assistant text the canonical path produced ──
     # Text is already authoritative at this point: ``chat_result.assistant_text``

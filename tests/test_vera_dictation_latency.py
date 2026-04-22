@@ -292,12 +292,17 @@ def test_chat_voice_payload_has_stage_timings(
     payload = res.json()
     assert "stage_timings" in payload
     timings = payload["stage_timings"]
-    # All known stage keys are present.
+    # All known stage keys are present.  ``vera_*`` sub-stage keys are
+    # truthful breakdowns of the ``vera_ms`` umbrella: ``None`` when the
+    # sub-stage did not run this turn, non-negative ``int`` when it did.
     expected_keys = {
         "upload_ms",
         "temp_write_ms",
         "stt_ms",
         "vera_ms",
+        "vera_preview_builder_ms",
+        "vera_reply_ms",
+        "vera_enrichment_ms",
         "tts_ms",
         "total_ms",
     }
@@ -308,6 +313,17 @@ def test_chat_voice_payload_has_stage_timings(
         assert timings[key] >= 0, f"{key} must be non-negative"
     # TTS did not run this turn (no speak_response) → truthful None.
     assert timings["tts_ms"] is None
+    # The main reply LLM call always runs on a non-early-exit turn.
+    # Monkeypatched ``generate_vera_reply`` is fast, so the timing is
+    # small but still a non-negative int — the key invariant here is
+    # that absence of the call would have left the field ``None``.
+    assert isinstance(timings["vera_reply_ms"], int)
+    assert timings["vera_reply_ms"] >= 0
+    # Enrichment did not run (no active preview on a fresh session) →
+    # truthful ``None``.  This is the central "absence stays truthful"
+    # property: sub-stage timings never get fabricated as 0 when the
+    # branch simply did not execute.
+    assert timings["vera_enrichment_ms"] is None
     # Sanity: total covers the run, should be >= individual stages that ran.
     assert timings["total_ms"] >= timings["stt_ms"]
 
@@ -394,6 +410,12 @@ def test_chat_voice_stage_timings_stt_failure_still_truthful(
     assert timings["vera_ms"] is None
     assert timings["tts_ms"] is None
     assert isinstance(timings["total_ms"], int)
+    # Vera sub-stages never ran because STT failed before Vera could
+    # even dispatch.  Absence stays truthful: ``None`` here, not 0 or
+    # a fabricated value that would claim the LLM ran.
+    assert timings["vera_preview_builder_ms"] is None
+    assert timings["vera_reply_ms"] is None
+    assert timings["vera_enrichment_ms"] is None
 
 
 # =============================================================================
@@ -562,12 +584,13 @@ def test_dictation_enhancer_surfaces_bounded_state_labels(
     """The enhancer JS contains the bounded state labels operators see.
 
     Pins the concrete strings so a silent rename cannot drift the UX.
-    The four labels together describe the whole in-flight pipeline
+    The five labels together describe the whole in-flight pipeline
     from the operator's point of view:
-    - "Uploading"      : blob being POSTed
-    - "Transcribing"   : server running STT
-    - "Vera thinking"  : server running the canonical chat helper
-    - "Speaking reply" : browser playing the synthesised audio
+    - "Uploading"           : blob being POSTed
+    - "Transcribing"        : server running STT
+    - "Vera thinking"       : server running the canonical chat helper
+    - "Synthesizing speech" : server running TTS over the final text
+    - "Speaking reply"      : browser playing the synthesised audio
     """
     _set_queue_root(monkeypatch, tmp_path / "queue")
     client = TestClient(vera_app_module.app)
@@ -577,11 +600,17 @@ def test_dictation_enhancer_surfaces_bounded_state_labels(
     assert "Uploading" in body
     assert "Transcribing" in body
     assert "Vera thinking" in body
+    assert "Synthesizing speech" in body
     assert "Speaking reply" in body
     # Timers that drive the transitions must also be present so a
     # refactor cannot accidentally collapse the progression back to
     # a single label.
     assert "clearStagingTimers" in body
+    # "Synthesizing speech…" must be gated on ``speakResponse`` — the
+    # label is only truthful when a spoken reply was actually requested.
+    # Without the gate, the label would appear on text-only voice turns
+    # that never run TTS, which would be fabricated progress.
+    assert "_stagingTimer3" in body
 
 
 # =============================================================================
@@ -833,3 +862,295 @@ def test_chat_voice_resolves_shared_stt_backend_end_to_end(
     # Null backend — the instrumentation is wiring-agnostic.
     assert isinstance(payload1["stage_timings"]["stt_ms"], int)
     assert isinstance(payload2["stage_timings"]["stt_ms"], int)
+
+
+# =============================================================================
+# Section 9: Vera-internal sub-stage breakdown (preview builder / reply / enrichment)
+# =============================================================================
+
+
+class TestVeraSubStageBreakdown:
+    """Pins the truthful Vera-internal sub-stage breakdown surfaced on
+    ``/chat/voice`` payloads.  The breakdown lets operators see where
+    inside the ``vera_ms`` umbrella a slow turn actually spent its
+    time — essential when the dominant latency source is the LLM
+    generation phase, not the STT/TTS backends.
+    """
+
+    def test_sub_stages_report_non_negative_ints_for_running_lanes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When the LLM orchestration lane runs, ``vera_reply_ms`` is
+        populated as a non-negative int.  The preview builder stage may
+        or may not run depending on the turn shape — we only assert it
+        is either a non-negative int (ran) or ``None`` (skipped), never
+        fabricated.
+        """
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        _force_enabled_voice(monkeypatch)
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
+        stt = _make_stt(transcript="tell me a joke")
+        with patch.object(
+            vera_app_module,
+            "transcribe_audio_file_async",
+            side_effect=_async_stt(stt),
+        ):
+            client = TestClient(vera_app_module.app)
+            res = _post_voice(client, body=b"\x00" * 32, params={"session_id": "st-sub"})
+        assert res.status_code == 200
+        timings = res.json()["stage_timings"]
+        # Main reply LLM ran — non-negative int.
+        assert isinstance(timings["vera_reply_ms"], int)
+        assert timings["vera_reply_ms"] >= 0
+        # Preview builder may be None (conversational/informational skip)
+        # or a non-negative int.  Absence stays truthful; it is never 0
+        # fabricated when the branch was skipped.
+        builder_ms = timings["vera_preview_builder_ms"]
+        assert builder_ms is None or (isinstance(builder_ms, int) and builder_ms >= 0)
+
+    def test_parallel_llm_calls_do_not_add_up_serially(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The preview builder and Vera reply run concurrently — not
+        serially — when both are needed.
+
+        Parallelism is the core latency reduction in this work: if
+        each LLM call takes ~200ms, running them in parallel keeps
+        ``vera_ms`` near the slower call, not the sum.  We simulate
+        this by making both patched calls deliberately sleep, then
+        assert the outer ``vera_ms`` is much closer to max(a, b) than
+        a + b.  This is the operator-visible proof that parallelism
+        actually happened; a regression that reverts to sequential
+        awaits would fail this bound.
+        """
+        import asyncio as _asyncio
+
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        _force_enabled_voice(monkeypatch)
+        # Active preview ensures the turn is not conversational/
+        # informational and the preview builder branch actually runs.
+        from voxera.vera.preview_ownership import reset_active_preview
+
+        reset_active_preview(
+            queue,
+            "st-parallel",
+            {"write_file": {"path": "notes/p.md", "content": "seed"}},
+        )
+        sleep_ms = 200
+
+        async def _slow_builder(**_kwargs: Any) -> dict[str, Any]:
+            await _asyncio.sleep(sleep_ms / 1000.0)
+            return {"write_file": {"path": "notes/p.md", "content": "updated"}}
+
+        async def _slow_reply(**_kwargs: Any) -> dict[str, Any]:
+            await _asyncio.sleep(sleep_ms / 1000.0)
+            return {"answer": "hi", "status": "ok:test"}
+
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _slow_builder)
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _slow_reply)
+        stt = _make_stt(transcript="revise the file")
+        with patch.object(
+            vera_app_module,
+            "transcribe_audio_file_async",
+            side_effect=_async_stt(stt),
+        ):
+            client = TestClient(vera_app_module.app)
+            res = _post_voice(client, body=b"\x00" * 32, params={"session_id": "st-parallel"})
+        assert res.status_code == 200
+        timings = res.json()["stage_timings"]
+        vera_ms = timings["vera_ms"]
+        builder_ms = timings["vera_preview_builder_ms"]
+        reply_ms = timings["vera_reply_ms"]
+        assert isinstance(vera_ms, int)
+        assert isinstance(builder_ms, int)
+        assert isinstance(reply_ms, int)
+        # Each individual stage reports its own sleep duration.
+        assert builder_ms >= sleep_ms - 50
+        assert reply_ms >= sleep_ms - 50
+        # Parallel execution: vera_ms covers the overlapping region,
+        # so it must be SIGNIFICANTLY less than the serial sum.  A
+        # generous margin keeps the assertion stable across slow CI
+        # runners: parallel wall-clock should be within ~1.5x the
+        # single-stage time, never the full 2x serial sum.
+        serial_sum = builder_ms + reply_ms
+        assert vera_ms < serial_sum * 0.85, (
+            f"parallel gather should keep vera_ms under 85% of the serial "
+            f"sum; got vera_ms={vera_ms}, serial_sum={serial_sum}"
+        )
+
+    def test_conversational_artifact_turn_skips_preview_builder_stage(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Conversational-artifact voice turns do not run the preview builder.
+
+        When the classifier puts a turn into CONVERSATIONAL_ARTIFACT
+        mode (checklist / planning / brainstorm without save intent),
+        the preview builder LLM call is skipped — the deterministic
+        answer-first lane handles it.  The instrumentation must
+        faithfully report the skipped stage as ``None``, never as 0.
+        This directly backs one of the primary latency reductions:
+        skipping an LLM call entirely is strictly better than running
+        it faster.
+        """
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        _force_enabled_voice(monkeypatch)
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
+
+        # Fail loudly if the builder is entered — the point of the
+        # test is that the conversational-artifact lane skips it.
+        async def _should_not_run(**_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError(
+                "preview builder should be skipped on conversational-artifact turn"
+            )
+
+        monkeypatch.setattr(vera_app_module, "generate_preview_builder_update", _should_not_run)
+        # Checklist-style request → classified as CONVERSATIONAL_ARTIFACT.
+        stt = _make_stt(transcript="give me a checklist for a weekend trip")
+        with patch.object(
+            vera_app_module,
+            "transcribe_audio_file_async",
+            side_effect=_async_stt(stt),
+        ):
+            client = TestClient(vera_app_module.app)
+            res = _post_voice(client, body=b"\x00" * 32, params={"session_id": "st-skip"})
+        assert res.status_code == 200
+        timings = res.json()["stage_timings"]
+        # Builder stage did not run → truthful None.
+        assert timings["vera_preview_builder_ms"] is None
+        # The main reply stage still ran.
+        assert isinstance(timings["vera_reply_ms"], int)
+
+
+# =============================================================================
+# Section 10: ChatTurnResult carries the same sub-stage timings
+# =============================================================================
+
+
+class TestChatTurnResultStageTimings:
+    """The canonical :class:`ChatTurnResult` carries stage timings so
+    both the typed ``/chat`` and dictated ``/chat/voice`` surfaces can
+    observe sub-stage breakdowns without relying on the dictation
+    endpoint being the only source of truth.  This test pins the
+    structure directly off the helper, independent of the JSON
+    payload serialization, so a regression that forgets to populate
+    the dict on the result is caught at the helper boundary.
+    """
+
+    def test_run_vera_chat_turn_returns_stage_timings_dict(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio as _asyncio
+
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
+        flags = _enabled_voice_flags()
+
+        from voxera.voice.models import InputOrigin
+
+        result = _asyncio.run(
+            vera_app_module.run_vera_chat_turn(
+                message="hello",
+                input_origin=InputOrigin.TYPED,
+                session_id="st-helper",
+                voice_flags=flags,
+            )
+        )
+        assert isinstance(result.stage_timings, dict)
+        # Reply stage ran.
+        assert "vera_reply_ms" in result.stage_timings
+        assert isinstance(result.stage_timings["vera_reply_ms"], int)
+        # Absent stages stay absent — never fabricated.
+        assert "vera_enrichment_ms" not in result.stage_timings
+
+    def test_early_exit_turns_carry_empty_stage_timings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Turns that short-circuit on an early-exit lane (time
+        question, diagnostics refusal, etc.) do not run the LLM path
+        and therefore carry an empty ``stage_timings`` dict.  This
+        keeps the "absence stays truthful" rule consistent across
+        all return points of the helper.
+        """
+        import asyncio as _asyncio
+
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        flags = _enabled_voice_flags()
+
+        from voxera.voice.models import InputOrigin
+
+        # "what time is it?" is handled by a deterministic early-exit
+        # branch with no LLM call involved.
+        result = _asyncio.run(
+            vera_app_module.run_vera_chat_turn(
+                message="what time is it?",
+                input_origin=InputOrigin.TYPED,
+                session_id="st-early",
+                voice_flags=flags,
+            )
+        )
+        # ``stage_timings`` is always a dict — never missing.
+        assert isinstance(result.stage_timings, dict)
+        # Early-exit lanes do not populate LLM sub-stages.
+        assert "vera_reply_ms" not in result.stage_timings
+        assert "vera_preview_builder_ms" not in result.stage_timings
+
+    def test_weather_pending_lookup_branch_records_reply_timing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The weather-pending-lookup branch is a real main-reply LLM
+        call, not an early-exit deterministic path.  Its timing MUST
+        be recorded in ``stage_timings["vera_reply_ms"]`` — without
+        this, a slow weather follow-up would be invisible in the
+        sub-stage breakdown and appear as unaccounted time inside
+        ``vera_ms``.
+
+        Review-hardening regression fence: a previous iteration of
+        the PR left this branch untimed, producing an "absence means
+        the LLM did not run" lie.  This test pins the instrumentation
+        so that gap cannot silently re-open.
+        """
+        import asyncio as _asyncio
+
+        from voxera.vera.session_store import write_session_weather_context
+        from voxera.voice.models import InputOrigin
+
+        queue = tmp_path / "queue"
+        _set_queue_root(monkeypatch, queue)
+        flags = _enabled_voice_flags()
+        session_id = "st-weather-timing"
+        # Prime a pending-lookup weather context so the branch condition
+        # at the top of run_vera_chat_turn evaluates True.
+        write_session_weather_context(
+            queue,
+            session_id,
+            {"pending_lookup": {"location_query": "Paris"}},
+        )
+
+        async def _slow_reply(**_kwargs: Any) -> dict[str, Any]:
+            await _asyncio.sleep(0.05)
+            return {"answer": "It is 12C and raining in Paris.", "status": "ok:weather_current"}
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _slow_reply)
+
+        result = _asyncio.run(
+            vera_app_module.run_vera_chat_turn(
+                message="yes",
+                input_origin=InputOrigin.TYPED,
+                session_id=session_id,
+                voice_flags=flags,
+            )
+        )
+        # The branch ran — status is weather-specific.
+        assert result.status.startswith("ok:weather")
+        # Reply timing is recorded — absence would be dishonest since
+        # a real LLM call did happen here.
+        assert "vera_reply_ms" in result.stage_timings
+        assert isinstance(result.stage_timings["vera_reply_ms"], int)
+        assert result.stage_timings["vera_reply_ms"] >= 40
+        # Builder stage never ran on this branch — truthful absence.
+        assert "vera_preview_builder_ms" not in result.stage_timings
