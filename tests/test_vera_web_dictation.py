@@ -1074,6 +1074,78 @@ def test_chat_voice_sentence_first_multi_chunk_ordered_urls(
         assert chunk_entry["success"] is True
 
 
+def test_chat_voice_partial_chunk_failure_truncates_url_list_at_gap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When a middle chunk fails, ``tts_chunk_urls`` only carries the
+    contiguous successful prefix — never appends post-gap chunks.
+
+    Trust invariant: the browser must not play sentences 1 and 3
+    back-to-back when sentence 2 failed to synthesize.  That would
+    fabricate continuity that does not exist in the spoken reply.
+    The full reply still appears in chat (text-authoritative), and
+    per-chunk diagnostics under ``tts.chunks`` carry the full truth
+    for every chunk including the failed one.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
+    chunk0 = tmp_path / "ok_first.wav"
+    chunk0.write_bytes(b"RIFF" + b"\x00" * 16)
+    chunk2 = tmp_path / "ok_third.wav"
+    chunk2.write_bytes(b"RIFF" + b"\x01" * 16)
+    speech_result = _make_speech_result(
+        responses=[
+            _make_tts(audio_path=str(chunk0)),
+            _make_tts(status="failed", audio_path=None),
+            _make_tts(audio_path=str(chunk2)),
+        ],
+        speech_text="First. Second. Third.",
+        sentence_count=3,
+    )
+    stt = _make_stt(transcript="hello vera")
+    with (
+        patch.object(
+            vera_app_module,
+            "transcribe_audio_file_async",
+            side_effect=_async_stt(stt),
+        ),
+        patch.object(
+            vera_app_module,
+            "synthesize_speech_reply_async",
+            side_effect=_async_speech_reply(speech_result),
+        ),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(
+            client,
+            body=b"\x00" * 32,
+            params={"session_id": "vera-partial-fail", "speak_response": "1"},
+        )
+    payload = res.json()
+    chunk_urls = payload["tts_chunk_urls"]
+    # Only the FIRST chunk's URL is present — chunk 2's success URL is
+    # NOT appended because chunk 1 failed in between.  Playing only
+    # chunk 0 and stopping is truthful; playing 0 then 2 would not be.
+    assert isinstance(chunk_urls, list)
+    assert len(chunk_urls) == 1
+    # Per-chunk diagnostics carry every chunk's outcome including the
+    # gap — operators can see which chunk failed and why.
+    chunks = payload["tts"]["chunks"]
+    assert len(chunks) == 3
+    assert chunks[0]["success"] is True
+    assert chunks[1]["success"] is False
+    assert chunks[2]["success"] is True
+    # Aggregate flags reflect partial-success truth.
+    assert payload["tts"]["success"] is True  # chunk 0 succeeded
+    assert payload["tts"]["all_chunks_succeeded"] is False
+    # Text remains authoritative regardless of the chunk gap.
+    turns = vera_session_store.read_session_turns(queue, "vera-partial-fail")
+    assert turns[-1]["role"] == "assistant"
+    assert turns[-1]["text"] == "Ack: hello vera"
+
+
 def test_chat_voice_tts_registry_cap_evicts_oldest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

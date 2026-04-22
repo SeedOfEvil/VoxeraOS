@@ -343,44 +343,55 @@ class TestFailSoftBehaviour:
         assert written == before
 
     @pytest.mark.asyncio
-    async def test_partial_failure_preserves_ordering(self) -> None:
-        """A backend that fails on the SECOND chunk still returns
-        truthful per-chunk responses in spoken order."""
+    async def test_partial_failure_preserves_per_chunk_ordering(self) -> None:
+        """A backend that fails on the SECOND sentence (by text content)
+        still returns per-chunk responses keyed by spoken position.
 
-        counter = {"n": 0}
+        ``responses[i]`` must always describe the synthesis outcome for
+        ``sentences[i]`` regardless of which task happened to finish
+        first wall-clock.  This is the contract operator-trust depends
+        on: the browser plays chunk 0 first, so chunk-0's response
+        must be the truthful outcome for the first spoken sentence.
+        """
 
-        class FlakyBackend:
+        class TextSelectiveBackend:
             @property
             def backend_name(self) -> str:
-                return "flaky"
+                return "text_selective"
 
             def supports_voice(self, voice_id: str) -> bool:
                 return True
 
             def synthesize(self, request):  # noqa: ANN001, ANN201
-                counter["n"] += 1
-                if counter["n"] == 2:
-                    raise RuntimeError("mid-chunk failure")
+                # Fail SPECIFICALLY for the second sentence's text.
+                # This decouples failure from call-arrival order so we
+                # actually verify position-keyed ordering.
+                if request.text.startswith("Second"):
+                    raise RuntimeError("middle chunk failure")
                 return TTSAdapterResult(
-                    audio_path=f"/tmp/ok_{counter['n']}.wav",
+                    audio_path=f"/tmp/ok_{request.text[:5]}.wav",
                     audio_duration_ms=200,
                     inference_ms=10,
                 )
 
         result = await synthesize_speech_reply_async(
-            text="First. Second. Third.",
+            text="First sentence. Second sentence. Third sentence.",
             flags=_make_flags(),
-            backend=FlakyBackend(),
+            backend=TextSelectiveBackend(),
         )
         assert result.sentence_count == 3
-        # The FIRST call is the first sentence (index 0) and succeeds.
-        # The order of per-chunk call completion may vary due to
-        # concurrent scheduling, but each response is a truthful
-        # outcome for its own text.  At least one succeeded and at
-        # least one failed.
-        statuses = [r.status for r in result.responses]
-        assert TTS_STATUS_SUCCEEDED in statuses
-        assert TTS_STATUS_FAILED in statuses
+        # Position-keyed truth: chunk 0 = first sentence (succeeded),
+        # chunk 1 = second sentence (failed), chunk 2 = third sentence
+        # (succeeded).  Any drift from this ordering would cause the
+        # browser to play sentences in the wrong order.
+        assert result.responses[0].status == TTS_STATUS_SUCCEEDED
+        assert result.responses[0].audio_path is not None
+        assert "First" in str(result.responses[0].audio_path)
+        assert result.responses[1].status == TTS_STATUS_FAILED
+        assert result.responses[1].audio_path is None
+        assert result.responses[2].status == TTS_STATUS_SUCCEEDED
+        assert result.responses[2].audio_path is not None
+        assert "Third" in str(result.responses[2].audio_path)
 
     @pytest.mark.asyncio
     async def test_empty_input_returns_truthful_empty_result(self) -> None:

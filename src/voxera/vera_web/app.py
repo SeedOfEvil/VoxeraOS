@@ -2166,18 +2166,27 @@ async def chat_voice(request: Request) -> JSONResponse:
             first_failure_error: str | None = None
             first_failure_error_class: str | None = None
             backend_name: str | None = None
+            # Truth invariant: ``tts_chunk_urls`` only carries CONTIGUOUS
+            # successful chunks from the start.  As soon as one chunk
+            # fails, we stop appending.  Otherwise a [ok, fail, ok]
+            # outcome would have the browser play sentences 0 and 2
+            # back-to-back, silently fabricating continuity that does
+            # not exist in the spoken reply.  The full per-chunk truth
+            # still surfaces under ``chunk_dicts`` for diagnostics.
+            stop_appending_urls = False
             for chunk_response in speech_result.responses:
                 chunk_ok = bool(
                     chunk_response.status == TTS_STATUS_SUCCEEDED and chunk_response.audio_path
                 )
                 if chunk_ok:
                     any_chunk_succeeded = True
-                    if chunk_response.audio_path:
+                    if chunk_response.audio_path and not stop_appending_urls:
                         chunk_token = _register_tts_audio(chunk_response.audio_path)
                         chunk_url = f"/vera/voice/audio/{chunk_token}"
                         tts_chunk_urls.append(chunk_url)
                 else:
                     all_chunks_succeeded = False
+                    stop_appending_urls = True
                     if first_failure_error is None:
                         first_failure_error = chunk_response.error
                         first_failure_error_class = chunk_response.error_class
