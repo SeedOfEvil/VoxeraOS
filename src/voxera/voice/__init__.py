@@ -8,9 +8,22 @@ from .input import (
 )
 from .kokoro_backend import KokoroLocalBackend
 from .models import InputOrigin, normalize_input_origin
-from .output import synthesize_text, synthesize_text_async, voice_output_status
+from .output import (
+    SpeechReplyTTSResult,
+    synthesize_speech_reply_async,
+    synthesize_text,
+    synthesize_text_async,
+    voice_output_status,
+)
 from .piper_backend import PiperLocalBackend
 from .speech_normalize import normalize_text_for_tts
+from .speech_reply import (
+    DEFAULT_SPEECH_MAX_CHARS,
+    DEFAULT_SPEECH_MAX_SENTENCES,
+    SpeechReplyShape,
+    prepare_speech_reply,
+    split_into_sentences,
+)
 from .stt_adapter import (
     NullSTTBackend,
     STTAdapterResult,
@@ -52,6 +65,8 @@ from .tts_status import TTSStatus, build_tts_status, tts_status_as_dict
 from .whisper_backend import WhisperLocalBackend
 
 __all__ = [
+    "DEFAULT_SPEECH_MAX_CHARS",
+    "DEFAULT_SPEECH_MAX_SENTENCES",
     "InputOrigin",
     "KokoroLocalBackend",
     "NullSTTBackend",
@@ -63,6 +78,8 @@ __all__ = [
     "STTRequest",
     "STTResponse",
     "STTStatus",
+    "SpeechReplyShape",
+    "SpeechReplyTTSResult",
     "TTSAdapterResult",
     "TTSBackend",
     "TTSBackendUnsupportedError",
@@ -87,9 +104,12 @@ __all__ = [
     "normalize_input_origin",
     "normalize_text_for_tts",
     "normalize_transcript_text",
+    "prepare_speech_reply",
+    "split_into_sentences",
     "stt_request_as_dict",
     "stt_response_as_dict",
     "stt_status_as_dict",
+    "synthesize_speech_reply_async",
     "synthesize_text",
     "synthesize_text_async",
     "synthesize_tts_request",

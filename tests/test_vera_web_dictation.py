@@ -44,6 +44,7 @@ from fastapi.testclient import TestClient
 from voxera.vera import session_store as vera_session_store
 from voxera.vera_web import app as vera_app_module
 from voxera.voice.flags import VoiceFoundationFlags
+from voxera.voice.output import SpeechReplyTTSResult
 from voxera.voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse
 from voxera.voice.tts_protocol import TTS_STATUS_SUCCEEDED, TTSResponse
 
@@ -117,6 +118,47 @@ def _async_stt(response: STTResponse) -> Any:
 def _async_tts(response: TTSResponse) -> Any:
     async def _run(**_kwargs: Any) -> TTSResponse:
         return response
+
+    return _run
+
+
+def _make_speech_result(
+    *,
+    responses: list[TTSResponse] | None = None,
+    speech_text: str = "Hello vera.",
+    sentence_count: int | None = None,
+    truncated: bool = False,
+    first_chunk_ms: int | None = 50,
+    total_ms: int | None = 75,
+    prepare_ms: int | None = 1,
+    split_ms: int | None = 1,
+) -> SpeechReplyTTSResult:
+    """Build a ``SpeechReplyTTSResult`` for tests.
+
+    Mirrors the shape the canonical pipeline produces — per-chunk
+    ``TTSResponse`` list plus truthful sub-stage timings — without
+    exercising any real backend.
+    """
+    if responses is None:
+        responses = [_make_tts()]
+    effective_count = sentence_count if sentence_count is not None else len(responses)
+    return SpeechReplyTTSResult(
+        speech_text=speech_text,
+        sentence_count=effective_count,
+        truncated=truncated,
+        responses=list(responses),
+        speech_text_prepare_ms=prepare_ms,
+        speech_sentence_split_ms=split_ms,
+        tts_first_chunk_ms=first_chunk_ms,
+        tts_total_synthesis_ms=total_ms,
+    )
+
+
+def _async_speech_reply(result: SpeechReplyTTSResult) -> Any:
+    """Async side_effect helper that returns a pre-built speech result."""
+
+    async def _run(**_kwargs: Any) -> SpeechReplyTTSResult:
+        return result
 
     return _run
 
@@ -674,6 +716,7 @@ def test_chat_voice_speak_response_returns_audio_url(
     audio_file.write_bytes(b"RIFF----WAVE" + b"\x00" * 32)
     stt = _make_stt(transcript="hello vera")
     tts = _make_tts(audio_path=str(audio_file))
+    speech_result = _make_speech_result(responses=[tts])
     with (
         patch.object(
             vera_app_module,
@@ -682,8 +725,8 @@ def test_chat_voice_speak_response_returns_audio_url(
         ),
         patch.object(
             vera_app_module,
-            "synthesize_text_async",
-            side_effect=_async_tts(tts),
+            "synthesize_speech_reply_async",
+            side_effect=_async_speech_reply(speech_result),
         ),
     ):
         client = TestClient(vera_app_module.app)
@@ -697,11 +740,23 @@ def test_chat_voice_speak_response_returns_audio_url(
     assert payload["tts"]["success"] is True
     assert payload["tts_url"] is not None
     assert payload["tts_url"].startswith("/vera/voice/audio/")
+    # Sentence-first: ``tts_chunk_urls`` is an ordered list whose first
+    # element equals the single ``tts_url`` returned for backwards
+    # compatibility.
+    chunk_urls = payload.get("tts_chunk_urls")
+    assert isinstance(chunk_urls, list)
+    assert chunk_urls[0] == payload["tts_url"]
     # Serving the token returns the audio file's bytes.
     audio_res = client.get(payload["tts_url"])
     assert audio_res.status_code == 200
     assert audio_res.headers["content-type"].startswith("audio/")
     assert audio_res.content.startswith(b"RIFF")
+    # Truthful sub-stage timings surface on the payload.
+    timings = payload.get("stage_timings", {})
+    assert isinstance(timings.get("speech_text_prepare_ms"), int)
+    assert isinstance(timings.get("speech_sentence_split_ms"), int)
+    assert isinstance(timings.get("tts_first_chunk_ms"), int)
+    assert isinstance(timings.get("tts_total_synthesis_ms"), int)
 
 
 def test_chat_voice_tts_failure_text_still_authoritative(
@@ -713,6 +768,7 @@ def test_chat_voice_tts_failure_text_still_authoritative(
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
     stt = _make_stt(transcript="hello vera")
     failing_tts = _make_tts(status="failed", audio_path=None)
+    speech_result = _make_speech_result(responses=[failing_tts])
     with (
         patch.object(
             vera_app_module,
@@ -721,8 +777,8 @@ def test_chat_voice_tts_failure_text_still_authoritative(
         ),
         patch.object(
             vera_app_module,
-            "synthesize_text_async",
-            side_effect=_async_tts(failing_tts),
+            "synthesize_speech_reply_async",
+            side_effect=_async_speech_reply(speech_result),
         ),
     ):
         client = TestClient(vera_app_module.app)
@@ -735,6 +791,9 @@ def test_chat_voice_tts_failure_text_still_authoritative(
     payload = res.json()
     assert payload["tts"]["success"] is False
     assert payload["tts_url"] is None
+    # TTS failure leaves the chunk URL list empty — no audio, no
+    # fabricated URLs.
+    assert payload["tts_chunk_urls"] == []
     # Vera answer still persisted even though TTS failed.
     turns = vera_session_store.read_session_turns(queue, "vera-tts-fail")
     assert turns[-1]["role"] == "assistant"
@@ -938,6 +997,81 @@ def test_chat_voice_ok_reflects_stt_failure(
     assert payload["stt"]["success"] is False
     # Assistant text is empty when STT never produced a transcript.
     assert payload["assistant_text"] == ""
+
+
+def test_chat_voice_sentence_first_multi_chunk_ordered_urls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A multi-sentence spoken reply returns one audio URL per chunk,
+    in spoken order, AND exposes truthful sub-stage timings.
+
+    The browser chains playback through ``tts_chunk_urls`` so audio
+    starts as soon as the first chunk is fetched; the server does
+    not wait for the full spoken reply to synthesize before the
+    first URL is playable.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply)
+    # Three chunk artifacts — one per spoken sentence.  The test is
+    # not actually playing audio; we just check the URLs map back to
+    # the three distinct tokens and survive a registry get.
+    chunk_files: list[Path] = []
+    chunk_responses: list[TTSResponse] = []
+    for i in range(3):
+        f = tmp_path / f"chunk_{i}.wav"
+        f.write_bytes(b"RIFF" + bytes([i]) * 16)
+        chunk_files.append(f)
+        chunk_responses.append(_make_tts(audio_path=str(f)))
+    speech_result = _make_speech_result(
+        responses=chunk_responses,
+        speech_text="First. Second. Third.",
+        sentence_count=3,
+        first_chunk_ms=30,
+        total_ms=90,
+    )
+    stt = _make_stt(transcript="hello vera")
+    with (
+        patch.object(
+            vera_app_module,
+            "transcribe_audio_file_async",
+            side_effect=_async_stt(stt),
+        ),
+        patch.object(
+            vera_app_module,
+            "synthesize_speech_reply_async",
+            side_effect=_async_speech_reply(speech_result),
+        ),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_voice(
+            client,
+            body=b"\x00" * 32,
+            params={"session_id": "vera-sentence-first", "speak_response": "1"},
+        )
+    assert res.status_code == 200
+    payload = res.json()
+    # Three chunks, three URLs, in spoken order.
+    chunk_urls = payload["tts_chunk_urls"]
+    assert isinstance(chunk_urls, list)
+    assert len(chunk_urls) == 3
+    for url in chunk_urls:
+        assert url.startswith("/vera/voice/audio/")
+    assert chunk_urls[0] == payload["tts_url"]
+    # Timings on the outer payload reflect the first-chunk win.
+    timings = payload["stage_timings"]
+    assert timings["tts_first_chunk_ms"] == 30
+    assert timings["tts_total_synthesis_ms"] == 90
+    # TTS dict surfaces per-chunk diagnostics so operators can see
+    # each chunk's outcome.
+    tts = payload["tts"]
+    assert tts["success"] is True
+    assert tts["sentence_count"] == 3
+    assert tts["speech_text"] == "First. Second. Third."
+    assert len(tts["chunks"]) == 3
+    for chunk_entry in tts["chunks"]:
+        assert chunk_entry["success"] is True
 
 
 def test_chat_voice_tts_registry_cap_evicts_oldest(

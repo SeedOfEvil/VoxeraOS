@@ -349,9 +349,30 @@
     }
     clearError();
     setState(deriveStateFromCanonicalStatus(payload));
-    if (payload.tts_url && audioEl) {
+    // Sentence-first playback: the server returns an ordered list of
+    // audio URLs in ``tts_chunk_urls`` (one per spoken sentence chunk).
+    // The browser plays them sequentially so audio starts as soon as
+    // the first chunk is fetched, while the remaining chunks queue in
+    // behind it.  Older payload shapes that only carry ``tts_url``
+    // still work via the single-element fallback below.
+    var chunkUrls = [];
+    if (Array.isArray(payload.tts_chunk_urls)) {
+      for (var i = 0; i < payload.tts_chunk_urls.length; i++) {
+        var chunkUrl = payload.tts_chunk_urls[i];
+        if (typeof chunkUrl === "string" && chunkUrl.length > 0) {
+          chunkUrls.push(chunkUrl);
+        }
+      }
+    }
+    if (
+      chunkUrls.length === 0 &&
+      typeof payload.tts_url === "string" &&
+      payload.tts_url
+    ) {
+      chunkUrls.push(payload.tts_url);
+    }
+    if (chunkUrls.length > 0 && audioEl) {
       audioEl.hidden = false;
-      audioEl.src = payload.tts_url;
       // Show the "Speaking reply…" state only while audio is
       // actually loading / playing; once it ends or errors, fall
       // back to the canonical status-derived state so the voice bar
@@ -360,22 +381,54 @@
       var resetState = function () {
         setState(deriveStateFromCanonicalStatus(payload));
       };
-      audioEl.onended = resetState;
-      audioEl.onerror = resetState;
-      var playPromise = audioEl.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch(function () {
-          // Autoplay may be blocked by the browser; the <audio>
-          // element has controls, so the operator can press play.
-          // Fall back to the canonical status line so the bar does
-          // not stay on "Speaking reply…" when nothing is playing.
-          resetState();
-        });
-      }
+      playChunkedAudio(audioEl, chunkUrls, resetState);
     } else if (audioEl) {
       audioEl.hidden = true;
       audioEl.removeAttribute("src");
     }
+  }
+
+  // Chain-play an ordered list of TTS audio chunk URLs through the
+  // same ``<audio>`` element.  The first chunk starts as soon as it
+  // is fetched so time-to-first-audio matches the server-side first-
+  // chunk synthesis time; subsequent chunks load when the previous
+  // one ends.  If any chunk fails (autoplay blocked on first chunk,
+  // a later chunk 404'd), we stop advancing and hand control back to
+  // the canonical status line rather than fabricating a "spoke
+  // reply" state the server did not report.
+  function playChunkedAudio(el, urls, doneCallback) {
+    if (!urls || urls.length === 0) {
+      if (typeof doneCallback === "function") doneCallback();
+      return;
+    }
+    var index = 0;
+    function advance() {
+      if (index >= urls.length) {
+        if (typeof doneCallback === "function") doneCallback();
+        return;
+      }
+      var url = urls[index];
+      index += 1;
+      el.src = url;
+      el.onended = advance;
+      el.onerror = function () {
+        // Truthful stop: a chunk failed to load.  We do not know if
+        // later chunks would fetch successfully and we must not
+        // silently skip over missing audio, so we end playback here.
+        if (typeof doneCallback === "function") doneCallback();
+      };
+      var playPromise = el.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(function () {
+          // Autoplay may be blocked by the browser; the <audio>
+          // element has controls, so the operator can press play on
+          // the first chunk.  If autoplay is blocked we stop the
+          // chain here rather than claim the reply is speaking.
+          if (typeof doneCallback === "function") doneCallback();
+        });
+      }
+    }
+    advance();
   }
 
   // Derive an operator-facing state line from the canonical chat

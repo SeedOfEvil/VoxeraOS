@@ -34,6 +34,7 @@ from fastapi.testclient import TestClient
 from voxera.vera_web import app as vera_app_module
 from voxera.voice import stt_backend_factory, tts_backend_factory
 from voxera.voice.flags import VoiceFoundationFlags
+from voxera.voice.output import SpeechReplyTTSResult
 from voxera.voice.stt_adapter import NullSTTBackend
 from voxera.voice.stt_protocol import STT_STATUS_SUCCEEDED, STTResponse
 from voxera.voice.tts_adapter import NullTTSBackend
@@ -99,6 +100,46 @@ def _async_stt(response: STTResponse) -> Any:
 def _async_tts(response: TTSResponse) -> Any:
     async def _run(**_kwargs: Any) -> TTSResponse:
         return response
+
+    return _run
+
+
+def _make_speech_result(
+    *,
+    responses: list[TTSResponse],
+    speech_text: str = "Hello vera.",
+    sentence_count: int | None = None,
+    first_chunk_ms: int | None = 50,
+    total_ms: int | None = 75,
+) -> SpeechReplyTTSResult:
+    return SpeechReplyTTSResult(
+        speech_text=speech_text,
+        sentence_count=sentence_count if sentence_count is not None else len(responses),
+        truncated=False,
+        responses=list(responses),
+        speech_text_prepare_ms=1,
+        speech_sentence_split_ms=1,
+        tts_first_chunk_ms=first_chunk_ms,
+        tts_total_synthesis_ms=total_ms,
+    )
+
+
+def _async_speech_reply_from_tts(tts: TTSResponse) -> Any:
+    """Wrap a single ``TTSResponse`` into a ``SpeechReplyTTSResult`` for patching."""
+
+    async def _run(**_kwargs: Any) -> SpeechReplyTTSResult:
+        return _make_speech_result(responses=[tts])
+
+    return _run
+
+
+def _slow_speech_reply_from_tts(tts: TTSResponse, *, sleep_s: float) -> Any:
+    """Async side_effect that sleeps before returning a single-chunk result."""
+    import asyncio as _asyncio
+
+    async def _run(**_kwargs: Any) -> SpeechReplyTTSResult:
+        await _asyncio.sleep(sleep_s)
+        return _make_speech_result(responses=[tts])
 
     return _run
 
@@ -304,6 +345,12 @@ def test_chat_voice_payload_has_stage_timings(
         "vera_reply_ms",
         "vera_enrichment_ms",
         "tts_ms",
+        # Sentence-first TTS sub-stage breakdown.  Each stays ``None``
+        # when the corresponding sub-stage did not run this turn.
+        "speech_text_prepare_ms",
+        "speech_sentence_split_ms",
+        "tts_first_chunk_ms",
+        "tts_total_synthesis_ms",
         "total_ms",
     }
     assert set(timings) == expected_keys
@@ -313,6 +360,12 @@ def test_chat_voice_payload_has_stage_timings(
         assert timings[key] >= 0, f"{key} must be non-negative"
     # TTS did not run this turn (no speak_response) → truthful None.
     assert timings["tts_ms"] is None
+    # Every sentence-first TTS sub-stage stays ``None`` because TTS did
+    # not run — absence stays truthful, never fabricated as 0.
+    assert timings["speech_text_prepare_ms"] is None
+    assert timings["speech_sentence_split_ms"] is None
+    assert timings["tts_first_chunk_ms"] is None
+    assert timings["tts_total_synthesis_ms"] is None
     # The main reply LLM call always runs on a non-early-exit turn.
     # Monkeypatched ``generate_vera_reply`` is fast, so the timing is
     # small but still a non-negative int — the key invariant here is
@@ -353,8 +406,8 @@ def test_chat_voice_tts_timing_present_when_speak_response(
         ),
         patch.object(
             vera_app_module,
-            "synthesize_text_async",
-            side_effect=_async_tts(tts),
+            "synthesize_speech_reply_async",
+            side_effect=_async_speech_reply_from_tts(tts),
         ),
     ):
         client = TestClient(vera_app_module.app)
@@ -368,6 +421,10 @@ def test_chat_voice_tts_timing_present_when_speak_response(
     timings = payload["stage_timings"]
     assert isinstance(timings["tts_ms"], int)
     assert timings["tts_ms"] >= 0
+    # Sentence-first sub-stage timings are populated when TTS runs.
+    assert isinstance(timings["tts_first_chunk_ms"], int)
+    assert isinstance(timings["tts_total_synthesis_ms"], int)
+    assert timings["tts_first_chunk_ms"] <= timings["tts_total_synthesis_ms"]
 
 
 def test_chat_voice_stage_timings_stt_failure_still_truthful(
@@ -434,8 +491,6 @@ def test_chat_voice_text_authoritative_on_slow_tts(
     returning, then assert the top-level payload shape is complete
     and coherent regardless.
     """
-    import asyncio
-
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
     _force_enabled_voice(monkeypatch)
@@ -443,11 +498,8 @@ def test_chat_voice_text_authoritative_on_slow_tts(
     audio_file = tmp_path / "slow_tts.wav"
     audio_file.write_bytes(b"RIFF----WAVE" + b"\x00" * 32)
 
-    async def _slow_tts(**_kwargs: Any) -> TTSResponse:
-        await asyncio.sleep(0.05)
-        return _make_tts(audio_path=str(audio_file))
-
     stt = _make_stt(transcript="hello vera")
+    slow_tts_response = _make_tts(audio_path=str(audio_file))
     with (
         patch.object(
             vera_app_module,
@@ -456,8 +508,8 @@ def test_chat_voice_text_authoritative_on_slow_tts(
         ),
         patch.object(
             vera_app_module,
-            "synthesize_text_async",
-            side_effect=_slow_tts,
+            "synthesize_speech_reply_async",
+            side_effect=_slow_speech_reply_from_tts(slow_tts_response, sleep_s=0.05),
         ),
     ):
         client = TestClient(vera_app_module.app)
@@ -499,8 +551,8 @@ def test_chat_voice_text_authoritative_when_tts_fails(
         ),
         patch.object(
             vera_app_module,
-            "synthesize_text_async",
-            side_effect=_async_tts(failing_tts),
+            "synthesize_speech_reply_async",
+            side_effect=_async_speech_reply_from_tts(failing_tts),
         ),
     ):
         client = TestClient(vera_app_module.app)

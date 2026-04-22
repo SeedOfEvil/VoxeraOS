@@ -132,7 +132,11 @@ from ..voice.input import (
     transcribe_audio_file_async,
 )
 from ..voice.models import InputOrigin, normalize_input_origin
-from ..voice.output import synthesize_text_async, voice_output_status
+from ..voice.output import (
+    SpeechReplyTTSResult,
+    synthesize_speech_reply_async,
+    voice_output_status,
+)
 from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, stt_response_as_dict
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, tts_response_as_dict
 from .chat_early_exit_dispatch import dispatch_early_exit_intent
@@ -1925,6 +1929,27 @@ async def chat_voice(request: Request) -> JSONResponse:
         "vera_reply_ms": None,
         "vera_enrichment_ms": None,
         "tts_ms": None,
+        # Sentence-first TTS sub-stage timings.  Each is the wall-clock
+        # millisecond cost of one stage of the speech-optimized reply
+        # pipeline:
+        #   speech_text_prepare_ms — derive the concise spoken copy
+        #     from the canonical written reply (markdown strip + bounded
+        #     sentence truncation).  Cheap; surfaces only when TTS ran.
+        #   speech_sentence_split_ms — split the spoken copy into
+        #     ordered sentence chunks for parallel synthesis.
+        #   tts_first_chunk_ms — wall-clock time from synthesis start
+        #     until the FIRST sentence chunk's audio is ready.  This
+        #     is the operator-visible time-to-first-audio for the
+        #     sentence-first playback path.
+        #   tts_total_synthesis_ms — wall-clock time from synthesis
+        #     start until ALL chunks are ready (and thus the URL list
+        #     in the response is complete).
+        # Each stays ``None`` when the corresponding sub-stage did not
+        # run this turn.  Absence stays truthful — never fabricated.
+        "speech_text_prepare_ms": None,
+        "speech_sentence_split_ms": None,
+        "tts_first_chunk_ms": None,
+        "tts_total_synthesis_ms": None,
         "total_ms": None,
     }
 
@@ -2091,8 +2116,20 @@ async def chat_voice(request: Request) -> JSONResponse:
     # canonical preview truth, so the enhancer can render the text reply
     # without waiting on audio.  Text stays authoritative even when TTS
     # fails.
+    #
+    # Sentence-first TTS path: instead of synthesizing the full assistant
+    # text in one pass, we (a) derive a concise speech-only copy of the
+    # reply (the full written reply still appears in chat unchanged),
+    # (b) split it into ordered sentence chunks, and (c) synthesize the
+    # chunks concurrently so the wall-clock cost is dominated by the
+    # slowest chunk rather than the full-reply synthesis.  The browser
+    # receives an ordered list of audio URLs in ``tts_chunk_urls`` and
+    # chains playback through them; ``tts_url`` stays populated with the
+    # FIRST chunk URL for backwards compatibility with any consumer that
+    # only knows the single-URL shape.
     tts_dict: dict[str, object] | None = None
     tts_url: str | None = None
+    tts_chunk_urls: list[str] = []
     tts_source_text = (
         chat_result.assistant_text.strip()
         if chat_result is not None and chat_result.assistant_text
@@ -2101,35 +2138,127 @@ async def chat_voice(request: Request) -> JSONResponse:
     if speak_response and tts_source_text:
         try:
             start_ms = int(time.time() * 1000)
-            tts_response = await synthesize_text_async(
+            speech_result: SpeechReplyTTSResult = await synthesize_speech_reply_async(
                 text=tts_source_text,
                 flags=voice_flags,
                 session_id=active_session,
             )
             elapsed_ms = int(time.time() * 1000) - start_ms
             stage_timings["tts_ms"] = max(0, elapsed_ms)
-            tts_ok = bool(tts_response.status == TTS_STATUS_SUCCEEDED and tts_response.audio_path)
+            # Per-sub-stage truthful timings.  ``None`` stays ``None``
+            # so a stage that was skipped (e.g. ``speech_sentence_split_ms``
+            # when the speech text was empty) is not back-filled with a
+            # fake zero.
+            if speech_result.speech_text_prepare_ms is not None:
+                stage_timings["speech_text_prepare_ms"] = speech_result.speech_text_prepare_ms
+            if speech_result.speech_sentence_split_ms is not None:
+                stage_timings["speech_sentence_split_ms"] = speech_result.speech_sentence_split_ms
+            if speech_result.tts_first_chunk_ms is not None:
+                stage_timings["tts_first_chunk_ms"] = speech_result.tts_first_chunk_ms
+            if speech_result.tts_total_synthesis_ms is not None:
+                stage_timings["tts_total_synthesis_ms"] = speech_result.tts_total_synthesis_ms
+
+            chunk_dicts: list[dict[str, object]] = []
+            total_audio_duration_ms = 0
+            total_inference_ms = 0
+            any_chunk_succeeded = False
+            all_chunks_succeeded = bool(speech_result.responses)
+            first_failure_error: str | None = None
+            first_failure_error_class: str | None = None
+            backend_name: str | None = None
+            for chunk_response in speech_result.responses:
+                chunk_ok = bool(
+                    chunk_response.status == TTS_STATUS_SUCCEEDED and chunk_response.audio_path
+                )
+                if chunk_ok:
+                    any_chunk_succeeded = True
+                    if chunk_response.audio_path:
+                        chunk_token = _register_tts_audio(chunk_response.audio_path)
+                        chunk_url = f"/vera/voice/audio/{chunk_token}"
+                        tts_chunk_urls.append(chunk_url)
+                else:
+                    all_chunks_succeeded = False
+                    if first_failure_error is None:
+                        first_failure_error = chunk_response.error
+                        first_failure_error_class = chunk_response.error_class
+                if backend_name is None and chunk_response.backend:
+                    backend_name = chunk_response.backend
+                if chunk_response.audio_duration_ms is not None:
+                    total_audio_duration_ms += chunk_response.audio_duration_ms
+                if chunk_response.inference_ms is not None:
+                    total_inference_ms += chunk_response.inference_ms
+                chunk_dicts.append(
+                    {
+                        "status": chunk_response.status,
+                        "success": chunk_ok,
+                        "audio_duration_ms": chunk_response.audio_duration_ms,
+                        "inference_ms": chunk_response.inference_ms,
+                        "error": chunk_response.error if not chunk_ok else None,
+                        "error_class": chunk_response.error_class if not chunk_ok else None,
+                        "request_id": chunk_response.request_id,
+                        "response_dict": tts_response_as_dict(chunk_response),
+                    }
+                )
+
+            # Operator-visible "did the spoken reply work?" flag.  Use
+            # ``any_chunk_succeeded`` so a partial failure (chunk 2 of 3
+            # failed) still surfaces playable audio for the chunks that
+            # did succeed; the per-chunk dicts carry the truthful per-
+            # chunk status for diagnostics.  Display status reflects the
+            # primary first-chunk outcome since that is what the browser
+            # plays first.
+            tts_ok = any_chunk_succeeded
+            primary_status = (
+                speech_result.responses[0].status if speech_result.responses else "failed"
+            )
+            primary_error = first_failure_error if not all_chunks_succeeded else None
             tts_dict = {
                 "success": tts_ok,
-                "status": tts_response.status,
-                "display_status": _display_status_for_tts(tts_response.status, ok=tts_ok),
-                "audio_path": tts_response.audio_path if tts_ok else None,
-                "backend": tts_response.backend,
-                "error": tts_response.error if not tts_ok else None,
-                "error_class": tts_response.error_class if not tts_ok else None,
-                "audio_duration_ms": tts_response.audio_duration_ms,
-                "inference_ms": tts_response.inference_ms,
+                "status": primary_status,
+                "display_status": _display_status_for_tts(primary_status, ok=tts_ok),
+                "backend": backend_name,
+                # ``audio_path`` retained for backwards compatibility —
+                # carries the FIRST chunk's path on success so older
+                # operator surfaces that consume the single-path shape
+                # still work.  New surfaces should use ``chunks``.
+                "audio_path": (
+                    speech_result.responses[0].audio_path
+                    if (
+                        speech_result.responses
+                        and speech_result.responses[0].status == TTS_STATUS_SUCCEEDED
+                    )
+                    else None
+                ),
+                "error": primary_error,
+                "error_class": first_failure_error_class if not all_chunks_succeeded else None,
+                "audio_duration_ms": total_audio_duration_ms or None,
+                "inference_ms": total_inference_ms or None,
                 "elapsed_ms": elapsed_ms,
-                "request_id": tts_response.request_id,
-                "response_dict": tts_response_as_dict(tts_response),
+                "request_id": (
+                    speech_result.responses[0].request_id if speech_result.responses else None
+                ),
+                "speech_text": speech_result.speech_text,
+                "sentence_count": speech_result.sentence_count,
+                "speech_truncated": speech_result.truncated,
+                "speech_text_prepare_ms": speech_result.speech_text_prepare_ms,
+                "speech_sentence_split_ms": speech_result.speech_sentence_split_ms,
+                "tts_first_chunk_ms": speech_result.tts_first_chunk_ms,
+                "tts_total_synthesis_ms": speech_result.tts_total_synthesis_ms,
+                "chunks": chunk_dicts,
+                "all_chunks_succeeded": all_chunks_succeeded,
+                "response_dict": (
+                    tts_response_as_dict(speech_result.responses[0])
+                    if speech_result.responses
+                    else None
+                ),
             }
-            if tts_ok and tts_response.audio_path:
-                token = _register_tts_audio(tts_response.audio_path)
-                tts_url = f"/vera/voice/audio/{token}"
+            # ``tts_url`` keeps the single-URL shape for older clients.
+            if tts_chunk_urls:
+                tts_url = tts_chunk_urls[0]
         except ValueError as exc:
-            # ``synthesize_text_async`` (via ``tts_protocol``) raises
-            # ``ValueError`` for input-shape violations — empty text
-            # after stripping, invalid ``output_format``, etc.  Surface
+            # ``synthesize_speech_reply_async`` may raise ``ValueError``
+            # for input-shape violations on a chunk (empty text after
+            # normalization, invalid ``output_format``, etc.).  Surface
             # the validation message verbatim since it is operator-
             # readable; broader runtime failures fall through to the
             # generic ``Exception`` branch below with a class-tagged
@@ -2207,6 +2336,12 @@ async def chat_voice(request: Request) -> JSONResponse:
         "stt": stt_dict,
         "tts": tts_dict,
         "tts_url": tts_url,
+        # Ordered list of audio URLs, one per spoken sentence chunk, in
+        # the order the browser should play them.  The first element is
+        # always ``tts_url`` when both are populated.  Empty when TTS
+        # did not run or every chunk failed — callers must not infer
+        # audio availability from anything other than explicit URLs.
+        "tts_chunk_urls": tts_chunk_urls,
         "speak_response_requested": speak_response,
         "stage_timings": stage_timings,
     }
